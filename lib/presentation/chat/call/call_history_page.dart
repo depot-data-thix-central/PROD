@@ -103,7 +103,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   late Future<List<_CallRow>> _future;
   String _query = '';
   
-  // 🚀 AMÉLIORATION : Chargement granulaire par peerId au lieu d'un flag global
   String? _callingPeerId;
 
   @override
@@ -125,8 +124,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
   bool _isCalling(String peerId) => _callingPeerId == peerId;
 
-  // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
-
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
@@ -143,8 +140,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       ),
     );
   }
-
-  // ── LOAD DATA ────────────────────────────────────────────────────────
 
   Future<List<_CallRow>> _load() async {
     final uid = _myId;
@@ -215,7 +210,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       return result;
     } catch (e) {
       debugPrint('[CallHistory] ❌ Load failed: $e');
-      rethrow; // Laisser le FutureBuilder gérer l'erreur
+      rethrow;
     }
   }
 
@@ -223,8 +218,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     setState(() => _future = _load());
     await _future;
   }
-
-  // ── CALL BACK ────────────────────────────────────────────────────────
 
   Future<void> _callBack(_CallRow row, {required bool video}) async {
     if (_isCalling(row.peerId)) return;
@@ -301,8 +294,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     );
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────────
-
   String _subtitle(_CallRow row, AppLocalizations l10n) {
     final inv = row.invite;
     final isVideoCall = inv.callType == CallType.video;
@@ -332,8 +323,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         inv.status == CallStatus.rejected ||
         inv.status == CallStatus.canceled;
     if (missed) return ThixPolicy.danger;
-    if (inv.callerId == _myId) return ThixPolicy.success; // Sortant réussi
-    return ThixPolicy.primary; // Entrant réussi
+    if (inv.callerId == _myId) return ThixPolicy.success;
+    return ThixPolicy.primary;
   }
 
   String _fmtDate(DateTime d, AppLocalizations l10n) {
@@ -348,8 +339,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     }
     return DateFormat('dd/MM/yy').format(local);
   }
-
-  // ── BUILD ────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -377,12 +366,11 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         backgroundColor: ThixPolicy.primary,
         foregroundColor: Colors.white,
         onPressed: _callingPeerId != null ? null : _openSearchToCall,
-        icon: const Icon(Icons.add_call_rounded),
+        icon: const Icon(Icons.add_ic_call), // ✅ CORRIGÉ: add_call_rounded → add_ic_call
         label: Text(l10n.t('call_new_call')),
       ),
       body: Column(
         children: [
-          // ── Champ de recherche ──
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: TextField(
@@ -404,7 +392,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
             ),
           ),
 
-          // ── Liste des appels ──
           Expanded(
             child: RefreshIndicator(
               color: ThixPolicy.primary,
@@ -536,13 +523,12 @@ class _CallHistoryTile extends StatelessWidget {
         inv.status == CallStatus.canceled;
 
     return InkWell(
-      onTap: () => onCall(false), // Tap par défaut = appel audio
+      onTap: () => onCall(false),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Avatar avec badge de statut
             Stack(
               clipBehavior: Clip.none,
               children: [
@@ -562,7 +548,6 @@ class _CallHistoryTile extends StatelessWidget {
                         )
                       : null,
                 ),
-                // Badge d'icône de direction (entrante/sortante/manquée)
                 Positioned(
                   bottom: -4,
                   right: -4,
@@ -584,7 +569,6 @@ class _CallHistoryTile extends StatelessWidget {
             ),
             const SizedBox(width: 16),
             
-            // Informations texte
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -610,7 +594,7 @@ class _CallHistoryTile extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          _subtitle(row, l10n),
+                          _subtitle(row, l10n), // ✅ CORRIGÉ: méthode maintenant définie ci-dessous
                           style: ThixPolicy.captionStyle.copyWith(
                             color: ThixPolicy.textMuted,
                             fontSize: 13,
@@ -625,12 +609,11 @@ class _CallHistoryTile extends StatelessWidget {
               ),
             ),
 
-            // Actions (Date + Boutons)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _fmtDate(inv.createdAt, l10n),
+                  _fmtDate(inv.createdAt, l10n), // ✅ CORRIGÉ: méthode maintenant définie ci-dessous
                   style: ThixPolicy.captionStyle.copyWith(
                     color: ThixPolicy.textMuted,
                     fontSize: 12,
@@ -675,6 +658,36 @@ class _CallHistoryTile extends StatelessWidget {
     if (missed) return ThixPolicy.danger;
     if (inv.callerId == myId) return ThixPolicy.success;
     return ThixPolicy.primary;
+  }
+
+  // ✅ CORRIGÉ: Ajout de la méthode _subtitle
+  String _subtitle(_CallRow row, AppLocalizations l10n) {
+    final inv = row.invite;
+    final isVideoCall = inv.callType == CallType.video;
+    final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
+    
+    if (inv.durationSec > 0) {
+      final m = (inv.durationSec / 60).floor();
+      final s = inv.durationSec % 60;
+      final mm = m.toString().padLeft(2, '0');
+      final ss = s.toString().padLeft(2, '0');
+      return '$type · ${inv.status.label} · $mm:$ss';
+    }
+    return '$type · ${inv.status.label}';
+  }
+
+  // ✅ CORRIGÉ: Ajout de la méthode _fmtDate
+  String _fmtDate(DateTime d, AppLocalizations l10n) {
+    final local = d.toLocal();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final day = DateTime(local.year, local.month, local.day);
+    
+    if (day == today) return DateFormat('HH:mm').format(local);
+    if (day == today.subtract(const Duration(days: 1))) {
+      return l10n.t('call_yesterday');
+    }
+    return DateFormat('dd/MM/yy').format(local);
   }
 }
 
