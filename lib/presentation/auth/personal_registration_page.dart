@@ -2254,14 +2254,27 @@ class _Step2Account extends StatelessWidget {
         ],
         const SizedBox(height: 16),
         _CleanField(
-          label: l10n.t('reg_confirm_password_label'),
-          hint: l10n.t('reg_confirm_password_hint'),
+          label: l10n.t('reg_password_label'),
+          hint: l10n.t('reg_password_hint'),
           icon: Icons.lock_outline_rounded,
-          controller: confirmC,
+          controller: passwordC,
           isPassword: true,
+          onChanged: onPasswordChanged,
+          errorText: passwordError, // ✅ FIX: paramètre nommé direct au lieu du spread
           maxLength: _kMaxPasswordLength,
           autofillHint: AutofillHints.newPassword,
+          trailing: passwordValidating
+              ? const Padding(
+                  padding: EdgeInsets.all(12),
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : null,
         ),
+        
         const SizedBox(height: 28),
         const Divider(color: Color(0xFFE5E7EB), height: 1),
         const SizedBox(height: 20),
