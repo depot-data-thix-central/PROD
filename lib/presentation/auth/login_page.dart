@@ -7,6 +7,7 @@
 // ✅ Design épuré minimaliste (THIX HUB branding)
 // ✅ Rate limiting serveur (check_login_allowed) + UI lockout
 // ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
+// ✅ FIX: syntaxe _CleanInput + champ identifiant + doublon password supprimé
 // ============================================================================
 
 import 'dart:async';
@@ -211,7 +212,7 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// CLEAN INPUT (design épuré)
+// CLEAN INPUT (design épuré) — ✅ CORRIGÉ
 // ════════════════════════════════════════════════════════════════════════
 class _CleanInput extends StatefulWidget {
   final String label;
@@ -224,10 +225,11 @@ class _CleanInput extends StatefulWidget {
   final TextInputAction textInputAction;
   final int? maxLength;
   final ValueChanged<String>? onSubmitted;
-  final String? autofillHint
-      
+  final AutofillHints? autofillHint;
+  final String? errorText; // ✅ AJOUTÉ : support des erreurs
+
   const _CleanInput({
-     super.key,
+    super.key,
     required this.label,
     required this.hint,
     required this.icon,
@@ -239,6 +241,7 @@ class _CleanInput extends StatefulWidget {
     this.maxLength,
     this.onSubmitted,
     this.autofillHint,
+    this.errorText, // ✅ AJOUTÉ
   });
 
   @override
@@ -252,6 +255,7 @@ class _CleanInputState extends State<_CleanInput> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
+    // Champ honeypot : invisible
     if (widget.obscure) {
       return SizedBox.shrink(
         child: TextField(
@@ -292,6 +296,7 @@ class _CleanInputState extends State<_CleanInput> {
           decoration: InputDecoration(
             counterText: '',
             hintText: widget.hint,
+            errorText: widget.errorText, // ✅ AJOUTÉ : affichage erreur
             hintStyle: const TextStyle(
               color: Color(0xFF9CA3AF),
               fontWeight: FontWeight.w400,
@@ -343,6 +348,13 @@ class _CleanInputState extends State<_CleanInput> {
               ),
             ),
             errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: ThixPolicy.danger,
+                width: 1.5,
+              ),
+            ),
+            focusedErrorBorder: OutlineInputBorder(
               borderRadius: BorderRadius.circular(12),
               borderSide: const BorderSide(
                 color: ThixPolicy.danger,
@@ -922,26 +934,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       obscure: true,
                     ),
 
+                    // ✅ IDENTIFIANT (email / téléphone / THIX ID)
                     Semantics(
-                            label: l10n.t('login_password_label'),
-                            textField: true,
-                            child: _CleanInput(
-                              key: const ValueKey('password'),
-                              label: l10n.t('login_password_label'),
-                              hint: l10n.t('login_password_hint'),
-                              icon: Icons.lock_outline_rounded,
-                              isPassword: true,
-                              type: TextInputType.text,
-                              controller: _passwordC,
-                              textInputAction: TextInputAction.done,
-                              maxLength: _kMaxPasswordLength,
-                              onSubmitted: (_) => _signIn(),
-                              autofillHint: AutofillHints.password,
-                              // ✅ FIX: errorText passé directement (null = aucune erreur)
-                              // Le spread if(...)...[] a été supprimé car invalide ici
-                            ),
-                          ),
+                      label: l10n.t('login_identifier_label'),
+                      textField: true,
+                      child: _CleanInput(
+                        key: const ValueKey('identifier'),
+                        label: l10n.t('login_identifier_label'),
+                        hint: l10n.t('login_identifier_hint'),
+                        icon: Icons.badge_outlined,
+                        isPassword: false,
+                        type: TextInputType.text,
+                        controller: _identifierC,
+                        textInputAction: TextInputAction.next,
+                        maxLength: _kMaxIdentifierLength,
+                        autofillHint: AutofillHints.username,
+                      ),
+                    ),
                     const SizedBox(height: 16),
+
+                    // ✅ MOT DE PASSE (une seule fois, avec errorText)
                     Semantics(
                       label: l10n.t('login_password_label'),
                       textField: true,
@@ -960,6 +972,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
+
+                    // ── REMEMBER ME + FORGOT PASSWORD ──
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -1031,6 +1045,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       ],
                     ),
                     const SizedBox(height: 28),
+
+                    // ── BOUTON CONNEXION ──
                     Semantics(
                       button: true,
                       label: l10n.t('login_button'),
