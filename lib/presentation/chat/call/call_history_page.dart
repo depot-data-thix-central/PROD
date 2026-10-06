@@ -1,29 +1,17 @@
 // lib/presentation/chat/call/call_history_page.dart
 //
 // ============================================================================
-// CALL HISTORY PAGE — Production Enterprise
+// CALL HISTORY PAGE — Production Enterprise v2.0
 // ============================================================================
 //
-// Historique des appels (entrants, sortants, manqués) avec recherche
-// et possibilité de rappeler un contact.
+// Historique des appels avec design moderne, états de chargement granulaires
+// et expérience utilisateur fluide (inspirée des standards iOS/Android).
 //
-// Architecture :
-//   - Utilise CallService injecté via Riverpod
-//   - Accès DB via supabaseClientProvider (testable)
-//   - Gestion d'état locale (pas besoin de StateNotifier pour une page)
-//
-// Sécurité :
-//   - Validation UUID sur tous les peerId
-//   - Sanitization XSS sur les noms affichés
-//   - Pas d'exposition de stack traces
-//   - Mounted checks sur tous les callbacks async
-//
-// UX :
-//   - ThixPolicy 100% (0 couleurs hardcodées)
-//   - i18n complète (25+ clés)
-//   - Semantics complets sur tous les boutons
-//   - HapticFeedback sur actions critiques
-//   - RepaintBoundary sur avatars
+// Améliorations clés :
+//   - État de chargement scoped (un seul bouton affiche un spinner à la fois)
+//   - UI modernisée avec hiérarchie visuelle claire et icônes de statut colorées
+//   - Optimisation des rebuilds via des widgets Stateless dédiés
+//   - Gestion élégante des états vides et des erreurs
 // ============================================================================
 
 import 'dart:async';
@@ -46,7 +34,7 @@ import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const int _kMaxHistoryItems = 80;
+const int _kMaxHistoryItems = 100;
 const int _kMaxSearchLength = 100;
 const Duration _kSearchDebounce = Duration(milliseconds: 300);
 const Duration _kCallStartTimeout = Duration(seconds: 10);
@@ -57,7 +45,6 @@ const Duration _kCallStartTimeout = Duration(seconds: 10);
 class _CallHistoryValidators {
   _CallHistoryValidators._();
 
-  /// Valide un UUID v4 strict
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
     return RegExp(
@@ -66,7 +53,6 @@ class _CallHistoryValidators {
     ).hasMatch(id);
   }
 
-  /// Sanitize un nom (XSS + caractères de contrôle)
   static String sanitizeName(String? input, {int maxLength = 100}) {
     if (input == null || input.trim().isEmpty) return '';
     var s = input
@@ -76,7 +62,6 @@ class _CallHistoryValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  /// Retourne une initiale safe (pas de crash sur string vide)
   static String safeInitial(String? name) {
     final sanitized = sanitizeName(name);
     if (sanitized.isEmpty) return '?';
@@ -88,7 +73,6 @@ class _CallHistoryValidators {
 // DATA MODEL
 // ============================================================================
 
-/// Ligne d'historique d'appel avec métadonnées du pair.
 class _CallRow {
   final CallInvite invite;
   final String peerId;
@@ -107,7 +91,6 @@ class _CallRow {
 // CALL HISTORY PAGE
 // ============================================================================
 
-/// Page d'historique des appels avec recherche et rappel.
 class CallHistoryPage extends ConsumerStatefulWidget {
   const CallHistoryPage({super.key});
 
@@ -119,7 +102,9 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   final _searchCtrl = TextEditingController();
   late Future<List<_CallRow>> _future;
   String _query = '';
-  bool _isStartingCall = false;
+  
+  // 🚀 AMÉLIORATION : Chargement granulaire par peerId au lieu d'un flag global
+  String? _callingPeerId;
 
   @override
   void initState() {
@@ -136,8 +121,9 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   }
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
-
   String get _myId => ref.read(supabaseUserIdProvider) ?? '';
+
+  bool _isCalling(String peerId) => _callingPeerId == peerId;
 
   // ── FEEDBACK HELPERS ─────────────────────────────────────────────────
 
@@ -147,9 +133,9 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
@@ -167,8 +153,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       return [];
     }
 
-    debugPrint('[CallHistory] 🔄 Loading history for ${_obfuscate(uid)}');
-
     try {
       final rows = await _db
           .from('call_invites')
@@ -181,7 +165,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           .map((r) => CallInvite.fromJson(Map<String, dynamic>.from(r as Map)))
           .toList();
 
-      // Collecte des peer IDs uniques
       final peerIds = <String>{};
       for (final inv in invites) {
         final peer = inv.callerId == uid ? inv.calleeId : inv.callerId;
@@ -190,7 +173,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         }
       }
 
-      // Chargement des profils en batch
       final nameById = <String, String>{};
       final avatarById = <String, String?>{};
 
@@ -230,19 +212,14 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         );
       }).toList();
 
-      debugPrint('[CallHistory] ✓ Loaded ${result.length} calls');
       return result;
     } catch (e) {
       debugPrint('[CallHistory] ❌ Load failed: $e');
-      if (mounted) {
-        _showError('Échec du chargement de l\'historique');
-      }
-      return [];
+      rethrow; // Laisser le FutureBuilder gérer l'erreur
     }
   }
 
   Future<void> _refresh() async {
-    debugPrint('[CallHistory] 🔄 Refresh requested');
     setState(() => _future = _load());
     await _future;
   }
@@ -250,20 +227,17 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   // ── CALL BACK ────────────────────────────────────────────────────────
 
   Future<void> _callBack(_CallRow row, {required bool video}) async {
+    if (_isCalling(row.peerId)) return;
+
     final l10n = AppLocalizations.of(context);
-
-    if (_isStartingCall) return;
-
     if (!_CallHistoryValidators.isValidUuid(row.peerId)) {
-      debugPrint('[CallHistory] ⚠️ Invalid peerId: ${row.peerId}');
       _showError(l10n.t('call_error_invalid_peer'));
       return;
     }
 
-    setState(() => _isStartingCall = true);
+    setState(() => _callingPeerId = row.peerId);
     HapticFeedback.mediumImpact();
-    debugPrint('[CallHistory] 📞 Calling back: ${_obfuscate(row.peerId)} '
-        '(video=$video)');
+    debugPrint('[CallHistory] 📞 Calling back: ${row.peerName} (video=$video)');
 
     try {
       await ref.read(callProvider.notifier).start(
@@ -275,7 +249,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           ).timeout(_kCallStartTimeout);
 
       if (!mounted) return;
-      debugPrint('[CallHistory] ✓ Call started, navigating to CallPage');
       Navigator.of(context).push(
         MaterialPageRoute(builder: (_) => const CallPage()),
       );
@@ -286,22 +259,19 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isStartingCall = false);
+        setState(() => _callingPeerId = null);
       }
     }
   }
 
   void _openSearchToCall() {
+    if (_callingPeerId != null) return;
     HapticFeedback.selectionClick();
-    debugPrint('[CallHistory] 🔍 Opening search sheet');
-
+    
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
+      backgroundColor: Colors.transparent,
       builder: (ctx) => _SearchCallSheet(
         onPick: (id, name, avatar, {required bool video}) async {
           Navigator.pop(ctx);
@@ -309,7 +279,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
             _CallRow(
               invite: CallInvite(
                 id: '',
-                channelName: 'call_${_myId}_$id', // ✅ AJOUTÉ ET CORRECT
+                channelName: 'call_${_myId}_$id',
                 callerId: _myId,
                 calleeId: id,
                 callerName: '',
@@ -328,7 +298,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           );
         },
       ),
-    ); // ✅ PARENTHÈSE ET POINT-VIRGULE REMIS !
+    );
   }
 
   // ── HELPERS ──────────────────────────────────────────────────────────
@@ -337,34 +307,33 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     final inv = row.invite;
     final isVideoCall = inv.callType == CallType.video;
     final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
-    final label = inv.status.label;
+    
     if (inv.durationSec > 0) {
       final m = (inv.durationSec / 60).floor();
       final s = inv.durationSec % 60;
       final mm = m.toString().padLeft(2, '0');
       final ss = s.toString().padLeft(2, '0');
-      return '$type · $label · $mm:$ss';
+      return '$type · ${inv.status.label} · $mm:$ss';
     }
-    return '$type · $label';
+    return '$type · ${inv.status.label}';
   }
 
-  Color _statusColor(CallInvite inv) {
-    if (inv.status == CallStatus.missed ||
-        inv.status == CallStatus.rejected ||
-        inv.status == CallStatus.canceled) {
-      return ThixPolicy.danger;
-    }
-    return ThixPolicy.success;
-  }
-
-  IconData _dirIcon(_CallRow row) {
-    final inv = row.invite;
+  IconData _dirIcon(CallInvite inv) {
     final missed = inv.status == CallStatus.missed ||
         inv.status == CallStatus.rejected ||
         inv.status == CallStatus.canceled;
-    if (missed) return Icons.call_missed;
-    if (inv.callerId == _myId) return Icons.call_made;
-    return Icons.call_received;
+    if (missed) return Icons.call_missed_rounded;
+    if (inv.callerId == _myId) return Icons.call_made_rounded;
+    return Icons.call_received_rounded;
+  }
+
+  Color _iconColor(CallInvite inv) {
+    final missed = inv.status == CallStatus.missed ||
+        inv.status == CallStatus.rejected ||
+        inv.status == CallStatus.canceled;
+    if (missed) return ThixPolicy.danger;
+    if (inv.callerId == _myId) return ThixPolicy.success; // Sortant réussi
+    return ThixPolicy.primary; // Entrant réussi
   }
 
   String _fmtDate(DateTime d, AppLocalizations l10n) {
@@ -372,16 +341,12 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(local.year, local.month, local.day);
+    
     if (day == today) return DateFormat('HH:mm').format(local);
     if (day == today.subtract(const Duration(days: 1))) {
       return l10n.t('call_yesterday');
     }
     return DateFormat('dd/MM/yy').format(local);
-  }
-
-  String _obfuscate(String? s) {
-    if (s == null || s.length <= 8) return '***';
-    return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
   }
 
   // ── BUILD ────────────────────────────────────────────────────────────
@@ -393,53 +358,48 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
       appBar: AppBar(
-        title: Text(l10n.t('call_history_title')),
-        backgroundColor: ThixPolicy.card,
+        title: Text(
+          l10n.t('call_history_title'),
+          style: const TextStyle(fontWeight: FontWeight.w700),
+        ),
+        backgroundColor: ThixPolicy.surface,
         foregroundColor: ThixPolicy.textMain,
         elevation: 0,
         actions: [
-          Semantics(
-            button: true,
-            label: l10n.t('call_search_button'),
-            child: IconButton(
-              icon: const Icon(Icons.search),
-              onPressed: _isStartingCall ? null : _openSearchToCall,
-            ),
+          IconButton(
+            icon: const Icon(Icons.search_rounded),
+            onPressed: _callingPeerId != null ? null : _openSearchToCall,
+            tooltip: l10n.t('call_search_button'),
           ),
         ],
       ),
-      floatingActionButton: Semantics(
-        button: true,
-        label: l10n.t('call_new_call'),
-        child: FloatingActionButton(
-          backgroundColor: ThixPolicy.primary,
-          onPressed: _isStartingCall ? null : _openSearchToCall,
-          child: const Icon(Icons.add_call, color: Colors.white),
-        ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: ThixPolicy.primary,
+        foregroundColor: Colors.white,
+        onPressed: _callingPeerId != null ? null : _openSearchToCall,
+        icon: const Icon(Icons.add_call_rounded),
+        label: Text(l10n.t('call_new_call')),
       ),
       body: Column(
         children: [
           // ── Champ de recherche ──
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-            child: Semantics(
-              label: l10n.t('call_search_hint'),
-              textField: true,
-              child: TextField(
-                controller: _searchCtrl,
-                maxLength: _kMaxSearchLength,
-                onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
-                decoration: InputDecoration(
-                  counterText: '',
-                  hintText: l10n.t('call_search_hint'),
-                  prefixIcon: Icon(Icons.search, color: ThixPolicy.textMuted),
-                  filled: true,
-                  fillColor: ThixPolicy.card,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: TextField(
+              controller: _searchCtrl,
+              maxLength: _kMaxSearchLength,
+              onChanged: (v) => setState(() => _query = v.trim().toLowerCase()),
+              decoration: InputDecoration(
+                counterText: '',
+                hintText: l10n.t('call_search_hint'),
+                prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                filled: true,
+                fillColor: ThixPolicy.surface,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  borderSide: BorderSide.none,
                 ),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ),
@@ -448,18 +408,18 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           Expanded(
             child: RefreshIndicator(
               color: ThixPolicy.primary,
+              backgroundColor: ThixPolicy.surface,
               onRefresh: _refresh,
               child: FutureBuilder<List<_CallRow>>(
                 future: _future,
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
-                    return Center(
-                      child: CircularProgressIndicator(color: ThixPolicy.primary),
+                    return const Center(
+                      child: CircularProgressIndicator(),
                     );
                   }
 
                   if (snap.hasError) {
-                    debugPrint('[CallHistory] ❌ FutureBuilder error: ${snap.error}');
                     return _buildErrorState(l10n);
                   }
 
@@ -471,18 +431,20 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
                   }
 
                   if (list.isEmpty) {
-                    return _buildEmptyState(l10n);
+                    return _buildEmptyState(l10n, _query.isNotEmpty);
                   }
 
                   return ListView.separated(
                     itemCount: list.length,
-                    separatorBuilder: (_, __) => Divider(
-                      height: 1,
-                      color: ThixPolicy.border.withOpacity(0.5),
-                    ),
+                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
                     itemBuilder: (context, i) {
-                      final row = list[i];
-                      return _buildCallTile(row, l10n);
+                      return _CallHistoryTile(
+                        row: list[i],
+                        l10n: l10n,
+                        myId: _myId,
+                        isCalling: _isCalling(list[i].peerId),
+                        onCall: (video) => _callBack(list[i], video: video),
+                      );
                     },
                   );
                 },
@@ -495,127 +457,268 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   }
 
   Widget _buildErrorState(AppLocalizations l10n) {
-    return ListView(
-      children: [
-        const SizedBox(height: 80),
-        Icon(Icons.error_outline_rounded, size: 48, color: ThixPolicy.textMuted),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.wifi_off_rounded, size: 64, color: ThixPolicy.textMuted.withOpacity(0.5)),
+          const SizedBox(height: 16),
+          Text(
             l10n.t('call_history_error'),
             style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted),
           ),
-        ),
-      ],
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: _refresh,
+            icon: const Icon(Icons.refresh_rounded),
+            label: Text(l10n.t('call_retry')),
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _buildEmptyState(AppLocalizations l10n) {
-    return ListView(
-      children: [
-        const SizedBox(height: 100),
-        Icon(Icons.call_outlined, size: 48, color: ThixPolicy.textMuted.withOpacity(0.5)),
-        const SizedBox(height: 12),
-        Center(
-          child: Text(
-            l10n.t('call_history_empty'),
-            style: ThixPolicy.bodyStyle.copyWith(
+  Widget _buildEmptyState(AppLocalizations l10n, bool isSearch) {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(
+            isSearch ? Icons.search_off_rounded : Icons.call_end_rounded, 
+            size: 64, 
+            color: ThixPolicy.textMuted.withOpacity(0.4),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            isSearch ? l10n.t('call_search_no_results') : l10n.t('call_history_empty'),
+            style: ThixPolicy.titleStyle.copyWith(
               color: ThixPolicy.textMuted,
-              fontWeight: FontWeight.w600,
+              fontSize: 18,
             ),
           ),
-        ),
-      ],
+          if (!isSearch) ...[
+            const SizedBox(height: 8),
+            Text(
+              l10n.t('call_history_empty_subtitle'),
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted),
+            ),
+          ],
+        ],
+      ),
     );
   }
+}
 
-  Widget _buildCallTile(_CallRow row, AppLocalizations l10n) {
+// ============================================================================
+// CALL HISTORY TILE (Extrait pour performance et lisibilité)
+// ============================================================================
+
+class _CallHistoryTile extends StatelessWidget {
+  final _CallRow row;
+  final AppLocalizations l10n;
+  final String myId;
+  final bool isCalling;
+  final Function(bool video) onCall;
+
+  const _CallHistoryTile({
+    required this.row,
+    required this.l10n,
+    required this.myId,
+    required this.isCalling,
+    required this.onCall,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final inv = row.invite;
     final isMissed = inv.status == CallStatus.missed ||
         inv.status == CallStatus.rejected ||
         inv.status == CallStatus.canceled;
-    final isCalling = _isStartingCall;
 
-    return Semantics(
-      button: true,
-      label: '${row.peerName}, ${_subtitle(row, l10n)}',
-      child: ListTile(
-        leading: RepaintBoundary(
-          child: CircleAvatar(
-            backgroundColor: ThixPolicy.surfaceSoft,
-            backgroundImage:
-                row.peerAvatar != null && row.peerAvatar!.isNotEmpty
-                    ? NetworkImage(row.peerAvatar!)
-                    : null,
-            child: row.peerAvatar == null || row.peerAvatar!.isEmpty
-                ? Text(
-                    _CallHistoryValidators.safeInitial(row.peerName),
+    return InkWell(
+      onTap: () => onCall(false), // Tap par défaut = appel audio
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Avatar avec badge de statut
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                CircleAvatar(
+                  radius: 28,
+                  backgroundColor: ThixPolicy.surfaceSoft,
+                  backgroundImage: row.peerAvatar != null && row.peerAvatar!.isNotEmpty
+                      ? NetworkImage(row.peerAvatar!)
+                      : null,
+                  child: row.peerAvatar == null || row.peerAvatar!.isEmpty
+                      ? Text(
+                          _CallHistoryValidators.safeInitial(row.peerName),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 20,
+                          ),
+                        )
+                      : null,
+                ),
+                // Badge d'icône de direction (entrante/sortante/manquée)
+                Positioned(
+                  bottom: -4,
+                  right: -4,
+                  child: Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.surface,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: ThixPolicy.surfaceSoft, width: 2),
+                    ),
+                    child: Icon(
+                      _dirIcon(inv),
+                      size: 16,
+                      color: _iconColor(inv),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(width: 16),
+            
+            // Informations texte
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    row.peerName,
                     style: TextStyle(
                       fontWeight: FontWeight.w700,
-                      color: ThixPolicy.primary,
+                      fontSize: 16,
+                      color: isMissed ? ThixPolicy.danger : ThixPolicy.textMain,
                     ),
-                  )
-                : null,
-          ),
-        ),
-        title: Text(
-          row.peerName,
-          style: ThixPolicy.bodyStyle.copyWith(
-            fontWeight: FontWeight.w700,
-            color: isMissed ? ThixPolicy.danger : ThixPolicy.textMain,
-          ),
-        ),
-        subtitle: Row(
-          children: [
-            Icon(_dirIcon(row), size: 14, color: _statusColor(inv)),
-            const SizedBox(width: 4),
-            Expanded(
-              child: Text(
-                _subtitle(row, l10n),
-                style: ThixPolicy.captionStyle.copyWith(
-                  color: ThixPolicy.textMuted,
-                  fontSize: 13,
-                ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(
+                        inv.callType == CallType.video ? Icons.videocam_rounded : Icons.phone_rounded,
+                        size: 14,
+                        color: ThixPolicy.textMuted,
+                      ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          _subtitle(row, l10n),
+                          style: ThixPolicy.captionStyle.copyWith(
+                            color: ThixPolicy.textMuted,
+                            fontSize: 13,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
+            ),
+
+            // Actions (Date + Boutons)
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  _fmtDate(inv.createdAt, l10n),
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    _ActionIconButton(
+                      icon: Icons.videocam_rounded,
+                      isCalling: isCalling,
+                      color: ThixPolicy.primary,
+                      onPressed: () => onCall(true),
+                    ),
+                    const SizedBox(width: 8),
+                    _ActionIconButton(
+                      icon: Icons.call_rounded,
+                      isCalling: isCalling,
+                      color: ThixPolicy.success,
+                      onPressed: () => onCall(false),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ],
         ),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              _fmtDate(inv.createdAt, l10n),
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.textMuted.withOpacity(0.8),
-                fontSize: 12,
-              ),
-            ),
-            const SizedBox(width: 4),
-            Semantics(
-              button: true,
-              label: '${l10n.t('call_video_call')} ${row.peerName}',
-              enabled: !isCalling,
-              child: IconButton(
-                icon: Icon(
-                  Icons.videocam_outlined,
-                  color: isCalling ? ThixPolicy.textMuted : ThixPolicy.primary,
-                ),
-                onPressed: isCalling ? null : () => _callBack(row, video: true),
-              ),
-            ),
-            Semantics(
-              button: true,
-              label: '${l10n.t('call_audio_call')} ${row.peerName}',
-              enabled: !isCalling,
-              child: IconButton(
-                icon: Icon(
-                  Icons.call_outlined,
-                  color: isCalling ? ThixPolicy.textMuted : ThixPolicy.primary,
-                ),
-                onPressed: isCalling ? null : () => _callBack(row, video: false),
-              ),
-            ),
-          ],
+      ),
+    );
+  }
+
+  IconData _dirIcon(CallInvite inv) {
+    final missed = inv.status == CallStatus.missed || inv.status == CallStatus.rejected || inv.status == CallStatus.canceled;
+    if (missed) return Icons.call_missed_rounded;
+    if (inv.callerId == myId) return Icons.call_made_rounded;
+    return Icons.call_received_rounded;
+  }
+
+  Color _iconColor(CallInvite inv) {
+    final missed = inv.status == CallStatus.missed || inv.status == CallStatus.rejected || inv.status == CallStatus.canceled;
+    if (missed) return ThixPolicy.danger;
+    if (inv.callerId == myId) return ThixPolicy.success;
+    return ThixPolicy.primary;
+  }
+}
+
+// ============================================================================
+// ACTION ICON BUTTON (Optimisé)
+// ============================================================================
+
+class _ActionIconButton extends StatelessWidget {
+  final IconData icon;
+  final bool isCalling;
+  final Color color;
+  final VoidCallback onPressed;
+
+  const _ActionIconButton({
+    required this.icon,
+    required this.isCalling,
+    required this.color,
+    required this.onPressed,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      child: InkWell(
+        onTap: isCalling ? null : onPressed,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: isCalling ? color.withOpacity(0.1) : color.withOpacity(0.15),
+            shape: BoxShape.circle,
+          ),
+          child: isCalling
+              ? SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    valueColor: AlwaysStoppedAnimation<Color>(color),
+                  ),
+                )
+              : Icon(icon, color: color, size: 20),
         ),
       ),
     );
@@ -626,14 +729,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 // SEARCH CALL SHEET
 // ============================================================================
 
-/// Bottom sheet : contacts (connexions) + appel audio / vidéo.
 class _SearchCallSheet extends ConsumerStatefulWidget {
-  final void Function(
-    String id,
-    String name,
-    String? avatar, {
-    required bool video,
-  }) onPick;
+  final void Function(String id, String name, String? avatar, {required bool video}) onPick;
 
   const _SearchCallSheet({required this.onPick});
 
@@ -650,7 +747,6 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[SearchCallSheet] 🚀 Opened');
     _search('');
   }
 
@@ -658,22 +754,18 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   void dispose() {
     _ctrl.dispose();
     _searchDebounce?.cancel();
-    debugPrint('[SearchCallSheet] 👋 Disposed');
     super.dispose();
   }
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
 
   Future<void> _search(String q) async {
-    final query = _CallHistoryValidators.sanitizeName(q, maxLength: _kMaxSearchLength)
-        .toLowerCase();
-    
+    final query = _CallHistoryValidators.sanitizeName(q, maxLength: _kMaxSearchLength).toLowerCase();
     final myId = ref.read(supabaseUserIdProvider);
     
     if (myId == null || !_CallHistoryValidators.isValidUuid(myId)) return;
 
     setState(() => _loading = true);
-    debugPrint('[SearchCallSheet] 🔍 Searching: "$query"');
 
     try {
       final rows = await _db
@@ -700,9 +792,7 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
           .select('id, display_name, full_name, avatar_url')
           .inFilter('id', peerIds.toList());
 
-      var list = (profiles as List)
-          .map((e) => Map<String, dynamic>.from(e as Map))
-          .toList();
+      var list = (profiles as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
 
       if (query.isNotEmpty) {
         list = list.where((p) {
@@ -719,15 +809,9 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
           _loading = false;
         });
       }
-      debugPrint('[SearchCallSheet] ✓ Found ${list.length} contacts');
     } catch (e) {
       debugPrint('[SearchCallSheet] ❌ Search failed: $e');
-      if (mounted) {
-        setState(() {
-          _results = [];
-          _loading = false;
-        });
-      }
+      if (mounted) setState(() { _results = []; _loading = false; });
     }
   }
 
@@ -741,10 +825,14 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
     final l10n = AppLocalizations.of(context);
     final bottom = MediaQuery.of(context).viewInsets.bottom;
 
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottom),
-      child: SizedBox(
-        height: MediaQuery.of(context).size.height * 0.7,
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: ThixPolicy.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottom),
         child: Column(
           children: [
             const SizedBox(height: 12),
@@ -757,60 +845,58 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
               ),
             ),
             Padding(
-              padding: const EdgeInsets.all(16),
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
               child: Text(
                 l10n.t('call_new_call'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: FontWeight.w800,
-                  fontSize: 18,
+                  fontSize: 20,
                 ),
               ),
             ),
             Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Semantics(
-                label: l10n.t('call_search_contact_hint'),
-                textField: true,
-                child: TextField(
-                  controller: _ctrl,
-                  maxLength: _kMaxSearchLength,
-                  onChanged: _debouncedSearch,
-                  decoration: InputDecoration(
-                    counterText: '',
-                    hintText: l10n.t('call_search_contact_hint'),
-                    prefixIcon: Icon(Icons.search, color: ThixPolicy.textMuted),
-                    filled: true,
-                    fillColor: ThixPolicy.surfaceSoft,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                      borderSide: BorderSide.none,
-                    ),
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                controller: _ctrl,
+                maxLength: _kMaxSearchLength,
+                autofocus: true,
+                onChanged: _debouncedSearch,
+                decoration: InputDecoration(
+                  counterText: '',
+                  hintText: l10n.t('call_search_contact_hint'),
+                  prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                  filled: true,
+                  fillColor: ThixPolicy.surfaceSoft,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
                   ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
                 ),
               ),
             ),
-            if (_loading)
-              LinearProgressIndicator(color: ThixPolicy.primary),
+            if (_loading) const LinearProgressIndicator(),
             Expanded(
               child: _results.isEmpty && !_loading
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.people_outline_rounded,
-                              size: 48, color: ThixPolicy.textMuted.withOpacity(0.5)),
-                          const SizedBox(height: 12),
+                          Icon(Icons.people_outline_rounded, size: 64, color: ThixPolicy.textMuted.withOpacity(0.4)),
+                          const SizedBox(height: 16),
                           Text(
                             l10n.t('call_no_connections'),
                             style: ThixPolicy.bodyStyle.copyWith(
                               color: ThixPolicy.textMuted,
+                              fontSize: 16,
                             ),
                           ),
                         ],
                       ),
                     )
-                  : ListView.builder(
+                  : ListView.separated(
                       itemCount: _results.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
                       itemBuilder: (context, i) {
                         final p = _results[i];
                         final id = '${p['id'] ?? ''}';
@@ -819,62 +905,57 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
                         );
                         final avatar = p['avatar_url']?.toString();
 
-                        return Semantics(
-                          button: true,
-                          label: name,
-                          child: ListTile(
-                            leading: RepaintBoundary(
-                              child: CircleAvatar(
-                                backgroundColor: ThixPolicy.surfaceSoft,
-                                backgroundImage:
-                                    avatar != null && avatar.isNotEmpty
-                                        ? NetworkImage(avatar)
-                                        : null,
-                                child: avatar == null || avatar.isEmpty
-                                    ? Text(
-                                        _CallHistoryValidators.safeInitial(name),
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          color: ThixPolicy.primary,
-                                        ),
-                                      )
-                                    : null,
-                              ),
-                            ),
-                            title: Text(
-                              name,
-                              style: ThixPolicy.bodyStyle.copyWith(
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                            trailing: Row(
-                              mainAxisSize: MainAxisSize.min,
+                        return InkWell(
+                          onTap: () => widget.onPick(id, name, avatar, video: false),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            child: Row(
                               children: [
-                                Semantics(
-                                  button: true,
-                                  label: '${l10n.t('call_video_call')} $name',
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.videocam_outlined,
-                                      color: ThixPolicy.primary,
+                                CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: ThixPolicy.surfaceSoft,
+                                  backgroundImage: avatar != null && avatar.isNotEmpty
+                                      ? NetworkImage(avatar)
+                                      : null,
+                                  child: avatar == null || avatar.isEmpty
+                                      ? Text(
+                                          _CallHistoryValidators.safeInitial(name),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 18,
+                                          ),
+                                        )
+                                      : null,
+                                ),
+                                const SizedBox(width: 16),
+                                Expanded(
+                                  child: Text(
+                                    name,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 16,
                                     ),
-                                    onPressed: () => widget.onPick(
-                                      id, name, avatar, video: true,
-                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                Semantics(
-                                  button: true,
-                                  label: '${l10n.t('call_audio_call')} $name',
-                                  child: IconButton(
-                                    icon: Icon(
-                                      Icons.call_outlined,
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    _ActionIconButton(
+                                      icon: Icons.videocam_rounded,
+                                      isCalling: false,
                                       color: ThixPolicy.primary,
+                                      onPressed: () => widget.onPick(id, name, avatar, video: true),
                                     ),
-                                    onPressed: () => widget.onPick(
-                                      id, name, avatar, video: false,
+                                    const SizedBox(width: 8),
+                                    _ActionIconButton(
+                                      icon: Icons.call_rounded,
+                                      isCalling: false,
+                                      color: ThixPolicy.success,
+                                      onPressed: () => widget.onPick(id, name, avatar, video: false),
                                     ),
-                                  ),
+                                  ],
                                 ),
                               ],
                             ),
