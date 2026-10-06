@@ -23,6 +23,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/data/models/live/audio_space_model.dart';
 import 'package:thix_id/data/services/live/audio_space_service.dart';
 import 'package:thix_id/data/services/live/audio_space_background_service.dart';
+import 'package:thix_id/data/services/live/live_service.dart'; // ✅ AJOUTÉ
 
 enum ManagerStatus {
   idle,       // Aucun space actif
@@ -61,6 +62,17 @@ class AudioSpaceManagerState {
       ? Duration.zero
       : DateTime.now().difference(startedAt!);
 
+  /// ✅ AJOUTÉ : Durée formatée (HH:MM:SS ou MM:SS)
+  String get elapsedFormatted {
+    if (startedAt == null) return '00:00';
+    final d = DateTime.now().difference(startedAt!);
+    String two(int v) => v.toString().padLeft(2, '0');
+    final h = d.inHours;
+    final m = d.inMinutes.remainder(60);
+    final s = d.inSeconds.remainder(60);
+    return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+  }
+
   AudioSpaceManagerState copyWith({
     ManagerStatus? status,
     AudioSpace? space,
@@ -95,6 +107,8 @@ class AudioSpaceManager {
 
   static final AudioSpaceManager instance = AudioSpaceManager._internal();
 
+  // ✅ AJOUTÉ : LiveService requis par AudioSpaceService
+  late final LiveService _liveService;
   late final AudioSpaceService _service;
   late final AudioSpaceBackgroundService _backgroundService;
 
@@ -115,6 +129,8 @@ class AudioSpaceManager {
   // INITIALISATION
   // ─────────────────────────────────────────────────────────────
   void _init() {
+    // ✅ CORRIGÉ : instancier LiveService AVANT AudioSpaceService
+    _liveService = LiveService();
     _service = AudioSpaceService(_liveService);
     _backgroundService = AudioSpaceBackgroundService();
 
