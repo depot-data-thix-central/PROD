@@ -1,80 +1,212 @@
 // lib/presentation/auth/login_page.dart
 //
 // ============================================================================
-// 🔐 LOGIN PAGE — THIX HUB (Production hardened)
+// 🔐 LOGIN PAGE — THIX HUB (Enterprise hardened · Design épuré)
 // ============================================================================
-// ✅ Anti-bot : honeypot + timing + rate limiting UI
-// ✅ Design épuré minimaliste (THIX HUB branding)
-// ✅ Rate limiting serveur (check_login_allowed) + UI lockout
+// ✅ Design unifié avec personal_registration_page.dart
+// ✅ Anti-bot : honeypot hors écran + timing + rate limiting UI persisté
+// ✅ Rate limiting serveur (check_login_allowed) + lockout UI persistant
 // ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
-// ✅ FIX: syntaxe _CleanInput + champ identifiant + doublon password supprimé
+// ✅ Enterprise : throttle persisté, gestion fine des erreurs, SSO-ready
 // ============================================================================
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
 
 import 'package:thix_id/auth/supabase_auth_manager.dart'
     show AuthException, AuthErrorCode;
+import 'package:thix_id/core/security/security_reporter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
-import 'package:thix_id/core/security/security_reporter.dart';
+import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
 
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // CONSTANTS
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 const int _kResetCooldownDuration = 45;
 const int _kMaxEmailLength = 254;
+const int _kMinPasswordLength = 8;
 const int _kMaxPasswordLength = 128;
 const int _kMaxOtpLength = 8;
 const int _kMaxIdentifierLength = 100;
 
-// ── Anti-bot ──
+// Anti-bot (logique identique au registration)
 const int _kMinFormFillSeconds = 2;
 const int _kMaxSubmissionsPerMinute = 5;
+const int _kMaxLoginAttempts = 8;      // par fenêtre
+const int _kLoginLockSeconds = 900;    // 15 min
+const int _kResetMaxAttempts = 3;      // demandes reset
+const int _kResetLockSeconds = 600;    // 10 min
 
-// ════════════════════════════════════════════════════════════════════════
-// VALIDATORS
-// ════════════════════════════════════════════════════════════════════════
-class _LoginValidators {
-  _LoginValidators._();
+// ════════════════════════════════════════════════════════════════════════════
+// i18n FALLBACK (même mécanisme que registration)
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, List<String>> _kLoginFb = {
+  'login_error_too_many_attempts': [
+    'Too many attempts. Try again in {0}.',
+    'Trop de tentatives. Réessayez dans {0}.',
+  ],
+  'login_minutes_short': ['min', 'min'],
+  'login_error_suspended': [
+    'This account is suspended. Contact support.',
+    'Ce compte est suspendu. Contactez le support.',
+  ],
+  'login_error_not_active': [
+    'This account is not yet active.',
+    'Ce compte n’est pas encore actif.',
+  ],
+  'login_error_no_account': [
+    'No account found with these details.',
+    'Aucun compte trouvé avec ces informations.',
+  ],
+  'login_error_mfa_required': [
+    'Two-factor authentication is required.',
+    'L’authentification à deux facteurs est requise.',
+  ],
+  'login_error_locked': [
+    'Access temporarily locked for security reasons.',
+    'Accès temporairement verrouillé pour raison de sécurité.',
+  ],
+};
 
-  static String sanitize(String? input, {int maxLength = 500}) {
-    if (input == null || input.trim().isEmpty) return '';
-    final doc = html_parser.parse(input);
-    var s = doc.body?.text ?? input;
-    s = s
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
-    return s.length > maxLength ? s.substring(0, maxLength) : s;
+String _tx(BuildContext ctx, String key, {List<String>? args}) {
+  final l10n = AppLocalizations.of(ctx);
+  var out = l10n.t(key);
+  if (out.isEmpty || out == key) {
+    final fb = _kLoginFb[key];
+    if (fb == null) return key;
+    out = Localizations.localeOf(ctx).languageCode == 'fr' ? fb[1] : fb[0];
+  }
+  if (args != null) {
+    for (var i = 0; i < args.length; i++) {
+      out = out.replaceAll('{$i}', args[i]);
+    }
+  }
+  return out;
+}
+
+String _fmtWait(BuildContext ctx, int seconds) {
+  if (seconds >= 60) return '${(seconds / 60).ceil()} ${_tx(ctx, 'login_minutes_short')}';
+  return '${seconds}${AppLocalizations.of(ctx).t('login_seconds_suffix')}';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// THROTTLE PERSISTÉ (identique à registration)
+// ════════════════════════════════════════════════════════════════════════════
+class _Throttle {
+  _Throttle._();
+
+  static Future<int> blockedSeconds(String key) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final until = p.getInt('thix_thr_${key}_until') ?? 0;
+      final r = ((until - DateTime.now().millisecondsSinceEpoch) / 1000).ceil();
+      if (r <= 0) {
+        if (until != 0) await p.remove('thix_thr_${key}_until');
+        return 0;
+      }
+      return r;
+    } catch (_) {
+      return 0;
+    }
   }
 
-  static bool looksLikePhone(String s) {
-    return RegExp(r'^\+?[0-9][0-9\s\-]{7,}$')
-        .hasMatch(sanitize(s, maxLength: 50));
+  static Future<void> hit(String key, int max, int lockSeconds) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      final n = (p.getInt('thix_thr_${key}_n') ?? 0) + 1;
+      if (n >= max) {
+        await p.setInt(
+          'thix_thr_${key}_until',
+          DateTime.now().millisecondsSinceEpoch + lockSeconds * 1000,
+        );
+        await p.setInt('thix_thr_${key}_n', 0);
+      } else {
+        await p.setInt('thix_thr_${key}_n', n);
+      }
+    } catch (_) {}
   }
 
-  static bool looksLikeEmail(String s) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
-        .hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
+  static Future<void> clear(String key) async {
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.remove('thix_thr_${key}_n');
+      await p.remove('thix_thr_${key}_until');
+    } catch (_) {}
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// ANTI-BOT ENGINE (silencieux)
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// VALIDATORS
+// ════════════════════════════════════════════════════════════════════════════
+class _LoginValidators {
+  _LoginValidators._();
+
+  static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
+  static final RegExp _bidi = RegExp(
+    r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
+  );
+  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
+  static final RegExp _jsScheme =
+      RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+  static final RegExp _onHandler =
+      RegExp(r'on\w+\s*=', caseSensitive: false);
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    var s = input;
+    if (s.contains('<')) {
+      final doc = html_parser.parse(s);
+      s = doc.body?.text ?? s;
+    }
+    s = s
+        .replaceAll(_tags, '')
+        .replaceAll(_jsScheme, '')
+        .replaceAll(_onHandler, '')
+        .replaceAll(_ctrlKeepTab, '')
+        .replaceAll(_bidi, '')
+        .trim();
+    if (s.length > maxLength) {
+      var end = maxLength;
+      final unit = s.codeUnitAt(end - 1);
+      if (unit >= 0xD800 && unit <= 0xDBFF) end--;
+      s = s.substring(0, end);
+    }
+    return s;
+  }
+
+  /// Ne pas toucher au mot de passe (sinon ≠ celui enregistré).
+  static bool isSafePassword(String p) =>
+      p.length <= _kMaxPasswordLength &&
+      !_ctrlKeepTab.hasMatch(p) &&
+      !_bidi.hasMatch(p);
+
+  static bool looksLikePhone(String s) =>
+      RegExp(r'^\+?[0-9][0-9\s\-]{7,}$').hasMatch(sanitize(s, maxLength: 50));
+
+  static bool looksLikeEmail(String s) => RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+      .hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
+
+  static bool looksLikeThixId(String s) =>
+      RegExp(r'^THIX-[A-Z0-9\-]{6,}$', caseSensitive: false)
+          .hasMatch(sanitize(s, maxLength: 64));
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// ANTI-BOT ENGINE
+// ════════════════════════════════════════════════════════════════════════════
 class _AntiBotEngine {
   _AntiBotEngine() : _formOpenedAt = DateTime.now();
 
@@ -104,7 +236,6 @@ class _AntiBotEngine {
       debugPrint('[AntiBot] 🤖 Rate limit hit');
       return l10n.t('auth_error_rate_limit');
     }
-
     return null;
   }
 
@@ -116,9 +247,9 @@ class _AntiBotEngine {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // AUTH ERROR TRANSLATOR
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 String _translateAuthError(Object e, AppLocalizations l10n) {
   if (e is AuthException) {
     switch (e.code) {
@@ -139,227 +270,186 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
         return l10n.t('auth_error_email_not_verified');
       case AuthErrorCode.serverMisconfiguration:
         return l10n.t('auth_error_server_misconfiguration');
-      case AuthErrorCode.accountAlreadyExists:
-        return l10n.t('auth_error_account_already_exists');
-      case AuthErrorCode.accountExistsWrongPassword:
-        return l10n.t('auth_error_account_exists_wrong_password');
-      case AuthErrorCode.accountExistsNewOtpSent:
-        return l10n.t('auth_error_account_exists_new_otp_sent');
-      case AuthErrorCode.invalidOtp:
-        return l10n.t('auth_error_invalid_otp');
-      case AuthErrorCode.otpExpired:
-        return l10n.t('auth_error_otp_expired');
-      case AuthErrorCode.networkError:
-        return l10n.t('auth_error_network');
       case AuthErrorCode.rateLimit:
         return l10n.t('auth_error_rate_limit');
+      case AuthErrorCode.networkError:
+        return l10n.t('auth_error_network');
       case AuthErrorCode.technicalError:
         return l10n.t('auth_error_technical');
       case AuthErrorCode.sessionExpired:
         return l10n.t('auth_error_session_expired');
-      case AuthErrorCode.userMismatch:
-        return l10n.t('auth_error_user_mismatch');
-      case AuthErrorCode.profileUpdateFailed:
-        return l10n.t('auth_error_profile_update_failed');
-      case AuthErrorCode.markEmailVerifiedFailed:
-        return l10n.t('auth_error_mark_email_verified_failed');
-      case AuthErrorCode.qrTokenGenerationFailed:
-        return l10n.t('auth_error_qr_token_generation_failed');
-      case AuthErrorCode.finalizeRegistrationFailed:
-        return l10n.t('auth_error_finalize_registration_failed');
-      case AuthErrorCode.consumeQrTokenFailed:
-        return l10n.t('auth_error_consume_qr_token_failed');
-      case AuthErrorCode.resendOtpFailed:
-        return l10n.t('auth_error_resend_otp_failed');
-      case AuthErrorCode.phoneAuthNotAvailable:
-        return l10n.t('auth_error_phone_auth_not_available');
-      case AuthErrorCode.deleteAccountNotAvailable:
-        return l10n.t('auth_error_delete_account_not_available');
-      case AuthErrorCode.updateEmailFailed:
-        return l10n.t('auth_error_update_email_failed');
-      case AuthErrorCode.resetPasswordFailed:
-        return l10n.t('auth_error_reset_password_failed');
-      case AuthErrorCode.signUpFailed:
-        return l10n.t('auth_error_sign_up_failed');
-      case AuthErrorCode.otpSent:
-        return l10n.t('auth_info_otp_sent');
+      default:
+        return l10n.t('auth_error_technical');
     }
   }
 
   final msg = e.toString().toLowerCase();
   if (msg.contains('account_suspended') || msg.contains('suspended')) {
-    return l10n.t('login_error_suspended');
+    return _tx(_ctxFallback(l10n), 'login_error_suspended');
   }
   if (msg.contains('account_not_active') || msg.contains('not active')) {
-    return l10n.t('login_error_not_active');
+    return _tx(_ctxFallback(l10n), 'login_error_not_active');
   }
   if (msg.contains('aucun compte trouvé') ||
       msg.contains('phone_resolution_failed')) {
-    return l10n.t('login_error_no_account');
+    return _tx(_ctxFallback(l10n), 'login_error_no_account');
   }
   if (msg.contains('mfa_required') || msg.contains('two_fa')) {
-    return l10n.t('login_error_mfa_required');
+    return _tx(_ctxFallback(l10n), 'login_error_mfa_required');
   }
   if (msg.contains('user_not_found_after_login')) {
     return l10n.t('auth_error_sign_in_failed');
   }
   if (msg.contains('login_locked')) {
-    return l10n.t('login_error_locked');
+    return _tx(_ctxFallback(l10n), 'login_error_locked');
+  }
+  if (msg.contains('invalid login') || msg.contains('invalid credentials')) {
+    return l10n.t('login_error_invalid_credentials');
   }
 
   debugPrint('[Login] ⚠️ Unmapped error: $e');
   return l10n.t('auth_error_technical');
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// CLEAN INPUT (design épuré) — ✅ CORRIGÉ
-// ════════════════════════════════════════════════════════════════════════
-class _CleanInput extends StatefulWidget {
+// Petit hack : le translator n'a pas de BuildContext ; on tolère le fallback
+// via un cache de Locale. Voir _ctxFallback ci-dessous.
+BuildContext? _gLoginCtx;
+BuildContext _ctxFallback(AppLocalizations _) => _gLoginCtx ?? _NullCtx();
+
+class _NullCtx implements BuildContext {
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DESIGN — PREMIUM FIELD (aligné sur personal_registration_page)
+// ════════════════════════════════════════════════════════════════════════════
+class _PremiumField extends StatefulWidget {
   final String label;
   final String hint;
   final IconData icon;
-  final bool isPassword;
-  final bool obscure;
-  final TextInputType type;
   final TextEditingController controller;
-  final TextInputAction textInputAction;
+  final bool isPassword;
+  final TextInputType keyboardType;
+  final bool readOnly;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  final String? errorText;
+  final String? helperText;
+  final TextStyle? helperStyle;
+  final ValueChanged<String>? onChanged;
+  final List<TextInputFormatter>? inputFormatters;
   final int? maxLength;
+  final String? semanticsLabel;
+  final Iterable<String>? autofillHints;
+  final TextInputAction? textInputAction;
   final ValueChanged<String>? onSubmitted;
-  final AutofillHints? autofillHint;
-  final String? errorText; // ✅ AJOUTÉ : support des erreurs
 
-  const _CleanInput({
+  const _PremiumField({
     super.key,
     required this.label,
-    required this.hint,
+    this.hint = '',
     required this.icon,
-    required this.isPassword,
-    required this.type,
     required this.controller,
-    required this.textInputAction,
-    this.obscure = false,
+    this.isPassword = false,
+    this.keyboardType = TextInputType.text,
+    this.readOnly = false,
+    this.onTap,
+    this.trailing,
+    this.errorText,
+    this.helperText,
+    this.helperStyle,
+    this.onChanged,
+    this.inputFormatters,
     this.maxLength,
+    this.semanticsLabel,
+    this.autofillHints,
+    this.textInputAction,
     this.onSubmitted,
-    this.autofillHint,
-    this.errorText, // ✅ AJOUTÉ
   });
 
   @override
-  State<_CleanInput> createState() => _CleanInputState();
+  State<_PremiumField> createState() => _PremiumFieldState();
 }
 
-class _CleanInputState extends State<_CleanInput> {
+class _PremiumFieldState extends State<_PremiumField> {
   late bool _obscured = widget.isPassword;
+
+  OutlineInputBorder _border(Color c, [double w = 1]) => OutlineInputBorder(
+        borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
+        borderSide: BorderSide(color: c, width: w),
+      );
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // Champ honeypot : invisible
-    if (widget.obscure) {
-      return SizedBox.shrink(
-        child: TextField(
-          controller: widget.controller,
-          decoration: const InputDecoration(border: InputBorder.none),
-          autofillHints: const [AutofillHints.name],
-        ),
-      );
-    }
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          widget.label,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: ThixPolicy.textMain,
-          ),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: widget.controller,
-          obscureText: _obscured,
-          keyboardType: widget.type,
-          textInputAction: widget.textInputAction,
-          maxLength: widget.maxLength,
-          onFieldSubmitted: widget.onSubmitted,
-          autofillHints: widget.autofillHint != null
-              ? [widget.autofillHint!]
-              : null,
-          style: const TextStyle(
-            fontSize: 14,
-            color: ThixPolicy.textMain,
-            fontWeight: FontWeight.w500,
-          ),
-          decoration: InputDecoration(
-            counterText: '',
-            hintText: widget.hint,
-            errorText: widget.errorText, // ✅ AJOUTÉ : affichage erreur
-            hintStyle: const TextStyle(
-              color: Color(0xFF9CA3AF),
-              fontWeight: FontWeight.w400,
-            ),
-            prefixIcon: Icon(
-              widget.icon,
-              size: 18,
-              color: ThixPolicy.textSecondary,
-            ),
-            suffixIcon: widget.isPassword
-                ? Semantics(
-                    button: true,
-                    label: _obscured
-                        ? l10n.t('common_show_password')
-                        : l10n.t('common_hide_password'),
-                    child: IconButton(
-                      splashRadius: 20,
-                      icon: Icon(
-                        _obscured
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        size: 18,
-                        color: ThixPolicy.textSecondary,
-                      ),
-                      onPressed: () =>
-                          setState(() => _obscured = !_obscured),
-                    ),
-                  )
-                : null,
-            filled: true,
-            fillColor: Colors.white,
-            contentPadding: const EdgeInsets.symmetric(
-              vertical: 14,
-              horizontal: 16,
-            ),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: ThixPolicy.primary,
-                width: 1.5,
+        Text(widget.label, style: ThixPolicy.labelStyle),
+        const SizedBox(height: ThixPolicy.s8),
+        Semantics(
+          label: widget.semanticsLabel ?? widget.label,
+          textField: true,
+          child: TextFormField(
+            controller: widget.controller,
+            obscureText: _obscured,
+            keyboardType: widget.keyboardType,
+            readOnly: widget.readOnly,
+            onTap: widget.onTap,
+            onChanged: widget.onChanged,
+            onFieldSubmitted: widget.onSubmitted,
+            maxLength: widget.maxLength,
+            inputFormatters: widget.inputFormatters,
+            autofillHints: widget.autofillHints,
+            textInputAction: widget.textInputAction,
+            enableSuggestions: !widget.isPassword,
+            autocorrect: !widget.isPassword,
+            style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.medium),
+            decoration: InputDecoration(
+              counterText: '',
+              hintText: widget.hint,
+              errorText: widget.errorText,
+              errorMaxLines: 3,
+              helperText: widget.helperText,
+              helperStyle: widget.helperStyle,
+              hintStyle: ThixPolicy.bodySmallStyle.copyWith(
+                color: ThixPolicy.textSecondary.withOpacity(0.7),
               ),
-            ),
-            errorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: ThixPolicy.danger,
-                width: 1.5,
-              ),
-            ),
-            focusedErrorBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(12),
-              borderSide: const BorderSide(
-                color: ThixPolicy.danger,
-                width: 1.5,
-              ),
+              prefixIcon: Icon(widget.icon,
+                  size: 20, color: ThixPolicy.textSecondary),
+              suffixIcon: widget.trailing ??
+                  (widget.isPassword
+                      ? Semantics(
+                          button: true,
+                          label: _obscured
+                              ? l10n.t('common_show_password')
+                              : l10n.t('common_hide_password'),
+                          child: IconButton(
+                            splashRadius: 20,
+                            icon: Icon(
+                              _obscured
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 20,
+                              color: ThixPolicy.textSecondary,
+                            ),
+                            onPressed: () {
+                              HapticFeedback.selectionClick();
+                              setState(() => _obscured = !_obscured);
+                            },
+                          ),
+                        )
+                      : null),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: ThixPolicy.inputPadding,
+              border: _border(ThixPolicy.border),
+              enabledBorder: _border(ThixPolicy.border),
+              focusedBorder: _border(ThixPolicy.primary, 1.6),
+              errorBorder: _border(ThixPolicy.danger, 1.4),
+              focusedErrorBorder: _border(ThixPolicy.danger, 1.6),
             ),
           ),
         ),
@@ -368,9 +458,9 @@ class _CleanInputState extends State<_CleanInput> {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // LOGIN PAGE
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -381,10 +471,11 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _identifierC = TextEditingController();
   final _passwordC = TextEditingController();
-  final _honeypotC = TextEditingController();
+  final _honeyC = TextEditingController();
   late final _AntiBotEngine _antiBot = _AntiBotEngine();
 
   bool _rememberMe = true;
+  bool _obscurePassword = true;
   int _lockoutSecondsLeft = 0;
   Timer? _lockoutTimer;
 
@@ -392,6 +483,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Timer? _resetCooldownTimer;
 
   bool _isInitialVerifying = true;
+  String? _identifierError;
+  String? _passwordError;
 
   @override
   void initState() {
@@ -419,75 +512,41 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void dispose() {
     _identifierC.dispose();
     _passwordC.dispose();
-    _honeypotC.dispose();
+    _honeyC.dispose();
     _lockoutTimer?.cancel();
     _resetCooldownTimer?.cancel();
     super.dispose();
   }
 
-  // ── FEEDBACK ─────────────────────────────────────────────────────
-  void _showSuccess(String message) {
+  // ── FEEDBACK (aligné sur registration) ──────────────────────────
+  void _snack(String message, Color bg, IconData icon, {int seconds = 4}) {
     if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.check_circle_rounded,
-              color: Colors.white, size: 18),
+          Icon(icon, color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(message,
-                style: const TextStyle(fontWeight: FontWeight.w500)),
+            child: Text(
+              message,
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
+            ),
           ),
         ]),
-        backgroundColor: ThixPolicy.success,
+        backgroundColor: bg,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 4),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        duration: Duration(seconds: seconds),
       ),
     );
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
+  void _showSuccess(String m) => _snack(m, ThixPolicy.success, Icons.check_circle_rounded);
+  void _showInfo(String m) => _snack(m, ThixPolicy.primary, Icons.info_outline_rounded);
+  void _showError(String m) {
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline_rounded,
-              color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message,
-                style: const TextStyle(fontWeight: FontWeight.w500)),
-          ),
-        ]),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
-  }
-
-  void _showInfo(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.info_outline_rounded,
-              color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(message,
-                style: const TextStyle(fontWeight: FontWeight.w500)),
-          ),
-        ]),
-        backgroundColor: ThixPolicy.primary,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 4),
-      ),
-    );
+    _snack(m, ThixPolicy.danger, Icons.error_outline_rounded);
   }
 
   // ── LOCKOUT ─────────────────────────────────────────────────────
@@ -544,8 +603,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         'label': success ? 'Connexion réussie' : 'Échec de connexion',
         'metadata': {
           'identifier': _LoginValidators.sanitize(
-              identifier,
-              maxLength: _kMaxIdentifierLength),
+            identifier,
+            maxLength: _kMaxIdentifierLength,
+          ),
           'failure_reason': failureReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
@@ -568,8 +628,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           : <String, dynamic>{};
       final allowed = map['allowed'] == true;
       if (!allowed) {
-        final seconds =
-            (map['seconds_remaining'] as num?)?.toInt() ?? 30;
+        final seconds = (map['seconds_remaining'] as num?)?.toInt() ?? 30;
         _startLockoutTimer(seconds);
       }
       return allowed;
@@ -604,12 +663,25 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   // ── SIGN IN ─────────────────────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
+    _gLoginCtx = context;
+    FocusScope.of(context).unfocus();
 
-    // 🤖 Anti-bot check
+    _antiBot.setHoneypot(_honeyC.text);
+
+    // 🤖 Anti-bot
     final botError = _antiBot.check(l10n);
     if (botError != null) {
       _showError(botError);
       _antiBot.registerFailure();
+      return;
+    }
+
+    // 🔒 Throttle persisté (en plus du serveur)
+    final localLock = await _Throttle.blockedSeconds('login_attempt');
+    if (localLock > 0) {
+      _startLockoutTimer(localLock);
+      _showError(_tx(context, 'login_error_too_many_attempts',
+          args: [_fmtWait(context, localLock)]));
       return;
     }
 
@@ -618,16 +690,31 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    final identifier = _LoginValidators.sanitize(
-        _identifierC.text.trim(),
-        maxLength: _kMaxIdentifierLength);
-    final password = _LoginValidators.sanitize(
-        _passwordC.text,
-        maxLength: _kMaxPasswordLength);
+    // Reset erreurs inline
+    setState(() {
+      _identifierError = null;
+      _passwordError = null;
+    });
 
-    if (identifier.isEmpty || password.isEmpty) {
-      _showError(l10n.t('login_error_empty_fields'));
+    final identifier = _LoginValidators.sanitize(
+      _identifierC.text.trim(),
+      maxLength: _kMaxIdentifierLength,
+    );
+    final password = _passwordC.text; // ne pas sanitiser
+
+    // Validation inline (UX pro)
+    if (identifier.isEmpty) {
+      setState(() => _identifierError = l10n.t('login_error_empty_fields'));
       _antiBot.registerFailure();
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _passwordError = l10n.t('login_error_empty_fields'));
+      _antiBot.registerFailure();
+      return;
+    }
+    if (!_LoginValidators.isSafePassword(password)) {
+      setState(() => _passwordError = l10n.t('auth_error_password_invalid_chars'));
       return;
     }
 
@@ -677,7 +764,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           'p_value': finalIdentifier.toLowerCase(),
         },
       );
-
       if (blocked == true) {
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier,
@@ -698,13 +784,10 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (!mounted) return;
 
       final user = ref.read(authControllerProvider).value;
-      if (user == null) {
-        throw Exception('user_not_found_after_login');
-      }
+      if (user == null) throw Exception('user_not_found_after_login');
 
-      // 4. Vérification statut compte
+      // 4. Statut compte
       final status = user.accountStatus?.toLowerCase() ?? '';
-
       if (status == 'deactivated' || status == 'pending_deletion') {
         await _logLoginAttempt(
           identifier: finalIdentifier,
@@ -748,6 +831,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         success: true,
       );
       await _clearLoginAttempts(finalIdentifier.toLowerCase());
+      await _Throttle.clear('login_attempt');
 
       final target = user.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
@@ -760,21 +844,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (!mounted) return;
 
       final loginIdentifier = _identifierC.text.trim();
-      final reason =
-          e is AuthException ? e.code.name : e.toString();
+      final reason = e is AuthException ? e.code.name : e.toString();
 
       await _logLoginAttempt(
         identifier: loginIdentifier,
         success: false,
         failureReason: reason,
       );
-
       SecurityReporter.reportLoginFailure(
         identifier: loginIdentifier,
         reason: reason,
       );
 
       await _recordFailedLogin(loginIdentifier.toLowerCase());
+      await _Throttle.hit('login_attempt', _kMaxLoginAttempts, _kLoginLockSeconds);
+
       _showError(_translateAuthError(e, l10n));
       _antiBot.registerFailure();
     }
@@ -783,14 +867,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   // ── PASSWORD RESET ──────────────────────────────────────────────
   Future<bool> _sendPasswordReset(String email) async {
     final l10n = AppLocalizations.of(context);
+    _gLoginCtx = context;
 
-    // 🤖 Anti-bot check
+    // 🤖 Anti-bot
     final botError = _antiBot.check(l10n);
     if (botError != null) {
       _showError(botError);
       _antiBot.registerFailure();
       return false;
     }
+
+    // 🔒 Throttle local
+    if (!await _notBlocked('reset_send')) {
+      return false;
+    }
+    await _Throttle.hit('reset_send', _kResetMaxAttempts, _kResetLockSeconds);
 
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(email);
@@ -806,6 +897,16 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       _antiBot.registerFailure();
     }
     _startResetCooldown();
+    return true;
+  }
+
+  Future<bool> _notBlocked(String key) async {
+    final s = await _Throttle.blockedSeconds(key);
+    if (s > 0 && mounted) {
+      _showError(_tx(context, 'login_error_too_many_attempts',
+          args: [_fmtWait(context, s)]));
+      return false;
+    }
     return true;
   }
 
@@ -831,443 +932,475 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
+  void _openPolicy(String slug) {
+    HapticFeedback.selectionClick();
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PolicyViewerPage(slug: slug)),
+    );
+  }
+
   // ── BUILD ───────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    _gLoginCtx = context;
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState.isLoading || _isInitialVerifying;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB),
+      backgroundColor: ThixPolicy.surfaceSoft,
       body: SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 60, 20, 40),
-          physics: const BouncingScrollPhysics(),
-          child: Column(
-            children: [
-              // ── HEADER ÉPURÉ ──
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: 44,
-                    height: 44,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF3B82F6).withOpacity(0.25),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                    ),
-                    child: const Center(
-                      child: Text(
-                        'T',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.5,
-                        ),
-                      ),
-                    ),
+        child: Stack(
+          children: [
+            // 🍯 Honeypot hors écran (exclu des lecteurs d'écran + du focus)
+            Positioned(
+              left: -3000,
+              top: 0,
+              width: 10,
+              height: 10,
+              child: ExcludeSemantics(
+                child: ExcludeFocus(
+                  child: TextField(
+                    controller: _honeyC,
+                    autofillHints: null,
+                    enableSuggestions: false,
+                    autocorrect: false,
+                    keyboardType: TextInputType.url,
                   ),
-                  const SizedBox(width: 12),
-                  Text(
-                    'THIX HUB',
-                    style: ThixPolicy.h2Style.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                l10n.t('login_subtitle'),
-                style: ThixPolicy.bodySmallStyle.copyWith(
-                  color: ThixPolicy.textSecondary,
                 ),
               ),
-              const SizedBox(height: 36),
-
-              // ── CARD PRINCIPALE ──
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
+            ),
+            Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 480),
                 child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Text(
-                      l10n.t('login_title'),
-                      style: ThixPolicy.h2Style.copyWith(
-                        color: ThixPolicy.inkDeep,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 22,
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-
-                    // 🤖 Honeypot (invisible)
-                    _CleanInput(
-                      label: '',
-                      hint: '',
-                      icon: Icons.person,
-                      isPassword: false,
-                      type: TextInputType.text,
-                      controller: _honeypotC,
-                      textInputAction: TextInputAction.next,
-                      obscure: true,
-                    ),
-
-                    // ✅ IDENTIFIANT (email / téléphone / THIX ID)
-                    Semantics(
-                      label: l10n.t('login_identifier_label'),
-                      textField: true,
-                      child: _CleanInput(
-                        key: const ValueKey('identifier'),
-                        label: l10n.t('login_identifier_label'),
-                        hint: l10n.t('login_identifier_hint'),
-                        icon: Icons.badge_outlined,
-                        isPassword: false,
-                        type: TextInputType.text,
-                        controller: _identifierC,
-                        textInputAction: TextInputAction.next,
-                        maxLength: _kMaxIdentifierLength,
-                        autofillHint: AutofillHints.username,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    // ✅ MOT DE PASSE (une seule fois, avec errorText)
-                    Semantics(
-                      label: l10n.t('login_password_label'),
-                      textField: true,
-                      child: _CleanInput(
-                        key: const ValueKey('password'),
-                        label: l10n.t('login_password_label'),
-                        hint: l10n.t('login_password_hint'),
-                        icon: Icons.lock_outline_rounded,
-                        isPassword: true,
-                        type: TextInputType.text,
-                        controller: _passwordC,
-                        textInputAction: TextInputAction.done,
-                        maxLength: _kMaxPasswordLength,
-                        onSubmitted: (_) => _signIn(),
-                        autofillHint: AutofillHints.password,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── REMEMBER ME + FORGOT PASSWORD ──
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Semantics(
-                          button: true,
-                          label: l10n.t('login_remember_me'),
-                          checked: _rememberMe,
-                          child: GestureDetector(
-                            onTap: isLoading
-                                ? null
-                                : () {
-                                    HapticFeedback.selectionClick();
-                                    setState(() => _rememberMe = !_rememberMe);
-                                  },
-                            child: Row(
-                              children: [
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  width: 18,
-                                  height: 18,
-                                  decoration: BoxDecoration(
-                                    color: _rememberMe
-                                        ? ThixPolicy.primary
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.circular(5),
-                                    border: Border.all(
-                                      color: _rememberMe
-                                          ? ThixPolicy.primary
-                                          : const Color(0xFFD1D5DB),
-                                      width: 1.5,
-                                    ),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Icon(
-                                    Icons.check_rounded,
-                                    size: 14,
-                                    color: _rememberMe
-                                        ? Colors.white
-                                        : Colors.transparent,
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                Text(
-                                  l10n.t('login_remember_me'),
-                                  style: ThixPolicy.bodySmallStyle.copyWith(
-                                    color: ThixPolicy.textSecondary,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+                    _buildTopBar(l10n),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.fromLTRB(
+                          ThixPolicy.s20,
+                          ThixPolicy.s8,
+                          ThixPolicy.s20,
+                          ThixPolicy.s24,
                         ),
-                        Semantics(
-                          button: true,
-                          label: l10n.t('login_forgot_password'),
-                          child: GestureDetector(
-                            onTap: _openForgotPasswordDialog,
-                            child: Text(
-                              l10n.t('login_forgot_password'),
-                              style: ThixPolicy.captionStyle.copyWith(
-                                color: ThixPolicy.primary,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 28),
-
-                    // ── BOUTON CONNEXION ──
-                    Semantics(
-                      button: true,
-                      label: l10n.t('login_button'),
-                      enabled: !isLoading && _lockoutSecondsLeft == 0,
-                      child: ElevatedButton(
-                        onPressed: (isLoading || _lockoutSecondsLeft > 0)
-                            ? null
-                            : _signIn,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: ThixPolicy.primary,
-                          foregroundColor: Colors.white,
-                          disabledBackgroundColor:
-                              ThixPolicy.primary.withOpacity(0.4),
-                          disabledForegroundColor: Colors.white70,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          elevation: 0,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
+                        physics: const BouncingScrollPhysics(),
+                        keyboardDismissBehavior:
+                            ScrollViewKeyboardDismissBehavior.onDrag,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            if (isLoading) ...[
-                              const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2.5,
-                                  valueColor: AlwaysStoppedAnimation<Color>(
-                                    Colors.white,
-                                  ),
-                                ),
+                            Container(
+                              padding: const EdgeInsets.all(ThixPolicy.s24),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius:
+                                    BorderRadius.circular(ThixPolicy.rXl),
+                                border: Border.all(
+                                    color: ThixPolicy.border.withOpacity(0.7)),
+                                boxShadow: ThixPolicy.shadowSoft(),
                               ),
-                              const SizedBox(width: 12),
-                            ],
-                            Text(
-                              _lockoutSecondsLeft > 0
-                                  ? '${l10n.t('login_retry_in')} '
-                                      '$_lockoutSecondsLeft'
-                                      '${l10n.t('login_seconds_suffix')}'
-                                  : (isLoading
-                                      ? l10n.t('login_verifying')
-                                      : l10n.t('login_button')),
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w700,
-                                fontSize: 15,
-                              ),
+                              child: _buildFormCard(isLoading, l10n),
                             ),
-                            if (_lockoutSecondsLeft == 0 && !isLoading) ...[
-                              const SizedBox(width: 8),
-                              const Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 18,
-                              ),
-                            ],
+                            const SizedBox(height: ThixPolicy.s16),
+                            _buildSecurityBanner(l10n),
+                            const SizedBox(height: ThixPolicy.s20),
+                            _buildRegisterRow(l10n),
+                            const SizedBox(height: ThixPolicy.s20),
+                            _buildLangChips(),
+                            const SizedBox(height: ThixPolicy.s24),
                           ],
                         ),
                       ),
                     ),
-
-                    // ── BIOMETRIC ──
-                    const SizedBox(height: 20),
-                    Row(
-                      children: [
-                        const Expanded(child: Divider(color: Color(0xFFE5E7EB))),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12),
-                          child: Text(
-                            l10n.t('login_biometric'),
-                            style: ThixPolicy.microStyle.copyWith(
-                              color: ThixPolicy.textMuted,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 10,
-                              letterSpacing: 1.0,
-                            ),
-                          ),
-                        ),
-                        const Expanded(child: Divider(color: Color(0xFFE5E7EB))),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _BiometricButton(
-                          icon: Icons.face_rounded,
-                          label: 'Face ID',
-                          onTap: () => _handleBiometric('face_id'),
-                        ),
-                        const SizedBox(width: 12),
-                        _BiometricButton(
-                          icon: Icons.fingerprint_rounded,
-                          label: 'Touch ID',
-                          onTap: () => _handleBiometric('touch_id'),
-                        ),
-                      ],
-                    ),
                   ],
                 ),
               ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
-              // ── SÉCURITÉ BANNER ──
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0FDF4),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: const Color(0xFFBBF7D0),
-                    width: 1,
+  Widget _buildTopBar(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        ThixPolicy.s20,
+        ThixPolicy.s20,
+        ThixPolicy.s20,
+        ThixPolicy.s12,
+      ),
+      child: Column(
+        children: [
+          Semantics(
+            header: true,
+            label: 'THIX HUB',
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: const BoxDecoration(
+                    color: ThixPolicy.gold,
+                    shape: BoxShape.circle,
                   ),
                 ),
+                const SizedBox(width: 10),
+                Text(
+                  'THIX HUB',
+                  style: ThixPolicy.h2Style.copyWith(
+                    color: ThixPolicy.primaryDeep,
+                    fontWeight: ThixPolicy.bold,
+                    letterSpacing: 2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.t('login_subtitle'),
+            textAlign: TextAlign.center,
+            style: ThixPolicy.captionStyle.copyWith(
+              color: ThixPolicy.textSecondary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFormCard(bool isLoading, AppLocalizations l10n) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          l10n.t('login_title'),
+          style: ThixPolicy.h2Style.copyWith(
+            color: ThixPolicy.primaryDeep,
+            fontWeight: ThixPolicy.bold,
+          ),
+        ),
+        const SizedBox(height: ThixPolicy.s6),
+        Text(
+          l10n.t('login_welcome_back'),
+          style: ThixPolicy.bodySmallStyle,
+        ),
+        const SizedBox(height: ThixPolicy.s24),
+
+        // Identifiant (email / téléphone / THIX ID)
+        _PremiumField(
+          key: const ValueKey('identifier'),
+          label: l10n.t('login_identifier_label'),
+          hint: l10n.t('login_identifier_hint'),
+          icon: Icons.badge_outlined,
+          controller: _identifierC,
+          keyboardType: TextInputType.emailAddress,
+          maxLength: _kMaxIdentifierLength,
+          errorText: _identifierError,
+          autofillHints: const [AutofillHints.username],
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: ThixPolicy.s16),
+
+        // Mot de passe (une seule fois)
+        _PremiumField(
+          key: const ValueKey('password'),
+          label: l10n.t('login_password_label'),
+          hint: l10n.t('login_password_hint'),
+          icon: Icons.lock_outline_rounded,
+          controller: _passwordC,
+          isPassword: true,
+          maxLength: _kMaxPasswordLength,
+          errorText: _passwordError,
+          autofillHints: const [AutofillHints.password],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) => _signIn(),
+        ),
+        const SizedBox(height: ThixPolicy.s12),
+
+        // Remember me + forgot password
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Semantics(
+              button: true,
+              label: l10n.t('login_remember_me'),
+              checked: _rememberMe,
+              child: GestureDetector(
+                onTap: isLoading
+                    ? null
+                    : () {
+                        HapticFeedback.selectionClick();
+                        setState(() => _rememberMe = !_rememberMe);
+                      },
                 child: Row(
                   children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 200),
+                      width: 18,
+                      height: 18,
                       decoration: BoxDecoration(
-                        color: ThixPolicy.success.withOpacity(0.15),
-                        shape: BoxShape.circle,
+                        color: _rememberMe
+                            ? ThixPolicy.primary
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(
+                          color: _rememberMe
+                              ? ThixPolicy.primary
+                              : ThixPolicy.border,
+                          width: 1.5,
+                        ),
                       ),
-                      child: const Icon(
-                        Icons.verified_user_rounded,
-                        color: Color(0xFF16A34A),
-                        size: 18,
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color:
+                            _rememberMe ? Colors.white : Colors.transparent,
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            l10n.t('login_security_title'),
-                            style: ThixPolicy.labelStyle.copyWith(
-                              color: const Color(0xFF166534),
-                              fontWeight: FontWeight.w700,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            l10n.t('login_security_subtitle'),
-                            style: ThixPolicy.captionStyle.copyWith(
-                              color: const Color(0xFF15803D),
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.t('login_remember_me'),
+                      style: ThixPolicy.captionStyle.copyWith(
+                        color: ThixPolicy.textSecondary,
                       ),
                     ),
                   ],
                 ),
               ),
+            ),
+            Semantics(
+              button: true,
+              label: l10n.t('login_forgot_password'),
+              child: GestureDetector(
+                onTap: _openForgotPasswordDialog,
+                child: Text(
+                  l10n.t('login_forgot_password'),
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.primary,
+                    fontWeight: ThixPolicy.semiBold,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: ThixPolicy.s24),
 
-              // ── REGISTER LINK ──
-              const SizedBox(height: 24),
-              Row(
+        // Bouton principal
+        Semantics(
+          button: true,
+          label: l10n.t('login_button'),
+          enabled: !isLoading && _lockoutSecondsLeft == 0,
+          child: SizedBox(
+            height: 54,
+            child: ElevatedButton(
+              onPressed: (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary,
+                foregroundColor: ThixPolicy.onBrand,
+                disabledBackgroundColor:
+                    ThixPolicy.primary.withOpacity(0.35),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                ),
+              ),
+              child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(
-                    l10n.t('login_new_user'),
-                    style: ThixPolicy.bodySmallStyle.copyWith(
-                      color: ThixPolicy.textSecondary,
-                      fontSize: 14,
+                  if (isLoading) ...[
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.5,
+                        valueColor:
+                            AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 6),
-                  Semantics(
-                    button: true,
-                    label: l10n.t('login_create_account'),
-                    child: GestureDetector(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        context.push(AppRoutes.personalReg);
-                      },
-                      child: Text(
-                        l10n.t('login_create_account'),
-                        style: ThixPolicy.bodySmallStyle.copyWith(
-                          color: ThixPolicy.primary,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 14,
-                        ),
+                    const SizedBox(width: ThixPolicy.s12),
+                  ],
+                  Flexible(
+                    child: Text(
+                      _lockoutSecondsLeft > 0
+                          ? '${l10n.t('login_retry_in')} '
+                              '$_lockoutSecondsLeft'
+                              '${l10n.t('login_seconds_suffix')}'
+                          : (isLoading
+                              ? l10n.t('login_verifying')
+                              : l10n.t('login_button')),
+                      overflow: TextOverflow.ellipsis,
+                      style: ThixPolicy.bodyStyle.copyWith(
+                        fontWeight: ThixPolicy.bold,
+                        color: ThixPolicy.onBrand,
+                        letterSpacing: 0.3,
                       ),
                     ),
                   ),
+                  if (!isLoading && _lockoutSecondsLeft == 0) ...[
+                    const SizedBox(width: ThixPolicy.s8),
+                    const Icon(Icons.arrow_forward_rounded, size: 20),
+                  ],
                 ],
               ),
+            ),
+          ),
+        ),
+        const SizedBox(height: ThixPolicy.s20),
 
-              const SizedBox(height: 32),
-
-              // ── LANG CHIPS ──
-              Container(
-                padding: const EdgeInsets.all(4),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    _LangChip(label: 'FR', active: true, onTap: () {}),
-                    _LangChip(label: 'EN', onTap: () {}),
-                    _LangChip(label: 'SW', onTap: () {}),
-                    _LangChip(label: 'LN', onTap: () {}),
-                  ],
+        // Biométrie
+        Row(
+          children: [
+            const Expanded(child: Divider(color: ThixPolicy.border)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                l10n.t('login_biometric'),
+                style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textMuted,
+                  fontWeight: ThixPolicy.bold,
+                  fontSize: 10,
+                  letterSpacing: 1.0,
                 ),
               ),
-            ],
+            ),
+            const Expanded(child: Divider(color: ThixPolicy.border)),
+          ],
+        ),
+        const SizedBox(height: ThixPolicy.s16),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _BiometricButton(
+              icon: Icons.face_rounded,
+              label: 'Face ID',
+              onTap: () => _handleBiometric('face_id'),
+            ),
+            const SizedBox(width: 12),
+            _BiometricButton(
+              icon: Icons.fingerprint_rounded,
+              label: 'Touch ID',
+              onTap: () => _handleBiometric('touch_id'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSecurityBanner(AppLocalizations l10n) {
+    return Container(
+      padding: const EdgeInsets.all(ThixPolicy.s16),
+      decoration: BoxDecoration(
+        color: ThixPolicy.success.withOpacity(0.06),
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(color: ThixPolicy.success.withOpacity(0.30)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: ThixPolicy.success.withOpacity(0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.verified_user_rounded,
+              color: ThixPolicy.success,
+              size: 18,
+            ),
           ),
+          const SizedBox(width: ThixPolicy.s12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  l10n.t('login_security_title'),
+                  style: ThixPolicy.labelStyle.copyWith(
+                    color: ThixPolicy.primaryDeep,
+                    fontWeight: ThixPolicy.bold,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  l10n.t('login_security_subtitle'),
+                  style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRegisterRow(AppLocalizations l10n) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(
+          l10n.t('login_new_user'),
+          style: ThixPolicy.bodySmallStyle.copyWith(
+            color: ThixPolicy.textSecondary,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Semantics(
+          button: true,
+          label: l10n.t('login_create_account'),
+          child: GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              context.push(AppRoutes.personalReg);
+            },
+            child: Text(
+              l10n.t('login_create_account'),
+              style: ThixPolicy.bodyStyle.copyWith(
+                color: ThixPolicy.primary,
+                fontWeight: ThixPolicy.bold,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLangChips() {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: ThixPolicy.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _LangChip(label: 'FR', active: true, onTap: () {}),
+            _LangChip(label: 'EN', onTap: () {}),
+            _LangChip(label: 'SW', onTap: () {}),
+            _LangChip(label: 'LN', onTap: () {}),
+          ],
         ),
       ),
     );
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// BIOMETRIC BUTTON (épuré)
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
+// BIOMETRIC BUTTON
+// ════════════════════════════════════════════════════════════════════════════
 class _BiometricButton extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1281,40 +1414,44 @@ class _BiometricButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        width: 80,
-        height: 60,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: ThixPolicy.textMain, size: 20),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: ThixPolicy.microStyle.copyWith(
-                color: ThixPolicy.textSecondary,
-                fontSize: 10,
-                fontWeight: FontWeight.w600,
+    return Semantics(
+      button: true,
+      label: label,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        child: Container(
+          width: 84,
+          height: 62,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+            border: Border.all(color: ThixPolicy.border),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, color: ThixPolicy.textMain, size: 20),
+              const SizedBox(height: 4),
+              Text(
+                label,
+                style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                  fontSize: 10,
+                  fontWeight: ThixPolicy.semiBold,
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // LANGUAGE CHIP
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 class _LangChip extends StatelessWidget {
   final String label;
   final bool active;
@@ -1358,9 +1495,9 @@ class _LangChip extends StatelessWidget {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 // FORGOT PASSWORD DIALOG
-// ════════════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════
 class _ForgotPasswordDialog extends StatefulWidget {
   final String prefillEmail;
   final Future<bool> Function(String) onSendReset;
@@ -1389,7 +1526,6 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   bool _isSending = false;
   bool _isOtpSent = false;
-  bool _isObscured = true;
   String? _passwordError;
 
   @override
@@ -1415,11 +1551,16 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           const Icon(Icons.error_outline_rounded,
               color: Colors.white, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          Expanded(
+            child: Text(
+              message,
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.onBrand),
+            ),
+          ),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
       ),
     );
   }
@@ -1427,316 +1568,256 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    _gLoginCtx = context;
     final canSend = !_isSending && widget.resetCooldown == 0;
 
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(ThixPolicy.s24),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+          border: Border.all(color: ThixPolicy.border.withOpacity(0.7)),
+          boxShadow: ThixPolicy.shadowCard(),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.primary.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    _isOtpSent
-                        ? Icons.vpn_key_rounded
-                        : Icons.lock_reset_rounded,
-                    color: ThixPolicy.primary,
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    _isOtpSent
-                        ? l10n.t('login_reset_new_password')
-                        : l10n.t('login_forgot_password'),
-                    style: ThixPolicy.h3Style.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 17,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.primary.withOpacity(0.10),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      _isOtpSent
+                          ? Icons.vpn_key_rounded
+                          : Icons.lock_reset_rounded,
+                      color: ThixPolicy.primary,
+                      size: 20,
                     ),
                   ),
+                  const SizedBox(width: ThixPolicy.s12),
+                  Expanded(
+                    child: Text(
+                      _isOtpSent
+                          ? l10n.t('login_reset_new_password')
+                          : l10n.t('login_forgot_password'),
+                      style: ThixPolicy.h3Style.copyWith(
+                        color: ThixPolicy.primaryDeep,
+                        fontWeight: ThixPolicy.bold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: ThixPolicy.s16),
+              Text(
+                _isOtpSent
+                    ? '${l10n.t('login_reset_otp_sent_prefix')} ${_emailC.text}. '
+                        '${l10n.t('login_reset_otp_sent_suffix')}'
+                    : l10n.t('login_reset_instructions'),
+                style: ThixPolicy.captionStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: ThixPolicy.s20),
+
+              if (!_isOtpSent)
+                _PremiumField(
+                  label: l10n.t('login_email_label'),
+                  hint: l10n.t('login_email_hint'),
+                  icon: Icons.email_outlined,
+                  controller: _emailC,
+                  keyboardType: TextInputType.emailAddress,
+                  maxLength: _kMaxEmailLength,
+                  autofillHints: const [AutofillHints.email],
+                  textInputAction: TextInputAction.done,
+                )
+              else ...[
+                _PremiumField(
+                  label: l10n.t('login_otp_label'),
+                  hint: '00000000',
+                  icon: Icons.confirmation_number_outlined,
+                  controller: _otpC,
+                  keyboardType: TextInputType.number,
+                  maxLength: _kMaxOtpLength,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                ),
+                const SizedBox(height: ThixPolicy.s16),
+                _PremiumField(
+                  label: l10n.t('login_new_password_label'),
+                  hint: l10n.t('login_password_min_length'),
+                  icon: Icons.lock_outline_rounded,
+                  controller: _newPasswordC,
+                  isPassword: true,
+                  maxLength: _kMaxPasswordLength,
+                  errorText: _passwordError,
+                  autofillHints: const [AutofillHints.newPassword],
                 ),
               ],
-            ),
-            const SizedBox(height: 16),
-            Text(
-              _isOtpSent
-                  ? '${l10n.t('login_reset_otp_sent_prefix')} ${_emailC.text}. '
-                      '${l10n.t('login_reset_otp_sent_suffix')}'
-                  : l10n.t('login_reset_instructions'),
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.textSecondary,
-                height: 1.4,
-              ),
-            ),
-            const SizedBox(height: 20),
+              const SizedBox(height: ThixPolicy.s24),
 
-            if (!_isOtpSent)
-              TextFormField(
-                controller: _emailC,
-                keyboardType: TextInputType.emailAddress,
-                maxLength: _kMaxEmailLength,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: _buildInputDecoration(
-                  labelText: l10n.t('login_email_label'),
-                  hintText: l10n.t('login_email_hint'),
-                ),
-              )
-            else ...[
-              TextFormField(
-                controller: _otpC,
-                keyboardType: TextInputType.number,
-                maxLength: _kMaxOtpLength,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: _buildInputDecoration(
-                  labelText: l10n.t('login_otp_label'),
-                  hintText: '00000000',
-                ),
-              ),
-              const SizedBox(height: 16),
-              TextFormField(
-                controller: _newPasswordC,
-                obscureText: _isObscured,
-                maxLength: _kMaxPasswordLength,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: ThixPolicy.textMain,
-                  fontWeight: FontWeight.w500,
-                ),
-                decoration: _buildInputDecoration(
-                  labelText: l10n.t('login_new_password_label'),
-                  hintText: l10n.t('login_password_min_length'),
-                  errorText: _passwordError,
-                  suffixIcon: IconButton(
-                    splashRadius: 20,
-                    icon: Icon(
-                      _isObscured
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: ThixPolicy.textSecondary,
-                      size: 18,
+              Row(
+                children: [
+                  Expanded(
+                    child: TextButton(
+                      onPressed:
+                          _isSending ? null : () => Navigator.of(context).pop(),
+                      style: TextButton.styleFrom(
+                        foregroundColor: ThixPolicy.textSecondary,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      child: Text(
+                        l10n.t('common_cancel'),
+                        style: ThixPolicy.bodyStyle.copyWith(
+                          fontWeight: ThixPolicy.semiBold,
+                        ),
+                      ),
                     ),
-                    onPressed: () =>
-                        setState(() => _isObscured = !_isObscured),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: _isSending ? null : () => _handleSend(l10n),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ThixPolicy.primary,
+                        foregroundColor: ThixPolicy.onBrand,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.circular(ThixPolicy.rMd),
+                        ),
+                      ),
+                      child: Text(
+                        _isSending
+                            ? l10n.t('login_please_wait')
+                            : (_isOtpSent
+                                ? l10n.t('login_confirm')
+                                : (!canSend && widget.resetCooldown > 0
+                                    ? '${l10n.t('login_wait_prefix')} '
+                                        '${widget.resetCooldown}'
+                                        '${l10n.t('login_seconds_suffix')}'
+                                    : l10n.t('login_send'))),
+                        style: ThixPolicy.bodyStyle.copyWith(
+                          fontWeight: ThixPolicy.bold,
+                          color: ThixPolicy.onBrand,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ],
-            const SizedBox(height: 24),
-            Row(
-              children: [
-                Expanded(
-                  child: TextButton(
-                    onPressed: _isSending
-                        ? null
-                        : () => Navigator.of(context).pop(),
-                    child: Text(
-                      l10n.t('common_cancel'),
-                      style: const TextStyle(
-                        color: ThixPolicy.textSecondary,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: _isSending
-                        ? null
-                        : () async {
-                            if (!_isOtpSent) {
-                              if (!canSend) return;
-                              final email = _LoginValidators.sanitize(
-                                  _emailC.text.trim(),
-                                  maxLength: _kMaxEmailLength);
-                              if (!_LoginValidators.looksLikeEmail(email)) {
-                                _showDialogError(
-                                    l10n.t('auth_error_invalid_email'));
-                                return;
-                              }
-                              setState(() => _isSending = true);
-                              HapticFeedback.mediumImpact();
-                              await widget.onSendReset(email);
-                              if (mounted) {
-                                setState(() {
-                                  _isSending = false;
-                                  _isOtpSent = true;
-                                });
-                              }
-                            } else {
-                              final otp = _LoginValidators.sanitize(
-                                  _otpC.text.trim(),
-                                  maxLength: _kMaxOtpLength);
-                              final newPass = _LoginValidators.sanitize(
-                                  _newPasswordC.text,
-                                  maxLength: _kMaxPasswordLength);
-
-                              if (otp.isEmpty) {
-                                _showDialogError(
-                                    l10n.t('login_error_empty_otp'));
-                                return;
-                              }
-                              if (newPass.length < 8) {
-                                HapticFeedback.lightImpact();
-                                setState(() => _passwordError =
-                                    'Le mot de passe doit contenir au moins 8 caractères');
-                                return;
-                              }
-
-                              setState(() => _isSending = true);
-                              HapticFeedback.mediumImpact();
-
-                              try {
-                                final res = await Supabase.instance.client.auth
-                                    .verifyOTP(
-                                  email: _emailC.text.trim(),
-                                  token: otp,
-                                  type: OtpType.recovery,
-                                );
-                                if (res.user != null) {
-                                  await Supabase.instance.client.auth
-                                      .updateUser(UserAttributes(
-                                    password: newPass,
-                                  ));
-                                  await widget.logAttempt(
-                                    identifier: _emailC.text.trim(),
-                                    success: true,
-                                    failureReason: 'password_reset_success',
-                                  );
-                                  if (mounted) {
-                                    Navigator.of(context).pop();
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
-                                      SnackBar(
-                                        content: Row(children: [
-                                          const Icon(
-                                            Icons.check_circle_rounded,
-                                            color: Colors.white,
-                                            size: 18,
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Expanded(
-                                            child: Text(l10n.t(
-                                                'login_password_updated')),
-                                          ),
-                                        ]),
-                                        backgroundColor: ThixPolicy.success,
-                                        behavior: SnackBarBehavior.floating,
-                                        shape: RoundedRectangleBorder(
-                                          borderRadius:
-                                              BorderRadius.circular(12),
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                }
-                              } catch (e) {
-                                debugPrint(
-                                    '[Login] ❌ Password reset error: $e');
-                                if (mounted) {
-                                  _showDialogError(
-                                      _translateAuthError(e, l10n));
-                                  setState(() => _isSending = false);
-                                }
-                              }
-                            }
-                          },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ThixPolicy.primary,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
-                    child: Text(
-                      _isSending
-                          ? l10n.t('login_please_wait')
-                          : (_isOtpSent
-                              ? l10n.t('login_confirm')
-                              : (!canSend && widget.resetCooldown > 0
-                                  ? '${l10n.t('login_wait_prefix')} '
-                                      '${widget.resetCooldown}'
-                                      '${l10n.t('login_seconds_suffix')}'
-                                  : l10n.t('login_send'))),
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
+          ),
         ),
       ),
     );
   }
 
-  InputDecoration _buildInputDecoration({
-    String? labelText,
-    String? hintText,
-    String? errorText,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      labelText: labelText,
-      hintText: hintText,
-      errorText: errorText,
-      counterText: '',
-      suffixIcon: suffixIcon,
-      filled: true,
-      fillColor: Colors.white,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 14,
-      ),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: ThixPolicy.primary,
-          width: 1.5,
-        ),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: ThixPolicy.danger,
-          width: 1.5,
-        ),
-      ),
+  Future<void> _handleSend(AppLocalizations l10n) async {
+    if (!_isOtpSent) {
+      final email = _LoginValidators.sanitize(
+        _emailC.text.trim(),
+        maxLength: _kMaxEmailLength,
+      );
+      if (!_LoginValidators.looksLikeEmail(email)) {
+        _showDialogError(l10n.t('auth_error_invalid_email'));
+        return;
+      }
+      setState(() => _isSending = true);
+      HapticFeedback.mediumImpact();
+      await widget.onSendReset(email);
+      if (mounted) {
+        setState(() {
+          _isSending = false;
+          _isOtpSent = true;
+        });
+      }
+      return;
+    }
+
+    // Vérification OTP + nouveau mot de passe
+    final otp = _LoginValidators.sanitize(
+      _otpC.text.trim(),
+      maxLength: _kMaxOtpLength,
     );
+    final newPass = _newPasswordC.text;
+
+    if (!RegExp(r'^\d{8}$').hasMatch(otp)) {
+      _showDialogError(l10n.t('login_error_empty_otp'));
+      return;
+    }
+    if (newPass.length < _kMinPasswordLength) {
+      HapticFeedback.lightImpact();
+      setState(() => _passwordError =
+          '${l10n.t('auth_error_password_too_short')} $_kMinPasswordLength');
+      return;
+    }
+    if (!_LoginValidators.isSafePassword(newPass)) {
+      setState(() => _passwordError = l10n.t('auth_error_password_invalid_chars'));
+      return;
+    }
+
+    setState(() {
+      _isSending = true;
+      _passwordError = null;
+    });
+    HapticFeedback.mediumImpact();
+
+    try {
+      final res = await Supabase.instance.client.auth.verifyOTP(
+        email: _emailC.text.trim(),
+        token: otp,
+        type: OtpType.recovery,
+      );
+      if (res.user != null) {
+        await Supabase.instance.client.auth.updateUser(
+          UserAttributes(password: newPass),
+        );
+        await widget.logAttempt(
+          identifier: _emailC.text.trim(),
+          success: true,
+          failureReason: 'password_reset_success',
+        );
+        if (!mounted) return;
+        Navigator.of(context).pop();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  l10n.t('login_password_updated'),
+                  style: ThixPolicy.bodyStyle
+                      .copyWith(color: ThixPolicy.onBrand),
+                ),
+              ),
+            ]),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Login] ❌ Password reset error: $e');
+      if (mounted) {
+        _showDialogError(_translateAuthError(e, l10n));
+        setState(() => _isSending = false);
+      }
+    }
   }
 }
