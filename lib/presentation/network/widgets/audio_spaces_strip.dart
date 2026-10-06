@@ -41,53 +41,82 @@ class AudioSpacesStrip extends ConsumerWidget {
         if (spaces.isEmpty) return const SizedBox.shrink();
 
         return Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 2, 16, 6),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             children: [
+              // ─── HEADER COMPACT ───
               Row(
                 children: [
-                  const CircleAvatar(
-                    radius: 14,
-                    backgroundColor: Color(0xFFEDE7FF),
-                    child: Icon(Icons.mic_none_rounded, size: 16, color: Color(0xFF7C4DFF)),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      l10n.t('audio_space_live_title'),
-                      style: ThixPolicy.h2Style.copyWith(fontSize: 16, fontWeight: FontWeight.w800),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF7C4DFF).withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _LiveDot(),
+                        const SizedBox(width: 5),
+                        Text(
+                          l10n.t('audio_space_live_title'),
+                          style: ThixPolicy.captionStyle.copyWith(
+                            color: const Color(0xFF7C4DFF),
+                            fontWeight: FontWeight.w800,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  TextButton(
-                    onPressed: () => showModalBottomSheet(
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => showModalBottomSheet(
                       context: context,
                       isScrollControlled: true,
                       builder: (_) => const CreateAudioSpaceSheet(),
                     ),
-                    child: Text(l10n.t('audio_space_create_short')),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.surfaceSoft,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.add_rounded, size: 13, color: Color(0xFF7C4DFF)),
+                          const SizedBox(width: 3),
+                          Text(
+                            l10n.t('audio_space_create_short'),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF7C4DFF),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
+
+              // ─── LISTE COMPACTE ───
               SizedBox(
-                height: 118,
+                height: 84,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
                   itemCount: spaces.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 10),
-                  itemBuilder: (context, i) {
-                    final s = spaces[i];
-                    return _LiveSpaceCard(
-                      title: s.title,
-                      subtitle: '${s.hostName} · ${s.listenerCount + s.speakerCount}',
-                      cta: l10n.t('audio_space_join'),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => AudioSpaceRoomScreen(space: s)),
-                      ),
-                    );
-                  },
+                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  itemBuilder: (context, i) => _CompactLiveSpaceCard(
+                    space: spaces[i],
+                    cta: l10n.t('audio_space_join'),
+                  ),
                 ),
               ),
             ],
@@ -98,61 +127,179 @@ class AudioSpacesStrip extends ConsumerWidget {
   }
 }
 
-class _LiveSpaceCard extends StatelessWidget {
-  final String title;
-  final String subtitle;
+// ════════════════════════════════════════════════════════════════════════
+// CARTE COMPACTE
+// ════════════════════════════════════════════════════════════════════════
+class _CompactLiveSpaceCard extends StatelessWidget {
+  final AudioSpace space;
   final String cta;
-  final VoidCallback onTap;
 
-  const _LiveSpaceCard({
-    required this.title,
-    required this.subtitle,
-    required this.cta,
-    required this.onTap,
-  });
+  const _CompactLiveSpaceCard({required this.space, required this.cta});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 260,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 10),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFE8E0FF)),
+    final count = space.listenerCount + space.speakerCount;
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => AudioSpaceRoomScreen(space: space)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Icon(Icons.graphic_eq_rounded, size: 16, color: Color(0xFF7C4DFF)),
-          const SizedBox(height: 6),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
-          ),
-          Text(
-            subtitle,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
-          ),
-          const Spacer(),
-          Align(
-            alignment: Alignment.centerRight,
-            child: FilledButton(
-              onPressed: onTap,
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF7C4DFF),
-                minimumSize: const Size(0, 32),
-                padding: const EdgeInsets.symmetric(horizontal: 14),
-                shape: const StadiumBorder(),
-              ),
-              child: Text(cta, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+      child: Container(
+        width: 210,
+        padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFE8E0FF)),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7C4DFF).withOpacity(0.06),
+              blurRadius: 8,
+              offset: const Offset(0, 3),
             ),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          children: [
+            // ─── ICÔNE LIVE ───
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF7C4DFF), Color(0xFF5E35B1)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(11),
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFF7C4DFF).withOpacity(0.25),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 18),
+            ),
+            const SizedBox(width: 10),
+
+            // ─── TEXTE ───
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    space.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 12.5,
+                      color: ThixPolicy.inkDeep,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.people_alt_rounded, size: 11, color: ThixPolicy.textSecondary),
+                      const SizedBox(width: 3),
+                      Text(
+                        '$count',
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: ThixPolicy.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(Icons.mic_rounded, size: 10, color: ThixPolicy.textSecondary),
+                      const SizedBox(width: 3),
+                      Text(
+                        space.hostName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 10.5,
+                          color: ThixPolicy.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 6),
+
+            // ─── BOUTON JOIN ───
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: const Color(0xFF7C4DFF),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                cta,
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// LIVE DOT (animation)
+// ════════════════════════════════════════════════════════════════════════
+class _LiveDot extends StatefulWidget {
+  const _LiveDot();
+  @override
+  State<_LiveDot> createState() => _LiveDotState();
+}
+
+class _LiveDotState extends State<_LiveDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Container(
+        width: 7,
+        height: 7,
+        decoration: BoxDecoration(
+          color: const Color(0xFF7C4DFF),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF7C4DFF).withOpacity(0.5 * _ctrl.value),
+              blurRadius: 4,
+              spreadRadius: 1.5 * _ctrl.value,
+            ),
+          ],
+        ),
       ),
     );
   }
