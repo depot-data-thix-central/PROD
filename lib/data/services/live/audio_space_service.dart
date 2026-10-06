@@ -5,7 +5,7 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/data/models/live/audio_space_model.dart';
-import 'package:thix_id/data/models/live/live_model.dart';
+import 'package:thix_id/data/models/live/live_model.dart' hide AgoraCredentials;
 import 'package:thix_id/data/services/live/live_service.dart';
 
 const int _kMaxTitle = 100;
