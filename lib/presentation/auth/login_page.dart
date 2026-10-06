@@ -227,6 +227,7 @@ class _CleanInput extends StatefulWidget {
   final AutofillHints? autofillHint;
 
   const _CleanInput({
+     super.key,
     required this.label,
     required this.hint,
     required this.icon,
