@@ -156,7 +156,11 @@ class HomeQuickActions extends StatelessWidget {
     if (notificationService == null) return;
     for (final section in sections) {
       try {
-        notificationService!.markSectionRead(section);
+        notificationService!.markSectionSeen(
+  uid: currentUid, // ID de l'utilisateur connecté
+  section: section, // Instance de ThixSection
+);
+
         debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
       } catch (e) {
         debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
