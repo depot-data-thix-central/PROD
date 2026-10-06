@@ -40,7 +40,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
-
+import 'package:thix_id/presentation/chat/group/group_badge.dart' hide GroupRole;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/group_info.dart';
