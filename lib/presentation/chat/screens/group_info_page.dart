@@ -21,10 +21,7 @@ import 'package:thix_id/presentation/chat/group/group_badge.dart';
 import 'package:thix_id/presentation/chat/group/group_member_list.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/group_service.dart';
-
-// ⚠️ ADAPTE ce chemin à l'emplacement réel de ton fichier GroupSettingsPage :
-//    (vérifie avec : find lib -name "group_settings_page.dart")
-import 'package:thix_id/presentation/chat/settings/group_settings_page.dart';
+import 'package:thix_id/presentation/chat/screens/group_settings_page.dart';
 
 const double _kAvatarRadius = 60.0;
 const double _kAvatarInitialFontSize = 36.0;
