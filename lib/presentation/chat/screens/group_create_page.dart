@@ -466,7 +466,7 @@ class _GroupCreatePageState extends State<GroupCreatePage> with TickerProviderSt
       setState(() => _isCreating = false);
       _showSuccess(l10n.t('group_create_success'));
       debugPrint('[GroupCreate] ✓ Group created: ${groupInfo.groupId}');
-      Navigator.pop(context, groupInfo);
+Navigator.pop(context, groupInfo);
     } catch (e) {
       debugPrint('[GroupCreate] ❌ Create error: $e');
       if (!mounted) return;
