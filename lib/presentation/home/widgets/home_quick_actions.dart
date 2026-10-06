@@ -147,22 +147,22 @@ class HomeQuickActions extends StatelessWidget {
   }
 
   void _markSectionsRead(List<ThixSection> sections) {
-    if (notificationService == null) return;
-    final userId = Supabase.instance.client.auth.currentUser?.id;
-    if (userId == null) return;
+  if (notificationService == null) return;
+  final userId = Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null) return;
 
-    for (final section in sections) {
-      try {
-        notificationService!.markSectionRead(
-          userId,
-          section: section,
-        );
-        debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
-      } catch (e) {
-        debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
-      }
+  for (final section in sections) {
+    try {
+      notificationService!.markSectionRead(
+        uid: userId,          // ✅ paramètre nommé
+        section: section,     // ✅ paramètre nommé
+      );
+      debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
+    } catch (e) {
+      debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
     }
   }
+}
 
   @override
   Widget build(BuildContext context) {
