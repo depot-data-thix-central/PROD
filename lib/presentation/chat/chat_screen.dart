@@ -2182,50 +2182,90 @@ static const List<String> _flags = [
   // BARRES UI
   // ============================================================================
   Widget _buildPinnedBar(AppLocalizations l10n) {
-    final msg = _pinnedMessages[_pinnedCursor % _pinnedMessages.length];
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(color: ThixPolicy.gold.withOpacity(0.10), border: Border(bottom: BorderSide(color: ThixPolicy.gold.withOpacity(0.3)))),
-      child: Row(
-        children: [
-          const Icon(Icons.push_pin_rounded, size: 16, color: ThixPolicy.gold),
-          const SizedBox(width: 8),
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                setState(() => _pinnedCursor = (_pinnedCursor + 1) % _pinnedMessages.length);
-                _scrollToMessage(msg.id);
-              },
-              child: Text(
-                '${msg.senderName}: ${msg.previewText}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600),
+  final msg = _pinnedMessages[_pinnedCursor % _pinnedMessages.length];
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+    decoration: BoxDecoration(
+      color: ThixPolicy.gold.withOpacity(0.10),
+      border: Border(
+        bottom: BorderSide(
+          color: ThixPolicy.gold.withOpacity(0.3),
+        ),
+      ),
+    ),
+    child: Row(
+      children: [
+        const Icon(
+          Icons.push_pin_rounded,
+          size: 16,
+          color: ThixPolicy.gold,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: GestureDetector(
+            onTap: () {
+              setState(() {
+                _pinnedCursor =
+                    (_pinnedCursor + 1) % _pinnedMessages.length;
+              });
+              _scrollToMessage(msg.id);
+            },
+            child: Text(
+              '${msg.senderName}: ${msg.previewText}',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.textMain,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (_pinnedMessages.length > 1)
-            Text('${(_pinnedCursor % _pinnedMessages.length) + 1}/${_pinnedMessages.length}',
-                style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
-          IconButton(
-  visualDensity: VisualDensity.compact,
-  icon: const Icon(Icons.push_pin_outlined, size: 16, color: ThixPolicy.textSecondary),
-  onPressed: () => _togglePin(msg),
-  tooltip: _tr(l10n, 'chat_unpin', 'Désépingler'),
-),
+        ),
+        if (_pinnedMessages.length > 1)
+          Text(
+            '${(_pinnedCursor % _pinnedMessages.length) + 1}/${_pinnedMessages.length}',
+            style: ThixPolicy.microStyle.copyWith(
+              color: ThixPolicy.textMuted,
+            ),
           ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close_rounded, size: 16, color: ThixPolicy.textSecondary),
-            onPressed: () => setState(() => _pinnedBarClosed = true),
-            tooltip: _tr(l10n, 'common_close', 'Fermer'),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(
+            Icons.push_pin_outlined,
+            size: 16,
+            color: ThixPolicy.textSecondary,
           ),
-        ],
-      ),
-    );
-  }
-
+          onPressed: () => _togglePin(msg),
+          tooltip: _tr(
+            l10n,
+            'chat_unpin',
+            'Désépingler',
+          ),
+        ),
+        IconButton(
+          visualDensity: VisualDensity.compact,
+          icon: const Icon(
+            Icons.close_rounded,
+            size: 16,
+            color: ThixPolicy.textSecondary,
+          ),
+          onPressed: () {
+            setState(() {
+              _pinnedBarClosed = true;
+            });
+          },
+          tooltip: _tr(
+            l10n,
+            'common_close',
+            'Fermer',
+          ),
+        ),
+      ],
+    ),
+  );
+}
   Widget _buildSearchBar(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
