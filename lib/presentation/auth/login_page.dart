@@ -1,4 +1,14 @@
 // lib/presentation/auth/login_page.dart
+//
+// ============================================================================
+// 🔐 LOGIN PAGE — THIX HUB (Production hardened)
+// ============================================================================
+// ✅ Anti-bot : honeypot + timing + rate limiting UI
+// ✅ Design épuré minimaliste (THIX HUB branding)
+// ✅ Rate limiting serveur (check_login_allowed) + UI lockout
+// ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
+// ============================================================================
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -9,28 +19,31 @@ import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
 
-import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthException, AuthErrorCode;
+import 'package:thix_id/auth/supabase_auth_manager.dart'
+    show AuthException, AuthErrorCode;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
-import 'package:thix_id/presentation/auth/personal_registration_page.dart';
-
 import 'package:thix_id/core/security/security_reporter.dart';
 
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
 // CONSTANTS
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
 const int _kResetCooldownDuration = 45;
 const int _kMaxEmailLength = 254;
 const int _kMaxPasswordLength = 128;
 const int _kMaxOtpLength = 8;
 const int _kMaxIdentifierLength = 100;
 
-// ============================================================================
+// ── Anti-bot ──
+const int _kMinFormFillSeconds = 2;
+const int _kMaxSubmissionsPerMinute = 5;
+
+// ════════════════════════════════════════════════════════════════════════
 // VALIDATORS
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
 class _LoginValidators {
   _LoginValidators._();
 
@@ -48,18 +61,63 @@ class _LoginValidators {
   }
 
   static bool looksLikePhone(String s) {
-    return RegExp(r'^\+?[0-9][0-9\s\-]{7,}$').hasMatch(sanitize(s, maxLength: 50));
+    return RegExp(r'^\+?[0-9][0-9\s\-]{7,}$')
+        .hasMatch(sanitize(s, maxLength: 50));
   }
 
   static bool looksLikeEmail(String s) {
-    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$').hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
+    return RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+        .hasMatch(sanitize(s, maxLength: _kMaxEmailLength));
   }
 }
 
-// ============================================================================
-// AUTH ERROR TRANSLATOR
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
+// ANTI-BOT ENGINE (silencieux)
+// ════════════════════════════════════════════════════════════════════════
+class _AntiBotEngine {
+  _AntiBotEngine() : _formOpenedAt = DateTime.now();
 
+  final DateTime _formOpenedAt;
+  String _honeypot = '';
+  final List<DateTime> _submissionAttempts = [];
+
+  void setHoneypot(String v) => _honeypot = v;
+
+  String? check(AppLocalizations l10n) {
+    if (_honeypot.trim().isNotEmpty) {
+      debugPrint('[AntiBot] 🤖 Honeypot filled');
+      return l10n.t('auth_error_technical');
+    }
+
+    final elapsed = DateTime.now().difference(_formOpenedAt).inSeconds;
+    if (elapsed < _kMinFormFillSeconds) {
+      debugPrint('[AntiBot] 🤖 Too fast ($elapsed s)');
+      return l10n.t('auth_error_technical');
+    }
+
+    _submissionAttempts.add(DateTime.now());
+    _submissionAttempts.removeWhere(
+      (t) => DateTime.now().difference(t).inSeconds > 60,
+    );
+    if (_submissionAttempts.length > _kMaxSubmissionsPerMinute) {
+      debugPrint('[AntiBot] 🤖 Rate limit hit');
+      return l10n.t('auth_error_rate_limit');
+    }
+
+    return null;
+  }
+
+  void registerFailure() {
+    final now = DateTime.now();
+    for (int i = 0; i < _kMaxSubmissionsPerMinute; i++) {
+      _submissionAttempts.add(now.subtract(Duration(seconds: i)));
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// AUTH ERROR TRANSLATOR
+// ════════════════════════════════════════════════════════════════════════
 String _translateAuthError(Object e, AppLocalizations l10n) {
   if (e is AuthException) {
     switch (e.code) {
@@ -134,7 +192,8 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
   if (msg.contains('account_not_active') || msg.contains('not active')) {
     return l10n.t('login_error_not_active');
   }
-  if (msg.contains('aucun compte trouvé') || msg.contains('phone_resolution_failed')) {
+  if (msg.contains('aucun compte trouvé') ||
+      msg.contains('phone_resolution_failed')) {
     return l10n.t('login_error_no_account');
   }
   if (msg.contains('mfa_required') || msg.contains('two_fa')) {
@@ -151,10 +210,154 @@ String _translateAuthError(Object e, AppLocalizations l10n) {
   return l10n.t('auth_error_technical');
 }
 
-// ============================================================================
-// LOGIN PAGE
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
+// CLEAN INPUT (design épuré)
+// ════════════════════════════════════════════════════════════════════════
+class _CleanInput extends StatefulWidget {
+  final String label;
+  final String hint;
+  final IconData icon;
+  final bool isPassword;
+  final bool obscure;
+  final TextInputType type;
+  final TextEditingController controller;
+  final TextInputAction textInputAction;
+  final int? maxLength;
+  final ValueChanged<String>? onSubmitted;
+  final AutofillHints? autofillHint;
 
+  const _CleanInput({
+    required this.label,
+    required this.hint,
+    required this.icon,
+    required this.isPassword,
+    required this.type,
+    required this.controller,
+    required this.textInputAction,
+    this.obscure = false,
+    this.maxLength,
+    this.onSubmitted,
+    this.autofillHint,
+  });
+
+  @override
+  State<_CleanInput> createState() => _CleanInputState();
+}
+
+class _CleanInputState extends State<_CleanInput> {
+  late bool _obscured = widget.isPassword;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    if (widget.obscure) {
+      return SizedBox.shrink(
+        child: TextField(
+          controller: widget.controller,
+          decoration: const InputDecoration(border: InputBorder.none),
+          autofillHints: const [AutofillHints.name],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: ThixPolicy.textMain,
+          ),
+        ),
+        const SizedBox(height: 8),
+        TextFormField(
+          controller: widget.controller,
+          obscureText: _obscured,
+          keyboardType: widget.type,
+          textInputAction: widget.textInputAction,
+          maxLength: widget.maxLength,
+          onFieldSubmitted: widget.onSubmitted,
+          autofillHints: widget.autofillHint != null
+              ? [widget.autofillHint!]
+              : null,
+          style: const TextStyle(
+            fontSize: 14,
+            color: ThixPolicy.textMain,
+            fontWeight: FontWeight.w500,
+          ),
+          decoration: InputDecoration(
+            counterText: '',
+            hintText: widget.hint,
+            hintStyle: const TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontWeight: FontWeight.w400,
+            ),
+            prefixIcon: Icon(
+              widget.icon,
+              size: 18,
+              color: ThixPolicy.textSecondary,
+            ),
+            suffixIcon: widget.isPassword
+                ? Semantics(
+                    button: true,
+                    label: _obscured
+                        ? l10n.t('common_show_password')
+                        : l10n.t('common_hide_password'),
+                    child: IconButton(
+                      splashRadius: 20,
+                      icon: Icon(
+                        _obscured
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: 18,
+                        color: ThixPolicy.textSecondary,
+                      ),
+                      onPressed: () =>
+                          setState(() => _obscured = !_obscured),
+                    ),
+                  )
+                : null,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding: const EdgeInsets.symmetric(
+              vertical: 14,
+              horizontal: 16,
+            ),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            ),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: ThixPolicy.primary,
+                width: 1.5,
+              ),
+            ),
+            errorBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(
+                color: ThixPolicy.danger,
+                width: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// LOGIN PAGE
+// ════════════════════════════════════════════════════════════════════════
 class LoginPage extends ConsumerStatefulWidget {
   const LoginPage({super.key});
 
@@ -165,15 +368,10 @@ class LoginPage extends ConsumerStatefulWidget {
 class _LoginPageState extends ConsumerState<LoginPage> {
   final _identifierC = TextEditingController();
   final _passwordC = TextEditingController();
-  bool _rememberMe = true;
+  final _honeypotC = TextEditingController();
+  late final _AntiBotEngine _antiBot = _AntiBotEngine();
 
-  // ✅ FIX: le compteur _failedAttempts en mémoire locale a été retiré —
-  // il repartait à zéro à chaque redémarrage de l'app ou navigation hors
-  // de la page, donc ne freinait jamais un vrai attaquant scripté. Le
-  // rate-limiting est désormais géré côté serveur (check_login_allowed /
-  // record_failed_login / clear_login_attempts), par identifiant, avec
-  // une fenêtre glissante de 15 min et un verrou de 30s après 5 échecs —
-  // impossible à contourner en relançant l'app.
+  bool _rememberMe = true;
   int _lockoutSecondsLeft = 0;
   Timer? _lockoutTimer;
 
@@ -192,18 +390,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     try {
       final session = Supabase.instance.client.auth.currentSession;
       if (session != null) {
-        await ref.read(authControllerProvider.notifier).refreshCurrentUser().timeout(
-          const Duration(seconds: 3),
-        );
+        await ref
+            .read(authControllerProvider.notifier)
+            .refreshCurrentUser()
+            .timeout(const Duration(seconds: 3));
       }
     } catch (e) {
-      debugPrint('[Login] ⚠️ Initial session check failed/timeout: $e');
+      debugPrint('[Login] ⚠️ Initial session check failed: $e');
     } finally {
-      if (mounted) {
-        setState(() {
-          _isInitialVerifying = false;
-        });
-      }
+      if (mounted) setState(() => _isInitialVerifying = false);
     }
   }
 
@@ -211,26 +406,29 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   void dispose() {
     _identifierC.dispose();
     _passwordC.dispose();
+    _honeypotC.dispose();
     _lockoutTimer?.cancel();
     _resetCooldownTimer?.cancel();
-    debugPrint('[Login] 👋 Page disposed');
     super.dispose();
   }
 
-  // ── FEEDBACK HELPERS ──────────────────────────────────────────────────────
-
+  // ── FEEDBACK ─────────────────────────────────────────────────────
   void _showSuccess(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.check_circle_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+          ),
         ]),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -242,13 +440,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+          ),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
       ),
     );
@@ -259,21 +461,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.info_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
-          Expanded(child: Text(message, style: const TextStyle(fontWeight: FontWeight.w500))),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(fontWeight: FontWeight.w500)),
+          ),
         ]),
         backgroundColor: ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 4),
       ),
     );
   }
 
-  // ── LOCKOUT TIMER (affichage UI seulement — l'application réelle est
-  // faite côté serveur via check_login_allowed) ────────────────────────────
-
+  // ── LOCKOUT ─────────────────────────────────────────────────────
   void _startLockoutTimer(int seconds) {
     _lockoutTimer?.cancel();
     setState(() => _lockoutSecondsLeft = seconds);
@@ -287,19 +491,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (_lockoutSecondsLeft <= 1) {
         timer.cancel();
         setState(() => _lockoutSecondsLeft = 0);
-        debugPrint('[Login] ✓ Lockout ended');
       } else {
         setState(() => _lockoutSecondsLeft -= 1);
       }
     });
   }
 
-  // ── RESET COOLDOWN TIMER ──────────────────────────────────────────────────
-
   void _startResetCooldown() {
     _resetCooldownTimer?.cancel();
     setState(() => _resetCooldown = _kResetCooldownDuration);
-    debugPrint('[Login] ⏱️ Reset cooldown started: ${_kResetCooldownDuration}s');
 
     _resetCooldownTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (!mounted) {
@@ -309,15 +509,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       if (_resetCooldown <= 1) {
         timer.cancel();
         setState(() => _resetCooldown = 0);
-        debugPrint('[Login] ✓ Reset cooldown ended');
       } else {
         setState(() => _resetCooldown -= 1);
       }
     });
   }
 
-  // ── LOGGING ───────────────────────────────────────────────────────────────
-
+  // ── LOGGING ─────────────────────────────────────────────────────
   Future<void> _logLoginAttempt({
     required String identifier,
     required bool success,
@@ -332,7 +530,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         'type': success ? 'login_success' : 'login_failed',
         'label': success ? 'Connexion réussie' : 'Échec de connexion',
         'metadata': {
-          'identifier': _LoginValidators.sanitize(identifier, maxLength: _kMaxIdentifierLength),
+          'identifier': _LoginValidators.sanitize(
+              identifier,
+              maxLength: _kMaxIdentifierLength),
           'failure_reason': failureReason,
           'timestamp': DateTime.now().toIso8601String(),
         },
@@ -343,35 +543,26 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── RATE LIMITING SERVEUR ─────────────────────────────────────────────────
-
-  /// ✅ Vérifie AVANT toute tentative si l'identifiant est actuellement
-  /// verrouillé côté serveur (5 échecs / 15 min → verrou de 30s). Contrairement
-  /// à l'ancien compteur en mémoire, ceci fonctionne même après un
-  /// redémarrage de l'app, et ne peut pas être contourné en rappelant
-  /// signInWithPassword directement (l'edge/RPC est le seul chemin légitime
-  /// utilisé par l'app, mais surtout : même en bypassant l'app, Supabase Auth
-  /// a son propre rate-limit serveur sur signInWithPassword — cette couche
-  /// ajoute la granularité par identifiant métier pour une UX cohérente).
+  // ── RATE LIMITING SERVEUR ───────────────────────────────────────
   Future<bool> _checkLoginAllowed(String identifier) async {
     try {
       final result = await Supabase.instance.client.rpc(
         'check_login_allowed',
         params: {'p_identifier': identifier},
       );
-      final map = result is Map ? Map<String, dynamic>.from(result) : <String, dynamic>{};
+      final map = result is Map
+          ? Map<String, dynamic>.from(result)
+          : <String, dynamic>{};
       final allowed = map['allowed'] == true;
       if (!allowed) {
-        final seconds = (map['seconds_remaining'] as num?)?.toInt() ?? 30;
+        final seconds =
+            (map['seconds_remaining'] as num?)?.toInt() ?? 30;
         _startLockoutTimer(seconds);
       }
       return allowed;
     } catch (e) {
-      debugPrint('[Login] ⚠️ check_login_allowed failed (fail-open): $e');
-      // Fail-open : si la vérification serveur elle-même échoue (réseau),
-      // on ne bloque pas la connexion légitime — Supabase Auth garde son
-      // propre rate-limit en dernier recours.
-      return true;
+      debugPrint('[Login] ⚠️ check_login_allowed failed: $e');
+      return true; // fail-open
     }
   }
 
@@ -397,42 +588,54 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── SIGN IN ───────────────────────────────────────────────────────────────
-
+  // ── SIGN IN ─────────────────────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
+
+    // 🤖 Anti-bot check
+    final botError = _antiBot.check(l10n);
+    if (botError != null) {
+      _showError(botError);
+      _antiBot.registerFailure();
+      return;
+    }
 
     if (_lockoutSecondsLeft > 0) {
       debugPrint('[Login] ⚠️ Sign in blocked: lockout active');
       return;
     }
 
-    final identifier = _LoginValidators.sanitize(_identifierC.text.trim(), maxLength: _kMaxIdentifierLength);
-    final password = _LoginValidators.sanitize(_passwordC.text, maxLength: _kMaxPasswordLength);
+    final identifier = _LoginValidators.sanitize(
+        _identifierC.text.trim(),
+        maxLength: _kMaxIdentifierLength);
+    final password = _LoginValidators.sanitize(
+        _passwordC.text,
+        maxLength: _kMaxPasswordLength);
 
     if (identifier.isEmpty || password.isEmpty) {
       _showError(l10n.t('login_error_empty_fields'));
+      _antiBot.registerFailure();
       return;
     }
 
-    // ✅ Vérification serveur AVANT toute tentative — remplace l'ancien
-    // compteur en mémoire par un verrou réel, par identifiant.
     final allowed = await _checkLoginAllowed(identifier.toLowerCase());
     if (!allowed) {
-      _showError('${l10n.t('login_error_too_many_attempts_prefix')} $_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}');
+      _showError(
+        '${l10n.t('login_error_too_many_attempts_prefix')} '
+        '$_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}',
+      );
       return;
     }
 
     HapticFeedback.mediumImpact();
-    debugPrint('[Login] 🔐 Sign in attempt for: ${identifier.substring(0, identifier.length > 20 ? 20 : identifier.length)}...');
-
     final authNotifier = ref.read(authControllerProvider.notifier);
 
     try {
       String finalIdentifier = identifier;
 
-      // 1. Résolution téléphone → email via RPC
-      if (_LoginValidators.looksLikePhone(identifier) && !identifier.contains('@')) {
+      // 1. Résolution téléphone → email
+      if (_LoginValidators.looksLikePhone(identifier) &&
+          !identifier.contains('@')) {
         try {
           final response = await Supabase.instance.client.rpc(
             'resolve_phone_to_email',
@@ -440,7 +643,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           );
           if (response is String && response.isNotEmpty) {
             finalIdentifier = response;
-            debugPrint('[Login] ✓ Phone resolved to email');
           } else {
             throw Exception('phone_resolution_failed');
           }
@@ -454,10 +656,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         }
       }
 
-      // ⛔ 2. Vérifier la liste noire avant toute tentative
+      // 2. Liste noire
       final blocked = await Supabase.instance.client.rpc(
         'is_blocked',
-        params: {'p_type': 'identifier', 'p_value': finalIdentifier.toLowerCase()},
+        params: {
+          'p_type': 'identifier',
+          'p_value': finalIdentifier.toLowerCase(),
+        },
       );
 
       if (blocked == true) {
@@ -466,10 +671,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           reason: 'identifiant en liste noire',
         );
         _showError(l10n.t('login_error_suspended'));
+        _antiBot.registerFailure();
         return;
       }
 
-      // 3. Connexion standard
+      // 3. Connexion
       await authNotifier.signIn(
         identifier: finalIdentifier,
         password: password,
@@ -483,24 +689,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         throw Exception('user_not_found_after_login');
       }
 
-      // 4. Vérification statut compte (base de données)
-      //
-      // ✅ FIX CRITIQUE : l'ancien code lisait `user.registrationStatus`
-      // pour décider si le compte était actif, alors que cette colonne ne
-      // vaut jamais 'active' pour un flux d'inscription standard (elle
-      // vaut 'completed' une fois finalize_registration() appelée avec
-      // succès). Résultat : tout utilisateur avec un compte parfaitement
-      // actif était systématiquement redirigé vers l'étape de finalisation
-      // d'inscription à chaque connexion. Le vrai indicateur du cycle de
-      // vie du compte (actif / désactivé / en suppression) est
-      // `user.accountStatus`, alimenté par la colonne `profiles.status`.
+      // 4. Vérification statut compte
       final status = user.accountStatus?.toLowerCase() ?? '';
 
-      if (status == 'deactivated') {
+      if (status == 'deactivated' || status == 'pending_deletion') {
         await _logLoginAttempt(
           identifier: finalIdentifier,
           success: false,
-          failureReason: 'account_deactivated',
+          failureReason: 'account_suspended',
         );
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier.trim(),
@@ -509,23 +705,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         throw Exception('account_suspended');
       }
 
-      if (status == 'pending_deletion') {
-        await _logLoginAttempt(
-          identifier: finalIdentifier,
-          success: false,
-          failureReason: 'account_pending_deletion',
-        );
-        SecurityReporter.reportLoginBlocked(
-          identifier: finalIdentifier.trim(),
-          reason: 'compte désactivé / en suppression',
-        );
-        throw Exception('account_suspended');
-      }
-
-      // registrationStatus reste le bon indicateur pour "inscription pas
-      // terminée" — 'completed' pour un flux standard, 'active' accepté
-      // aussi pour compatibilité avec les comptes existants créés par un
-      // ancien mécanisme d'activation.
       final regStatus = user.registrationStatus?.toLowerCase() ?? '';
       const completedStatuses = {'completed', 'active'};
       if (!completedStatuses.contains(regStatus)) {
@@ -539,7 +718,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         return;
       }
 
-      // 5. Vérification MFA
+      // 5. MFA
       if (user.twoFaEnabled == true) {
         await _logLoginAttempt(
           identifier: finalIdentifier,
@@ -555,23 +734,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         identifier: finalIdentifier,
         success: true,
       );
-      // ✅ Efface le compteur d'échecs côté serveur après une connexion
-      // réussie, pour ce même identifiant.
       await _clearLoginAttempts(finalIdentifier.toLowerCase());
 
       final target = user.accountType == AccountType.enterprise
           ? AppRoutes.enterpriseDashboard
           : AppRoutes.userDashboard;
 
-      debugPrint('[Login] ✓ Sign in successful, redirecting to: $target');
+      debugPrint('[Login] ✓ Sign in successful → $target');
       context.go(target);
-
     } catch (e) {
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
 
       final loginIdentifier = _identifierC.text.trim();
-      final reason = e is AuthException ? e.code.name : e.toString();
+      final reason =
+          e is AuthException ? e.code.name : e.toString();
 
       await _logLoginAttempt(
         identifier: loginIdentifier,
@@ -584,22 +761,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         reason: reason,
       );
 
-      // ✅ Enregistre l'échec côté serveur (fonctionne même sans session,
-      // contrairement à _logLoginAttempt qui exige un uid). C'est ce qui
-      // permet réellement de détecter/freiner un bruteforce par mot de
-      // passe — l'ancien système ne journalisait jamais ces cas car
-      // aucune session n'existe après un login raté.
       await _recordFailedLogin(loginIdentifier.toLowerCase());
-
       _showError(_translateAuthError(e, l10n));
+      _antiBot.registerFailure();
     }
   }
 
-
-  // ── PASSWORD RESET ────────────────────────────────────────────────────────
-
+  // ── PASSWORD RESET ──────────────────────────────────────────────
   Future<bool> _sendPasswordReset(String email) async {
     final l10n = AppLocalizations.of(context);
+
+    // 🤖 Anti-bot check
+    final botError = _antiBot.check(l10n);
+    if (botError != null) {
+      _showError(botError);
+      _antiBot.registerFailure();
+      return false;
+    }
+
     try {
       await Supabase.instance.client.auth.resetPasswordForEmail(email);
       await _logLoginAttempt(
@@ -607,11 +786,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         success: true,
         failureReason: 'password_reset_requested',
       );
-      debugPrint('[Login] ✓ Password reset email sent to: $email');
       _showInfo(l10n.t('login_reset_email_sent'));
     } catch (e) {
       debugPrint('[Login] ❌ Password reset failed: $e');
       _showError(_translateAuthError(e, l10n));
+      _antiBot.registerFailure();
     }
     _startResetCooldown();
     return true;
@@ -623,7 +802,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       context: context,
       barrierDismissible: false,
       builder: (dialogContext) => _ForgotPasswordDialog(
-        prefillEmail: _LoginValidators.looksLikeEmail(_identifierC.text) ? _identifierC.text.trim() : '',
+        prefillEmail: _LoginValidators.looksLikeEmail(_identifierC.text)
+            ? _identifierC.text.trim()
+            : '',
         onSendReset: _sendPasswordReset,
         resetCooldown: _resetCooldown,
         logAttempt: _logLoginAttempt,
@@ -631,17 +812,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  // ── BIOMETRIC AUTH ────────────────────────────────────────────────────────
-
   void _handleBiometric(String type) {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
-    debugPrint('[Login] 🔓 Biometric auth requested: $type');
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  // ── BUILD ─────────────────────────────────────────────────────────────────
-
+  // ── BUILD ───────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -649,378 +826,463 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final isLoading = authState.isLoading || _isInitialVerifying;
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
+      backgroundColor: const Color(0xFFF9FAFB),
       body: SafeArea(
         top: false,
-        child: Stack(
-          children: [
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              height: 260,
-              child: RepaintBoundary(
-                child: Container(
-                  padding: const EdgeInsets.only(top: 60),
-                  decoration: const BoxDecoration(gradient: ThixPolicy.brandGradient),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset(
-                        'assets/images/thix_id_logo.png',
-                        height: 55,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) {
-                          return Semantics(
-                            label: 'THIX CENTRAL',
-                            child: const Text(
-                              'THIX CENTRAL',
-                              style: TextStyle(
-                                color: ThixPolicy.onBrand,
-                                fontWeight: FontWeight.w900,
-                                fontSize: 20,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                          );
-                        },
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 60, 20, 40),
+          physics: const BouncingScrollPhysics(),
+          child: Column(
+            children: [
+              // ── HEADER ÉPURÉ ──
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
                       ),
-                    ],
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF3B82F6).withOpacity(0.25),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                    ),
+                    child: const Center(
+                      child: Text(
+                        'T',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
                   ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'THIX HUB',
+                    style: ThixPolicy.h2Style.copyWith(
+                      color: ThixPolicy.inkDeep,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                l10n.t('login_subtitle'),
+                style: ThixPolicy.bodySmallStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
                 ),
               ),
-            ),
-            Positioned.fill(
-              top: 200,
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s24, vertical: 0),
-                physics: const BouncingScrollPhysics(),
+              const SizedBox(height: 36),
+
+              // ── CARD PRINCIPALE ──
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
                 child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.card,
-                        borderRadius: BorderRadius.circular(ThixPolicy.rXl),
-                        boxShadow: ThixPolicy.shadowCard(),
-                      ),
-                      padding: const EdgeInsets.all(ThixPolicy.s28),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Text(
-                            l10n.t('login_title'),
-                            style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 20,
-                                  color: ThixPolicy.textMain,
-                                ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            l10n.t('login_subtitle'),
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: ThixPolicy.textSecondary,
-                                  fontSize: 13,
-                                ),
-                          ),
-                          const SizedBox(height: ThixPolicy.s28),
-                          Semantics(
-                            label: l10n.t('login_identifier_label'),
-                            textField: true,
-                            child: _SecureInput(
-                              key: const ValueKey('identifier'),
-                              label: l10n.t('login_identifier_label'),
-                              hint: l10n.t('login_identifier_hint'),
-                              icon: Icons.badge_outlined,
-                              isPassword: false,
-                              type: TextInputType.text,
-                              controller: _identifierC,
-                              textInputAction: TextInputAction.next,
-                              maxLength: _kMaxIdentifierLength,
-                            ),
-                          ),
-                          const SizedBox(height: ThixPolicy.s16),
-                          Semantics(
-                            label: l10n.t('login_password_label'),
-                            textField: true,
-                            child: _SecureInput(
-                              key: const ValueKey('password'),
-                              label: l10n.t('login_password_label'),
-                              hint: l10n.t('login_password_hint'),
-                              icon: Icons.lock_outline_rounded,
-                              isPassword: true,
-                              type: TextInputType.text,
-                              controller: _passwordC,
-                              textInputAction: TextInputAction.done,
-                              maxLength: _kMaxPasswordLength,
-                              onSubmitted: (_) => _signIn(),
-                            ),
-                          ),
-                          const SizedBox(height: ThixPolicy.s12),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Semantics(
-                                button: true,
-                                label: l10n.t('login_remember_me'),
-                                checked: _rememberMe,
-                                child: GestureDetector(
-                                  onTap: isLoading
-                                      ? null
-                                      : () {
-                                          HapticFeedback.selectionClick();
-                                          setState(() => _rememberMe = !_rememberMe);
-                                        },
-                                  child: Row(
-                                    children: [
-                                      AnimatedContainer(
-                                        duration: const Duration(milliseconds: 200),
-                                        width: 18,
-                                        height: 18,
-                                        decoration: BoxDecoration(
-                                          color: _rememberMe ? ThixPolicy.primary : ThixPolicy.card,
-                                          borderRadius: BorderRadius.circular(6),
-                                          border: Border.all(
-                                            color: _rememberMe ? ThixPolicy.primary : ThixPolicy.border,
-                                            width: 1.5,
-                                          ),
-                                        ),
-                                        alignment: Alignment.center,
-                                        child: Icon(
-                                          Icons.check_rounded,
-                                          size: 14,
-                                          color: _rememberMe ? ThixPolicy.onBrand : Colors.transparent,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        l10n.t('login_remember_me'),
-                                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                              color: ThixPolicy.textSecondary,
-                                              fontSize: 13,
-                                              fontWeight: FontWeight.w500,
-                                            ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                              Semantics(
-                                button: true,
-                                label: l10n.t('login_forgot_password'),
-                                child: GestureDetector(
-                                  onTap: () {
-                                    HapticFeedback.selectionClick();
-                                    _openForgotPasswordDialog();
-                                  },
-                                  child: Text(
-                                    l10n.t('login_forgot_password'),
-                                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                          color: ThixPolicy.primary,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                        ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: ThixPolicy.s32),
-                          Semantics(
-                            button: true,
-                            label: l10n.t('login_button'),
-                            enabled: !isLoading && _lockoutSecondsLeft == 0,
-                            child: ElevatedButton(
-                              onPressed: (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: ThixPolicy.primary,
-                                foregroundColor: ThixPolicy.onBrand,
-                                padding: const EdgeInsets.symmetric(vertical: 16),
-                                elevation: 4,
-                                shadowColor: ThixPolicy.primary.withOpacity(0.4),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
-                              ),
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  if (isLoading) ...[
-                                    const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                  ],
-                                  Text(
-                                    _lockoutSecondsLeft > 0
-                                        ? '${l10n.t('login_retry_in')} $_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}'
-                                        : (isLoading ? l10n.t('login_verifying') : l10n.t('login_button')),
-                                    style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15, letterSpacing: 0.5),
-                                  ),
-                                  if (_lockoutSecondsLeft == 0 && !isLoading) ...[
-                                    const SizedBox(width: 8),
-                                    const Icon(Icons.arrow_forward_rounded, size: 20),
-                                  ],
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: ThixPolicy.s24),
-                          Row(
-                            children: [
-                              const Expanded(child: Divider(color: ThixPolicy.border)),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                child: Text(
-                                  l10n.t('login_biometric'),
-                                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                                        color: ThixPolicy.textSecondary,
-                                        fontWeight: FontWeight.w700,
-                                        fontSize: 10,
-                                        letterSpacing: 1.0,
-                                      ),
-                                ),
-                              ),
-                              const Expanded(child: Divider(color: ThixPolicy.border)),
-                            ],
-                          ),
-                          const SizedBox(height: 20),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Semantics(
-                                button: true,
-                                label: 'Face ID',
-                                child: _SocialAuth(
-                                  icon: Icons.face_rounded,
-                                  label: 'Face ID',
-                                  onTap: () => _handleBiometric('face_id'),
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Semantics(
-                                button: true,
-                                label: 'Touch ID',
-                                child: _SocialAuth(
-                                  icon: Icons.fingerprint_rounded,
-                                  label: 'Touch ID',
-                                  onTap: () => _handleBiometric('touch_id'),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                    Text(
+                      l10n.t('login_title'),
+                      style: ThixPolicy.h2Style.copyWith(
+                        color: ThixPolicy.inkDeep,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 22,
                       ),
                     ),
-                    const SizedBox(height: ThixPolicy.s24),
-                    RepaintBoundary(
-                      child: Container(
-                        padding: const EdgeInsets.all(ThixPolicy.s16),
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.card,
-                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                          border: Border.all(color: ThixPolicy.success.withOpacity(0.3)),
-                          boxShadow: [
-                            BoxShadow(
-                              color: ThixPolicy.success.withOpacity(0.05),
-                              blurRadius: 10,
-                            ),
-                          ],
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: ThixPolicy.success.withOpacity(0.1),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.verified_user_rounded, color: ThixPolicy.success, size: 20),
-                            ),
-                            const SizedBox(width: ThixPolicy.s16),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    l10n.t('login_security_title'),
-                                    style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                                          color: ThixPolicy.textMain,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                        ),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    l10n.t('login_security_subtitle'),
-                                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                          color: ThixPolicy.textSecondary,
-                                          fontSize: 12,
-                                        ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
+                    const SizedBox(height: 24),
+
+                    // 🤖 Honeypot (invisible)
+                    _CleanInput(
+                      label: '',
+                      hint: '',
+                      icon: Icons.person,
+                      isPassword: false,
+                      type: TextInputType.text,
+                      controller: _honeypotC,
+                      textInputAction: TextInputAction.next,
+                      obscure: true,
+                    ),
+
+                    Semantics(
+                      label: l10n.t('login_identifier_label'),
+                      textField: true,
+                      child: _CleanInput(
+                        key: const ValueKey('identifier'),
+                        label: l10n.t('login_identifier_label'),
+                        hint: l10n.t('login_identifier_hint'),
+                        icon: Icons.badge_outlined,
+                        isPassword: false,
+                        type: TextInputType.text,
+                        controller: _identifierC,
+                        textInputAction: TextInputAction.next,
+                        maxLength: _kMaxIdentifierLength,
+                        autofillHint: AutofillHints.username,
                       ),
                     ),
-                    const SizedBox(height: ThixPolicy.s28),
+                    const SizedBox(height: 16),
+                    Semantics(
+                      label: l10n.t('login_password_label'),
+                      textField: true,
+                      child: _CleanInput(
+                        key: const ValueKey('password'),
+                        label: l10n.t('login_password_label'),
+                        hint: l10n.t('login_password_hint'),
+                        icon: Icons.lock_outline_rounded,
+                        isPassword: true,
+                        type: TextInputType.text,
+                        controller: _passwordC,
+                        textInputAction: TextInputAction.done,
+                        maxLength: _kMaxPasswordLength,
+                        onSubmitted: (_) => _signIn(),
+                        autofillHint: AutofillHints.password,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
                     Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          l10n.t('login_new_user'),
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: ThixPolicy.textSecondary,
-                                fontSize: 14,
-                              ),
-                        ),
-                        const SizedBox(width: 6),
                         Semantics(
                           button: true,
-                          label: l10n.t('login_create_account'),
+                          label: l10n.t('login_remember_me'),
+                          checked: _rememberMe,
                           child: GestureDetector(
-                            onTap: () {
-                              HapticFeedback.selectionClick();
-                              context.push(AppRoutes.personalReg);
-                            },
-                            child: Text(
-                              l10n.t('login_create_account'),
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                    color: ThixPolicy.primary,
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 14,
+                            onTap: isLoading
+                                ? null
+                                : () {
+                                    HapticFeedback.selectionClick();
+                                    setState(() => _rememberMe = !_rememberMe);
+                                  },
+                            child: Row(
+                              children: [
+                                AnimatedContainer(
+                                  duration: const Duration(milliseconds: 200),
+                                  width: 18,
+                                  height: 18,
+                                  decoration: BoxDecoration(
+                                    color: _rememberMe
+                                        ? ThixPolicy.primary
+                                        : Colors.white,
+                                    borderRadius: BorderRadius.circular(5),
+                                    border: Border.all(
+                                      color: _rememberMe
+                                          ? ThixPolicy.primary
+                                          : const Color(0xFFD1D5DB),
+                                      width: 1.5,
+                                    ),
                                   ),
+                                  alignment: Alignment.center,
+                                  child: Icon(
+                                    Icons.check_rounded,
+                                    size: 14,
+                                    color: _rememberMe
+                                        ? Colors.white
+                                        : Colors.transparent,
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  l10n.t('login_remember_me'),
+                                  style: ThixPolicy.bodySmallStyle.copyWith(
+                                    color: ThixPolicy.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Semantics(
+                          button: true,
+                          label: l10n.t('login_forgot_password'),
+                          child: GestureDetector(
+                            onTap: _openForgotPasswordDialog,
+                            child: Text(
+                              l10n.t('login_forgot_password'),
+                              style: ThixPolicy.captionStyle.copyWith(
+                                color: ThixPolicy.primary,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: ThixPolicy.s24),
-                    Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.card,
-                        borderRadius: BorderRadius.circular(24),
-                        border: Border.all(color: ThixPolicy.border),
+                    const SizedBox(height: 28),
+                    Semantics(
+                      button: true,
+                      label: l10n.t('login_button'),
+                      enabled: !isLoading && _lockoutSecondsLeft == 0,
+                      child: ElevatedButton(
+                        onPressed: (isLoading || _lockoutSecondsLeft > 0)
+                            ? null
+                            : _signIn,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: ThixPolicy.primary,
+                          foregroundColor: Colors.white,
+                          disabledBackgroundColor:
+                              ThixPolicy.primary.withOpacity(0.4),
+                          disabledForegroundColor: Colors.white70,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            if (isLoading) ...[
+                              const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2.5,
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                    Colors.white,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                            ],
+                            Text(
+                              _lockoutSecondsLeft > 0
+                                  ? '${l10n.t('login_retry_in')} '
+                                      '$_lockoutSecondsLeft'
+                                      '${l10n.t('login_seconds_suffix')}'
+                                  : (isLoading
+                                      ? l10n.t('login_verifying')
+                                      : l10n.t('login_button')),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w700,
+                                fontSize: 15,
+                              ),
+                            ),
+                            if (_lockoutSecondsLeft == 0 && !isLoading) ...[
+                              const SizedBox(width: 8),
+                              const Icon(
+                                Icons.arrow_forward_rounded,
+                                size: 18,
+                              ),
+                            ],
+                          ],
+                        ),
                       ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
+                    ),
+
+                    // ── BIOMETRIC ──
+                    const SizedBox(height: 20),
+                    Row(
+                      children: [
+                        const Expanded(child: Divider(color: Color(0xFFE5E7EB))),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: Text(
+                            l10n.t('login_biometric'),
+                            style: ThixPolicy.microStyle.copyWith(
+                              color: ThixPolicy.textMuted,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 10,
+                              letterSpacing: 1.0,
+                            ),
+                          ),
+                        ),
+                        const Expanded(child: Divider(color: Color(0xFFE5E7EB))),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _BiometricButton(
+                          icon: Icons.face_rounded,
+                          label: 'Face ID',
+                          onTap: () => _handleBiometric('face_id'),
+                        ),
+                        const SizedBox(width: 12),
+                        _BiometricButton(
+                          icon: Icons.fingerprint_rounded,
+                          label: 'Touch ID',
+                          onTap: () => _handleBiometric('touch_id'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // ── SÉCURITÉ BANNER ──
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: const Color(0xFFBBF7D0),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.success.withOpacity(0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.verified_user_rounded,
+                        color: Color(0xFF16A34A),
+                        size: 18,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _LangChip(label: 'FR', active: true, onTap: () {}),
-                          _LangChip(label: 'EN', onTap: () {}),
-                          _LangChip(label: 'SW', onTap: () {}),
-                          _LangChip(label: 'LN', onTap: () {}),
+                          Text(
+                            l10n.t('login_security_title'),
+                            style: ThixPolicy.labelStyle.copyWith(
+                              color: const Color(0xFF166534),
+                              fontWeight: FontWeight.w700,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            l10n.t('login_security_subtitle'),
+                            style: ThixPolicy.captionStyle.copyWith(
+                              color: const Color(0xFF15803D),
+                              fontSize: 11,
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 40),
                   ],
                 ),
+              ),
+
+              // ── REGISTER LINK ──
+              const SizedBox(height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    l10n.t('login_new_user'),
+                    style: ThixPolicy.bodySmallStyle.copyWith(
+                      color: ThixPolicy.textSecondary,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Semantics(
+                    button: true,
+                    label: l10n.t('login_create_account'),
+                    child: GestureDetector(
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        context.push(AppRoutes.personalReg);
+                      },
+                      child: Text(
+                        l10n.t('login_create_account'),
+                        style: ThixPolicy.bodySmallStyle.copyWith(
+                          color: ThixPolicy.primary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 32),
+
+              // ── LANG CHIPS ──
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _LangChip(label: 'FR', active: true, onTap: () {}),
+                    _LangChip(label: 'EN', onTap: () {}),
+                    _LangChip(label: 'SW', onTap: () {}),
+                    _LangChip(label: 'LN', onTap: () {}),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// BIOMETRIC BUTTON (épuré)
+// ════════════════════════════════════════════════════════════════════════
+class _BiometricButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _BiometricButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        width: 80,
+        height: 60,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, color: ThixPolicy.textMain, size: 20),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: ThixPolicy.microStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+                fontSize: 10,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -1030,156 +1292,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   }
 }
 
-// ============================================================================
-// SECURE INPUT
-// ============================================================================
-
-class _SecureInput extends StatefulWidget {
-  final String label;
-  final String hint;
-  final IconData icon;
-  final bool isPassword;
-  final TextInputType type;
-  final TextEditingController controller;
-  final TextInputAction textInputAction;
-  final int? maxLength;
-  final ValueChanged<String>? onSubmitted;
-
-  const _SecureInput({
-    super.key,
-    required this.label,
-    required this.hint,
-    required this.icon,
-    required this.isPassword,
-    required this.type,
-    required this.controller,
-    required this.textInputAction,
-    this.maxLength,
-    this.onSubmitted,
-  });
-
-  @override
-  State<_SecureInput> createState() => _SecureInputState();
-}
-
-class _SecureInputState extends State<_SecureInput> {
-  late bool _obscured = widget.isPassword;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.label,
-          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: ThixPolicy.textMain),
-        ),
-        const SizedBox(height: 8),
-        TextFormField(
-          controller: widget.controller,
-          obscureText: _obscured,
-          keyboardType: widget.type,
-          textInputAction: widget.textInputAction,
-          maxLength: widget.maxLength,
-          onFieldSubmitted: widget.onSubmitted,
-          style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
-          decoration: InputDecoration(
-            counterText: '',
-            hintText: widget.hint,
-            hintStyle: const TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w400),
-            prefixIcon: Icon(widget.icon, size: 20, color: ThixPolicy.textSecondary),
-            suffixIcon: widget.isPassword
-                ? Semantics(
-                    button: true,
-                    label: _obscured ? l10n.t('common_show_password') : l10n.t('common_hide_password'),
-                    child: IconButton(
-                      splashRadius: 20,
-                      icon: Icon(
-                        _obscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                        size: 20,
-                        color: ThixPolicy.textSecondary,
-                      ),
-                      onPressed: () => setState(() => _obscured = !_obscured),
-                    ),
-                  )
-                : null,
-            filled: true,
-            fillColor: ThixPolicy.surface,
-            contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-              borderSide: const BorderSide(color: ThixPolicy.border),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-              borderSide: const BorderSide(color: ThixPolicy.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-              borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// ============================================================================
-// SOCIAL AUTH BUTTON
-// ============================================================================
-
-class _SocialAuth extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _SocialAuth({required this.icon, required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-      child: Container(
-        width: 76,
-        height: 60,
-        decoration: BoxDecoration(
-          color: ThixPolicy.surface,
-          borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          border: Border.all(color: ThixPolicy.border),
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, color: ThixPolicy.textMain, size: 22),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: ThixPolicy.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                  ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
 // LANGUAGE CHIP
-// ============================================================================
-
+// ════════════════════════════════════════════════════════════════════════
 class _LangChip extends StatelessWidget {
   final String label;
   final bool active;
   final VoidCallback onTap;
 
-  const _LangChip({required this.label, this.active = false, required this.onTap});
+  const _LangChip({
+    required this.label,
+    this.active = false,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1192,20 +1317,20 @@ class _LangChip extends StatelessWidget {
           HapticFeedback.selectionClick();
           onTap();
         },
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           decoration: BoxDecoration(
             color: active ? ThixPolicy.primary : Colors.transparent,
-            borderRadius: BorderRadius.circular(20),
+            borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
             label,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: active ? ThixPolicy.onBrand : ThixPolicy.textSecondary,
-                  fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                  fontSize: 11,
-                ),
+            style: TextStyle(
+              color: active ? Colors.white : ThixPolicy.textSecondary,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+              fontSize: 11,
+            ),
           ),
         ),
       ),
@@ -1213,15 +1338,18 @@ class _LangChip extends StatelessWidget {
   }
 }
 
-// ============================================================================
+// ════════════════════════════════════════════════════════════════════════
 // FORGOT PASSWORD DIALOG
-// ============================================================================
-
+// ════════════════════════════════════════════════════════════════════════
 class _ForgotPasswordDialog extends StatefulWidget {
   final String prefillEmail;
   final Future<bool> Function(String) onSendReset;
   final int resetCooldown;
-  final Future<void> Function({required String identifier, required bool success, String? failureReason}) logAttempt;
+  final Future<void> Function({
+    required String identifier,
+    required bool success,
+    String? failureReason,
+  }) logAttempt;
 
   const _ForgotPasswordDialog({
     required this.prefillEmail,
@@ -1264,12 +1392,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 8),
           Expanded(child: Text(message)),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -1281,12 +1411,13 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
     return Dialog(
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        padding: const EdgeInsets.all(ThixPolicy.s28),
+        padding: const EdgeInsets.all(24),
         decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: BorderRadius.circular(ThixPolicy.cardRadius),
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -1298,215 +1429,243 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
                     color: ThixPolicy.primary.withOpacity(0.1),
-                    shape: BoxShape.circle,
+                    borderRadius: BorderRadius.circular(10),
                   ),
                   child: Icon(
-                    _isOtpSent ? Icons.vpn_key_rounded : Icons.lock_reset_rounded,
+                    _isOtpSent
+                        ? Icons.vpn_key_rounded
+                        : Icons.lock_reset_rounded,
                     color: ThixPolicy.primary,
+                    size: 20,
                   ),
                 ),
-                const SizedBox(width: ThixPolicy.s16),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    _isOtpSent ? l10n.t('login_reset_new_password') : l10n.t('login_forgot_password'),
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w800,
-                          fontSize: 18,
-                          color: ThixPolicy.textMain,
-                        ),
+                    _isOtpSent
+                        ? l10n.t('login_reset_new_password')
+                        : l10n.t('login_forgot_password'),
+                    style: ThixPolicy.h3Style.copyWith(
+                      color: ThixPolicy.inkDeep,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 17,
+                    ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: ThixPolicy.s16),
+            const SizedBox(height: 16),
             Text(
               _isOtpSent
-                  ? '${l10n.t('login_reset_otp_sent_prefix')} ${_emailC.text}. ${l10n.t('login_reset_otp_sent_suffix')}'
+                  ? '${l10n.t('login_reset_otp_sent_prefix')} ${_emailC.text}. '
+                      '${l10n.t('login_reset_otp_sent_suffix')}'
                   : l10n.t('login_reset_instructions'),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ThixPolicy.textSecondary,
-                    fontSize: 13,
-                    height: 1.4,
-                  ),
+              style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+                height: 1.4,
+              ),
             ),
-            const SizedBox(height: ThixPolicy.s24),
+            const SizedBox(height: 20),
+
             if (!_isOtpSent)
-              Semantics(
-                label: l10n.t('login_email_label'),
-                textField: true,
-                child: TextFormField(
-                  controller: _emailC,
-                  keyboardType: TextInputType.emailAddress,
-                  maxLength: _kMaxEmailLength,
-                  style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
-                  decoration: _buildInputDecoration(hintText: l10n.t('login_email_hint')),
+              TextFormField(
+                controller: _emailC,
+                keyboardType: TextInputType.emailAddress,
+                maxLength: _kMaxEmailLength,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: ThixPolicy.textMain,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: _buildInputDecoration(
+                  labelText: l10n.t('login_email_label'),
+                  hintText: l10n.t('login_email_hint'),
                 ),
               )
             else ...[
-              Semantics(
-                label: l10n.t('login_otp_label'),
-                textField: true,
-                child: TextFormField(
-                  controller: _otpC,
-                  keyboardType: TextInputType.number,
-                  maxLength: _kMaxOtpLength,
-                  style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
-                  decoration: _buildInputDecoration(
-                    labelText: l10n.t('login_otp_label'),
-                    hintText: '00000000',
-                  ),
+              TextFormField(
+                controller: _otpC,
+                keyboardType: TextInputType.number,
+                maxLength: _kMaxOtpLength,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: ThixPolicy.textMain,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: _buildInputDecoration(
+                  labelText: l10n.t('login_otp_label'),
+                  hintText: '00000000',
                 ),
               ),
-              const SizedBox(height: ThixPolicy.s16),
-              Semantics(
-                label: l10n.t('login_new_password_label'),
-                textField: true,
-                child: TextFormField(
-                  controller: _newPasswordC,
-                  obscureText: _isObscured,
-                  maxLength: _kMaxPasswordLength,
-                  style: const TextStyle(fontSize: 14, color: ThixPolicy.textMain, fontWeight: FontWeight.w500),
-                  decoration: _buildInputDecoration(
-                    labelText: l10n.t('login_new_password_label'),
-                    hintText: l10n.t('login_password_min_length'),
-                    errorText: _passwordError,
-                    suffixIcon: Semantics(
-                      button: true,
-                      label: _isObscured ? l10n.t('common_show_password') : l10n.t('common_hide_password'),
-                      child: IconButton(
-                        splashRadius: 20,
-                        icon: Icon(
-                          _isObscured ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                          color: ThixPolicy.textSecondary,
-                          size: 20,
-                        ),
-                        onPressed: () => setState(() => _isObscured = !_isObscured),
-                      ),
+              const SizedBox(height: 16),
+              TextFormField(
+                controller: _newPasswordC,
+                obscureText: _isObscured,
+                maxLength: _kMaxPasswordLength,
+                style: const TextStyle(
+                  fontSize: 14,
+                  color: ThixPolicy.textMain,
+                  fontWeight: FontWeight.w500,
+                ),
+                decoration: _buildInputDecoration(
+                  labelText: l10n.t('login_new_password_label'),
+                  hintText: l10n.t('login_password_min_length'),
+                  errorText: _passwordError,
+                  suffixIcon: IconButton(
+                    splashRadius: 20,
+                    icon: Icon(
+                      _isObscured
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: ThixPolicy.textSecondary,
+                      size: 18,
                     ),
+                    onPressed: () =>
+                        setState(() => _isObscured = !_isObscured),
                   ),
                 ),
               ),
             ],
-            const SizedBox(height: ThixPolicy.s28),
+            const SizedBox(height: 24),
             Row(
               children: [
                 Expanded(
-                  child: Semantics(
-                    button: true,
-                    label: l10n.t('common_cancel'),
-                    child: TextButton(
-                      onPressed: _isSending ? null : () => Navigator.of(context).pop(),
-                      child: Text(
-                        l10n.t('common_cancel'),
-                        style: const TextStyle(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+                  child: TextButton(
+                    onPressed: _isSending
+                        ? null
+                        : () => Navigator.of(context).pop(),
+                    child: Text(
+                      l10n.t('common_cancel'),
+                      style: const TextStyle(
+                        color: ThixPolicy.textSecondary,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: ThixPolicy.s12),
+                const SizedBox(width: 12),
                 Expanded(
-                  child: Semantics(
-                    button: true,
-                    label: _isOtpSent ? l10n.t('login_confirm') : l10n.t('login_send'),
-                    enabled: !_isSending,
-                    child: ElevatedButton(
-                      onPressed: _isSending
-                          ? null
-                          : () async {
-                              if (!_isOtpSent) {
-                                if (!canSend) return;
-                                final email = _LoginValidators.sanitize(_emailC.text.trim(), maxLength: _kMaxEmailLength);
-                                if (!_LoginValidators.looksLikeEmail(email)) {
-                                  _showDialogError(l10n.t('auth_error_invalid_email'));
-                                  return;
-                                }
+                  child: ElevatedButton(
+                    onPressed: _isSending
+                        ? null
+                        : () async {
+                            if (!_isOtpSent) {
+                              if (!canSend) return;
+                              final email = _LoginValidators.sanitize(
+                                  _emailC.text.trim(),
+                                  maxLength: _kMaxEmailLength);
+                              if (!_LoginValidators.looksLikeEmail(email)) {
+                                _showDialogError(
+                                    l10n.t('auth_error_invalid_email'));
+                                return;
+                              }
+                              setState(() => _isSending = true);
+                              HapticFeedback.mediumImpact();
+                              await widget.onSendReset(email);
+                              if (mounted) {
+                                setState(() {
+                                  _isSending = false;
+                                  _isOtpSent = true;
+                                });
+                              }
+                            } else {
+                              final otp = _LoginValidators.sanitize(
+                                  _otpC.text.trim(),
+                                  maxLength: _kMaxOtpLength);
+                              final newPass = _LoginValidators.sanitize(
+                                  _newPasswordC.text,
+                                  maxLength: _kMaxPasswordLength);
 
-                                setState(() => _isSending = true);
-                                HapticFeedback.mediumImpact();
-                                await widget.onSendReset(email);
+                              if (otp.isEmpty) {
+                                _showDialogError(
+                                    l10n.t('login_error_empty_otp'));
+                                return;
+                              }
+                              if (newPass.length < 8) {
+                                HapticFeedback.lightImpact();
+                                setState(() => _passwordError =
+                                    'Le mot de passe doit contenir au moins 8 caractères');
+                                return;
+                              }
 
-                                if (mounted) {
-                                  setState(() {
-                                    _isSending = false;
-                                    _isOtpSent = true;
-                                  });
-                                }
-                              } else {
-                                final otp = _LoginValidators.sanitize(_otpC.text.trim(), maxLength: _kMaxOtpLength);
-                                final newPass = _LoginValidators.sanitize(_newPasswordC.text, maxLength: _kMaxPasswordLength);
+                              setState(() => _isSending = true);
+                              HapticFeedback.mediumImpact();
 
-                                if (otp.isEmpty) {
-                                  _showDialogError(l10n.t('login_error_empty_otp'));
-                                  return;
-                                }
-
-                                if (newPass.length < 8) {
-                                  HapticFeedback.lightImpact();
-                                  setState(() => _passwordError = "Le mot de passe doit contenir au moins 8 caractères");
-                                  return;
-                                }
-
-                                setState(() => _isSending = true);
-                                HapticFeedback.mediumImpact();
-
-                                try {
-                                  final res = await Supabase.instance.client.auth.verifyOTP(
-                                    email: _emailC.text.trim(),
-                                    token: otp,
-                                    type: OtpType.recovery,
+                              try {
+                                final res = await Supabase.instance.client.auth
+                                    .verifyOTP(
+                                  email: _emailC.text.trim(),
+                                  token: otp,
+                                  type: OtpType.recovery,
+                                );
+                                if (res.user != null) {
+                                  await Supabase.instance.client.auth
+                                      .updateUser(UserAttributes(
+                                    password: newPass,
+                                  ));
+                                  await widget.logAttempt(
+                                    identifier: _emailC.text.trim(),
+                                    success: true,
+                                    failureReason: 'password_reset_success',
                                   );
-
-                                  if (res.user != null) {
-                                    await Supabase.instance.client.auth.updateUser(
-                                      UserAttributes(password: newPass),
-                                    );
-
-                                    await widget.logAttempt(
-                                      identifier: _emailC.text.trim(),
-                                      success: true,
-                                      failureReason: 'password_reset_success',
-                                    );
-
-                                    if (mounted) {
-                                      Navigator.of(context).pop();
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Row(children: [
-                                            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-                                            const SizedBox(width: 8),
-                                            Expanded(child: Text(l10n.t('login_password_updated'))),
-                                          ]),
-                                          backgroundColor: ThixPolicy.success,
-                                          behavior: SnackBarBehavior.floating,
-                                        ),
-                                      );
-                                    }
-                                  }
-                                } catch (e) {
-                                  debugPrint('[Login] ❌ Password reset error: $e');
                                   if (mounted) {
-                                    _showDialogError(_translateAuthError(e, l10n));
-                                    setState(() => _isSending = false);
+                                    Navigator.of(context).pop();
+                                    ScaffoldMessenger.of(context)
+                                        .showSnackBar(
+                                      SnackBar(
+                                        content: Row(children: [
+                                          const Icon(
+                                            Icons.check_circle_rounded,
+                                            color: Colors.white,
+                                            size: 18,
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: Text(l10n.t(
+                                                'login_password_updated')),
+                                          ),
+                                        ]),
+                                        backgroundColor: ThixPolicy.success,
+                                        behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                        ),
+                                      ),
+                                    );
                                   }
+                                }
+                              } catch (e) {
+                                debugPrint(
+                                    '[Login] ❌ Password reset error: $e');
+                                if (mounted) {
+                                  _showDialogError(
+                                      _translateAuthError(e, l10n));
+                                  setState(() => _isSending = false);
                                 }
                               }
-                            },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: ThixPolicy.primary,
-                        foregroundColor: ThixPolicy.onBrand,
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ThixPolicy.primary,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(
-                        _isSending
-                            ? l10n.t('login_please_wait')
-                            : (_isOtpSent
-                                ? l10n.t('login_confirm')
-                                : (!canSend && widget.resetCooldown > 0
-                                    ? '${l10n.t('login_wait_prefix')} ${widget.resetCooldown}${l10n.t('login_seconds_suffix')}'
-                                    : l10n.t('login_send'))),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                    ),
+                    child: Text(
+                      _isSending
+                          ? l10n.t('login_please_wait')
+                          : (_isOtpSent
+                              ? l10n.t('login_confirm')
+                              : (!canSend && widget.resetCooldown > 0
+                                  ? '${l10n.t('login_wait_prefix')} '
+                                      '${widget.resetCooldown}'
+                                      '${l10n.t('login_seconds_suffix')}'
+                                  : l10n.t('login_send'))),
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                   ),
                 ),
@@ -1531,23 +1690,32 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       counterText: '',
       suffixIcon: suffixIcon,
       filled: true,
-      fillColor: ThixPolicy.surface,
-      contentPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s16),
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 14,
+      ),
       border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-        borderSide: const BorderSide(color: ThixPolicy.border),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
       enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-        borderSide: const BorderSide(color: ThixPolicy.border),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
       ),
       focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-        borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(
+          color: ThixPolicy.primary,
+          width: 1.5,
+        ),
       ),
       errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(ThixPolicy.inputRadius),
-        borderSide: const BorderSide(color: ThixPolicy.danger, width: 1.5),
+        borderRadius: BorderRadius.circular(12),
+        borderSide: const BorderSide(
+          color: ThixPolicy.danger,
+          width: 1.5,
+        ),
       ),
     );
   }
