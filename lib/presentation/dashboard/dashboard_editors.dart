@@ -1,4 +1,13 @@
 // lib/presentation/home/dashboard_editors.dart
+//
+// ============================================================================
+// DASHBOARD EDITORS — Production v2.0
+// ============================================================================
+// ✅ THIX CHAT éditable avec validation temps réel (unicité + réservés)
+// ✅ Sécurité : thix_chat envoyé au serveur avec double-check
+// ✅ Profile / Education / Experience / Skills editors
+// ============================================================================
+
 import 'dart:async';
 
 import 'package:file_picker/file_picker.dart';
@@ -33,6 +42,8 @@ const int _kMaxNameLength = 80;
 const int _kMaxBioLength = 1000;
 const int _kMaxFieldLength = 120;
 const int _kMaxDescriptionLength = 500;
+const int _kMaxChatLength = 21; // @ + 20 chars max
+const int _kChatDebounceMs = 600;
 const List<String> _kAllowedDocExtensions = ['pdf', 'png', 'jpg', 'jpeg'];
 const List<String> _kAllowedImageExtensions = ['png', 'jpg', 'jpeg', 'webp'];
 
@@ -60,7 +71,8 @@ class _EdValidators {
     return name.replaceAll(RegExp(r'[^A-Za-z0-9._-]'), '_');
   }
 
-  static bool isValidFileSize(int bytes) => bytes > 0 && bytes <= _kMaxFileSizeBytes;
+  static bool isValidFileSize(int bytes) =>
+      bytes > 0 && bytes <= _kMaxFileSizeBytes;
 
   static bool isValidExtension(String? ext, List<String> allowed) {
     if (ext == null) return false;
@@ -74,12 +86,33 @@ class _EdValidators {
   }
 
   static String? validatePhone(String? value) {
-    if (value == null || value.trim().isEmpty) return null; // optionnel
+    if (value == null || value.trim().isEmpty) return null;
     final cleaned = value.replaceAll(RegExp(r'[\s\-\(\)\.]'), '');
     if (!RegExp(r'^\+?[0-9]{6,15}$').hasMatch(cleaned)) {
       return 'Format invalide';
     }
     return null;
+  }
+
+  // ─── THIX CHAT VALIDATION ──────────────────────────────────────────
+  static const List<String> reservedChats = [
+    '@admin', '@thix', '@support', '@root', '@system',
+    '@officiel', '@help', '@moderator', '@central', '@staff',
+    '@team', '@mod', '@superadmin', '@owner', '@dev',
+  ];
+
+  static String normalizeChat(String raw) {
+    final s = raw.trim().toLowerCase();
+    if (s.isEmpty) return '';
+    return s.startsWith('@') ? s : '@$s';
+  }
+
+  static bool isValidChatFormat(String chat) {
+    return RegExp(r'^@[a-z0-9._]{3,20}$').hasMatch(chat);
+  }
+
+  static bool isReservedChat(String chat) {
+    return reservedChats.contains(chat.toLowerCase());
   }
 
   static String friendlyError(dynamic e) {
@@ -91,6 +124,9 @@ class _EdValidators {
     if (msg.contains('too large') || msg.contains('size')) return 'Fichier trop volumineux.';
     if (msg.contains('protected_column_change_denied')) {
       return 'Ce champ ne peut pas être modifié depuis cet écran.';
+    }
+    if (msg.contains('unique') || msg.contains('duplicate') || msg.contains('23505')) {
+      return 'Cette valeur est déjà utilisée.';
     }
     return 'Une erreur est survenue. Réessayez.';
   }
@@ -139,7 +175,8 @@ class EvidenceFileRef {
     final path = map['storagePathOrUrl'] ?? map['url'] ?? map['path'];
     if (path == null || path.toString().trim().isEmpty) return null;
     return EvidenceFileRef(
-      storagePathOrUrl: _EdValidators.sanitize(path.toString(), maxLength: 300),
+      storagePathOrUrl:
+          _EdValidators.sanitize(path.toString(), maxLength: 300),
       label: _EdValidators.sanitize(map['label']?.toString(), maxLength: 100),
     );
   }
@@ -177,7 +214,8 @@ InputDecoration _inputDecor(String label, IconData icon, {String? hint}) {
       borderRadius: BorderRadius.circular(12),
       borderSide: const BorderSide(color: ThixPolicy.danger, width: 1),
     ),
-    contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+    contentPadding:
+        const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
   );
 }
 
@@ -229,7 +267,6 @@ class _EditorSectionCard extends StatelessWidget {
   }
 }
 
-/// Scaffold commun pour tous les editors (header + scroll + footer)
 class _EditorSheetScaffold extends StatelessWidget {
   final String title;
   final bool isSaving;
@@ -248,7 +285,8 @@ class _EditorSheetScaffold extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      padding:
+          EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Container(
         decoration: BoxDecoration(
           color: ThixPolicy.surfaceSoft,
@@ -316,7 +354,6 @@ class _EditorSheetScaffold extends StatelessWidget {
   }
 }
 
-/// Helper pour picker des fichiers avec validation stricte
 Future<List<PlatformFile>> _pickValidatedFiles({
   required BuildContext context,
   required bool allowMultiple,
@@ -336,7 +373,6 @@ Future<List<PlatformFile>> _pickValidatedFiles({
 
     final valid = <PlatformFile>[];
     for (final f in res.files) {
-      // Validation taille
       if (!_EdValidators.isValidFileSize(f.size)) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -351,12 +387,12 @@ Future<List<PlatformFile>> _pickValidatedFiles({
         }
         continue;
       }
-      // Validation extension
       if (!_EdValidators.isValidExtension(f.extension, allowedExtensions)) {
         if (context.mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('${_EdValidators.sanitizeFileName(f.name)}: ${l10n.t('editors_invalid_type')}'),
+              content: Text(
+                  '${_EdValidators.sanitizeFileName(f.name)}: ${l10n.t('editors_invalid_type')}'),
               backgroundColor: ThixPolicy.danger,
             ),
           );
@@ -380,14 +416,14 @@ Future<List<PlatformFile>> _pickValidatedFiles({
   }
 }
 
-/// Confirmation avant suppression
 Future<bool> _confirmDelete(BuildContext context, String itemName) async {
   final l10n = AppLocalizations.of(context);
   HapticFeedback.mediumImpact();
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
       title: Row(
         children: [
           Container(
@@ -396,13 +432,15 @@ Future<bool> _confirmDelete(BuildContext context, String itemName) async {
               color: ThixPolicy.danger.withOpacity(0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger, size: 20),
+            child: const Icon(Icons.delete_outline_rounded,
+                color: ThixPolicy.danger, size: 20),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               l10n.t('editors_delete_title'),
-              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+              style: ThixPolicy.h3Style.copyWith(
+                  fontWeight: ThixPolicy.bold, fontSize: 16),
             ),
           ),
         ],
@@ -471,51 +509,57 @@ class _ProfileEditorBody extends StatefulWidget {
 class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
   final ValueNotifier<bool> _saving = ValueNotifier(false);
 
-  // Contrôleurs (regroupés pour dispose facile)
   final List<TextEditingController> _controllers = [];
-  late final TextEditingController _nameC, _competenceC, _bioC, _countryOriginC;
-  late final TextEditingController _contactPhoneC, _dobC, _pobC, _nationalityC;
-  late final TextEditingController _maritalC, _genderC, _occupationC, _addressC;
+  late final TextEditingController _nameC,
+      _competenceC,
+      _bioC,
+      _countryOriginC;
+  late final TextEditingController _contactPhoneC,
+      _dobC,
+      _pobC,
+      _nationalityC;
+  late final TextEditingController _maritalC,
+      _genderC,
+      _occupationC,
+      _addressC;
   late final TextEditingController _fatherNameC, _motherNameC;
-  late final TextEditingController _originProvinceC, _originTerritoryC, _originSectorC;
-  late final TextEditingController _residenceCountryC, _residenceProvinceC, _residenceCityC;
-  late final TextEditingController _residenceTerritoryC, _residenceCommuneC;
-  late final TextEditingController _residenceQuarterC, _residenceAvenueC, _residenceNumberC;
-  late final TextEditingController _emergencyNameC, _emergencyPhoneC, _emergencyRelationC;
-  late final TextEditingController _heightC, _weightC, _bloodGroupC, _disabilityDescC;
-  late final TextEditingController _nationalIdNumberC, _idDocTypeC, _idIssueDateC, _idExpiryDateC, _idIssuePlaceC;
+  late final TextEditingController _originProvinceC,
+      _originTerritoryC,
+      _originSectorC;
+  late final TextEditingController _residenceCountryC,
+      _residenceProvinceC,
+      _residenceCityC;
+  late final TextEditingController _residenceTerritoryC,
+      _residenceCommuneC;
+  late final TextEditingController _residenceQuarterC,
+      _residenceAvenueC,
+      _residenceNumberC;
+  late final TextEditingController _emergencyNameC,
+      _emergencyPhoneC,
+      _emergencyRelationC;
+  late final TextEditingController _heightC,
+      _weightC,
+      _bloodGroupC,
+      _disabilityDescC;
+  late final TextEditingController _nationalIdNumberC,
+      _idDocTypeC,
+      _idIssueDateC,
+      _idExpiryDateC,
+      _idIssuePlaceC;
 
-  // ✅ FIX SÉCURITÉ : thix_chat n'est plus un champ éditable depuis cet
-  // écran. Il est désormais protégé côté serveur par
-  // trg_guard_profiles_protected_columns (aucun utilisateur non-admin ne
-  // peut le modifier via un simple UPDATE). Le seul chemin légitime pour
-  // changer son thix_chat est une RPC serveur dédiée qui revalide le
-  // format, la liste des chats réservés et l'unicité — comme le fait déjà
-  // finalize_registration() à l'inscription. Tant que cette RPC de
-  // modification post-inscription n'existe pas, ce champ reste en lecture
-  // seule ici pour éviter un appel qui échouerait silencieusement (ou
-  // qui, avant le fix serveur, aurait permis de réclamer n'importe quel
-  // chat sans validation).
-  late final TextEditingController _thixChatDisplayC;
+  // ✅ THIX CHAT éditable
+  late final TextEditingController _thixChatC;
+
+  // ✅ État de validation du chat
+  String? _chatError;
+  String? _chatSuccess;
+  bool _chatValidating = false;
+  Timer? _chatDebounce;
 
   bool _hasDisability = false;
   PlatformFile? _idFront, _idBack, _idSelfie;
   String? _idFrontDocId, _idBackDocId, _idSelfieDocId;
-
-  // ✅ FIX SÉCURITÉ CRITIQUE : id_verification_status n'est plus envoyé au
-  // serveur depuis cet écran. Avant ce fix, cette valeur était construite
-  // côté client (mise à 'pending' après un simple pick de fichier, sans
-  // garantie que l'upload avait réellement abouti) puis transmise telle
-  // quelle à updateProfile(), qui l'écrivait sans aucune validation
-  // serveur. Un client modifié pouvait envoyer n'importe quelle valeur
-  // ('approved', 'verified', etc.) et s'auto-certifier d'identité sans
-  // jamais avoir fourni de documents réels. Cette colonne est maintenant
-  // protégée par trg_guard_profiles_protected_columns : seul un processus
-  // serveur (revue admin, webhook d'un prestataire de vérification
-  // d'identité tiers) peut la faire évoluer. On garde ici uniquement la
-  // valeur reçue du profil pour l'AFFICHER, jamais pour la renvoyer.
   String? _idVerificationStatusDisplay;
-
   PlatformFile? _pickedPhoto;
 
   final _photos = ProfilePhotoService();
@@ -530,12 +574,15 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[Editors] 📝 ProfileEditor opened for ${widget.profile.userId.substring(0, 8)}...');
+    debugPrint(
+        '[Editors] 📝 ProfileEditor opened for ${widget.profile.userId.substring(0, 8)}...');
 
     final p = widget.profile;
     final a = widget.authUser;
 
-    _nameC = _register((p.fullName ?? p.displayName).trim().isEmpty ? p.displayName : (p.fullName ?? p.displayName));
+    _nameC = _register((p.fullName ?? p.displayName).trim().isEmpty
+        ? p.displayName
+        : (p.fullName ?? p.displayName));
     _competenceC = _register(p.competence ?? '');
     _bioC = _register(p.bio ?? '');
     _countryOriginC = _register(p.countryOrOrigin ?? '');
@@ -545,11 +592,15 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     _nationalityC = _register(p.nationality ?? a.nationality ?? '');
     _maritalC = _register(p.maritalStatus ?? a.maritalStatus ?? '');
     _genderC = _register(p.gender ?? a.gender ?? '');
-    _occupationC = _register((p.profession ?? p.occupation ?? a.profession ?? a.occupation) ?? '');
+    _occupationC = _register(
+        (p.profession ?? p.occupation ?? a.profession ?? a.occupation) ?? '');
     _addressC = _register(p.address ?? a.address ?? '');
     _fatherNameC = _register(p.fatherName ?? a.fatherName ?? '');
     _motherNameC = _register(p.motherName ?? a.motherName ?? '');
-    _thixChatDisplayC = _register(p.thixChat ?? '');
+
+    // ✅ THIX CHAT éditable
+    _thixChatC = _register(p.thixChat ?? '');
+
     _originProvinceC = _register(p.originProvince ?? '');
     _originTerritoryC = _register(p.originTerritory ?? '');
     _originSectorC = _register(p.originSector ?? '');
@@ -583,18 +634,112 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
 
   @override
   void dispose() {
+    _chatDebounce?.cancel();
     for (final c in _controllers) {
       c.dispose();
     }
     _saving.dispose();
-    debugPrint('[Editors] 👋 ProfileEditor disposed (${_controllers.length} controllers)');
+    debugPrint(
+        '[Editors] 👋 ProfileEditor disposed (${_controllers.length} controllers)');
     super.dispose();
   }
 
-  Future<void> _selectDate(BuildContext context, TextEditingController controller) async {
+  // ─── THIX CHAT VALIDATION ─────────────────────────────────────────
+  Future<void> _onChatChanged(String value) async {
+    _chatDebounce?.cancel();
+
+    final raw =
+        _EdValidators.sanitize(value.trim().toLowerCase(), maxLength: _kMaxChatLength);
+
+    if (raw.isEmpty) {
+      setState(() {
+        _chatError = null;
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    final chat = _EdValidators.normalizeChat(raw);
+
+    // Validation format
+    if (!_EdValidators.isValidChatFormat(chat)) {
+      setState(() {
+        _chatError = 'Format: @ + 3-20 caractères (lettres, chiffres, . _)';
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    // Validation réservé
+    if (_EdValidators.isReservedChat(chat)) {
+      setState(() {
+        _chatError = 'Ce nom est réservé';
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    // Si inchangé par rapport au profil actuel → OK immédiat
+    final currentChat =
+        _EdValidators.normalizeChat(widget.profile.thixChat ?? '');
+    if (chat == currentChat) {
+      setState(() {
+        _chatError = null;
+        _chatSuccess = null;
+        _chatValidating = false;
+      });
+      return;
+    }
+
+    setState(() {
+      _chatValidating = true;
+      _chatError = null;
+      _chatSuccess = null;
+    });
+
+    // Debounce avant vérification serveur
+    _chatDebounce = Timer(const Duration(milliseconds: _kChatDebounceMs),
+        () async {
+      try {
+        final res = await Supabase.instance.client
+            .from('profiles')
+            .select('id')
+            .ilike('thix_chat', chat)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 8));
+
+        if (!mounted) return;
+
+        if (res != null &&
+            res['id']?.toString() != widget.profile.userId) {
+          setState(() {
+            _chatError = 'Déjà pris';
+            _chatValidating = false;
+          });
+        } else {
+          setState(() {
+            _chatSuccess = '✓ Disponible';
+            _chatValidating = false;
+          });
+        }
+      } catch (e) {
+        debugPrint('[Editors] ⚠️ Chat validation error: $e');
+        if (!mounted) return;
+        setState(() => _chatValidating = false);
+      }
+    });
+  }
+
+  // ─── DATE PICKER ──────────────────────────────────────────────────
+  Future<void> _selectDate(
+      BuildContext context, TextEditingController controller) async {
     HapticFeedback.selectionClick();
     final locale = Localizations.localeOf(context).toString();
-    final DateTime initialDate = DateTime.tryParse(controller.text) ?? DateTime.now();
+    final DateTime initialDate =
+        DateTime.tryParse(controller.text) ?? DateTime.now();
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
@@ -637,7 +782,8 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       value: currentVal.isEmpty ? null : currentVal,
       decoration: _inputDecor(label, icon),
       items: validOptions
-          .map((v) => DropdownMenuItem<String>(value: v, child: Text(v, style: const TextStyle(fontSize: 14))))
+          .map((v) => DropdownMenuItem<String>(
+              value: v, child: Text(v, style: const TextStyle(fontSize: 14))))
           .toList(),
       onChanged: (newValue) {
         if (newValue != null) {
@@ -664,16 +810,21 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       if (kind == 'back') _idBack = files.first;
       if (kind == 'selfie') _idSelfie = files.first;
     });
-    debugPrint('[Editors] 📎 ID file picked: $kind (${_EdValidators.sanitizeFileName(files.first.name)})');
+    debugPrint(
+        '[Editors] 📎 ID file picked: $kind (${_EdValidators.sanitizeFileName(files.first.name)})');
   }
 
-  Future<void> _uploadIdIfNeeded({required String uid, required String kind}) async {
-    final PlatformFile? f = kind == 'front' ? _idFront : (kind == 'back' ? _idBack : _idSelfie);
+  Future<void> _uploadIdIfNeeded(
+      {required String uid, required String kind}) async {
+    final PlatformFile? f = kind == 'front'
+        ? _idFront
+        : (kind == 'back' ? _idBack : _idSelfie);
     if (f == null) return;
 
     final l10n = AppLocalizations.of(context);
     final docId = 'NATIONAL_ID_${kind.toUpperCase()}';
-    final title = l10n.t('editors_national_id_${kind == 'front' ? 'front' : kind == 'back' ? 'back' : 'selfie'}');
+    final title = l10n.t(
+        'editors_national_id_${kind == 'front' ? 'front' : kind == 'back' ? 'back' : 'selfie'}');
 
     await _edRetry(
       () => _docs.uploadPickedFile(
@@ -691,34 +842,93 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     if (kind == 'back') _idBackDocId = docId;
     if (kind == 'selfie') _idSelfieDocId = docId;
 
-    // ✅ FIX: on ne construit plus idVerificationStatus ici pour l'envoyer
-    // nous-mêmes — c'est désormais au serveur (trigger sur les inserts de
-    // documents, ou fonction dédiée appelée après upload confirmé) de
-    // faire passer le profil à 'pending' une fois les 3 documents reçus.
-    // On se contente de rafraîchir l'affichage local pour l'utilisateur.
     _idVerificationStatusDisplay = 'pending';
   }
 
+  // ─── SAVE ─────────────────────────────────────────────────────────
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
 
-    final name = _EdValidators.sanitize(_nameC.text, maxLength: _kMaxNameLength);
+    final name =
+        _EdValidators.sanitize(_nameC.text, maxLength: _kMaxNameLength);
     if (name.isEmpty) {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_name_required')), backgroundColor: ThixPolicy.warning),
+        SnackBar(
+            content: Text(l10n.t('editors_name_required')),
+            backgroundColor: ThixPolicy.warning),
       );
       return;
     }
 
-    // Validation téléphone
     final phoneError = _EdValidators.validatePhone(_contactPhoneC.text);
     if (phoneError != null) {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${l10n.t('editors_phone')}: $phoneError'), backgroundColor: ThixPolicy.warning),
+        SnackBar(
+            content: Text('${l10n.t('editors_phone')}: $phoneError'),
+            backgroundColor: ThixPolicy.warning),
       );
       return;
+    }
+
+    // ✅ VALIDATION THIX CHAT AVANT SAVE
+    final rawChat = _EdValidators.sanitize(
+        _thixChatC.text.trim().toLowerCase(),
+        maxLength: _kMaxChatLength);
+    String? newThixChat;
+
+    if (rawChat.isNotEmpty) {
+      final normalizedChat = _EdValidators.normalizeChat(rawChat);
+
+      if (!_EdValidators.isValidChatFormat(normalizedChat)) {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: const Text('THIX CHAT: Format invalide'),
+              backgroundColor: ThixPolicy.warning),
+        );
+        return;
+      }
+
+      if (_EdValidators.isReservedChat(normalizedChat)) {
+        HapticFeedback.lightImpact();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content: const Text('THIX CHAT: Nom réservé'),
+              backgroundColor: ThixPolicy.warning),
+        );
+        return;
+      }
+
+      // Double-check unicité serveur
+      final currentChat =
+          _EdValidators.normalizeChat(widget.profile.thixChat ?? '');
+      if (normalizedChat != currentChat) {
+        try {
+          final existing = await Supabase.instance.client
+              .from('profiles')
+              .select('id')
+              .ilike('thix_chat', normalizedChat)
+              .maybeSingle()
+              .timeout(const Duration(seconds: 8));
+
+          if (existing != null &&
+              existing['id']?.toString() != widget.profile.userId) {
+            HapticFeedback.lightImpact();
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                  content: Text('THIX CHAT "$normalizedChat" est déjà pris'),
+                  backgroundColor: ThixPolicy.warning),
+            );
+            return;
+          }
+        } catch (e) {
+          debugPrint('[Editors] ⚠️ Chat uniqueness check failed: $e');
+        }
+      }
+
+      newThixChat = normalizedChat;
     }
 
     if (_saving.value) {
@@ -735,7 +945,8 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       String? newPhotoUrl;
       if (_pickedPhoto != null) {
         newPhotoUrl = await _edRetry(
-          () => _photos.uploadProfilePhoto(uid: widget.profile.userId, file: _pickedPhoto!),
+          () => _photos.uploadProfilePhoto(
+              uid: widget.profile.userId, file: _pickedPhoto!),
           label: 'uploadPhoto',
           timeout: _kUploadTimeout,
         );
@@ -746,61 +957,105 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       await _uploadIdIfNeeded(uid: widget.profile.userId, kind: 'back');
       await _uploadIdIfNeeded(uid: widget.profile.userId, kind: 'selfie');
 
-      // Save profile (tous les champs sanitisés)
-      //
-      // ✅ FIX: thixChat et idVerificationStatus ne sont plus transmis ici.
-      // Ces deux colonnes sont protégées côté serveur
-      // (trg_guard_profiles_protected_columns) — un envoi ici échouerait
-      // désormais avec 'protected_column_change_denied', et avant ce fix
-      // serveur, ces champs auraient permis un contournement des règles
-      // d'unicité/format du chat et une auto-certification d'identité.
+      // Save profile
       await _edRetry(
         () => widget.profileService.updateProfile(
           userId: widget.profile.userId,
           displayName: name,
           fullName: name,
-          competence: _EdValidators.sanitize(_competenceC.text, maxLength: _kMaxDescriptionLength),
+          competence: _EdValidators.sanitize(_competenceC.text,
+              maxLength: _kMaxDescriptionLength),
           bio: _EdValidators.sanitize(_bioC.text, maxLength: _kMaxBioLength),
-          countryOrOrigin: _EdValidators.sanitize(_countryOriginC.text, maxLength: _kMaxFieldLength),
-          contactPhone: _EdValidators.sanitize(_contactPhoneC.text, maxLength: 30),
-          maritalStatus: _EdValidators.sanitize(_maritalC.text, maxLength: 30),
+          countryOrOrigin: _EdValidators.sanitize(_countryOriginC.text,
+              maxLength: _kMaxFieldLength),
+          contactPhone: _EdValidators.sanitize(_contactPhoneC.text,
+              maxLength: 30),
+          maritalStatus:
+              _EdValidators.sanitize(_maritalC.text, maxLength: 30),
           gender: _EdValidators.sanitize(_genderC.text, maxLength: 20),
-          profession: _EdValidators.sanitize(_occupationC.text, maxLength: _kMaxFieldLength),
-          occupation: _EdValidators.sanitize(_occupationC.text, maxLength: _kMaxFieldLength),
-          dateOfBirth: _EdValidators.sanitize(_dobC.text, maxLength: 20),
-          placeOfBirth: _EdValidators.sanitize(_pobC.text, maxLength: _kMaxFieldLength),
-          nationality: _EdValidators.sanitize(_nationalityC.text, maxLength: 40),
-          address: _EdValidators.sanitize(_addressC.text, maxLength: 200),
-          fatherName: _EdValidators.sanitize(_fatherNameC.text, maxLength: _kMaxNameLength),
-          motherName: _EdValidators.sanitize(_motherNameC.text, maxLength: _kMaxNameLength),
-          originProvince: _EdValidators.sanitize(_originProvinceC.text, maxLength: 60),
-          originTerritory: _EdValidators.sanitize(_originTerritoryC.text, maxLength: 60),
-          originSector: _EdValidators.sanitize(_originSectorC.text, maxLength: 60),
-          residenceCountry: _EdValidators.sanitize(_residenceCountryC.text, maxLength: 60),
-          residenceProvince: _EdValidators.sanitize(_residenceProvinceC.text, maxLength: 60),
-          residenceTerritory: _EdValidators.sanitize(_residenceTerritoryC.text, maxLength: 60),
-          residenceCity: _EdValidators.sanitize(_residenceCityC.text, maxLength: 60),
-          residenceCommune: _EdValidators.sanitize(_residenceCommuneC.text, maxLength: 60),
-          residenceQuarter: _EdValidators.sanitize(_residenceQuarterC.text, maxLength: 60),
-          residenceAvenue: _EdValidators.sanitize(_residenceAvenueC.text, maxLength: 60),
-          residenceNumber: _EdValidators.sanitize(_residenceNumberC.text, maxLength: 20),
-          emergencyContactName: _EdValidators.sanitize(_emergencyNameC.text, maxLength: _kMaxNameLength),
-          emergencyContactPhone: _EdValidators.sanitize(_emergencyPhoneC.text, maxLength: 30),
-          emergencyContactRelation: _EdValidators.sanitize(_emergencyRelationC.text, maxLength: 40),
-          height: _EdValidators.sanitize(_heightC.text, maxLength: 10),
-          weight: _EdValidators.sanitize(_weightC.text, maxLength: 10),
-          bloodGroup: _EdValidators.sanitize(_bloodGroupC.text, maxLength: 5),
+          profession: _EdValidators.sanitize(_occupationC.text,
+              maxLength: _kMaxFieldLength),
+          occupation: _EdValidators.sanitize(_occupationC.text,
+              maxLength: _kMaxFieldLength),
+          dateOfBirth:
+              _EdValidators.sanitize(_dobC.text, maxLength: 20),
+          placeOfBirth: _EdValidators.sanitize(_pobC.text,
+              maxLength: _kMaxFieldLength),
+          nationality:
+              _EdValidators.sanitize(_nationalityC.text, maxLength: 40),
+          address:
+              _EdValidators.sanitize(_addressC.text, maxLength: 200),
+          fatherName: _EdValidators.sanitize(_fatherNameC.text,
+              maxLength: _kMaxNameLength),
+          motherName: _EdValidators.sanitize(_motherNameC.text,
+              maxLength: _kMaxNameLength),
+          originProvince: _EdValidators.sanitize(_originProvinceC.text,
+              maxLength: 60),
+          originTerritory: _EdValidators.sanitize(_originTerritoryC.text,
+              maxLength: 60),
+          originSector: _EdValidators.sanitize(_originSectorC.text,
+              maxLength: 60),
+          residenceCountry: _EdValidators.sanitize(
+              _residenceCountryC.text,
+              maxLength: 60),
+          residenceProvince: _EdValidators.sanitize(
+              _residenceProvinceC.text,
+              maxLength: 60),
+          residenceTerritory: _EdValidators.sanitize(
+              _residenceTerritoryC.text,
+              maxLength: 60),
+          residenceCity: _EdValidators.sanitize(_residenceCityC.text,
+              maxLength: 60),
+          residenceCommune: _EdValidators.sanitize(
+              _residenceCommuneC.text,
+              maxLength: 60),
+          residenceQuarter: _EdValidators.sanitize(
+              _residenceQuarterC.text,
+              maxLength: 60),
+          residenceAvenue: _EdValidators.sanitize(
+              _residenceAvenueC.text,
+              maxLength: 60),
+          residenceNumber: _EdValidators.sanitize(
+              _residenceNumberC.text,
+              maxLength: 20),
+          emergencyContactName: _EdValidators.sanitize(
+              _emergencyNameC.text,
+              maxLength: _kMaxNameLength),
+          emergencyContactPhone: _EdValidators.sanitize(
+              _emergencyPhoneC.text,
+              maxLength: 30),
+          emergencyContactRelation: _EdValidators.sanitize(
+              _emergencyRelationC.text,
+              maxLength: 40),
+          height:
+              _EdValidators.sanitize(_heightC.text, maxLength: 10),
+          weight:
+              _EdValidators.sanitize(_weightC.text, maxLength: 10),
+          bloodGroup:
+              _EdValidators.sanitize(_bloodGroupC.text, maxLength: 5),
           hasPhysicalDisability: _hasDisability,
-          physicalDisabilityDescription: _EdValidators.sanitize(_disabilityDescC.text, maxLength: 300),
-          nationalIdNumber: _EdValidators.sanitize(_nationalIdNumberC.text, maxLength: 40),
-          idDocumentType: _EdValidators.sanitize(_idDocTypeC.text, maxLength: 40),
-          idDocumentIssueDate: _EdValidators.sanitize(_idIssueDateC.text, maxLength: 20),
-          idDocumentExpiryDate: _EdValidators.sanitize(_idExpiryDateC.text, maxLength: 20),
-          idDocumentIssuePlace: _EdValidators.sanitize(_idIssuePlaceC.text, maxLength: _kMaxFieldLength),
+          physicalDisabilityDescription: _EdValidators.sanitize(
+              _disabilityDescC.text,
+              maxLength: 300),
+          nationalIdNumber: _EdValidators.sanitize(
+              _nationalIdNumberC.text,
+              maxLength: 40),
+          idDocumentType:
+              _EdValidators.sanitize(_idDocTypeC.text, maxLength: 40),
+          idDocumentIssueDate: _EdValidators.sanitize(
+              _idIssueDateC.text,
+              maxLength: 20),
+          idDocumentExpiryDate: _EdValidators.sanitize(
+              _idExpiryDateC.text,
+              maxLength: 20),
+          idDocumentIssuePlace: _EdValidators.sanitize(
+              _idIssuePlaceC.text,
+              maxLength: _kMaxFieldLength),
           idDocumentFrontDocId: _idFrontDocId,
           idDocumentBackDocId: _idBackDocId,
           idDocumentSelfieDocId: _idSelfieDocId,
-          // idVerificationStatus volontairement omis (voir commentaire ci-dessus)
+          // ✅ THIX CHAT envoyé au serveur
+          thixChat: newThixChat,
           photoUrl: newPhotoUrl,
         ),
         label: 'updateProfile',
@@ -812,7 +1067,8 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+            const Icon(Icons.check_circle_rounded,
+                color: Colors.white, size: 18),
             const SizedBox(width: 8),
             Expanded(child: Text(l10n.t('editors_profile_saved'))),
           ]),
@@ -841,7 +1097,9 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
     required String label,
     required IconData icon,
   }) {
-    final pickedFile = kind == 'front' ? _idFront : (kind == 'back' ? _idBack : _idSelfie);
+    final pickedFile = kind == 'front'
+        ? _idFront
+        : (kind == 'back' ? _idBack : _idSelfie);
 
     if (pickedFile != null) {
       return Semantics(
@@ -849,12 +1107,14 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
         label: '$label: ${_EdValidators.sanitizeFileName(pickedFile.name)}',
         child: OutlinedButton.icon(
           onPressed: _saving.value ? null : () => _pickIdFile(kind),
-          icon: const Icon(Icons.cloud_upload_rounded, color: ThixPolicy.warning),
+          icon: const Icon(Icons.cloud_upload_rounded,
+              color: ThixPolicy.warning),
           label: Text(
             AppLocalizations.of(context).t('editors_ready_send'),
             style: TextStyle(color: ThixPolicy.warning, fontSize: 11),
           ),
-          style: OutlinedButton.styleFrom(side: BorderSide(color: ThixPolicy.warning)),
+          style: OutlinedButton.styleFrom(
+              side: BorderSide(color: ThixPolicy.warning)),
         ),
       );
     }
@@ -876,12 +1136,14 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
       label: '$label: ${AppLocalizations.of(context).t('editors_uploaded')}',
       child: OutlinedButton.icon(
         onPressed: _saving.value ? null : () => _pickIdFile(kind),
-        icon: const Icon(Icons.check_circle_rounded, color: ThixPolicy.success),
+        icon: const Icon(Icons.check_circle_rounded,
+            color: ThixPolicy.success),
         label: Text(
           '$label ✓',
           style: const TextStyle(color: ThixPolicy.success, fontSize: 12),
         ),
-        style: OutlinedButton.styleFrom(side: BorderSide(color: ThixPolicy.success)),
+        style: OutlinedButton.styleFrom(
+            side: BorderSide(color: ThixPolicy.success)),
       ),
     );
   }
@@ -907,12 +1169,15 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                   backgroundImage: _pickedPhoto != null
                       ? (kIsWeb
                           ? MemoryImage(_pickedPhoto!.bytes!)
-                          : FileImage(fileFromPath(_pickedPhoto!.path!) as dynamic)) as ImageProvider
+                          : FileImage(fileFromPath(_pickedPhoto!.path!)
+                              as dynamic)) as ImageProvider
                       : ((widget.profile.photoUrl ?? '').isNotEmpty
                           ? NetworkImage(widget.profile.photoUrl!)
                           : null),
-                  child: _pickedPhoto == null && (widget.profile.photoUrl ?? '').isEmpty
-                      ? const Icon(Icons.person, size: 40, color: ThixPolicy.textMuted)
+                  child: _pickedPhoto == null &&
+                          (widget.profile.photoUrl ?? '').isEmpty
+                      ? const Icon(Icons.person,
+                          size: 40, color: ThixPolicy.textMuted)
                       : null,
                 ),
                 Positioned(
@@ -944,7 +1209,8 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 2),
                         ),
-                        child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            color: Colors.white, size: 16),
                       ),
                     ),
                   ),
@@ -959,18 +1225,34 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             title: l10n.t('editors_civil_identity'),
             icon: Icons.account_circle_rounded,
             child: Column(children: [
-              TextField(controller: _nameC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_full_name'), Icons.badge_rounded)),
+              TextField(
+                  controller: _nameC,
+                  maxLength: _kMaxNameLength,
+                  decoration: _inputDecor(
+                      l10n.t('editors_full_name'), Icons.badge_rounded)),
               const SizedBox(height: 12),
               InkWell(
                 onTap: () => _selectDate(context, _dobC),
                 child: IgnorePointer(
-                  child: TextField(controller: _dobC, decoration: _inputDecor(l10n.t('editors_dob'), Icons.cake_rounded, hint: 'YYYY-MM-DD')),
+                  child: TextField(
+                      controller: _dobC,
+                      decoration: _inputDecor(l10n.t('editors_dob'),
+                          Icons.cake_rounded,
+                          hint: 'YYYY-MM-DD')),
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(controller: _pobC, maxLength: _kMaxFieldLength, decoration: _inputDecor(l10n.t('editors_pob'), Icons.place_rounded)),
+              TextField(
+                  controller: _pobC,
+                  maxLength: _kMaxFieldLength,
+                  decoration: _inputDecor(
+                      l10n.t('editors_pob'), Icons.place_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _nationalityC, maxLength: 40, decoration: _inputDecor(l10n.t('editors_nationality'), Icons.flag_rounded)),
+              TextField(
+                  controller: _nationalityC,
+                  maxLength: 40,
+                  decoration: _inputDecor(
+                      l10n.t('editors_nationality'), Icons.flag_rounded)),
               const SizedBox(height: 12),
               Row(children: [
                 Expanded(
@@ -987,24 +1269,44 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                     label: l10n.t('editors_marital'),
                     icon: Icons.favorite_rounded,
                     controller: _maritalC,
-                    options: ['Célibataire', 'Marié(e)', 'Divorcé(e)', 'Veuf/Veuve'],
+                    options: [
+                      'Célibataire',
+                      'Marié(e)',
+                      'Divorcé(e)',
+                      'Veuf/Veuve'
+                    ],
                   ),
                 ),
               ]),
               const SizedBox(height: 12),
-              TextField(controller: _addressC, maxLength: 200, decoration: _inputDecor(l10n.t('editors_address'), Icons.home_rounded)),
+              TextField(
+                  controller: _addressC,
+                  maxLength: 200,
+                  decoration: _inputDecor(
+                      l10n.t('editors_address'), Icons.home_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _fatherNameC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_father'), Icons.man_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _fatherNameC,
+                        maxLength: _kMaxNameLength,
+                        decoration: _inputDecor(
+                            l10n.t('editors_father'), Icons.man_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _motherNameC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_mother'), Icons.woman_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _motherNameC,
+                        maxLength: _kMaxNameLength,
+                        decoration: _inputDecor(l10n.t('editors_mother'),
+                            Icons.woman_rounded))),
               ]),
               const SizedBox(height: 12),
               TextField(
                 controller: _contactPhoneC,
                 keyboardType: TextInputType.phone,
                 maxLength: 30,
-                decoration: _inputDecor(l10n.t('editors_phone'), Icons.call_rounded),
+                decoration: _inputDecor(
+                    l10n.t('editors_phone'), Icons.call_rounded),
               ),
             ]),
           ),
@@ -1014,12 +1316,26 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             title: l10n.t('editors_origin'),
             icon: Icons.map_rounded,
             child: Column(children: [
-              TextField(controller: _originProvinceC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_origin_province'), Icons.location_on_rounded)),
+              TextField(
+                  controller: _originProvinceC,
+                  maxLength: 60,
+                  decoration: _inputDecor(l10n.t('editors_origin_province'),
+                      Icons.location_on_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _originTerritoryC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_territory'), Icons.terrain_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _originTerritoryC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_territory'),
+                            Icons.terrain_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _originSectorC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_sector'), Icons.account_tree_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _originSectorC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_sector'),
+                            Icons.account_tree_rounded))),
               ]),
             ]),
           ),
@@ -1029,26 +1345,64 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             title: l10n.t('editors_residence'),
             icon: Icons.home_work_rounded,
             child: Column(children: [
-              TextField(controller: _residenceCountryC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_country'), Icons.public_rounded)),
+              TextField(
+                  controller: _residenceCountryC,
+                  maxLength: 60,
+                  decoration: _inputDecor(
+                      l10n.t('editors_country'), Icons.public_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _residenceProvinceC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_province'), Icons.map_outlined))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceProvinceC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_province'),
+                            Icons.map_outlined))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _residenceTerritoryC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_territory'), Icons.terrain_outlined))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceTerritoryC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_territory'),
+                            Icons.terrain_outlined))),
               ]),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _residenceCityC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_city'), Icons.location_city_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceCityC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_city'),
+                            Icons.location_city_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _residenceCommuneC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_commune'), Icons.apartment_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceCommuneC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_commune'),
+                            Icons.apartment_rounded))),
               ]),
               const SizedBox(height: 12),
-              TextField(controller: _residenceQuarterC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_quarter'), Icons.streetview_rounded)),
+              TextField(
+                  controller: _residenceQuarterC,
+                  maxLength: 60,
+                  decoration: _inputDecor(l10n.t('editors_quarter'),
+                      Icons.streetview_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _residenceAvenueC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_avenue'), Icons.route_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceAvenueC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_avenue'),
+                            Icons.route_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _residenceNumberC, maxLength: 20, decoration: _inputDecor(l10n.t('editors_number'), Icons.numbers_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _residenceNumberC,
+                        maxLength: 20,
+                        decoration: _inputDecor(l10n.t('editors_number'),
+                            Icons.numbers_rounded))),
               ]),
             ]),
           ),
@@ -1061,33 +1415,85 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
               controller: _bioC,
               maxLines: 5,
               maxLength: _kMaxBioLength,
-              decoration: _inputDecor(l10n.t('editors_bio_hint'), Icons.edit_note_rounded),
+              decoration: _inputDecor(
+                  l10n.t('editors_bio_hint'), Icons.edit_note_rounded),
             ),
           ),
 
-          // SECTION 5: Professionnel
+          // SECTION 5: Professionnel + THIX CHAT
           _EditorSectionCard(
             title: l10n.t('editors_professional'),
             icon: Icons.work_outline_rounded,
             child: Column(children: [
-              TextField(controller: _occupationC, maxLength: _kMaxFieldLength, decoration: _inputDecor(l10n.t('editors_occupation'), Icons.work_rounded)),
-              const SizedBox(height: 12),
-              TextField(controller: _competenceC, maxLines: 3, maxLength: _kMaxDescriptionLength, decoration: _inputDecor(l10n.t('editors_competence'), Icons.psychology_rounded)),
-              const SizedBox(height: 12),
-              // ✅ FIX: champ en lecture seule — voir commentaire sur
-              // _thixChatDisplayC dans les déclarations d'état. Modifier
-              // le chat THIX nécessite un flux dédié (pas encore
-              // implémenté) qui revalide format/liste-réservée/unicité
-              // côté serveur.
               TextField(
-                controller: _thixChatDisplayC,
-                readOnly: false,
-                maxLength: 50,
-                decoration: _inputDecor('THIX CHAT (@handle)', Icons.alternate_email_rounded).copyWith(
-                  
-                  
+                  controller: _occupationC,
+                  maxLength: _kMaxFieldLength,
+                  decoration: _inputDecor(
+                      l10n.t('editors_occupation'), Icons.work_rounded)),
+              const SizedBox(height: 12),
+              TextField(
+                  controller: _competenceC,
+                  maxLines: 3,
+                  maxLength: _kMaxDescriptionLength,
+                  decoration: _inputDecor(l10n.t('editors_competence'),
+                      Icons.psychology_rounded)),
+              const SizedBox(height: 12),
+
+              // ✅ THIX CHAT ÉDITABLE AVEC VALIDATION TEMPS RÉEL
+              TextField(
+                controller: _thixChatC,
+                maxLength: _kMaxChatLength,
+                onChanged: _onChatChanged,
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(
+                      RegExp(r'[a-zA-Z0-9._@]')),
+                  TextInputFormatter.withFunction((oldVal, newVal) {
+                    final text = newVal.text;
+                    if (text.contains('@@')) return oldVal;
+                    final atIndex = text.indexOf('@');
+                    if (atIndex > 0) return oldVal;
+                    return newVal;
+                  }),
+                ],
+                decoration: _inputDecor(
+                        'THIX CHAT (@handle)',
+                        Icons.alternate_email_rounded)
+                    .copyWith(
+                  errorText: _chatError,
+                  helperText: _chatSuccess,
+                  helperStyle: ThixPolicy.bodySmallStyle.copyWith(
+                    color: ThixPolicy.success,
+                    fontWeight: ThixPolicy.semiBold,
+                  ),
+                  suffixIcon: _chatValidating
+                      ? const Padding(
+                          padding: EdgeInsets.all(12),
+                          child: SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : (_chatSuccess != null
+                          ? const Icon(Icons.check_circle_rounded,
+                              color: ThixPolicy.success, size: 20)
+                          : (_chatError != null
+                              ? const Icon(Icons.error_outline_rounded,
+                                  color: ThixPolicy.danger, size: 20)
+                              : null)),
                 ),
               ),
+              if (_chatError == null &&
+                  _chatSuccess == null &&
+                  !_chatValidating)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    '⚠️ Le changement de THIX CHAT est définitif et vérifié côté serveur.',
+                    style: ThixPolicy.microStyle
+                        .copyWith(color: ThixPolicy.warning),
+                  ),
+                ),
             ]),
           ),
 
@@ -1096,11 +1502,24 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             title: l10n.t('editors_emergency'),
             icon: Icons.contact_emergency_rounded,
             child: Column(children: [
-              TextField(controller: _emergencyNameC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_emergency_name'), Icons.person_search_rounded)),
+              TextField(
+                  controller: _emergencyNameC,
+                  maxLength: _kMaxNameLength,
+                  decoration: _inputDecor(l10n.t('editors_emergency_name'),
+                      Icons.person_search_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _emergencyPhoneC, keyboardType: TextInputType.phone, maxLength: 30, decoration: _inputDecor(l10n.t('editors_emergency_phone'), Icons.phone_callback_rounded)),
+              TextField(
+                  controller: _emergencyPhoneC,
+                  keyboardType: TextInputType.phone,
+                  maxLength: 30,
+                  decoration: _inputDecor(l10n.t('editors_emergency_phone'),
+                      Icons.phone_callback_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _emergencyRelationC, maxLength: 40, decoration: _inputDecor(l10n.t('editors_emergency_relation'), Icons.family_restroom_rounded)),
+              TextField(
+                  controller: _emergencyRelationC,
+                  maxLength: 40,
+                  decoration: _inputDecor(l10n.t('editors_emergency_relation'),
+                      Icons.family_restroom_rounded)),
             ]),
           ),
 
@@ -1110,16 +1529,37 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             icon: Icons.monitor_weight_rounded,
             child: Column(children: [
               Row(children: [
-                Expanded(child: TextField(controller: _heightC, keyboardType: TextInputType.number, maxLength: 10, decoration: _inputDecor(l10n.t('editors_height'), Icons.height_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _heightC,
+                        keyboardType: TextInputType.number,
+                        maxLength: 10,
+                        decoration: _inputDecor(
+                            l10n.t('editors_height'), Icons.height_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _weightC, keyboardType: TextInputType.number, maxLength: 10, decoration: _inputDecor(l10n.t('editors_weight'), Icons.scale_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _weightC,
+                        keyboardType: TextInputType.number,
+                        maxLength: 10,
+                        decoration: _inputDecor(
+                            l10n.t('editors_weight'), Icons.scale_rounded))),
               ]),
               const SizedBox(height: 12),
               _buildDropdown(
                 label: l10n.t('editors_blood_group'),
                 icon: Icons.bloodtype_rounded,
                 controller: _bloodGroupC,
-                options: ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'],
+                options: [
+                  'A+',
+                  'A-',
+                  'B+',
+                  'B-',
+                  'AB+',
+                  'AB-',
+                  'O+',
+                  'O-'
+                ],
               ),
               const SizedBox(height: 12),
               SwitchListTile(
@@ -1129,11 +1569,17 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                   HapticFeedback.selectionClick();
                   setState(() => _hasDisability = v);
                 },
-                title: Text(l10n.t('editors_disability'), style: const TextStyle(fontSize: 14)),
+                title: Text(l10n.t('editors_disability'),
+                    style: const TextStyle(fontSize: 14)),
                 contentPadding: EdgeInsets.zero,
               ),
               if (_hasDisability)
-                TextField(controller: _disabilityDescC, maxLines: 2, maxLength: 300, decoration: _inputDecor(l10n.t('editors_disability_desc'), Icons.accessible_forward_rounded)),
+                TextField(
+                    controller: _disabilityDescC,
+                    maxLines: 2,
+                    maxLength: 300,
+                    decoration: _inputDecor(l10n.t('editors_disability_desc'),
+                        Icons.accessible_forward_rounded)),
             ]),
           ),
 
@@ -1142,48 +1588,78 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
             title: l10n.t('editors_national_id'),
             icon: Icons.admin_panel_settings_rounded,
             child: Column(children: [
-              TextField(controller: _nationalIdNumberC, maxLength: 40, decoration: _inputDecor(l10n.t('editors_id_number'), Icons.numbers_rounded)),
+              TextField(
+                  controller: _nationalIdNumberC,
+                  maxLength: 40,
+                  decoration: _inputDecor(
+                      l10n.t('editors_id_number'), Icons.numbers_rounded)),
               const SizedBox(height: 12),
               _buildDropdown(
                 label: l10n.t('editors_id_type'),
                 icon: Icons.credit_card_rounded,
                 controller: _idDocTypeC,
-                options: ['Carte d\'identité', 'Passeport', 'Permis de conduire', 'Carte d\'électeur', 'Autre'],
+                options: [
+                  'Carte d\'identité',
+                  'Passeport',
+                  'Permis de conduire',
+                  'Carte d\'électeur',
+                  'Autre'
+                ],
               ),
               const SizedBox(height: 12),
               Row(children: [
                 Expanded(
                   child: InkWell(
                     onTap: () => _selectDate(context, _idIssueDateC),
-                    child: IgnorePointer(child: TextField(controller: _idIssueDateC, decoration: _inputDecor(l10n.t('editors_id_issue'), Icons.event_available_rounded, hint: 'YYYY-MM-DD'))),
+                    child: IgnorePointer(
+                        child: TextField(
+                            controller: _idIssueDateC,
+                            decoration: _inputDecor(
+                                l10n.t('editors_id_issue'),
+                                Icons.event_available_rounded,
+                                hint: 'YYYY-MM-DD'))),
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: InkWell(
                     onTap: () => _selectDate(context, _idExpiryDateC),
-                    child: IgnorePointer(child: TextField(controller: _idExpiryDateC, decoration: _inputDecor(l10n.t('editors_id_expiry'), Icons.event_busy_rounded, hint: 'YYYY-MM-DD'))),
+                    child: IgnorePointer(
+                        child: TextField(
+                            controller: _idExpiryDateC,
+                            decoration: _inputDecor(
+                                l10n.t('editors_id_expiry'),
+                                Icons.event_busy_rounded,
+                                hint: 'YYYY-MM-DD'))),
                   ),
                 ),
               ]),
               const SizedBox(height: 12),
-              TextField(controller: _idIssuePlaceC, maxLength: _kMaxFieldLength, decoration: _inputDecor(l10n.t('editors_id_place'), Icons.location_city_rounded)),
+              TextField(
+                  controller: _idIssuePlaceC,
+                  maxLength: _kMaxFieldLength,
+                  decoration: _inputDecor(l10n.t('editors_id_place'),
+                      Icons.location_city_rounded)),
               const SizedBox(height: 16),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: ThixPolicy.surfaceSoft,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+                  border:
+                      Border.all(color: ThixPolicy.border.withOpacity(0.6)),
                 ),
                 child: Column(children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(l10n.t('editors_id_photos'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
+                      Text(l10n.t('editors_id_photos'),
+                          style: ThixPolicy.labelStyle.copyWith(
+                              fontWeight: ThixPolicy.bold, fontSize: 13)),
                       if (_idVerificationStatusDisplay != null)
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
                           decoration: BoxDecoration(
                             color: ThixPolicy.surfaceSoft,
                             borderRadius: BorderRadius.circular(8),
@@ -1191,19 +1667,35 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
                           ),
                           child: Text(
                             _idVerificationStatusDisplay!,
-                            style: ThixPolicy.captionStyle.copyWith(fontSize: 10, fontWeight: ThixPolicy.semiBold),
+                            style: ThixPolicy.captionStyle.copyWith(
+                                fontSize: 10,
+                                fontWeight: ThixPolicy.semiBold),
                           ),
                         ),
                     ],
                   ),
                   const SizedBox(height: 12),
                   Row(children: [
-                    Expanded(child: _idSlot(kind: 'front', docId: _idFrontDocId, label: l10n.t('editors_id_front'), icon: Icons.front_hand_rounded)),
+                    Expanded(
+                        child: _idSlot(
+                            kind: 'front',
+                            docId: _idFrontDocId,
+                            label: l10n.t('editors_id_front'),
+                            icon: Icons.front_hand_rounded)),
                     const SizedBox(width: 8),
-                    Expanded(child: _idSlot(kind: 'back', docId: _idBackDocId, label: l10n.t('editors_id_back'), icon: Icons.branding_watermark_rounded)),
+                    Expanded(
+                        child: _idSlot(
+                            kind: 'back',
+                            docId: _idBackDocId,
+                            label: l10n.t('editors_id_back'),
+                            icon: Icons.branding_watermark_rounded)),
                   ]),
                   const SizedBox(height: 8),
-                  _idSlot(kind: 'selfie', docId: _idSelfieDocId, label: l10n.t('editors_id_selfie'), icon: Icons.face_rounded),
+                  _idSlot(
+                      kind: 'selfie',
+                      docId: _idSelfieDocId,
+                      label: l10n.t('editors_id_selfie'),
+                      icon: Icons.face_rounded),
                 ]),
               ),
             ]),
@@ -1220,11 +1712,18 @@ class _ProfileEditorBodyState extends State<_ProfileEditorBody> {
               onPressed: isSaving ? null : _save,
               style: FilledButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(25)),
               ),
               child: isSaving
-                  ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                  : Text(l10n.t('common_save'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(
+                          color: Colors.white, strokeWidth: 2))
+                  : Text(l10n.t('common_save'),
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w900, fontSize: 16)),
             ),
           ),
         ),
@@ -1272,7 +1771,8 @@ class _MultiFileUploadCard extends StatelessWidget {
             children: [
               Text(
                 l10n.t('editors_evidences'),
-                style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13),
+                style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold, fontSize: 13),
               ),
               Semantics(
                 button: true,
@@ -1285,7 +1785,8 @@ class _MultiFileUploadCard extends StatelessWidget {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: ThixPolicy.primary,
                     side: const BorderSide(color: ThixPolicy.primary),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 0),
                     minimumSize: const Size(0, 32),
                   ),
                 ),
@@ -1297,7 +1798,8 @@ class _MultiFileUploadCard extends StatelessWidget {
               padding: const EdgeInsets.only(top: 8),
               child: Text(
                 l10n.t('editors_no_documents'),
-                style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12),
+                style: ThixPolicy.captionStyle.copyWith(
+                    color: ThixPolicy.textMuted, fontSize: 12),
               ),
             ),
           const SizedBox(height: 8),
@@ -1334,7 +1836,8 @@ class _MultiFileUploadCard extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold),
+              style: ThixPolicy.captionStyle.copyWith(
+                  fontSize: 12, fontWeight: ThixPolicy.semiBold),
               overflow: TextOverflow.ellipsis,
             ),
           ),
@@ -1343,7 +1846,8 @@ class _MultiFileUploadCard extends StatelessWidget {
             label: 'Supprimer $label',
             enabled: !isSaving,
             child: IconButton(
-              icon: const Icon(Icons.close_rounded, color: ThixPolicy.danger, size: 16),
+              icon: const Icon(Icons.close_rounded,
+                  color: ThixPolicy.danger, size: 16),
               onPressed: isSaving ? null : onRemove,
               constraints: const BoxConstraints(),
               padding: EdgeInsets.zero,
@@ -1368,7 +1872,8 @@ class EducationEditorSheet {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EducationEditorBody(profile: profile, profileService: profileService),
+      builder: (_) =>
+          _EducationEditorBody(profile: profile, profileService: profileService),
     );
   }
 }
@@ -1377,7 +1882,8 @@ class _EducationEditorBody extends StatefulWidget {
   final ThixProfile profile;
   final ProfileService profileService;
 
-  const _EducationEditorBody({required this.profile, required this.profileService});
+  const _EducationEditorBody(
+      {required this.profile, required this.profileService});
 
   @override
   State<_EducationEditorBody> createState() => _EducationEditorBodyState();
@@ -1402,7 +1908,8 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
   @override
   void initState() {
     super.initState();
-    _localEducation = List<Map<String, dynamic>>.from(widget.profile.education);
+    _localEducation =
+        List<Map<String, dynamic>>.from(widget.profile.education);
   }
 
   @override
@@ -1421,15 +1928,21 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
     HapticFeedback.selectionClick();
     setState(() {
       _editingIndex = index;
-      _institutionC.text = (entry['institution'] ?? entry['school'] ?? '') as String;
+      _institutionC.text =
+          (entry['institution'] ?? entry['school'] ?? '') as String;
       _degreeC.text = (entry['degree'] ?? entry['title'] ?? '') as String;
       _cityC.text = (entry['city'] ?? '') as String;
-      _startDateC.text = (entry['startYear'] ?? entry['start_date'] ?? '') as String;
-      _endDateC.text = (entry['endYear'] ?? entry['end_date'] ?? '') as String;
+      _startDateC.text =
+          (entry['startYear'] ?? entry['start_date'] ?? '') as String;
+      _endDateC.text =
+          (entry['endYear'] ?? entry['end_date'] ?? '') as String;
       _descriptionC.text = (entry['description'] ?? '') as String;
 
       final rawEv = (entry['evidence'] as List?) ?? [];
-      _existingEvidences = rawEv.map(EvidenceFileRef.tryParse).whereType<EvidenceFileRef>().toList();
+      _existingEvidences = rawEv
+          .map(EvidenceFileRef.tryParse)
+          .whereType<EvidenceFileRef>()
+          .toList();
       _newFiles = [];
     });
   }
@@ -1462,12 +1975,15 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    final institution = _EdValidators.sanitize(_institutionC.text, maxLength: _kMaxNameLength);
+    final institution = _EdValidators.sanitize(_institutionC.text,
+        maxLength: _kMaxNameLength);
 
     if (institution.isEmpty) {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_institution_required')), backgroundColor: ThixPolicy.warning),
+        SnackBar(
+            content: Text(l10n.t('editors_institution_required')),
+            backgroundColor: ThixPolicy.warning),
       );
       return;
     }
@@ -1482,7 +1998,9 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
 
       for (final f in _newFiles) {
         final safeName = _EdValidators.sanitizeFileName(f.name);
-        final docId = 'EDU_${DateTime.now().millisecondsSinceEpoch}_$safeName'.toUpperCase();
+        final docId =
+            'EDU_${DateTime.now().millisecondsSinceEpoch}_$safeName'
+                .toUpperCase();
         await _edRetry(
           () => _docs.uploadPickedFile(
             uid: uid,
@@ -1494,16 +2012,22 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
           label: 'uploadEduEvidence',
           timeout: _kUploadTimeout,
         );
-        uploadedEvidences.add(EvidenceFileRef(storagePathOrUrl: 'documents:$docId', label: safeName));
+        uploadedEvidences.add(EvidenceFileRef(
+            storagePathOrUrl: 'documents:$docId', label: safeName));
       }
 
       final patch = {
         'institution': institution,
-        'degree': _EdValidators.sanitize(_degreeC.text, maxLength: _kMaxFieldLength),
-        'city': _EdValidators.sanitize(_cityC.text, maxLength: 60),
-        'startYear': _EdValidators.sanitize(_startDateC.text, maxLength: 20),
-        'endYear': _EdValidators.sanitize(_endDateC.text, maxLength: 20),
-        'description': _EdValidators.sanitize(_descriptionC.text, maxLength: _kMaxDescriptionLength),
+        'degree': _EdValidators.sanitize(_degreeC.text,
+            maxLength: _kMaxFieldLength),
+        'city':
+            _EdValidators.sanitize(_cityC.text, maxLength: 60),
+        'startYear':
+            _EdValidators.sanitize(_startDateC.text, maxLength: 20),
+        'endYear':
+            _EdValidators.sanitize(_endDateC.text, maxLength: 20),
+        'description': _EdValidators.sanitize(_descriptionC.text,
+            maxLength: _kMaxDescriptionLength),
         'evidence': uploadedEvidences.map((e) => e.toJson()).toList(),
       };
 
@@ -1514,7 +2038,8 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
       }
 
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: uid, education: _localEducation),
+        () => widget.profileService.updateProfile(
+            userId: uid, education: _localEducation),
         label: 'updateEducation',
       );
 
@@ -1522,14 +2047,18 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_edu_saved')), backgroundColor: ThixPolicy.success),
+        SnackBar(
+            content: Text(l10n.t('editors_edu_saved')),
+            backgroundColor: ThixPolicy.success),
       );
       _reset();
     } catch (e) {
       debugPrint('[Editors] ❌ Save education error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -1539,16 +2068,20 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
 
   Future<void> _delete(int index) async {
     final l10n = AppLocalizations.of(context);
-    final itemName = (_localEducation[index]['institution'] ?? l10n.t('editors_education')).toString();
+    final itemName = (_localEducation[index]['institution'] ??
+            l10n.t('editors_education'))
+        .toString();
 
     final confirmed = await _confirmDelete(context, itemName);
     if (!confirmed || !mounted) return;
 
     _saving.value = true;
     try {
-      final copy = List<Map<String, dynamic>>.from(_localEducation)..removeAt(index);
+      final copy = List<Map<String, dynamic>>.from(_localEducation)
+        ..removeAt(index);
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: widget.profile.userId, education: copy),
+        () => widget.profileService.updateProfile(
+            userId: widget.profile.userId, education: copy),
         label: 'deleteEducation',
       );
 
@@ -1561,7 +2094,9 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
       debugPrint('[Editors] ❌ Delete education error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -1581,38 +2116,54 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
         onClose: () => context.pop(),
         children: [
           if (_localEducation.isNotEmpty) ...[
-            Text(l10n.t('editors_your_records'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14)),
+            Text(l10n.t('editors_your_records'),
+                style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold, fontSize: 14)),
             const SizedBox(height: 8),
             ...List.generate(_localEducation.length, (i) {
               final e = _localEducation[i];
               final isEditing = _editingIndex == i;
-              final inst = _EdValidators.sanitize(e['institution']?.toString(), maxLength: _kMaxNameLength);
-              final degree = _EdValidators.sanitize(e['degree']?.toString(), maxLength: _kMaxFieldLength);
-              final start = _EdValidators.sanitize(e['startYear']?.toString(), maxLength: 20);
+              final inst = _EdValidators.sanitize(
+                  e['institution']?.toString(),
+                  maxLength: _kMaxNameLength);
+              final degree = _EdValidators.sanitize(
+                  e['degree']?.toString(),
+                  maxLength: _kMaxFieldLength);
+              final start = _EdValidators.sanitize(
+                  e['startYear']?.toString(),
+                  maxLength: 20);
 
               return Card(
                 elevation: 0,
-                color: isEditing ? ThixPolicy.primary.withOpacity(0.05) : ThixPolicy.card,
+                color: isEditing
+                    ? ThixPolicy.primary.withOpacity(0.05)
+                    : ThixPolicy.card,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: isEditing ? ThixPolicy.primary : ThixPolicy.border.withOpacity(0.6)),
+                  side: BorderSide(
+                      color: isEditing
+                          ? ThixPolicy.primary
+                          : ThixPolicy.border.withOpacity(0.6)),
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   title: Text(
                     inst.isEmpty ? l10n.t('editors_unknown') : inst,
-                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14),
+                    style: ThixPolicy.labelStyle.copyWith(
+                        fontWeight: ThixPolicy.bold, fontSize: 14),
                   ),
                   subtitle: Text(
                     '$degree - $start',
-                    style: ThixPolicy.captionStyle.copyWith(fontSize: 12),
+                    style:
+                        ThixPolicy.captionStyle.copyWith(fontSize: 12),
                   ),
                   trailing: Semantics(
                     button: true,
                     label: l10n.t('common_delete'),
                     enabled: !isSaving,
                     child: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: ThixPolicy.danger),
+                      icon: const Icon(Icons.delete_outline,
+                          color: ThixPolicy.danger),
                       onPressed: isSaving ? null : () => _delete(i),
                     ),
                   ),
@@ -1623,22 +2174,51 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
             const SizedBox(height: 24),
           ],
           _EditorSectionCard(
-            title: _editingIndex == null ? l10n.t('editors_add_education') : l10n.t('editors_edit_education'),
+            title: _editingIndex == null
+                ? l10n.t('editors_add_education')
+                : l10n.t('editors_edit_education'),
             icon: Icons.school_rounded,
             child: Column(children: [
-              TextField(controller: _institutionC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_institution'), Icons.account_balance_rounded)),
+              TextField(
+                  controller: _institutionC,
+                  maxLength: _kMaxNameLength,
+                  decoration: _inputDecor(l10n.t('editors_institution'),
+                      Icons.account_balance_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _degreeC, maxLength: _kMaxFieldLength, decoration: _inputDecor(l10n.t('editors_degree'), Icons.workspace_premium_rounded)),
+              TextField(
+                  controller: _degreeC,
+                  maxLength: _kMaxFieldLength,
+                  decoration: _inputDecor(l10n.t('editors_degree'),
+                      Icons.workspace_premium_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _cityC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_city'), Icons.location_city_rounded)),
+              TextField(
+                  controller: _cityC,
+                  maxLength: 60,
+                  decoration: _inputDecor(l10n.t('editors_city'),
+                      Icons.location_city_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _startDateC, maxLength: 20, decoration: _inputDecor(l10n.t('editors_start'), Icons.date_range_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _startDateC,
+                        maxLength: 20,
+                        decoration: _inputDecor(l10n.t('editors_start'),
+                            Icons.date_range_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _endDateC, maxLength: 20, decoration: _inputDecor(l10n.t('editors_end'), Icons.event_available_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _endDateC,
+                        maxLength: 20,
+                        decoration: _inputDecor(l10n.t('editors_end'),
+                            Icons.event_available_rounded))),
               ]),
               const SizedBox(height: 12),
-              TextField(controller: _descriptionC, maxLines: 3, maxLength: _kMaxDescriptionLength, decoration: _inputDecor(l10n.t('editors_description'), Icons.notes_rounded)),
+              TextField(
+                  controller: _descriptionC,
+                  maxLines: 3,
+                  maxLength: _kMaxDescriptionLength,
+                  decoration: _inputDecor(l10n.t('editors_description'),
+                      Icons.notes_rounded)),
               const SizedBox(height: 16),
               _MultiFileUploadCard(
                 isSaving: isSaving,
@@ -1646,7 +2226,8 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
                 newFiles: _newFiles,
                 onPickFiles: _pickFiles,
                 onRemoveNew: (f) => setState(() => _newFiles.remove(f)),
-                onRemoveExisting: (e) => setState(() => _existingEvidences.remove(e)),
+                onRemoveExisting: (e) =>
+                    setState(() => _existingEvidences.remove(e)),
               ),
             ]),
           ),
@@ -1656,7 +2237,8 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
             if (_editingIndex != null) ...[
               OutlinedButton(
                 onPressed: isSaving ? null : _reset,
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: Text(l10n.t('common_cancel')),
               ),
               const SizedBox(width: 12),
@@ -1668,13 +2250,21 @@ class _EducationEditorBodyState extends State<_EducationEditorBody> {
                   onPressed: isSaving ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: ThixPolicy.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25)),
                   ),
                   child: isSaving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
                       : Text(
-                          _editingIndex == null ? l10n.t('editors_add_record') : l10n.t('common_update'),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                          _editingIndex == null
+                              ? l10n.t('editors_add_record')
+                              : l10n.t('common_update'),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 14),
                         ),
                 ),
               ),
@@ -1699,7 +2289,8 @@ class ExperienceEditorSheet {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _ExperienceEditorBody(profile: profile, profileService: profileService),
+      builder: (_) => _ExperienceEditorBody(
+          profile: profile, profileService: profileService),
     );
   }
 }
@@ -1708,7 +2299,8 @@ class _ExperienceEditorBody extends StatefulWidget {
   final ThixProfile profile;
   final ProfileService profileService;
 
-  const _ExperienceEditorBody({required this.profile, required this.profileService});
+  const _ExperienceEditorBody(
+      {required this.profile, required this.profileService});
 
   @override
   State<_ExperienceEditorBody> createState() => _ExperienceEditorBodyState();
@@ -1732,7 +2324,8 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
   @override
   void initState() {
     super.initState();
-    _localExperience = List<Map<String, dynamic>>.from(widget.profile.experience);
+    _localExperience =
+        List<Map<String, dynamic>>.from(widget.profile.experience);
   }
 
   @override
@@ -1752,14 +2345,23 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
     setState(() {
       _editingIndex = index;
       _titleC.text = (entry['title'] as String?) ?? '';
-      _orgC.text = (entry['org'] as String?) ?? (entry['company'] as String?) ?? '';
-      _dateC.text = (entry['date'] as String?) ?? (entry['period'] as String?) ?? '';
-      _tasksC.text = (entry['tasks'] as String?) ?? (entry['missions'] as String?) ?? '';
+      _orgC.text = (entry['org'] as String?) ??
+          (entry['company'] as String?) ??
+          '';
+      _dateC.text = (entry['date'] as String?) ??
+          (entry['period'] as String?) ??
+          '';
+      _tasksC.text = (entry['tasks'] as String?) ??
+          (entry['missions'] as String?) ??
+          '';
       _sectorC.text = (entry['sector'] as String?) ?? '';
       _cityC.text = (entry['city'] as String?) ?? '';
 
       final rawEv = (entry['evidence'] as List?) ?? [];
-      _existingEvidences = rawEv.map(EvidenceFileRef.tryParse).whereType<EvidenceFileRef>().toList();
+      _existingEvidences = rawEv
+          .map(EvidenceFileRef.tryParse)
+          .whereType<EvidenceFileRef>()
+          .toList();
       _newFiles = [];
     });
   }
@@ -1792,12 +2394,15 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    final title = _EdValidators.sanitize(_titleC.text, maxLength: _kMaxFieldLength);
+    final title = _EdValidators.sanitize(_titleC.text,
+        maxLength: _kMaxFieldLength);
 
     if (title.isEmpty) {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_title_required')), backgroundColor: ThixPolicy.warning),
+        SnackBar(
+            content: Text(l10n.t('editors_title_required')),
+            backgroundColor: ThixPolicy.warning),
       );
       return;
     }
@@ -1812,7 +2417,9 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
 
       for (final f in _newFiles) {
         final safeName = _EdValidators.sanitizeFileName(f.name);
-        final docId = 'EXP_${DateTime.now().millisecondsSinceEpoch}_$safeName'.toUpperCase();
+        final docId =
+            'EXP_${DateTime.now().millisecondsSinceEpoch}_$safeName'
+                .toUpperCase();
         await _edRetry(
           () => _docs.uploadPickedFile(
             uid: uid,
@@ -1824,15 +2431,20 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
           label: 'uploadExpEvidence',
           timeout: _kUploadTimeout,
         );
-        uploadedEvidences.add(EvidenceFileRef(storagePathOrUrl: 'documents:$docId', label: safeName));
+        uploadedEvidences.add(EvidenceFileRef(
+            storagePathOrUrl: 'documents:$docId', label: safeName));
       }
 
-      final tasks = _EdValidators.sanitize(_tasksC.text, maxLength: _kMaxDescriptionLength);
+      final tasks = _EdValidators.sanitize(_tasksC.text,
+          maxLength: _kMaxDescriptionLength);
       final patch = {
         'title': title,
-        'org': _EdValidators.sanitize(_orgC.text, maxLength: _kMaxNameLength),
-        'date': _EdValidators.sanitize(_dateC.text, maxLength: 40),
-        'sector': _EdValidators.sanitize(_sectorC.text, maxLength: 60),
+        'org': _EdValidators.sanitize(_orgC.text,
+            maxLength: _kMaxNameLength),
+        'date':
+            _EdValidators.sanitize(_dateC.text, maxLength: 40),
+        'sector':
+            _EdValidators.sanitize(_sectorC.text, maxLength: 60),
         'city': _EdValidators.sanitize(_cityC.text, maxLength: 60),
         if (tasks.isNotEmpty) 'tasks': tasks,
         'evidence': uploadedEvidences.map((e) => e.toJson()).toList(),
@@ -1845,7 +2457,8 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
       }
 
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: uid, experience: _localExperience),
+        () => widget.profileService.updateProfile(
+            userId: uid, experience: _localExperience),
         label: 'updateExperience',
       );
 
@@ -1853,14 +2466,18 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_exp_saved')), backgroundColor: ThixPolicy.success),
+        SnackBar(
+            content: Text(l10n.t('editors_exp_saved')),
+            backgroundColor: ThixPolicy.success),
       );
       _reset();
     } catch (e) {
       debugPrint('[Editors] ❌ Save experience error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -1870,16 +2487,20 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
 
   Future<void> _delete(int index) async {
     final l10n = AppLocalizations.of(context);
-    final itemName = (_localExperience[index]['title'] ?? l10n.t('editors_experience')).toString();
+    final itemName = (_localExperience[index]['title'] ??
+            l10n.t('editors_experience'))
+        .toString();
 
     final confirmed = await _confirmDelete(context, itemName);
     if (!confirmed || !mounted) return;
 
     _saving.value = true;
     try {
-      final copy = List<Map<String, dynamic>>.from(_localExperience)..removeAt(index);
+      final copy = List<Map<String, dynamic>>.from(_localExperience)
+        ..removeAt(index);
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: widget.profile.userId, experience: copy),
+        () => widget.profileService.updateProfile(
+            userId: widget.profile.userId, experience: copy),
         label: 'deleteExperience',
       );
 
@@ -1892,7 +2513,9 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
       debugPrint('[Editors] ❌ Delete experience error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -1912,35 +2535,51 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
         onClose: () => context.pop(),
         children: [
           if (_localExperience.isNotEmpty) ...[
-            Text(l10n.t('editors_your_records'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14)),
+            Text(l10n.t('editors_your_records'),
+                style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold, fontSize: 14)),
             const SizedBox(height: 8),
             ...List.generate(_localExperience.length, (i) {
               final e = _localExperience[i];
               final isEditing = _editingIndex == i;
-              final title = _EdValidators.sanitize(e['title']?.toString(), maxLength: _kMaxFieldLength);
-              final org = _EdValidators.sanitize(e['org']?.toString(), maxLength: _kMaxNameLength);
-              final date = _EdValidators.sanitize(e['date']?.toString(), maxLength: 40);
+              final title = _EdValidators.sanitize(
+                  e['title']?.toString(),
+                  maxLength: _kMaxFieldLength);
+              final org = _EdValidators.sanitize(e['org']?.toString(),
+                  maxLength: _kMaxNameLength);
+              final date = _EdValidators.sanitize(
+                  e['date']?.toString(),
+                  maxLength: 40);
 
               return Card(
                 elevation: 0,
-                color: isEditing ? ThixPolicy.primary.withOpacity(0.05) : ThixPolicy.card,
+                color: isEditing
+                    ? ThixPolicy.primary.withOpacity(0.05)
+                    : ThixPolicy.card,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: isEditing ? ThixPolicy.primary : ThixPolicy.border.withOpacity(0.6)),
+                  side: BorderSide(
+                      color: isEditing
+                          ? ThixPolicy.primary
+                          : ThixPolicy.border.withOpacity(0.6)),
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   title: Text(
                     title.isEmpty ? l10n.t('editors_position') : title,
-                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14),
+                    style: ThixPolicy.labelStyle.copyWith(
+                        fontWeight: ThixPolicy.bold, fontSize: 14),
                   ),
-                  subtitle: Text('$org - $date', style: ThixPolicy.captionStyle.copyWith(fontSize: 12)),
+                  subtitle: Text('$org - $date',
+                      style:
+                          ThixPolicy.captionStyle.copyWith(fontSize: 12)),
                   trailing: Semantics(
                     button: true,
                     label: l10n.t('common_delete'),
                     enabled: !isSaving,
                     child: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: ThixPolicy.danger),
+                      icon: const Icon(Icons.delete_outline,
+                          color: ThixPolicy.danger),
                       onPressed: isSaving ? null : () => _delete(i),
                     ),
                   ),
@@ -1951,22 +2590,51 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
             const SizedBox(height: 24),
           ],
           _EditorSectionCard(
-            title: _editingIndex == null ? l10n.t('editors_add_experience') : l10n.t('editors_edit_experience'),
+            title: _editingIndex == null
+                ? l10n.t('editors_add_experience')
+                : l10n.t('editors_edit_experience'),
             icon: Icons.work_history_rounded,
             child: Column(children: [
-              TextField(controller: _titleC, maxLength: _kMaxFieldLength, decoration: _inputDecor(l10n.t('editors_position'), Icons.badge_rounded)),
+              TextField(
+                  controller: _titleC,
+                  maxLength: _kMaxFieldLength,
+                  decoration: _inputDecor(
+                      l10n.t('editors_position'), Icons.badge_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _orgC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_company'), Icons.business_rounded)),
+              TextField(
+                  controller: _orgC,
+                  maxLength: _kMaxNameLength,
+                  decoration: _inputDecor(l10n.t('editors_company'),
+                      Icons.business_rounded)),
               const SizedBox(height: 12),
               Row(children: [
-                Expanded(child: TextField(controller: _sectorC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_sector'), Icons.category_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _sectorC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_sector'),
+                            Icons.category_rounded))),
                 const SizedBox(width: 12),
-                Expanded(child: TextField(controller: _cityC, maxLength: 60, decoration: _inputDecor(l10n.t('editors_city'), Icons.location_city_rounded))),
+                Expanded(
+                    child: TextField(
+                        controller: _cityC,
+                        maxLength: 60,
+                        decoration: _inputDecor(l10n.t('editors_city'),
+                            Icons.location_city_rounded))),
               ]),
               const SizedBox(height: 12),
-              TextField(controller: _dateC, maxLength: 40, decoration: _inputDecor(l10n.t('editors_period'), Icons.date_range_rounded)),
+              TextField(
+                  controller: _dateC,
+                  maxLength: 40,
+                  decoration: _inputDecor(l10n.t('editors_period'),
+                      Icons.date_range_rounded)),
               const SizedBox(height: 12),
-              TextField(controller: _tasksC, maxLines: 4, maxLength: _kMaxDescriptionLength, decoration: _inputDecor(l10n.t('editors_missions'), Icons.format_list_bulleted_rounded)),
+              TextField(
+                  controller: _tasksC,
+                  maxLines: 4,
+                  maxLength: _kMaxDescriptionLength,
+                  decoration: _inputDecor(l10n.t('editors_missions'),
+                      Icons.format_list_bulleted_rounded)),
               const SizedBox(height: 16),
               _MultiFileUploadCard(
                 isSaving: isSaving,
@@ -1974,7 +2642,8 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
                 newFiles: _newFiles,
                 onPickFiles: _pickFiles,
                 onRemoveNew: (f) => setState(() => _newFiles.remove(f)),
-                onRemoveExisting: (e) => setState(() => _existingEvidences.remove(e)),
+                onRemoveExisting: (e) =>
+                    setState(() => _existingEvidences.remove(e)),
               ),
             ]),
           ),
@@ -1984,7 +2653,8 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
             if (_editingIndex != null) ...[
               OutlinedButton(
                 onPressed: isSaving ? null : _reset,
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: Text(l10n.t('common_cancel')),
               ),
               const SizedBox(width: 12),
@@ -1996,13 +2666,21 @@ class _ExperienceEditorBodyState extends State<_ExperienceEditorBody> {
                   onPressed: isSaving ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: ThixPolicy.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25)),
                   ),
                   child: isSaving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
                       : Text(
-                          _editingIndex == null ? l10n.t('editors_add_exp') : l10n.t('common_update'),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                          _editingIndex == null
+                              ? l10n.t('editors_add_exp')
+                              : l10n.t('common_update'),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 14),
                         ),
                 ),
               ),
@@ -2037,7 +2715,8 @@ class ConfirmFeeSheet {
             topRight: Radius.circular(20),
           ),
         ),
-        padding: EdgeInsets.fromLTRB(24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
+        padding: EdgeInsets.fromLTRB(
+            24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -2073,7 +2752,8 @@ class ConfirmFeeSheet {
             const SizedBox(height: 8),
             Text(
               _EdValidators.sanitize(description, maxLength: 500),
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted, height: 1.4),
+              style: ThixPolicy.bodyStyle.copyWith(
+                  color: ThixPolicy.textMuted, height: 1.4),
             ),
             const SizedBox(height: 24),
             Semantics(
@@ -2086,15 +2766,18 @@ class ConfirmFeeSheet {
                     HapticFeedback.mediumImpact();
                     context.pop(true);
                   },
-                  icon: const Icon(Icons.payments_rounded, color: Colors.white),
+                  icon: const Icon(Icons.payments_rounded,
+                      color: Colors.white),
                   label: Text(
                     amountLabel,
-                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w900),
                   ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: ThixPolicy.primary,
                     elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(30)),
                   ),
                 ),
               ),
@@ -2105,7 +2788,8 @@ class ConfirmFeeSheet {
                 HapticFeedback.lightImpact();
                 context.pop(false);
               },
-              child: Text(l10n.t('common_cancel'), style: const TextStyle(color: Colors.grey)),
+              child: Text(l10n.t('common_cancel'),
+                  style: const TextStyle(color: Colors.grey)),
             ),
           ],
         ),
@@ -2127,7 +2811,8 @@ class SkillsEditorSheet {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _SkillsEditorBody(profile: profile, profileService: profileService),
+      builder: (_) => _SkillsEditorBody(
+          profile: profile, profileService: profileService),
     );
   }
 }
@@ -2136,7 +2821,8 @@ class _SkillsEditorBody extends StatefulWidget {
   final ThixProfile profile;
   final dynamic profileService;
 
-  const _SkillsEditorBody({required this.profile, required this.profileService});
+  const _SkillsEditorBody(
+      {required this.profile, required this.profileService});
 
   @override
   State<_SkillsEditorBody> createState() => _SkillsEditorBodyState();
@@ -2187,12 +2873,15 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
 
   Future<void> _save() async {
     final l10n = AppLocalizations.of(context);
-    final name = _EdValidators.sanitize(_nameC.text, maxLength: _kMaxNameLength);
+    final name = _EdValidators.sanitize(_nameC.text,
+        maxLength: _kMaxNameLength);
 
     if (name.isEmpty) {
       HapticFeedback.lightImpact();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_skill_required')), backgroundColor: ThixPolicy.warning),
+        SnackBar(
+            content: Text(l10n.t('editors_skill_required')),
+            backgroundColor: ThixPolicy.warning),
       );
       return;
     }
@@ -2202,7 +2891,8 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
     HapticFeedback.mediumImpact();
 
     try {
-      final details = _EdValidators.sanitize(_detailsC.text, maxLength: 300);
+      final details =
+          _EdValidators.sanitize(_detailsC.text, maxLength: 300);
       final patch = {
         'name': name,
         'level': _level,
@@ -2216,7 +2906,8 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
       }
 
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: widget.profile.userId, skills: _localSkills),
+        () => widget.profileService.updateProfile(
+            userId: widget.profile.userId, skills: _localSkills),
         label: 'updateSkills',
       );
 
@@ -2224,14 +2915,18 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(l10n.t('editors_skill_saved')), backgroundColor: ThixPolicy.success),
+        SnackBar(
+            content: Text(l10n.t('editors_skill_saved')),
+            backgroundColor: ThixPolicy.success),
       );
       _reset();
     } catch (e) {
       debugPrint('[Editors] ❌ Save skill error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -2241,16 +2936,19 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
 
   Future<void> _delete(int index) async {
     final l10n = AppLocalizations.of(context);
-    final itemName = (_localSkills[index]['name'] ?? l10n.t('editors_skill')).toString();
+    final itemName =
+        (_localSkills[index]['name'] ?? l10n.t('editors_skill')).toString();
 
     final confirmed = await _confirmDelete(context, itemName);
     if (!confirmed || !mounted) return;
 
     _saving.value = true;
     try {
-      final copy = List<Map<String, dynamic>>.from(_localSkills)..removeAt(index);
+      final copy = List<Map<String, dynamic>>.from(_localSkills)
+        ..removeAt(index);
       await _edRetry(
-        () => widget.profileService.updateProfile(userId: widget.profile.userId, skills: copy),
+        () => widget.profileService.updateProfile(
+            userId: widget.profile.userId, skills: copy),
         label: 'deleteSkill',
       );
 
@@ -2263,7 +2961,9 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
       debugPrint('[Editors] ❌ Delete skill error: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(_EdValidators.friendlyError(e)), backgroundColor: ThixPolicy.danger),
+          SnackBar(
+              content: Text(_EdValidators.friendlyError(e)),
+              backgroundColor: ThixPolicy.danger),
         );
       }
     } finally {
@@ -2283,34 +2983,48 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
         onClose: () => context.pop(),
         children: [
           if (_localSkills.isNotEmpty) ...[
-            Text(l10n.t('editors_your_records'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14)),
+            Text(l10n.t('editors_your_records'),
+                style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: ThixPolicy.bold, fontSize: 14)),
             const SizedBox(height: 8),
             ...List.generate(_localSkills.length, (i) {
               final e = _localSkills[i];
               final isEditing = _editingIndex == i;
-              final name = _EdValidators.sanitize(e['name']?.toString(), maxLength: _kMaxNameLength);
-              final level = _EdValidators.sanitize(e['level']?.toString(), maxLength: 30);
+              final name = _EdValidators.sanitize(e['name']?.toString(),
+                  maxLength: _kMaxNameLength);
+              final level = _EdValidators.sanitize(
+                  e['level']?.toString(),
+                  maxLength: 30);
 
               return Card(
                 elevation: 0,
-                color: isEditing ? ThixPolicy.primary.withOpacity(0.05) : ThixPolicy.card,
+                color: isEditing
+                    ? ThixPolicy.primary.withOpacity(0.05)
+                    : ThixPolicy.card,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: BorderSide(color: isEditing ? ThixPolicy.primary : ThixPolicy.border.withOpacity(0.6)),
+                  side: BorderSide(
+                      color: isEditing
+                          ? ThixPolicy.primary
+                          : ThixPolicy.border.withOpacity(0.6)),
                 ),
                 margin: const EdgeInsets.only(bottom: 8),
                 child: ListTile(
                   title: Text(
                     name.isEmpty ? '—' : name,
-                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14),
+                    style: ThixPolicy.labelStyle.copyWith(
+                        fontWeight: ThixPolicy.bold, fontSize: 14),
                   ),
-                  subtitle: Text(level.isEmpty ? '—' : level, style: ThixPolicy.captionStyle.copyWith(fontSize: 12)),
+                  subtitle: Text(level.isEmpty ? '—' : level,
+                      style:
+                          ThixPolicy.captionStyle.copyWith(fontSize: 12)),
                   trailing: Semantics(
                     button: true,
                     label: l10n.t('common_delete'),
                     enabled: !isSaving,
                     child: IconButton(
-                      icon: const Icon(Icons.delete_outline, color: ThixPolicy.danger),
+                      icon: const Icon(Icons.delete_outline,
+                          color: ThixPolicy.danger),
                       onPressed: isSaving ? null : () => _delete(i),
                     ),
                   ),
@@ -2321,22 +3035,36 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
             const SizedBox(height: 24),
           ],
           _EditorSectionCard(
-            title: _editingIndex == null ? l10n.t('editors_add_skill') : l10n.t('editors_edit_skill'),
+            title: _editingIndex == null
+                ? l10n.t('editors_add_skill')
+                : l10n.t('editors_edit_skill'),
             icon: Icons.psychology_rounded,
             child: Column(children: [
-              TextField(controller: _nameC, maxLength: _kMaxNameLength, decoration: _inputDecor(l10n.t('editors_skill'), Icons.psychology_rounded)),
+              TextField(
+                  controller: _nameC,
+                  maxLength: _kMaxNameLength,
+                  decoration: _inputDecor(
+                      l10n.t('editors_skill'), Icons.psychology_rounded)),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
                 value: _levels.contains(_level) ? _level : 'Intermédiaire',
-                items: _levels.map((l) => DropdownMenuItem(value: l, child: Text(l))).toList(),
+                items: _levels
+                    .map((l) => DropdownMenuItem(value: l, child: Text(l)))
+                    .toList(),
                 onChanged: (v) {
                   HapticFeedback.selectionClick();
                   setState(() => _level = v ?? 'Intermédiaire');
                 },
-                decoration: _inputDecor(l10n.t('editors_level'), Icons.signal_cellular_alt_rounded),
+                decoration: _inputDecor(l10n.t('editors_level'),
+                    Icons.signal_cellular_alt_rounded),
               ),
               const SizedBox(height: 12),
-              TextField(controller: _detailsC, maxLines: 3, maxLength: 300, decoration: _inputDecor(l10n.t('editors_details'), Icons.notes_rounded)),
+              TextField(
+                  controller: _detailsC,
+                  maxLines: 3,
+                  maxLength: 300,
+                  decoration: _inputDecor(
+                      l10n.t('editors_details'), Icons.notes_rounded)),
             ]),
           ),
         ],
@@ -2345,7 +3073,8 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
             if (_editingIndex != null) ...[
               OutlinedButton(
                 onPressed: isSaving ? null : _reset,
-                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
+                style: OutlinedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(vertical: 14)),
                 child: Text(l10n.t('common_cancel')),
               ),
               const SizedBox(width: 12),
@@ -2357,13 +3086,21 @@ class _SkillsEditorBodyState extends State<_SkillsEditorBody> {
                   onPressed: isSaving ? null : _save,
                   style: FilledButton.styleFrom(
                     backgroundColor: ThixPolicy.primary,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(25)),
                   ),
                   child: isSaving
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
                       : Text(
-                          _editingIndex == null ? l10n.t('common_add') : l10n.t('common_update'),
-                          style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14),
+                          _editingIndex == null
+                              ? l10n.t('common_add')
+                              : l10n.t('common_update'),
+                          style: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 14),
                         ),
                 ),
               ),
