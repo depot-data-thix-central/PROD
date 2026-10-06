@@ -69,7 +69,7 @@ class AudioSpaceService {
     final raw = userId.replaceAll('-', '');
     final head = raw.length >= 12 ? raw.substring(0, 12) : raw.padRight(12, '0');
     final ts = DateTime.now().millisecondsSinceEpoch.toString();
-    return 'space_' + head + '_' + ts;
+    return 'space_${head}_$ts';
   }
 
   bool _isDuplicateChannel(Object e) {
@@ -106,10 +106,7 @@ class AudioSpaceService {
 
       if (res.status != 200 || res.data == null) {
         throw Exception(
-          'Token salon audio refusé (' +
-              res.status.toString() +
-              ') channel=' +
-              channelName,
+          'Token salon audio refusé (${res.status}) channel=$channelName',
         );
       }
 
@@ -123,7 +120,7 @@ class AudioSpaceService {
       }
       return AgoraCredentials(appId: appId, token: token);
     } catch (e) {
-      debugPrint('[AudioSpace] token-space error: ' + e.toString());
+      debugPrint('[AudioSpace] token-space error: $e');
       rethrow;
     }
   }
@@ -153,24 +150,27 @@ class AudioSpaceService {
       throw Exception('Le consentement d\'enregistrement est obligatoire.');
     }
 
+    final cleanDesc = AudioSpaceSanitizer.sanitize(description, maxLength: _kMaxDesc);
+    final cleanTopicRaw = AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic);
+    final cleanTopic = cleanTopicRaw.isEmpty ? 'general' : cleanTopicRaw;
+    final cleanHostName = AudioSpaceSanitizer.sanitize(hostName, maxLength: _kMaxName);
+
     final uid = currentUserId;
     Object? lastError;
 
     for (var attempt = 0; attempt < 3; attempt++) {
       final channel = _newChannel(uid);
-      debugPrint('[AudioSpace] channel=' + channel);
+      debugPrint('[AudioSpace] channel=$channel');
       try {
         final row = await _client
             .from('audio_spaces')
             .insert({
               'channel_name': channel,
               'title': cleanTitle,
-              'description': AudioSpaceSanitizer.sanitize(description, maxLength: _kMaxDesc),
-              'topic': AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic).isEmpty
-                  ? 'general'
-                  : AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic),
+              'description': cleanDesc,
+              'topic': cleanTopic,
               'host_id': uid,
-              'host_name': AudioSpaceSanitizer.sanitize(hostName, maxLength: _kMaxName),
+              'host_name': cleanHostName,
               'host_avatar_url': hostAvatarUrl,
               'enterprise_id': enterpriseId,
               'status': 'live',
@@ -189,7 +189,7 @@ class AudioSpaceService {
         final space = AudioSpace.fromMap(Map<String, dynamic>.from(row));
         await joinSpace(
           space,
-          displayName: hostName,
+          displayName: cleanHostName,
           avatarUrl: hostAvatarUrl,
           role: AudioSpaceRole.host,
           isMuted: false,
@@ -197,7 +197,7 @@ class AudioSpaceService {
         return space;
       } catch (e) {
         lastError = e;
-        debugPrint('[AudioSpace] create attempt failed: ' + e.toString());
+        debugPrint('[AudioSpace] create attempt failed: $e');
         if (!_isDuplicateChannel(e)) rethrow;
         await Future<void>.delayed(Duration(milliseconds: 80 * (attempt + 1)));
       }
@@ -219,7 +219,6 @@ class AudioSpaceService {
         .timeout(_kDbTimeout);
   }
 
-  /// ✅ NOUVEAU : Récupère un space par son ID (pour deep links)
   Future<AudioSpace?> getSpaceById(String spaceId) async {
     if (spaceId.isEmpty) return null;
     try {
@@ -232,17 +231,14 @@ class AudioSpaceService {
       if (row == null) return null;
       return AudioSpace.fromMap(Map<String, dynamic>.from(row));
     } catch (e) {
-      debugPrint('[AudioSpace] getSpaceById error: ' + e.toString());
+      debugPrint('[AudioSpace] getSpaceById error: $e');
       return null;
     }
   }
 
-  /// ✅ NOUVEAU : Récupère le space actif de l'utilisateur courant
-  /// (utile au retour en foreground après minimisation)
   Future<AudioSpace?> getMyActiveSpace() async {
     if (currentUserId.isEmpty) return null;
     try {
-      // Cherche d'abord un space où l'utilisateur est hôte ET live
       final asHost = await _client
           .from('audio_spaces')
           .select()
@@ -255,7 +251,6 @@ class AudioSpaceService {
         return AudioSpace.fromMap(Map<String, dynamic>.from(asHost));
       }
 
-      // Sinon, cherche un space où il est participant actif (non banni, non parti)
       final participation = await _client
           .from('audio_space_participants')
           .select('space_id, audio_spaces!inner(*)')
@@ -277,12 +272,11 @@ class AudioSpaceService {
 
       return null;
     } catch (e) {
-      debugPrint('[AudioSpace] getMyActiveSpace error: ' + e.toString());
+      debugPrint('[AudioSpace] getMyActiveSpace error: $e');
       return null;
     }
   }
 
-  /// ✅ NOUVEAU : Liste les spaces live (filtres optionnels)
   Future<List<AudioSpace>> listActiveSpaces({
     int limit = 12,
     String? topic,
@@ -309,12 +303,11 @@ class AudioSpaceService {
           .where((s) => s.isLive && s.id.isNotEmpty)
           .toList();
     } catch (e) {
-      debugPrint('[AudioSpace] listActiveSpaces error: ' + e.toString());
+      debugPrint('[AudioSpace] listActiveSpaces error: $e');
       return [];
     }
   }
 
-  /// ✅ NOUVEAU : Met à jour les métadonnées d'un space (hôte uniquement)
   Future<void> updateSpaceMetadata({
     required String spaceId,
     String? title,
@@ -347,7 +340,6 @@ class AudioSpaceService {
         .timeout(_kDbTimeout);
   }
 
-  /// ✅ NOUVEAU : Supprime un space (hôte ou admin)
   Future<void> deleteSpace(String spaceId) async {
     if (spaceId.isEmpty || currentUserId.isEmpty) return;
     await _client
@@ -404,7 +396,6 @@ class AudioSpaceService {
         .single()
         .timeout(_kDbTimeout);
 
-    // ✅ Incrémenter le compteur côté space
     await _incrementParticipantCount(space.id);
 
     return AudioSpaceParticipant.fromMap(Map<String, dynamic>.from(row));
@@ -422,7 +413,6 @@ class AudioSpaceService {
         .eq('user_id', currentUserId)
         .timeout(_kDbTimeout);
 
-    // ✅ Décrémenter le compteur côté space
     await _decrementParticipantCount(spaceId);
   }
 
@@ -439,7 +429,6 @@ class AudioSpaceService {
         .toList();
   }
 
-  /// ✅ NOUVEAU : Compte les participants actifs d'un space
   Future<int> getParticipantsCount(String spaceId) async {
     try {
       final rows = await _client
@@ -451,22 +440,19 @@ class AudioSpaceService {
           .timeout(_kDbTimeout);
       return (rows as List).length;
     } catch (e) {
-      debugPrint('[AudioSpace] getParticipantsCount error: ' + e.toString());
+      debugPrint('[AudioSpace] getParticipantsCount error: $e');
       return 0;
     }
   }
 
-  /// ✅ Helper : incrémente speaker_count / listener_count
   Future<void> _incrementParticipantCount(String spaceId) async {
     try {
       await _client.rpc('increment_space_participant_count', params: {'p_space_id': spaceId});
     } catch (e) {
-      // Fallback : mise à jour manuelle
       debugPrint('[AudioSpace] RPC increment failed, fallback manual: $e');
     }
   }
 
-  /// ✅ Helper : décrémente speaker_count / listener_count
   Future<void> _decrementParticipantCount(String spaceId) async {
     try {
       await _client.rpc('decrement_space_participant_count', params: {'p_space_id': spaceId});
@@ -515,7 +501,7 @@ class AudioSpaceService {
         .length;
     if (speakers >= space.maxSpeakers) {
       throw Exception(
-        'Nombre maximum d\'intervenants atteint (' + space.maxSpeakers.toString() + ').',
+        'Nombre maximum d\'intervenants atteint (${space.maxSpeakers}).',
       );
     }
     await _client
@@ -556,7 +542,6 @@ class AudioSpaceService {
         .timeout(_kDbTimeout);
   }
 
-  /// ✅ NOUVEAU : Vérifie si l'utilisateur courant peut modérer
   Future<bool> canModerate(String spaceId) async {
     if (currentUserId.isEmpty) return false;
     try {
@@ -572,7 +557,7 @@ class AudioSpaceService {
       final role = row['role']?.toString();
       return role == 'host' || role == 'cohost';
     } catch (e) {
-      debugPrint('[AudioSpace] canModerate error: ' + e.toString());
+      debugPrint('[AudioSpace] canModerate error: $e');
       return false;
     }
   }
@@ -595,7 +580,6 @@ class AudioSpaceService {
     }).timeout(_kDbTimeout);
   }
 
-  /// ✅ NOUVEAU : Récupère l'historique des messages d'un space
   Future<List<AudioSpaceChatMessage>> getChatHistory(
     String spaceId, {
     int limit = 50,
@@ -624,15 +608,13 @@ class AudioSpaceService {
         );
       }).toList();
 
-      // Retourner dans l'ordre chronologique (plus ancien d'abord)
       return messages.reversed.toList();
     } catch (e) {
-      debugPrint('[AudioSpace] getChatHistory error: ' + e.toString());
+      debugPrint('[AudioSpace] getChatHistory error: $e');
       return [];
     }
   }
 
-  /// ✅ NOUVEAU : Supprime un message (hôte/cohost ou auteur)
   Future<void> deleteMessage({
     required String spaceId,
     required String messageId,
@@ -646,7 +628,7 @@ class AudioSpaceService {
           .eq('space_id', spaceId)
           .timeout(_kDbTimeout);
     } catch (e) {
-      debugPrint('[AudioSpace] deleteMessage error: ' + e.toString());
+      debugPrint('[AudioSpace] deleteMessage error: $e');
       rethrow;
     }
   }
@@ -654,7 +636,6 @@ class AudioSpaceService {
   // ═════════════════════════════════════════════════════════════════════
   // REACTIONS
   // ═════════════════════════════════════════════════════════════════════
-  /// ✅ NOUVEAU : Envoie une réaction (via broadcast)
   Future<void> sendReaction(RealtimeChannel channel, String emoji) async {
     if (emoji.isEmpty || currentUserId.isEmpty) return;
     await broadcast(channel, 'reaction', {
@@ -667,10 +648,9 @@ class AudioSpaceService {
   // ═════════════════════════════════════════════════════════════════════
   // ANALYTICS
   // ═════════════════════════════════════════════════════════════════════
-  /// ✅ NOUVEAU : Enregistre une vue/participation pour analytics
   Future<void> recordAnalytics({
     required String spaceId,
-    required String eventType, // 'view', 'join', 'share', 'reaction'
+    required String eventType,
     Map<String, dynamic>? metadata,
   }) async {
     if (spaceId.isEmpty) return;
@@ -683,12 +663,10 @@ class AudioSpaceService {
         'created_at': DateTime.now().toUtc().toIso8601String(),
       }).timeout(_kDbTimeout);
     } catch (e) {
-      // Non bloquant — analytics ne doit pas casser l'app
-      debugPrint('[AudioSpace] recordAnalytics error: ' + e.toString());
+      debugPrint('[AudioSpace] recordAnalytics error: $e');
     }
   }
 
-  /// ✅ NOUVEAU : Récupère les stats d'un space
   Future<Map<String, int>> getSpaceStats(String spaceId) async {
     try {
       final rows = await _client
@@ -713,7 +691,7 @@ class AudioSpaceService {
 
       return stats;
     } catch (e) {
-      debugPrint('[AudioSpace] getSpaceStats error: ' + e.toString());
+      debugPrint('[AudioSpace] getSpaceStats error: $e');
       return {'views': 0, 'joins': 0, 'shares': 0, 'reactions': 0};
     }
   }
@@ -731,7 +709,7 @@ class AudioSpaceService {
     required void Function(String targetUserId) onBanned,
     void Function(String userId, String emoji)? onReaction,
   }) {
-    final channel = _client.channel('audio_space_' + spaceId);
+    final channel = _client.channel('audio_space_$spaceId');
     channel
         .onBroadcast(
           event: 'chat',
@@ -754,7 +732,7 @@ class AudioSpaceService {
                     DateTime.now(),
               ));
             } catch (e) {
-              debugPrint('[AudioSpace] chat parse error: ' + e.toString());
+              debugPrint('[AudioSpace] chat parse error: $e');
             }
           },
         )
@@ -806,13 +784,12 @@ class AudioSpaceService {
     return channel.sendBroadcastMessage(event: event, payload: payload);
   }
 
-  /// ✅ NOUVEAU : Ferme proprement un channel Realtime
   Future<void> closeChannel(RealtimeChannel? channel) async {
     if (channel == null) return;
     try {
       await _client.removeChannel(channel);
     } catch (e) {
-      debugPrint('[AudioSpace] closeChannel error: ' + e.toString());
+      debugPrint('[AudioSpace] closeChannel error: $e');
     }
   }
 }
