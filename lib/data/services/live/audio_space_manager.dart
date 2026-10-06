@@ -1,20 +1,8 @@
 // lib/data/services/live/audio_space_manager.dart
 //
 // ============================================================================
-// 🧠 AUDIO SPACE MANAGER — Singleton global
+// 🧠 AUDIO SPACE MANAGER — Singleton global (Production)
 // ============================================================================
-// Problème résolu :
-//   - Survit à la navigation (plus d'autoDispose)
-//   - Survit au background (l'hôte garde le contrôle)
-//   - Survit à la fermeture de la page (l'espace continue)
-//   - Reconnexion automatique si session Supabase expire
-//   - Émet un Stream global pour le UI
-//
-// Utilisation :
-//   AudioSpaceManager.instance.join(space, user)
-//   AudioSpaceManager.instance.stream.listen(...)
-// ============================================================================
-
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -23,14 +11,14 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/data/models/live/audio_space_model.dart';
 import 'package:thix_id/data/services/live/audio_space_service.dart';
 import 'package:thix_id/data/services/live/audio_space_background_service.dart';
-import 'package:thix_id/data/services/live/live_service.dart'; // ✅ AJOUTÉ
+import 'package:thix_id/data/services/live/live_service.dart';
 
 enum ManagerStatus {
-  idle,       // Aucun space actif
-  joining,    // En cours de connexion
-  live,       // Space en cours (hôte ou participant)
-  background, // App en arrière-plan mais space toujours actif
-  ending,     // Fermeture en cours
+  idle,
+  joining,
+  live,
+  background,
+  ending,
   error,
 }
 
@@ -55,14 +43,15 @@ class AudioSpaceManagerState {
     this.errorMessage,
   });
 
-  bool get isActive => status == ManagerStatus.live || status == ManagerStatus.background;
-  bool get isHost => me?.role == AudioSpaceRole.host || space?.hostId == me?.userId;
+  bool get isActive =>
+      status == ManagerStatus.live || status == ManagerStatus.background;
+  bool get isHost =>
+      me?.role == AudioSpaceRole.host || space?.hostId == me?.userId;
   String? get spaceId => space?.id;
   Duration get elapsed => startedAt == null
       ? Duration.zero
       : DateTime.now().difference(startedAt!);
 
-  /// ✅ AJOUTÉ : Durée formatée (HH:MM:SS ou MM:SS)
   String get elapsedFormatted {
     if (startedAt == null) return '00:00';
     final d = DateTime.now().difference(startedAt!);
@@ -99,7 +88,6 @@ class AudioSpaceManagerState {
   static const AudioSpaceManagerState initial = AudioSpaceManagerState();
 }
 
-/// Singleton global — accessible partout via `AudioSpaceManager.instance`
 class AudioSpaceManager {
   AudioSpaceManager._internal() {
     _init();
@@ -107,7 +95,6 @@ class AudioSpaceManager {
 
   static final AudioSpaceManager instance = AudioSpaceManager._internal();
 
-  // ✅ AJOUTÉ : LiveService requis par AudioSpaceService
   late final LiveService _liveService;
   late final AudioSpaceService _service;
   late final AudioSpaceBackgroundService _backgroundService;
@@ -129,12 +116,9 @@ class AudioSpaceManager {
   // INITIALISATION
   // ─────────────────────────────────────────────────────────────
   void _init() {
-    // ✅ CORRIGÉ : instancier LiveService AVANT AudioSpaceService
     _liveService = LiveService();
     _service = AudioSpaceService(_liveService);
     _backgroundService = AudioSpaceBackgroundService();
-
-    // Écouter le cycle de vie de l'app pour gérer le background
     _backgroundService.onAppLifecycleChanged.listen(_onAppLifecycleChanged);
   }
 
@@ -145,7 +129,7 @@ class AudioSpaceManager {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // CYCLE DE VIE APP (background/foreground)
+  // CYCLE DE VIE APP
   // ─────────────────────────────────────────────────────────────
   void _onAppLifecycleChanged(bool isInBackground) {
     if (!_state.isActive) return;
@@ -162,7 +146,6 @@ class AudioSpaceManager {
     } else {
       _state = _state.copyWith(status: ManagerStatus.live);
       _backgroundService.exitBackgroundMode();
-      // Reconnecter si session Supabase expirée
       _recoverSupabaseSession();
       _loadRoster();
     }
@@ -213,19 +196,12 @@ class AudioSpaceManager {
         isVerified: isVerified,
       );
 
-      _state = _state.copyWith(
-        me: meRow,
-        startedAt: DateTime.now(),
-      );
+      _state = _state.copyWith(me: meRow, startedAt: DateTime.now());
 
-      // Charger roster + chat en parallèle
       await Future.wait([_loadRoster(), _loadChat()]);
-
-      // Écouter Realtime
       _listenRealtime();
       _listenChatTable();
 
-      // Timers
       _rosterTick?.cancel();
       _rosterTick = Timer.periodic(
         const Duration(seconds: 10),
@@ -234,23 +210,21 @@ class AudioSpaceManager {
       _elapsedTick?.cancel();
       _elapsedTick = Timer.periodic(
         const Duration(seconds: 1),
-        (_) => _emit(), // émettre pour rafraîchir l'elapsed dans le UI
+        (_) => _emit(),
       );
 
-      // Lancer Agora via le background service
       await _backgroundService.startAgora(
         space: space,
         me: meRow,
         isHost: isHost,
       );
-
-      // Activer le mode background (même en foreground, pour préparation)
       await _backgroundService.prepareBackgroundMode();
 
       _state = _state.copyWith(status: ManagerStatus.live);
       _emit();
 
-      debugPrint('[AudioSpaceManager] ✓ Rejoint ${space.title} (${isHost ? "hôte" : "participant"})');
+      debugPrint(
+          '[AudioSpaceManager] ✓ Rejoint ${space.title} (${isHost ? "hôte" : "participant"})');
     } catch (e, st) {
       debugPrint('[AudioSpaceManager] ✗ join failed: $e\n$st');
       _state = _state.copyWith(
@@ -284,9 +258,8 @@ class AudioSpaceManager {
     if (!_state.isActive || !_state.isHost) return;
     final spaceId = _state.spaceId;
     final channelName = _state.space?.channelName;
-    
-    if (spaceId == null || channelName == null) {
-      debugPrint('[AudioSpaceManager] ⚠️ endSpace: spaceId or channelName null');
+
+    if (spaceId == null) {
       await _cleanup();
       return;
     }
@@ -295,43 +268,34 @@ class AudioSpaceManager {
     _emit();
 
     try {
-      // ✅ APPEL RPC SQL POUR FERMER LE SALON CÔTE SERVEUR
-      // Cela garantit que le statut passe à 'ended' et ended_at est défini
-      await Supabase.instance.client.rpc(
-        'end_audio_space', 
-        params: {'p_channel_name': channelName},
-      ).timeout(const Duration(seconds: 10));
-      
-      debugPrint('[AudioSpaceManager] ✓ Salon fermé via RPC: $channelName');
-      
-      // Broadcast pour notifier tous les participants connectés
-      await _broadcast('ended', {});
-      
-    } catch (e) {
-      debugPrint('[AudioSpaceManager] ❌ end_audio_space RPC failed: $e');
-      // Fallback : tentative via le service standard si le RPC échoue
-      try {
-        await _service.endSpace(spaceId);
-        debugPrint('[AudioSpaceManager] ✓ Fallback endSpace service OK');
-      } catch (fallbackErr) {
-        debugPrint('[AudioSpaceManager] ❌ Fallback also failed: $fallbackErr');
+      // ✅ Appel RPC SQL pour fermer le salon côté serveur
+      if (channelName != null && channelName.isNotEmpty) {
+        await Supabase.instance.client
+            .rpc('end_audio_space', params: {'p_channel_name': channelName})
+            .timeout(const Duration(seconds: 10));
+        debugPrint(
+            '[AudioSpaceManager] ✓ Salon fermé via RPC: $channelName');
       }
+
+      // Fallback via service standard
+      await _service.endSpace(spaceId);
+      await _broadcast('ended', {});
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ❌ endSpace error: $e');
     } finally {
-      // Toujours nettoyer localement même si le serveur a échoué
       await _cleanup();
     }
   }
+
   // ─────────────────────────────────────────────────────────────
-  // CLEANUP (Nettoyage complet des ressources)
+  // CLEANUP (Unique définition)
   // ─────────────────────────────────────────────────────────────
   Future<void> _cleanup() async {
-    // 1. Arrêter les timers
     _rosterTick?.cancel();
     _rosterTick = null;
     _elapsedTick?.cancel();
     _elapsedTick = null;
 
-    // 2. Fermer les channels Realtime Supabase
     try {
       await _rtChannel?.unsubscribe();
     } catch (_) {}
@@ -341,48 +305,17 @@ class AudioSpaceManager {
     _rtChannel = null;
     _pgChannel = null;
 
-    // 3. Arrêter Agora et le mode background
     await _backgroundService.stopAgora();
     _backgroundService.exitBackgroundMode();
 
-    // 4. Réinitialiser l'état global
     _state = AudioSpaceManagerState.initial;
     _emit();
 
     debugPrint('[AudioSpaceManager] ✓ Cleanup completed');
   }
+
   // ─────────────────────────────────────────────────────────────
-  // CLEANUP (Nettoyage complet des ressources)
-  // ─────────────────────────────────────────────────────────────
-  Future<void> _cleanup() async {
-    // 1. Arrêter les timers
-    _rosterTick?.cancel();
-    _rosterTick = null;
-    _elapsedTick?.cancel();
-    _elapsedTick = null;
-
-    // 2. Fermer les channels Realtime Supabase
-    try {
-      await _rtChannel?.unsubscribe();
-    } catch (_) {}
-    try {
-      await _pgChannel?.unsubscribe();
-    } catch (_) {}
-    _rtChannel = null;
-    _pgChannel = null;
-
-    // 3. Arrêter Agora et le mode background
-    await _backgroundService.stopAgora();
-    _backgroundService.exitBackgroundMode();
-
-    // 4. Réinitialiser l'état global
-    _state = AudioSpaceManagerState.initial;
-    _emit();
-
-    debugPrint('[AudioSpaceManager] ✓ Cleanup completed');
-  }
-  // ─────────────────────────────────────────────────────────────
-  // ROSTER
+  // ROSTER & CHAT
   // ─────────────────────────────────────────────────────────────
   Future<void> _loadRoster() async {
     final spaceId = _state.spaceId;
@@ -397,10 +330,7 @@ class AudioSpaceManager {
           break;
         }
       }
-      _state = _state.copyWith(
-        participants: list,
-        me: mine ?? _state.me,
-      );
+      _state = _state.copyWith(participants: list, me: mine ?? _state.me);
       _emit();
     } catch (e) {
       debugPrint('[AudioSpaceManager] _loadRoster error: $e');
@@ -425,8 +355,8 @@ class AudioSpaceManager {
           userId: m['user_id']?.toString() ?? '',
           displayName: m['display_name']?.toString() ?? 'Membre',
           body: m['body']?.toString() ?? '',
-          sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ??
-              DateTime.now(),
+          sentAt:
+              DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
         );
       }).toList();
 
@@ -446,18 +376,11 @@ class AudioSpaceManager {
     final body = AudioSpaceSanitizer.sanitize(raw, maxLength: 300);
     if (body.isEmpty) return;
     final name = _state.me?.displayName ?? 'Membre';
-    await _service.persistChat(
-      spaceId: spaceId,
-      displayName: name,
-      body: body,
-    );
+    await _service.persistChat(spaceId: spaceId, displayName: name, body: body);
   }
 
   Future<void> sendReaction(String emoji) async {
-    await _broadcast('reaction', {
-      'emoji': emoji,
-      'userId': _service.currentUserId,
-    });
+    await _broadcast('reaction', {'emoji': emoji, 'userId': _service.currentUserId});
   }
 
   Future<void> toggleMute() async {
@@ -490,7 +413,6 @@ class AudioSpaceManager {
     await _loadRoster();
   }
 
-  // ─── Actions hôte ───
   Future<void> promoteToSpeaker(AudioSpaceParticipant p) async {
     if (!_state.isHost) return;
     await _service.promoteToSpeaker(
@@ -559,9 +481,6 @@ class AudioSpaceManager {
       onChat: (_) {},
       onReaction: (userId, emoji) {
         if (userId == _service.currentUserId) return;
-        _state = _state.copyWith(
-          // stocke la dernière réaction pour l'animer dans le UI
-        );
         _emit();
       },
       onEnded: () async {
@@ -657,7 +576,7 @@ class AudioSpaceManager {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // DISPOSE (à appeler uniquement à la fermeture complète de l'app)
+  // DISPOSE
   // ─────────────────────────────────────────────────────────────
   Future<void> dispose() async {
     await _cleanup();
