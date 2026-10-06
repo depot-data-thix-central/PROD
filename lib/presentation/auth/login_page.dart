@@ -937,8 +937,8 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                               maxLength: _kMaxPasswordLength,
                               onSubmitted: (_) => _signIn(),
                               autofillHint: AutofillHints.password,
-                              // ✅ FIX: errorText passé directement (null = pas d'erreur)
-                              // Le spread if(...)...[] a été retiré car invalide dans les params
+                              // ✅ FIX: errorText passé directement (null = aucune erreur)
+                              // Le spread if(...)...[] a été supprimé car invalide ici
                             ),
                           ),
                     const SizedBox(height: 16),
