@@ -31,30 +31,56 @@ const int _kMaxReactionLength = 10;
 const double _kBubbleMaxWidthRatio = 0.85;
 const int _kEditWindowMinutes = 15;
 
+/// Clé l10n conservée ; si elle manque dans les fichiers ARB, on affiche le
+/// texte anglais de secours au lieu de la clé brute.
+String _t(AppLocalizations l10n, String key, String fallback) {
+  final s = l10n.t(key);
+  return (s.isEmpty || s == key) ? fallback : s;
+}
+
 // ============================================================================
 // VALIDATORS
 // ============================================================================
 class _BubbleValidators {
   _BubbleValidators._();
 
+  static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
+  static final RegExp _ctrlAll = RegExp(r'[\x00-\x1F\x7F]');
+  static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
+  static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
+  static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
-    final doc = html_parser.parse(input);
-    var s = doc.body?.text ?? input;
+    var s = input;
+    if (s.contains('<')) {
+      final doc = html_parser.parse(s);
+      s = doc.body?.text ?? s;
+    }
     s = s
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .replaceAll('\r\n', '\n')
+        .replaceAll(_tags, '')
+        .replaceAll(_jsScheme, '')
+        .replaceAll(_ctrlKeepNl, '')
+        .replaceAll(_bidi, '')
         .trim();
-    return s.length > maxLength ? s.substring(0, maxLength) : s;
+    if (s.length > maxLength) {
+      var end = maxLength;
+      final unit = s.codeUnitAt(end - 1);
+      if (unit >= 0xD800 && unit <= 0xDBFF) end--;
+      s = s.substring(0, end);
+    }
+    return s;
   }
 
   static String? sanitizeUrl(String? url) {
-    if (url == null || url.trim().isEmpty) return null;
-    final t = url.trim();
-    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
-    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    if (url == null) return null;
+    final t = url.trim().replaceAll(_ctrlAll, '');
+    if (t.isEmpty || t.length > 2048) return null;
+    final u = Uri.tryParse(t);
+    if (u == null || !u.hasAuthority || u.host.isEmpty) return null;
+    if (u.scheme != 'http' && u.scheme != 'https') return null;
+    return t;
   }
 
   static String friendlyError(dynamic e) {
@@ -97,7 +123,6 @@ Future<T> _bubbleRetry<T>(
         debugPrint('[Bubble] ❌ $label: timeout after $attempt attempts');
         throw TimeoutException('$label: délai dépassé');
       }
-      debugPrint('[Bubble] ⏱️ $label timeout — retry $attempt/$maxRetries');
       await Future.delayed(_kRetryDelay);
     } catch (e) {
       debugPrint('[Bubble] ❌ $label error: $e');
@@ -107,7 +132,9 @@ Future<T> _bubbleRetry<T>(
 }
 
 // ============================================================================
-// CHAT MESSAGE BUBBLE (P0/P1 Enterprise)
+// CHAT MESSAGE BUBBLE
+// Le swipe (droite = répondre, gauche = menu) est géré par chat_screen.dart
+// pour TOUS les messages : aucun Dismissible ici (sinon double déclenchement).
 // ============================================================================
 class ChatMessageBubble extends ConsumerStatefulWidget {
   final ChatMessage message;
@@ -115,12 +142,12 @@ class ChatMessageBubble extends ConsumerStatefulWidget {
   final VoidCallback? onReply;
   final void Function(String reaction)? onReaction;
   final VoidCallback? onDelete;
-  final VoidCallback? onDeleteForAll; // ✅ P0: Supprimer pour tous
+  final VoidCallback? onDeleteForAll; // conservé pour compatibilité
   final void Function(String newContent)? onEdit;
-  final VoidCallback? onForward;     // ✅ P0: Transférer
-  final VoidCallback? onPin;         // ✅ P0: Épingler
-  final VoidCallback? onStar;        // ✅ P0: Favori
-  final VoidCallback? onViewOnceOpened; // ✅ P1: View Once
+  final VoidCallback? onForward;
+  final VoidCallback? onPin;
+  final VoidCallback? onStar;
+  final VoidCallback? onViewOnceOpened;
   final ChatMessage? replyToMessage;
   final bool isEphemeralActive;
   final bool isInternalNote;
@@ -158,7 +185,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   bool _isDecrypted = false;
   bool _isUnlocking = false;
   String? _decrypted;
-  bool _swipeHapticTriggered = false;
 
   static const _quickReactions = ['❤️', '😂', '🔥', '👍', '😮', '😢'];
 
@@ -170,27 +196,15 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
   ChatMessage get m => widget.message;
   bool get _isNote => widget.isInternalNote || m.isInternalNote;
 
-  bool get _shouldHideNote {
-    if (!_isNote) return false;
-    return !widget.isAgentView;
-  }
+  bool get _shouldHideNote => _isNote && !widget.isAgentView;
 
-  // ✅ P0: Vérification fenêtre d'édition (15 min)
   bool get _canEdit {
     if (!widget.isOwn) return false;
     if (m.isDeleted || m.isDeletedForAll) return false;
     if (m.hasMedia) return false;
     if (m.isEphemeral) return false;
-    final elapsed = DateTime.now().toUtc().difference(m.createdAt);
-    return elapsed.inMinutes <= _kEditWindowMinutes;
-  }
-
-  // ✅ P0: Vérification fenêtre suppression pour tous (15 min)
-  bool get _canDeleteForAll {
-    if (!widget.isOwn) return false;
-    if (m.isDeleted || m.isDeletedForAll) return false;
-    final elapsed = DateTime.now().toUtc().difference(m.createdAt);
-    return elapsed.inMinutes <= _kEditWindowMinutes;
+    final elapsed = DateTime.now().toUtc().difference(m.createdAt.toUtc());
+    return elapsed.inMinutes < _kEditWindowMinutes;
   }
 
   Color get _bubbleColor {
@@ -207,52 +221,26 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
 
     if (_shouldHideNote) return const SizedBox.shrink();
 
-    // ✅ CORRECTION AUTO-DESTRUCT: Si expiré, ne rien afficher du tout
-    if (m.isExpired || m.isDeleted || m.isDeletedForAll) {
+    // 💣 Auto-destruction : expiré → rien du tout (aucune trace, aucun popup).
+    if (m.isExpired || (m.isEphemeral && m.isDeleted)) return const SizedBox.shrink();
+
+    if (m.isDeleted || m.isDeletedForAll) {
       return _DeletedBubble(isOwn: widget.isOwn, isDeletedForAll: m.isDeletedForAll);
     }
 
-    // ✅ P1: View Once déjà vu → masquer
-    if (m.isViewOnce && m.hasBeenViewed) {
-      return const SizedBox.shrink();
-    }
+    if (m.isViewOnce && m.hasBeenViewed) return const SizedBox.shrink();
 
     final topSpacing = widget.isFirstInGroup ? 6.0 : 1.5;
     final bottomSpacing = widget.isLastInGroup ? 6.0 : 1.5;
     final tailRadius = widget.isLastInGroup ? 4.0 : 16.0;
 
-    // ✅ P0: Swipe-to-Reply (seulement pour messages des autres)
-    Widget bubbleContent = _buildBubbleContent(l10n, tailRadius);
-
-    if (!widget.isOwn && widget.onReply != null) {
-      bubbleContent = Dismissible(
-        key: ValueKey(m.id),
-        direction: DismissDirection.startToEnd,
-        confirmDismiss: (_) async => false, // On gère manuellement
-        onUpdate: (details) {
-      // Feedback haptique unique au seuil de 30% via un flag local
-      // DismissUpdateDetails ne fournit que progress et direction
-      if (details.progress > 0.3 && !_swipeHapticTriggered) {
-        _swipeHapticTriggered = true;
-        HapticFeedback.selectionClick();
-      } else if (details.progress <= 0.3) {
-        _swipeHapticTriggered = false;
-      }
-    },
-        onDismissed: (_) {
-          widget.onReply?.call();
-        },
-        child: bubbleContent,
-      );
-    }
+    final bubbleContent = _buildBubbleContent(l10n, tailRadius);
 
     return Padding(
       padding: EdgeInsets.only(top: topSpacing, bottom: bottomSpacing),
       child: Column(
-        crossAxisAlignment:
-            widget.isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+        crossAxisAlignment: widget.isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
         children: [
-          // ✅ P0: Badge Forward
           if (m.isForwarded)
             Padding(
               padding: EdgeInsets.only(
@@ -267,13 +255,12 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                   const Icon(Icons.forward_rounded, size: 12, color: ThixPolicy.textMuted),
                   const SizedBox(width: 4),
                   Text(
-                    l10n.t('bubble_forwarded'),
+                    _t(l10n, 'bubble_forwarded', 'Forwarded'),
                     style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
                   ),
                 ],
               ),
             ),
-
           if (!widget.isOwn && widget.isFirstInGroup && m.senderName.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(left: 12, bottom: 2),
@@ -286,7 +273,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                 ),
               ),
             ),
-
           if (_isNote && widget.isAgentView)
             Padding(
               padding: const EdgeInsets.only(bottom: 4, left: 4, right: 4),
@@ -296,7 +282,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                   const Icon(Icons.lock_outline, size: 12, color: ThixPolicy.warning),
                   const SizedBox(width: 4),
                   Text(
-                    l10n.t('bubble_internal_note'),
+                    _t(l10n, 'bubble_internal_note', 'Internal note'),
                     style: ThixPolicy.microStyle.copyWith(
                       fontSize: 10,
                       fontWeight: ThixPolicy.bold,
@@ -306,7 +292,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                 ],
               ),
             ),
-
           GestureDetector(
             onLongPress: _openActions,
             onDoubleTap: () {
@@ -314,8 +299,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
               widget.onReaction?.call('❤️');
             },
             child: Align(
-              alignment:
-                  widget.isOwn ? Alignment.centerRight : Alignment.centerLeft,
+              alignment: widget.isOwn ? Alignment.centerRight : Alignment.centerLeft,
               child: ConstrainedBox(
                 constraints: BoxConstraints(
                   maxWidth: MediaQuery.of(context).size.width * _kBubbleMaxWidthRatio,
@@ -324,7 +308,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
               ),
             ),
           ),
-
           if (_showReact)
             Padding(
               padding: const EdgeInsets.only(top: 6),
@@ -368,37 +351,29 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.replyToMessage != null)
-                _ReplyQuote(
-                  message: widget.replyToMessage!,
-                  isOwn: widget.isOwn,
-                ),
-
+                _ReplyQuote(message: widget.replyToMessage!, isOwn: widget.isOwn),
               _buildBody(l10n),
-
               const SizedBox(height: 4),
-
               Row(
                 mainAxisSize: MainAxisSize.min,
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  // ✅ P0: Badge "Modifié"
                   if (m.isEdited) ...[
                     Text(
-                      l10n.t('bubble_edited'),
+                      _t(l10n, 'bubble_edited', 'edited'),
                       style: TextStyle(fontSize: 9, color: _timeColor, fontStyle: FontStyle.italic),
                     ),
                     const SizedBox(width: 4),
                   ],
 
-                  // ✅ CORRECTION AUTO-DESTRUCT: Timer visuel actif avec StreamBuilder
+                  // ⏱️ Minuteur d'auto-destruction EN ROUGE
                   if (m.isEphemeral || widget.isEphemeralActive) ...[
                     _EphemeralTimerWidget(
                       message: m,
-                      timeColor: _timeColor,
-                      onExpired: () {
-                        // Force le rebuild parent pour masquer le message
+                      onTick: () {
+                        // À l'expiration : simple rebuild. Le retrait de la liste est fait
+                        // par chat_screen (purge à la seconde). Aucun appel serveur, aucun popup.
                         if (mounted) setState(() {});
-                        widget.onDelete?.call();
                       },
                     ),
                     const SizedBox(width: 6),
@@ -414,18 +389,13 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
                   ),
                   if (widget.isOwn) ...[
                     const SizedBox(width: 4),
-                    MessageStatusTicks(
-                      isDelivered: m.isDelivered,
-                      isRead: m.isRead,
-                    ),
+                    MessageStatusTicks(isDelivered: m.isDelivered, isRead: m.isRead),
                   ],
                 ],
               ),
             ],
           ),
         ),
-
-        // ✅ P0: Badge Épinglé
         if (m.isPinned)
           Positioned(
             top: -8,
@@ -441,8 +411,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
               child: const Icon(Icons.push_pin_rounded, size: 10, color: Colors.white),
             ),
           ),
-
-        // ✅ P0: Badge Favori
         if (m.isStarred)
           Positioned(
             top: -8,
@@ -458,7 +426,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
               child: const Icon(Icons.star_rounded, size: 10, color: Colors.white),
             ),
           ),
-
         if (m.reactions.isNotEmpty)
           Positioned(
             bottom: -10,
@@ -483,7 +450,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     final isImage = m.mediaType == 'image' ||
         (m.mediaUrl != null && _imageExtRegex.hasMatch(m.mediaUrl!));
 
-    // ✅ P1: View Once media
     if (isImage && m.mediaUrl != null) {
       final safeUrl = _BubbleValidators.sanitizeUrl(m.mediaUrl);
       if (safeUrl != null) {
@@ -520,7 +486,6 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     );
   }
 
-  // ✅ CORRECTION MOT DE PASSE: Dialog robuste avec validation
   Future<void> _unlock() async {
     if (_isUnlocking) return;
 
@@ -540,7 +505,10 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
             children: [
               const Icon(Icons.lock_rounded, color: ThixPolicy.primary, size: 22),
               const SizedBox(width: 8),
-              Expanded(child: Text(l10n.t('bubble_protected_message'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold))),
+              Expanded(
+                child: Text(_t(l10n, 'bubble_protected_message', 'Protected message'),
+                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+              ),
             ],
           ),
           content: TextField(
@@ -553,22 +521,24 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
               if (val.trim().isNotEmpty) Navigator.pop(dialogCtx, val.trim());
             },
             decoration: InputDecoration(
-              labelText: l10n.t('bubble_password'),
-              hintText: l10n.t('bubble_password_hint'),
+              labelText: _t(l10n, 'bubble_password', 'Password'),
+              hintText: _t(l10n, 'bubble_password_hint', 'Enter the password'),
               prefixIcon: const Icon(Icons.key_rounded, size: 18),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
+              focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: ThixPolicy.primary, width: 1.5)),
             ),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogCtx),
-              child: Text(l10n.t('common_cancel')),
+              child: Text(_t(l10n, 'common_cancel', 'Cancel')),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white),
               onPressed: ctrl.text.trim().isEmpty ? null : () => Navigator.pop(dialogCtx, ctrl.text.trim()),
-              child: Text(l10n.t('bubble_unlock')),
+              child: Text(_t(l10n, 'bubble_unlock', 'Unlock')),
             ),
           ],
         ),
@@ -576,7 +546,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     );
 
     ctrl.dispose();
-    if (!mounted) { setState(() => _isUnlocking = false); return; }
+    if (!mounted) return;
     setState(() => _isUnlocking = false);
 
     if (password == null || password.isEmpty) return;
@@ -585,7 +555,10 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       final plain = EncryptionService.decryptMessage(m.content, password);
       if (plain == null || plain.isEmpty) throw Exception('Empty result');
       if (mounted) {
-        setState(() { _isDecrypted = true; _decrypted = plain; });
+        setState(() {
+          _isDecrypted = true;
+          _decrypted = plain;
+        });
         HapticFeedback.mediumImpact();
       }
     } catch (e) {
@@ -597,7 +570,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
             content: Row(children: [
               const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
               const SizedBox(width: 8),
-              Expanded(child: Text(l10n.t('bubble_wrong_password'))),
+              Expanded(child: Text(_t(l10n, 'bubble_wrong_password', 'Wrong password'))),
             ]),
             backgroundColor: ThixPolicy.danger,
             behavior: SnackBarBehavior.floating,
@@ -607,7 +580,7 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
     }
   }
 
-  void _showEditDialog() async {
+  Future<void> _showEditDialog() async {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
 
@@ -618,7 +591,8 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: ThixPolicy.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: ThixPolicy.border)),
-        title: Text(l10n.t('bubble_edit_message'), style: ThixPolicy.titleStyle.copyWith(fontSize: 16, fontWeight: ThixPolicy.bold)),
+        title: Text(_t(l10n, 'bubble_edit_message', 'Edit message'),
+            style: ThixPolicy.titleStyle.copyWith(fontSize: 16, fontWeight: ThixPolicy.bold)),
         content: TextField(
           controller: ctrl,
           maxLines: null,
@@ -633,11 +607,13 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(dialogCtx), child: Text(l10n.t('common_cancel'), style: TextStyle(color: ThixPolicy.textMuted))),
+          TextButton(
+              onPressed: () => Navigator.pop(dialogCtx),
+              child: Text(_t(l10n, 'common_cancel', 'Cancel'), style: TextStyle(color: ThixPolicy.textMuted))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white),
             onPressed: () => Navigator.pop(dialogCtx, ctrl.text.trim()),
-            child: Text(l10n.t('bubble_save')),
+            child: Text(_t(l10n, 'bubble_save', 'Save')),
           ),
         ],
       ),
@@ -647,13 +623,13 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
 
     if (newContent != null && newContent.isNotEmpty && newContent != m.content) {
       final sanitized = _BubbleValidators.sanitize(newContent, maxLength: _kMaxContentLength);
-      if (sanitized.isNotEmpty) {
-        widget.onEdit?.call(sanitized);
-      }
+      if (sanitized.isNotEmpty) widget.onEdit?.call(sanitized);
     }
   }
 
-  // ✅ MENU CONTEXTUEL COMPLET P0/P1
+  /// Menu appui long. La suppression passe par UN seul point d'entrée (onDelete)
+  /// géré par chat_screen : message éphémère → suppression directe sans popup ;
+  /// message normal → feuille « pour moi / pour tous ».
   void _openActions() {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
@@ -663,78 +639,103 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
       backgroundColor: ThixPolicy.card,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
       builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 10),
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-            
-            // Quick Reactions
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: _quickReactions.map((r) => Semantics(
-                  button: true,
-                  label: '${l10n.t('bubble_react_with')} $r',
-                  child: InkWell(
-                    onTap: () { HapticFeedback.selectionClick(); Navigator.pop(ctx); widget.onReaction?.call(r); },
-                    child: Text(r, style: const TextStyle(fontSize: 28)),
-                  ),
-                )).toList(),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 10),
+              Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: _quickReactions
+                      .map((r) => Semantics(
+                            button: true,
+                            label: '${_t(l10n, 'bubble_react_with', 'React with')} $r',
+                            child: InkWell(
+                              onTap: () {
+                                HapticFeedback.selectionClick();
+                                Navigator.pop(ctx);
+                                widget.onReaction?.call(r);
+                              },
+                              child: Text(r, style: const TextStyle(fontSize: 28)),
+                            ),
+                          ))
+                      .toList(),
+                ),
               ),
-            ),
-            const Divider(height: 1, color: ThixPolicy.border),
-
-            // Reply
-            _ActionTile(icon: Icons.reply_rounded, label: l10n.t('bubble_reply'), color: ThixPolicy.primary,
-              onTap: () { Navigator.pop(ctx); widget.onReply?.call(); }),
-
-            // ✅ P0: Forward
-            if (widget.onForward != null)
-              _ActionTile(icon: Icons.forward_rounded, label: l10n.t('bubble_forward'), color: ThixPolicy.textMain,
-                onTap: () { Navigator.pop(ctx); widget.onForward?.call(); }),
-
-            // Copy
-            _ActionTile(icon: Icons.copy_rounded, label: l10n.t('bubble_copy'), color: ThixPolicy.textMuted,
-              onTap: () {
-                Navigator.pop(ctx);
-                final textToCopy = _isDecrypted ? (_decrypted ?? '') : m.content;
-                Clipboard.setData(ClipboardData(text: _BubbleValidators.sanitize(textToCopy, maxLength: _kMaxContentLength)));
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('bubble_copied')), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating, duration: const Duration(milliseconds: 800)));
-              }),
-
-            // ✅ P0: Pin
-            if (widget.onPin != null)
-              _ActionTile(icon: m.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                label: m.isPinned ? l10n.t('bubble_unpin') : l10n.t('bubble_pin'),
-                color: ThixPolicy.gold,
-                onTap: () { Navigator.pop(ctx); widget.onPin?.call(); }),
-
-            // ✅ P0: Star
-            if (widget.onStar != null)
-              _ActionTile(icon: m.isStarred ? Icons.star_rounded : Icons.star_outline_rounded,
-                label: m.isStarred ? l10n.t('bubble_unstar') : l10n.t('bubble_star'),
-                color: ThixPolicy.primary,
-                onTap: () { Navigator.pop(ctx); widget.onStar?.call(); }),
-
-            // ✅ P0: Edit (15 min window)
-            if (_canEdit)
-              _ActionTile(icon: Icons.edit_rounded, label: l10n.t('bubble_edit'), color: ThixPolicy.textMain,
-                onTap: () { Navigator.pop(ctx); _showEditDialog(); }),
-
-            // ✅ P0: Delete for All (15 min window)
-            if (_canDeleteForAll && widget.onDeleteForAll != null)
-              _ActionTile(icon: Icons.delete_forever_rounded, label: l10n.t('bubble_delete_for_all'), color: ThixPolicy.danger,
-                onTap: () { Navigator.pop(ctx); widget.onDeleteForAll?.call(); }),
-
-            // Delete for Me
-            if (widget.onDelete != null)
-              _ActionTile(icon: Icons.delete_outline, label: l10n.t('bubble_delete'), color: ThixPolicy.danger,
-                onTap: () { Navigator.pop(ctx); widget.onDelete?.call(); }),
-
-            const SizedBox(height: 8),
-          ],
+              const Divider(height: 1, color: ThixPolicy.border),
+              _ActionTile(
+                  icon: Icons.reply_rounded,
+                  label: _t(l10n, 'bubble_reply', 'Reply'),
+                  color: ThixPolicy.primary,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    widget.onReply?.call();
+                  }),
+              if (widget.onForward != null)
+                _ActionTile(
+                    icon: Icons.forward_rounded,
+                    label: _t(l10n, 'bubble_forward', 'Forward'),
+                    color: ThixPolicy.textMain,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      widget.onForward?.call();
+                    }),
+              _ActionTile(
+                  icon: Icons.copy_rounded,
+                  label: _t(l10n, 'bubble_copy', 'Copy'),
+                  color: ThixPolicy.textMuted,
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    final textToCopy = _isDecrypted ? (_decrypted ?? '') : m.content;
+                    Clipboard.setData(ClipboardData(text: _BubbleValidators.sanitize(textToCopy, maxLength: _kMaxContentLength)));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: Text(_t(l10n, 'bubble_copied', 'Copied')),
+                        backgroundColor: ThixPolicy.success,
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(milliseconds: 800)));
+                  }),
+              if (widget.onPin != null)
+                _ActionTile(
+                    icon: m.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
+                    label: m.isPinned ? _t(l10n, 'bubble_unpin', 'Unpin') : _t(l10n, 'bubble_pin', 'Pin'),
+                    color: ThixPolicy.gold,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      widget.onPin?.call();
+                    }),
+              if (widget.onStar != null)
+                _ActionTile(
+                    icon: m.isStarred ? Icons.star_rounded : Icons.star_outline_rounded,
+                    label: m.isStarred ? _t(l10n, 'bubble_unstar', 'Remove from favorites') : _t(l10n, 'bubble_star', 'Add to favorites'),
+                    color: ThixPolicy.primary,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      widget.onStar?.call();
+                    }),
+              if (_canEdit)
+                _ActionTile(
+                    icon: Icons.edit_rounded,
+                    label: _t(l10n, 'bubble_edit', 'Edit'),
+                    color: ThixPolicy.textMain,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showEditDialog();
+                    }),
+              if (widget.onDelete != null)
+                _ActionTile(
+                    icon: Icons.delete_outline,
+                    label: _t(l10n, 'bubble_delete', 'Delete'),
+                    color: ThixPolicy.danger,
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      widget.onDelete?.call();
+                    }),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
@@ -742,14 +743,13 @@ class _ChatMessageBubbleState extends ConsumerState<ChatMessageBubble> {
 }
 
 // ============================================================================
-// ✅ CORRECTION AUTO-DESTRUCT: Timer visuel actif avec StreamBuilder
+// ⏱️ MINUTEUR D'AUTO-DESTRUCTION (ROUGE)
 // ============================================================================
 class _EphemeralTimerWidget extends StatefulWidget {
   final ChatMessage message;
-  final Color timeColor;
-  final VoidCallback onExpired;
+  final VoidCallback onTick;
 
-  const _EphemeralTimerWidget({required this.message, required this.timeColor, required this.onExpired});
+  const _EphemeralTimerWidget({required this.message, required this.onTick});
 
   @override
   State<_EphemeralTimerWidget> createState() => _EphemeralTimerWidgetState();
@@ -763,22 +763,22 @@ class _EphemeralTimerWidgetState extends State<_EphemeralTimerWidget> {
   void initState() {
     super.initState();
     _updateRemaining();
-    // Tick toutes les secondes pour mise à jour visuelle fluide
     _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
       _updateRemaining();
       if (_remainingSeconds <= 0) {
         _ticker?.cancel();
-        widget.onExpired();
+        widget.onTick();
       }
     });
   }
 
   void _updateRemaining() {
-    if (widget.message.deleteAt != null) {
-      _remainingSeconds = widget.message.deleteAt!.toUtc().difference(DateTime.now().toUtc()).inSeconds;
-    } else if (widget.message.ephemeralDuration != null) {
-      final expiresAt = widget.message.createdAt.add(Duration(seconds: widget.message.ephemeralDuration!));
+    final msg = widget.message;
+    if (msg.deleteAt != null) {
+      _remainingSeconds = msg.deleteAt!.toUtc().difference(DateTime.now().toUtc()).inSeconds;
+    } else if (msg.ephemeralDuration != null) {
+      final expiresAt = msg.createdAt.add(Duration(seconds: msg.ephemeralDuration!));
       _remainingSeconds = expiresAt.toUtc().difference(DateTime.now().toUtc()).inSeconds;
     } else {
       _remainingSeconds = 0;
@@ -800,19 +800,29 @@ class _EphemeralTimerWidgetState extends State<_EphemeralTimerWidget> {
     final minutes = (_remainingSeconds ~/ 60).toString().padLeft(2, '0');
     final seconds = (_remainingSeconds % 60).toString().padLeft(2, '0');
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(Icons.timer_outlined, size: 12, color: widget.timeColor),
-        const SizedBox(width: 3),
-        Text('$minutes:$seconds', style: TextStyle(fontSize: 10, color: widget.timeColor, fontWeight: FontWeight.w600)),
-      ],
+    // Pastille claire + texte rouge : lisible sur bulle bleue comme sur bulle claire.
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: ThixPolicy.danger.withOpacity(0.35)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.timer_outlined, size: 12, color: ThixPolicy.danger),
+          const SizedBox(width: 3),
+          Text('$minutes:$seconds',
+              style: const TextStyle(fontSize: 10, color: ThixPolicy.danger, fontWeight: FontWeight.w800)),
+        ],
+      ),
     );
   }
 }
 
 // ============================================================================
-// ACTION TILE (Menu contextuel)
+// ACTION TILE
 // ============================================================================
 class _ActionTile extends StatelessWidget {
   final IconData icon;
@@ -837,7 +847,7 @@ class _ActionTile extends StatelessWidget {
 }
 
 // ============================================================================
-// DELETED BUBBLE
+// DELETED BUBBLE (supprimé pour tous)
 // ============================================================================
 class _DeletedBubble extends StatelessWidget {
   final bool isOwn;
@@ -862,10 +872,12 @@ class _DeletedBubble extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(isDeletedForAll ? Icons.block : Icons.block, size: 14, color: ThixPolicy.textMuted),
+            const Icon(Icons.block, size: 14, color: ThixPolicy.textMuted),
             const SizedBox(width: 6),
             Text(
-              isDeletedForAll ? l10n.t('bubble_deleted_for_all') : l10n.t('bubble_deleted'),
+              isDeletedForAll
+                  ? _t(l10n, 'bubble_deleted_for_all', 'This message was deleted')
+                  : _t(l10n, 'bubble_deleted', 'Message deleted'),
               style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontStyle: FontStyle.italic, color: ThixPolicy.textMuted),
             ),
           ],
@@ -901,9 +913,11 @@ class _ReplyQuote extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(safeName.isEmpty ? l10n.t('bubble_message') : safeName,
+          Text(safeName.isEmpty ? _t(l10n, 'bubble_message', 'Message') : safeName,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: isOwn ? Colors.white : ThixPolicy.primary)),
-          Text(safeContent.isEmpty ? '—' : safeContent, maxLines: 2, overflow: TextOverflow.ellipsis,
+          Text(safeContent.isEmpty ? '—' : safeContent,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 12, color: isOwn ? Colors.white70 : ThixPolicy.textMuted)),
         ],
       ),
@@ -926,7 +940,7 @@ class _EncryptedBody extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: l10n.t('bubble_tap_to_unlock'),
+      label: _t(l10n, 'bubble_tap_to_unlock', 'Tap to unlock'),
       child: InkWell(
         onTap: onUnlock,
         child: Row(
@@ -934,7 +948,10 @@ class _EncryptedBody extends StatelessWidget {
           children: [
             Icon(Icons.lock_rounded, size: 16, color: color),
             const SizedBox(width: 8),
-            Flexible(child: Text(l10n.t('bubble_protected_tap'), style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color))),
+            Flexible(
+              child: Text(_t(l10n, 'bubble_protected_tap', 'Protected message, tap to open'),
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: color)),
+            ),
           ],
         ),
       ),
@@ -943,7 +960,7 @@ class _EncryptedBody extends StatelessWidget {
 }
 
 // ============================================================================
-// IMAGE BODY (avec View Once support)
+// IMAGE BODY (View Once)
 // ============================================================================
 class _ImageBody extends StatelessWidget {
   final String url;
@@ -958,11 +975,10 @@ class _ImageBody extends StatelessWidget {
     final tag = 'img_$messageId';
     return Semantics(
       button: true,
-      label: AppLocalizations.of(context).t('bubble_view_image'),
+      label: _t(AppLocalizations.of(context), 'bubble_view_image', 'View image'),
       child: GestureDetector(
         onTap: () {
           HapticFeedback.selectionClick();
-          // ✅ P1: Marquer comme vu pour View Once
           if (isViewOnce && onViewed != null) onViewed!();
           showFullscreenImageViewer(context, url: url, heroTag: tag, fileName: 'thix_$messageId.jpg');
         },
@@ -977,19 +993,26 @@ class _ImageBody extends StatelessWidget {
                   width: 240,
                   height: 180,
                   fit: BoxFit.cover,
-                  placeholder: (_, __) => Container(width: 240, height: 180, color: ThixPolicy.surfaceSoft,
-                    child: const Center(child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)))),
-                  errorWidget: (_, __, ___) => Container(width: 180, height: 120, color: ThixPolicy.surfaceSoft,
-                    child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted)),
+                  placeholder: (_, __) => Container(
+                      width: 240,
+                      height: 180,
+                      color: ThixPolicy.surfaceSoft,
+                      child: const Center(
+                          child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)))),
+                  errorWidget: (_, __, ___) => Container(
+                      width: 180,
+                      height: 120,
+                      color: ThixPolicy.surfaceSoft,
+                      child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted)),
                 ),
               ),
-              // ✅ P1: Badge View Once
               if (isViewOnce)
                 Positioned(
-                  top: 8, right: 8,
+                  top: 8,
+                  right: 8,
                   child: Container(
                     padding: const EdgeInsets.all(4),
-                    decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
+                    decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
                     child: const Icon(Icons.visibility_rounded, color: Colors.white, size: 16),
                   ),
                 ),
@@ -1026,21 +1049,47 @@ class _FileBodyState extends State<_FileBody> {
 
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(SnackBar(
-      content: Row(children: [const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)), const SizedBox(width: 8), Expanded(child: Text(l10n.t('bubble_downloading')))]),
-      backgroundColor: ThixPolicy.primary, behavior: SnackBarBehavior.floating));
+        content: Row(children: [
+          const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+          const SizedBox(width: 8),
+          Expanded(child: Text(_t(l10n, 'bubble_downloading', 'Downloading…')))
+        ]),
+        backgroundColor: ThixPolicy.primary,
+        behavior: SnackBarBehavior.floating));
 
     try {
       final path = await _bubbleRetry(() => MediaSaver.download(url: widget.url, fileName: widget.name), label: 'downloadFile');
       if (!mounted) return;
       if (path != null) {
         HapticFeedback.lightImpact();
-        messenger.showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text('${l10n.t('bubble_downloaded')}: $path'))]), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
+        messenger.showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text('${_t(l10n, 'bubble_downloaded', 'Downloaded')}: $path'))
+            ]),
+            backgroundColor: ThixPolicy.success,
+            behavior: SnackBarBehavior.floating));
       } else {
-        messenger.showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(l10n.t('bubble_download_failed')))]), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating));
+        messenger.showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_t(l10n, 'bubble_download_failed', 'Download failed')))
+            ]),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating));
       }
     } catch (e) {
       if (mounted) {
-        messenger.showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(_BubbleValidators.friendlyError(e)))]), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating));
+        messenger.showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Expanded(child: Text(_BubbleValidators.friendlyError(e)))
+            ]),
+            backgroundColor: ThixPolicy.danger,
+            behavior: SnackBarBehavior.floating));
       }
     } finally {
       if (mounted) setState(() => _isDownloading = false);
@@ -1052,18 +1101,26 @@ class _FileBodyState extends State<_FileBody> {
     final safeName = widget.name.isNotEmpty ? widget.name : widget.type;
     return Semantics(
       button: true,
-      label: '${AppLocalizations.of(context).t('bubble_download_file')}: $safeName',
+      label: '${_t(AppLocalizations.of(context), 'bubble_download_file', 'Download file')}: $safeName',
       child: GestureDetector(
         onTap: _isDownloading ? null : _download,
         child: Container(
           padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: Colors.black.withOpacity(0.06), borderRadius: BorderRadius.circular(10), border: Border.all(color: widget.isOwn ? Colors.white30 : ThixPolicy.border)),
+          decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.06),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: widget.isOwn ? Colors.white30 : ThixPolicy.border)),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             _isDownloading
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))
-                : Icon(widget.type == 'video' ? Icons.videocam_rounded : Icons.insert_drive_file_rounded, size: 18, color: widget.isOwn ? Colors.white : ThixPolicy.primary),
+                : Icon(widget.type == 'video' ? Icons.videocam_rounded : Icons.insert_drive_file_rounded,
+                    size: 18, color: widget.isOwn ? Colors.white : ThixPolicy.primary),
             const SizedBox(width: 8),
-            Flexible(child: Text(safeName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: widget.isOwn ? Colors.white : ThixPolicy.textMain))),
+            Flexible(
+                child: Text(safeName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: widget.isOwn ? Colors.white : ThixPolicy.textMain))),
             const SizedBox(width: 8),
             if (!_isDownloading) Icon(Icons.download_rounded, size: 16, color: widget.isOwn ? Colors.white70 : ThixPolicy.primary),
           ]),
@@ -1091,8 +1148,18 @@ class _ReactionsChip extends StatelessWidget {
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: ThixPolicy.border), boxShadow: ThixPolicy.shadowSoft(opacity: 0.06)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: map.entries.map((e) => Padding(padding: const EdgeInsets.symmetric(horizontal: 2), child: Text(e.value > 1 ? '${e.key} ${e.value}' : e.key, style: const TextStyle(fontSize: 12)))).toList()),
+      decoration: BoxDecoration(
+          color: ThixPolicy.card,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: ThixPolicy.border),
+          boxShadow: ThixPolicy.shadowSoft(opacity: 0.06)),
+      child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: map.entries
+              .map((e) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
+                  child: Text(e.value > 1 ? '${e.key} ${e.value}' : e.key, style: const TextStyle(fontSize: 12))))
+              .toList()),
     );
   }
 }
@@ -1108,10 +1175,20 @@ class _QuickReactions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(24), boxShadow: ThixPolicy.shadowSoft(opacity: 0.08)),
-      child: Row(mainAxisSize: MainAxisSize.min, children: _reactions.map((r) => Semantics(button: true, label: '${AppLocalizations.of(context).t('bubble_react_with')} $r', child: InkWell(onTap: () => onPick(r), child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Text(r, style: const TextStyle(fontSize: 22)))))).toList()),
+      child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: _reactions
+              .map((r) => Semantics(
+                  button: true,
+                  label: '${_t(l10n, 'bubble_react_with', 'React with')} $r',
+                  child: InkWell(
+                      onTap: () => onPick(r),
+                      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6), child: Text(r, style: const TextStyle(fontSize: 22))))))
+              .toList()),
     );
   }
 }
@@ -1130,7 +1207,9 @@ class MessageStatusTicks extends StatelessWidget {
   Widget build(BuildContext context) {
     final activeColor = isRead ? ThixPolicy.success : (isDelivered ? ThixPolicy.warning : ThixPolicy.textMuted);
     return Container(
-      width: 9, height: 20, padding: const EdgeInsets.symmetric(vertical: 2.5),
+      width: 9,
+      height: 20,
+      padding: const EdgeInsets.symmetric(vertical: 2.5),
       decoration: BoxDecoration(color: ThixPolicy.inkDeep, borderRadius: BorderRadius.circular(5)),
       child: Column(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
         _dot(ThixPolicy.success, activeColor == ThixPolicy.success),
@@ -1140,5 +1219,6 @@ class MessageStatusTicks extends StatelessWidget {
     );
   }
 
-  Widget _dot(Color base, bool active) => Container(width: 5, height: 5, decoration: BoxDecoration(shape: BoxShape.circle, color: active ? base : base.withOpacity(0.22)));
+  Widget _dot(Color base, bool active) => Container(
+      width: 5, height: 5, decoration: BoxDecoration(shape: BoxShape.circle, color: active ? base : base.withOpacity(0.22)));
 }
