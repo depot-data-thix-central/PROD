@@ -157,7 +157,8 @@ class HomeQuickActions extends StatelessWidget {
     for (final section in sections) {
       try {
         notificationService!.markSectionSeen(
-  uid: currentUid, // ID de l'utilisateur connecté
+  Supabase.instance.client.auth.currentUser?.id
+// ID de l'utilisateur connecté
   section: section, // Instance de ThixSection
 );
 
