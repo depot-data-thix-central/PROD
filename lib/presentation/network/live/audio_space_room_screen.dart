@@ -89,32 +89,32 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   }
 
   Future<void> _ensureJoined() async {
-    final manager = AudioSpaceManager.instance;
-    if (manager.state.isActive && manager.state.spaceId == widget.space.id) {
-      debugPrint('[Room] Déjà dans ce space, skip join');
-      return;
-    }
-    if (manager.state.isActive) {
-      debugPrint('[Room] Un autre space est actif, skip');
-      return;
-    }
-    final user = ref.read(authControllerProvider).value;
-
-    // ✅ FIX : lecture sûre de isVerified (champ peut ne pas exister sur AppUser)
-    final bool isVerified;
-    try {
-      isVerified = (user as dynamic)?.isVerified ?? false;
-    } catch (_) {
-      isVerified = false;
-    }
-
-    await ref.read(audioSpaceControllerProvider.notifier).join(
-          space: widget.space,
-          displayName: user?.displayName ?? 'Membre THIX',
-          avatarUrl: user?.photoUrl,
-          isVerified: isVerified,
-        );
+  final manager = AudioSpaceManager.instance;
+  if (manager.state.isActive && manager.state.spaceId == widget.space.id) {
+    debugPrint('[Room] Déjà dans ce space, skip join');
+    return;
   }
+  if (manager.state.isActive) {
+    debugPrint('[Room] Un autre space est actif, skip');
+    return;
+  }
+  final user = ref.read(authControllerProvider).value;
+
+  // ✅ FIX : utiliser var au lieu de final pour permettre l'assignation dans try/catch
+  bool isVerified = false;
+  try {
+    isVerified = (user as dynamic)?.isVerified ?? false;
+  } catch (_) {
+    isVerified = false;
+  }
+
+  await ref.read(audioSpaceControllerProvider.notifier).join(
+        space: widget.space,
+        displayName: user?.displayName ?? 'Membre THIX',
+        avatarUrl: user?.photoUrl,
+        isVerified: isVerified,
+      );
+}
 
   void _listenInvites() {
     final userId = ref.read(authControllerProvider).value?.id;
