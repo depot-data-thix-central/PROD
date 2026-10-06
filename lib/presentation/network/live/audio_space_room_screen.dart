@@ -1,3 +1,24 @@
+// lib/presentation/network/live/audio_space_room_screen.dart
+//
+// ============================================================================
+// 🎙️ AUDIO SPACE ROOM SCREEN — UI connectée au Manager (v2)
+// ============================================================================
+// Architecture :
+//   AudioSpaceManager (singleton global)
+//        ↓ stream
+//   AudioSpaceController (Riverpod, miroir)
+//        ↓
+//   Cette UI (ref.watch / ref.read)
+//
+// ✅ Survit à la navigation (l'hôte garde le contrôle)
+// ✅ Mode background affiché en bannière
+// ✅ Partage complet (multi-plateforme + invitations + QR)
+// ✅ Réactions propres (sendReaction)
+// ✅ Invitations entrantes détectées
+// ============================================================================
+
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -5,15 +26,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/data/models/live/audio_space_model.dart';
+import 'package:thix_id/data/services/live/audio_space_controller.dart';
+import 'package:thix_id/data/services/live/audio_space_manager.dart';
+import 'package:thix_id/data/services/live/audio_space_share_service.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-import 'package:thix_id/presentation/network/live/audio_space_controller.dart';
 
+// ════════════════════════════════════════════════════════════════════════
+// CONSTANTS
+// ════════════════════════════════════════════════════════════════════════
 const Duration _kActionThrottle = Duration(milliseconds: 400);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const int _kChatMaxLength = 300;
-const List<String> _kReactions = ['❤️', '👏', '🔥', '😂', '🙌'];
+const List<String> _kReactions = ['❤️', '👏', '🔥', '😂', '🙌', '🎉', '💯'];
 
+// ════════════════════════════════════════════════════════════════════════
+// SANITIZER
+// ════════════════════════════════════════════════════════════════════════
 class _SpaceSanitizer {
   _SpaceSanitizer._();
   static String chat(String? input) {
@@ -27,6 +56,9 @@ class _SpaceSanitizer {
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// PAGE PRINCIPALE
+// ════════════════════════════════════════════════════════════════════════
 class AudioSpaceRoomScreen extends ConsumerStatefulWidget {
   final AudioSpace space;
   const AudioSpaceRoomScreen({super.key, required this.space});
@@ -39,29 +71,59 @@ class AudioSpaceRoomScreen extends ConsumerStatefulWidget {
 class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   final _chatCtrl = TextEditingController();
   final _chatScroll = ScrollController();
-  bool _started = false;
+
   DateTime? _lastAction;
   DateTime? _lastChat;
   int _reactionBurst = 0;
   String _lastReaction = '';
+  StreamSubscription<Map<String, dynamic>>? _invitesSub;
 
-  String _tx(AppLocalizations l10n, String key, String fallback) {
-    final v = l10n.t(key);
-    if (v.isEmpty || v == key) return fallback;
-    return v;
+  // ════════════════════════════════════════════════════════════════════
+  // LIFECYCLE
+  // ════════════════════════════════════════════════════════════════════
+  @override
+  void initState() {
+    super.initState();
+    // Rejoindre uniquement si aucun space n'est actif (singleton)
+    Future.microtask(_ensureJoined);
+    _listenInvites();
   }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_started) return;
-    _started = true;
+  Future<void> _ensureJoined() async {
+    final manager = AudioSpaceManager.instance;
+    if (manager.state.isActive && manager.state.spaceId == widget.space.id) {
+      debugPrint('[Room] Déjà dans ce space, skip join');
+      return;
+    }
+    if (manager.state.isActive) {
+      debugPrint('[Room] Un autre space est actif, skip');
+      return;
+    }
     final user = ref.read(authControllerProvider).value;
-    Future.microtask(() {
-      ref.read(audioSpaceControllerProvider(widget.space).notifier).bootstrap(
-            displayName: user?.displayName ?? 'Membre THIX',
-            avatarUrl: user?.photoUrl,
-          );
+    await ref.read(audioSpaceControllerProvider.notifier).join(
+          space: widget.space,
+          displayName: user?.displayName ?? 'Membre THIX',
+          avatarUrl: user?.photoUrl,
+          isVerified: user?.isVerified ?? false,
+        );
+  }
+
+  /// Écoute les invitations entrantes (si l'utilisateur reçoit une invite
+  /// pour CE space, on peut afficher un toast)
+  void _listenInvites() {
+    final userId = ref.read(authControllerProvider).value?.id;
+    if (userId == null) return;
+
+    _invitesSub = AudioSpaceShareService.instance
+        .watchInvites(userId)
+        .listen((invite) {
+      final inviteSpaceId = invite['space_id']?.toString();
+      if (inviteSpaceId != widget.space.id) return;
+      if (!mounted) return;
+      _snack(
+        '📨 ${invite['invited_by_name'] ?? "Quelqu\'un"} vous a invité',
+        error: false,
+      );
     });
   }
 
@@ -69,7 +131,17 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   void dispose() {
     _chatCtrl.dispose();
     _chatScroll.dispose();
+    _invitesSub?.cancel();
     super.dispose();
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // HELPERS
+  // ════════════════════════════════════════════════════════════════════
+  String _tx(AppLocalizations l10n, String key, String fallback) {
+    final v = l10n.t(key);
+    if (v.isEmpty || v == key) return fallback;
+    return v;
   }
 
   bool _throttleAction() {
@@ -113,150 +185,268 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final state = ref.watch(audioSpaceControllerProvider(widget.space));
-    final ctrl = ref.read(audioSpaceControllerProvider(widget.space).notifier);
+    final state = ref.watch(audioSpaceControllerProvider);
+    final ctrl = ref.read(audioSpaceControllerProvider.notifier);
     final liveCount = state.participants.length;
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        await _leave(ctrl);
+        await _handleBack(l10n, ctrl, state);
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.tint,
-        appBar: AppBar(
-          backgroundColor: ThixPolicy.card,
-          elevation: 0,
-          leading: IconButton(
-            icon: const Icon(Icons.keyboard_arrow_down_rounded),
-            tooltip: _tx(l10n, 'audio_space_leave', 'Quitter'),
-            onPressed: () => _leave(ctrl),
-          ),
-          title: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                widget.space.title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.h2Style.copyWith(fontSize: 16),
-              ),
-              Text(
-                '${widget.space.topic} · $liveCount ${_tx(l10n, 'audio_space_people', 'personnes')}',
-                style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary),
-              ),
-            ],
-          ),
-          actions: [
-            IconButton(
-              icon: const Icon(Icons.share_rounded),
-              tooltip: _tx(l10n, 'audio_space_share', 'Partager'),
-              onPressed: () => _shareSpace(l10n),
-            ),
-            if (ctrl.isHost)
-              TextButton(
-                onPressed: () => _confirmEnd(l10n, ctrl),
-                child: Text(
-                  _tx(l10n, 'audio_space_end', 'Terminer'),
-                  style: const TextStyle(color: ThixPolicy.danger),
-                ),
-              ),
-          ],
-        ),
+        appBar: _buildAppBar(l10n, state, ctrl, liveCount),
         body: _buildBody(l10n, state, ctrl),
       ),
     );
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // APP BAR (avec timer + mode background)
+  // ════════════════════════════════════════════════════════════════════
+  PreferredSizeWidget _buildAppBar(
+    AppLocalizations l10n,
+    AudioSpaceManagerState state,
+    AudioSpaceController ctrl,
+    int liveCount,
+  ) {
+    return AppBar(
+      backgroundColor: ThixPolicy.card,
+      elevation: 0,
+      leading: IconButton(
+        icon: const Icon(Icons.keyboard_arrow_down_rounded),
+        tooltip: _tx(l10n, 'audio_space_leave', 'Quitter'),
+        onPressed: () => _handleBack(l10n, ctrl, state),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            widget.space.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.h2Style.copyWith(fontSize: 16),
+          ),
+          Row(
+            children: [
+              const _LiveDot(),
+              const SizedBox(width: 6),
+              Text(
+                state.elapsedFormatted,
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: ThixPolicy.danger,
+                  fontWeight: FontWeight.w700,
+                  fontFeatures: [FontFeature.tabularFigures()],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '${widget.space.topic} · $liveCount ${_tx(l10n, 'audio_space_people', 'personnes')}',
+                style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        // Bouton inviter
+        IconButton(
+          icon: const Icon(Icons.person_add_alt_rounded),
+          tooltip: 'Inviter',
+          onPressed: () => _showInviteSheet(l10n, ctrl),
+        ),
+        // Bouton partager
+        IconButton(
+          icon: const Icon(Icons.share_rounded),
+          tooltip: _tx(l10n, 'audio_space_share', 'Partager'),
+          onPressed: () => _shareSpace(l10n, ctrl),
+        ),
+        // Bouton terminer (hôte uniquement)
+        if (ctrl.isHost)
+          TextButton(
+            onPressed: () => _confirmEnd(l10n, ctrl),
+            child: Text(
+              _tx(l10n, 'audio_space_end', 'Terminer'),
+              style: const TextStyle(color: ThixPolicy.danger),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // BODY
+  // ════════════════════════════════════════════════════════════════════
   Widget _buildBody(
     AppLocalizations l10n,
-    AudioSpaceState state,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
     switch (state.status) {
-      case AudioSpaceScreenStatus.loading:
+      case ManagerStatus.idle:
+      case ManagerStatus.joining:
         return const Center(child: CircularProgressIndicator());
-      case AudioSpaceScreenStatus.permissionDenied:
+      case ManagerStatus.ending:
         return _statusPane(
-          _tx(l10n, 'audio_space_mic_denied', 'Micro refusé. Active-le dans les réglages.'),
-          Icons.mic_off_rounded,
+          'Fermeture du salon en cours...',
+          Icons.hourglass_top_rounded,
         );
-      case AudioSpaceScreenStatus.banned:
+      case ManagerStatus.error:
+        // Si l'erreur est "salon terminé", on pop automatiquement
+        if (state.errorMessage?.contains('terminé') == true ||
+            state.errorMessage?.contains('exclu') == true) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              _snack(state.errorMessage!, error: true);
+              Navigator.of(context).pop();
+            }
+          });
+        }
         return _statusPane(
-          _tx(l10n, 'audio_space_banned', 'Tu as été exclu de ce salon.'),
-          Icons.block_rounded,
-        );
-      case AudioSpaceScreenStatus.error:
-        return _statusPane(
-          state.errorMessage ?? _tx(l10n, 'audio_space_error', 'Impossible de rejoindre le salon.'),
+          state.errorMessage ??
+              _tx(l10n, 'audio_space_error', 'Impossible de rejoindre le salon.'),
           Icons.error_outline,
         );
-      case AudioSpaceScreenStatus.ready:
-        final raised = state.participants.where((p) => p.handRaised).length;
-        return Stack(
-          children: [
-            Column(
-              children: [
-                if (widget.space.recordingEnabled)
-                  Container(
-                    width: double.infinity,
-                    color: ThixPolicy.warning.withValues(alpha: 0.15),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                    child: Text(
-                      _tx(l10n, 'audio_space_recording_notice', 'Ce salon est enregistré.'),
-                      style: TextStyle(fontSize: 12, color: ThixPolicy.warning),
-                    ),
-                  ),
-                if (ctrl.isHost && raised > 0)
-                  Material(
-                    color: ThixPolicy.domainMedia.withValues(alpha: 0.1),
-                    child: InkWell(
-                      onTap: () => _requestsSheet(l10n, state, ctrl),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        child: Row(
-                          children: [
-                            Icon(Icons.back_hand_rounded, color: ThixPolicy.domainMedia, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '$raised ${_tx(l10n, 'audio_space_requests', 'demandes de parole')}',
-                                style: const TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                            Text(_tx(l10n, 'audio_space_invite', 'Gérer'),
-                                style: TextStyle(color: ThixPolicy.domainMedia)),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                Expanded(child: _speakersGrid(l10n, state, ctrl)),
-                _listenersRow(l10n, state),
-                _chatList(l10n, state),
-                _reactionsBar(l10n, ctrl),
-                _composer(l10n, ctrl),
-                _controls(l10n, state, ctrl),
-              ],
-            ),
-            if (_reactionBurst > 0)
-              Positioned(
-                right: 24,
-                bottom: 160,
-                child: _ReactionBurst(
-                  key: ValueKey(_reactionBurst),
-                  emoji: _lastReaction,
-                ),
-              ),
-          ],
-        );
+      case ManagerStatus.live:
+      case ManagerStatus.background:
+        return _buildLiveBody(l10n, state, ctrl);
     }
   }
 
+  Widget _buildLiveBody(
+    AppLocalizations l10n,
+    AudioSpaceManagerState state,
+    AudioSpaceController ctrl,
+  ) {
+    final raised = state.participants.where((p) => p.handRaised).length;
+    final me = state.me;
+
+    return Stack(
+      children: [
+        Column(
+          children: [
+            // ─── BANNIÈRE MODE BACKGROUND ───
+            if (state.isInBackground)
+              Container(
+                width: double.infinity,
+                color: ThixPolicy.warning.withValues(alpha: 0.15),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.screen_share_rounded,
+                        size: 16, color: ThixPolicy.warning),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Audio en cours en arrière-plan',
+                        style: TextStyle(fontSize: 12, color: ThixPolicy.warning),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ─── BANNIÈRE ENREGISTREMENT ───
+            if (widget.space.recordingEnabled)
+              Container(
+                width: double.infinity,
+                color: ThixPolicy.warning.withValues(alpha: 0.15),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    const Icon(Icons.fiber_manual_record_rounded,
+                        size: 12, color: ThixPolicy.danger),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        _tx(l10n, 'audio_space_recording_notice',
+                            'Ce salon est enregistré.'),
+                        style: const TextStyle(
+                            fontSize: 12, color: ThixPolicy.danger),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ─── BARRE DEMANDES DE PAROLE (hôte) ───
+            if (ctrl.isHost && raised > 0)
+              Material(
+                color: ThixPolicy.domainMedia.withValues(alpha: 0.1),
+                child: InkWell(
+                  onTap: () => _requestsSheet(l10n, state, ctrl),
+                  child: Padding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.back_hand_rounded,
+                            color: ThixPolicy.domainMedia, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '$raised ${_tx(l10n, 'audio_space_requests', 'demandes de parole')}',
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        Text(
+                          _tx(l10n, 'audio_space_invite', 'Gérer'),
+                          style:
+                              const TextStyle(color: ThixPolicy.domainMedia),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+            // ─── GRILLE INTERVENANTS ───
+            Expanded(child: _speakersGrid(l10n, state, ctrl)),
+
+            // ─── LIGNE AUDITEURS ───
+            _listenersRow(l10n, state),
+
+            // ─── CHAT ───
+            _chatList(l10n, state),
+
+            // ─── RÉACTIONS ───
+            _reactionsBar(l10n, ctrl),
+
+            // ─── COMPOSER ───
+            _composer(l10n, ctrl),
+
+            // ─── CONTRÔLES ───
+            _controls(l10n, state, ctrl),
+          ],
+        ),
+
+        // ─── BURST DE RÉACTION (animation) ───
+        if (_reactionBurst > 0)
+          Positioned(
+            right: 24,
+            bottom: 160,
+            child: _ReactionBurst(
+              key: ValueKey(_reactionBurst),
+              emoji: _lastReaction,
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // STATUS PANE
+  // ════════════════════════════════════════════════════════════════════
   Widget _statusPane(String text, IconData icon) {
     return Center(
       child: Padding(
@@ -266,20 +456,34 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           children: [
             Icon(icon, size: 42, color: ThixPolicy.textSecondary),
             const SizedBox(height: 12),
-            Text(text, textAlign: TextAlign.center, style: ThixPolicy.bodyStyle),
+            Text(text,
+                textAlign: TextAlign.center, style: ThixPolicy.bodyStyle),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: ThixPolicy.primary,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Retour'),
+            ),
           ],
         ),
       ),
     );
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // SPEAKERS GRID
+  // ════════════════════════════════════════════════════════════════════
   Widget _speakersGrid(
     AppLocalizations l10n,
-    AudioSpaceState state,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
-    final speakers =
-        state.participants.where((p) => p.role != AudioSpaceRole.listener).toList();
+    final speakers = state.participants
+        .where((p) => p.role != AudioSpaceRole.listener)
+        .toList();
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       children: [
@@ -297,7 +501,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 l10n,
                 p,
                 ctrl,
-                canModerate: ctrl.isHost || state.myRole == AudioSpaceRole.cohost,
+                canModerate:
+                    ctrl.isHost || state.me?.role == AudioSpaceRole.cohost,
               ),
           ],
         ),
@@ -329,7 +534,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 children: [
                   _avatar(p.avatarUrl, 64),
                   if (!p.isMuted)
-                    const Positioned(right: 0, bottom: 0, child: _SpeakingBadge()),
+                    const Positioned(
+                        right: 0, bottom: 0, child: _SpeakingBadge()),
                   if (p.isMuted)
                     const Positioned(
                       right: 0,
@@ -337,7 +543,22 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                       child: CircleAvatar(
                         radius: 10,
                         backgroundColor: Colors.black54,
-                        child: Icon(Icons.mic_off, size: 12, color: Colors.white),
+                        child:
+                            Icon(Icons.mic_off, size: 12, color: Colors.white),
+                      ),
+                    ),
+                  if (p.handRaised)
+                    Positioned(
+                      left: 0,
+                      top: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.amber,
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(Icons.back_hand_rounded,
+                            size: 12, color: Colors.white),
                       ),
                     ),
                 ],
@@ -348,11 +569,13 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                style: const TextStyle(
+                    fontSize: 12, fontWeight: FontWeight.w600),
               ),
               Text(
                 _roleLabel(l10n, p.role),
-                style: TextStyle(fontSize: 10, color: ThixPolicy.textSecondary),
+                style: const TextStyle(
+                    fontSize: 10, color: ThixPolicy.textSecondary),
               ),
             ],
           ),
@@ -361,9 +584,10 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
   }
 
-  Widget _listenersRow(AppLocalizations l10n, AudioSpaceState state) {
-    final listeners =
-        state.participants.where((p) => p.role == AudioSpaceRole.listener).toList();
+  Widget _listenersRow(AppLocalizations l10n, AudioSpaceManagerState state) {
+    final listeners = state.participants
+        .where((p) => p.role == AudioSpaceRole.listener)
+        .toList();
     if (listeners.isEmpty) return const SizedBox.shrink();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -371,7 +595,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
         children: [
           Text(
             '${_tx(l10n, 'audio_space_listeners', 'Auditeurs')} · ${listeners.length}',
-            style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary),
+            style: const TextStyle(
+                fontSize: 12, color: ThixPolicy.textSecondary),
           ),
           const SizedBox(width: 8),
           Expanded(
@@ -406,19 +631,24 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
       child: ClipOval(
         child: (url != null && url.isNotEmpty)
             ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover)
-            : Icon(Icons.person, size: size * 0.5, color: ThixPolicy.textSecondary),
+            : Icon(Icons.person,
+                size: size * 0.5, color: ThixPolicy.textSecondary),
       ),
     );
   }
 
-  Widget _chatList(AppLocalizations l10n, AudioSpaceState state) {
+  // ════════════════════════════════════════════════════════════════════
+  // CHAT
+  // ════════════════════════════════════════════════════════════════════
+  Widget _chatList(AppLocalizations l10n, AudioSpaceManagerState state) {
     if (state.messages.isEmpty) {
       return SizedBox(
         height: 48,
         child: Center(
           child: Text(
-            _tx(l10n, 'audio_space_chat_empty', 'Le chat du salon apparaît ici pour tout le monde.'),
-            style: TextStyle(fontSize: 12, color: ThixPolicy.textMuted),
+            _tx(l10n, 'audio_space_chat_empty',
+                'Le chat du salon apparaît ici pour tout le monde.'),
+            style: const TextStyle(fontSize: 12, color: ThixPolicy.textMuted),
           ),
         ),
       );
@@ -441,7 +671,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
             child: Text.rich(TextSpan(children: [
               TextSpan(
                 text: '${m.displayName} ',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
+                style: const TextStyle(
+                    fontWeight: FontWeight.w700, fontSize: 13),
               ),
               TextSpan(text: m.body, style: const TextStyle(fontSize: 13)),
             ])),
@@ -465,14 +696,16 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
               ],
               decoration: InputDecoration(
                 counterText: '',
-                hintText: _tx(l10n, 'audio_space_chat_hint', 'Message du salon'),
+                hintText: _tx(
+                    l10n, 'audio_space_chat_hint', 'Message du salon'),
                 filled: true,
                 fillColor: ThixPolicy.card,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(22),
                   borderSide: BorderSide.none,
                 ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
               ),
               onSubmitted: (_) => _sendChat(l10n, ctrl),
             ),
@@ -480,7 +713,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           IconButton(
             tooltip: _tx(l10n, 'audio_space_send', 'Envoyer'),
             onPressed: () => _sendChat(l10n, ctrl),
-            icon: Icon(Icons.send_rounded, color: ThixPolicy.domainMedia),
+            icon: const Icon(Icons.send_rounded, color: ThixPolicy.domainMedia),
           ),
         ],
       ),
@@ -491,12 +724,14 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     if (!_throttleChat()) return;
     final clean = _SpaceSanitizer.chat(_chatCtrl.text);
     if (clean.isEmpty) return;
-    final user = ref.read(authControllerProvider).value;
     HapticFeedback.lightImpact();
-    ctrl.sendChat(clean, user?.displayName ?? 'Membre');
+    ctrl.sendChat(clean);
     _chatCtrl.clear();
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // RÉACTIONS (via sendReaction, PAS sendChat)
+  // ════════════════════════════════════════════════════════════════════
   Widget _reactionsBar(AppLocalizations l10n, AudioSpaceController ctrl) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
@@ -508,39 +743,55 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
               onTap: () {
                 if (!_throttleChat()) return;
                 HapticFeedback.lightImpact();
-                final user = ref.read(authControllerProvider).value;
-                ctrl.sendChat(e, user?.displayName ?? 'Membre');
+                ctrl.sendReaction(e);
                 setState(() {
                   _lastReaction = e;
                   _reactionBurst++;
                 });
               },
-              child: Text(e, style: const TextStyle(fontSize: 20)),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(e, style: const TextStyle(fontSize: 20)),
+              ),
             ),
         ],
       ),
     );
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // CONTRÔLES
+  // ════════════════════════════════════════════════════════════════════
   Widget _controls(
     AppLocalizations l10n,
-    AudioSpaceState state,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
     final raised = state.participants.where((p) => p.handRaised).length;
+    final me = state.me;
+    final isMuted = me?.isMuted ?? true;
+    final handRaised = me?.handRaised ?? false;
+
     return SafeArea(
       child: Padding(
         padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
+            // ─── MUTE / UNMUTE ───
             _roundBtn(
-              icon: state.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-              color: state.isMuted ? ThixPolicy.textSecondary : ThixPolicy.domainMedia,
-              label: state.isMuted
+              icon: isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+              color: isMuted
+                  ? ThixPolicy.textSecondary
+                  : ThixPolicy.domainMedia,
+              label: isMuted
                   ? _tx(l10n, 'audio_space_muted', 'Muet')
                   : _tx(l10n, 'audio_space_live_mic', 'Micro'),
-              onTap: ctrl.canSpeak || ctrl.isHost
+              onTap: ctrl.canSpeak(me!) || ctrl.isHost
                   ? () {
                       if (!_throttleAction()) return;
                       HapticFeedback.selectionClick();
@@ -548,6 +799,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                     }
                   : null,
             ),
+
+            // ─── ACTIONS HÔTE ───
             if (ctrl.isHost) ...[
               _roundBtn(
                 icon: Icons.volume_off_rounded,
@@ -555,24 +808,24 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 label: _tx(l10n, 'audio_space_mute_all', 'Mute tous'),
                 onTap: () {
                   if (!_throttleAction()) return;
-                  for (final p in state.participants) {
-                    if (p.role == AudioSpaceRole.host) continue;
-                    if (p.role == AudioSpaceRole.listener) continue;
-                    ctrl.demote(p);
-                  }
-                  _snack(_tx(l10n, 'audio_space_muted_all', 'Intervenants coupés'));
+                  ctrl.hostMuteAll();
+                  _snack(_tx(l10n, 'audio_space_muted_all',
+                      'Intervenants coupés'));
                 },
               ),
               _roundBtn(
                 icon: Icons.back_hand_rounded,
                 color: ThixPolicy.domainMedia,
-                label: '${_tx(l10n, 'audio_space_requests', 'Demandes')}${raised > 0 ? ' ($raised)' : ''}',
+                label:
+                    '${_tx(l10n, 'audio_space_requests', 'Demandes')}${raised > 0 ? ' ($raised)' : ''}',
                 onTap: () => _requestsSheet(l10n, state, ctrl),
               ),
             ],
-            if (!ctrl.isHost && state.myRole == AudioSpaceRole.listener)
+
+            // ─── DEMANDE DE PAROLE (auditeur) ───
+            if (!ctrl.isHost && me?.role == AudioSpaceRole.listener)
               _roundBtn(
-                icon: state.handRaised
+                icon: handRaised
                     ? Icons.back_hand_rounded
                     : Icons.back_hand_outlined,
                 color: ThixPolicy.domainMedia,
@@ -580,14 +833,16 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                 onTap: () {
                   if (!_throttleAction()) return;
                   HapticFeedback.selectionClick();
-                  ctrl.toggleHand();
+                  ctrl.toggleHandRaise();
                 },
               ),
+
+            // ─── QUITTER ───
             _roundBtn(
               icon: Icons.logout_rounded,
               color: ThixPolicy.danger,
               label: _tx(l10n, 'audio_space_leave', 'Quitter'),
-              onTap: () => _leave(ctrl),
+              onTap: () => _confirmLeave(l10n, ctrl),
             ),
           ],
         ),
@@ -608,18 +863,26 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           CircleAvatar(
             radius: 24,
             backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(icon, color: onTap == null ? color.withValues(alpha: 0.35) : color),
+            child: Icon(icon,
+                color: onTap == null
+                    ? color.withValues(alpha: 0.35)
+                    : color),
           ),
           const SizedBox(height: 4),
-          Text(label, style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 11, color: ThixPolicy.textSecondary)),
         ],
       ),
     );
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // SHEETS
+  // ════════════════════════════════════════════════════════════════════
   Future<void> _requestsSheet(
     AppLocalizations l10n,
-    AudioSpaceState state,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) async {
     final raised = state.participants.where((p) => p.handRaised).toList();
@@ -638,7 +901,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
               ),
               const SizedBox(height: 8),
               if (raised.isEmpty)
-                Text(_tx(l10n, 'audio_space_no_requests', 'Aucune demande pour le moment.')),
+                Text(_tx(l10n, 'audio_space_no_requests',
+                    'Aucune demande pour le moment.')),
               for (final p in raised)
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -648,10 +912,12 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
                     onPressed: () {
                       Navigator.pop(context);
                       if (!_throttleAction()) return;
-                      ctrl.promote(p);
-                      _snack(_tx(l10n, 'audio_space_invited', 'Invité à parler'));
+                      ctrl.promoteToSpeaker(p);
+                      _snack(_tx(l10n, 'audio_space_invited',
+                          'Invité à parler'));
                     },
-                    child: Text(_tx(l10n, 'audio_space_invite', 'Accepter')),
+                    child:
+                        Text(_tx(l10n, 'audio_space_invite', 'Accepter')),
                   ),
                 ),
             ],
@@ -679,27 +945,33 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
             if (p.role == AudioSpaceRole.listener)
               ListTile(
                 leading: const Icon(Icons.mic),
-                title: Text(_tx(l10n, 'audio_space_invite', 'Inviter à parler')),
+                title: Text(
+                    _tx(l10n, 'audio_space_invite', 'Inviter à parler')),
                 onTap: () {
                   Navigator.pop(context);
                   if (!_throttleAction()) return;
-                  ctrl.promote(p);
-                  _snack(_tx(l10n, 'audio_space_invited', 'Invité à parler'));
+                  ctrl.promoteToSpeaker(p);
+                  _snack(_tx(
+                      l10n, 'audio_space_invited', 'Invité à parler'));
                 },
               ),
-            if (p.role == AudioSpaceRole.speaker || p.role == AudioSpaceRole.cohost)
+            if (p.role == AudioSpaceRole.speaker ||
+                p.role == AudioSpaceRole.cohost)
               ListTile(
                 leading: const Icon(Icons.hearing_disabled),
-                title: Text(_tx(l10n, 'audio_space_remove_speaker', 'Retirer le micro')),
+                title: Text(_tx(l10n, 'audio_space_remove_speaker',
+                    'Retirer le micro')),
                 onTap: () {
                   Navigator.pop(context);
                   if (!_throttleAction()) return;
-                  ctrl.demote(p);
-                  _snack(_tx(l10n, 'audio_space_removed', 'Micro retiré'));
+                  ctrl.demoteToListener(p);
+                  _snack(
+                      _tx(l10n, 'audio_space_removed', 'Micro retiré'));
                 },
               ),
             ListTile(
-              leading: const Icon(Icons.block, color: ThixPolicy.danger),
+              leading:
+                  const Icon(Icons.block, color: ThixPolicy.danger),
               title: Text(_tx(l10n, 'audio_space_kick', 'Expulser')),
               onTap: () {
                 Navigator.pop(context);
@@ -720,10 +992,10 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_tx(l10n, 'audio_space_kick_confirm_title', 'Expulser ?')),
-        content: Text(
-          _tx(l10n, 'audio_space_kick_confirm_message', 'Retirer ${p.displayName} du salon ?'),
-        ),
+        title: Text(_tx(
+            l10n, 'audio_space_kick_confirm_title', 'Expulser ?')),
+        content: Text(_tx(l10n, 'audio_space_kick_confirm_message',
+            'Retirer ${p.displayName} du salon ?')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -746,14 +1018,64 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
-  Future<void> _confirmEnd(AppLocalizations l10n, AudioSpaceController ctrl) async {
+  // ════════════════════════════════════════════════════════════════════
+  // PARTAGE (nouvelle version complète)
+  // ════════════════════════════════════════════════════════════════════
+  Future<void> _shareSpace(
+    AppLocalizations l10n,
+    AudioSpaceController ctrl,
+  ) async {
+    if (!_throttleAction()) return;
+    HapticFeedback.lightImpact();
+
+    final me = ref.read(authControllerProvider).value;
+    if (me == null) return;
+
+    await AudioSpaceShareSheet.show(
+      context,
+      space: widget.space,
+      currentUserId: me.id,
+      currentUserName: me.displayName,
+      listeners: ctrl.participants.length,
+      hostName: ctrl.hostName,
+    );
+  }
+
+  /// Feuille d'invitation des contacts THIX
+  Future<void> _showInviteSheet(
+    AppLocalizations l10n,
+    AudioSpaceController ctrl,
+  ) async {
+    if (!_throttleAction()) return;
+    HapticFeedback.lightImpact();
+
+    final me = ref.read(authControllerProvider).value;
+    if (me == null) return;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _InviteContactsSheet(
+        space: widget.space,
+        currentUserId: me.id,
+        currentUserName: me.displayName,
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // CONFIRMATIONS
+  // ════════════════════════════════════════════════════════════════════
+  Future<void> _confirmEnd(
+      AppLocalizations l10n, AudioSpaceController ctrl) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_tx(l10n, 'audio_space_end_confirm_title', 'Terminer le salon ?')),
-        content: Text(
-          _tx(l10n, 'audio_space_end_confirm_message', 'Tous les participants seront déconnectés.'),
-        ),
+        title: Text(_tx(l10n, 'audio_space_end_confirm_title',
+            'Terminer le salon ?')),
+        content: Text(_tx(l10n, 'audio_space_end_confirm_message',
+            'Tous les participants seront déconnectés.')),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
@@ -776,25 +1098,123 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
-  void _shareSpace(AppLocalizations l10n) {
+  /// Gestion du retour :
+  /// - Si hôte → propose de mettre en arrière-plan (space continue)
+  /// - Si participant → quitte vraiment le space
+  Future<void> _handleBack(
+    AppLocalizations l10n,
+    AudioSpaceController ctrl,
+    AudioSpaceManagerState state,
+  ) async {
     if (!_throttleAction()) return;
-    HapticFeedback.lightImpact();
-    final link = 'https://thix.id/live/audio/${widget.space.id}';
-    Clipboard.setData(ClipboardData(text: link));
-    _snack(_tx(l10n, 'audio_space_link_copied', 'Lien copié'));
+
+    // Participant : quitter directement
+    if (!ctrl.isHost) {
+      await ctrl.leave();
+      if (mounted) Navigator.pop(context);
+      return;
+    }
+
+    // Hôte : demander s'il veut minimiser (space continue) ou terminer
+    final action = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Que souhaitez-vous faire ?'),
+        content: const Text(
+          'En tant qu\'hôte, vous pouvez continuer le salon en arrière-plan ou le terminer pour tout le monde.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'cancel'),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'minimize'),
+            child: const Text('Minimiser'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, 'end'),
+            child: const Text('Terminer pour tous',
+                style: TextStyle(color: ThixPolicy.danger)),
+          ),
+        ],
+      ),
+    );
+
+    if (action == 'minimize') {
+      // Minimiser : pop de la page, le space continue en background
+      if (mounted) Navigator.pop(context);
+    } else if (action == 'end') {
+      await ctrl.endSpace();
+      if (mounted) Navigator.pop(context);
+    }
   }
 
-  Future<void> _leave(AudioSpaceController ctrl) async {
-    if (!_throttleAction()) return;
+  Future<void> _confirmLeave(AudioSpaceController ctrl) async {
     if (ctrl.isHost) {
-      await ctrl.endSpace();
+      final l10n = AppLocalizations.of(context);
+      _confirmEnd(l10n, ctrl);
     } else {
+      if (!_throttleAction()) return;
       await ctrl.leave();
+      if (mounted) Navigator.pop(context);
     }
-    if (mounted) Navigator.pop(context);
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// LIVE DOT (indicateur temps réel)
+// ════════════════════════════════════════════════════════════════════════
+class _LiveDot extends StatefulWidget {
+  const _LiveDot();
+  @override
+  State<_LiveDot> createState() => _LiveDotState();
+}
+
+class _LiveDotState extends State<_LiveDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1200),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) => Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          color: ThixPolicy.danger,
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: ThixPolicy.danger.withValues(alpha: 0.5 * _ctrl.value),
+              blurRadius: 6,
+              spreadRadius: 2 * _ctrl.value,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// SPEAKING BADGE (animation quand quelqu'un parle)
+// ════════════════════════════════════════════════════════════════════════
 class _SpeakingBadge extends StatefulWidget {
   const _SpeakingBadge();
   @override
@@ -808,7 +1228,8 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800))
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 800))
       ..repeat(reverse: true);
   }
 
@@ -827,13 +1248,17 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
         child: CircleAvatar(
           radius: 10,
           backgroundColor: ThixPolicy.domainMedia,
-          child: const Icon(Icons.graphic_eq_rounded, size: 12, color: Colors.white),
+          child: const Icon(Icons.graphic_eq_rounded,
+              size: 12, color: Colors.white),
         ),
       ),
     );
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// REACTION BURST (animation d'envoi)
+// ════════════════════════════════════════════════════════════════════════
 class _ReactionBurst extends StatefulWidget {
   final String emoji;
   const _ReactionBurst({super.key, required this.emoji});
@@ -849,7 +1274,8 @@ class _ReactionBurstState extends State<_ReactionBurst>
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 900))
       ..forward();
   }
 
@@ -864,8 +1290,209 @@ class _ReactionBurstState extends State<_ReactionBurst>
     return FadeTransition(
       opacity: Tween<double>(begin: 1, end: 0).animate(_ctrl),
       child: SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero).animate(_ctrl),
+        position: Tween<Offset>(
+                begin: const Offset(0, 0.4), end: Offset.zero)
+            .animate(_ctrl),
         child: Text(widget.emoji, style: const TextStyle(fontSize: 32)),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FEUILLE D'INVITATION DES CONTACTS THIX
+// ════════════════════════════════════════════════════════════════════════
+class _InviteContactsSheet extends StatefulWidget {
+  final AudioSpace space;
+  final String currentUserId;
+  final String currentUserName;
+  const _InviteContactsSheet({
+    required this.space,
+    required this.currentUserId,
+    required this.currentUserName,
+  });
+
+  @override
+  State<_InviteContactsSheet> createState() => _InviteContactsSheetState();
+}
+
+class _InviteContactsSheetState extends State<_InviteContactsSheet> {
+  final Set<String> _selected = {};
+  bool _sending = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final service = AudioSpaceShareService.instance;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.98),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 42, height: 4,
+                decoration: BoxDecoration(
+                    color: ThixPolicy.border,
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text('Inviter des contacts',
+                style: ThixPolicy.h3Style.copyWith(
+                    color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 16),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.4),
+              child: FutureBuilder<List<Map<String, dynamic>>>(
+                future: service.getInvitableContacts(widget.currentUserId),
+                builder: (context, snap) {
+                  if (snap.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                        child:
+                            CircularProgressIndicator(color: ThixPolicy.primary));
+                  }
+                  final contacts = snap.data ?? [];
+                  if (contacts.isEmpty) {
+                    return Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Center(
+                        child: Text('Aucun contact à inviter',
+                            style: ThixPolicy.captionStyle
+                                .copyWith(color: ThixPolicy.textMuted)),
+                      ),
+                    );
+                  }
+                  return ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: contacts.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) {
+                      final c = contacts[i];
+                      final id = c['id']?.toString() ?? '';
+                      final name = (c['display_name'] ??
+                              c['full_name'] ??
+                              'Contact')
+                          .toString();
+                      final avatar = c['avatar_url']?.toString() ?? '';
+                      final isSelected = _selected.contains(id);
+
+                      return InkWell(
+                        onTap: () => setState(() {
+                          isSelected
+                              ? _selected.remove(id)
+                              : _selected.add(id);
+                        }),
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? ThixPolicy.primary.withOpacity(0.08)
+                                : ThixPolicy.surfaceSoft,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: isSelected
+                                  ? ThixPolicy.primary
+                                  : ThixPolicy.border,
+                              width: isSelected ? 2 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 20,
+                                backgroundColor: ThixPolicy.card,
+                                backgroundImage: avatar.isNotEmpty
+                                    ? NetworkImage(avatar)
+                                    : null,
+                                child: avatar.isEmpty
+                                    ? const Icon(Icons.person,
+                                        size: 20,
+                                        color: ThixPolicy.textMuted)
+                                    : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(name,
+                                    style: ThixPolicy.labelStyle.copyWith(
+                                        color: ThixPolicy.inkDeep,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                              if (isSelected)
+                                const Icon(Icons.check_circle_rounded,
+                                    color: ThixPolicy.primary),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: _selected.isEmpty || _sending
+                    ? null
+                    : () async {
+                        setState(() => _sending = true);
+                        try {
+                          await service.inviteUsers(
+                            space: widget.space,
+                            userIds: _selected.toList(),
+                            inviterName: widget.currentUserName,
+                          );
+                          if (mounted) {
+                            Navigator.pop(context);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    '📨 ${_selected.length} invitation(s) envoyée(s)'),
+                              ),
+                            );
+                          }
+                        } catch (e) {
+                          if (mounted) {
+                            setState(() => _sending = false);
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                  content: Text('⚠️ Erreur d\'envoi')),
+                            );
+                          }
+                        }
+                      },
+                icon: _sending
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
+                    : const Icon(Icons.send_rounded, size: 18),
+                label: Text(_selected.isEmpty
+                    ? 'Sélectionner des contacts'
+                    : 'Inviter (${_selected.length})'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF8E24AA),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(14)),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
