@@ -279,7 +279,7 @@ class GroupService {
   // CRÉATION DE GROUPE
   // ============================================================
 
-  Future<ChatConversation> createGroup({
+  Future<GroupInfo> createGroup(...) async {
     required String name,
     String? description,
     String? avatarUrl,
