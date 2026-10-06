@@ -22,7 +22,7 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
-
+import 'package:thix_id/data/services/live/live_service.dart';
 import 'package:thix_id/data/models/live/audio_space_model.dart';
 import 'package:thix_id/data/services/live/audio_space_service.dart';
 
@@ -236,7 +236,7 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     AudioSpaceParticipant me,
     bool isHost,
   ) async {
-    final service = AudioSpaceService();
+    final service = AudioSpaceService(LiveService());
     final canSpeak = me.role == AudioSpaceRole.host ||
         me.role == AudioSpaceRole.cohost ||
         me.role == AudioSpaceRole.speaker;
