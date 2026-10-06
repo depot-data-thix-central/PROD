@@ -923,21 +923,24 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                     ),
 
                     Semantics(
-                      label: l10n.t('login_identifier_label'),
-                      textField: true,
-                      child: _CleanInput(
-                        key: const ValueKey('identifier'),
-                        label: l10n.t('login_identifier_label'),
-                        hint: l10n.t('login_identifier_hint'),
-                        icon: Icons.badge_outlined,
-                        isPassword: false,
-                        type: TextInputType.text,
-                        controller: _identifierC,
-                        textInputAction: TextInputAction.next,
-                        maxLength: _kMaxIdentifierLength,
-                        autofillHint: AutofillHints.username,
-                      ),
-                    ),
+                            label: l10n.t('login_password_label'),
+                            textField: true,
+                            child: _CleanInput(
+                              key: const ValueKey('password'),
+                              label: l10n.t('login_password_label'),
+                              hint: l10n.t('login_password_hint'),
+                              icon: Icons.lock_outline_rounded,
+                              isPassword: true,
+                              type: TextInputType.text,
+                              controller: _passwordC,
+                              textInputAction: TextInputAction.done,
+                              maxLength: _kMaxPasswordLength,
+                              onSubmitted: (_) => _signIn(),
+                              autofillHint: AutofillHints.password,
+                              // ✅ FIX: errorText passé directement (null = pas d'erreur)
+                              // Le spread if(...)...[] a été retiré car invalide dans les params
+                            ),
+                          ),
                     const SizedBox(height: 16),
                     Semantics(
                       label: l10n.t('login_password_label'),
