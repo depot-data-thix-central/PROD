@@ -1,13 +1,31 @@
 // lib/presentation/chat/chat_screen.dart
-// THIX Chat — conversation complète style WhatsApp + entreprise.
-// ✅ Zéro appel Supabase direct : TOUT passe par ChatService.
-// ✅ Zéro syntaxe Dart 3 (pas de records / patterns / switch-expression) → analyzer 3.4.0 OK.
-// ✅ Features : swipe-reply (2 directions), edit 15 min + badge, delete for all/me,
-//    forward (max 5), pin/unpin (max 3) + barre épinglés, favoris ⭐ + sheet, recherche
-//    in-chat + navigation, jump to first unread + séparateur, View Once, mentions @,
-//    rappels 🔔, auto-destruct visuel (bubble), mot de passe robuste, appels
-//    entrant/sortant/manqué, export agent, info message.
+// ============================================================================
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE)
+// ----------------------------------------------------------------------------
+// SÉCURITÉ :
+//  ✅ Zéro appel Supabase direct : 100% via ChatService (couche d'accès données).
+//  ✅ Zéro syntaxe Dart 3 (records/patterns/switch-expr) → analyzer 3.4.0 OK.
+//  ✅ Sanitisation HTML/JS/control-chars de TOUT contenu entrant & sortant.
+//  ✅ Sanitisation URLs (schémas http/https uniquement) → anti-injection/phishing.
+//  ✅ Limites strictes : taille fichiers, durée audio, longueur message,
+//     fenêtre d'édition (15 min), fenêtre suppression pour tous (60 min),
+//     max 5 transferts, max 3 épinglés, throttle anti-spam envoi.
+//  ✅ Permissions avec divulgation préalable (micro/caméra) + refus gracieux.
+//  ✅ Logs obfusqués / désactivés en release (kDebugMode uniquement).
+//  ✅ Cache offline : exclusion des médias View-Once (pas de ré-ouverture locale).
+//  ✅ Export CSV réservé aux rôles agent/admin/support/enterprise.
+//  ✅ Timeouts + retry bornés sur chaque opération réseau (pas de freeze UI).
+//  ✅ Mot de passe chiffré : score >= 3 exigé + confirmation.
+//  ✅ Auto-destruction : purge silencieuse côté client (aucune confirmation).
+// ----------------------------------------------------------------------------
+// FONCTIONNALITÉS : swipe-reply (reçus + envoyés), swipe-gauche menu extra,
+//  édition + badge, suppression moi/tous, forward, pin + barre, favoris ⭐,
+//  recherche in-chat + serveur, jump first unread, View-Once, mentions @,
+//  rappels 🔔, éphémère visuel, audio (pause/préécoute/fix web), caméra,
+//  galerie, pager photos ◀▶, stickers + création perso, appels in/out/manqués.
+// ============================================================================
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -22,11 +40,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:http/http.dart' as http;
+import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
@@ -50,7 +71,7 @@ import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
 // ============================================================================
-// CONSTANTES
+// CONSTANTES (politique de sécurité & limites)
 // ============================================================================
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kUploadTimeout = Duration(seconds: 60);
@@ -60,7 +81,8 @@ const int _kPageSize = 30;
 const int _kLoadMoreThresholdPx = 200;
 const int _kLoadMoreThrottleMs = 500;
 const int _kMaxMessageLength = 5000;
-const int _kMaxFileSizeBytes = 25 * 1024 * 1024;
+const int _kMaxFileSizeBytes = 25 * 1024 * 1024; // 25 Mo
+const int _kMaxStickerBytes = 512 * 1024; // 512 Ko
 const int _kMaxAudioDurationSeconds = 300;
 const int _kTypingDebounceMs = 2000;
 const int _kMarkReadDebounceMs = 1000;
@@ -68,14 +90,18 @@ const int _kPresenceCheckThrottleSeconds = 30;
 const int _kMaxForward = 5;
 const int _kSearchDebounceMs = 350;
 const int _kEditWindowMinutes = 15;
+const int _kDeleteForAllWindowMinutes = 60;
+const int _kSendThrottleMs = 600; // anti-spam
+const int _kExpirySweepSeconds = 15; // purge auto-destruct
+const String _kCustomStickersPrefKey = 'thix_custom_stickers_v1';
 
 // ============================================================================
-// VALIDATEURS
+// VALIDATEURS (sanitisation centralisée)
 // ============================================================================
 class _ChatValidators {
   _ChatValidators._();
 
-  static String sanitize(String? input, {int maxLength = 5000}) {
+  static String sanitize(String? input, {int maxLength = _kMaxMessageLength}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
     var s = doc.body?.text ?? input;
@@ -103,6 +129,7 @@ class _ChatValidators {
     if (msg.contains('not found')) return 'Ressource introuvable.';
     if (msg.contains('too large') || msg.contains('size')) return 'Fichier trop volumineux.';
     if (msg.contains('maximum') || msg.contains('atteint')) return 'Limite atteinte.';
+    if (msg.contains('accès refusé')) return 'Accès refusé à cette conversation.';
     return 'Une erreur est survenue. Réessayez.';
   }
 
@@ -111,7 +138,7 @@ class _ChatValidators {
   static String getMediaType(String ext) {
     const img = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
     const vid = {'mp4', 'mov', 'avi', 'mkv'};
-    const aud = {'mp3', 'wav', 'm4a'};
+    const aud = {'mp3', 'wav', 'm4a', 'webm', 'opus'};
     final e = ext.toLowerCase();
     if (img.contains(e)) return 'image';
     if (vid.contains(e)) return 'video';
@@ -119,7 +146,7 @@ class _ChatValidators {
     return 'file';
   }
 
-  /// Score de robustesse mot de passe : 0..5 (>= 3 exigé)
+  /// Score de robustesse mot de passe : 0..5 (>= 3 exigé en production)
   static int passwordScore(String pwd) {
     int score = 0;
     if (pwd.length >= 8) score++;
@@ -129,12 +156,23 @@ class _ChatValidators {
     if (pwd.contains(RegExp(r'[^\w\s]'))) score++;
     return score;
   }
+
+  static String extFromBytes(Uint8List bytes, String fallback) {
+    if (bytes.length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8) return 'jpg';
+    if (bytes.length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50) return 'png';
+    return fallback;
+  }
 }
 
 /// l10n avec repli FR si la clé n'existe pas encore dans app_localizations.
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final s = l10n.t(key);
   return s == key ? fallback : s;
+}
+
+/// Logs uniquement en debug (release = silencieux, zéro fuite de données).
+void _log(String message) {
+  if (kDebugMode) debugPrint(message);
 }
 
 Future<T> _chatRetry<T>(
@@ -150,19 +188,19 @@ Future<T> _chatRetry<T>(
     } on TimeoutException {
       attempt++;
       if (attempt > maxRetries) {
-        debugPrint('[Chat] ❌ $label: timeout after $attempt attempts');
+        _log('[Chat] ❌ $label: timeout after $attempt attempts');
         throw TimeoutException('$label: délai dépassé');
       }
       await Future.delayed(_kRetryDelay);
     } catch (e) {
-      debugPrint('[Chat] ❌ $label error: $e');
+      _log('[Chat] ❌ $label error: $e');
       rethrow;
     }
   }
 }
 
 // ============================================================================
-// PROVIDER MESSAGES (aucun Supabase direct : svc.currentUserId)
+// PROVIDER MESSAGES (cache offline sécurisé : exclusion View-Once)
 // ============================================================================
 final chatMessagesProvider =
     StateNotifierProvider.family<ChatMsgNotifier, List<ChatMessage>, String>((ref, conversationId) {
@@ -181,28 +219,41 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     loadInitial();
   }
 
+  /// 🔒 Sécurité : ne jamais persister localement les médias View-Once.
+  List<Map<String, dynamic>> _cacheable(List<ChatMessage> msgs) => msgs
+      .where((m) => !m.isViewOnce)
+      .map((m) => m.toJson())
+      .toList();
+
+  Future<void> _persist() async {
+    final uid = svc.currentUserId;
+    if (uid.isEmpty) return;
+    unawaited(ChatOfflineCache.instance.saveMessages(uid, convId, _cacheable(state)));
+  }
+
   Future<void> loadInitial() async {
     page = 0;
     final uid = svc.currentUserId;
     try {
       final msgs = await _chatRetry(
         () => svc.getMessages(convId, limit: pageSize, offset: 0),
-        label: 'loadInitial[$convId]',
+        label: 'loadInitial',
       );
       hasMore = msgs.length >= pageSize;
       msgs.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       state = msgs;
       if (uid.isNotEmpty) {
-        unawaited(ChatOfflineCache.instance.saveMessages(
-          uid, convId, msgs.map((m) => m.toJson()).toList(),
-        ));
+        unawaited(ChatOfflineCache.instance.saveMessages(uid, convId, _cacheable(msgs)));
       }
     } catch (e) {
-      debugPrint('[ChatMsg] ❌ Load initial error: $e');
+      _log('[ChatMsg] ❌ Load initial error: $e');
       if (uid.isNotEmpty) {
         final cached = ChatOfflineCache.instance.readMessages(uid, convId);
         if (cached.isNotEmpty) {
-          state = cached.map(ChatMessage.fromJson).where((m) => m.id.isNotEmpty).toList()
+          state = cached
+              .map(ChatMessage.fromJson)
+              .where((m) => m.id.isNotEmpty && !m.isViewOnce)
+              .toList()
             ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
           hasMore = false;
           return;
@@ -219,7 +270,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     try {
       final msgs = await _chatRetry(
         () => svc.getMessages(convId, limit: pageSize, offset: page * pageSize),
-        label: 'loadMore[$convId]',
+        label: 'loadMore',
       );
       hasMore = msgs.length >= pageSize;
       var current = [...state, ...msgs];
@@ -228,13 +279,13 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       current.sort((a, b) => b.createdAt.compareTo(a.createdAt));
       state = current;
     } catch (e) {
-      debugPrint('[ChatMsg] ❌ Load more error: $e');
+      _log('[ChatMsg] ❌ Load more error: $e');
     } finally {
       loadingMore = false;
     }
   }
 
-  /// Cherche un message en paginant (recherche / jump) — max [maxPages] pages.
+  /// Cherche un message en paginant (recherche serveur / jump) — borné.
   Future<bool> ensureLoaded(String messageId, {int maxPages = 6}) async {
     int guard = 0;
     while (guard < maxPages) {
@@ -255,7 +306,7 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       if (idx != -1) {
         current[idx] = msg;
         changed = true;
-      } else if (!msg.isDeleted) {
+      } else if (!msg.isDeleted && !msg.isDeletedForAll) {
         current.insert(0, msg);
         changed = true;
       }
@@ -265,22 +316,18 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
       final seen = <String>{};
       current = current.where((m) => seen.add(m.id)).toList();
       state = current;
-      final uid = svc.currentUserId;
-      if (uid.isNotEmpty) {
-        unawaited(ChatOfflineCache.instance.saveMessages(
-          uid, convId, state.map((m) => m.toJson()).toList(),
-        ));
-      }
+      unawaited(_persist());
     }
   }
 
   void removeLocal(String id) {
     state = state.where((m) => m.id != id).toList();
+    unawaited(_persist());
   }
 }
 
 // ============================================================================
-// GROUPEMENT D'IMAGES
+// GROUPEMENT D'IMAGES (galeries ◀▶)
 // ============================================================================
 class _ChatListItem {
   final List<ChatMessage> messages;
@@ -293,18 +340,14 @@ List<_ChatListItem> _buildChatDisplayItems(List<ChatMessage> messages) {
   int i = 0;
   while (i < messages.length) {
     final m = messages[i];
-    final isImg = m.mediaType == 'image' &&
-        (m.mediaUrl?.isNotEmpty ?? false) &&
-        !m.isViewOnce;
+    final isImg = m.mediaType == 'image' && (m.mediaUrl?.isNotEmpty ?? false) && !m.isViewOnce;
     if (isImg) {
       final group = <ChatMessage>[m];
       int j = i + 1;
       while (j < messages.length) {
         final next = messages[j];
         final sameSender = next.senderId == m.senderId;
-        final alsoImg = next.mediaType == 'image' &&
-            (next.mediaUrl?.isNotEmpty ?? false) &&
-            !next.isViewOnce;
+        final alsoImg = next.mediaType == 'image' && (next.mediaUrl?.isNotEmpty ?? false) && !next.isViewOnce;
         final closeInTime = m.createdAt.difference(next.createdAt).inSeconds.abs() < 120;
         if (sameSender && alsoImg && closeInTime) {
           group.add(next);
@@ -332,11 +375,7 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String conversationId;
   final ChatConversation conversation;
 
-  const ChatScreen({
-    super.key,
-    required this.conversationId,
-    required this.conversation,
-  });
+  const ChatScreen({super.key, required this.conversationId, required this.conversation});
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -360,11 +399,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _otherUserTyping = false;
   bool _isSending = false;
   bool _isConnectionValid = true;
+  DateTime? _lastSendAt;
 
+  // ── Audio ──
   final AudioRecorder _audioRecorder = AudioRecorder();
   Timer? _recordTimer;
   int _recordDuration = 0;
   bool _isRecording = false;
+  bool _isPaused = false;
+  String _recordExt = 'm4a';
   Uint8List? _audioBytes;
   String? _localAudioPath;
   bool _sendViewOnce = false;
@@ -374,18 +417,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Timer? _typingTimer;
   Timer? _markReadTimer;
   Timer? _searchDebounce;
+  Timer? _expiryTimer;
   DateTime? _lastConnCheck;
   DateTime? _lastLoadMore;
   bool _isAgent = false;
   bool _isInternalNoteMode = false;
   StreamSubscription<List<ChatMessage>>? _messageSub;
   StreamSubscription<List<UserStatus>>? _presenceSub;
-
   bool _showStickers = false;
+  bool _showScrollDown = false;
 
   // ── Édition ──
   String _editingMessageId = '';
-  // ── Recherche in-chat ──
+  // ── Recherche ──
   bool _searchActive = false;
   List<String> _searchMatches = <String>[];
   int _searchPos = -1;
@@ -397,103 +441,86 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   final Set<String> _starredIds = <String>{};
   // ── View once ──
   final Set<String> _viewedOnceIds = <String>{};
-  // ── Jump to first unread ──
+  // ── Jump unread ──
   int _initialUnread = 0;
   String _firstUnreadId = '';
   bool _showJumpUnread = false;
   bool _unreadAnchorDone = false;
-  // ── Mentions @ ──
+  // ── Mentions ──
   List<GroupMember> _mentionSuggestions = <GroupMember>[];
   final List<String> _mentionedUserIds = <String>[];
-  // ── Rappels 🔔 ──
+  // ── Rappels ──
   final Map<String, Timer> _reminderTimers = <String, Timer>{};
   final Set<String> _reminderScheduled = <String>{};
-  // ── Scroll vers message ──
+  // ── Stickers perso ──
+  final List<Uint8List> _customStickers = <Uint8List>[];
+  // ── Ancres de scroll ──
   final Map<String, GlobalKey> _msgKeys = <String, GlobalKey>{};
 
-  static const List<String> _quickReactions = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
-
   static const List<String> _emojis = [
-  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
-  '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
-  '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
-  '😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😔','😪',
-  '🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴',
-  '😵','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕','😟',
-  '🙁','☹️','😮','😯','😲','😳','🥺','😦','😧','😨',
-  '😰','😥','😢','😭','😱','😖','😣','😞','😓','😩',
-  '😫','🥱','😤','😡','😠','🤬','🤡','👹','👺','👻',
-  '💀','☠️','👽','👾','🤖','💩','😺','😸','😹','😻',
-  '😼','😽','🙀','😿','😾','🫠','🫡','🫢','🫣','🫤',
-  '🫥','🫨','🫩','🥹','🥲','🫶','🤩','😈','👿','💯',
-];
+    '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
+    '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
+    '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
+    '😐','😑','😶','😏','😒','🙄','','😔','😪','🤤',
+    '😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴','😵',
+    '🤯','🤠','🥳','🥸','😎','🤓','','😕','😟','🙁',
+    '☹️','😮','😯','😲','😳','🥺','','😧','😨','😰',
+    '😥','😢','😭','😱','😖','😣','😞','😓','😩','😫',
+    '🥱','','😡','😠','🤬','🤡','👹','👺','👻','💀',
+    '☠️','','👾','','💩','😺','😸','😹','😻','😼',
+    '😽','🙀','😿','😾','🥹','🥲','🫶','','😈','',
+  ];
 
-static const List<String> _reactions = [
-  '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
-  '🤙','👈','👉','👆','🖕','👇','☝️','👋','🤚','🖐️',
-  '✋','🖖','👏','🙌','🫶','👐','🤲','🤝','🙏','💪',
-  '🦾','✍️','💅','🤳','👊','✊','🤛','🤜','❤️','🧡',
-  '💛','💚','💙','💜','🖤','🤍','🤎','🩷','🩵','🩶',
-  '💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟',
-  '♥️','❤️‍🔥','❤️‍🩹','🔥','⭐','🌟','✨','⚡','☄️','🌈',
-  '☀️','🌙','🌞','🌝','🌚','⛅','☁️','🌧️','⛈️','🌩️',
-  '🌨️','❄️','💧','💦','🌊','🎉','🎊','🎁','🎂','🍰',
-  '🎈','🎗️','🏆','🥇','🥈','🥉','🎯','🚀','💎','👑',
-  '💯','💥','💫','💢','✅','❌','❗','❓','‼️','⁉️',
-  '🔔','🔕','📌','🔗','💡','👏','🙌','🙏','🤝','🫂',
-];
+  static const List<String> _reactions = [
+    '👍','👎','','🤌','','✌️','','🫰','','🤘',
+    '🤙','👈','👉','👆','👇','☝️','👋','🤚','️','✋',
+    '🖖','👏','🙌','🫶','👐','🤲','🤝','🙏','💪','🦾',
+    '✍️','💅','🤳','👊','✊','🤛','','❤️','🧡','💛',
+    '💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞',
+    '💓','💗','💖','💘','💝','💟','♥️','🔥','⭐','🌟',
+    '✨','⚡','☄️','🌈','☀️','🌙','🌞','🌝','🌚','⛅',
+    '☁️','🌧️','⛈️','🌩️','️','❄️','💧','💦','🌊','',
+    '🎊','🎁','🎂','🍰','🎈','🎗️','🏆','','🥈','',
+    '🎯','🚀','💎','👑','💯','💥','💫','','✅','❌',
+    '❗','❓','‼️','⁉️','🔔','🔕','📌','🔗','💡','🫂',
+  ];
 
-static const List<String> _objects = [
-  '📱','💻','🖥️','⌨️','🖱️','🖨️','💾','💿','📀','🎥',
-  '📷','📸','📹','📼','🔍','🔎','💡','🔦','🕯️','💰',
-  '💳','💎','⚖️','🧰','🔧','🔨','⚙️','🧲','🔒','🔓',
-  '🔑','🗝️','📦','📫','📮','📝','📄','📑','📊','📈',
-  '📉','🗓️','📅','📆','📇','🗃️','⏳','⌛','🕐','🔌',
-  '🔋','💊','💉','🩺','🩹','🧬','🔬','🔭','📡','🧭',
-  '✈️','🚀','🛸','🚁','⛵','🚤','🛳️','🚗','🚕','🚌',
-  '🏠','🏡','🏢','🏣','🏥','🏦','🏨','🏩','🏪','🏫',
-  '⛪','🕌','🕍','⛩️','🛕','🏔️','🌋','🗻','🏕️','🏖️',
-  '📚','📖','📕','📗','📘','📙','📒','📓','📔','📐',
-  '📏','✏️','🖊️','🖋️','🎓','🎒','🧪','🧫','🧮','🧠',
-  '💼','🏭','🏪','🏬','🛒','🛍️','🏷️','🧾','💵','💶',
-  '💷','💴','🪙','🏧','📞','☎️','📺','📻','🎧','🎤',
-  '🎙️','🔊','🔇','📢','📣','📨','📩','✉️','📬','📭',
-  '🗂️','📁','📂','🗄️','🗑️','📎','🖇️','📌','✂️','🧷',
-  '🛠️','🪛','🪚','🪓','⛏️','🧱','🪜','🔩','🔗','🪢',
-  '🧲','🧯','🪣','🧹','🧺','🧴','🧼','🪥','🚪','🪟',
-  '🛋️','🪑','🛏️','🚿','🛁','🚽','🍽️','🥄','🍴','☕',
-  '🌱','🌿','🌳','🌲','🌴','🌾','🌻','🌹','🌷','🌺',
-  '🌸','🌼','🍀','🌍','🌎','🌏','☀️','🌤️','🌧️','🌈',
-  '🚗','🚕','🚙','🚌','🚎','🚓','🚑','🚒','🚚','🚛',
-  '🚜','🏍️','🚲','🛴','🚆','🚇','🚉','🚂','🚢','🛥️',
-  '🏖️','🏝️','🏜️','🏞️','🏟️','🎡','🎢','🎠','🏛️','🗼',
-];
+  static const List<String> _objects = [
+    '📱','','🖥️','⌨️','🖱️','️','💾','💿','📀','',
+    '📷','📸','📹','📼','🔍','🔎','💡','🔦','🕯️','💰',
+    '💳','💎','⚖️','','🔧','🔨','⚙️','🧲','','🔓',
+    '🔑','🗝️','📦','','📮','','📄','','📊','',
+    '📉','🗓️','📅','','📇','️','⏳','','🕐','🔌',
+    '🔋','💊','💉','🩺','🩹','🧬','🔬','🔭','📡','🧭',
+    '✈️','🚀','','🚁','','🚤','️','🚗','🚕','🚌',
+    '🏠','','🏢','🏣','🏥','🏦','🏨','🏩','🏪','🏫',
+    '⛪','','🕍','️','','🏔️','','🗻','🏕️','🏖️',
+    '📚','','📕','📗','','📙','','📓','','📐',
+    '📏','✏️','🖊️','🖋️','','🎒','🧪','','🧮','🧠',
+    '💼','🏭','','🛒','️','🏷️','🧾','','💶','💷',
+    '💴','🪙','🏧','','☎️','','📻','','🎤','️',
+    '','🔇','','📣','📨','📩','️','📬','','🗂️',
+    '📁','📂','🗄️','🗑️','','🖇️','📌','✂️','🧷','🛠️',
+  ];
 
-static const List<String> _flags = [
-  '🇫🇷','🇧🇪','🇨🇭','🇨🇦','🇱🇺','🇲🇨','🇺🇸','🇬🇧','🇩🇪','🇪🇸',
-  '🇮🇹','🇵🇹','🇳🇱','🇷🇺','🇨🇳','🇯🇵','🇰🇷','🇮🇳','🇧🇷','🇲🇽',
-  '🇦🇷','🇨🇱','🇨🇴','🇵🇪','🇻🇪','🇪🇨','🇧🇴','🇵🇾','🇺🇾','🇨🇷',
-  '🇵🇦','🇨🇺','🇩🇴','🇭🇹','🇯🇲','🇹🇹','🇧🇸','🇬🇾','🇸🇷','🇦🇺',
-  '🇳🇿','🇿🇦','🇪🇬','🇲🇦','🇹🇳','🇩🇿','🇳🇬','🇬🇭','🇰🇪','🇪🇹',
-  '🇸🇳','🇨🇮','🇨🇲','🇨🇩','🇨🇬','🇦🇴','🇲🇿','🇹🇿','🇿🇼','🇧🇼',
-  '🇲🇬','🇲🇺','🇸🇨','🇰🇲','🇩🇯','🇸🇦','🇦🇪','🇶🇦','🇰🇼','🇧🇭',
-  '🇴🇲','🇾🇪','🇯🇴','🇱🇧','🇸🇾','🇮🇶','🇮🇷','🇹🇷','🇬🇷','🇮🇱',
-  '🇵🇸','🇵🇰','🇦🇫','🇮🇩','🇲🇾','🇸🇬','🇹🇭','🇻🇳','🇵🇭','🇸🇪',
-  '🇳🇴','🇩🇰','🇫🇮','🇮🇸','🇵🇱','🇨🇿','🇸🇰','🇭🇺','🇷🇴','🇧🇬',
-  '🇭🇷','🇷🇸','🇸🇮','🇺🇦','🇬🇪','🇦🇲','🇦🇿','🇰🇿','🇺🇿','🇲🇳',
-  '🇳🇵','🇱🇰','🇧🇩','🇲🇲','🇰🇭','🇱🇦','🇵🇭','🇧🇳','🇹🇱','🇻🇦',
-  '🇲🇱','🇧🇫','🇳🇪','🇹🇩','🇨🇫','🇸🇸','🇸🇩','🇸🇴','🇪🇷','🇺🇬',
-  '🇷🇼','🇧🇮','🇿🇲','🇿🇦','🇳🇦','🇧🇼','🇿🇼','🇲🇼','🇱🇸','🇸🇿',
-  '🇬🇦','🇬🇶','🇬🇲','🇬🇼','🇸🇱','🇱🇷','🇹🇬','🇧🇯','🇲🇷','🇨🇻',
-  '🇸🇹','🇨🇴','🇵🇷','🇵🇲','🇬🇹','🇭🇳','🇸🇻','🇳🇮','🇨🇺','🇧🇧',
-  '🇦🇬','🇩🇲','🇬🇩','🇱🇨','🇻🇨','🇰🇳','🇦🇪','🇵🇦','🇧🇸','🇧🇿',
-];
+  static const List<String> _flags = [
+    '🇫🇷','🇪','🇨🇭','🇦','🇱🇺','🇨','🇺🇸','🇧','🇩🇪','🇸',
+    '🇮🇹','🇹','🇳🇱','🇺','🇳','🇵','🇷','🇮🇳','🇷','🇽',
+    '🇦🇷','🇱','🇨🇴','🇵','🇻🇪','🇨','🇧🇴','🇵','🇺','🇨',
+    '🇦','🇨🇺','🇴','🇭🇹','🇲','🇹','🇧🇸','🇾','🇸🇷','🇺',
+    '🇳🇿','🇦','🇪🇬','🇦','🇳','🇿','🇳🇬','🇬🇭','🇪','🇪🇹',
+    '🇸🇳','🇮','🇨🇲','🇨🇩','🇬','🇦🇴','🇲🇿','🇹🇿','🇼','🇼',
+    '🇲🇬','🇺','🇸🇨','🇲','🇯','🇸🇦','🇪','🇦','🇰🇼','🇭',
+    '🇴🇲','🇾🇪','🇯🇴','🇱🇧','🇾','🇮🇶','🇷','🇹🇷','🇷','🇮🇱',
+    '🇵🇸','🇰','🇫','🇩','🇾','🇸🇬','🇭','🇳','🇭','🇪',
+    '🇳🇴','🇩🇰','🇮','🇸','🇵🇱','🇿','🇰','🇺','🇴','🇧🇬',
+    '🇭🇷','🇷🇸','🇮','🇺🇦','🇪','🇦🇲','🇦🇿','🇿','🇿','🇲🇳',
+  ];
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-
     _chatService = ref.read(chatServiceProvider);
     _connectionService = ConnectionService();
     _chatService.startPresenceHeartbeat();
@@ -508,7 +535,7 @@ static const List<String> _flags = [
         }
       }
     } catch (e) {
-      debugPrint('[Chat] ⚠️ unread capture: $e');
+      _log('[Chat] ⚠️ unread capture: $e');
     }
 
     _inputController.addListener(() {
@@ -524,6 +551,7 @@ static const List<String> _flags = [
     _loadGroupMembers();
     _loadPinned();
     _loadStarred();
+    _loadCustomStickers();
     _markAsRead();
 
     try {
@@ -531,8 +559,15 @@ static const List<String> _flags = [
       _subscribeToRealtime();
       _subscribeToTyping();
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Failed to subscribe to realtime: $e');
+      _log('[Chat] ⚠️ realtime subscribe: $e');
     }
+
+    // ✅ Purge périodique des messages auto-destruct expirés (silencieux)
+    _expiryTimer = Timer.periodic(const Duration(seconds: _kExpirySweepSeconds), (_) {
+      if (!mounted) return;
+      final msgs = ref.read(chatMessagesProvider(widget.conversationId));
+      if (msgs.any((m) => m.isExpired)) setState(() {});
+    });
 
     _scrollController.addListener(_onScroll);
   }
@@ -543,7 +578,7 @@ static const List<String> _flags = [
     try {
       _chatService.stopTypingListener(widget.conversationId);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ stopTypingListener: $e');
+      _log('[Chat] ⚠️ stopTypingListener: $e');
     }
     WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
@@ -553,6 +588,7 @@ static const List<String> _flags = [
     _typingTimer?.cancel();
     _markReadTimer?.cancel();
     _searchDebounce?.cancel();
+    _expiryTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
     for (final t in _reminderTimers.values) {
@@ -565,14 +601,12 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // CYCLE DE VIE / SÉCURITÉ
+  // CYCLE DE VIE / SÉCURITÉ CONNEXION
   // ==========================================================================
   Future<void> _checkConnectionSecurity() async {
     if (widget.conversation.isGroup || _isAgent) return;
     final now = DateTime.now();
-    if (_lastConnCheck != null && now.difference(_lastConnCheck!).inSeconds < _kPresenceCheckThrottleSeconds) {
-      return;
-    }
+    if (_lastConnCheck != null && now.difference(_lastConnCheck!).inSeconds < _kPresenceCheckThrottleSeconds) return;
     _lastConnCheck = now;
     final myId = _chatService.currentUserId;
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != myId, orElse: () => '');
@@ -584,7 +618,7 @@ static const List<String> _flags = [
       );
       if (mounted) setState(() => _isConnectionValid = isConnected);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Connection check failed: $e');
+      _log('[Chat] ⚠️ Connection check failed: $e');
     }
   }
 
@@ -608,17 +642,14 @@ static const List<String> _flags = [
     try {
       final uid = _chatService.currentUserId;
       if (uid.isEmpty) return;
-      final role = await _chatRetry(
-        () => _chatService.getUserRole(uid),
-        label: 'loadUserRole',
-      );
+      final role = await _chatRetry(() => _chatService.getUserRole(uid), label: 'loadUserRole');
       if (mounted && role.isNotEmpty) {
         setState(() {
           _isAgent = role == 'agent' || role == 'admin' || role == 'support' || role == 'enterprise';
         });
       }
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Load user role failed: $e');
+      _log('[Chat] ⚠️ Load user role failed: $e');
     }
   }
 
@@ -630,7 +661,7 @@ static const List<String> _flags = [
       );
       if (mounted) setState(() => _groupMembers = members);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Load group members error: $e');
+      _log('[Chat] ⚠️ Load group members error: $e');
     }
   }
 
@@ -642,7 +673,7 @@ static const List<String> _flags = [
       );
       if (mounted) setState(() => _pinnedMessages = pinned);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Load pinned error: $e');
+      _log('[Chat] ⚠️ Load pinned error: $e');
     }
   }
 
@@ -661,11 +692,10 @@ static const List<String> _flags = [
       });
       _syncStarFlags();
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Load starred error: $e');
+      _log('[Chat] ⚠️ Load starred error: $e');
     }
   }
 
-  /// Aligne le badge ⭐ des messages chargés sur l'état serveur.
   void _syncStarFlags() {
     if (_starredIds.isEmpty) return;
     final msgs = ref.read(chatMessagesProvider(widget.conversationId));
@@ -683,7 +713,6 @@ static const List<String> _flags = [
     _messageSub = _chatService.subscribeToMessages(widget.conversationId).listen(
       (updated) {
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime(updated);
-
         final me = _chatService.currentUserId;
         final idsToDeliver = updated
             .where((m) => m.senderId != me && !m.isDelivered && !m.isDeleted)
@@ -692,8 +721,6 @@ static const List<String> _flags = [
         if (idsToDeliver.isNotEmpty) {
           unawaited(_chatService.markMessagesDelivered(idsToDeliver));
         }
-
-        // Rafraîchit la barre des épinglés si un pin a changé
         for (final m in updated) {
           if (m.isPinned && !_pinnedMessages.any((p) => p.id == m.id)) {
             _loadPinned();
@@ -703,7 +730,7 @@ static const List<String> _flags = [
         _scheduleRemindersFor(updated);
         _scheduleMarkAsRead();
       },
-      onError: (e) => debugPrint('[Chat] ⚠️ Realtime subscription error: $e'),
+      onError: (e) => _log('[Chat] ⚠️ Realtime subscription error: $e'),
     );
   }
 
@@ -723,7 +750,7 @@ static const List<String> _flags = [
       (list) {
         if (mounted && list.isNotEmpty) setState(() => _otherParticipant = list.first);
       },
-      onError: (e) => debugPrint('[Chat] ⚠️ Presence subscription error: $e'),
+      onError: (e) => _log('[Chat] ⚠️ Presence subscription error: $e'),
     );
   }
 
@@ -759,7 +786,7 @@ static const List<String> _flags = [
       json.addAll(patch);
       return ChatMessage.fromJson(json);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ overrideMsg: $e');
+      _log('[Chat] ⚠️ overrideMsg: $e');
       return m;
     }
   }
@@ -775,8 +802,7 @@ static const List<String> _flags = [
   }
 
   void _scrollToMessage(String id) {
-    final k = _msgKeys[id];
-    final ctx = k?.currentContext;
+    final ctx = _msgKeys[id]?.currentContext;
     if (ctx != null) {
       Scrollable.ensureVisible(ctx, alignment: 0.3, duration: const Duration(milliseconds: 300));
     }
@@ -786,7 +812,7 @@ static const List<String> _flags = [
     try {
       ref.read(chatListProvider.notifier).markAsRead(widget.conversationId);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Mark as read error: $e');
+      _log('[Chat] ⚠️ Mark as read error: $e');
     }
   }
 
@@ -813,6 +839,8 @@ static const List<String> _flags = [
     if (_showJumpUnread && _scrollController.position.pixels < 60) {
       setState(() => _showJumpUnread = false);
     }
+    final show = _scrollController.position.pixels > 240;
+    if (show != _showScrollDown) setState(() => _showScrollDown = show);
   }
 
   // ==========================================================================
@@ -850,33 +878,25 @@ static const List<String> _flags = [
       backgroundColor: Colors.transparent,
       builder: (ctx) => Container(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        ),
+        decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
             const SizedBox(height: 14),
-            Text(_tr(l10n, 'chat_remind_title', 'Me rappeler ce message'),
-                style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+            Text(_tr(l10n, 'chat_remind_title', 'Me rappeler ce message'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
             const SizedBox(height: 8),
             ...options.map((o) => ListTile(
-                  leading: const Icon(Icons.notifications_active_outlined, color: ThixPolicy.primary),
+                  leading: const Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold),
                   title: Text(o['label'] as String),
                   onTap: () async {
                     Navigator.pop(ctx);
                     final at = o['at'] as DateTime;
                     try {
-                      await _chatRetry(
-                        () => _chatService.setMessageReminder(msg.id, at),
-                        label: 'setMessageReminder',
-                      );
-                      ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([
-                        _overrideMsg(msg, {'reminder_at': at.toUtc().toIso8601String()}),
-                      ]);
-                      _scheduleRemindersFor([_overrideMsg(msg, {'reminder_at': at.toUtc().toIso8601String()})]);
+                      await _chatRetry(() => _chatService.setMessageReminder(msg.id, at), label: 'setMessageReminder');
+                      final patched = _overrideMsg(msg, {'reminder_at': at.toUtc().toIso8601String()});
+                      ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([patched]);
+                      _scheduleRemindersFor([patched]);
                       _showSuccess(_tr(l10n, 'chat_remind_set', 'Rappel programmé'));
                     } catch (e) {
                       _showError(_ChatValidators.friendlyError(e));
@@ -890,7 +910,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // ÉDITION (15 min) + badge "Modifié"
+  // ÉDITION (fenêtre 15 min) + badge "Modifié"
   // ==========================================================================
   void _startEdit(ChatMessage msg) {
     HapticFeedback.selectionClick();
@@ -912,10 +932,7 @@ static const List<String> _flags = [
     }
     final l10n = AppLocalizations.of(context);
     try {
-      final updated = await _chatRetry(
-        () => _chatService.editMessage(msg.id, clean),
-        label: 'editMessage',
-      );
+      final updated = await _chatRetry(() => _chatService.editMessage(msg.id, clean), label: 'editMessage');
       if (updated != null) {
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([updated]);
       } else {
@@ -943,9 +960,14 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // SUPPRESSIONS
+  // SUPPRESSIONS (moi / tous < 60 min / auto-destruct silencieuse)
   // ==========================================================================
   Future<void> _deleteForMe(ChatMessage msg) async {
+    // ✅ Auto-destruct expiré : suppression immédiate, SANS confirmation
+    if (msg.isExpired) {
+      ref.read(chatMessagesProvider(widget.conversationId).notifier).removeLocal(msg.id);
+      return;
+    }
     final l10n = AppLocalizations.of(context);
     final ok = await _confirmDialog(
       title: _tr(l10n, 'chat_delete_title', 'Supprimer le message ?'),
@@ -964,6 +986,11 @@ static const List<String> _flags = [
 
   Future<void> _deleteForAll(ChatMessage msg) async {
     final l10n = AppLocalizations.of(context);
+    // 🔒 Fenêtre serveur : 60 min (double contrôle client)
+    if (!msg.canBeDeletedForAll(_chatService.currentUserId)) {
+      _showWarning(_tr(l10n, 'chat_delete_window', 'Suppression pour tous possible pendant $_kDeleteForAllWindowMinutes min après envoi.'));
+      return;
+    }
     final ok = await _confirmDialog(
       title: _tr(l10n, 'chat_delete_for_all_title', 'Supprimer pour tous ?'),
       body: _tr(l10n, 'chat_delete_for_all_body', 'Le message sera remplacé par « Message supprimé » chez tous les participants.'),
@@ -973,12 +1000,7 @@ static const List<String> _flags = [
     try {
       await _chatRetry(() => _chatService.deleteMessageForAll(msg.id), label: 'deleteMessageForAll');
       ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([
-        _overrideMsg(msg, {
-          'is_deleted_for_all': true,
-          'is_deleted': true,
-          'content': '',
-          'media_url': null,
-        }),
+        _overrideMsg(msg, {'is_deleted_for_all': true, 'is_deleted': true, 'content': '', 'media_url': null}),
       ]);
       _showSuccess(_tr(l10n, 'chat_deleted_all', 'Message supprimé pour tous'));
     } catch (e) {
@@ -1016,11 +1038,8 @@ static const List<String> _flags = [
   void _showForwardSheet(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
-    final conversations = ref.read(chatListProvider).all
-        .where((c) => c.id != widget.conversationId)
-        .toList();
+    final conversations = ref.read(chatListProvider).all.where((c) => c.id != widget.conversationId).toList();
     final selected = <String>{};
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -1028,10 +1047,7 @@ static const List<String> _flags = [
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => Container(
           height: MediaQuery.of(ctx).size.height * 0.65,
-          decoration: BoxDecoration(
-            color: ThixPolicy.card,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-          ),
+          decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
           child: Column(
             children: [
@@ -1042,10 +1058,8 @@ static const List<String> _flags = [
                   const Icon(Icons.forward_rounded, color: ThixPolicy.primary),
                   const SizedBox(width: 8),
                   Expanded(
-                    child: Text(
-                      '${_tr(l10n, 'chat_forward_title', 'Transférer')} (${selected.length}/$_kMaxForward)',
-                      style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold),
-                    ),
+                    child: Text('${_tr(l10n, 'chat_forward_title', 'Transférer')} (${selected.length}/$_kMaxForward)',
+                        style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
                   ),
                   ElevatedButton(
                     style: ElevatedButton.styleFrom(
@@ -1059,15 +1073,11 @@ static const List<String> _flags = [
                             Navigator.pop(ctx);
                             try {
                               final sent = await _chatRetry(
-                                () => _chatService.forwardMessage(
-                                  originalMessageId: msg.id,
-                                  targetConversationIds: selected.toList(),
-                                ),
+                                () => _chatService.forwardMessage(originalMessageId: msg.id, targetConversationIds: selected.toList()),
                                 label: 'forwardMessage',
                                 timeout: _kUploadTimeout,
                               );
-                              _showSuccess(_tr(l10n, 'chat_forward_done', 'Transféré à {n} conversation(s)')
-                                  .replaceAll('{n}', '${sent.length}'));
+                              _showSuccess(_tr(l10n, 'chat_forward_done', 'Transféré à {n} conversation(s)').replaceAll('{n}', '${sent.length}'));
                             } catch (e) {
                               _showError(_ChatValidators.friendlyError(e));
                             }
@@ -1094,22 +1104,20 @@ static const List<String> _flags = [
                           style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                       trailing: Icon(checked ? Icons.check_circle : Icons.radio_button_unchecked,
                           color: checked ? ThixPolicy.primary : ThixPolicy.textMuted),
-                      onTap: () {
-                        setSheetState(() {
-                          if (checked) {
-                            selected.remove(c.id);
-                          } else if (selected.length < _kMaxForward) {
-                            selected.add(c.id);
-                          } else {
-                            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                              content: Text(_tr(l10n, 'chat_forward_max', 'Maximum 5 destinataires')),
-                              backgroundColor: ThixPolicy.warning,
-                              behavior: SnackBarBehavior.floating,
-                              duration: const Duration(milliseconds: 900),
-                            ));
-                          }
-                        });
-                      },
+                      onTap: () => setSheetState(() {
+                        if (checked) {
+                          selected.remove(c.id);
+                        } else if (selected.length < _kMaxForward) {
+                          selected.add(c.id);
+                        } else {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(_tr(l10n, 'chat_forward_max', 'Maximum 5 destinataires')),
+                            backgroundColor: ThixPolicy.warning,
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(milliseconds: 900),
+                          ));
+                        }
+                      }),
                     );
                   },
                 ),
@@ -1130,16 +1138,11 @@ static const List<String> _flags = [
     try {
       if (msg.isPinned) {
         await _chatRetry(() => _chatService.unpinMessage(msg.id), label: 'unpinMessage');
-        ref.read(chatMessagesProvider(widget.conversationId).notifier)
-            .upsertRealtime([_overrideMsg(msg, const {'is_pinned': false})]);
+        ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, const {'is_pinned': false})]);
         _showInfo(_tr(l10n, 'chat_unpinned', 'Message désépinglé'));
       } else {
-        await _chatRetry(
-          () => _chatService.pinMessage(msg.id, widget.conversationId),
-          label: 'pinMessage',
-        );
-        ref.read(chatMessagesProvider(widget.conversationId).notifier)
-            .upsertRealtime([_overrideMsg(msg, const {'is_pinned': true})]);
+        await _chatRetry(() => _chatService.pinMessage(msg.id, widget.conversationId), label: 'pinMessage');
+        ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, const {'is_pinned': true})]);
         _showInfo(_tr(l10n, 'chat_pinned', 'Message épinglé'));
       }
       await _loadPinned();
@@ -1158,26 +1161,20 @@ static const List<String> _flags = [
         _starredIds.remove(msg.id);
       }
     });
-    ref.read(chatMessagesProvider(widget.conversationId).notifier)
-        .upsertRealtime([_overrideMsg(msg, {'is_starred': nowStarred})]);
+    ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, {'is_starred': nowStarred})]);
     unawaited(_chatService.toggleStarMessage(msg.id));
   }
 
   void _showStarredSheet() {
     final l10n = AppLocalizations.of(context);
-    final msgs = ref.read(chatMessagesProvider(widget.conversationId))
-        .where((m) => _starredIds.contains(m.id))
-        .toList();
+    final msgs = ref.read(chatMessagesProvider(widget.conversationId)).where((m) => _starredIds.contains(m.id)).toList();
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => Container(
         height: MediaQuery.of(ctx).size.height * 0.6,
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        ),
+        decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
           children: [
@@ -1187,16 +1184,14 @@ static const List<String> _flags = [
               children: [
                 const Icon(Icons.star_rounded, color: ThixPolicy.gold),
                 const SizedBox(width: 8),
-                Text(_tr(l10n, 'chat_starred_title', 'Messages favoris'),
-                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                Text(_tr(l10n, 'chat_starred_title', 'Messages favoris'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
               ],
             ),
             const SizedBox(height: 8),
             Expanded(
               child: msgs.isEmpty
-                  ? Center(
-                      child: Text(_tr(l10n, 'chat_starred_empty', 'Aucun message favori'),
-                          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)))
+                  ? Center(child: Text(_tr(l10n, 'chat_starred_empty', 'Aucun message favori'),
+                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)))
                   : ListView.builder(
                       itemCount: msgs.length,
                       itemBuilder: (ctx, i) {
@@ -1235,9 +1230,7 @@ static const List<String> _flags = [
           _searchPos = -1;
         } else {
           _searchMatches = msgs
-              .where((m) =>
-                  m.content.toLowerCase().contains(q) ||
-                  (m.mediaName ?? '').toLowerCase().contains(q))
+              .where((m) => m.content.toLowerCase().contains(q) || (m.mediaName ?? '').toLowerCase().contains(q))
               .map((m) => m.id)
               .toList();
           _searchPos = _searchMatches.isEmpty ? -1 : 0;
@@ -1246,8 +1239,7 @@ static const List<String> _flags = [
     });
   }
 
-  String get _searchHighlightId =>
-      (_searchPos >= 0 && _searchPos < _searchMatches.length) ? _searchMatches[_searchPos] : '';
+  String get _searchHighlightId => (_searchPos >= 0 && _searchPos < _searchMatches.length) ? _searchMatches[_searchPos] : '';
 
   void _searchMove(int delta) {
     if (_searchMatches.isEmpty) return;
@@ -1258,7 +1250,6 @@ static const List<String> _flags = [
     _scrollToMessage(_searchHighlightId);
   }
 
-  /// Recherche serveur (messages plus anciens) : sheet de résultats + jump paginé.
   Future<void> _searchRemote() async {
     final q = _searchCtrl.text.trim();
     if (q.length < 3) return;
@@ -1274,10 +1265,7 @@ static const List<String> _flags = [
       isScrollControlled: true,
       builder: (ctx) => Container(
         height: MediaQuery.of(ctx).size.height * 0.6,
-        decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        ),
+        decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(22))),
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
         child: Column(
           children: [
@@ -1340,10 +1328,7 @@ static const List<String> _flags = [
     }
     final q = (match.group(1) ?? '').toLowerCase();
     final me = _chatService.currentUserId;
-    final sugg = _groupMembers
-        .where((m) => m.userId != me && m.displayName.toLowerCase().contains(q))
-        .take(4)
-        .toList();
+    final sugg = _groupMembers.where((m) => m.userId != me && m.displayName.toLowerCase().contains(q)).take(4).toList();
     setState(() => _mentionSuggestions = sugg);
   }
 
@@ -1353,26 +1338,24 @@ static const List<String> _flags = [
     final match = RegExp(r'@([A-Za-zÀ-ÖØ-öø-ÿ0-9_.]{0,20})$').firstMatch(text);
     if (match == null) return;
     final prefix = text.substring(0, match.start);
-    final inserted = '@${member.displayName} ';
-    _inputController.text = prefix + inserted;
+    _inputController.text = prefix + '@${member.displayName} ';
     _inputController.selection = TextSelection.fromPosition(TextPosition(offset: _inputController.text.length));
     if (!_mentionedUserIds.contains(member.userId)) _mentionedUserIds.add(member.userId);
     setState(() => _mentionSuggestions = <GroupMember>[]);
   }
 
   // ==========================================================================
-  // VIEW ONCE
+  // VIEW ONCE (aucune persistance locale)
   // ==========================================================================
   void _onViewOnceOpened(ChatMessage msg) {
     if (_viewedOnceIds.contains(msg.id)) return;
     setState(() => _viewedOnceIds.add(msg.id));
     unawaited(_chatService.markViewOnceAsSeen(msg.id));
-    ref.read(chatMessagesProvider(widget.conversationId).notifier)
-        .upsertRealtime([_overrideMsg(msg, const {'has_been_viewed': true})]);
+    ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([_overrideMsg(msg, const {'has_been_viewed': true})]);
   }
 
   // ==========================================================================
-  // INFO MESSAGE + EXPORT (entreprise)
+  // INFO MESSAGE + EXPORT (réservé agents)
   // ==========================================================================
   void _showMessageInfo(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
@@ -1392,7 +1375,7 @@ static const List<String> _flags = [
             if (msg.senderId == _chatService.currentUserId)
               _infoRow(_tr(l10n, 'chat_info_status', 'Statut'),
                   msg.isRead ? _tr(l10n, 'chat_info_read', 'Lu') : (msg.isDelivered ? _tr(l10n, 'chat_info_delivered', 'Distribué') : _tr(l10n, 'chat_info_sent', 'Envoyé'))),
-            if (msg.hasMedia) _infoRow(_tr(l10n, 'chat_info_media', 'Média'), '${msg.mediaName ?? '-'} (${(msg.mediaSize ?? 0) ~/ 1024} Ko)'),
+            if (msg.hasMedia) _infoRow(_tr(l10n, 'chat_info_media', 'Média'), '${_ChatValidators.sanitize(msg.mediaName, maxLength: 40)} (${(msg.mediaSize ?? 0) ~/ 1024} Ko)'),
             if (msg.isForwarded) _infoRow(_tr(l10n, 'chat_info_forwarded', 'Transféré depuis'), msg.forwardedFromSenderName ?? '-'),
             if (msg.isEphemeral) _infoRow(_tr(l10n, 'chat_info_ephemeral', 'Éphémère'), '${msg.ephemeralDuration ?? 0}s'),
             if (msg.isViewOnce) _infoRow('View once', msg.hasBeenViewed ? _tr(l10n, 'chat_info_opened', 'Ouvert') : _tr(l10n, 'chat_info_pending', 'En attente')),
@@ -1417,10 +1400,12 @@ static const List<String> _flags = [
       );
 
   Future<void> _exportConversation() async {
+    if (!_isAgent) return; // 🔒 contrôle rôle côté client (serveur fait foi)
     final l10n = AppLocalizations.of(context);
     final msgs = ref.read(chatMessagesProvider(widget.conversationId));
     final sb = StringBuffer('date;expediteur;contenu\n');
     for (final m in msgs.reversed) {
+      if (m.isViewOnce) continue; // 🔒 jamais exporter les view-once
       sb.writeln('${DateFormat('yyyy-MM-dd HH:mm').format(m.createdAt.toLocal())};'
           '${m.senderName.replaceAll(';', ',')};'
           '${m.content.replaceAll(';', ',').replaceAll('\n', ' ')}');
@@ -1430,7 +1415,7 @@ static const List<String> _flags = [
   }
 
   // ==========================================================================
-  // APPELS / PERMISSIONS / ENREGISTREMENT AUDIO
+  // APPELS / PERMISSIONS (divulgation préalable)
   // ==========================================================================
   Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
     if (kIsWeb) return true;
@@ -1494,6 +1479,9 @@ static const List<String> _flags = [
     Navigator.push(context, MaterialPageRoute(builder: (_) => const CallPage()));
   }
 
+  // ==========================================================================
+  // AUDIO : FIX WEB + PAUSE + PRÉÉCOUTE + DESIGN
+  // ==========================================================================
   Future<void> _startRecording() async {
     final l10n = AppLocalizations.of(context);
     if (!_isConnectionValid || _isRecording) return;
@@ -1501,30 +1489,76 @@ static const List<String> _flags = [
     final hasPerm = await _checkPermissionWithDisclosure(Permission.microphone, _tr(l10n, 'chat_mic_disclosure', 'Le micro est nécessaire pour les messages vocaux.'));
     if (!hasPerm) return;
     try {
-      String recordPath;
-      if (kIsWeb) {
-        recordPath = 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a';
-      } else {
-        final dir = await getTemporaryDirectory();
-        recordPath = p.join(dir.path, 'audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
+      final ts = DateTime.now().millisecondsSinceEpoch;
+      final configs = kIsWeb
+          ? <Map<String, dynamic>>[
+              {'cfg': const RecordConfig(encoder: AudioEncoder.mp3, bitRate: 128000), 'ext': 'mp3', 'path': 'audio_$ts.mp3'},
+              {'cfg': const RecordConfig(encoder: AudioEncoder.wav, bitRate: 128000), 'ext': 'wav', 'path': 'audio_$ts.wav'},
+              {'cfg': const RecordConfig(encoder: AudioEncoder.opus, bitRate: 128000), 'ext': 'webm', 'path': 'audio_$ts.webm'},
+            ]
+          : <Map<String, dynamic>>[
+              {'cfg': const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), 'ext': 'm4a', 'path': p.join((await getTemporaryDirectory()).path, 'audio_$ts.m4a')},
+              {'cfg': const RecordConfig(encoder: AudioEncoder.mp3, bitRate: 128000), 'ext': 'mp3', 'path': p.join((await getTemporaryDirectory()).path, 'audio_$ts.mp3')},
+            ];
+      Object? lastError;
+      bool started = false;
+      for (final c in configs) {
+        try {
+          await _audioRecorder.start(c['cfg'] as RecordConfig, path: c['path'] as String);
+          _recordExt = c['ext'] as String;
+          _localAudioPath = c['path'] as String;
+          started = true;
+          break;
+        } catch (e) {
+          lastError = e;
+        }
       }
-      await _audioRecorder.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), path: recordPath);
+      if (!started) throw lastError ?? StateError('Recorder unavailable');
       if (!mounted) return;
       setState(() {
         _isRecording = true;
+        _isPaused = false;
         _recordDuration = 0;
         _audioBytes = null;
-        _localAudioPath = null;
         _showStickers = false;
       });
       _recordTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-        if (!mounted) return;
+        if (!mounted || _isPaused) return;
         setState(() => _recordDuration++);
         if (_recordDuration >= _kMaxAudioDurationSeconds) _stopRecording();
       });
     } catch (e) {
-      debugPrint('[Chat] ❌ Start recording error: $e');
+      _log('[Chat] ❌ Start recording error: $e');
       if (mounted) _showError(_tr(l10n, 'chat_recording_error', 'Erreur d’enregistrement'));
+    }
+  }
+
+  Future<void> _pauseRecording() async {
+    try {
+      await _audioRecorder.pause();
+      if (mounted) setState(() => _isPaused = true);
+    } catch (_) {}
+  }
+
+  Future<void> _resumeRecording() async {
+    try {
+      await _audioRecorder.resume();
+      if (mounted) setState(() => _isPaused = false);
+    } catch (_) {}
+  }
+
+  Future<void> _cancelRecording() async {
+    _recordTimer?.cancel();
+    try {
+      await _audioRecorder.stop();
+    } catch (_) {}
+    if (mounted) {
+      setState(() {
+        _isRecording = false;
+        _isPaused = false;
+        _audioBytes = null;
+        _localAudioPath = null;
+      });
     }
   }
 
@@ -1534,37 +1568,241 @@ static const List<String> _flags = [
       final path = await _audioRecorder.stop();
       if (mounted) setState(() => _isRecording = false);
       if (path != null) {
-        Uint8List bytes;
-        if (kIsWeb) {
-          final response = await _chatRetry(() => http_get(Uri.parse(path)), label: 'downloadAudio');
-          bytes = response;
-        } else {
-          bytes = await File(path).readAsBytes();
-        }
+        final bytes = await _fetchAudioBytes(path);
         if (mounted) {
           setState(() {
             _audioBytes = bytes;
             _localAudioPath = path;
+            _isPaused = false;
           });
         }
       }
     } catch (e) {
-      debugPrint('[Chat] ❌ Stop recording error: $e');
+      _log('[Chat] ❌ Stop recording error: $e');
       if (mounted) _showError(_tr(AppLocalizations.of(context), 'chat_recording_error', 'Erreur d’enregistrement'));
     }
   }
 
-  // ============================================================================
-  // ENVOI
-  // ============================================================================
+  /// 🔒 Bytes audio : http (blob:) sur web, File sur mobile — jamais dart:io sur web.
+  Future<Uint8List> _fetchAudioBytes(String path) async {
+    if (kIsWeb) {
+      final r = await http.get(Uri.parse(path)).timeout(_kRequestTimeout);
+      return r.bodyBytes;
+    }
+    return File(path).readAsBytes();
+  }
+
+  Widget _buildRecordingBar(AppLocalizations l10n) {
+    final mm = (_recordDuration ~/ 60).toString().padLeft(2, '0');
+    final ss = (_recordDuration % 60).toString().padLeft(2, '0');
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [ThixPolicy.danger.withOpacity(0.14), ThixPolicy.danger.withOpacity(0.05)]),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: ThixPolicy.danger.withOpacity(0.35)),
+      ),
+      child: Row(
+        children: [
+          Container(width: 10, height: 10, decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle)),
+          const SizedBox(width: 10),
+          Icon(_isPaused ? Icons.pause_circle_outline_rounded : Icons.mic_rounded, color: ThixPolicy.danger, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _isPaused
+                  ? '${_tr(l10n, 'chat_recording_paused', 'Pause')}  $mm:$ss'
+                  : '${_tr(l10n, 'chat_recording', 'Enregistrement')}  $mm:$ss',
+              style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold),
+            ),
+          ),
+          IconButton(
+            icon: Icon(_isPaused ? Icons.play_arrow_rounded : Icons.pause_rounded, color: ThixPolicy.danger),
+            onPressed: _isPaused ? _resumeRecording : _pauseRecording,
+            tooltip: _tr(l10n, 'chat_pause', 'Pause'),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.textSecondary),
+            onPressed: _cancelRecording,
+            tooltip: _tr(l10n, 'common_cancel', 'Annuler'),
+          ),
+          GestureDetector(
+            onTap: _stopRecording,
+            child: Container(
+              padding: const EdgeInsets.all(10),
+              decoration: const BoxDecoration(color: ThixPolicy.danger, shape: BoxShape.circle),
+              child: const Icon(Icons.check_rounded, color: Colors.white, size: 20),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // CAPTURE PHOTOS (caméra / galerie)
+  // ==========================================================================
+  Future<void> _pickFromCamera() async {
+    HapticFeedback.selectionClick();
+    try {
+      final x = await ImagePicker().pickImage(source: ImageSource.camera, imageQuality: 85, maxWidth: 1920);
+      if (x == null) return;
+      final bytes = await x.readAsBytes();
+      if (!_ChatValidators.isValidFileSize(bytes.length)) {
+        _showWarning(_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux'));
+        return;
+      }
+      if (mounted) setState(() => _selectedFiles.add(PlatformFile(name: x.name, size: bytes.length, bytes: bytes)));
+    } catch (e) {
+      if (mounted) _showError(_ChatValidators.friendlyError(e));
+    }
+  }
+
+  Future<void> _pickFromGallery() async {
+    HapticFeedback.selectionClick();
+    try {
+      final list = await ImagePicker().pickMultiImage(imageQuality: 85, maxWidth: 1920);
+      if (list.isEmpty) return;
+      final added = <PlatformFile>[];
+      for (final x in list) {
+        final bytes = await x.readAsBytes();
+        if (_ChatValidators.isValidFileSize(bytes.length)) {
+          added.add(PlatformFile(name: x.name, size: bytes.length, bytes: bytes));
+        }
+      }
+      if (mounted && added.isNotEmpty) setState(() => _selectedFiles.addAll(added));
+    } catch (e) {
+      if (mounted) _showError(_ChatValidators.friendlyError(e));
+    }
+  }
+
+  Future<void> _pickFile() async {
+    HapticFeedback.selectionClick();
+    try {
+      final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+      if (result != null && result.files.isNotEmpty) {
+        final validFiles = result.files.where((f) => _ChatValidators.isValidFileSize(f.size)).toList();
+        if (validFiles.length < result.files.length) {
+          _showWarning('${_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux :')} ${result.files.length - validFiles.length} ignoré(s)');
+        }
+        if (validFiles.isNotEmpty && mounted) setState(() => _selectedFiles.addAll(validFiles));
+      }
+    } catch (e) {
+      if (mounted) _showError(_ChatValidators.friendlyError(e));
+    }
+  }
+
+  void _removeFile(int index) {
+    HapticFeedback.lightImpact();
+    setState(() => _selectedFiles.removeAt(index));
+  }
+
+  // ==========================================================================
+  // STICKERS PERSO (création + persistance locale chiffrable)
+  // ==========================================================================
+  Future<void> _loadCustomStickers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final list = prefs.getStringList(_kCustomStickersPrefKey) ?? <String>[];
+      if (!mounted) return;
+      setState(() {
+        _customStickers.clear();
+        for (final b64 in list) {
+          try {
+            _customStickers.add(base64Decode(b64));
+          } catch (_) {}
+        }
+      });
+    } catch (e) {
+      _log('[Chat] ⚠️ loadCustomStickers: $e');
+    }
+  }
+
+  Future<void> _persistCustomStickers() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setStringList(_kCustomStickersPrefKey, _customStickers.map(base64Encode).toList());
+    } catch (e) {
+      _log('[Chat] ⚠️ persistCustomStickers: $e');
+    }
+  }
+
+  Future<void> _addCustomSticker() async {
+    final l10n = AppLocalizations.of(context);
+    final source = await showModalBottomSheet<ImageSource>(
+      context: context,
+      backgroundColor: ThixPolicy.card,
+      builder: (ctx) => SafeArea(
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          ListTile(leading: const Icon(Icons.photo_camera_rounded), title: Text(_tr(l10n, 'chat_camera', 'Caméra')), onTap: () => Navigator.pop(ctx, ImageSource.camera)),
+          ListTile(leading: const Icon(Icons.photo_library_rounded), title: Text(_tr(l10n, 'chat_gallery', 'Galerie')), onTap: () => Navigator.pop(ctx, ImageSource.gallery)),
+        ]),
+      ),
+    );
+    if (source == null) return;
+    try {
+      final x = await ImagePicker().pickImage(source: source, imageQuality: 90, maxWidth: 512, maxHeight: 512);
+      if (x == null) return;
+      final bytes = await x.readAsBytes();
+      if (bytes.lengthInBytes > _kMaxStickerBytes) {
+        _showWarning(_tr(l10n, 'chat_sticker_too_big', 'Sticker trop lourd (max 512 Ko)'));
+        return;
+      }
+      setState(() => _customStickers.insert(0, bytes));
+      await _persistCustomStickers();
+      _showSuccess(_tr(l10n, 'chat_sticker_created', 'Sticker créé'));
+    } catch (e) {
+      _showError(_ChatValidators.friendlyError(e));
+    }
+  }
+
+  Future<void> _sendCustomSticker(Uint8List bytes) async {
+    final ext = _ChatValidators.extFromBytes(bytes, 'png');
+    try {
+      final url = await _chatRetry(
+        () => _chatService.uploadFileWithUniqueName('chat-media', 'stickers/${widget.conversationId}', bytes, ext),
+        label: 'uploadSticker',
+        timeout: _kUploadTimeout,
+      );
+      if (url == null) throw StateError('Upload sticker échoué');
+      final msg = await _chatRetry(
+        () => _chatService.sendMessage(
+          conversationId: widget.conversationId,
+          content: '',
+          mediaUrl: url,
+          mediaType: 'sticker',
+          mediaName: 'sticker.$ext',
+          mediaSize: bytes.length,
+        ),
+        label: 'sendSticker',
+      );
+      ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
+      if (mounted) setState(() => _showStickers = false);
+      _scrollToBottom();
+    } catch (e) {
+      _showError(_ChatValidators.friendlyError(e));
+    }
+  }
+
+  // ==========================================================================
+  // PAGER PHOTOS ◀▶
+  // ==========================================================================
+  void _showPhotoPager(List<ChatMessage> imgs, int start) {
+    Navigator.of(context).push(MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => _PhotoPager(images: imgs, initialIndex: start),
+    ));
+  }
+
+  // ==========================================================================
+  // ENVOI (throttle anti-spam + limites)
+  // ==========================================================================
   Future<void> _sendMessage() async {
     final l10n = AppLocalizations.of(context);
     if (!_isConnectionValid) {
       _showError(_tr(l10n, 'chat_send_inactive', 'Connexion inactive : envoi impossible'));
       return;
     }
-
-    // Mode édition → update au lieu d'insert
     if (_editingMessageId.isNotEmpty) {
       final msgs = ref.read(chatMessagesProvider(widget.conversationId));
       final target = msgs.where((m) => m.id == _editingMessageId).toList();
@@ -1574,10 +1812,13 @@ static const List<String> _flags = [
       }
       _cancelEdit();
     }
-
     final text = _ChatValidators.sanitize(_inputController.text.trim(), maxLength: _kMaxMessageLength);
     if (text.isEmpty && _selectedFiles.isEmpty && _audioBytes == null) return;
     if (_isSending) return;
+    // 🔒 Throttle anti-spam
+    final now = DateTime.now();
+    if (_lastSendAt != null && now.difference(_lastSendAt!).inMilliseconds < _kSendThrottleMs) return;
+    _lastSendAt = now;
 
     _isTyping = false;
     _sendTypingStatus(false);
@@ -1589,28 +1830,52 @@ static const List<String> _flags = [
 
     try {
       if (_audioBytes != null) {
-        final msg = await _chatRetry(
-          () => _chatService.sendAudioMessage(
-            conversationId: widget.conversationId,
-            audioData: _audioBytes!,
-            duration: _recordDuration > 0 ? _recordDuration : 1,
-            isEphemeral: _isEphemeral,
-            ephemeralDuration: _ephemeralDuration,
-            replyToId: _replyToId.isEmpty ? null : _replyToId,
-          ),
-          label: 'sendAudio',
-          timeout: _kUploadTimeout,
-        );
+        ChatMessage msg;
+        if (kIsWeb) {
+          final ext = _recordExt.isEmpty ? 'webm' : _recordExt;
+          final url = await _chatRetry(
+            () => _chatService.uploadFileWithUniqueName('chat-media', 'messages/${widget.conversationId}', _audioBytes!, ext),
+            label: 'uploadAudio',
+            timeout: _kUploadTimeout,
+          );
+          if (url == null) throw StateError('Upload audio échoué');
+          msg = await _chatRetry(
+            () => _chatService.sendMessage(
+              conversationId: widget.conversationId,
+              content: '🎤 Message audio (${_recordDuration}s)',
+              mediaUrl: url,
+              mediaType: 'audio',
+              mediaName: 'audio_${DateTime.now().millisecondsSinceEpoch}.$ext',
+              mediaSize: _audioBytes!.length,
+              isEphemeral: _isEphemeral,
+              ephemeralDuration: _ephemeralDuration,
+              replyToId: _replyToId.isEmpty ? null : _replyToId,
+            ),
+            label: 'sendAudioWeb',
+          );
+        } else {
+          msg = await _chatRetry(
+            () => _chatService.sendAudioMessage(
+              conversationId: widget.conversationId,
+              audioData: _audioBytes!,
+              duration: _recordDuration > 0 ? _recordDuration : 1,
+              isEphemeral: _isEphemeral,
+              ephemeralDuration: _ephemeralDuration,
+              replyToId: _replyToId.isEmpty ? null : _replyToId,
+            ),
+            label: 'sendAudio',
+            timeout: _kUploadTimeout,
+          );
+        }
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       } else if (_selectedFiles.isNotEmpty) {
         final filesToSend = List<PlatformFile>.from(_selectedFiles);
         setState(() => _selectedFiles.clear());
-
         final imageFiles = <PlatformFile>[];
         final otherFiles = <PlatformFile>[];
         for (final f in filesToSend) {
           if (!_ChatValidators.isValidFileSize(f.size)) {
-            _showError('${_tr(l10n, 'chat_file_too_big', 'Fichier trop volumineux :')} ${f.name}');
+            _showError('${_tr(l10n, 'chat_file_too_big', 'Fichier trop volumineux :')} ${_ChatValidators.sanitize(f.name, maxLength: 40)}');
             continue;
           }
           final ext = (f.extension ?? '').toLowerCase();
@@ -1620,11 +1885,10 @@ static const List<String> _flags = [
             otherFiles.add(f);
           }
         }
-
         if (imageFiles.isNotEmpty) {
           final urls = <String>[];
           for (final f in imageFiles) {
-            final bytes = f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
+            final bytes = f.bytes ?? (f.path != null && !kIsWeb ? await File(f.path!).readAsBytes() : null);
             if (bytes == null) continue;
             final ext = f.extension ?? 'jpg';
             final url = await _chatRetry(
@@ -1650,15 +1914,14 @@ static const List<String> _flags = [
                   mentionedUserIds: mentions,
                   replyToId: i == 0 && _replyToId.isNotEmpty ? _replyToId : null,
                 ),
-                label: 'sendImage[$i]',
+                label: 'sendImage',
               );
               ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
             }
           }
         }
-
         for (final f in otherFiles) {
-          final bytes = f.bytes ?? (f.path != null ? await File(f.path!).readAsBytes() : null);
+          final bytes = f.bytes ?? (f.path != null && !kIsWeb ? await File(f.path!).readAsBytes() : null);
           if (bytes == null) continue;
           final ext = f.extension ?? 'bin';
           final url = await _chatRetry(
@@ -1699,7 +1962,6 @@ static const List<String> _flags = [
         );
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       }
-
       if (mounted) {
         setState(() {
           _inputController.clear();
@@ -1715,37 +1977,16 @@ static const List<String> _flags = [
       }
       _scrollToBottom();
     } catch (e) {
-      debugPrint('[Chat] ❌ Send message error: $e');
+      _log('[Chat] ❌ Send message error: $e');
       if (mounted) _showError(_ChatValidators.friendlyError(e));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
   }
 
-  // ============================================================================
-  // PIÈCES JOINTES / DIVERS
-  // ============================================================================
-  Future<void> _pickFile() async {
-    HapticFeedback.selectionClick();
-    try {
-      final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
-      if (result != null && result.files.isNotEmpty) {
-        final validFiles = result.files.where((f) => _ChatValidators.isValidFileSize(f.size)).toList();
-        if (validFiles.length < result.files.length) {
-          _showWarning('${_tr(AppLocalizations.of(context), 'chat_file_too_big', 'Fichier trop volumineux :')} ${result.files.length - validFiles.length} ignoré(s)');
-        }
-        if (validFiles.isNotEmpty && mounted) setState(() => _selectedFiles.addAll(validFiles));
-      }
-    } catch (e) {
-      if (mounted) _showError(_ChatValidators.friendlyError(e));
-    }
-  }
-
-  void _removeFile(int index) {
-    HapticFeedback.lightImpact();
-    setState(() => _selectedFiles.removeAt(index));
-  }
-
+  // ==========================================================================
+  // DIVERS (escalade, notes internes)
+  // ==========================================================================
   void _escalateConversation() {
     HapticFeedback.mediumImpact();
     context.pushNamed(
@@ -1767,9 +2008,9 @@ static const List<String> _flags = [
     _showInfo(_isInternalNoteMode ? _tr(l10n, 'chat_internal_note_on', 'Note interne activée') : _tr(l10n, 'chat_internal_note_off', 'Note interne désactivée'));
   }
 
-  // ============================================================================
+  // ==========================================================================
   // SNACKBARS
-  // ============================================================================
+  // ==========================================================================
   void _showSuccess(String message) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -1821,9 +2062,9 @@ static const List<String> _flags = [
     ));
   }
 
-  // ============================================================================
+  // ==========================================================================
   // PRÉSENCE
-  // ============================================================================
+  // ==========================================================================
   Future<void> _getParticipantInfo() async {
     if (widget.conversation.isGroup) return;
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != _chatService.currentUserId, orElse: () => '');
@@ -1832,7 +2073,7 @@ static const List<String> _flags = [
       final p = await _chatRetry(() => _chatService.getUserPresence(otherId), label: 'getUserPresence');
       if (mounted) setState(() => _otherParticipant = p);
     } catch (e) {
-      debugPrint('[Chat] ⚠️ Get participant info error: $e');
+      _log('[Chat] ⚠️ Get participant info error: $e');
     }
   }
 
@@ -1844,7 +2085,7 @@ static const List<String> _flags = [
       if (DateTime.now().difference(lastSeen.toLocal()).inMinutes <= 2) return _tr(l10n, 'chat_online', 'En ligne');
     }
     if (lastSeen == null) return _tr(l10n, 'chat_online', 'En ligne');
-    return '${_tr(l10n, 'chat_seen_at', 'Vu à')} ${_formatLastSeen(lastSeen.toLocal())}';
+    return '${_tr(l10n, 'chat_seen', 'Vu')} ${_formatLastSeen(lastSeen.toLocal())}';
   }
 
   bool get _isOnline {
@@ -1866,15 +2107,17 @@ static const List<String> _flags = [
     return '${_tr(l10n, 'chat_on', 'le')} ${DateFormat('dd/MM/yyyy').format(localDate)}';
   }
 
-  // ============================================================================
+  // ==========================================================================
   // BUILD
-  // ============================================================================
+  // ==========================================================================
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final messages = ref.watch(chatMessagesProvider(widget.conversationId));
     final msgNotifier = ref.watch(chatMessagesProvider(widget.conversationId).notifier);
-    final displayItems = _buildChatDisplayItems(messages);
+    // ✅ Purge visuelle : les messages expirés disparaissent sans confirmation
+    final visible = messages.where((m) => !m.isExpired).toList();
+    final displayItems = _buildChatDisplayItems(visible);
     final currentUid = _chatService.currentUserId;
 
     if (!_unreadAnchorDone && messages.isNotEmpty) {
@@ -1920,7 +2163,11 @@ static const List<String> _flags = [
 
                           Widget content;
                           if (item.messages.length > 1) {
-                            content = _ImageGroupBubble(images: item.messages, isOwn: isOwn);
+                            content = _ImageGroupBubble(
+                              images: item.messages,
+                              isOwn: isOwn,
+                              onOpenGallery: (list, idx) => _showPhotoPager(list, idx),
+                            );
                           } else if (firstMsg.mediaType == 'call_audio' || firstMsg.mediaType == 'call_video') {
                             content = _CallBubble(
                               message: firstMsg,
@@ -1933,7 +2180,6 @@ static const List<String> _flags = [
                             content = _buildSingleBubble(firstMsg, isOwn, messages);
                           }
 
-                          // Chip rappel 🔔
                           final reminder = firstMsg.reminderAt;
                           if (reminder != null && reminder.isAfter(DateTime.now())) {
                             content = Column(
@@ -1958,7 +2204,6 @@ static const List<String> _flags = [
                             );
                           }
 
-                          // Surbrillance recherche
                           if (_searchHighlightId.isNotEmpty && firstMsg.id == _searchHighlightId) {
                             content = Container(
                               decoration: BoxDecoration(borderRadius: BorderRadius.circular(18), boxShadow: [
@@ -1968,24 +2213,22 @@ static const List<String> _flags = [
                             );
                           }
 
-                          // ✅ Swipe-to-reply natif pour MES messages (les autres : géré par la bubble)
-                          if (isOwn) {
-                            content = Dismissible(
-                              key: ValueKey('swipe_reply_${firstMsg.id}'),
-                              direction: DismissDirection.startToEnd,
-                              confirmDismiss: (_) async {
-                                HapticFeedback.selectionClick();
-                                setState(() => _replyToId = firstMsg.id);
-                                return false;
-                              },
-                              background: Container(
-                                alignment: Alignment.centerLeft,
-                                padding: const EdgeInsets.only(left: 24),
-                                child: const Icon(Icons.reply_rounded, color: ThixPolicy.primary),
-                              ),
-                              child: content,
-                            );
-                          }
+                          // ✅ Swipe-to-reply : reçus (bubble) + envoyés (ici)
+                          content = Dismissible(
+                            key: ValueKey('swipe_reply_${firstMsg.id}'),
+                            direction: DismissDirection.startToEnd,
+                            confirmDismiss: (_) async {
+                              HapticFeedback.selectionClick();
+                              setState(() => _replyToId = firstMsg.id);
+                              return false;
+                            },
+                            background: Container(
+                              alignment: Alignment.centerLeft,
+                              padding: const EdgeInsets.only(left: 24),
+                              child: const Icon(Icons.reply_rounded, color: ThixPolicy.primary),
+                            ),
+                            child: content,
+                          );
 
                           // ✅ Swipe gauche = menu extra (rappel, info, copier, transférer)
                           content = Dismissible(
@@ -2011,7 +2254,6 @@ static const List<String> _flags = [
                           );
 
                           final keyed = KeyedSubtree(key: _keyFor(firstMsg.id), child: content);
-
                           if (i == firstUnreadIdx) {
                             return Column(children: [_UnreadDivider(l10n: l10n), keyed]);
                           }
@@ -2043,13 +2285,30 @@ static const List<String> _flags = [
                                     const Icon(Icons.arrow_downward_rounded, color: Colors.white, size: 14),
                                     const SizedBox(width: 6),
                                     Text(
-                                      _tr(l10n, 'chat_jump_unread', 'Premiers messages non lus')
-                                          .replaceAll('{n}', '$_initialUnread'),
+                                      _tr(l10n, 'chat_jump_unread', 'Premiers messages non lus'),
                                       style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700),
                                     ),
                                   ],
                                 ),
                               ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (_showScrollDown)
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: Material(
+                          color: ThixPolicy.primary,
+                          shape: const CircleBorder(),
+                          elevation: 4,
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut),
+                            child: const Padding(
+                              padding: EdgeInsets.all(10),
+                              child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 26),
                             ),
                           ),
                         ),
@@ -2081,22 +2340,20 @@ static const List<String> _flags = [
     );
   }
 
-  // ============================================================================
-  // BUBBLE UNIQUE + CALLBACKS COMPLETS
-  // ============================================================================
+  // ==========================================================================
+  // BUBBLE + CALLBACKS
+  // ==========================================================================
   Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> messages) {
     final idx = messages.indexWhere((m) => m.id == msg.id);
     final prev = idx > 0 ? messages[idx - 1] : null;
     final next = idx < messages.length - 1 ? messages[idx + 1] : null;
     final firstInGroup = prev == null || prev.senderId != msg.senderId;
     final lastInGroup = next == null || next.senderId != msg.senderId;
-
     ChatMessage? replyTo;
     if (msg.replyToId != null) {
       final found = messages.where((m) => m.id == msg.replyToId).toList();
       replyTo = found.isEmpty ? null : found.first;
     }
-
     return ChatMessageBubble(
       message: msg,
       isOwn: isOwn,
@@ -2124,7 +2381,6 @@ static const List<String> _flags = [
     );
   }
 
-  /// Menu "swipe gauche" : rappels + infos + copier + transférer.
   void _showExtraSheet(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
@@ -2178,94 +2434,53 @@ static const List<String> _flags = [
     );
   }
 
-  // ============================================================================
+  // ==========================================================================
   // BARRES UI
-  // ============================================================================
+  // ==========================================================================
   Widget _buildPinnedBar(AppLocalizations l10n) {
-  final msg = _pinnedMessages[_pinnedCursor % _pinnedMessages.length];
-
-  return Container(
-    width: double.infinity,
-    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-    decoration: BoxDecoration(
-      color: ThixPolicy.gold.withOpacity(0.10),
-      border: Border(
-        bottom: BorderSide(
-          color: ThixPolicy.gold.withOpacity(0.3),
-        ),
+    final msg = _pinnedMessages[_pinnedCursor % _pinnedMessages.length];
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: ThixPolicy.gold.withOpacity(0.10),
+        border: Border(bottom: BorderSide(color: ThixPolicy.gold.withOpacity(0.3))),
       ),
-    ),
-    child: Row(
-      children: [
-        const Icon(
-          Icons.push_pin_rounded,
-          size: 16,
-          color: ThixPolicy.gold,
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: GestureDetector(
-            onTap: () {
-              setState(() {
-                _pinnedCursor =
-                    (_pinnedCursor + 1) % _pinnedMessages.length;
-              });
-              _scrollToMessage(msg.id);
-            },
-            child: Text(
-              '${msg.senderName}: ${msg.previewText}',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.textMain,
-                fontWeight: FontWeight.w600,
-              ),
+      child: Row(
+        children: [
+          const Icon(Icons.push_pin_rounded, size: 16, color: ThixPolicy.gold),
+          const SizedBox(width: 8),
+          Expanded(
+            child: GestureDetector(
+              onTap: () {
+                setState(() => _pinnedCursor = (_pinnedCursor + 1) % _pinnedMessages.length);
+                _scrollToMessage(msg.id);
+              },
+              child: Text('${msg.senderName}: ${msg.previewText}',
+                  maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600)),
             ),
           ),
-        ),
-        if (_pinnedMessages.length > 1)
-          Text(
-            '${(_pinnedCursor % _pinnedMessages.length) + 1}/${_pinnedMessages.length}',
-            style: ThixPolicy.microStyle.copyWith(
-              color: ThixPolicy.textMuted,
-            ),
+          if (_pinnedMessages.length > 1)
+            Text('${(_pinnedCursor % _pinnedMessages.length) + 1}/${_pinnedMessages.length}',
+                style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.push_pin_outlined, size: 16, color: ThixPolicy.textSecondary),
+            onPressed: () => _togglePin(msg),
+            tooltip: _tr(l10n, 'chat_unpin', 'Désépingler'),
           ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(
-            Icons.push_pin_outlined,
-            size: 16,
-            color: ThixPolicy.textSecondary,
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.close_rounded, size: 16, color: ThixPolicy.textSecondary),
+            onPressed: () => setState(() => _pinnedBarClosed = true),
+            tooltip: _tr(l10n, 'common_close', 'Fermer'),
           ),
-          onPressed: () => _togglePin(msg),
-          tooltip: _tr(
-            l10n,
-            'chat_unpin',
-            'Désépingler',
-          ),
-        ),
-        IconButton(
-          visualDensity: VisualDensity.compact,
-          icon: const Icon(
-            Icons.close_rounded,
-            size: 16,
-            color: ThixPolicy.textSecondary,
-          ),
-          onPressed: () {
-            setState(() {
-              _pinnedBarClosed = true;
-            });
-          },
-          tooltip: _tr(
-            l10n,
-            'common_close',
-            'Fermer',
-          ),
-        ),
-      ],
-    ),
-  );
-}
+        ],
+      ),
+    );
+  }
+
   Widget _buildSearchBar(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -2322,10 +2537,8 @@ static const List<String> _flags = [
           const Icon(Icons.edit_rounded, size: 16, color: ThixPolicy.primary),
           const SizedBox(width: 8),
           Expanded(
-            child: Text(
-              _tr(l10n, 'chat_editing', 'Modification du message (fenêtre $_kEditWindowMinutes min)'),
-              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: FontWeight.w700),
-            ),
+            child: Text(_tr(l10n, 'chat_editing', 'Modification du message (fenêtre $_kEditWindowMinutes min)'),
+                style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.primary, fontWeight: FontWeight.w700)),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
@@ -2351,7 +2564,8 @@ static const List<String> _flags = [
                     backgroundImage: m.avatarUrl != null ? CachedNetworkImageProvider(m.avatarUrl!) : null,
                     child: m.avatarUrl == null ? const Icon(Icons.person, size: 14, color: ThixPolicy.textSecondary) : null,
                   ),
-                  title: Text('@${m.displayName}', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
+                  title: Text('@${_ChatValidators.sanitize(m.displayName, maxLength: 40)}',
+                      style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13)),
                   onTap: () => _insertMention(m),
                 ))
             .toList(),
@@ -2368,9 +2582,11 @@ static const List<String> _flags = [
         children: [
           const Icon(Icons.person_off_rounded, color: ThixPolicy.textSecondary, size: 32),
           const SizedBox(height: 12),
-          Text(_tr(l10n, 'chat_cannot_reply', 'Vous ne pouvez pas répondre'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14), textAlign: TextAlign.center),
+          Text(_tr(l10n, 'chat_cannot_reply', 'Vous ne pouvez pas répondre'),
+              style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold, fontSize: 14), textAlign: TextAlign.center),
           const SizedBox(height: 4),
-          Text(_tr(l10n, 'chat_connection_interrupted', 'Connexion interrompue avec ce contact'), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13), textAlign: TextAlign.center),
+          Text(_tr(l10n, 'chat_connection_interrupted', 'Connexion interrompue avec ce contact'),
+              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 13), textAlign: TextAlign.center),
         ],
       ),
     );
@@ -2469,21 +2685,14 @@ static const List<String> _flags = [
                     style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: _isOnline ? ThixPolicy.success : ThixPolicy.textSecondary, fontWeight: _isOnline ? FontWeight.w600 : FontWeight.w400),
                   )
                 else if (widget.conversation.isGroup)
-                  Text('${_groupMembers.length} ${_tr(l10n, 'chat_members', 'membres')}', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary)),
+                  Text('${_groupMembers.length} ${_tr(l10n, 'chat_members', 'membres')}',
+                      style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary)),
               ],
             ),
           ),
         ],
       ),
       actions: [
-        Semantics(
-          button: true,
-          label: _tr(l10n, 'chat_search', 'Rechercher'),
-          child: IconButton(
-            icon: Icon(_searchActive ? Icons.search_off_rounded : Icons.search_rounded, color: ThixPolicy.primary, size: 22),
-            onPressed: () => setState(() => _searchActive = !_searchActive),
-          ),
-        ),
         Semantics(
           button: true,
           label: _tr(l10n, 'chat_video_call', 'Appel vidéo'),
@@ -2500,7 +2709,9 @@ static const List<String> _flags = [
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           onSelected: (v) {
             HapticFeedback.selectionClick();
-            if (v == 'escalate') {
+            if (v == 'search') {
+              setState(() => _searchActive = !_searchActive);
+            } else if (v == 'escalate') {
               _escalateConversation();
             } else if (v == 'history') {
               _viewEscalationHistory();
@@ -2513,6 +2724,7 @@ static const List<String> _flags = [
             }
           },
           itemBuilder: (_) => [
+            PopupMenuItem(value: 'search', child: Row(children: [const Icon(Icons.search_rounded, color: ThixPolicy.primary, size: 20), const SizedBox(width: 10), Text(_tr(l10n, 'chat_search', 'Rechercher'))])),
             PopupMenuItem(value: 'starred', child: Row(children: [const Icon(Icons.star_outline_rounded, color: ThixPolicy.gold, size: 20), const SizedBox(width: 10), Text(_tr(l10n, 'chat_starred', 'Favoris'))])),
             PopupMenuItem(value: 'escalate', child: Row(children: [const Icon(Icons.arrow_upward, color: ThixPolicy.warning, size: 20), const SizedBox(width: 10), Text(_tr(l10n, 'chat_escalate', 'Escalader'))])),
             PopupMenuItem(value: 'history', child: Row(children: [const Icon(Icons.history, color: ThixPolicy.primary, size: 20), const SizedBox(width: 10), Text(_tr(l10n, 'chat_history', 'Historique'))])),
@@ -2526,13 +2738,12 @@ static const List<String> _flags = [
     );
   }
 
-  // ============================================================================
+  // ==========================================================================
   // BARRE DE SAISIE
-  // ============================================================================
+  // ==========================================================================
   Widget _buildInputBar(AppLocalizations l10n) {
     final hasTextOrImage = _inputController.text.trim().isNotEmpty || _selectedFiles.isNotEmpty;
     final hasViewOnceCandidate = _selectedFiles.any((f) => ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains((f.extension ?? '').toLowerCase()));
-
     return Container(
       decoration: BoxDecoration(color: ThixPolicy.card, border: Border(top: BorderSide(color: ThixPolicy.border, width: 1.2)), boxShadow: ThixPolicy.shadowSoft(opacity: 0.03)),
       child: SafeArea(
@@ -2548,6 +2759,8 @@ static const List<String> _flags = [
                 child: Row(
                   children: [
                     _optionButton(l10n, Icons.attach_file_rounded, _tr(l10n, 'chat_file', 'Fichier'), _pickFile),
+                    _optionButton(l10n, Icons.photo_camera_rounded, _tr(l10n, 'chat_camera', 'Caméra'), _pickFromCamera),
+                    _optionButton(l10n, Icons.photo_library_rounded, _tr(l10n, 'chat_gallery', 'Galerie'), _pickFromGallery),
                     _optionButton(l10n, Icons.sentiment_satisfied_alt_rounded, _tr(l10n, 'chat_sticker', 'Stickers'), () {
                       FocusScope.of(context).unfocus();
                       setState(() => _showStickers = !_showStickers);
@@ -2583,32 +2796,39 @@ static const List<String> _flags = [
                           children: [
                             Icon(Icons.visibility_off_rounded, size: 14, color: _sendViewOnce ? Colors.white : ThixPolicy.textSecondary),
                             const SizedBox(width: 6),
-                            Text(
-                              _tr(l10n, 'chat_view_once', 'View once'),
-                              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sendViewOnce ? Colors.white : ThixPolicy.textSecondary),
-                            ),
+                            Text(_tr(l10n, 'chat_view_once', 'View once'),
+                                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sendViewOnce ? Colors.white : ThixPolicy.textSecondary)),
                           ],
                         ),
                       ),
                     ),
                     const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(_tr(l10n, 'chat_view_once_hint', 'Le média s’efface après ouverture'),
-                          style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
-                    ),
+                    Expanded(child: Text(_tr(l10n, 'chat_view_once_hint', 'Le média s’efface après ouverture'),
+                        style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted))),
                   ],
                 ),
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-              child: _localAudioPath != null && !_isRecording
+              child: _localAudioPath != null && !_isRecording && _audioBytes != null
                   ? Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                      decoration: BoxDecoration(color: ThixPolicy.inkDeep, borderRadius: BorderRadius.circular(24)),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(colors: [ThixPolicy.inkDeep, ThixPolicy.inkDeep.withOpacity(0.85)]),
+                        borderRadius: BorderRadius.circular(24),
+                      ),
                       child: Row(
                         children: [
+                          const Icon(Icons.mic_rounded, color: ThixPolicy.gold, size: 18),
+                          const SizedBox(width: 8),
                           Expanded(child: _ChatWaveformAudioPlayer(audioUrl: _localAudioPath!, isLocal: true)),
-                          IconButton(icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70), onPressed: () => setState(() { _audioBytes = null; _localAudioPath = null; })),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.white70),
+                            onPressed: () => setState(() {
+                              _audioBytes = null;
+                              _localAudioPath = null;
+                            }),
+                          ),
                           CircleAvatar(
                             radius: 16,
                             backgroundColor: ThixPolicy.primary,
@@ -2623,23 +2843,7 @@ static const List<String> _flags = [
                       ),
                     )
                   : _isRecording
-                      ? Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), borderRadius: BorderRadius.circular(24), border: Border.all(color: ThixPolicy.danger.withOpacity(0.2))),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.mic, color: ThixPolicy.danger),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Text(
-                                  '${_tr(l10n, 'chat_recording', 'Enregistrement')} ${(_recordDuration ~/ 60).toString().padLeft(2, '0')}:${(_recordDuration % 60).toString().padLeft(2, '0')}',
-                                  style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold),
-                                ),
-                              ),
-                              GestureDetector(onTap: _stopRecording, child: const Icon(Icons.stop_circle_rounded, color: ThixPolicy.danger, size: 30)),
-                            ],
-                          ),
-                        )
+                      ? _buildRecordingBar(l10n)
                       : Row(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
@@ -2725,9 +2929,9 @@ static const List<String> _flags = [
     );
   }
 
-  // ============================================================================
+  // ==========================================================================
   // DIALOGUES ÉPHÉMÈRE + MOT DE PASSE ROBUSTE
-  // ============================================================================
+  // ==========================================================================
   void _showEphemeralTimerDialog() {
     final l10n = AppLocalizations.of(context);
     bool showCustomInput = false;
@@ -2797,14 +3001,14 @@ static const List<String> _flags = [
                           style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16)),
                           onPressed: () {
                             final val = int.tryParse(customTimeCtrl.text.trim());
-                            if (val != null && val > 0) {
+                            if (val != null && val > 0 && val <= 86400) {
                               setState(() {
                                 _ephemeralDuration = val;
                                 _isEphemeral = true;
                               });
                               Navigator.pop(ctx);
                             } else {
-                              _showWarning(_tr(l10n, 'chat_invalid_number', 'Nombre invalide'));
+                              _showWarning(_tr(l10n, 'chat_invalid_number', 'Nombre invalide (1 - 86400)'));
                             }
                           },
                           child: Text(_tr(l10n, 'chat_validate', 'Valider'), style: const TextStyle(color: Colors.white)),
@@ -2828,7 +3032,6 @@ static const List<String> _flags = [
     final passCtrl = TextEditingController();
     final confirmCtrl = TextEditingController();
     HapticFeedback.selectionClick();
-
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
@@ -2911,14 +3114,14 @@ static const List<String> _flags = [
     );
   }
 
-  // ============================================================================
-  // STICKERS (5 catégories)
-  // ============================================================================
+  // ==========================================================================
+  // STICKERS (4 catégories + Mes stickers)
+  // ==========================================================================
   Widget _buildStickerPicker(AppLocalizations l10n) {
     return SizedBox(
       height: 260,
       child: DefaultTabController(
-        length: 4,
+        length: 5,
         child: Column(
           children: [
             TabBar(
@@ -2930,6 +3133,7 @@ static const List<String> _flags = [
                 Tab(text: _tr(l10n, 'chat_reactions', 'Réactions')),
                 Tab(text: _tr(l10n, 'chat_objects', 'Objets')),
                 Tab(text: _tr(l10n, 'chat_flags', 'Drapeaux')),
+                Tab(text: _tr(l10n, 'chat_my_stickers', 'Mes stickers')),
               ],
             ),
             Expanded(
@@ -2938,6 +3142,7 @@ static const List<String> _flags = [
                 _buildStickerGrid(_reactions),
                 _buildStickerGrid(_objects),
                 _buildStickerGrid(_flags),
+                _buildCustomStickerGrid(l10n),
               ]),
             ),
           ],
@@ -2963,6 +3168,40 @@ static const List<String> _flags = [
           child: Center(child: Text(items[index], style: const TextStyle(fontSize: 24))),
         ),
       ),
+    );
+  }
+
+  Widget _buildCustomStickerGrid(AppLocalizations l10n) {
+    return GridView.builder(
+      padding: const EdgeInsets.all(8),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 8, crossAxisSpacing: 8),
+      itemCount: _customStickers.length + 1,
+      itemBuilder: (context, index) {
+        if (index == 0) {
+          return InkWell(
+            onTap: _addCustomSticker,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(border: Border.all(color: ThixPolicy.primary), borderRadius: BorderRadius.circular(12)),
+              child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                const Icon(Icons.add_photo_alternate_outlined, color: ThixPolicy.primary),
+                const SizedBox(height: 4),
+                Text(_tr(l10n, 'chat_sticker_create', 'Créer'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: ThixPolicy.primary)),
+              ]),
+            ),
+          );
+        }
+        final bytes = _customStickers[index - 1];
+        return InkWell(
+          onTap: () => _sendCustomSticker(bytes),
+          onLongPress: () {
+            setState(() => _customStickers.removeAt(index - 1));
+            _persistCustomStickers();
+          },
+          borderRadius: BorderRadius.circular(12),
+          child: ClipRRect(borderRadius: BorderRadius.circular(12), child: Image.memory(bytes, fit: BoxFit.cover)),
+        );
+      },
     );
   }
 }
@@ -3029,7 +3268,9 @@ class _ViewOnceOpenedBubble extends StatelessWidget {
 class _ImageGroupBubble extends StatelessWidget {
   final List<ChatMessage> images;
   final bool isOwn;
-  const _ImageGroupBubble({required this.images, required this.isOwn});
+  final void Function(List<ChatMessage>, int)? onOpenGallery;
+
+  const _ImageGroupBubble({required this.images, required this.isOwn, this.onOpenGallery});
 
   @override
   Widget build(BuildContext context) {
@@ -3059,26 +3300,24 @@ class _ImageGroupBubble extends StatelessWidget {
                     itemBuilder: (context, idx) {
                       final msg = shown[idx];
                       final showMore = extra > 0 && idx == shown.length - 1;
-                      final tag = 'img_group_${msg.id}';
                       final safeUrl = _ChatValidators.sanitizeUrl(msg.mediaUrl);
                       return GestureDetector(
-                        onTap: safeUrl != null
-                            ? () => showFullscreenImageViewer(context, url: safeUrl, heroTag: tag, fileName: msg.mediaName ?? 'thix_${msg.id}.jpg')
-                            : null,
+                        onTap: onOpenGallery != null
+                            ? () => onOpenGallery!(images, idx)
+                            : (safeUrl != null
+                                ? () => showFullscreenImageViewer(context, url: safeUrl, heroTag: 'img_${msg.id}', fileName: msg.mediaName ?? 'thix_${msg.id}.jpg')
+                                : null),
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            Hero(
-                              tag: tag,
-                              child: safeUrl != null
-                                  ? CachedNetworkImage(
-                                      imageUrl: safeUrl,
-                                      fit: BoxFit.cover,
-                                      placeholder: (_, __) => Container(color: ThixPolicy.tint, child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)))),
-                                      errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
-                                    )
-                                  : const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
-                            ),
+                            safeUrl != null
+                                ? CachedNetworkImage(
+                                    imageUrl: safeUrl,
+                                    fit: BoxFit.cover,
+                                    placeholder: (_, __) => Container(color: ThixPolicy.tint, child: const Center(child: SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)))),
+                                    errorWidget: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
+                                  )
+                                : const Center(child: Icon(Icons.broken_image_outlined, color: ThixPolicy.textSecondary)),
                             if (showMore)
                               Container(color: Colors.black.withOpacity(0.55), alignment: Alignment.center, child: Text('+ $extra', style: const TextStyle(color: Colors.white, fontSize: 26, fontWeight: FontWeight.w800))),
                           ],
@@ -3100,10 +3339,70 @@ class _ImageGroupBubble extends StatelessWidget {
   }
 }
 
+class _PhotoPager extends StatefulWidget {
+  final List<ChatMessage> images;
+  final int initialIndex;
+  const _PhotoPager({required this.images, required this.initialIndex});
+
+  @override
+  State<_PhotoPager> createState() => _PhotoPagerState();
+}
+
+class _PhotoPagerState extends State<_PhotoPager> {
+  late final PageController _ctrl;
+  int _idx = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _idx = widget.initialIndex.clamp(0, widget.images.length - 1);
+    _ctrl = PageController(initialPage: _idx);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      appBar: AppBar(
+        backgroundColor: Colors.black,
+        iconTheme: const IconThemeData(color: Colors.white),
+        title: Text('${_idx + 1}/${widget.images.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        centerTitle: true,
+      ),
+      body: PageView.builder(
+        controller: _ctrl,
+        itemCount: widget.images.length,
+        onPageChanged: (i) => setState(() => _idx = i),
+        itemBuilder: (ctx, i) {
+          final url = _ChatValidators.sanitizeUrl(widget.images[i].mediaUrl);
+          if (url == null) return const Center(child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48));
+          return InteractiveViewer(
+            child: Center(
+              child: CachedNetworkImage(
+                imageUrl: url,
+                fit: BoxFit.contain,
+                placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
+                errorWidget: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: Colors.white54, size: 48),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
 class _CallBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isOwn;
   final VoidCallback onCallback;
+
   const _CallBubble({required this.message, required this.isOwn, required this.onCallback});
 
   @override
@@ -3117,7 +3416,6 @@ class _CallBubble extends StatelessWidget {
     final String dirLabel = isMissed
         ? _tr(l10n, 'chat_call_missed', 'Appel manqué')
         : (isOwn ? _tr(l10n, 'chat_call_outgoing', 'Appel sortant') : _tr(l10n, 'chat_call_incoming', 'Appel entrant'));
-
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
       child: Align(
@@ -3289,9 +3587,13 @@ class _FilesPreview extends StatelessWidget {
               Positioned(
                 top: -4,
                 right: 4,
-                child: GestureDetector(
-                  onTap: () => onRemove(i),
-                  child: const CircleAvatar(radius: 10, backgroundColor: Colors.black87, child: Icon(Icons.close, size: 12, color: Colors.white)),
+                child: Semantics(
+                  button: true,
+                  label: '${_tr(l10n, 'common_remove', 'Retirer')} $safeName',
+                  child: GestureDetector(
+                    onTap: () => onRemove(i),
+                    child: const CircleAvatar(radius: 10, backgroundColor: Colors.black87, child: Icon(Icons.close, size: 12, color: Colors.white)),
+                  ),
                 ),
               ),
             ],
@@ -3428,25 +3730,4 @@ class _ThixChatBackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-// ============================================================================
-// HELPER WEB (remplace http.get direct pour l'audio web via service si dispo)
-// ============================================================================
-Future<Uint8List> http_get(Uri uri) async {
-  final resp = await _chatRetry(() => _httpGet(uri), label: 'httpGetAudio');
-  return resp;
-}
-
-Future<Uint8List> _httpGet(Uri uri) async {
-  final client = HttpClient();
-  try {
-    final req = await client.getUrl(uri);
-    final resp = await req.close();
-    final bytes = <int>[];
-    await resp.forEach((chunk) => bytes.addAll(chunk));
-    return Uint8List.fromList(bytes);
-  } finally {
-    client.close();
-  }
 }
