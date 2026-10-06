@@ -13,7 +13,7 @@
 // ============================================================================
 
 import 'dart:async';
-
+import 'dart:ui' as ui;
 import 'package:app_links/app_links.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -405,7 +405,7 @@ class AudioSpaceShareSheet extends StatelessWidget {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: BackdropFilter(
-        filter: ImageFilterBlurHelper.blur(),
+        filter: ui.ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
         child: Container(
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.97),
