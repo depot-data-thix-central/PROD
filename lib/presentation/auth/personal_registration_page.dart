@@ -7,6 +7,7 @@
 // ✅ Design épuré minimaliste (THIX HUB branding)
 // ✅ Message OTP permanent (vérifier mail + spam)
 // ✅ Sécurité renforcée sur toutes les entrées
+// ✅ FIX: autofillHints syntax + password field dedup + confirm field
 // ============================================================================
 
 import 'dart:async';
@@ -53,9 +54,9 @@ const int _kPasswordDebounceMs = 400;
 const int _kHibpMinBreaches = 5;
 
 // ── Sécurité anti-bot ──
-const int _kMinFormFillSeconds = 3;       // Soumission trop rapide = bot
-const int _kMaxSubmissionsPerMinute = 3;  // Rate limit UI
-const int _kCooldownOnFailureSeconds = 5; // Cooldown après échec
+const int _kMinFormFillSeconds = 3;
+const int _kMaxSubmissionsPerMinute = 3;
+const int _kCooldownOnFailureSeconds = 5;
 
 const List<String> _kReservedChats = [
   '@admin', '@thix', '@support', '@root', '@system',
@@ -128,9 +129,6 @@ class _RegValidators {
 // ════════════════════════════════════════════════════════════════════════
 // ANTI-BOT ENGINE
 // ════════════════════════════════════════════════════════════════════════
-
-/// Moteur de détection anti-bot (honeypot, timing, rate limiting).
-/// Silencieux : ne jamais révéler au bot qu'il est détecté.
 class _AntiBotEngine {
   _AntiBotEngine() : _formOpenedAt = DateTime.now();
 
@@ -138,26 +136,20 @@ class _AntiBotEngine {
   String _honeypot = '';
   final List<DateTime> _submissionAttempts = [];
 
-  /// Champ honeypot (caché visuellement, rempli par les bots).
   void setHoneypot(String v) => _honeypot = v;
 
-  /// Vérifie tous les signaux anti-bot.
-  /// Retourne null si OK, sinon un message d'erreur générique.
   String? check(AppLocalizations l10n) {
-    // 1. Honeypot rempli → bot
     if (_honeypot.trim().isNotEmpty) {
       debugPrint('[AntiBot] 🤖 Honeypot filled');
       return l10n.t('reg_error_generic');
     }
 
-    // 2. Soumission trop rapide (< 3s) → bot
     final elapsed = DateTime.now().difference(_formOpenedAt).inSeconds;
     if (elapsed < _kMinFormFillSeconds) {
       debugPrint('[AntiBot] 🤖 Too fast ($elapsed s)');
       return l10n.t('reg_error_generic');
     }
 
-    // 3. Rate limit (> 3 tentatives/min)
     _submissionAttempts.add(DateTime.now());
     _submissionAttempts.removeWhere(
       (t) => DateTime.now().difference(t).inSeconds > 60,
@@ -170,9 +162,7 @@ class _AntiBotEngine {
     return null;
   }
 
-  /// Enregistre un échec pour refroidir
   void registerFailure() {
-    // On ajoute plusieurs entrées fictives pour déclencher le rate limit
     final now = DateTime.now();
     for (int i = 0; i < _kMaxSubmissionsPerMinute; i++) {
       _submissionAttempts.add(now.subtract(Duration(seconds: i)));
@@ -405,7 +395,7 @@ class _CleanField extends StatefulWidget {
   final bool isPassword;
   final TextInputType keyboardType;
   final bool readOnly;
-  final bool obscure; // pour honeypot (invisible)
+  final bool obscure;
   final VoidCallback? onTap;
   final Widget? trailing;
   final String? errorText;
@@ -456,7 +446,7 @@ class _CleanFieldState extends State<_CleanField> {
           controller: widget.controller,
           onChanged: widget.onChanged,
           decoration: const InputDecoration(border: InputBorder.none),
-          autofillHints: const [AutofillHints.name], // leurre
+          autofillHints: const [AutofillHints.name],
         ),
       );
     }
@@ -484,8 +474,9 @@ class _CleanFieldState extends State<_CleanField> {
             onChanged: widget.onChanged,
             maxLength: widget.maxLength,
             inputFormatters: widget.inputFormatters,
+            // ✅ FIX: syntaxe autofillHints corrigée
             autofillHints: widget.autofillHint != null
-                ? [widget.autofillHint
+                ? [widget.autofillHint!]
                 : null,
             style: ThixPolicy.bodyStyle.copyWith(
               fontWeight: ThixPolicy.medium,
@@ -678,9 +669,6 @@ class _CleanDropdown extends StatelessWidget {
 // ════════════════════════════════════════════════════════════════════════
 // BANNIÈRE OTP PERSISTANTE
 // ════════════════════════════════════════════════════════════════════════
-
-/// Bannière permanente affichée après envoi de l'OTP.
-/// Indique à l'utilisateur de vérifier ses emails + spam.
 class _OtpInfoBanner extends StatelessWidget {
   final String email;
 
@@ -693,7 +681,7 @@ class _OtpInfoBanner extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF), // bleu très pâle
+        color: const Color(0xFFEFF6FF),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFBFDBFE), width: 1),
       ),
@@ -776,7 +764,7 @@ class _PersonalRegistrationPageState
   final _otpC = TextEditingController();
   final _thixChatC = TextEditingController();
 
-  // 🤖 Honeypot (champ caché anti-bot)
+  // 🤖 Honeypot
   final _honeypotC = TextEditingController();
   late final _AntiBotEngine _antiBot = _AntiBotEngine();
 
@@ -1064,7 +1052,6 @@ class _PersonalRegistrationPageState
     final l10n = AppLocalizations.of(context);
     if (_busy) return;
 
-    // 🤖 Anti-bot check
     final botError = _antiBot.check(l10n);
     if (botError != null) {
       _showError(botError);
@@ -1237,7 +1224,6 @@ class _PersonalRegistrationPageState
     final l10n = AppLocalizations.of(context);
     if (_busy || _resendCooldown > 0) return;
 
-    // 🤖 Anti-bot check avant envoi OTP
     final botError = _antiBot.check(l10n);
     if (botError != null) {
       _showError(botError);
@@ -1313,7 +1299,6 @@ class _PersonalRegistrationPageState
     final l10n = AppLocalizations.of(context);
     if (_busy) return;
 
-    // 🤖 Anti-bot check avant activation finale
     final botError = _antiBot.check(l10n);
     if (botError != null) {
       _showError(botError);
@@ -1482,7 +1467,7 @@ class _PersonalRegistrationPageState
     final isLoading = ref.watch(authControllerProvider).isLoading || _busy;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9FAFB), // fond très clair
+      backgroundColor: const Color(0xFFF9FAFB),
       body: SafeArea(
         top: false,
         child: Stack(
@@ -1502,7 +1487,6 @@ class _PersonalRegistrationPageState
                 ),
                 child: Column(
                   children: [
-                    // Logo + nom
                     Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
@@ -1922,7 +1906,7 @@ class _Step1Profile extends StatelessWidget {
         ),
         const SizedBox(height: 28),
 
-        // 🤖 HONEYPOT (invisible aux humains, rempli par les bots)
+        // 🤖 HONEYPOT
         _CleanField(
           label: '',
           hint: '',
@@ -1975,7 +1959,6 @@ class _Step1Profile extends StatelessWidget {
         const Divider(color: Color(0xFFE5E7EB), height: 1),
         const SizedBox(height: 20),
 
-        // ── CONSENTEMENTS ──
         _ConsentCheckboxRow(
           value: acceptedTerms,
           onChanged: onAcceptedTermsChanged,
@@ -2075,7 +2058,7 @@ class _ConsentCheckboxRow extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// STEP 2 — COMPTE
+// STEP 2 — COMPTE (✅ CORRIGÉ : pas de doublon password)
 // ════════════════════════════════════════════════════════════════════════
 class _Step2Account extends StatelessWidget {
   final TextEditingController emailC;
@@ -2185,6 +2168,7 @@ class _Step2Account extends StatelessWidget {
           const SizedBox(height: 20),
         ],
 
+        // ── EMAIL ──
         _CleanField(
           label: l10n.t('reg_email_label'),
           hint: l10n.t('reg_email_hint'),
@@ -2195,6 +2179,8 @@ class _Step2Account extends StatelessWidget {
           autofillHint: AutofillHints.email,
         ),
         const SizedBox(height: 16),
+
+        // ── TÉLÉPHONE ──
         _CleanField(
           label: l10n.t('reg_phone_label'),
           hint: l10n.t('reg_phone_hint'),
@@ -2205,6 +2191,8 @@ class _Step2Account extends StatelessWidget {
           autofillHint: AutofillHints.telephoneNumber,
         ),
         const SizedBox(height: 16),
+
+        // ── MOT DE PASSE (UNE SEULE FOIS) ──
         _CleanField(
           label: l10n.t('reg_password_label'),
           hint: l10n.t('reg_password_hint'),
@@ -2212,7 +2200,7 @@ class _Step2Account extends StatelessWidget {
           controller: passwordC,
           isPassword: true,
           onChanged: onPasswordChanged,
-          errorText: passwordError, // ✅ FIX: passé directement au lieu du spread invalide
+          errorText: passwordError,
           maxLength: _kMaxPasswordLength,
           autofillHint: AutofillHints.newPassword,
           trailing: passwordValidating
@@ -2226,6 +2214,8 @@ class _Step2Account extends StatelessWidget {
                 )
               : null,
         ),
+
+        // ── INDICATEUR DE FORCE ──
         if (passwordScore >= 0 && passwordC.text.isNotEmpty) ...[
           const SizedBox(height: 10),
           Row(
@@ -2253,31 +2243,23 @@ class _Step2Account extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 16),
+
+        // ── CONFIRMER MOT DE PASSE (✅ AJOUTÉ — était manquant/dupliqué) ──
         _CleanField(
-          label: l10n.t('reg_password_label'),
-          hint: l10n.t('reg_password_hint'),
+          label: l10n.t('reg_confirm_password_label'),
+          hint: l10n.t('reg_confirm_password_hint'),
           icon: Icons.lock_outline_rounded,
-          controller: passwordC,
+          controller: confirmC,
           isPassword: true,
-          onChanged: onPasswordChanged,
-          errorText: passwordError, // ✅ FIX: paramètre nommé direct au lieu du spread
           maxLength: _kMaxPasswordLength,
           autofillHint: AutofillHints.newPassword,
-          trailing: passwordValidating
-              ? const Padding(
-                  padding: EdgeInsets.all(12),
-                  child: SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
-                )
-              : null,
         ),
-        
+
         const SizedBox(height: 28),
         const Divider(color: Color(0xFFE5E7EB), height: 1),
         const SizedBox(height: 20),
+
+        // ── IDENTITÉ NUMÉRIQUE ──
         Text(
           l10n.t('reg_identity_title'),
           style: ThixPolicy.h3Style.copyWith(
@@ -2319,6 +2301,8 @@ class _Step2Account extends StatelessWidget {
         const SizedBox(height: 28),
         const Divider(color: Color(0xFFE5E7EB), height: 1),
         const SizedBox(height: 20),
+
+        // ── VÉRIFICATION ──
         Text(
           l10n.t('reg_verification_title'),
           style: ThixPolicy.h3Style.copyWith(
