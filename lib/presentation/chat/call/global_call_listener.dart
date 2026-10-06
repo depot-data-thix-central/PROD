@@ -250,7 +250,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
 
   Future<void> _autoRejectBusy(CallInvite invite) async {
     try {
-      await _signal?.rejectBusy(invite.id);
+      await _signal?.reject(invite.id); // ✅ CORRIGÉ: rejectBusy → reject
       debugPrint('[GlobalCallListener] ✓ Auto-rejected busy invite: ${invite.id}');
     } catch (e) {
       debugPrint('[GlobalCallListener] ❌ Auto-reject failed: $e');
