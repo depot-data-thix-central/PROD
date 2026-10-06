@@ -1,3 +1,14 @@
+// lib/models/chat/group_info.dart
+//
+// ============================================================================
+// GROUP INFO MODEL — Production Enterprise++ (Dépasse WhatsApp)
+// ============================================================================
+// ✅ 8 rôles : owner, admin, moderator, editor, member, muted, observer, bot
+// ✅ Permissions granulaires
+// ✅ Settings globaux
+// ✅ Zéro syntaxe Dart 3 (compatible analyzer 3.4.0)
+// ============================================================================
+
 /// Permissions granulaires d'un membre ou du groupe
 class GroupPermissions {
   final bool canSendMessages;
@@ -101,6 +112,20 @@ class GroupPermissions {
     canMuteMembers: true,
     canInviteViaLink: true,
   );
+
+  /// Permissions pour un bot (lecture + envoi de messages)
+  static const GroupPermissions bot = GroupPermissions(
+    canSendMessages: true,
+    canSendMedia: false,
+    canSendStickers: false,
+    canEditGroupInfo: false,
+    canAddMembers: false,
+    canRemoveMembers: false,
+    canPinMessages: false,
+    canDeleteMessages: false,
+    canMuteMembers: false,
+    canInviteViaLink: false,
+  );
 }
 
 /// Paramètres globaux du groupe
@@ -109,7 +134,7 @@ class GroupSettings {
   final bool onlyAdminsCanEditGroupInfo;
   final bool requireAdminApprovalForNewMembers;
   final bool disappearingMessagesEnabled;
-  final int? disappearingMessagesDuration; // en secondes
+  final int? disappearingMessagesDuration;
   final bool allowReactions;
   final bool allowForwarding;
 
@@ -168,13 +193,14 @@ class GroupSettings {
 
 /// Rôles possibles dans un groupe
 enum GroupRole {
-  owner,      // Propriétaire du groupe (permissions maximales)
-  admin,      // Administrateur
-  moderator,  // Modérateur (peut supprimer messages, muter)
-  editor,     // Éditeur (peut modifier description/avatar)
-  member,     // Membre standard
-  muted,      // Membre muté (lecture seule)
-  observer,   // Observateur (lecture seule, pas de statut en ligne)
+  owner,
+  admin,
+  moderator,
+  editor,
+  member,
+  muted,
+  observer,
+  bot, // ✅ AJOUTÉ
 }
 
 extension GroupRoleX on GroupRole {
@@ -194,6 +220,8 @@ extension GroupRoleX on GroupRole {
         return 'muted';
       case GroupRole.observer:
         return 'observer';
+      case GroupRole.bot: // ✅ AJOUTÉ
+        return 'bot';
     }
   }
 
@@ -213,25 +241,29 @@ extension GroupRoleX on GroupRole {
         return 'Muté';
       case GroupRole.observer:
         return 'Observateur';
+      case GroupRole.bot: // ✅ AJOUTÉ
+        return 'Bot';
     }
   }
 
   String get badgeColor {
     switch (this) {
       case GroupRole.owner:
-        return '#E3B23C'; // or
+        return '#E3B23C';
       case GroupRole.admin:
-        return '#E3B23C'; // or
+        return '#E3B23C';
       case GroupRole.moderator:
-        return '#2D6CDF'; // bleu
+        return '#2D6CDF';
       case GroupRole.editor:
-        return '#10B981'; // vert
+        return '#10B981';
       case GroupRole.member:
-        return '#6B7690'; // gris
+        return '#6B7690';
       case GroupRole.muted:
-        return '#EF4444'; // rouge
+        return '#EF4444';
       case GroupRole.observer:
-        return '#8B5CF6'; // violet
+        return '#8B5CF6';
+      case GroupRole.bot: // ✅ AJOUTÉ
+        return '#6B7690';
     }
   }
 
@@ -253,6 +285,8 @@ extension GroupRoleX on GroupRole {
         );
       case GroupRole.member:
         return GroupPermissions.defaultMember;
+      case GroupRole.bot: // ✅ AJOUTÉ
+        return GroupPermissions.bot;
     }
   }
 
@@ -270,6 +304,8 @@ extension GroupRoleX on GroupRole {
         return GroupRole.muted;
       case 'observer':
         return GroupRole.observer;
+      case 'bot': // ✅ AJOUTÉ
+        return GroupRole.bot;
       case 'member':
       default:
         return GroupRole.member;
@@ -285,14 +321,13 @@ class GroupMember {
   final GroupRole role;
   final bool isOnline;
   final DateTime joinedAt;
-  
-  // ✅ NOUVEAUX CHAMPS (P0-P2)
-  final DateTime? lastSeenAt;           // P0 : Indicateur "Dernier vu"
-  final String? phoneNumber;            // P1 : Numéro masqué
-  final DateTime? mutedUntil;           // P1 : Membre muté jusqu'à
-  final String? addedBy;                // P1 : Qui a ajouté ce membre
-  final String? internalNote;           // P2 : Note interne (agents/support)
-  final GroupPermissions? permissions;  // P2 : Permissions personnalisées
+
+  final DateTime? lastSeenAt;
+  final String? phoneNumber;
+  final DateTime? mutedUntil;
+  final String? addedBy;
+  final String? internalNote;
+  final GroupPermissions? permissions;
 
   const GroupMember({
     required this.userId,
@@ -349,7 +384,6 @@ class GroupMember {
     'permissions': permissions?.toJson(),
   };
 
-  /// Crée une copie avec les champs modifiés
   GroupMember copyWith({
     String? userId,
     String? displayName,
@@ -391,54 +425,48 @@ class GroupMember {
   bool get isMember => role == GroupRole.member;
   bool get isMuted => role == GroupRole.muted || (mutedUntil != null && mutedUntil!.isAfter(DateTime.now()));
   bool get isObserver => role == GroupRole.observer;
+  bool get isBot => role == GroupRole.bot; // ✅ AJOUTÉ
 
-  /// Vérifie si le membre a un rôle avec privilèges (admin, modérateur, éditeur)
   bool get hasPrivileges => isAdmin || isModerator || isEditor;
 
   // ============================================================
-  // ✅ NOUVEAUX GETTERS (P0-P2)
+  // GETTERS (P0-P2)
   // ============================================================
 
-  /// P1 : Badge "Nouveau membre" si rejoint il y a moins de 7 jours
   bool get isNewMember {
     final diff = DateTime.now().difference(joinedAt);
     return diff.inDays < 7;
   }
 
-  /// P1 : Texte formaté pour "Dernier vu"
   String formatLastSeen() {
     if (isOnline) return 'En ligne';
     if (lastSeenAt == null) return 'Vu récemment';
-    
+
     final diff = DateTime.now().difference(lastSeenAt!);
-    
+
     if (diff.inMinutes < 1) return 'Vu à l\'instant';
     if (diff.inMinutes < 60) return 'Vu il y a ${diff.inMinutes} min';
     if (diff.inHours < 24) return 'Vu il y a ${diff.inHours} h';
     if (diff.inDays < 7) return 'Vu il y a ${diff.inDays} j';
-    
+
     return 'Vu le ${lastSeenAt!.day}/${lastSeenAt!.month}/${lastSeenAt!.year}';
   }
 
-  /// P1 : Numéro de téléphone masqué (ex: +33 *** *** 78 90)
   String? get maskedPhoneNumber {
     if (phoneNumber == null || phoneNumber!.isEmpty) return null;
-    
+
     final clean = phoneNumber!.replaceAll(RegExp(r'[^\d+]'), '');
     if (clean.length <= 6) return phoneNumber;
-    
-    // Masquer le milieu : garder les 3 premiers et 4 derniers caractères
+
     final prefix = clean.substring(0, 3);
     final suffix = clean.substring(clean.length - 4);
     return '$prefix *** *** $suffix';
   }
 
-  /// P2 : Permissions effectives (custom ou par défaut selon le rôle)
   GroupPermissions get effectivePermissions {
     return permissions ?? role.defaultPermissions;
   }
 
-  /// P2 : Vérifie si le membre peut effectuer une action
   bool canPerform(GroupPermissionAction action) {
     final perms = effectivePermissions;
     switch (action) {
@@ -465,10 +493,8 @@ class GroupMember {
     }
   }
 
-  /// Couleur de badge selon le rôle (chartre THIX)
   String get roleBadgeColor => role.badgeColor;
 
-  /// Initiale pour l'avatar fallback
   String get initial {
     if (displayName.isEmpty) return '?';
     return displayName.trim()[0].toUpperCase();
@@ -501,11 +527,10 @@ class GroupInfo {
   final String? inviteCode;
   final DateTime createdAt;
   final DateTime? updatedAt;
-  
-  // ✅ NOUVEAUX CHAMPS (P0-P2)
-  final GroupSettings settings;         // P2 : Paramètres globaux
-  final String? createdBy;              // P1 : Créateur du groupe
-  final List<String> commonGroupIds;    // P2 : Groupes en commun avec l'utilisateur courant
+
+  final GroupSettings settings;
+  final String? createdBy;
+  final List<String> commonGroupIds;
 
   const GroupInfo({
     required this.groupId,
@@ -569,7 +594,6 @@ class GroupInfo {
     'common_group_ids': commonGroupIds,
   };
 
-  /// Crée une copie avec les champs modifiés
   GroupInfo copyWith({
     String? groupId,
     String? name,
@@ -606,19 +630,12 @@ class GroupInfo {
   // GETTERS DE BASE
   // ============================================================
 
-  /// Nombre total de membres
   int get memberCount => members.length;
-
-  /// Nombre de membres en ligne
   int get onlineCount => members.where((m) => m.isOnline).length;
-
-  /// Nombre d'admins
   int get adminCount => members.where((m) => m.isAdmin).length;
-
-  /// Nombre de nouveaux membres (< 7 jours)
   int get newMemberCount => members.where((m) => m.isNewMember).length;
+  int get botCount => members.where((m) => m.isBot).length; // ✅ AJOUTÉ
 
-  /// Récupère un membre par son userId
   GroupMember? getMember(String userId) {
     try {
       return members.firstWhere((m) => m.userId == userId);
@@ -627,20 +644,17 @@ class GroupInfo {
     }
   }
 
-  /// Vérifie si un utilisateur est admin
   bool isAdmin(String userId) => adminIds.contains(userId);
 
-  /// Vérifie si un utilisateur est modérateur (ou admin)
   bool isModeratorOrAdmin(String userId) {
     final member = getMember(userId);
     return member != null && (member.isAdmin || member.isModerator);
   }
 
   // ============================================================
-  // ✅ NOUVEAUX GETTERS (P0-P2)
+  // GETTERS (P0-P2)
   // ============================================================
 
-  /// P0 : Membres triés (admins d'abord, puis en ligne, puis alphabétique)
   List<GroupMember> get sortedMembers {
     final admins = members.where((m) => m.isAdmin).toList();
     final online = members.where((m) => !m.isAdmin && m.isOnline).toList();
@@ -653,10 +667,9 @@ class GroupInfo {
     return [...admins, ...online, ...offline];
   }
 
-  /// P0 : Recherche dans la liste des membres
   List<GroupMember> searchMembers(String query) {
     if (query.isEmpty) return members;
-    
+
     final lowerQuery = query.toLowerCase();
     return members.where((m) {
       return m.displayName.toLowerCase().contains(lowerQuery) ||
@@ -664,50 +677,42 @@ class GroupInfo {
     }).toList();
   }
 
-  /// P0 : Sections séparées (Admins / Membres)
   Map<String, List<GroupMember>> get membersBySection {
     final admins = members.where((m) => m.isAdmin).toList();
     final regularMembers = members.where((m) => !m.isAdmin).toList();
-    
+
     admins.sort((a, b) => a.displayName.compareTo(b.displayName));
     regularMembers.sort((a, b) => a.displayName.compareTo(b.displayName));
-    
+
     return {
       'admins': admins,
       'members': regularMembers,
     };
   }
 
-  /// P2 : Vérifie si l'utilisateur courant peut effectuer une action
   bool canUserPerform(String userId, GroupPermissionAction action) {
     final member = getMember(userId);
     if (member == null) return false;
-    
-    // Les admins peuvent tout faire
+
     if (member.isAdmin) return true;
-    
-    // Vérifier les paramètres globaux du groupe
+
     if (action == GroupPermissionAction.sendMessage && settings.onlyAdminsCanSendMessages) {
       return false;
     }
     if (action == GroupPermissionAction.editGroupInfo && settings.onlyAdminsCanEditGroupInfo) {
       return false;
     }
-    
-    // Vérifier les permissions du membre
+
     return member.canPerform(action);
   }
 
-  /// P2 : Lien d'invitation complet
   String? get inviteLink {
     if (inviteCode == null) return null;
     return 'https://thix.chat/join/$inviteCode';
   }
 
-  /// P2 : Âge du groupe en jours
   int get ageInDays => DateTime.now().difference(createdAt).inDays;
 
-  /// P2 : Texte formaté pour la date de création
   String get formattedCreatedAt {
     final diff = DateTime.now().difference(createdAt);
     if (diff.inDays < 1) return 'Créé aujourd\'hui';
