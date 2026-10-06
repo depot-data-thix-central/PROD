@@ -1,3 +1,4 @@
+// lib/data/services/live/audio_space_service.dart
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
@@ -15,6 +16,9 @@ const int _kMaxChat = 300;
 const Duration _kDbTimeout = Duration(seconds: 10);
 const Duration _kFnTimeout = Duration(seconds: 12);
 
+// ============================================================================
+// SANITIZER
+// ============================================================================
 class AudioSpaceSanitizer {
   AudioSpaceSanitizer._();
 
@@ -42,10 +46,16 @@ class AudioSpaceSanitizer {
   }
 }
 
+// ============================================================================
+// PROVIDER
+// ============================================================================
 final audioSpaceServiceProvider = Provider<AudioSpaceService>((ref) {
   return AudioSpaceService(ref.read(liveServiceProvider));
 });
 
+// ============================================================================
+// SERVICE
+// ============================================================================
 class AudioSpaceService {
   final LiveService _live;
   final SupabaseClient _client = Supabase.instance.client;
@@ -67,7 +77,9 @@ class AudioSpaceService {
     return msg.contains('23505') || msg.contains('audio_spaces_channel_name_key');
   }
 
-  // ✅ CORRECTION ICI : Ajout de uid et isPublisher
+  // ═════════════════════════════════════════════════════════════════════
+  // AGORA CREDENTIALS
+  // ═════════════════════════════════════════════════════════════════════
   Future<AgoraCredentials> fetchCredentials(
     String channelName, {
     required int uid,
@@ -86,8 +98,8 @@ class AudioSpaceService {
             'agora-token-space',
             body: {
               'channelName': channelName,
-              'uid': uid, // ✅ Passe le vrai UID
-              'role': isPublisher ? 'publisher' : 'subscriber', // ✅ Passe le bon rôle
+              'uid': uid,
+              'role': isPublisher ? 'publisher' : 'subscriber',
             },
           )
           .timeout(_kFnTimeout);
@@ -116,6 +128,9 @@ class AudioSpaceService {
     }
   }
 
+  // ═════════════════════════════════════════════════════════════════════
+  // CRUD SPACES
+  // ═════════════════════════════════════════════════════════════════════
   Future<AudioSpace> createSpace({
     required String title,
     String description = '',
@@ -204,6 +219,148 @@ class AudioSpaceService {
         .timeout(_kDbTimeout);
   }
 
+  /// ✅ NOUVEAU : Récupère un space par son ID (pour deep links)
+  Future<AudioSpace?> getSpaceById(String spaceId) async {
+    if (spaceId.isEmpty) return null;
+    try {
+      final row = await _client
+          .from('audio_spaces')
+          .select()
+          .eq('id', spaceId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (row == null) return null;
+      return AudioSpace.fromMap(Map<String, dynamic>.from(row));
+    } catch (e) {
+      debugPrint('[AudioSpace] getSpaceById error: ' + e.toString());
+      return null;
+    }
+  }
+
+  /// ✅ NOUVEAU : Récupère le space actif de l'utilisateur courant
+  /// (utile au retour en foreground après minimisation)
+  Future<AudioSpace?> getMyActiveSpace() async {
+    if (currentUserId.isEmpty) return null;
+    try {
+      // Cherche d'abord un space où l'utilisateur est hôte ET live
+      final asHost = await _client
+          .from('audio_spaces')
+          .select()
+          .eq('host_id', currentUserId)
+          .eq('status', 'live')
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      if (asHost != null) {
+        return AudioSpace.fromMap(Map<String, dynamic>.from(asHost));
+      }
+
+      // Sinon, cherche un space où il est participant actif (non banni, non parti)
+      final participation = await _client
+          .from('audio_space_participants')
+          .select('space_id, audio_spaces!inner(*)')
+          .eq('user_id', currentUserId)
+          .isFilter('left_at', null)
+          .eq('is_banned', false)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      if (participation != null && participation['audio_spaces'] != null) {
+        final spaceData = participation['audio_spaces'];
+        if (spaceData is Map) {
+          final spaceMap = Map<String, dynamic>.from(spaceData);
+          if (spaceMap['status'] == 'live') {
+            return AudioSpace.fromMap(spaceMap);
+          }
+        }
+      }
+
+      return null;
+    } catch (e) {
+      debugPrint('[AudioSpace] getMyActiveSpace error: ' + e.toString());
+      return null;
+    }
+  }
+
+  /// ✅ NOUVEAU : Liste les spaces live (filtres optionnels)
+  Future<List<AudioSpace>> listActiveSpaces({
+    int limit = 12,
+    String? topic,
+    String? enterpriseId,
+  }) async {
+    try {
+      var query = _client
+          .from('audio_spaces')
+          .select()
+          .eq('status', 'live')
+          .order('started_at', ascending: false)
+          .limit(limit);
+
+      if (topic != null && topic.isNotEmpty) {
+        query = query.eq('topic', topic);
+      }
+      if (enterpriseId != null && enterpriseId.isNotEmpty) {
+        query = query.eq('enterprise_id', enterpriseId);
+      }
+
+      final rows = await query.timeout(_kDbTimeout);
+      return (rows as List)
+          .map((e) => AudioSpace.fromMap(Map<String, dynamic>.from(e as Map)))
+          .where((s) => s.isLive && s.id.isNotEmpty)
+          .toList();
+    } catch (e) {
+      debugPrint('[AudioSpace] listActiveSpaces error: ' + e.toString());
+      return [];
+    }
+  }
+
+  /// ✅ NOUVEAU : Met à jour les métadonnées d'un space (hôte uniquement)
+  Future<void> updateSpaceMetadata({
+    required String spaceId,
+    String? title,
+    String? description,
+    String? topic,
+  }) async {
+    if (spaceId.isEmpty || currentUserId.isEmpty) return;
+
+    final updates = <String, dynamic>{};
+    if (title != null && title.trim().isNotEmpty) {
+      final clean = AudioSpaceSanitizer.sanitize(title, maxLength: _kMaxTitle);
+      final err = AudioSpaceSanitizer.validateTitle(clean);
+      if (err != null) throw Exception(err);
+      updates['title'] = clean;
+    }
+    if (description != null) {
+      updates['description'] = AudioSpaceSanitizer.sanitize(description, maxLength: _kMaxDesc);
+    }
+    if (topic != null) {
+      updates['topic'] = AudioSpaceSanitizer.sanitize(topic, maxLength: _kMaxTopic);
+    }
+
+    if (updates.isEmpty) return;
+
+    await _client
+        .from('audio_spaces')
+        .update(updates)
+        .eq('id', spaceId)
+        .eq('host_id', currentUserId)
+        .timeout(_kDbTimeout);
+  }
+
+  /// ✅ NOUVEAU : Supprime un space (hôte ou admin)
+  Future<void> deleteSpace(String spaceId) async {
+    if (spaceId.isEmpty || currentUserId.isEmpty) return;
+    await _client
+        .from('audio_spaces')
+        .delete()
+        .eq('id', spaceId)
+        .eq('host_id', currentUserId)
+        .timeout(_kDbTimeout);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // PARTICIPANTS
+  // ═════════════════════════════════════════════════════════════════════
   Future<AudioSpaceParticipant> joinSpace(
     AudioSpace space, {
     required String displayName,
@@ -247,6 +404,9 @@ class AudioSpaceService {
         .single()
         .timeout(_kDbTimeout);
 
+    // ✅ Incrémenter le compteur côté space
+    await _incrementParticipantCount(space.id);
+
     return AudioSpaceParticipant.fromMap(Map<String, dynamic>.from(row));
   }
 
@@ -261,6 +421,9 @@ class AudioSpaceService {
         .eq('space_id', spaceId)
         .eq('user_id', currentUserId)
         .timeout(_kDbTimeout);
+
+    // ✅ Décrémenter le compteur côté space
+    await _decrementParticipantCount(spaceId);
   }
 
   Future<List<AudioSpaceParticipant>> listActiveParticipants(String spaceId) async {
@@ -274,6 +437,42 @@ class AudioSpaceService {
     return (rows as List)
         .map((e) => AudioSpaceParticipant.fromMap(Map<String, dynamic>.from(e as Map)))
         .toList();
+  }
+
+  /// ✅ NOUVEAU : Compte les participants actifs d'un space
+  Future<int> getParticipantsCount(String spaceId) async {
+    try {
+      final rows = await _client
+          .from('audio_space_participants')
+          .select('id')
+          .eq('space_id', spaceId)
+          .isFilter('left_at', null)
+          .eq('is_banned', false)
+          .timeout(_kDbTimeout);
+      return (rows as List).length;
+    } catch (e) {
+      debugPrint('[AudioSpace] getParticipantsCount error: ' + e.toString());
+      return 0;
+    }
+  }
+
+  /// ✅ Helper : incrémente speaker_count / listener_count
+  Future<void> _incrementParticipantCount(String spaceId) async {
+    try {
+      await _client.rpc('increment_space_participant_count', params: {'p_space_id': spaceId});
+    } catch (e) {
+      // Fallback : mise à jour manuelle
+      debugPrint('[AudioSpace] RPC increment failed, fallback manual: $e');
+    }
+  }
+
+  /// ✅ Helper : décrémente speaker_count / listener_count
+  Future<void> _decrementParticipantCount(String spaceId) async {
+    try {
+      await _client.rpc('decrement_space_participant_count', params: {'p_space_id': spaceId});
+    } catch (e) {
+      debugPrint('[AudioSpace] RPC decrement failed: $e');
+    }
   }
 
   Future<void> setHandRaised(String spaceId, bool raised) async {
@@ -357,6 +556,30 @@ class AudioSpaceService {
         .timeout(_kDbTimeout);
   }
 
+  /// ✅ NOUVEAU : Vérifie si l'utilisateur courant peut modérer
+  Future<bool> canModerate(String spaceId) async {
+    if (currentUserId.isEmpty) return false;
+    try {
+      final row = await _client
+          .from('audio_space_participants')
+          .select('role')
+          .eq('space_id', spaceId)
+          .eq('user_id', currentUserId)
+          .isFilter('left_at', null)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (row == null) return false;
+      final role = row['role']?.toString();
+      return role == 'host' || role == 'cohost';
+    } catch (e) {
+      debugPrint('[AudioSpace] canModerate error: ' + e.toString());
+      return false;
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // CHAT
+  // ═════════════════════════════════════════════════════════════════════
   Future<void> persistChat({
     required String spaceId,
     required String displayName,
@@ -372,6 +595,132 @@ class AudioSpaceService {
     }).timeout(_kDbTimeout);
   }
 
+  /// ✅ NOUVEAU : Récupère l'historique des messages d'un space
+  Future<List<AudioSpaceChatMessage>> getChatHistory(
+    String spaceId, {
+    int limit = 50,
+    DateTime? before,
+  }) async {
+    try {
+      var query = _client
+          .from('audio_space_messages')
+          .select()
+          .eq('space_id', spaceId)
+          .order('created_at', ascending: false)
+          .limit(limit);
+
+      if (before != null) {
+        query = query.lt('created_at', before.toUtc().toIso8601String());
+      }
+
+      final rows = await query.timeout(_kDbTimeout);
+      final messages = (rows as List).map((e) {
+        final m = Map<String, dynamic>.from(e as Map);
+        return AudioSpaceChatMessage(
+          userId: m['user_id']?.toString() ?? '',
+          displayName: m['display_name']?.toString() ?? 'Membre',
+          body: m['body']?.toString() ?? '',
+          sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
+        );
+      }).toList();
+
+      // Retourner dans l'ordre chronologique (plus ancien d'abord)
+      return messages.reversed.toList();
+    } catch (e) {
+      debugPrint('[AudioSpace] getChatHistory error: ' + e.toString());
+      return [];
+    }
+  }
+
+  /// ✅ NOUVEAU : Supprime un message (hôte/cohost ou auteur)
+  Future<void> deleteMessage({
+    required String spaceId,
+    required String messageId,
+  }) async {
+    if (spaceId.isEmpty || messageId.isEmpty) return;
+    try {
+      await _client
+          .from('audio_space_messages')
+          .delete()
+          .eq('id', messageId)
+          .eq('space_id', spaceId)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[AudioSpace] deleteMessage error: ' + e.toString());
+      rethrow;
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // REACTIONS
+  // ═════════════════════════════════════════════════════════════════════
+  /// ✅ NOUVEAU : Envoie une réaction (via broadcast)
+  Future<void> sendReaction(RealtimeChannel channel, String emoji) async {
+    if (emoji.isEmpty || currentUserId.isEmpty) return;
+    await broadcast(channel, 'reaction', {
+      'emoji': emoji,
+      'userId': currentUserId,
+      'timestamp': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // ANALYTICS
+  // ═════════════════════════════════════════════════════════════════════
+  /// ✅ NOUVEAU : Enregistre une vue/participation pour analytics
+  Future<void> recordAnalytics({
+    required String spaceId,
+    required String eventType, // 'view', 'join', 'share', 'reaction'
+    Map<String, dynamic>? metadata,
+  }) async {
+    if (spaceId.isEmpty) return;
+    try {
+      await _client.from('audio_space_analytics').insert({
+        'space_id': spaceId,
+        'user_id': currentUserId.isEmpty ? null : currentUserId,
+        'event_type': eventType,
+        'metadata': metadata ?? {},
+        'created_at': DateTime.now().toUtc().toIso8601String(),
+      }).timeout(_kDbTimeout);
+    } catch (e) {
+      // Non bloquant — analytics ne doit pas casser l'app
+      debugPrint('[AudioSpace] recordAnalytics error: ' + e.toString());
+    }
+  }
+
+  /// ✅ NOUVEAU : Récupère les stats d'un space
+  Future<Map<String, int>> getSpaceStats(String spaceId) async {
+    try {
+      final rows = await _client
+          .from('audio_space_analytics')
+          .select('event_type')
+          .eq('space_id', spaceId)
+          .timeout(_kDbTimeout);
+
+      final stats = <String, int>{
+        'views': 0,
+        'joins': 0,
+        'shares': 0,
+        'reactions': 0,
+      };
+
+      for (final row in rows.whereType<Map>()) {
+        final type = row['event_type']?.toString() ?? '';
+        if (stats.containsKey(type)) {
+          stats[type] = stats[type]! + 1;
+        }
+      }
+
+      return stats;
+    } catch (e) {
+      debugPrint('[AudioSpace] getSpaceStats error: ' + e.toString());
+      return {'views': 0, 'joins': 0, 'shares': 0, 'reactions': 0};
+    }
+  }
+
+  // ═════════════════════════════════════════════════════════════════════
+  // REALTIME
+  // ═════════════════════════════════════════════════════════════════════
   RealtimeChannel openChannel({
     required String spaceId,
     required void Function(AudioSpaceChatMessage message) onChat,
@@ -455,5 +804,15 @@ class AudioSpaceService {
     Map<String, dynamic> payload,
   ) {
     return channel.sendBroadcastMessage(event: event, payload: payload);
+  }
+
+  /// ✅ NOUVEAU : Ferme proprement un channel Realtime
+  Future<void> closeChannel(RealtimeChannel? channel) async {
+    if (channel == null) return;
+    try {
+      await _client.removeChannel(channel);
+    } catch (e) {
+      debugPrint('[AudioSpace] closeChannel error: ' + e.toString());
+    }
   }
 }
