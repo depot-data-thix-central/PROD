@@ -330,6 +330,7 @@ class NotificationCountersService {
       return false;
     }
   }
+  
 
   /// Force la mise à jour du badge de l'icône avec un total donné.
   Future<void> syncAppIconBadge(int total) => _updateAppIconBadge(total);
@@ -401,6 +402,28 @@ class NotificationCountersService {
         }
       },
     );
+  /// Alias/Raccourci appelé par l'interface utilisateur pour marquer une section comme lue.
+  Future<bool> markSectionRead(dynamic section, {String? uid}) async {
+    final currentUid = uid ?? _client.auth.currentUser?.id;
+    if (currentUid == null) return false;
+
+    ThixSection? targetSection;
+    if (section is ThixSection) {
+      targetSection = section;
+    } else if (section is String) {
+      try {
+        targetSection = ThixSection.values.firstWhere(
+          (e) => e.name.toLowerCase() == section.toLowerCase(),
+        );
+      } catch (_) {
+        return false;
+      }
+    }
+
+    if (targetSection == null) return false;
+
+    return markSectionSeen(uid: currentUid, section: targetSection);
+  }
 
     Future<void> subscribeOrRetry() async {
       if (isCancelled || polling) return;
