@@ -2212,7 +2212,7 @@ class _Step2Account extends StatelessWidget {
           controller: passwordC,
           isPassword: true,
           onChanged: onPasswordChanged,
-          errorText: passwordError,
+          errorText: passwordError, // ✅ FIX: passé directement au lieu du spread invalide
           maxLength: _kMaxPasswordLength,
           autofillHint: AutofillHints.newPassword,
           trailing: passwordValidating
