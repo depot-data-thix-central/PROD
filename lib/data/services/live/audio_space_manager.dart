@@ -322,6 +322,66 @@ class AudioSpaceManager {
     }
   }
   // ─────────────────────────────────────────────────────────────
+  // CLEANUP (Nettoyage complet des ressources)
+  // ─────────────────────────────────────────────────────────────
+  Future<void> _cleanup() async {
+    // 1. Arrêter les timers
+    _rosterTick?.cancel();
+    _rosterTick = null;
+    _elapsedTick?.cancel();
+    _elapsedTick = null;
+
+    // 2. Fermer les channels Realtime Supabase
+    try {
+      await _rtChannel?.unsubscribe();
+    } catch (_) {}
+    try {
+      await _pgChannel?.unsubscribe();
+    } catch (_) {}
+    _rtChannel = null;
+    _pgChannel = null;
+
+    // 3. Arrêter Agora et le mode background
+    await _backgroundService.stopAgora();
+    _backgroundService.exitBackgroundMode();
+
+    // 4. Réinitialiser l'état global
+    _state = AudioSpaceManagerState.initial;
+    _emit();
+
+    debugPrint('[AudioSpaceManager] ✓ Cleanup completed');
+  }
+  // ─────────────────────────────────────────────────────────────
+  // CLEANUP (Nettoyage complet des ressources)
+  // ─────────────────────────────────────────────────────────────
+  Future<void> _cleanup() async {
+    // 1. Arrêter les timers
+    _rosterTick?.cancel();
+    _rosterTick = null;
+    _elapsedTick?.cancel();
+    _elapsedTick = null;
+
+    // 2. Fermer les channels Realtime Supabase
+    try {
+      await _rtChannel?.unsubscribe();
+    } catch (_) {}
+    try {
+      await _pgChannel?.unsubscribe();
+    } catch (_) {}
+    _rtChannel = null;
+    _pgChannel = null;
+
+    // 3. Arrêter Agora et le mode background
+    await _backgroundService.stopAgora();
+    _backgroundService.exitBackgroundMode();
+
+    // 4. Réinitialiser l'état global
+    _state = AudioSpaceManagerState.initial;
+    _emit();
+
+    debugPrint('[AudioSpaceManager] ✓ Cleanup completed');
+  }
+  // ─────────────────────────────────────────────────────────────
   // ROSTER
   // ─────────────────────────────────────────────────────────────
   Future<void> _loadRoster() async {
