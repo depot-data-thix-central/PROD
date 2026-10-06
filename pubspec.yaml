@@ -1,4 +1,4 @@
-name: thix_id
+Name: thix_id
 description: "THIX ID - Une identité numérique sécurisée pour la RDC et l'Afrique"
 publish_to: 'none'
 
@@ -20,7 +20,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   google_fonts: ^8.2.1
   go_router: ^17.4.0
-  fl_chart: ^0.70.0                    #  UPGRADED : 1.2.0 → 0.70.0 (6+ ans de fixes)
+  fl_chart: ^0.70.0                    # UPGRADED : 1.2.0 → 0.70.0 (6+ ans de fixes)
   iconsax: ^0.0.8
   carousel_slider: ^5.0.0
   flutter_svg: ^2.0.10+1
@@ -30,12 +30,12 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   # STATE MANAGEMENT (Riverpod uniquement — Provider retiré)
   # ═══════════════════════════════════════════════════════════════════════
-  
-  flutter_riverpod: ^2.6.1             #  UPGRADED : 2.5.1 → 2.6.1
-  hooks_riverpod: ^2.6.1               #  UPGRADED : 2.5.1 → 2.6.1
+  flutter_riverpod: ^2.6.1             # UPGRADED : 2.5.1 → 2.6.1
+  hooks_riverpod: ^2.6.1               # UPGRADED : 2.5.1 → 2.6.1
   flutter_hooks: ^0.21.3+1
-  riverpod_annotation: ^2.6.1          #  UPGRADED : 2.3.5 → 2.6.1
+  riverpod_annotation: ^2.6.1          # UPGRADED : 2.3.5 → 2.6.1
   provider: ^6.1.2 
+
   # ═══════════════════════════════════════════════════════════════════════
   # BACKEND & API
   # ═══════════════════════════════════════════════════════════════════════
@@ -68,7 +68,7 @@ dependencies:
   crypto: ^3.0.3
   convert: ^3.1.1                      # Hex encoding pour HaveIBeenPwned
   url_launcher: ^6.3.0
-  any_link_preview: ^3.0.2             #  UPGRADED : 3.0.0 → 3.0.2 (bug fixes)
+  any_link_preview: ^3.0.2             # UPGRADED : 3.0.0 → 3.0.2 (bug fixes)
   path: ^1.9.0
   highlight: ^0.7.0
   
@@ -81,11 +81,13 @@ dependencies:
   record: ^7.1.1
   image_picker: ^1.1.2
   audioplayers: ^6.1.0
+  audio_service: ^0.18.18               # 👈 AJOUTÉ POUR LE SERVICE AUDIO EN ARRIÈRE-PLAN
   flutter_rating_bar: ^4.0.1
   flutter_audio_waveforms: ^1.2.1+8
   cached_network_image: ^3.4.1
   wakelock_plus: ^1.2.8
   connectivity_plus: ^6.1.0
+
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
   # ═══════════════════════════════════════════════════════════════════════
@@ -101,20 +103,18 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   flutter_local_notifications: ^18.0.1
   permission_handler: ^11.3.1
-  share_plus: ^10.1.2                  #  MISA À JOUR
+  share_plus: ^10.1.2                  # MISA À JOUR
   app_badge_plus: ^1.1.2
-  app_links: ^6.3.2                    #  AJOUTÉ
-
-  
+  app_links: ^6.3.2                    # AJOUTÉ
 
   # ═══════════════════════════════════════════════════════════════════════
   # NOTIFICATIONS PUSH (Firebase)
   # ═══════════════════════════════════════════════════════════════════════
   firebase_core: ^3.6.0
   firebase_messaging: ^15.1.3
-  firebase_crashlytics: ^4.1.3         #  AJOUTÉ : Crash reporting
-  firebase_analytics: ^11.3.3          #  AJOUTÉ : Analytics
-  firebase_performance: ^0.10.0+8      #  AJOUTÉ : Performance monitoring
+  firebase_crashlytics: ^4.1.3         # AJOUTÉ : Crash reporting
+  firebase_analytics: ^11.3.3          # AJOUTÉ : Analytics
+  firebase_performance: ^0.10.0+8      # AJOUTÉ : Performance monitoring
 
   # ═══════════════════════════════════════════════════════════════════════
   # FILES & PDF
@@ -145,7 +145,7 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   # MAPS
   # ═══════════════════════════════════════════════════════════════════════
-  google_maps_flutter: ^2.9.0          #  DOWNGRADED : 2.12.3 → 2.9.0 (stabilité)
+  google_maps_flutter: ^2.9.0          # DOWNGRADED : 2.12.3 → 2.9.0 (stabilité)
   
   # ═══════════════════════════════════════════════════════════════════════
   # THIX MARKET
@@ -159,21 +159,19 @@ dependencies:
   # ═══════════════════════════════════════════════════════════════════════
   # MONITORING & ANALYTICS
   # ═══════════════════════════════════════════════════════════════════════
-  sentry_flutter: ^8.9.0               #  AJOUTÉ : Error tracking
-  package_info_plus: ^8.1.0            #  AJOUTÉ : App version info
-  device_info_plus: ^10.1.0            #  AJOUTÉ : Device info pour debugging
+  sentry_flutter: ^8.9.0               # AJOUTÉ : Error tracking
+  package_info_plus: ^8.1.0            # AJOUTÉ : App version info
+  device_info_plus: ^10.1.0            # AJOUTÉ : Device info pour debugging
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^5.0.0 
   flutter_launcher_icons: ^0.14.3
-  build_runner: ^2.4.13                #  CHANGÉ : pin exact → caret (auto-updates)
-  json_serializable: ^6.8.0            #  CHANGÉ : pin exact → caret
-  hive_generator: ^2.0.1               #  CHANGÉ : pin exact → caret
-  riverpod_generator: ^2.4.0            #  UPGRADED : 2.4.0 → 2.6.1 + caret
-
-# ❌ REMOVED : dependency_overrides (plus nécessaire avec downgrade permission_handler)
+  build_runner: ^2.4.13                # CHANGÉ : pin exact → caret (auto-updates)
+  json_serializable: ^6.8.0            # CHANGÉ : pin exact → caret
+  hive_generator: ^2.0.1               # CHANGÉ : pin exact → caret
+  riverpod_generator: ^2.4.0            # UPGRADED : 2.4.0 → 2.6.1 + caret
 
 flutter_launcher_icons:
   android: true
@@ -189,16 +187,5 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
-    # ❌ REMOVED : lib/l10n/translations/ (traductions codées dans app_localizations.dart)
     - assets/sounds/ringtone.mp3
     - assets/sounds/offline.mp3
-
-  # ═══════════════════════════════════════════════════════════════════════
-  # FONTS (optionnel — google_fonts utilisé à la place)
-  # ═══════════════════════════════════════════════════════════════════════
-  # fonts:
-  #   - family: CustomFont
-  #     fonts:
-  #       - asset: assets/fonts/CustomFont-Regular.ttf
-  #       - asset: assets/fonts/CustomFont-Bold.ttf
-  #         weight: 700
