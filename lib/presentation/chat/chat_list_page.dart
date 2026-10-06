@@ -1,13 +1,18 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — Design moderne enterprise avec :
+// ChatListPage — Design moderne enterprise :
 // ✅ Performance : SliverList natif (pas de shrinkWrap)
 // ✅ Architecture : aucun appel Supabase direct (délégué au provider)
-// ✅ i18n : 100% via l10n
-// ✅ Biométrie : local_auth pour verrouillage
+// ✅ i18n : 100% via l10n (+ replis FR pour nouvelles clés)
+// ✅ Lock : mot de passe défini par l'utilisateur (vault local) + biométrie secours
+// ✅ Notebook : notes personnelles persistées localement
+// ✅ Navbar : FIXE en bas, ondulation centrale, bouton crayon, couleurs allégées
+// ✅ Escalade : double avatar agent+client, barre rouge, pulse si non acceptée
+// ✅ Swipe tuiles : gauche = archiver, droite = lu/non-lu
 // ✅ Navigation : retour homepage THIX Hub au lieu de quitter l'app
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -16,6 +21,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
@@ -46,6 +52,14 @@ const int _kLoadMoreThrottleMs = 500;
 const int _kMaxChatNameLength = 80;
 const int _kMaxPreviewLength = 140;
 const int _kMaxPinned = 3;
+const String _kLockPwdKey = 'thix_chat_lock_pwd_v1';
+const String _kNotesKey = 'thix_chat_notes_v1';
+
+/// l10n avec repli FR si la clé n'existe pas encore.
+String _tr(AppLocalizations l10n, String key, String fallback) {
+  final s = l10n.t(key);
+  return s == key ? fallback : s;
+}
 
 // ============================================================================
 // VALIDATORS
@@ -118,6 +132,47 @@ class _ListValidators {
     return l.endsWith('.mp3') || l.endsWith('.wav') || l.endsWith('.m4a') ||
         name.contains('Message audio (');
   }
+
+  /// Score mot de passe 0..5 (>= 3 exigé pour le vault)
+  static int passwordScore(String pwd) {
+    int score = 0;
+    if (pwd.length >= 8) score++;
+    if (pwd.length >= 12) score++;
+    if (pwd.contains(RegExp(r'[a-z]')) && pwd.contains(RegExp(r'[A-Z]'))) score++;
+    if (pwd.contains(RegExp(r'[0-9]'))) score++;
+    if (pwd.contains(RegExp(r'[^\w\s]'))) score++;
+    return score;
+  }
+}
+
+// ============================================================================
+// 🔒 VAULT LOCAL (mot de passe de verrouillage des conversations)
+// Stockage device-only (base64) — suffisant pour un vault UI local.
+// ============================================================================
+class _LockVault {
+  _LockVault._();
+
+  static Future<String?> _read() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_kLockPwdKey);
+  }
+
+  static Future<bool> hasPassword() async => (await _read()) != null;
+
+  static Future<void> setPassword(String pwd) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_kLockPwdKey, base64Encode(utf8.encode(pwd)));
+  }
+
+  static Future<bool> verify(String pwd) async {
+    final stored = await _read();
+    if (stored == null) return false;
+    try {
+      return utf8.decode(base64Decode(stored)) == pwd;
+    } catch (_) {
+      return false;
+    }
+  }
 }
 
 // ============================================================================
@@ -180,23 +235,185 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     unawaited(ref.read(statusProvider.notifier).refresh().catchError((_) {}));
   }
 
-  // ── OUVERTURE DE CONVERSATION (avec biométrie si verrouillée) ──
+  // ==========================================================================
+  // 🔒 LOCK PAR MOT DE PASSE (+ biométrie en secours)
+  // ==========================================================================
+  Future<bool> _defineLockPassword() async {
+    final l10n = AppLocalizations.of(context);
+    final passCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? error;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) {
+          final score = _ListValidators.passwordScore(passCtrl.text);
+          return AlertDialog(
+            backgroundColor: ThixPolicy.card,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+            title: Row(
+              children: [
+                const Icon(Icons.lock_outline_rounded, color: ThixPolicy.danger, size: 22),
+                const SizedBox(width: 10),
+                Expanded(child: Text(_tr(l10n, 'chatlist_lock_define_title', 'Définir un mot de passe'),
+                    style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16))),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(_tr(l10n, 'chatlist_lock_define_sub', 'Ce mot de passe ouvrira vos conversations verrouillées.'),
+                    style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: passCtrl,
+                  obscureText: true,
+                  onChanged: (_) => setS(() => error = null),
+                  decoration: InputDecoration(labelText: _tr(l10n, 'chatlist_lock_pwd', 'Mot de passe')),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: List.generate(5, (i) => Expanded(
+                        child: Container(
+                          height: 4,
+                          margin: const EdgeInsets.only(right: 3),
+                          decoration: BoxDecoration(
+                            color: i < score ? (score >= 3 ? ThixPolicy.success : ThixPolicy.warning) : ThixPolicy.border,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      )),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: confirmCtrl,
+                  obscureText: true,
+                  onChanged: (_) => setS(() => error = null),
+                  decoration: InputDecoration(labelText: _tr(l10n, 'chatlist_lock_pwd_confirm', 'Confirmer')),
+                ),
+                if (error != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('common_cancel'))),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary),
+                onPressed: () async {
+                  if (_ListValidators.passwordScore(passCtrl.text) < 3) {
+                    setS(() => error = _tr(l10n, 'chatlist_lock_weak', 'Mot de passe trop faible (8+ car., maj., min., chiffre)'));
+                    return;
+                  }
+                  if (passCtrl.text != confirmCtrl.text) {
+                    setS(() => error = _tr(l10n, 'chatlist_lock_mismatch', 'Les mots de passe ne correspondent pas'));
+                    return;
+                  }
+                  await _LockVault.setPassword(passCtrl.text);
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                },
+                child: Text(_tr(l10n, 'chatlist_lock_save', 'Enregistrer'), style: const TextStyle(color: Colors.white)),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+    return ok == true;
+  }
+
+  Future<bool> _promptUnlock(ChatConversation conv) async {
+    final l10n = AppLocalizations.of(context);
+    final ctrl = TextEditingController();
+    String? error;
+    final bioAvailable = await BiometricService.instance.isAvailable();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: ThixPolicy.card,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_rounded, color: ThixPolicy.danger, size: 22),
+              const SizedBox(width: 10),
+              Expanded(child: Text(_tr(l10n, 'chatlist_locked_title', 'Conversation verrouillée'),
+                  style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16))),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_ListValidators.sanitize(conv.displayName, maxLength: 40),
+                  style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: ctrl,
+                obscureText: true,
+                autofocus: true,
+                onChanged: (_) => setS(() => error = null),
+                decoration: InputDecoration(labelText: _tr(l10n, 'chatlist_lock_pwd', 'Mot de passe')),
+              ),
+              if (error != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(error!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                ),
+            ],
+          ),
+          actions: [
+            if (bioAvailable)
+              TextButton(
+                onPressed: () async {
+                  final authed = await BiometricService.instance.authenticate(
+                    reason: _tr(l10n, 'chatlist_biometric_reason', 'Ouvrir {0}')
+                        .replaceAll('{0}', _ListValidators.sanitize(conv.displayName, maxLength: 30)),
+                  );
+                  if (ctx.mounted) Navigator.pop(ctx, authed);
+                },
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.fingerprint_rounded, size: 18),
+                    const SizedBox(width: 6),
+                    Text(_tr(l10n, 'chatlist_use_biometric', 'Biométrie')),
+                  ],
+                ),
+              ),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('common_cancel'))),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary),
+              onPressed: () async {
+                final good = await _LockVault.verify(ctrl.text);
+                if (good) {
+                  if (ctx.mounted) Navigator.pop(ctx, true);
+                } else {
+                  setS(() => error = _tr(l10n, 'chatlist_lock_bad_pwd', 'Mot de passe incorrect'));
+                }
+              },
+              child: Text(_tr(l10n, 'chatlist_unlock_open', 'Ouvrir'), style: const TextStyle(color: Colors.white)),
+            ),
+          ],
+        ),
+      ),
+    );
+    return ok == true;
+  }
+
+  // ── OUVERTURE DE CONVERSATION (vault mot de passe / biométrie) ──
   Future<void> _openConversation(ChatConversation conv) async {
     HapticFeedback.mediumImpact();
+    final l10n = AppLocalizations.of(context);
 
-    // ✅ Biométrie si conversation verrouillée
     if (conv.isLocked) {
-      final l10n = AppLocalizations.of(context);
-      final available = await BiometricService.instance.isAvailable();
-      if (!available) {
-        _showError(l10n.t('chatlist_biometric_unavailable'));
-        return;
-      }
-      final authed = await BiometricService.instance.authenticate(
-        reason: l10n.t('chatlist_biometric_reason', args: [_ListValidators.sanitize(conv.displayName, maxLength: 30)]),
-      );
-      if (!authed) {
-        _showInfo(l10n.t('chatlist_biometric_denied'));
+      final unlocked = await _promptUnlock(conv);
+      if (!unlocked) {
+        _showInfo(_tr(l10n, 'chatlist_locked_denied', 'Accès refusé'));
         return;
       }
     }
@@ -206,14 +423,101 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
     await Navigator.push(
       context,
-      MaterialPageRoute(
-        builder: (_) => ChatScreen(conversationId: conv.id, conversation: conv),
-      ),
+      MaterialPageRoute(builder: (_) => ChatScreen(conversationId: conv.id, conversation: conv)),
     );
 
     if (mounted) _refreshAllCounters();
   }
 
+  // ==========================================================================
+  // 📓 NOTEBOOK (notes locales persistées)
+  // ==========================================================================
+  Future<void> _openNotebook() async {
+    HapticFeedback.selectionClick();
+    final l10n = AppLocalizations.of(context);
+    final prefs = await SharedPreferences.getInstance();
+    final ctrl = TextEditingController(text: prefs.getString(_kNotesKey) ?? '');
+    Timer? debounce;
+    int len = ctrl.text.length;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => Padding(
+          padding: EdgeInsets.only(bottom: MediaQuery.of(ctx).viewInsets.bottom),
+          child: Container(
+            height: MediaQuery.of(ctx).size.height * 0.6,
+            decoration: BoxDecoration(
+              color: ThixPolicy.card,
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            ),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+            child: Column(
+              children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    const Icon(Icons.menu_book_outlined, color: ThixPolicy.primary),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(_tr(l10n, 'chatlist_notebook', 'Mon bloc-notes'),
+                        style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold))),
+                    Text('$len', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: TextField(
+                    controller: ctrl,
+                    maxLines: null,
+                    expands: true,
+                    textAlignVertical: TextAlignVertical.top,
+                    style: ThixPolicy.bodyStyle,
+                    decoration: InputDecoration(
+                      hintText: _tr(l10n, 'chatlist_notebook_hint', 'Écrivez vos notes privées…'),
+                      hintStyle: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                      contentPadding: const EdgeInsets.all(12),
+                    ),
+                    onChanged: (v) {
+                      setS(() => len = v.length);
+                      debounce?.cancel();
+                      debounce = Timer(const Duration(milliseconds: 700), () async {
+                        await prefs.setString(_kNotesKey, v);
+                      });
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: ThixPolicy.primary,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      debounce?.cancel();
+                      await prefs.setString(_kNotesKey, ctrl.text);
+                      if (ctx.mounted) Navigator.pop(ctx);
+                      _showSuccess(_tr(l10n, 'chatlist_notebook_saved', 'Notes enregistrées'));
+                    },
+                    child: Text(_tr(l10n, 'chatlist_notebook_save', 'Enregistrer')),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ==========================================================================
+  // NAVIGATION
+  // ==========================================================================
   void _navigateTo(int idx) {
     HapticFeedback.lightImpact();
     final countersNotifier = ref.read(notificationCountersProvider.notifier);
@@ -242,22 +546,34 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     }
   }
 
-  // ── NAVIGATION RETOUR : Homepage THIX Hub (pas fermer l'app) ──
   void _goToHomepage() {
-    // Route principale de THIX Hub (à ajuster selon ton router)
     context.go('/');
+  }
+
+  Future<void> _markAllAsRead() async {
+    final l10n = AppLocalizations.of(context);
+    final convs = ref.read(chatListProvider).all.where((c) => c.unreadCount > 0).take(30).toList();
+    if (convs.isEmpty) {
+      _showInfo(_tr(l10n, 'chatlist_nothing_unread', 'Aucun message non lu'));
+      return;
+    }
+    for (final c in convs) {
+      await ref.read(chatListProvider.notifier).markAsRead(c.id);
+    }
+    _showSuccess(_tr(l10n, 'chatlist_all_read', 'Tout est marqué comme lu'));
   }
 
   void _openNotifications(int pending) {
     HapticFeedback.selectionClick();
     final l10n = AppLocalizations.of(context);
+    final totalUnread = ref.read(chatListProvider).totalUnread;
 
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => Container(
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.55),
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.6),
         decoration: BoxDecoration(
           color: ThixPolicy.card,
           borderRadius: const BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl)),
@@ -281,8 +597,11 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             ),
             const Divider(height: 1, color: ThixPolicy.border),
             Flexible(
-              child: pending > 0
-                  ? Semantics(
+              child: ListView(
+                shrinkWrap: true,
+                children: [
+                  if (pending > 0)
+                    Semantics(
                       button: true,
                       label: l10n.t('chatlist_pending_escalations'),
                       child: ListTile(
@@ -307,14 +626,40 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                           context.pushNamed('chatEscalationReceived');
                         },
                       ),
-                    )
-                  : Padding(
+                    ),
+                  if (totalUnread > 0)
+                    ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s24, vertical: ThixPolicy.s12),
+                      leading: Container(
+                        width: 48, height: 48,
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                        ),
+                        child: const Icon(Icons.done_all_rounded, color: ThixPolicy.primary, size: 24),
+                      ),
+                      title: Text(_tr(l10n, 'chatlist_mark_all_read', 'Tout marquer comme lu'),
+                          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15)),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 3),
+                        child: Text('$totalUnread ${_tr(l10n, 'chatlist_unread_label', 'non lus')}',
+                            style: ThixPolicy.bodySmallStyle),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _markAllAsRead();
+                      },
+                    ),
+                  if (pending == 0 && totalUnread == 0)
+                    Padding(
                       padding: const EdgeInsets.symmetric(vertical: 48),
                       child: Center(
                         child: Text(l10n.t('chatlist_no_recent'),
                             style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
                       ),
                     ),
+                ],
+              ),
             ),
             const SizedBox(height: ThixPolicy.s24),
           ],
@@ -420,7 +765,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   }
 
   String _formatPreview(ChatConversation conv, AppLocalizations l10n) {
-    // ✅ i18n : Brouillon
     if ((conv.draft?.trim().isNotEmpty ?? false)) {
       final draftText = _ListValidators.sanitize(conv.draft, maxLength: 100);
       return '${l10n.t('chatlist_draft_prefix')} $draftText';
@@ -434,6 +778,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     if (_ListValidators.isAudioFile(raw)) return '🎤 ${l10n.t('chatlist_audio_message')}';
     return _ListValidators.sanitize(raw, maxLength: _kMaxPreviewLength);
   }
+
+  /// Escalade en attente d'acceptation → pastille rouge pulsante
+  bool _isEscalationPending(ChatConversation conv) =>
+      conv.isEscalation && (conv.unreadCount > 0 || (conv.escalatedByName?.isNotEmpty ?? false));
 
   // ── MENU CONTEXTUEL ──────────────────────────────────
   void _showContextMenu(ChatConversation conv) {
@@ -460,8 +808,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
           children: [
             Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: ThixPolicy.s20),
-
-            // En-tête avec avatar
             Row(
               children: [
                 CircleAvatar(
@@ -487,7 +833,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             const Divider(height: 1),
             const SizedBox(height: ThixPolicy.s8),
 
-            // Épingler
             _contextMenuItem(
               icon: conv.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
               label: conv.isPinned ? l10n.t('chatlist_unpin') : l10n.t('chatlist_pin'),
@@ -502,7 +847,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
               },
             ),
 
-            // Archiver
             _contextMenuItem(
               icon: conv.isArchived ? Icons.unarchive_rounded : Icons.archive_outlined,
               label: conv.isArchived ? l10n.t('chatlist_unarchive') : l10n.t('chatlist_archive'),
@@ -514,7 +858,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
               },
             ),
 
-            // Sourdine
             _contextMenuItem(
               icon: conv.isCurrentlyMuted ? Icons.volume_off_rounded : Icons.volume_up_rounded,
               label: conv.isCurrentlyMuted ? l10n.t('chatlist_unmute') : l10n.t('chatlist_mute'),
@@ -532,22 +875,30 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
               },
             ),
 
-            // Verrouiller
+            // 🔒 VERROUILLAGE PAR MOT DE PASSE
             _contextMenuItem(
               icon: conv.isLocked ? Icons.lock_rounded : Icons.lock_outline_rounded,
               label: conv.isLocked ? l10n.t('chatlist_unlock') : l10n.t('chatlist_lock'),
-              subtitle: conv.isLocked ? l10n.t('chatlist_unlock_subtitle') : l10n.t('chatlist_lock_subtitle'),
+              subtitle: conv.isLocked
+                  ? l10n.t('chatlist_unlock_subtitle')
+                  : _tr(l10n, 'chatlist_lock_subtitle_pwd', 'Protéger par mot de passe à l’ouverture'),
               color: ThixPolicy.danger,
               onTap: () async {
                 Navigator.pop(ctx);
                 if (!conv.isLocked) {
+                  if (!await _LockVault.hasPassword()) {
+                    final defined = await _defineLockPassword();
+                    if (!defined) return;
+                  }
                   final confirmed = await showDialog<bool>(
                     context: context,
                     builder: (ctx) => AlertDialog(
                       backgroundColor: ThixPolicy.card,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
                       title: Text(l10n.t('chatlist_lock_confirm_title'), style: ThixPolicy.titleStyle),
-                      content: Text(l10n.t('chatlist_lock_confirm_message'), style: ThixPolicy.bodyStyle),
+                      content: Text(_tr(l10n, 'chatlist_lock_confirm_message_pwd',
+                          'Un mot de passe (ou la biométrie) sera exigé pour ouvrir cette conversation.'),
+                          style: ThixPolicy.bodyStyle),
                       actions: [
                         TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.t('common_cancel'))),
                         ElevatedButton(
@@ -564,7 +915,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
               },
             ),
 
-            // Marquer comme non lu
             if (conv.unreadCount == 0)
               _contextMenuItem(
                 icon: Icons.mark_unread_chat_alt_rounded,
@@ -579,7 +929,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
             const Divider(height: 1),
 
-            // Supprimer
             _contextMenuItem(
               icon: Icons.delete_outline_rounded,
               label: l10n.t('chatlist_delete'),
@@ -646,7 +995,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
   }
 
-  // ── PICKER DURÉE SOURDINE ──────────────────────────────────
   void _showMuteDurationPicker(String convId) {
     final l10n = AppLocalizations.of(context);
 
@@ -691,7 +1039,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
   }
 
-  // ── CONFIRM & DELETE (via provider, pas Supabase direct) ──
   Future<void> _confirmAndDeleteSingle(ChatConversation conv) async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
@@ -713,7 +1060,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
     if (confirmed != true) return;
 
-    // ✅ Délégation au provider (optimistic + rollback)
     final notifier = ref.read(chatListProvider.notifier);
     notifier.toggleSelection(conv.id);
     await notifier.bulkDelete();
@@ -727,7 +1073,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     final notifier = ref.read(chatListProvider.notifier);
 
     return Positioned(
-      bottom: 100,
+      bottom: 90,
       left: 16,
       right: 16,
       child: Material(
@@ -784,7 +1130,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                     ),
                   );
                   if (confirmed == true) {
-                    // ✅ Délégation au provider
                     await notifier.bulkDelete();
                     _showSuccess(l10n.t('chatlist_bulk_deleted'));
                   }
@@ -873,7 +1218,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     }
 
     return PopScope(
-      canPop: false, // ✅ Jamais fermer l'app, toujours gérer nous-mêmes
+      canPop: false,
       onPopInvokedWithResult: (didPop, _) {
         if (didPop) return;
         if (state.isSelectionMode) {
@@ -881,12 +1226,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         } else if (_selectedNav != 1) {
           setState(() => _selectedNav = 1);
         } else {
-          // ✅ Retour homepage THIX Hub au lieu de quitter
           _goToHomepage();
         }
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
+        // ✅ NAVBAR FIXE (plus flottante)
+        bottomNavigationBar: state.isSelectionMode ? null : _buildFixedBottomNav(l10n, state.totalUnread, counters),
         body: Stack(
           children: [
             Positioned(top: -100, right: -50, child: Container(
@@ -945,11 +1291,19 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                         },
                                       ),
                                       const SizedBox(width: ThixPolicy.s12),
+                                      // 📓 NOTEBOOK
+                                      _iconButtonGlass(
+                                        l10n: l10n,
+                                        icon: Icons.menu_book_outlined,
+                                        semanticsLabel: _tr(l10n, 'chatlist_notebook', 'Mon bloc-notes'),
+                                        onTap: _openNotebook,
+                                      ),
+                                      const SizedBox(width: ThixPolicy.s12),
                                       _iconButtonGlass(
                                         l10n: l10n,
                                         icon: Icons.notifications_none_rounded,
                                         semanticsLabel: l10n.t('chatlist_notifications'),
-                                        badge: state.pendingEscalations > 0,
+                                        badge: state.pendingEscalations > 0 || state.totalUnread > 0,
                                         onTap: () => _openNotifications(state.pendingEscalations),
                                       ),
                                     ]),
@@ -1008,7 +1362,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
                           const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
 
-                          // ✅ PERFORMANCE : SliverList natif (pas de shrinkWrap)
                           SliverPadding(
                             padding: const EdgeInsets.only(top: 8),
                             sliver: _chatListSliver(
@@ -1025,14 +1378,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                               ),
                             ),
 
-                          const SliverToBoxAdapter(child: SizedBox(height: 180)),
+                          const SliverToBoxAdapter(child: SizedBox(height: 110)),
                         ],
                       ),
                     ),
                   ),
 
             if (state.isSelectionMode) _buildBulkActionsBar(l10n),
-            if (!state.isSelectionMode) _buildGlassBottomNav(l10n, state.totalUnread, counters),
           ],
         ),
       ),
@@ -1213,7 +1565,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
           ),
           child: Row(
             children: [
-              const Icon(Icons.warning_amber_rounded, color: ThixPolicy.danger, size: 18),
+              const _PulseDot(color: ThixPolicy.danger, size: 10),
               const SizedBox(width: ThixPolicy.s12),
               Expanded(
                 child: Text('$pending ${l10n.t('chatlist_pending_escalations')}',
@@ -1228,14 +1580,13 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   }
 
   Widget _buildFilters(int selected, AppLocalizations l10n) {
-    // ✅ 100% i18n
     final filterLabels = [
       l10n.t('chatlist_filter_all'),
       l10n.t('chatlist_filter_unread'),
       l10n.t('chatlist_filter_teams'),
       l10n.t('chatlist_filter_personal'),
-      l10n.t('chatlist_filter_pinned'),  // 📌 Épinglés
-      l10n.t('chatlist_filter_archived'), // 📁 Archivés
+      l10n.t('chatlist_filter_pinned'),
+      l10n.t('chatlist_filter_archived'),
     ];
 
     return SizedBox(
@@ -1286,7 +1637,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
   }
 
-  // ✅ PERFORMANCE : SliverList natif au lieu de ListView.builder avec shrinkWrap
   Widget _chatListSliver(
     List<ChatConversation> list,
     String currentUserId,
@@ -1324,7 +1674,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
       );
     }
 
-    // ✅ Lazy loading natif Flutter — seulement les éléments visibles sont instanciés
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (ctx, idx) {
@@ -1333,6 +1682,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
           final t = last?.createdAt ?? conv.updatedAt;
           final unread = conv.unreadCount > 0;
           final isSelected = state.selectedIds.contains(conv.id);
+          final escPending = _isEscalationPending(conv);
 
           final otherUserId = conv.participantIds.firstWhere((id) => id != currentUserId, orElse: () => '');
           final isOnline = onlineUserIds.contains(otherUserId);
@@ -1349,13 +1699,14 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             }
           }
 
-          return _ConversationTile(
+          final tile = _ConversationTile(
             conv: conv,
             chatName: chatName,
             chatAvatar: chatAvatar,
             isOnline: isOnline,
             unread: unread,
             isSelected: isSelected,
+            escalationPending: escPending,
             currentUserId: currentUserId,
             otherUserId: otherUserId,
             lastMessage: last,
@@ -1380,27 +1731,60 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             },
             onContextMenu: () => _showContextMenu(conv),
           );
+
+          // ✅ SWIPE : droite = lu/non-lu, gauche = archiver
+          return Dismissible(
+            key: ValueKey('tile_${conv.id}'),
+            direction: DismissDirection.horizontal,
+            confirmDismiss: (dir) async {
+              final notifier = ref.read(chatListProvider.notifier);
+              if (dir == DismissDirection.endToStart) {
+                notifier.toggleArchive(conv.id);
+                _showInfo(conv.isArchived
+                    ? _tr(l10n, 'chatlist_unarchived', 'Conversation désarchivée')
+                    : _tr(l10n, 'chatlist_archived', 'Conversation archivée'));
+              } else {
+                if (unread) {
+                  await notifier.markAsRead(conv.id);
+                  _showInfo(_tr(l10n, 'chatlist_marked_read', 'Marqué comme lu'));
+                } else {
+                  notifier.markAsUnread(conv.id);
+                  _showInfo(_tr(l10n, 'chatlist_marked_unread', 'Marqué comme non lu'));
+                }
+              }
+              return false;
+            },
+            background: Container(
+              alignment: Alignment.centerLeft,
+              padding: const EdgeInsets.only(left: 24),
+              color: ThixPolicy.primary.withOpacity(0.12),
+              child: const Icon(Icons.done_all_rounded, color: ThixPolicy.primary),
+            ),
+            secondaryBackground: Container(
+              alignment: Alignment.centerRight,
+              padding: const EdgeInsets.only(right: 24),
+              color: ThixPolicy.warning.withOpacity(0.12),
+              child: const Icon(Icons.archive_outlined, color: ThixPolicy.warning),
+            ),
+            child: tile,
+          );
         },
         childCount: list.length,
       ),
     );
   }
 
-  Widget _buildGlassBottomNav(AppLocalizations l10n, int unread, NotificationCounters counters) {
-    return Positioned(
-      bottom: 24,
-      left: 0,
-      right: 0,
-      child: Center(
-        child: Container(
-          height: 64,
-          width: MediaQuery.of(context).size.width * 0.90,
-          decoration: BoxDecoration(
-            color: ThixPolicy.card,
-            borderRadius: BorderRadius.circular(32),
-            border: Border.all(color: ThixPolicy.border),
-            boxShadow: ThixPolicy.shadowSoft(opacity: 0.08),
-          ),
+  // ==========================================================================
+  // 🧭 NAVBAR FIXE + ONDULATION CENTRALE + CRAYON
+  // ==========================================================================
+  Widget _buildFixedBottomNav(AppLocalizations l10n, int unread, NotificationCounters counters) {
+    final navBg = ThixPolicy.card;
+    return CustomPaint(
+      painter: _WaveNavPainter(color: navBg),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 66,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
@@ -1408,6 +1792,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                   l10n.t('chatlist_network'), 0, counters.newConnections),
               _navItem(l10n, Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded,
                   l10n.t('chatlist_discussions'), 1, unread),
+              // ✏️ CRAYON (couleur allégée) dans l'ondulation
               Semantics(
                 button: true,
                 label: l10n.t('chatlist_create_new'),
@@ -1416,20 +1801,17 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                     HapticFeedback.mediumImpact();
                     _showCreateMenu();
                   },
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(
-                      gradient: ThixPolicy.brandGradient,
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: ThixPolicy.primary.withOpacity(0.4),
-                          blurRadius: 8,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
+                  child: Transform.translate(
+                    offset: const Offset(0, -10),
+                    child: Container(
+                      width: 48, height: 48,
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.primary.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: ThixPolicy.primary.withOpacity(0.35), width: 1.5),
+                      ),
+                      child: Icon(Icons.edit_rounded, color: ThixPolicy.primary.withOpacity(0.9), size: 20),
                     ),
-                    child: const Icon(Icons.add_rounded, color: Colors.white, size: 24),
                   ),
                 ),
               ),
@@ -1462,7 +1844,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
             children: [
               Icon(
                 isSelected ? iconFilled : iconOutlined,
-                color: isSelected ? ThixPolicy.primary : ThixPolicy.textSecondary.withOpacity(0.8),
+                color: isSelected
+                    ? ThixPolicy.primary.withOpacity(0.9)
+                    : ThixPolicy.textSecondary.withOpacity(0.65),
                 size: 24,
               ),
               if (badge > 0)
@@ -1510,7 +1894,81 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 }
 
 // ============================================================================
-// CONVERSATION TILE (avec badges P0/P1)
+// ONDULATION NAVBAR (vague centrale)
+// ============================================================================
+class _WaveNavPainter extends CustomPainter {
+  final Color color;
+  const _WaveNavPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final cx = size.width / 2;
+    final path = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(0, 22)
+      ..lineTo(cx - 56, 22)
+      ..quadraticBezierTo(cx - 26, 22, cx - 18, 10)
+      ..quadraticBezierTo(cx, -8, cx + 18, 10)
+      ..quadraticBezierTo(cx + 26, 22, cx + 56, 22)
+      ..lineTo(size.width, 22)
+      ..lineTo(size.width, size.height)
+      ..close();
+
+    canvas.drawPath(path, Paint()..color = color..style = PaintingStyle.fill);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = Colors.black.withOpacity(0.05)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ============================================================================
+// PASTILLE PULSANTE (escalade non acceptée)
+// ============================================================================
+class _PulseDot extends StatefulWidget {
+  final Color color;
+  final double size;
+  const _PulseDot({required this.color, this.size = 10});
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: Tween<double>(begin: 0.8, end: 1.25).animate(_c),
+      child: FadeTransition(
+        opacity: Tween<double>(begin: 1.0, end: 0.45).animate(_c),
+        child: Container(
+          width: widget.size, height: widget.size,
+          decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// CONVERSATION TILE (badges P0/P1 + escalade rouge)
 // ============================================================================
 class _ConversationTile extends StatelessWidget {
   final ChatConversation conv;
@@ -1520,6 +1978,7 @@ class _ConversationTile extends StatelessWidget {
   final bool unread;
   final bool isSelected;
   final bool hasDraft;
+  final bool escalationPending;
   final String currentUserId;
   final String otherUserId;
   final ChatMessage? lastMessage;
@@ -1538,6 +1997,7 @@ class _ConversationTile extends StatelessWidget {
     required this.unread,
     required this.isSelected,
     required this.hasDraft,
+    required this.escalationPending,
     required this.currentUserId,
     required this.otherUserId,
     required this.lastMessage,
@@ -1551,6 +2011,11 @@ class _ConversationTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Barre gauche : ROUGE si escalade, or si épinglé
+    final leftBarColor = conv.isEscalation
+        ? ThixPolicy.danger
+        : (conv.isPinned ? ThixPolicy.gold : Colors.transparent);
+
     return Semantics(
       button: true,
       label: '$chatName. ${unread ? "${conv.unreadCount} ${l10n.t('chatlist_unread_label')}. " : ""}$previewText',
@@ -1562,12 +2027,7 @@ class _ConversationTile extends StatelessWidget {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20, vertical: 12),
             decoration: BoxDecoration(
-              border: Border(
-                left: BorderSide(
-                  color: conv.isPinned ? ThixPolicy.gold : Colors.transparent,
-                  width: 3,
-                ),
-              ),
+              border: Border(left: BorderSide(color: leftBarColor, width: 3)),
             ),
             child: Row(
               children: [
@@ -1577,8 +2037,9 @@ class _ConversationTile extends StatelessWidget {
                       _EscalationAvatars(
                         clientName: _ListValidators.sanitize(conv.clientName ?? chatName, maxLength: 40),
                         clientAvatar: _ListValidators.sanitizeUrl(conv.clientAvatar ?? chatAvatar),
-                        agentName: _ListValidators.sanitize(conv.agentName ?? l10n.t('chatlist_agent'), maxLength: 40),
+                        agentName: _ListValidators.sanitize(conv.escalatedByName ?? l10n.t('chatlist_agent'), maxLength: 40),
                         agentAvatar: _ListValidators.sanitizeUrl(conv.agentAvatar),
+                        pending: escalationPending,
                       )
                     else
                       Stack(
@@ -1741,10 +2202,10 @@ class _ConversationTile extends StatelessWidget {
                       if (conv.isEscalation && (conv.escalatedByName?.isNotEmpty ?? false)) ...[
                         const SizedBox(height: 2),
                         Text(
-                          '${l10n.t('chatlist_agent_label')}: ${_ListValidators.sanitize(conv.agentName ?? '', maxLength: 60)}',
+                          '${l10n.t('chatlist_agent_label')}: ${_ListValidators.sanitize(conv.escalatedByName ?? '', maxLength: 60)}',
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.captionStyle,
+                          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.danger),
                         ),
                       ],
                       const SizedBox(height: 4),
@@ -1857,19 +2318,21 @@ class ListMessageStatusLights extends StatelessWidget {
 }
 
 // ============================================================================
-// ESCALATION AVATARS
+// ESCALATION AVATARS (client + agent) + PULSE SI NON ACCEPTÉE
 // ============================================================================
 class _EscalationAvatars extends StatelessWidget {
   final String clientName;
   final String? clientAvatar;
   final String agentName;
   final String? agentAvatar;
+  final bool pending;
 
   const _EscalationAvatars({
     required this.clientName,
     this.clientAvatar,
     required this.agentName,
     this.agentAvatar,
+    this.pending = false,
   });
 
   @override
@@ -1883,14 +2346,20 @@ class _EscalationAvatars extends StatelessWidget {
           Positioned(left: 20, top: 2, child: _miniAvatar(agentAvatar, agentName, ThixPolicy.danger)),
           Positioned(
             right: 0, bottom: 0,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: BoxDecoration(
-                color: ThixPolicy.danger,
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 1.5),
-              ),
-              child: const Icon(Icons.swap_vert_rounded, size: 10, color: Colors.white),
+            child: Stack(
+              alignment: Alignment.center,
+              children: [
+                if (pending) const _PulseDot(color: ThixPolicy.danger, size: 16),
+                Container(
+                  padding: const EdgeInsets.all(2),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.danger,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                  ),
+                  child: const Icon(Icons.swap_vert_rounded, size: 10, color: Colors.white),
+                ),
+              ],
             ),
           ),
         ],
