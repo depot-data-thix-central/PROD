@@ -12,15 +12,13 @@ const double _kCircleSize = 42.0;
 const double _kIconSize = 18.0;
 const double _kLabelFontSize = 8.5;
 const int _kMaxLabelLength = 12;
-const int _kMaxBadgeDisplay = 99; // Au-delà, affiche "99+"
+const int _kMaxBadgeDisplay = 99;
 
-/// Durées et courbes pour les animations de badges critiques
 const Duration _kPulseDuration = Duration(milliseconds: 900);
 const Curve _kPulseCurve = Curves.easeInOut;
 
 // ============================================================================
 // CONFIGURATION DES 4 BOUTONS
-// Mapping action → sections de notifications (peut être multi-sections)
 // ============================================================================
 class _ActionConfig {
   final IconData icon;
@@ -28,8 +26,10 @@ class _ActionConfig {
   final Color accent;
   final String semanticsLabel;
   final List<ThixSection> sections;
-  final bool pulseBadge; // Badge animé si activité critique
+  final bool pulseBadge;
   final bool isDanger;
+  /// Si true, marque les sections comme lues quand l'action est tapée
+  final bool autoMarkRead;
 
   const _ActionConfig({
     required this.icon,
@@ -39,6 +39,7 @@ class _ActionConfig {
     required this.sections,
     this.pulseBadge = false,
     this.isDanger = false,
+    this.autoMarkRead = true, // ✅ Par défaut, on marque comme lu à l'ouverture
   });
 
   int count(SectionBadgeCounts c) {
@@ -50,13 +51,12 @@ class _ActionConfig {
   }
 }
 
-/// Les 4 configurations des quick actions avec leurs sources de badges
 const _kSonaAction = _ActionConfig(
   icon: Icons.auto_awesome_rounded,
   label: 'Sona',
   accent: ThixPolicy.primaryDeep,
   semanticsLabel: 'Sona — Assistant IA',
-  sections: [ThixSection.info], // IA, news, docs → info
+  sections: [ThixSection.info],
 );
 
 const _kDocAction = _ActionConfig(
@@ -64,7 +64,7 @@ const _kDocAction = _ActionConfig(
   label: 'Thix doc',
   accent: ThixPolicy.domainLearning,
   semanticsLabel: 'Thix doc — Coffre-fort documents',
-  sections: [ThixSection.formations, ThixSection.opportunities], // docs certifiés, opportunités
+  sections: [ThixSection.formations, ThixSection.opportunities],
 );
 
 const _kChatAction = _ActionConfig(
@@ -72,8 +72,8 @@ const _kChatAction = _ActionConfig(
   label: 'Thix chat',
   accent: ThixPolicy.domainNetwork,
   semanticsLabel: 'Thix chat — Messagerie',
-  sections: [ThixSection.messages, ThixSection.network], // messages + interactions réseau
-  pulseBadge: true, // Chat = critique, on pulse
+  sections: [ThixSection.messages, ThixSection.network],
+  pulseBadge: true,
 );
 
 const _kSosAction = _ActionConfig(
@@ -81,9 +81,10 @@ const _kSosAction = _ActionConfig(
   label: 'Thix sos',
   accent: ThixPolicy.danger,
   semanticsLabel: 'Thix sos — Urgence',
-  sections: [ThixSection.health], // santé + urgences
-  pulseBadge: true, // SOS = vital, on pulse
+  sections: [ThixSection.health],
+  pulseBadge: true,
   isDanger: true,
+  autoMarkRead: false, // ❌ SOS ne se "lit" pas, on garde le badge
 );
 
 const List<_ActionConfig> _kActions = [
@@ -102,9 +103,11 @@ class HomeQuickActions extends StatelessWidget {
   final VoidCallback onChatTap;
   final VoidCallback onSecurityTap;
 
-  /// Flux optionnel des compteurs de notifications par section.
-  /// Quand null, désactive les badges sans casser les appels existants.
   final Stream<SectionBadgeCounts>? badgeCountsStream;
+
+  /// ✅ Service injecté pour marquer les sections comme lues à l'ouverture.
+  /// Si null, le reset automatique est désactivé (compatibilité ascendante).
+  final NotificationCountersService? notificationService;
 
   const HomeQuickActions({
     super.key,
@@ -113,11 +116,20 @@ class HomeQuickActions extends StatelessWidget {
     required this.onChatTap,
     required this.onSecurityTap,
     this.badgeCountsStream,
+    this.notificationService, // ✅ Nouveau paramètre
   });
 
-  /// Dispatch central : chaque config → son callback
+  /// Dispatch central avec reset automatique des badges
   void _dispatch(int index) {
     HapticFeedback.selectionClick();
+    final config = _kActions[index];
+
+    // ✅ Marquer les sections comme lues AVANT d'appeler le callback
+    // pour que le stream émette 0 immédiatement → le badge disparaît
+    if (config.autoMarkRead && notificationService != null) {
+      _markSectionsRead(config.sections);
+    }
+
     switch (index) {
       case 0:
         debugPrint('[QuickActions] 🤖 Sona tap');
@@ -128,14 +140,27 @@ class HomeQuickActions extends StatelessWidget {
         onDocumentTap();
         break;
       case 2:
-        debugPrint('[QuickActions] 💬 Chat tap');
+        debugPrint('[QuickActions] 💬 Chat tap → reset messages+network');
         onChatTap();
         break;
       case 3:
-        HapticFeedback.mediumImpact(); // SOS = feedback plus fort
+        HapticFeedback.mediumImpact();
         debugPrint('[QuickActions] 🚨 SOS tap');
         onSecurityTap();
         break;
+    }
+  }
+
+  /// ✅ Marque toutes les sections associées comme lues (compteur → 0)
+  void _markSectionsRead(List<ThixSection> sections) {
+    if (notificationService == null) return;
+    for (final section in sections) {
+      try {
+        notificationService!.markSectionRead(section);
+        debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
+      } catch (e) {
+        debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
+      }
     }
   }
 
@@ -172,7 +197,6 @@ class HomeQuickActions extends StatelessWidget {
     );
   }
 
-  /// Validation stricte du badge (≥ 0, entier, sans NaN)
   int _safeBadge(int value) {
     if (value.isNaN || value.isInfinite) return 0;
     return value < 0 ? 0 : value;
@@ -226,7 +250,6 @@ class _QuickActionItem extends StatelessWidget {
                 Stack(
                   clipBehavior: Clip.none,
                   children: [
-                    // Cercle solide
                     Container(
                       width: _kCircleSize,
                       height: _kCircleSize,
@@ -248,8 +271,6 @@ class _QuickActionItem extends StatelessWidget {
                       alignment: Alignment.center,
                       child: Icon(config.icon, size: _kIconSize, color: config.accent),
                     ),
-
-                    // Badge notification (animé si critique)
                     if (hasBadge)
                       Positioned(
                         top: -2,
@@ -286,7 +307,7 @@ class _QuickActionItem extends StatelessWidget {
 }
 
 // ============================================================================
-// BADGE WIDGET — statique ou animé (pulse) selon le contexte
+// BADGE WIDGET
 // ============================================================================
 class _BadgeWidget extends StatefulWidget {
   final String displayText;
@@ -358,7 +379,6 @@ class _BadgeWidgetState extends State<_BadgeWidget>
       ),
     );
 
-    // Wrapper animé pour les badges critiques (chat, SOS)
     if (widget.pulse && _pulseAnim != null) {
       return AnimatedBuilder(
         animation: _pulseAnim!,
@@ -374,7 +394,7 @@ class _BadgeWidgetState extends State<_BadgeWidget>
 }
 
 // ============================================================================
-// PRESSABLE SCALE (Feedback tactile au tap)
+// PRESSABLE SCALE
 // ============================================================================
 class _PressableScale extends StatefulWidget {
   final Widget child;
