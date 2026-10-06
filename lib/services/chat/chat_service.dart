@@ -6,11 +6,13 @@
 //
 // ✅ P0/P1 Enterprise : edit, deleteForAll, forward, pin, star, search,
 //    viewOnce, mentions, reminders, threads, transcription, annotations
+// ✅ P2 : typing broadcast, getUserRole, markMessagesDelivered
 
 import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:realtime_client/realtime_client.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
@@ -165,13 +167,16 @@ class _ProfileCache {
 }
 
 // ============================================================================
-// CHAT SERVICE — P0/P1 Enterprise
+// CHAT SERVICE — P0/P1/P2 Enterprise
 // ============================================================================
 class ChatService {
   final SupabaseClient _supabase;
   Timer? _presenceHeartbeat;
   final _ProfileCache _profileCache = _ProfileCache();
   bool _isDisposed = false;
+  
+  // ✅ P2: Channels pour typing broadcast
+  final Map<String, RealtimeChannel> _typingChannels = <String, RealtimeChannel>{};
 
   ChatService(this._supabase) {
     debugPrint('[ChatService] 🚀 Initialized');
@@ -1710,6 +1715,106 @@ class ChatService {
     }
   }
 
+  // ============================================================
+  // ✅ P2: TYPING BROADCAST + RÔLE + DELIVERED
+  // ============================================================
+
+  /// Envoie le statut "typing" via Realtime broadcast
+  Future<void> sendTypingStatus(String conversationId, {required bool isTyping}) async {
+    if (_isDisposed) return;
+    final uid = currentUserId;
+    if (!_ChatValidators.isValidUuid(uid) || !_ChatValidators.isValidUuid(conversationId)) return;
+    
+    try {
+      final key = 'send:$conversationId';
+      RealtimeChannel channel;
+      
+      if (_typingChannels.containsKey(key)) {
+        channel = _typingChannels[key]!;
+      } else {
+        channel = _supabase.channel('typing:$conversationId');
+        _typingChannels[key] = channel;
+      }
+      
+      await channel.sendBroadcastMessage(
+        event: 'typing',
+        payload: <String, dynamic>{'senderId': uid, 'isTyping': isTyping},
+      );
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ sendTypingStatus: $e');
+    }
+  }
+
+  /// Démarre l'écoute des événements typing d'une conversation
+  void startTypingListener(
+    String conversationId,
+    void Function(String senderId, bool isTyping) onEvent,
+  ) {
+    if (_isDisposed || !_ChatValidators.isValidUuid(conversationId)) return;
+    
+    stopTypingListener(conversationId);
+    
+    final channel = _supabase.channel('typing:$conversationId');
+    _typingChannels['listen:$conversationId'] = channel;
+    
+    channel.onBroadcast(
+      event: 'typing',
+      callback: (Map<String, dynamic> payload) {
+        final sid = (payload['senderId'] ?? '').toString();
+        final typing = payload['isTyping'] == true;
+        if (sid.isNotEmpty) onEvent(sid, typing);
+      },
+    ).subscribe();
+  }
+
+  /// Arrête l'écoute des événements typing d'une conversation
+  void stopTypingListener(String conversationId) {
+    final channel = _typingChannels.remove('listen:$conversationId');
+    if (channel == null) return;
+    
+    try {
+      _supabase.removeChannel(channel);
+    } catch (_) {}
+  }
+
+  /// Récupère le rôle d'un utilisateur (agent, admin, support, enterprise, user)
+  Future<String> getUserRole(String userId) async {
+    if (_isDisposed || !_ChatValidators.isValidUuid(userId)) return '';
+    
+    try {
+      final row = await _supabase
+          .from('profiles')
+          .select('role, account_type')
+          .eq('id', userId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      
+      if (row == null) return '';
+      
+      return (row['role'] ?? row['account_type'] ?? '').toString();
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ getUserRole: $e');
+      return '';
+    }
+  }
+
+  /// Marque une liste de messages comme distribués (is_delivered = true)
+  Future<void> markMessagesDelivered(List<String> messageIds) async {
+    if (_isDisposed || messageIds.isEmpty) return;
+    
+    try {
+      final chunk = messageIds.take(_kMaxInFilterSize).toList();
+      
+      await _supabase
+          .from('messages')
+          .update(<String, dynamic>{'is_delivered': true})
+          .inFilter('id', chunk)
+          .timeout(_kDbTimeout);
+    } catch (e) {
+      debugPrint('[ChatService] ⚠️ markMessagesDelivered: $e');
+    }
+  }
+
   Future<ChatMessage> sendAudioMessage({
     required String conversationId,
     required Uint8List audioData,
@@ -1760,6 +1865,15 @@ class ChatService {
     _isDisposed = true;
     _presenceHeartbeat?.cancel();
     _presenceHeartbeat = null;
+    
+    // ✅ Nettoyer tous les channels typing
+    for (final channel in _typingChannels.values) {
+      try {
+        _supabase.removeChannel(channel);
+      } catch (_) {}
+    }
+    _typingChannels.clear();
+    
     _profileCache.clear();
     debugPrint('[ChatService] 👋 Disposed');
   }
