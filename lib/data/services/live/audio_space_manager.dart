@@ -115,7 +115,7 @@ class AudioSpaceManager {
   // INITIALISATION
   // ─────────────────────────────────────────────────────────────
   void _init() {
-    _service = AudioSpaceService();
+    _service = AudioSpaceService(_liveService);
     _backgroundService = AudioSpaceBackgroundService();
 
     // Écouter le cycle de vie de l'app pour gérer le background
