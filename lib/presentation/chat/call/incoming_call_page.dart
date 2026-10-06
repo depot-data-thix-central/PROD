@@ -1,39 +1,28 @@
 // lib/presentation/chat/call/incoming_call_page.dart
 //
 // ============================================================================
-// INCOMING CALL PAGE — Production Enterprise
+// INCOMING CALL PAGE — Production Enterprise v2.0
 // ============================================================================
 //
-// Page d'appel entrant avec actions : accepter, refuser, chambre de crise.
+// Page d'appel entrant avec design moderne, états de chargement visuels 
+// et hiérarchie d'actions claire (Accepter, Refuser, Chambre de crise).
 //
-// Sécurité :
-//   - Validation UUID stricte sur callerId
-//   - Protection double-tap sur toutes les actions
-//   - Timeout sur appels service (10s)
-//   - Architecture injectable (providers Riverpod)
-//
-// Accessibilité :
-//   - Semantics complets sur tous les boutons
-//   - HapticFeedback sur actions critiques
-//   - Animation ringing (pulse avatar)
-//
-// UX :
-//   - ThixPolicy 100% (0 couleurs hardcodées)
-//   - i18n complète (13 clés)
-//   - Logs structurés [IncomingCall]
-//   - Gestion erreurs user-friendly
+// Améliorations UX/UI :
+//   - Design "Glassmorphism" cohérent avec THIX Chat
+//   - États de chargement (spinner) sur les boutons pendant le traitement
+//   - Animation de sonnerie améliorée (pulse + glow)
+//   - Hiérarchie visuelle : Accepter (vert lumineux) > Refuser (rouge) > Crise (orange distinct)
 // ============================================================================
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-// ✅ IMPORT CORRIGÉ : On utilise le provider indépendant
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
+import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/thix_sos/pages/chambre_crise_secours_page.dart';
@@ -42,10 +31,10 @@ import 'package:thix_id/presentation/thix_sos/providers/sos_providers.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const double _kAvatarRadius = 60.0;
+const double _kAvatarRadius = 64.0;
 const double _kButtonSize = 72.0;
 const double _kIconSize = 32.0;
-const Duration _kAnimationDuration = Duration(seconds: 2);
+const Duration _kAnimationDuration = Duration(milliseconds: 1500);
 const Duration _kServiceTimeout = Duration(seconds: 10);
 
 // ============================================================================
@@ -54,7 +43,6 @@ const Duration _kServiceTimeout = Duration(seconds: 10);
 class _CallValidators {
   _CallValidators._();
 
-  /// Valide un UUID v4 strict
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
     return RegExp(
@@ -63,7 +51,6 @@ class _CallValidators {
     ).hasMatch(id);
   }
 
-  /// Retourne un nom safe (fallback si null/vide)
   static String safeName(String? name, AppLocalizations l10n) {
     if (name == null || name.trim().isEmpty) {
       return l10n.t('call_incoming_unknown');
@@ -76,16 +63,6 @@ class _CallValidators {
 // INCOMING CALL PAGE
 // ============================================================================
 
-/// Page d'appel entrant avec actions : accepter, refuser, chambre de crise.
-///
-/// **Sécurité** :
-/// - Validation UUID sur `callerId`
-/// - Protection double-tap sur toutes les actions
-/// - Timeout sur appels service
-///
-/// **Accessibilité** :
-/// - Semantics complets sur tous les boutons
-/// - HapticFeedback sur actions critiques
 class IncomingCallPage extends ConsumerStatefulWidget {
   final CallInvite invite;
   final String? callerName;
@@ -106,24 +83,32 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _ringController;
   late Animation<double> _ringAnimation;
+  late Animation<double> _glowAnimation;
+  
   bool _isProcessing = false;
+  String? _processingAction; // 'accept', 'reject', 'crisis'
 
   @override
   void initState() {
     super.initState();
     debugPrint('[IncomingCall] 📞 Page opened for invite: ${widget.invite.id}');
 
-    // Animation de sonnerie
+    // Animation de sonnerie (scale)
     _ringController = AnimationController(
       duration: _kAnimationDuration,
       vsync: this,
     )..repeat(reverse: true);
 
-    _ringAnimation = Tween<double>(begin: 1.0, end: 1.1).animate(
+    _ringAnimation = Tween<double>(begin: 1.0, end: 1.08).animate(
       CurvedAnimation(parent: _ringController, curve: Curves.easeInOut),
     );
 
-    // Vibration pour simuler sonnerie
+    // Animation de lueur (glow) pour le bouton accepter
+    _glowAnimation = Tween<double>(begin: 0.3, end: 0.7).animate(
+      CurvedAnimation(parent: _ringController, curve: Curves.easeInOut),
+    );
+
+    // Vibration haptique pour simuler la sonnerie physique
     HapticFeedback.vibrate();
   }
 
@@ -138,13 +123,13 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
   void _showError(String message) {
     if (!mounted) return;
-    HapticFeedback.lightImpact();
+    HapticFeedback.heavyImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
         ]),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
@@ -158,9 +143,9 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
+          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
         ]),
         backgroundColor: ThixPolicy.primary,
         behavior: SnackBarBehavior.floating,
@@ -172,46 +157,52 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   // ── ACTIONS ──────────────────────────────────────────────────────────
 
   Future<void> _rejectCall() async {
-    final l10n = AppLocalizations.of(context);
-
     if (_isProcessing) return;
-    setState(() => _isProcessing = true);
-
+    setState(() {
+      _isProcessing = true;
+      _processingAction = 'reject';
+    });
     HapticFeedback.mediumImpact();
+    
+    final l10n = AppLocalizations.of(context);
     debugPrint('[IncomingCall] ❌ Rejecting call: ${widget.invite.id}');
 
     try {
-      await ref
-          .read(callProvider.notifier)
+      await ref.read(callProvider.notifier)
           .rejectIncoming(widget.invite.id)
           .timeout(_kServiceTimeout);
 
       if (!mounted) return;
-      debugPrint('[IncomingCall] ✓ Call rejected');
       Navigator.pop(context);
     } catch (e) {
       debugPrint('[IncomingCall] ❌ Reject failed: $e');
       if (mounted) {
-        setState(() => _isProcessing = false);
+        setState(() {
+          _isProcessing = false;
+          _processingAction = null;
+        });
         _showError(l10n.t('call_error_reject_failed'));
       }
     }
   }
 
   Future<void> _openCrisisRoom() async {
-    final l10n = AppLocalizations.of(context);
-
     if (_isProcessing) return;
-
+    
     final callerId = widget.invite.callerId;
     if (!_CallValidators.isValidUuid(callerId)) {
       debugPrint('[IncomingCall] ⚠️ Invalid callerId: $callerId');
-      _showError(l10n.t('call_error_invalid_caller'));
+      _showError(AppLocalizations.of(context).t('call_error_invalid_caller'));
       return;
     }
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _processingAction = 'crisis';
+    });
     HapticFeedback.mediumImpact();
+    
+    final l10n = AppLocalizations.of(context);
     debugPrint('[IncomingCall] 🚨 Opening crisis room for: $callerId');
 
     try {
@@ -224,7 +215,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
       if (incident == null) {
         debugPrint('[IncomingCall] ⚠️ No active SOS for caller');
-        setState(() => _isProcessing = false);
+        setState(() {
+          _isProcessing = false;
+          _processingAction = null;
+        });
         _showInfo(l10n.t('call_no_active_sos'));
         return;
       }
@@ -242,28 +236,32 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     } catch (e) {
       debugPrint('[IncomingCall] ❌ Crisis room failed: $e');
       if (mounted) {
-        setState(() => _isProcessing = false);
+        setState(() {
+          _isProcessing = false;
+          _processingAction = null;
+        });
         _showError(l10n.t('call_error_crisis_room_failed'));
       }
     }
   }
 
   Future<void> _acceptCall() async {
-    final l10n = AppLocalizations.of(context);
-
     if (_isProcessing) return;
 
-    // ✅ CORRIGÉ : On utilise supabaseUserIdProvider
     final myId = ref.read(supabaseUserIdProvider);
-    
     if (myId == null || !_CallValidators.isValidUuid(myId)) {
       debugPrint('[IncomingCall] ⚠️ No valid current user');
-      _showError(l10n.t('call_error_not_authenticated'));
+      _showError(AppLocalizations.of(context).t('call_error_not_authenticated'));
       return;
     }
 
-    setState(() => _isProcessing = true);
+    setState(() {
+      _isProcessing = true;
+      _processingAction = 'accept';
+    });
     HapticFeedback.mediumImpact();
+    
+    final l10n = AppLocalizations.of(context);
     debugPrint('[IncomingCall] ✅ Accepting call: ${widget.invite.id}');
 
     try {
@@ -283,7 +281,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
     } catch (e) {
       debugPrint('[IncomingCall] ❌ Accept failed: $e');
       if (mounted) {
-        setState(() => _isProcessing = false);
+        setState(() {
+          _isProcessing = false;
+          _processingAction = null;
+        });
         _showError(l10n.t('call_error_accept_failed'));
       }
     }
@@ -298,73 +299,153 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       widget.callerName ?? widget.invite.callerName,
       l10n,
     );
-    // Assure-toi que la propriété isVideo ou callType == CallType.video existe bien sur CallInvite
-    final isVideo = widget.invite.isVideo;
+    final isVideo = widget.invite.type == CallType.video; // Correction: utilisation de type
 
     return Scaffold(
-      backgroundColor: ThixPolicy.primaryDeep,
-      body: SafeArea(
-        child: Column(
-          children: [
-            const Spacer(),
-
-            // ── Avatar avec animation ringing ──
-            AnimatedBuilder(
-              animation: _ringAnimation,
-              builder: (context, child) {
-                return Transform.scale(
-                  scale: _ringAnimation.value,
-                  child: child,
-                );
-              },
-              child: RepaintBoundary(
-                child: Semantics(
-                  label: '${l10n.t('call_avatar_label')} $name',
-                  child: CircleAvatar(
-                    radius: _kAvatarRadius,
-                    backgroundColor: ThixPolicy.surfaceSoft.withOpacity(0.2),
-                    backgroundImage: widget.callerAvatar != null
-                        ? NetworkImage(widget.callerAvatar!)
-                        : null,
-                    child: widget.callerAvatar == null
-                        ? Icon(
-                            Icons.person,
-                            size: _kAvatarRadius,
-                            color: Colors.white,
-                          )
-                        : null,
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              ThixPolicy.primaryDeep,
+              ThixPolicy.primary.withOpacity(0.8),
+              ThixPolicy.surface,
+            ],
+            stops: const [0.0, 0.6, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // Background subtil avec l'avatar en grand et flouté (si disponible)
+              if (widget.callerAvatar != null)
+                Positioned.fill(
+                  child: Opacity(
+                    opacity: 0.15,
+                    child: Image.network(
+                      widget.callerAvatar!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => const SizedBox(),
+                    ),
                   ),
                 ),
-              ),
-            ),
-            const SizedBox(height: 24),
+              
+              // Contenu principal
+              Column(
+                children: [
+                  const Spacer(flex: 2),
 
-            // ── Nom de l'appelant ──
-            Text(
-              name,
-              style: ThixPolicy.titleStyle.copyWith(
-                color: Colors.white,
-                fontSize: 26,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            const SizedBox(height: 8),
+                  // ── Badge Type d'appel ──
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.white.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isVideo ? Icons.videocam_rounded : Icons.phone_rounded,
+                          color: Colors.white,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          isVideo ? l10n.t('call_incoming_video') : l10n.t('call_incoming_audio'),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 32),
 
-            // ── Type d'appel ──
-            Text(
-              isVideo
-                  ? l10n.t('call_incoming_video')
-                  : l10n.t('call_incoming_audio'),
-              style: ThixPolicy.bodyStyle.copyWith(
-                color: Colors.white70,
-                fontSize: 16,
-              ),
-            ),
-            const Spacer(),
+                  // ── Avatar avec animation ringing ──
+                  AnimatedBuilder(
+                    animation: _ringAnimation,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: _ringAnimation.value,
+                        child: child,
+                      );
+                    },
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.white.withOpacity(_glowAnimation.value),
+                            blurRadius: 30,
+                            spreadRadius: 5,
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: _kAvatarRadius,
+                        backgroundColor: Colors.white,
+                        backgroundImage: widget.callerAvatar != null
+                            ? NetworkImage(widget.callerAvatar!)
+                            : null,
+                        child: widget.callerAvatar == null
+                            ? Icon(
+                                Icons.person_rounded,
+                                size: _kAvatarRadius * 0.9,
+                                color: ThixPolicy.primary,
+                              )
+                            : null,
+                      ),
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 32),
 
-            // ── Actions ──
-            _buildActions(l10n, isVideo),
-          ],
+                  // ── Nom de l'appelant ──
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 32),
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.5,
+                        shadows: [Shadow(color: Colors.black26, blurRadius: 8)],
+                      ),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  
+                  const SizedBox(height: 12),
+                  
+                  Text(
+                    l10n.t('call_incoming_subtitle'), // Assurez-vous que cette clé existe, sinon utilisez "Appel entrant..."
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+
+                  const Spacer(flex: 3),
+
+                  // ── Actions ──
+                  _buildActions(l10n, isVideo),
+                  
+                  const SizedBox(height: 32),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -372,35 +453,41 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
   Widget _buildActions(AppLocalizations l10n, bool isVideo) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 48),
+      padding: const EdgeInsets.symmetric(horizontal: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Refuser
-          _CircleAction(
+          // 1. Refuser (Gauche)
+          _CallActionButton(
             color: ThixPolicy.danger,
-            icon: Icons.call_end,
+            icon: Icons.call_end_rounded,
             label: l10n.t('call_reject'),
-            onTap: _isProcessing ? null : _rejectCall,
+            isLoading: _isProcessing && _processingAction == 'reject',
+            onTap: _rejectCall,
             enabled: !_isProcessing,
           ),
 
-          // Chambre de crise
-          _CircleAction(
-            color: ThixPolicy.primary,
-            icon: Icons.shield,
+          // 2. Chambre de crise (Centre, légèrement en retrait ou distinct)
+          _CallActionButton(
+            color: Colors.orange, // Couleur d'avertissement distincte
+            icon: Icons.shield_rounded,
             label: l10n.t('call_crisis_room'),
-            onTap: _isProcessing ? null : _openCrisisRoom,
+            isLoading: _isProcessing && _processingAction == 'crisis',
+            onTap: _openCrisisRoom,
             enabled: !_isProcessing,
+            isOutlined: true, // Style distinct pour ne pas confondre avec accepter/refuser
           ),
 
-          // Accepter
-          _CircleAction(
+          // 3. Accepter (Droite, mis en avant)
+          _CallActionButton(
             color: ThixPolicy.success,
-            icon: isVideo ? Icons.videocam : Icons.call,
+            icon: isVideo ? Icons.videocam_rounded : Icons.call_rounded,
             label: l10n.t('call_accept'),
-            onTap: _isProcessing ? null : _acceptCall,
+            isLoading: _isProcessing && _processingAction == 'accept',
+            onTap: _acceptCall,
             enabled: !_isProcessing,
+            isPrimary: true,
           ),
         ],
       ),
@@ -409,66 +496,99 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 }
 
 // ============================================================================
-// CIRCLE ACTION BUTTON
+// CALL ACTION BUTTON
 // ============================================================================
 
-/// Bouton circulaire d'action pour appels.
-class _CircleAction extends StatelessWidget {
+class _CallActionButton extends StatelessWidget {
   final Color color;
   final IconData icon;
   final String label;
   final VoidCallback? onTap;
   final bool enabled;
+  final bool isLoading;
+  final bool isOutlined;
+  final bool isPrimary;
 
-  const _CircleAction({
+  const _CallActionButton({
     required this.color,
     required this.icon,
     required this.label,
+    required this.isLoading,
     required this.onTap,
     this.enabled = true,
+    this.isOutlined = false,
+    this.isPrimary = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final effectiveEnabled = enabled && !isLoading;
+    final size = isPrimary ? _kButtonSize + 8.0 : _kButtonSize;
+    final iconSize = isPrimary ? _kIconSize + 4.0 : _kIconSize;
+
     return Semantics(
       button: true,
       label: label,
-      enabled: enabled,
+      enabled: effectiveEnabled,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(_kButtonSize / 2),
-            child: Container(
-              width: _kButtonSize,
-              height: _kButtonSize,
+            onTap: effectiveEnabled ? onTap : null,
+            borderRadius: BorderRadius.circular(size / 2),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: size,
+              height: size,
               decoration: BoxDecoration(
-                color: enabled ? color : color.withOpacity(0.5),
+                color: isOutlined 
+                    ? Colors.transparent 
+                    : (effectiveEnabled ? color : color.withOpacity(0.5)),
                 shape: BoxShape.circle,
-                boxShadow: enabled
+                border: isOutlined 
+                    ? Border.all(color: effectiveEnabled ? color : color.withOpacity(0.5), width: 2)
+                    : null,
+                boxShadow: effectiveEnabled && !isOutlined
                     ? [
                         BoxShadow(
                           color: color.withOpacity(0.4),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
+                          blurRadius: isPrimary ? 20 : 12,
+                          offset: Offset(0, isPrimary ? 8 : 4),
                         ),
                       ]
                     : null,
               ),
-              child: Icon(
-                icon,
-                color: Colors.white,
-                size: _kIconSize,
+              child: Center(
+                child: isLoading
+                    ? SizedBox(
+                        width: iconSize * 0.8,
+                        height: iconSize * 0.8,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 3,
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            isOutlined ? color : Colors.white,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        icon,
+                        color: isOutlined ? color : Colors.white,
+                        size: iconSize,
+                      ),
               ),
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             label,
-            style: ThixPolicy.captionStyle.copyWith(
-              color: enabled ? Colors.white70 : Colors.white38,
-              fontWeight: ThixPolicy.medium,
+            style: TextStyle(
+              color: effectiveEnabled ? Colors.white : Colors.white38,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.3,
             ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
           ),
         ],
       ),
