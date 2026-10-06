@@ -585,39 +585,44 @@ class AudioSpaceService {
   }
 
   Future<List<AudioSpaceChatMessage>> getChatHistory(
-    String spaceId, {
-    int limit = 50,
-    DateTime? before,
-  }) async {
-    try {
-      var query = _client
-          .from('audio_space_messages')
-          .select()
-          .eq('space_id', spaceId)
-          .order('created_at', ascending: false)
-          .limit(limit);
+  String spaceId, {
+  int limit = 50,
+  DateTime? before,
+}) async {
+  try {
+    // ✅ Construction progressive
+    PostgrestFilterBuilder<List<Map<String, dynamic>>> query =
+        _client.from('audio_space_messages')
+            .select()
+            .eq('space_id', spaceId);
 
-      if (before != null) {
-        query = query.lt('created_at', before.toUtc().toIso8601String());
-      }
-
-      final rows = await query.timeout(_kDbTimeout);
-      final messages = (rows as List).map((e) {
-        final m = Map<String, dynamic>.from(e as Map);
-        return AudioSpaceChatMessage(
-          userId: m['user_id']?.toString() ?? '',
-          displayName: m['display_name']?.toString() ?? 'Membre',
-          body: m['body']?.toString() ?? '',
-          sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ?? DateTime.now(),
-        );
-      }).toList();
-
-      return messages.reversed.toList();
-    } catch (e) {
-      debugPrint('[AudioSpace] getChatHistory error: $e');
-      return [];
+    if (before != null) {
+      query = query.lt('created_at', before.toUtc().toIso8601String());
     }
+
+    final rows = await query
+        .order('created_at', ascending: false)
+        .limit(limit)
+        .timeout(_kDbTimeout);
+
+    final messages = (rows as List).map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      return AudioSpaceChatMessage(
+        userId: m['user_id']?.toString() ?? '',
+        displayName: m['display_name']?.toString() ?? 'Membre',
+        body: m['body']?.toString() ?? '',
+        sentAt: DateTime.tryParse(m['created_at']?.toString() ?? '') ??
+            DateTime.now(),
+      );
+    }).toList();
+
+    return messages.reversed.toList();
+  } catch (e) {
+    debugPrint('[AudioSpace] getChatHistory error: ' + e.toString());
+    return [];
   }
+}
+
 
   Future<void> deleteMessage({
     required String spaceId,
