@@ -1,4 +1,3 @@
-
 // lib/presentation/network/widgets/comments_page.dart
 import 'dart:async';
 import 'dart:typed_data';
@@ -19,6 +18,7 @@ import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/models/comment.dart';
@@ -42,6 +42,7 @@ class _CommentValidators {
   static const int maxCommentLength = 2000;
   static const int maxAudioDurationSeconds = 30;
   static const int maxImageSizeMB = 10;
+  static const int rateLimitSeconds = 30; // ⏱️ Rate limiting
 
   static String sanitize(String? input, {int maxLength = maxCommentLength}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -54,57 +55,220 @@ class _CommentValidators {
         .trim();
     return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
   }
+
+  /// Détecte les mentions @username dans le texte
+  static List<String> extractMentions(String text) {
+    final regex = RegExp(r'@(\w+)');
+    return regex.allMatches(text).map((m) => m.group(1)!).toList();
+  }
+
+  /// Vérifie si le texte contient une mention
+  static bool hasMention(String text) {
+    return RegExp(r'@\w+').hasMatch(text);
+  }
 }
 
 // ============================================================================
-// EMOJIS / REACTIONS / FLAGS
+// EMOJIS / REACTIONS / FLAGS (NOUVELLES LISTES)
 // ============================================================================
 const List<String> _emojis = [
-  '😀','😃','😄','😁','😆','😅','😂','🤣','🥲','🥹',
-  '😊','😇','🙂','🙃','😉','😌','😍','🥰','😘','😗',
-  '😙','😚','🤩','🥳','🤗','🤔','🤭','🤫','🤥','😏',
-  '😒','🙄','😬','😮‍💨','😔','😪','🤤','😴','😷','🤒',
-  '🤕','🤢','🤮','🥵','🥶','😵','🤯','🤠','🥸','😎',
-  '🤓','🧐','😕','😟','🙁','☹️','😮','😯','😲','😳',
-  '🥺','😦','😧','😨','😰','😥','😢','😭','😱','😖',
-  '😣','😞','😓','😩','😫','🥱','😤','😡','😠','🤬',
+  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
+  '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
+  '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
+  '😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😔','😪',
+  '🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴',
+  '😵','😵‍💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕',
+  '😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧',
+  '😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
+  '😩','😫','🥱','😤','😡','😠','🤬','🤡','👹','👺',
+  '👻','💀','☠️','👽','👾','🤖','💩','😺','😸','😹',
+  '😻','😼','😽','🙀','😿','😾','🫠','🫡','🫢','🫣',
+  '🫤','🫥','🫨','🫩','🥹','🥲','🫶','🤩','😈','👿',
+  '😺','😸','😹','😻','😼','😽','🙀','😿','😾','🙈',
+  '🙉','🙊','💯','✨','🔥','⭐','🌟','💫','💥','💢',
 ];
 
 const List<String> _reactions = [
+  // Gestes
   '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
-  '🤙','👈','👉','👆','👇','☝️','✋','🤚','🖐️','🖖',
-  '👋','👏','🙌','🫶','💪','🦾','🙏','✍️',
-  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔',
-  '❣️','💕','💞','💓','💗','💖','💘','💝','💟','❤️‍🔥',
-  '🔥','⭐','🌟','✨','💫','💥','💯','🎉','🎊','🏆',
-  '🥇','🥈','🥉','🎯','✅','❌','⚡','💡','📌','🔔',
+  '🤙','👈','👉','👆','👇','☝️','🖕','👋','🤚','🖐️',
+  '✋','🖖','👏','🙌','👐','🤲','🤝','🙏','💪','🦾',
+  '✍️','💅','🤳','👊','✊','🤛','🤜','🫶','🫂','🫳',
+  '🫴','🫵','🫱','🫲','🫸','🫷',
+  // Amour
+  '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','🩷',
+  '🩵','🩶','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗',
+  '💖','💘','💝','💟','♥️','💌','💋',
+  // Joie
+  '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
+  '🙂','😉','🥰','😍','😘','🤩','🥳','😎','🤗','😺',
+  '😸','😹','😻','😼','😽',
+  // Rire
+  '🤣','😂','😆','😅','😹','🤭','🤪','😜','😝','😛',
+  '😏','🙈','🙉','🙊',
+  // Surprise
+  '😮','😯','😲','😳','🤯','😱','🫨','😵','😵‍💫','🤨',
+  '🧐','😦','😧','😨','😰',
+  // Tristesse
+  '😔','😟','🙁','☹️','😞','😓','😩','😫','🥺','😢',
+  '😭','😥','😪','😿','🥹',
+  // Colère
+  '😐','😑','😶','😒','🙄','😤','😡','😠','🤬','👿',
+  '😈','💢','💥',
+  // Approbation
+  '✅','☑️','✔️','👍','👌','👏','🙌','💯','⭐','🌟',
+  '🏆','🥇','🎯','💡','🔥',
+  // Désaccord
+  '❌','🚫','⛔','⚠️','👎','🙅','🤦','😒','🙄','❗',
+  '❓','‼️','⁉️',
+  // Encouragement
+  '💪','🔥','⚡','🚀','🌟','⭐','✨','💫','💯','🏆',
+  '🥇','🥈','🥉','🏅','🎖️','👑','💎','🎯',
+  // Célébration
+  '🎉','🎊','🥳','🎈','🎁','🎂','🍰','🍾','🥂','🏆',
+  '🥇','🥈','🥉','🎖️','👑','🎆','🎇','🪩','🪅',
+  // Réflexion
+  '🤔','🧐','🤨','🤓','😐','😑','😶','🫤','🫥','💭',
+  '💡','❓','❔','⁉️','🧠',
+  // Soutien
+  '🤝','🫂','🙏','🫶','❤️','💪','👏','🙌','👍','❤️‍🩹',
+  '💚','💙','🤍',
+  // Admiration
+  '😍','🥰','🤩','🤯','👏','🙌','❤️','🔥','💎','👑',
+  '🌟','✨','💯',
+  // Fatigue / soulagement
+  '😮‍💨','😪','😴','🥱','😌','🫠','😵‍💫',
+  // Symboles rapides
+  '💯','🔥','✨','⭐','🌟','💫','⚡','💥','💢','☀️',
+  '🌈','🎯','🚀','💎','👑',
+];
+
+const List<String> _objects = [
+  // Technologie
+  '📱','💻','🖥️','⌨️','🖱️','🖨️','💾','💿','📀','📷',
+  '📸','📹','📼','🎥','📽️','📡','🛰️','📟','🔌','🔋',
+  '🔦','💡','🔍','🔎','🕹️','🎮','💽',
+  // Bureau
+  '📝','📄','📃','📑','📊','📈','📉','📋','📌','📍',
+  '📎','🖇️','📐','📏','✏️','✒️','🖊️','🖋️','🗂️','📁',
+  '📂','🗄️','🗃️','🗑️','📦','📬','📭','📮','📫','📚',
+  '📖','📕','📗','📘','📙','📒','📓','📔','📇','🗒️',
+  '📅','📆','🗓️','⏰','⌚','⏳','⌛',
+  // Travail et outils
+  '💼','🧰','🔧','🔨','⚙️','🪛','🪚','🪓','⛏️','🔩',
+  '🧲','🪜','🧱','🛠️','🧯','🪣','🧹','🧺','🧴','🧼',
+  '🪥','🪒','🔑','🗝️','🔒','🔓','🔐','🔏','🪢',
+  // Argent et commerce
+  '💰','💵','💴','💶','💷','💳','🪙','💎','🏧','🧾',
+  '🏷️','🛒','🛍️','💸','💲','💹','🏪','🏬','🏭','🏦',
+  // Maison
+  '🏠','🏡','🏢','🚪','🪟','🛋️','🪑','🛏️','🚿','🛁',
+  '🚽','🪞','🕯️','🪴','🍽️','🥄','🍴','🔪','☕','🫖',
+  '🍳',
+  // Santé et sciences
+  '💊','💉','🩺','🩹','🧬','🔬','🔭','🧪','🧫','🧮',
+  '🧠','🦷','🩻','🩼','🦽','🦯','⚕️',
+  // Transport
+  '🚗','🚕','🚙','🚌','🚎','🚓','🚑','🚒','🚚','🚛',
+  '🚜','🏍️','🛵','🚲','🛴','🛹','🚆','🚇','🚉','🚂',
+  '🚃','🚋','🚝','🚄','🚅','🚈','🚞','🚊','✈️','🛫',
+  '🛬','🚁','🛸','🚀','⛵','🚤','🛥️','🚢','🛳️','⚓',
+  '🛟','🗺️','🧭','🛣️','🛤️','⛽','🚦','🚧','🅿️',
+  // Nourriture
+  '🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐',
+  '🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🥦','🥕',
+  '🌽','🥔','🍠','🧅','🧄','🍞','🥐','🥖','🥨','🧀',
+  '🥚','🍳','🍗','🍖','🍔','🍟','🍕','🌭','🌮','🌯',
+  '🥪','🥗','🍝','🍜','🍲','🍛','🍣','🍤','🍚','🍙',
+  '🍱','🥟','🍰','🎂','🧁','🍩','🍪','🍫','🍬','🍭',
+  '🍿','🍯','🥜','☕','🍵','🧃','🥤','🧋','🫖',
+  // Musique et divertissement
+  '🎧','🎤','🎙️','🎸','🎹','🥁','🎺','🎻','🎷','🪕',
+  '🎼','🎵','🎶','🎬','🎞️','🎭','🎨','🖌️','🖍️','🧩',
+  '🎮','🕹️','🎲','♟️','🎯','🎪','🎡','🎢','🎠','🎫',
+  '🎟️',
+  // Fête et anniversaire
+  '🎈','🎀','🎂','🍰','🧁','🎁','🎊','🎉','🥳','🪅',
+  '🪩','🎆','🎇','🧨','💐','💝','🏆','🥇','🥈','🥉',
+  '🏅','🎖️','👑',
+  // Sport
+  '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱',
+  '🏓','🏸','🏒','🏑','🥍','🏏','🥊','🥋','⛳','🏹',
+  '🎣','🤿','🏋️','🤸','⛹️','🤾','🏊','🚴','🏃','🧗',
+  '🎽',
+  // Nature
+  '🌱','🌿','☘️','🍀','🌳','🌲','🌴','🌵','🌾','🌻',
+  '🌹','🌷','🌺','🌸','🌼','🪻','🪷','🍁','🍂','🍃',
+  '🌍','🌎','🌏','🌙','☀️','🌞','🌝','🌚','⭐','🌈',
+  '☁️','⛅','🌤️','🌧️','⛈️','🌩️','🌨️','❄️','🌪️',
+  '🌊','💧','💦','🔥','🌋','🏔️','🗻','🏝️','🏜️','🏕️',
+  '🏞️','🏖️',
+  // Animaux
+  '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
+  '🦁','🐮','🐷','🐸','🐵','🙈','🙉','🙊','🐔','🐧',
+  '🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄',
+  '🐝','🦋','🐌','🐞','🐜','🕷️','🐢','🐍','🦎','🐙',
+  '🦑','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🦓',
+  '🦒','🐘','🦏','🦛','🐪','🐫','🦘','🦥','🦦','🦫',
+  // Lieux
+  '🏥','🏦','🏨','🏫','⛪','🕌','🕍','⛩️','🛕','🏛️',
+  '🗼','🗽','🗿','🏰','🏯','⛺','🏟️',
 ];
 
 const List<String> _flags = [
-  '🏁','🚩','🎌','🏴','🏳️','🏳️‍⚧️','🏴‍☠️',
-  '🇦🇫','🇿🇦','🇦🇱','🇩🇿','🇩🇪','🇦🇩','🇦🇴','🇦🇬',
-  '🇸🇦','🇦🇷','🇦🇲','🇦🇺','🇦🇹','🇦🇿','🇧🇸','🇧🇭',
-  '🇧🇩','🇧🇧','🇧🇪','🇧🇿','🇧🇯','🇧🇹','🇧🇾','🇲🇲',
-  '🇧🇴','🇧🇦','🇧🇼','🇧🇷','🇧🇳','🇧🇬','🇧🇫','🇧🇮',
-  '🇰🇭','🇨🇲','🇨🇦','🇨🇻','🇨🇱','🇨🇳','🇨🇾','🇨🇴',
-  '🇰🇲','🇨🇬','🇨🇩','🇰🇵','🇰🇷','🇨🇷','🇨🇮','🇭🇷',
-  '🇨🇺','🇩🇰','🇩🇯','🇩🇲','🇪🇬','🇸🇻','🇦🇪','🇪🇨',
-  '🇪🇷','🇪🇸','🇪🇪','🇺🇸','🇪🇹','🇫🇯','🇫🇮','🇫🇷',
-  '🇬🇦','🇬🇲','🇬🇪','🇬🇭','🇬🇷','🇬🇩','🇬🇹','🇬🇳',
-  '🇬🇶','🇬🇾','🇭🇹','🇭🇳','🇭🇰','🇭🇺','🇮🇳','🇮🇩',
-  '🇮🇷','🇮🇶','🇮🇪','🇮🇸','🇮🇱','🇮🇹','🇯🇲','🇯🇵',
-  '🇯🇴','🇰🇿','🇰🇪','🇰🇬','🇰🇼','🇱🇦','🇱🇻','🇱🇧',
-  '🇱🇷','🇱🇾','🇱🇮','🇱🇹','🇱🇺','🇲🇬','🇲🇾','🇲🇼',
-  '🇲🇻','🇲🇱','🇲🇹','🇲🇦','🇲🇺','🇲🇽','🇲🇩','🇲🇨',
-  '🇲🇳','🇲🇪','🇲🇿','🇳🇦','🇳🇵','🇳🇮','🇳🇪','🇳🇬',
-  '🇳🇴','🇳🇿','🇴🇲','🇺🇬','🇺🇿','🇵🇰','🇵🇸','🇵🇦',
-  '🇵🇬','🇵🇾','🇳🇱','🇵🇪','🇵🇭','🇵🇱','🇵🇹','🇶🇦',
-  '🇨🇫','🇩🇴','🇷🇴','🇬🇧','🇷🇺','🇷🇼','🇸🇳','🇷🇸',
-  '🇸🇨','🇸🇱','🇸🇬','🇸🇰','🇸🇮','🇸🇴','🇸🇩','🇱🇰',
-  '🇸🇪','🇨🇭','🇸🇾','🇹🇯','🇹🇼','🇹🇿','🇹🇩','🇨🇿',
-  '🇹🇭','🇹🇬','🇹🇴','🇹🇹','🇹🇳','🇹🇷','🇺🇦','🇺🇾',
-  '🇻🇪','🇻🇳','🇾🇪','🇿🇲','🇿🇼',
+  // Europe
+  '🇦🇱','🇦🇩','🇦🇹','🇧🇾','🇧🇪','🇧🇦','🇧🇬','🇭🇷','🇨🇾','🇨🇿',
+  '🇩🇰','🇪🇪','🇫🇮','🇫🇷','🇩🇪','🇬🇷','🇭🇺','🇮🇸','🇮🇪','🇮🇹',
+  '🇽🇰','🇱🇻','🇱🇮','🇱🇹','🇱🇺','🇲🇹','🇲🇩','🇲🇨','🇲🇪','🇳🇱',
+  '🇲🇰','🇳🇴','🇵🇱','🇵🇹','🇷🇴','🇷🇺','🇸🇲','🇷🇸','🇸🇰','🇸🇮',
+  '🇪🇸','🇸🇪','🇨🇭','🇺🇦','🇬🇧','🇻🇦',
+  // Afrique
+  '🇩🇿','🇦🇴','🇧🇯','🇧🇼','🇧🇫','🇧🇮','🇨🇻','🇨🇲','🇨🇫','🇹🇩',
+  '🇰🇲','🇨🇬','🇨🇩','🇨🇮','🇩🇯','🇪🇬','🇬🇶','🇪🇷','🇸🇿','🇪🇹',
+  '🇬🇦','🇬🇲','🇬🇭','🇬🇳','🇬🇼','🇰🇪','🇱🇸','🇱🇷','🇱🇾','🇲🇬',
+  '🇲🇼','🇲🇱','🇲🇷','🇲🇺','🇲🇦','🇲🇿','🇳🇦','🇳🇪','🇳🇬','🇷🇼',
+  '🇸🇹','🇸🇳','🇸🇨','🇸🇱','🇸🇴','🇿🇦','🇸🇸','🇸🇩','🇹🇿','🇹🇬',
+  '🇹🇳','🇺🇬','🇿🇲','🇿🇼',
+  // Amérique du Nord et Caraïbes
+  '🇦🇬','🇧🇸','🇧🇧','🇧🇿','🇨🇦','🇨🇷','🇨🇺','🇩🇲','🇩🇴','🇸🇻',
+  '🇬🇩','🇬🇹','🇭🇹','🇭🇳','🇯🇲','🇲🇽','🇳🇮','🇵🇦','🇰🇳','🇱🇨',
+  '🇻🇨','🇹🇹','🇺🇸',
+  // Amérique du Sud
+  '🇦🇷','🇧🇴','🇧🇷','🇨🇱','🇨🇴','🇪🇨','🇬🇾','🇵🇾','🇵🇪','🇸🇷',
+  '🇺🇾','🇻🇪',
+  // Asie
+  '🇦🇫','🇦🇲','🇦🇿','🇧🇭','🇧🇩','🇧🇹','🇧🇳','🇰🇭','🇨🇳','🇬🇪',
+  '🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇱','🇯🇵','🇯🇴','🇰🇿','🇰🇼','🇰🇬',
+  '🇱🇦','🇱🇧','🇲🇾','🇲🇻','🇲🇳','🇲🇲','🇳🇵','🇰🇵','🇴🇲','🇵🇰',
+  '🇵🇸','🇵🇭','🇶🇦','🇸🇦','🇸🇬','🇰🇷','🇱🇰','🇸🇾','🇹🇯','🇹🇭',
+  '🇹🇱','🇹🇷','🇹🇲','🇦🇪','🇺🇿','🇻🇳','🇾🇪',
+  // Océanie
+  '🇦🇺','🇫🇯','🇰🇮','🇲🇭','🇫🇲','🇳🇷','🇳🇿','🇵🇼','🇵🇬','🇼🇸',
+  '🇸🇧','🇹🇴','🇹🇻','🇻🇺',
+  // Territoires / régions fréquemment utilisés
+  '🇦🇽','🇦🇸','🇦🇼','🇧🇲','🇧🇶','🇨🇽','🇨🇨','🇨🇰','🇨🇼','🇫🇴',
+  '🇬🇮','🇬🇱','🇬🇵','🇬🇺','🇭🇰','🇮🇲','🇯🇪','🇯🇲','🇰🇾','🇲🇴',
+  '🇲🇶','🇲🇸','🇳🇨','🇳🇫','🇵🇫','🇵🇷','🇷🇪','🇸🇽','🇹🇨','🇻🇬',
+  '🇻🇮'
 ];
+
+// ============================================================================
+// TYPES DE RÉACTIONS (NOUVEAU)
+// ============================================================================
+const List<_ReactionType> _reactionTypes = [
+  _ReactionType(emoji: '❤️', label: 'J\'adore'),
+  _ReactionType(emoji: '😂', label: 'Drôle'),
+  _ReactionType(emoji: '😮', label: 'Surpris'),
+  _ReactionType(emoji: '😢', label: 'Triste'),
+  _ReactionType(emoji: '😡', label: 'En colère'),
+  _ReactionType(emoji: '👍', label: 'Approuve'),
+];
+
+class _ReactionType {
+  final String emoji;
+  final String label;
+  const _ReactionType({required this.emoji, required this.label});
+}
 
 // ============================================================================
 // COMPOSANT PRINCIPAL
@@ -121,6 +285,7 @@ class CommentsPage extends ConsumerStatefulWidget {
 
 class _CommentsPageState extends ConsumerState<CommentsPage> {
   final TextEditingController _controller = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
   final ScrollController _scrollController = ScrollController();
   final FocusNode _focusNode = FocusNode();
   NetworkPost? _post;
@@ -128,6 +293,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   bool _isSubmitting = false;
   String? _replyingTo;
   String? _replyingToName;
+  String _searchQuery = '';
 
   final Set<String> _expandedComments = {};
 
@@ -142,25 +308,34 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   bool _isRecording = false;
 
   bool _showStickers = false;
+  bool _showSearch = false;
+
+  DateTime? _lastCommentTime; // ⏱️ Rate limiting
 
   @override
   void initState() {
     super.initState();
     _controller.addListener(_onTextChanged);
+    _searchController.addListener(_onSearchChanged);
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 400) {
         ref.read(commentsProvider(widget.postId).notifier).loadMore();
       }
     });
     _loadPost();
+    _loadDraft(); // 📝 Charger le brouillon
+    _loadLastCommentTime(); // ⏱️ Charger le rate limiting
   }
 
   @override
   void dispose() {
+    _saveDraft(); // 📝 Sauvegarder le brouillon
     _recordTimer?.cancel();
     _audioRecorder.dispose();
     _controller.removeListener(_onTextChanged);
+    _searchController.removeListener(_onSearchChanged);
     _controller.dispose();
+    _searchController.dispose();
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
@@ -168,6 +343,59 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
   void _onTextChanged() {
     setState(() {});
+  }
+
+  void _onSearchChanged() {
+    setState(() => _searchQuery = _searchController.text.trim().toLowerCase());
+  }
+
+  // 📝 BROUILLONS
+  Future<void> _saveDraft() async {
+    final text = _controller.text.trim();
+    if (text.isEmpty) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('draft_${widget.postId}', text);
+  }
+
+  Future<void> _loadDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    final draft = prefs.getString('draft_${widget.postId}');
+    if (draft != null && draft.isNotEmpty) {
+      _controller.text = draft;
+    }
+  }
+
+  Future<void> _clearDraft() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('draft_${widget.postId}');
+  }
+
+  // ⏱️ RATE LIMITING
+  Future<void> _loadLastCommentTime() async {
+    final prefs = await SharedPreferences.getInstance();
+    final timestamp = prefs.getInt('last_comment_${widget.postId}');
+    if (timestamp != null) {
+      _lastCommentTime = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    }
+  }
+
+  Future<void> _saveLastCommentTime() async {
+    final now = DateTime.now();
+    _lastCommentTime = now;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt('last_comment_${widget.postId}', now.millisecondsSinceEpoch);
+  }
+
+  bool _canComment() {
+    if (_lastCommentTime == null) return true;
+    final secondsSinceLast = DateTime.now().difference(_lastCommentTime!).inSeconds;
+    return secondsSinceLast >= _CommentValidators.rateLimitSeconds;
+  }
+
+  int _secondsUntilCanComment() {
+    if (_lastCommentTime == null) return 0;
+    final secondsSinceLast = DateTime.now().difference(_lastCommentTime!).inSeconds;
+    return (_CommentValidators.rateLimitSeconds - secondsSinceLast).clamp(0, _CommentValidators.rateLimitSeconds);
   }
 
   Future<void> _loadPost() async {
@@ -243,7 +471,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     return newStatus.isGranted;
   }
 
-  // ─── AUDIO (disponible pour tous) ───
+  // ─── AUDIO ───
   Future<void> _startRecording() async {
     final hasPerm = await _checkPermissionWithDisclosure(
       Permission.microphone,
@@ -337,6 +565,20 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 
   // ─── SOUMISSION ───
   Future<void> _submitComment({String? parentId}) async {
+    // ⏱️ Vérifier le rate limiting
+    if (!_canComment()) {
+      final secondsLeft = _secondsUntilCanComment();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Veuillez patienter ${secondsLeft}s avant de commenter à nouveau'),
+            backgroundColor: ThixPolicy.warning,
+          ),
+        );
+      }
+      return;
+    }
+
     final text = _controller.text.trim();
     if (text.isEmpty && _audioBytes == null && _imageBytes == null) return;
     if (_isSubmitting) return;
@@ -374,6 +616,11 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       }
 
       ref.invalidate(commentsProvider(widget.postId));
+
+      // ⏱️ Sauvegarder le timestamp du dernier commentaire
+      await _saveLastCommentTime();
+      // 📝 Effacer le brouillon
+      await _clearDraft();
 
       setState(() {
         _controller.clear();
@@ -433,7 +680,8 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     FocusScope.of(context).unfocus();
     final isOwnComment = comment.userId == currentUserId;
     final isPostOwner = _post?.userId == currentUserId;
-    final canDelete = isOwnComment || isPostOwner;
+    final canDelete = isOwnComment || isPostOwner; // ✅ L'auteur du post peut supprimer
+    final canPin = isPostOwner; // ✅ Seul l'auteur du post peut épingler
 
     final action = await showModalBottomSheet<String>(
       context: context,
@@ -460,16 +708,39 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                 title: Text('Copier le texte', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain)),
                 onTap: () => Navigator.pop(context, 'copy'),
               ),
+              ListTile(
+                leading: const Icon(Icons.share_rounded, color: ThixPolicy.primary),
+                title: Text('Partager le commentaire', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain)),
+                onTap: () => Navigator.pop(context, 'share'),
+              ),
               if (isOwnComment && (comment.audioUrl == null || comment.audioUrl!.isEmpty))
                 ListTile(
                   leading: const Icon(Icons.edit_rounded, color: ThixPolicy.textMain),
                   title: Text('Modifier', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain)),
                   onTap: () => Navigator.pop(context, 'edit'),
                 ),
+              if (canPin)
+                ListTile(
+                  leading: Icon(
+                    comment.isPinned ? Icons.push_pin_outlined : Icons.push_pin_rounded,
+                    color: comment.isPinned ? ThixPolicy.textSecondary : ThixPolicy.gold,
+                  ),
+                  title: Text(
+                    comment.isPinned ? 'Désépingler' : 'Épingler',
+                    style: ThixPolicy.bodyStyle.copyWith(
+                      color: comment.isPinned ? ThixPolicy.textSecondary : ThixPolicy.gold,
+                      fontWeight: comment.isPinned ? FontWeight.normal : ThixPolicy.bold,
+                    ),
+                  ),
+                  onTap: () => Navigator.pop(context, 'pin'),
+                ),
               if (canDelete)
                 ListTile(
                   leading: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger),
-                  title: Text('Supprimer', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
+                  title: Text(
+                    'Supprimer',
+                    style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold),
+                  ),
                   onTap: () => Navigator.pop(context, 'delete'),
                 ),
               if (!isOwnComment)
@@ -509,8 +780,14 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
           );
         }
         break;
+      case 'share':
+        _shareComment(comment);
+        break;
       case 'edit':
         _editComment(comment);
+        break;
+      case 'pin':
+        _togglePinComment(comment);
         break;
       case 'delete':
         _confirmDelete(comment);
@@ -518,6 +795,56 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
       case 'report':
         _showReportDialog(comment);
         break;
+    }
+  }
+
+  // 📌 ÉPINGLER UN COMMENTAIRE
+  Future<void> _togglePinComment(Comment comment) async {
+    try {
+      final newPinned = !comment.isPinned;
+      await Supabase.instance.client
+          .from('comments')
+          .update({'is_pinned': newPinned})
+          .eq('id', comment.id);
+      
+      ref.invalidate(commentsProvider(widget.postId));
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(newPinned ? 'Commentaire épinglé' : 'Commentaire désépinglé'),
+            backgroundColor: ThixPolicy.success,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('[Comments] Pin error: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur : $e'), backgroundColor: ThixPolicy.danger),
+        );
+      }
+    }
+  }
+
+  // 📤 PARTAGER UN COMMENTAIRE
+  void _shareComment(Comment comment) async {
+    final deepLink = 'thix://post/${widget.postId}?comment=${comment.id}';
+    await Clipboard.setData(ClipboardData(text: deepLink));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.link, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              const Text('Lien du commentaire copié'),
+            ],
+          ),
+          backgroundColor: ThixPolicy.primary,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
   }
 
@@ -741,6 +1068,54 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     HapticFeedback.selectionClick();
   }
 
+  // 🎯 RÉACTIONS MULTIPLES
+  Future<void> _showReactionPicker(Comment comment) async {
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: ThixPolicy.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(ThixPolicy.rXl))),
+      builder: (context) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: _reactionTypes.map((reaction) {
+                return GestureDetector(
+                  onTap: () => Navigator.pop(context, reaction.emoji),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 60,
+                        height: 60,
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.surfaceSoft,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(reaction.emoji, style: const TextStyle(fontSize: 36)),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(reaction.label, style: ThixPolicy.captionStyle),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        );
+      },
+    );
+
+    if (selected != null) {
+      // TODO: Ajouter la réaction au backend
+      // await ref.read(networkServiceProvider).addReaction(comment.id, selected);
+      HapticFeedback.mediumImpact();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final commentsAsync = ref.watch(commentsProvider(widget.postId));
@@ -755,6 +1130,13 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         iconTheme: const IconThemeData(color: ThixPolicy.textMain),
         actions: [
           IconButton(
+            onPressed: () => setState(() => _showSearch = !_showSearch),
+            icon: Icon(
+              _showSearch ? Icons.close_rounded : Icons.search_rounded,
+              color: _showSearch ? ThixPolicy.primary : ThixPolicy.textSecondary,
+            ),
+          ),
+          IconButton(
             onPressed: () => ref.invalidate(commentsProvider(widget.postId)),
             icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textSecondary),
           ),
@@ -764,6 +1146,25 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
           ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
           : Column(
               children: [
+                if (_showSearch)
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    color: ThixPolicy.card,
+                    child: TextField(
+                      controller: _searchController,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        hintText: 'Rechercher dans les commentaires...',
+                        prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.textSecondary),
+                        filled: true,
+                        fillColor: ThixPolicy.surfaceSoft,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(ThixPolicy.rXl),
+                          borderSide: BorderSide.none,
+                        ),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: RefreshIndicator(
                     color: ThixPolicy.primary,
@@ -799,25 +1200,50 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                               ),
                             ),
                           ),
-                          data: (comments) => comments.isEmpty
-                              ? SliverFillRemaining(
-                                  child: Center(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      children: [
-                                        Icon(Icons.comment_outlined, size: 60, color: ThixPolicy.textMuted),
-                                        const SizedBox(height: 12),
-                                        Text('Soyez le premier à commenter !', style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary)),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                              : SliverList(
-                                  delegate: SliverChildBuilderDelegate(
-                                    (context, index) => _buildCommentThread(comments[index], currentUserId, depth: 0),
-                                    childCount: comments.length,
+                          data: (comments) {
+                            // 🔍 Filtrer par recherche
+                            var filteredComments = comments;
+                            if (_searchQuery.isNotEmpty) {
+                              filteredComments = comments.where((c) {
+                                return c.content.toLowerCase().contains(_searchQuery) ||
+                                    c.userName.toLowerCase().contains(_searchQuery);
+                              }).toList();
+                            }
+
+                            // 📌 Trier : épinglés en premier
+                            filteredComments.sort((a, b) {
+                              if (a.isPinned && !b.isPinned) return -1;
+                              if (!a.isPinned && b.isPinned) return 1;
+                              return b.createdAt.compareTo(a.createdAt);
+                            });
+
+                            if (filteredComments.isEmpty) {
+                              return SliverFillRemaining(
+                                child: Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.comment_outlined, size: 60, color: ThixPolicy.textMuted),
+                                      const SizedBox(height: 12),
+                                      Text(
+                                        _searchQuery.isNotEmpty
+                                            ? 'Aucun résultat pour "$_searchQuery"'
+                                            : 'Soyez le premier à commenter !',
+                                        style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                              );
+                            }
+
+                            return SliverList(
+                              delegate: SliverChildBuilderDelegate(
+                                (context, index) => _buildCommentThread(filteredComments[index], currentUserId, depth: 0),
+                                childCount: filteredComments.length,
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -830,7 +1256,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     );
   }
 
-  // ─── THREAD IMBRIQUÉ STYLE RÉSEAUX SOCIAUX ───
+  // ─── THREAD IMBRIQUÉ STYLE RÉSEAUX SOCIAUX (AMÉLIORÉ) ───
   Widget _buildCommentThread(Comment comment, String? currentUserId, {int depth = 0}) {
     final hasReplies = comment.replies.isNotEmpty;
     final isExpanded = _expandedComments.contains(comment.id);
@@ -846,6 +1272,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         onMenuTap: () => _showCommentActions(comment, currentUserId ?? ''),
         onLike: () => _toggleLikeComment(comment),
         onReply: () => _startReply(comment.userName, comment.id),
+        onReact: () => _showReactionPicker(comment),
       ),
     ];
 
@@ -865,6 +1292,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
             onMenuTap: () => _showCommentActions(lastReply, currentUserId ?? ''),
             onLike: () => _toggleLikeComment(lastReply),
             onReply: () => _startReply(lastReply.userName, lastReply.parentId ?? lastReply.id),
+            onReact: () => _showReactionPicker(lastReply),
           ),
         );
       } else {
@@ -881,6 +1309,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               onMenuTap: () => _showCommentActions(reply, currentUserId ?? ''),
               onLike: () => _toggleLikeComment(reply),
               onReply: () => _startReply(reply.userName, reply.parentId ?? reply.id),
+              onReact: () => _showReactionPicker(reply),
             ),
           );
         }
@@ -888,7 +1317,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
     }
 
     return Padding(
-      padding: EdgeInsets.only(left: depth > 0 ? (depth * 20.0).clamp(0.0, 60.0) : 0.0, bottom: 4),
+      padding: EdgeInsets.only(left: depth > 0 ? (depth * 24.0).clamp(0.0, 72.0) : 0.0, bottom: 4),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: threadChildren,
@@ -934,6 +1363,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
   // ─── BARRE DE SAISIE ───
   Widget _buildInputBar() {
     final hasTextOrImage = _controller.text.trim().isNotEmpty || _imageBytes != null;
+    final canSubmit = _canComment();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -946,6 +1376,33 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // ⏱️ Rate limiting warning
+            if (!canSubmit)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.warning.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                  border: Border.all(color: ThixPolicy.warning.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.timer_outlined, size: 14, color: ThixPolicy.warning),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Veuillez patienter ${_secondsUntilCanComment()}s avant de commenter',
+                        style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.warning,
+                          fontWeight: ThixPolicy.semiBold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             if (_replyingTo != null)
               Container(
                 margin: const EdgeInsets.only(bottom: 8),
@@ -1041,7 +1498,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                         icon: _isSubmitting
                             ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))
                             : const Icon(Icons.send_rounded, color: ThixPolicy.primary, size: 14),
-                        onPressed: _isSubmitting ? null : () => _submitComment(),
+                        onPressed: _isSubmitting || !canSubmit ? null : () => _submitComment(),
                       ),
                     ),
                   ],
@@ -1096,7 +1553,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                       const SizedBox(width: 8),
                       GestureDetector(
                         onTap: () {
-                          if (_isSubmitting) return;
+                          if (_isSubmitting || !canSubmit) return;
                           if (hasTextOrImage) {
                             _submitComment();
                           } else {
@@ -1112,6 +1569,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                                 : const LinearGradient(colors: [ThixPolicy.gold, Color(0xFFFFA500)]),
                             shape: BoxShape.circle,
                             boxShadow: ThixPolicy.shadowNode(color: hasTextOrImage ? ThixPolicy.primary : ThixPolicy.gold),
+                            color: !canSubmit ? Colors.grey : null,
                           ),
                           child: _isSubmitting
                               ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
@@ -1140,7 +1598,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
         border: Border(top: BorderSide(color: ThixPolicy.border)),
       ),
       child: DefaultTabController(
-        length: 3,
+        length: 4, // 🆕 Ajout de l'onglet "Objets"
         child: Column(
           children: [
             TabBar(
@@ -1151,6 +1609,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
               tabs: const [
                 Tab(text: 'Émojis'),
                 Tab(text: 'Réactions'),
+                Tab(text: 'Objets'), // 🆕
                 Tab(text: 'Drapeaux'),
               ],
             ),
@@ -1159,6 +1618,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
                 children: [
                   _buildStickerGrid(_emojis),
                   _buildStickerGrid(_reactions),
+                  _buildStickerGrid(_objects), // 🆕
                   _buildStickerGrid(_flags),
                 ],
               ),
@@ -1190,7 +1650,7 @@ class _CommentsPageState extends ConsumerState<CommentsPage> {
 }
 
 // ============================================================================
-// BULLE DE COMMENTAIRE AVEC MENU 3 POINTS
+// BULLE DE COMMENTAIRE AVEC MENU 3 POINTS (AMÉLIORÉ)
 // ============================================================================
 class _CommentBubble extends ConsumerWidget {
   final Comment comment;
@@ -1202,6 +1662,7 @@ class _CommentBubble extends ConsumerWidget {
   final VoidCallback onMenuTap;
   final VoidCallback onLike;
   final VoidCallback onReply;
+  final VoidCallback onReact; // 🆕
 
   const _CommentBubble({
     Key? key,
@@ -1214,12 +1675,14 @@ class _CommentBubble extends ConsumerWidget {
     required this.onMenuTap,
     required this.onLike,
     required this.onReply,
+    required this.onReact, // 🆕
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final hasAudio = comment.audioUrl != null && comment.audioUrl!.isNotEmpty;
     final hasImage = comment.imageUrl != null && comment.imageUrl!.isNotEmpty;
+    final hasMention = _CommentValidators.hasMention(comment.content); // 🆕 Détection de mention
 
     final authorProfile = ref.watch(userProfileProvider(comment.userId)).valueOrNull;
     CertificationTier? tier;
@@ -1234,7 +1697,7 @@ class _CommentBubble extends ConsumerWidget {
       isLegacyVerified = authorProfile['is_verified'] == true;
     }
 
-    // Couleur de la barre latérale selon la profondeur
+    // 🎨 Couleur de la barre latérale selon la profondeur
     final Color depthColor = depth == 0
         ? ThixPolicy.primary
         : depth == 1
@@ -1252,17 +1715,39 @@ class _CommentBubble extends ConsumerWidget {
               width: 40,
               child: Stack(
                 children: [
+                  // 🎨 Barre de connexion verticale améliorée
                   Positioned(
                     left: 20,
                     top: 0,
                     bottom: isLastReply ? null : 0,
                     height: isLastReply ? 24 : null,
-                    child: Container(width: 2, color: depthColor.withOpacity(0.3)),
+                    child: Container(
+                      width: 3,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            depthColor.withOpacity(0.5),
+                            depthColor.withOpacity(0.2),
+                          ],
+                        ),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
+                  // 🎨 Barre de connexion horizontale
                   Positioned(
                     left: 20,
                     top: 24,
-                    child: Container(width: 14, height: 2, color: depthColor.withOpacity(0.3)),
+                    child: Container(
+                      width: 16,
+                      height: 3,
+                      decoration: BoxDecoration(
+                        color: depthColor.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -1281,15 +1766,59 @@ class _CommentBubble extends ConsumerWidget {
                   ),
                   child: Stack(
                     children: [
-                      // Barre latérale colorée pour la profondeur
+                      // 📌 Badge épinglé
+                      if (comment.isPinned)
+                        Positioned(
+                          top: 8,
+                          right: 8,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              gradient: const LinearGradient(
+                                colors: [ThixPolicy.gold, Color(0xFFFFA500)],
+                              ),
+                              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: ThixPolicy.gold.withOpacity(0.3),
+                                  blurRadius: 8,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.push_pin_rounded, size: 12, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text(
+                                  'Épinglé',
+                                  style: ThixPolicy.microStyle.copyWith(
+                                    color: Colors.white,
+                                    fontWeight: ThixPolicy.bold,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                      // 🎨 Barre latérale colorée pour la profondeur
                       Positioned(
                         left: 0,
                         top: 8,
                         bottom: 8,
                         child: Container(
-                          width: 3,
+                          width: 4,
                           decoration: BoxDecoration(
-                            color: depthColor,
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                depthColor,
+                                depthColor.withOpacity(0.6),
+                              ],
+                            ),
                             borderRadius: BorderRadius.circular(2),
                           ),
                         ),
@@ -1353,9 +1882,11 @@ class _CommentBubble extends ConsumerWidget {
                           if (comment.content.isNotEmpty)
                             Padding(
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-                              child: Text(
-                                _CommentValidators.sanitize(comment.content),
-                                style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, height: 1.4),
+                              child: RichText(
+                                text: TextSpan(
+                                  style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, height: 1.4, color: ThixPolicy.textMain),
+                                  children: _buildContentWithMentions(comment.content), // 🆕 Mentions stylisées
+                                ),
                               ),
                             ),
                           if (hasImage)
@@ -1400,6 +1931,13 @@ class _CommentBubble extends ConsumerWidget {
                                 ),
                                 const SizedBox(width: 8),
                                 _actionButton(
+                                  icon: Icons.add_reaction_rounded, // 🆕 Bouton réactions
+                                  iconColor: ThixPolicy.textSecondary,
+                                  label: '',
+                                  onTap: onReact,
+                                ),
+                                const SizedBox(width: 8),
+                                _actionButton(
                                   icon: Icons.reply_rounded,
                                   iconColor: ThixPolicy.textSecondary,
                                   label: 'Répondre',
@@ -1419,6 +1957,37 @@ class _CommentBubble extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  // 🆕 Construire le texte avec mentions stylisées
+  List<TextSpan> _buildContentWithMentions(String content) {
+    final spans = <TextSpan>[];
+    final regex = RegExp(r'(@\w+)');
+    final matches = regex.allMatches(content);
+
+    int lastEnd = 0;
+    for (final match in matches) {
+      // Texte avant la mention
+      if (match.start > lastEnd) {
+        spans.add(TextSpan(text: content.substring(lastEnd, match.start)));
+      }
+      // La mention stylisée
+      spans.add(TextSpan(
+        text: match.group(0),
+        style: TextStyle(
+          color: ThixPolicy.primary,
+          fontWeight: ThixPolicy.bold,
+          decoration: TextDecoration.underline,
+        ),
+      ));
+      lastEnd = match.end;
+    }
+    // Texte restant
+    if (lastEnd < content.length) {
+      spans.add(TextSpan(text: content.substring(lastEnd)));
+    }
+
+    return spans;
   }
 
   Widget _actionButton({required IconData icon, required Color iconColor, required String label, required VoidCallback onTap}) {
@@ -1579,4 +2148,3 @@ class _CommentAudioPlayerState extends State<_CommentAudioPlayer> {
     );
   }
 }
- 
