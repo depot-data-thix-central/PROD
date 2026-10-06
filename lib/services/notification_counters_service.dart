@@ -306,7 +306,7 @@ class NotificationCountersService {
 
   /// ✅ CORRECTEMENT PLACÉ : Alias/wrapper pour markSectionSeen
   /// Accepte ThixSection ou String, utilise l'UID courant si non fourni
-  Future<bool> markSectionRead(dynamic section, {String? uid}) async {
+  Future<bool> markSectionRead({required dynamic section, String? uid}) async {
     final currentUid = uid ?? _client.auth.currentUser?.id;
     if (currentUid == null) {
       debugPrint('[NotifCounters] ⚠️ No UID available for markSectionRead');
