@@ -337,7 +337,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
     final client = Supabase.instance.client;
     _inviteChannel = client.channel('live_invite_${user.id}')
-      ..onBroadcastEvent(event: 'guest_invite', callback: (payload) {
+      ..onBroadcast(event: 'guest_invite', callback: (payload) {
         if (!mounted) return;
         final data = payload;
         
@@ -1495,7 +1495,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                   ),
                 )
               else
-                const Icon(Icons.hand_raised, color: Colors.white, size: 18),
+                const Icon(Icons.front_hand, color: Colors.white, size: 18),
               const SizedBox(width: 8),
               Text(
                 _requestingJoin
@@ -1530,7 +1530,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
           ),
           child: Row(
             children: [
-              const Icon(Icons.hand_raised, color: Colors.white, size: 14),
+              const Icon(Icons.front_hand, color: Colors.white, size: 14),
               const SizedBox(width: 6),
               Expanded(
                 child: Text.rich(
