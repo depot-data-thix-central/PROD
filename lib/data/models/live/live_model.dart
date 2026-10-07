@@ -41,7 +41,10 @@ class LiveSession {
   // Guests (co-hosts)
   final List<GuestInfo> guests;
 
-  const LiveSession({
+  const
+    
+    
+   LiveSession({
     required this.id,
     required this.channelName,
     required this.title,
