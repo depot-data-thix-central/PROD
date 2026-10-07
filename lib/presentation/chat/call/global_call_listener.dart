@@ -1,16 +1,16 @@
 // lib/presentation/chat/call/global_call_listener.dart
 //
 // ============================================================================
-// GLOBAL CALL LISTENER — Production Enterprise v2.0
+// GLOBAL CALL LISTENER — v2.1
 // ============================================================================
-//
-// Écouteur global des appels entrants via Realtime + Polling.
-//
-// Améliorations Enterprise :
-//   - Vérification d'appel actif (auto-rejet "Occupé" pour éviter les conflits)
-//   - Fallback Notification Locale si la navigation échoue (app en arrière-plan)
-//   - Hooks prêts pour l'intégration FCM (Firebase Cloud Messaging)
-//   - Gestion stricte du cycle de vie et prévention des fuites mémoire
+// Corrections :
+//  ✅ Plus de `await push().timeout()` : ce Future ne se termine qu'à la
+//     fermeture de la page, le timeout empilait la MÊME route une 2e fois
+//     (pile de navigation corrompue → écran noir)
+//  ✅ Une seule page d'appel entrant à la fois (pas de doublon à la reprise
+//     de l'app ou à chaque événement d'authentification)
+//  ✅ La page d'appel entrant se ferme si l'appelant annule / manque l'appel
+//  ✅ Plus de délai de 3 s qui ignorait silencieusement un appel
 // ============================================================================
 
 import 'dart:async';
@@ -30,9 +30,7 @@ import 'package:thix_id/services/chat/call_signaling_service.dart';
 // CONSTANTS
 // ============================================================================
 const Duration _kNavigationRetryDelay = Duration(milliseconds: 500);
-const Duration _kNavigationTimeout = Duration(seconds: 5);
 const int _kMaxNavigationRetries = 3;
-const Duration _kInviteCooldown = Duration(seconds: 3); // Augmenté pour éviter les spams
 
 // ============================================================================
 // VALIDATORS
@@ -57,7 +55,6 @@ class _CallListenerValidators {
 // ============================================================================
 // GLOBAL CALL LISTENER
 // ============================================================================
-
 class GlobalCallListener extends ConsumerStatefulWidget {
   final Widget child;
   final GlobalKey<NavigatorState>? navigatorKey;
@@ -76,28 +73,25 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     with WidgetsBindingObserver {
   CallSignalingService? _signal;
   StreamSubscription<CallInvite>? _callSubscription;
+  StreamSubscription<CallStatus>? _inviteStatusSub;
   ProviderSubscription<String?>? _authSubscription;
   StreamSubscription<AuthState>? _authStreamSubscription;
 
   String? _currentUserId;
   String? _lastShownInviteId;
-  DateTime? _lastInviteTime;
+  MaterialPageRoute<void>? _incomingRoute;
   bool _isDisposed = false;
   bool _isNavigating = false;
 
   @override
   void initState() {
     super.initState();
-    debugPrint('[GlobalCallListener] 🚀 Initialized');
-
     WidgetsBinding.instance.addObserver(this);
     _bindAuthChanges();
     _bindSupabaseAuth();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_isDisposed) {
-        _syncListen(force: true);
-      }
+      if (!_isDisposed) _syncListen(force: true);
     });
   }
 
@@ -106,26 +100,22 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     _isDisposed = true;
     WidgetsBinding.instance.removeObserver(this);
     _callSubscription?.cancel();
+    _inviteStatusSub?.cancel();
     _authSubscription?.close();
     _authStreamSubscription?.cancel();
     _signal?.dispose();
-    debugPrint('[GlobalCallListener] 👋 Disposed');
     super.dispose();
   }
 
   // ── AUTH BINDING ─────────────────────────────────────────────────────
-
   void _bindAuthChanges() {
     _authSubscription = ref.listenManual<String?>(
       supabaseUserIdProvider,
       (previous, next) {
-        if (_isDisposed) return;
-        if (previous == next) return;
-
-        debugPrint('[GlobalCallListener] 🔄 Auth changed: '
-            '${_obfuscate(previous)} → ${_obfuscate(next)}');
-
+        if (_isDisposed || previous == next) return;
+        debugPrint('[GlobalCallListener] 🔄 Auth changed: ${_obfuscate(previous)} → ${_obfuscate(next)}');
         _currentUserId = next;
+        _lastShownInviteId = null; // autre utilisateur : on repart de zéro
         _syncListen(force: true);
       },
     );
@@ -133,11 +123,11 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
 
   void _bindSupabaseAuth() {
     try {
-      _authStreamSubscription =
-          Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+      _authStreamSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
         if (_isDisposed) return;
-        debugPrint('[GlobalCallListener] 📞 Auth event: ${data.event}');
-        _syncListen(force: true);
+        // Non forcé : un simple rafraîchissement de token ne doit PAS
+        // relancer l'écoute (sinon un appel en cours de sonnerie réapparaît)
+        _syncListen();
       });
     } catch (e) {
       debugPrint('[GlobalCallListener] ⚠️ Supabase auth listener failed: $e');
@@ -147,25 +137,19 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_isDisposed) return;
-
     if (state == AppLifecycleState.resumed) {
-      debugPrint('[GlobalCallListener] 📱 App resumed');
+      // Les connexions realtime peuvent être mortes après l'arrière-plan
       _syncListen(force: true);
-    } else if (state == AppLifecycleState.paused) {
-      debugPrint('[GlobalCallListener] ⏸️ App paused (background)');
-      // NOTE ENTERPRISE : C'est ici qu'il faut s'assurer que le service 
-      // FCM (Firebase Messaging) est prêt à prendre le relais pour les 
-      // notifications d'appel entrant quand l'app est en arrière-plan.
     }
+    // NOTE : en arrière-plan, c'est FCM + notification plein écran qui doit
+    // prendre le relais (voir _triggerIncomingCallNotification).
   }
 
   // ── SYNC LISTEN ──────────────────────────────────────────────────────
-
   void _syncListen({bool force = false}) {
     if (_isDisposed) return;
 
     final uid = _currentUserId ?? Supabase.instance.client.auth.currentUser?.id;
-    debugPrint('[GlobalCallListener] 🔄 syncListen uid=${_obfuscate(uid)} force=$force');
 
     if (uid == null) {
       _cleanupSubscription();
@@ -173,10 +157,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
       return;
     }
 
-    if (!force && uid == _currentUserId && _callSubscription != null) {
-      debugPrint('[GlobalCallListener] ✓ Already listening');
-      return;
-    }
+    if (!force && uid == _currentUserId && _callSubscription != null) return;
 
     _currentUserId = uid;
     _cleanupSubscription();
@@ -187,14 +168,11 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
         _handleIncomingInvite,
         onError: _handleStreamError,
         onDone: () {
-          debugPrint('[GlobalCallListener] 🔌 Stream done');
-          // Auto-reconnect en cas de fermeture inattendue du stream
           if (!_isDisposed) {
             Future.delayed(const Duration(seconds: 2), () => _syncListen(force: true));
           }
         },
       );
-      debugPrint('[GlobalCallListener] ✓ Listening for incoming calls');
     } catch (e) {
       debugPrint('[GlobalCallListener] ❌ Subscribe failed: $e');
     }
@@ -203,12 +181,11 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   void _cleanupSubscription() {
     _callSubscription?.cancel();
     _callSubscription = null;
-    _lastShownInviteId = null;
-    _lastInviteTime = null;
+    // _lastShownInviteId volontairement CONSERVÉ : une ré-écoute ne doit pas
+    // réafficher une page d'appel déjà montrée.
   }
 
   // ── INCOMING INVITE HANDLER ──────────────────────────────────────────
-
   void _handleIncomingInvite(CallInvite invite) {
     if (_isDisposed) return;
 
@@ -217,40 +194,24 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
       return;
     }
 
-    // 🛡️ ENTERPRISE : Vérifier si un appel est déjà en cours
-    final currentCallState = ref.read(callProvider);
-    if (currentCallState.isActive) {
-      debugPrint('[GlobalCallListener] ⚠️ Call already active. Auto-rejecting new invite: ${invite.id}');
+    // Même invitation déjà traitée (realtime + poll, ou ré-écoute)
+    if (_lastShownInviteId == invite.id) return;
+
+    // Occupé : appel en cours OU page d'appel entrant déjà affichée
+    final busy = ref.read(callProvider).isActive || (_incomingRoute?.isActive ?? false);
+    if (busy) {
+      _lastShownInviteId = invite.id; // évite de rejeter plusieurs fois
       _autoRejectBusy(invite);
       return;
     }
 
-    debugPrint('[GlobalCallListener] 📞 Incoming call: ${invite.id} '
-        'from ${_obfuscate(invite.callerId)}');
-
-    // Protection contre les pushs multiples
-    if (_lastShownInviteId == invite.id) {
-      debugPrint('[GlobalCallListener] ⚠️ Invite already shown: ${invite.id}');
-      return;
-    }
-
-    // Debounce
-    final now = DateTime.now();
-    if (_lastInviteTime != null &&
-        now.difference(_lastInviteTime!) < _kInviteCooldown) {
-      debugPrint('[GlobalCallListener] ⚠️ Invite too soon, skipping');
-      return;
-    }
-
     _lastShownInviteId = invite.id;
-    _lastInviteTime = now;
-
     _openIncoming(invite);
   }
 
   Future<void> _autoRejectBusy(CallInvite invite) async {
     try {
-      await _signal?.reject(invite.id); // ✅ CORRIGÉ: rejectBusy → reject
+      await _signal?.reject(invite.id);
       debugPrint('[GlobalCallListener] ✓ Auto-rejected busy invite: ${invite.id}');
     } catch (e) {
       debugPrint('[GlobalCallListener] ❌ Auto-reject failed: $e');
@@ -259,94 +220,86 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
 
   void _handleStreamError(Object error, StackTrace? stackTrace) {
     debugPrint('[GlobalCallListener] ❌ Stream error: $error');
-    // TODO ENTERPRISE : Envoyer à Sentry / Datadog
-    // Sentry.captureException(error, stackTrace: stackTrace);
+    // TODO ENTERPRISE : Sentry.captureException(error, stackTrace: stackTrace);
   }
 
   // ── NAVIGATION ───────────────────────────────────────────────────────
-
   Future<void> _openIncoming(CallInvite invite) async {
     if (_isDisposed || _isNavigating) return;
-
     _isNavigating = true;
-    debugPrint('[GlobalCallListener] 📞 Opening IncomingCallPage: ${invite.id}');
 
-    final route = MaterialPageRoute(
-      fullscreenDialog: true,
-      builder: (_) => IncomingCallPage(invite: invite),
-    );
+    try {
+      MaterialPageRoute<void>? route;
 
-    bool success = false;
+      for (var attempt = 0; attempt <= _kMaxNavigationRetries && route == null; attempt++) {
+        if (_isDisposed) return;
+        if (attempt > 0) await Future.delayed(_kNavigationRetryDelay);
 
-    // Tentative 1 : navigatorKey fourni (recommandé pour les appels entrants)
-    final nav = widget.navigatorKey?.currentState;
-    if (nav != null) {
-      success = await _safePush(nav, route);
-    }
+        final nav = widget.navigatorKey?.currentState ??
+            (mounted ? Navigator.maybeOf(context, rootNavigator: true) : null);
+        if (nav == null || !nav.mounted) continue;
 
-    // Tentative 2 : context navigator
-    if (!success && mounted) {
-      try {
-        final navigator = Navigator.of(context, rootNavigator: true);
-        success = await _safePush(navigator, route);
-      } catch (e) {
-        debugPrint('[GlobalCallListener] ⚠️ Context navigator failed: $e');
+        route = _pushIncoming(nav, invite);
       }
-    }
 
-    // Tentative 3 : Retry avec délai (gère les micro-latences de rendu)
-    if (!success && !_isDisposed) {
-      debugPrint('[GlobalCallListener] 🔄 Retrying navigation...');
-      await Future.delayed(_kNavigationRetryDelay);
-
-      if (!_isDisposed) {
-        final retryNav = widget.navigatorKey?.currentState;
-        if (retryNav != null) {
-          success = await _safePush(retryNav, route);
-        }
+      if (route == null) {
+        debugPrint('[GlobalCallListener] ⚠️ Navigation failed. Local notification fallback.');
+        _triggerIncomingCallNotification(invite);
+        _lastShownInviteId = null; // permet de retenter plus tard
+        return;
       }
-    }
 
-    // 🛡️ ENTERPRISE FALLBACK : Si la navigation échoue (app en arrière-plan),
-    // déclencher une notification locale "Full Screen Intent" pour réveiller l'app.
-    if (!success && !_isDisposed) {
-      debugPrint('[GlobalCallListener] ⚠️ Navigation failed. Triggering local notification fallback.');
-      _triggerIncomingCallNotification(invite);
-      _lastShownInviteId = null; // Permet de re-tenter si l'utilisateur clique sur la notification
-    } else {
-      debugPrint('[GlobalCallListener] ✓ IncomingCallPage opened successfully');
-    }
+      _incomingRoute = route;
+      _watchInviteEnd(invite, route);
 
-    _isNavigating = false;
+      route.popped.whenComplete(() {
+        if (identical(_incomingRoute, route)) _incomingRoute = null;
+        _inviteStatusSub?.cancel();
+        _inviteStatusSub = null;
+      });
+    } finally {
+      _isNavigating = false;
+    }
   }
 
-  Future<bool> _safePush(NavigatorState navigator, Route route) async {
+  /// Pousse la page SANS attendre : le Future de push() ne se termine qu'à la
+  /// fermeture de la page. Chaque tentative crée une NOUVELLE route.
+  MaterialPageRoute<void>? _pushIncoming(NavigatorState nav, CallInvite invite) {
     try {
-      // On utilise pushAndRemoveUntil ou push selon l'architecture, 
-      // ici push standard avec timeout de sécurité.
-      await navigator.push(route).timeout(_kNavigationTimeout);
-      return true;
+      final route = MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        settings: const RouteSettings(name: 'incoming_call'),
+        builder: (_) => IncomingCallPage(invite: invite),
+      );
+      unawaited(nav.push(route));
+      return route;
     } catch (e) {
       debugPrint('[GlobalCallListener] ⚠️ Push failed: $e');
-      return false;
+      return null;
     }
+  }
+
+  /// Ferme la page d'appel entrant si l'appelant annule ou si l'appel est manqué.
+  void _watchInviteEnd(CallInvite invite, MaterialPageRoute<void> route) {
+    _inviteStatusSub?.cancel();
+    _inviteStatusSub = _signal?.watchInviteStatus(invite.id).listen((s) {
+      if (_isDisposed) return;
+      final over = s == CallStatus.canceled || s == CallStatus.missed || s == CallStatus.ended;
+      if (over && route.isActive) {
+        debugPrint('[GlobalCallListener] 🔚 Caller ended the invite → closing incoming page');
+        route.navigator?.removeRoute(route);
+      }
+    });
   }
 
   // ── FALLBACK NOTIFICATION (HOOK) ─────────────────────────────────────
-
   void _triggerIncomingCallNotification(CallInvite invite) {
-    // TODO ENTERPRISE : Intégrer flutter_local_notifications ici.
-    // Configurer une notification avec :
-    // 1. priority: Priority.max
-    // 2. fullScreenIntent: true (pour Android)
-    // 3. category: AndroidNotificationCategory.call
-    // Cela permet d'afficher l'écran d'appel même si l'app est fermée/minimisée.
-    
-    debugPrint('[GlobalCallListener] 🔔 [MOCK] Notification locale déclenchée pour ${invite.callerId}');
+    // TODO ENTERPRISE : flutter_local_notifications avec
+    // priority max, fullScreenIntent: true, category call.
+    debugPrint('[GlobalCallListener] 🔔 [MOCK] Notification locale pour ${_obfuscate(invite.callerId)}');
   }
 
   // ── HELPERS ──────────────────────────────────────────────────────────
-
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
