@@ -14,7 +14,7 @@
         android:name="android.hardware.camera.autofocus"
         android:required="false" />
 
-    <!-- Microphone -->
+    <!-- Microphone & Audio -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
@@ -34,9 +34,6 @@
     <!-- Localisation -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-
-    <!-- À garder uniquement si ton application utilise réellement
-         la localisation en arrière-plan -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- NFC -->
@@ -52,22 +49,33 @@
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
-
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
 
-    <!-- Notifications -->
+    <!-- Notifications & Appel VoIP -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    
-    <!-- Permission pour notifications plein écran (appels entrants) -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
-    
-    <!-- Permission pour wake lock (notifications en arrière-plan) -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.CALL_PHONE" />
 
-    <!-- Système -->
+    <!-- Système & Badges d'icônes (Samsung, LG, Huawei, Xiaomi, etc.) -->
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="com.sec.android.provider.badge.permission.READ"/>
+    <uses-permission android:name="com.sec.android.provider.badge.permission.WRITE"/>
+    <uses-permission android:name="com.htc.launcher.permission.READ_SETTINGS"/>
+    <uses-permission android:name="com.htc.launcher.permission.UPDATE_SHORTCUT"/>
+    <uses-permission android:name="com.huawei.android.launcher.permission.CHANGE_BADGE"/>
+    <uses-permission android:name="com.huawei.android.launcher.permission.READ_SETTINGS"/>
+    <uses-permission android:name="com.huawei.android.launcher.permission.WRITE_SETTINGS"/>
+    <uses-permission android:name="com.sonyericsson.home.permission.BROADCAST_BADGE"/>
+    <uses-permission android:name="com.sonymobile.home.permission.PROVIDER_INSERT_BADGE"/>
+    <uses-permission android:name="android.permission.READ_APP_BADGE"/>
 
     <application
         android:name="${applicationName}"
@@ -83,17 +91,21 @@
         <!-- Métadonnées Firebase Messaging -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="thix_id_default" />
+            android:value="thix_calls_v2" />
         
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
 
+        <!-- Activité principale -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTop"
             android:theme="@style/LaunchTheme"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:showOnLockScreen="true"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
@@ -114,7 +126,7 @@
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
 
-            <!-- ✅ AJOUTÉ : Custom Scheme Deep Linking (ex: thix://profile/123) -->
+            <!-- Custom Scheme Deep Linking -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -122,7 +134,7 @@
                 <data android:scheme="thix" />
             </intent-filter>
 
-            <!-- ✅ AJOUTÉ : App Links HTTPS Auto-Vérifiés (ex: https://thix.app/profile/123) -->
+            <!-- App Links HTTPS Auto-Vérifiés -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -131,6 +143,22 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Récepteurs pour Flutter Local Notifications -->
+        <receiver 
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+        
+        <receiver 
+            android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
+            android:exported="false"/>
 
         <!-- Service Firebase Messaging pour notifications en arrière-plan -->
         <service
@@ -141,12 +169,12 @@
             </intent-filter>
         </service>
 
-        <!-- Flutter -->
+        <!-- Flutter Embedder -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
-        <!-- Impeller activé -->
+        <!-- Impeller -->
         <meta-data
             android:name="io.flutter.embedding.android.EnableImpeller"
             android:value="true" />
