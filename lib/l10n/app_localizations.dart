@@ -13085,31 +13085,6 @@ const Map<String, String> _ar = {
   'reg_chat_available': 'اسم المستخدم متاح',
   'reg_previous_step': 'الخطوة السابقة',
   'reg_error_request_otp_first': 'يرجى طلب رمز التحقق أولاً',
-  // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'دعوة للانضمام إلى البث المباشر',
-  'live_invite_desc': 'يدعوك للصعود إلى المنصة',
-  'live_invite_accept': 'قبول',
-  'live_invite_decline': 'رفض',
-  'live_invite_accepted': 'أنت الآن على المنصة!',
-  'live_invite_accept_failed': 'فشل قبول الدعوة',
-  'live_invite_expired': 'انتهت صلاحية الدعوة',
-  'live_request_to_join': 'طلب الصعود إلى المنصة',
-  'live_request_sent': 'تم إرسال الطلب إلى المضيف',
-  'live_request_failed': 'فشل الطلب',
-  'live_request_pending': 'الطلب قيد الانتظار...',
-  'live_wants_to_join': 'يريد الصعود إلى المنصة',
-  'live_on_stage': 'بث مباشر',
-  'live_now_on_stage': 'أنت على المنصة!',
-  'live_promote_failed': 'تعذر الصعود إلى المنصة',
-  'live_back_to_audience': 'العودة إلى وضع المشاهد',
-  'live_leave_stage_title': 'مغادرة المنصة؟',
-  'live_leave_stage_confirm': 'ستعود إلى وضع المشاهد',
-  'live_leave_stage_btn': 'مغادرة المنصة',
-  'reg_chat_available': 'اسم المستخدم متاح',
-  'reg_previous_step': 'الخطوة السابقة',
-  'reg_error_request_otp_first': 'يرجى طلب رمز التحقق أولاً',
-
-
 };
 
 //🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹🌹
