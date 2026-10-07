@@ -12,10 +12,9 @@ class PushNotificationService {
   PushNotificationService._();
   static final PushNotificationService instance = PushNotificationService._();
 
-  // ✅ OBLIGATOIRE : ces deux setters doivent exister dans le stub
-  //    pour que main.dart compile sur Web (même s'ils ne sont jamais appelés)
-  static void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
-  static void Function(String inviteId)? onVoipDecline;
+  // ✅ CORRIGÉ : Membres d'instance (retrait de static) pour matcher l'utilisation d'instance dans main.dart
+  void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
+  void Function(String inviteId)? onVoipDecline;
 
   Future<void> initialize() async {
     debugPrint('[PushNotif-Stub] ℹ️ init skipped (web)');
