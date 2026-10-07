@@ -1,10 +1,12 @@
 // lib/presentation/thix_media/live/services/live_service.dart
 //
 // LiveService — Production Enterprise (niveau TikTok/IG Live backend)
-// Version 2.0 avec :
+// Version 2.1 avec :
 // - Like Batching (TikTok-style ultra-rapide)
 // - Multi-Guest / Co-hosting (invitations + promotion broadcaster)
 // - Gestion complète des rôles Agora (host/audience/broadcaster)
+// - ✅ Support complet description/tags/audience
+// - ✅ Nouvelle API Realtime Supabase (broadcast)
 //
 import 'dart:async';
 import 'dart:math';
@@ -19,14 +21,14 @@ import 'package:thix_id/l10n/app_localizations.dart';
 // ============================================================================
 
 const Duration _kRequestTimeout = Duration(seconds: 15);
-const Duration _kTokenCacheTTL = Duration(minutes: 50); // Agora token TTL ~60min
+const Duration _kTokenCacheTTL = Duration(minutes: 50);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const int _kMaxTitleLength = 80;
 const int _kMaxCategoryLength = 40;
 const int _kMaxChatLength = 200;
 const int _kDefaultListLimit = 30;
 const int _kMaxListLimit = 100;
-const int _kMaxGuestsPerLive = 4; // Limite de guests simultanés
+const int _kMaxGuestsPerLive = 4;
 
 // ============================================================================
 // LOGGING
@@ -164,7 +166,7 @@ class AgoraCredentials {
 
   bool get isValid =>
       token.isNotEmpty && appId.isNotEmpty && channelName.isNotEmpty;
-  
+
   bool get isHost => role == 'host';
   bool get isBroadcaster => role == 'broadcaster' || role == 'host';
   bool get isAudience => role == 'audience';
@@ -220,7 +222,9 @@ class LiveSession {
           : DateTime.now(),
       guests: j['guests'] is List
           ? (j['guests'] as List)
-              .map((g) => g is Map ? GuestInfo.fromJson(Map<String, dynamic>.from(g)) : null)
+              .map((g) => g is Map
+                  ? GuestInfo.fromJson(Map<String, dynamic>.from(g))
+                  : null)
               .whereType<GuestInfo>()
               .toList()
           : [],
@@ -260,7 +264,7 @@ class GuestInfo {
   final String userId;
   final String username;
   final int? agoraUid;
-  final String status; // 'invited', 'accepted', 'on_stage', 'left'
+  final String status;
   final DateTime joinedAt;
 
   GuestInfo({
@@ -284,7 +288,7 @@ class GuestInfo {
   }
 
   bool get isOnStage => status == 'on_stage' || status == 'accepted';
-  
+
   GuestInfo copyWith({
     String? status,
     int? agoraUid,
@@ -358,7 +362,7 @@ class LiveService {
   final _client = Supabase.instance.client;
   final _tokenCache = _AgoraTokenCache();
   final Map<String, DateTime> _chatLastSend = {};
-  final Map<String, int> _pendingLikes = {}; // liveId -> count
+  final Map<String, int> _pendingLikes = {};
 
   // ════════════════════════════════════════════════════════════
   // HELPERS
@@ -411,26 +415,37 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // START LIVE
+  // START LIVE (avec support complet description/tags/audience)
   // ════════════════════════════════════════════════════════════
 
   Future<({LiveSession session, AgoraCredentials creds})> startLive({
-  required String title,
-  String category = 'general',
-  String? description,   // ✅ NOUVEAU
-  String? tags,          // ✅ NOUVEAU
-  String audience = 'public',  // ✅ NOUVEAU
-}) async { 
+    required String title,
+    String category = 'general',
+    String? description,
+    String? tags,
+    String audience = 'public',
+  }) async {
     final userId = _getUserId();
     final safeTitle = _LiveValidators.sanitizeTitle(title);
     final safeCategory = _LiveValidators.sanitizeCategory(category);
+    final safeDescription = description != null
+        ? _LiveValidators.sanitizeText(description, maxLength: 500)
+        : null;
+    final safeTags = tags != null
+        ? _LiveValidators.sanitizeText(tags, maxLength: 120)
+        : null;
+    final safeAudience =
+        ['public', 'followers', 'private'].contains(audience) ? audience : 'public';
 
     if (safeTitle.isEmpty) {
       throw LiveException('invalid_title', 'Title cannot be empty');
     }
 
-    _LiveServiceLogger.info('Starting live',
-        {'userId': userId, 'category': safeCategory});
+    _LiveServiceLogger.info('Starting live', {
+      'userId': userId,
+      'category': safeCategory,
+      'audience': safeAudience,
+    });
 
     try {
       final existing = await _withTimeout(
@@ -454,20 +469,26 @@ class LiveService {
 
     final channel = _generateChannelName(userId);
 
+    // ✅ INSERT avec tous les champs (description, tags, audience)
+    final insertData = <String, dynamic>{
+      'host_id': userId,
+      'title': safeTitle,
+      'category': safeCategory,
+      'status': 'live',
+      'channel_name': channel,
+      'started_at': DateTime.now().toUtc().toIso8601String(),
+      'audience': safeAudience,
+    };
+    if (safeDescription != null && safeDescription.isNotEmpty) {
+      insertData['description'] = safeDescription;
+    }
+    if (safeTags != null && safeTags.isNotEmpty) {
+      insertData['tags'] = safeTags;
+    }
+
     final row = await _withRetry(
       () => _withTimeout(
-        _client
-            .from('lives')
-            .insert({
-              'host_id': userId,
-              'title': safeTitle,
-              'category': safeCategory,
-              'status': 'live',
-              'channel_name': channel,
-              'started_at': DateTime.now().toUtc().toIso8601String(),
-            })
-            .select()
-            .single(),
+        _client.from('lives').insert(insertData).select().single(),
         context: 'insert_live',
       ),
       context: 'insert_live',
@@ -594,7 +615,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // END LIVE (ownership vérifiée)
+  // END LIVE
   // ════════════════════════════════════════════════════════════
 
   Future<void> endLive(String liveId) async {
@@ -700,7 +721,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // SEND CHAT MESSAGE (avec throttling + sanitization)
+  // SEND CHAT MESSAGE
   // ════════════════════════════════════════════════════════════
 
   Future<void> sendMessage({
@@ -759,18 +780,16 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 TIKTOK-STYLE LIKES (Batching ultra-rapide)
+  // 🎯 TIKTOK-STYLE LIKES (Batching)
   // ════════════════════════════════════════════════════════════
 
-  /// Envoie les likes par batch (toutes les 500ms depuis le host_page)
-  /// Incrémente atomiquement le compteur côté serveur
   Future<void> sendLikeBatch({
     required String liveId,
     required int count,
     required String username,
   }) async {
     if (count <= 0) return;
-    
+
     final userId = _getUserId();
     if (!_LiveValidators.isValidUuid(liveId)) {
       _LiveServiceLogger.warn('Invalid live ID for likes', {'liveId': liveId});
@@ -778,8 +797,6 @@ class LiveService {
     }
 
     try {
-      // Utiliser une fonction RPC pour incrémenter atomiquement
-      // Évite les race conditions et les pertes de likes
       await _withTimeout(
         _client.rpc(
           'increment_live_likes',
@@ -803,15 +820,13 @@ class LiveService {
         'count': count,
         'error': '$e',
       });
-      // Ne pas rethrow : les likes sont non-critiques (optimistic UI)
     }
   }
 
   // ════════════════════════════════════════════════════════════
-  // 👥 MULTI-GUEST / CO-HOSTING (Faire monter les gens)
+  // 👥 MULTI-GUEST / CO-HOSTING
   // ════════════════════════════════════════════════════════════
 
-  /// L'hôte envoie une invitation à un spectateur pour monter sur scène
   Future<void> sendGuestInvite({
     required String liveId,
     required String guestUserId,
@@ -822,9 +837,12 @@ class LiveService {
       throw LiveException('invalid_id', 'Invalid live ID format');
     }
 
-    // Vérifier que l'utilisateur est bien l'hôte
     final liveRow = await _withTimeout(
-      _client.from('lives').select('host_id, status').eq('id', liveId).maybeSingle(),
+      _client
+          .from('lives')
+          .select('host_id, status, channel_name, title')
+          .eq('id', liveId)
+          .maybeSingle(),
       context: 'verify_host_for_invite',
     );
 
@@ -832,7 +850,6 @@ class LiveService {
     if (liveRow['host_id'] != hostId) throw LiveNotOwnerException();
     if (liveRow['status'] != 'live') throw LiveTerminatedException();
 
-    // Vérifier la limite de guests
     final guestsRow = await _withTimeout(
       _client
           .from('live_guests')
@@ -846,7 +863,6 @@ class LiveService {
       throw LiveGuestLimitException();
     }
 
-    // Vérifier que le guest n'est pas déjà invité
     if (guestsRow is List) {
       final alreadyInvited = guestsRow.any((g) => g['user_id'] == guestUserId);
       if (alreadyInvited) {
@@ -854,13 +870,14 @@ class LiveService {
       }
     }
 
-    // Insérer l'invitation
+    final hostUsername = _LiveValidators.sanitizeText(guestUsername, maxLength: 50);
+
     await _withRetry(
       () => _withTimeout(
         _client.from('live_guests').insert({
           'live_id': liveId,
           'user_id': guestUserId,
-          'username': _LiveValidators.sanitizeText(guestUsername, maxLength: 50),
+          'username': hostUsername,
           'status': 'invited',
           'invited_at': DateTime.now().toUtc().toIso8601String(),
         }),
@@ -869,18 +886,30 @@ class LiveService {
       context: 'insert_guest_invite',
     );
 
-    // Envoyer une notification realtime au guest
-    final channel = _client.channel('live_invite_$guestUserId');
-    await channel.send(
-      type: RealtimeListenTypes.broadcast,
-      event: 'guest_invite',
-      payload: {
-        'live_id': liveId,
-        'host_id': hostId,
-        'host_username': _LiveValidators.sanitizeText(guestUsername, maxLength: 50),
-        'invited_at': DateTime.now().toUtc().toIso8601String(),
-      },
-    );
+    // ✅ NOUVELLE API REALTIME : sendBroadcastMessage (remplace channel.send + RealtimeListenTypes)
+    try {
+      final inviteChannel = _client.channel('live_invite_$guestUserId');
+      await inviteChannel.sendBroadcastMessage(
+        event: 'guest_invite',
+        payload: {
+          'live_id': liveId,
+          'host_id': hostId,
+          'host_username': hostUsername,
+          'channel_name': liveRow['channel_name']?.toString() ?? '',
+          'live_title': liveRow['title']?.toString() ?? '',
+          'invited_at': DateTime.now().toUtc().toIso8601String(),
+        },
+      );
+      _LiveServiceLogger.info('Guest invite broadcast sent', {
+        'liveId': liveId,
+        'guestId': guestUserId,
+      });
+    } catch (e) {
+      _LiveServiceLogger.warn('Invite broadcast failed (non-critical)', {
+        'error': '$e',
+      });
+      // Non-critique : l'invitation est en DB, le guest la verra au prochain poll
+    }
 
     _LiveServiceLogger.info('Guest invite sent', {
       'liveId': liveId,
@@ -889,14 +918,12 @@ class LiveService {
     });
   }
 
-  /// Le spectateur accepte l'invitation et devient broadcaster
   Future<AgoraCredentials> acceptGuestInvite(String liveId) async {
     final userId = _getUserId();
     if (!_LiveValidators.isValidUuid(liveId)) {
       throw LiveException('invalid_id', 'Invalid live ID format');
     }
 
-    // Vérifier que l'invitation existe
     final inviteRow = await _withTimeout(
       _client
           .from('live_guests')
@@ -912,16 +939,18 @@ class LiveService {
       throw LiveException('invite_not_found', 'No pending invite for this live');
     }
 
-    // Récupérer le channel name du live
     final liveRow = await _withTimeout(
-      _client.from('lives').select('channel_name, status').eq('id', liveId).maybeSingle(),
+      _client
+          .from('lives')
+          .select('channel_name, status')
+          .eq('id', liveId)
+          .maybeSingle(),
       context: 'fetch_live_for_accept',
     );
 
     if (liveRow == null) throw LiveNotFoundException(liveId);
     if (liveRow['status'] != 'live') throw LiveTerminatedException();
 
-    // Mettre à jour le statut du guest
     await _withRetry(
       () => _withTimeout(
         _client.from('live_guests').update({
@@ -933,11 +962,10 @@ class LiveService {
       context: 'update_guest_accept',
     );
 
-    // Récupérer un token Agora avec le rôle "broadcaster"
     final creds = await fetchAgoraToken(
       channelName: liveRow['channel_name'] as String,
       role: 'broadcaster',
-      cacheResult: false, // Nouveau token pour le nouveau rôle
+      cacheResult: false,
     );
 
     _LiveServiceLogger.info('Guest accepted invite', {
@@ -949,7 +977,6 @@ class LiveService {
     return creds;
   }
 
-  /// Le spectateur refuse l'invitation
   Future<void> rejectGuestInvite(String liveId) async {
     final userId = _getUserId();
     if (!_LiveValidators.isValidUuid(liveId)) {
@@ -973,14 +1000,12 @@ class LiveService {
     });
   }
 
-  /// L'hôte retire un guest de la scène (le renvoie en audience)
   Future<void> removeGuest(String liveId, String guestUserId) async {
     final hostId = _getUserId();
     if (!_LiveValidators.isValidUuid(liveId)) {
       throw LiveException('invalid_id', 'Invalid live ID format');
     }
 
-    // Vérifier ownership
     final liveRow = await _withTimeout(
       _client.from('lives').select('host_id').eq('id', liveId).maybeSingle(),
       context: 'verify_host_for_remove',
@@ -989,7 +1014,6 @@ class LiveService {
     if (liveRow == null) throw LiveNotFoundException(liveId);
     if (liveRow['host_id'] != hostId) throw LiveNotOwnerException();
 
-    // Mettre à jour le statut du guest
     await _withRetry(
       () => _withTimeout(
         _client.from('live_guests').update({
@@ -1008,14 +1032,13 @@ class LiveService {
     });
   }
 
-  /// L'hôte promeut un guest au statut de broadcaster (après acceptation)
-  Future<void> promoteToBroadcaster(String liveId, String guestUserId, int agoraUid) async {
+  Future<void> promoteToBroadcaster(
+      String liveId, String guestUserId, int agoraUid) async {
     final hostId = _getUserId();
     if (!_LiveValidators.isValidUuid(liveId)) {
       throw LiveException('invalid_id', 'Invalid live ID format');
     }
 
-    // Vérifier ownership
     final liveRow = await _withTimeout(
       _client.from('lives').select('host_id').eq('id', liveId).maybeSingle(),
       context: 'verify_host_for_promote',
@@ -1024,7 +1047,6 @@ class LiveService {
     if (liveRow == null) throw LiveNotFoundException(liveId);
     if (liveRow['host_id'] != hostId) throw LiveNotOwnerException();
 
-    // Mettre à jour le statut et l'UID Agora du guest
     await _withRetry(
       () => _withTimeout(
         _client.from('live_guests').update({
@@ -1044,7 +1066,6 @@ class LiveService {
     });
   }
 
-  /// Récupère la liste des guests actuels d'un live
   Future<List<GuestInfo>> getLiveGuests(String liveId) async {
     if (!_LiveValidators.isValidUuid(liveId)) {
       throw LiveException('invalid_id', 'Invalid live ID format');
@@ -1064,7 +1085,9 @@ class LiveService {
       if (rows is! List) return [];
 
       return rows
-          .map((r) => r is Map ? GuestInfo.fromJson(Map<String, dynamic>.from(r)) : null)
+          .map((r) => r is Map
+              ? GuestInfo.fromJson(Map<String, dynamic>.from(r))
+              : null)
           .whereType<GuestInfo>()
           .toList();
     } catch (e) {
