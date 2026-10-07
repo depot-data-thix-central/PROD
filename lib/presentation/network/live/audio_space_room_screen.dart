@@ -778,7 +778,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
               label: isMuted
                   ? _tx(l10n, 'audio_space_muted', 'Muet')
                   : _tx(l10n, 'audio_space_live_mic', 'Micro'),
-              onTap: ctrl.canSpeak(me!) || ctrl.isHost
+              // ✅ FIX: guard null-safe au lieu de me!
+              onTap: me != null && (ctrl.canSpeak(me) || ctrl.isHost)
                   ? () {
                       if (!_throttleAction()) return;
                       HapticFeedback.selectionClick();
