@@ -1,6 +1,7 @@
 // lib/presentation/thix_media/live/providers/go_live_provider.dart
 //
 // GoLiveProvider — Production Enterprise
+// Version 2.0 avec support description/tags/audience
 //
 // Features :
 // - Mapping complet des LiveException vers GoLiveErrorCode
@@ -9,6 +10,8 @@
 // - Détection "already active" + reprise automatique
 // - Logging structuré
 // - Timeout global pour éviter les blocages UI
+// - ✅ Support paramètres avancés (description, tags, audience)
+//
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -52,16 +55,16 @@ final liveServiceProvider = Provider<LiveService>((ref) => LiveService());
 // ============================================================================
 
 enum GoLiveErrorCode {
-  notAuthenticated,   // → live_error_not_authenticated
-  alreadyActive,      // → live_error_already_active (+ offer resume)
-  invalidTitle,       // → live_error_invalid_title
-  tokenError,         // → live_error_token
-  network,            // → error_network
-  timeout,            // → error_timeout
-  permissionDenied,   // → error_permission_denied
-  serverError,        // → error_server
-  cancelled,          // (pas d'affichage, state → idle)
-  unknown,            // → error_generic
+  notAuthenticated,
+  alreadyActive,
+  invalidTitle,
+  tokenError,
+  network,
+  timeout,
+  permissionDenied,
+  serverError,
+  cancelled,
+  unknown,
 }
 
 // ============================================================================
@@ -77,9 +80,8 @@ class GoLiveIdle extends GoLiveState {
 }
 
 class GoLiveLoading extends GoLiveState {
-  /// 0.0 → 1.0 (pour progress indicator)
   final double progress;
-  final String stage; // 'preparing' | 'creating' | 'fetching_token'
+  final String stage;
   const GoLiveLoading({this.progress = 0.0, this.stage = 'preparing'});
 
   GoLiveLoading copyWith({double? progress, String? stage}) =>
@@ -95,8 +97,6 @@ class GoLiveReady extends GoLiveState {
 class GoLiveError extends GoLiveState {
   final GoLiveErrorCode code;
   final String rawMessage;
-
-  /// Si `alreadyActiveSession` est non-null, proposer "Reprendre le live".
   final LiveSession? alreadyActiveSession;
 
   const GoLiveError({
@@ -105,7 +105,6 @@ class GoLiveError extends GoLiveState {
     this.alreadyActiveSession,
   });
 
-  /// Clé i18n associée au code (à utiliser avec AppLocalizations).
   String get i18nKey {
     switch (code) {
       case GoLiveErrorCode.notAuthenticated:
@@ -131,7 +130,6 @@ class GoLiveError extends GoLiveState {
     }
   }
 
-  // ✅ NOUVEAU : Override de toString pour faciliter le debug
   @override
   String toString() => 'GoLiveError($code): $rawMessage';
 }
@@ -153,20 +151,21 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
   _LastAttempt? _lastAttempt;
   int _retryCount = 0;
 
-  /// Retourne true si une action est en cours (pour désactiver UI).
   bool get isBusy =>
       state is GoLiveLoading || state is GoLiveCancelling;
 
-  /// Retourne true si on peut retry (après une erreur non-fatale).
   bool get canRetry => state is GoLiveError && _lastAttempt != null;
 
   // ════════════════════════════════════════════════════════════
-  // START LIVE
+  // START LIVE (avec paramètres avancés)
   // ════════════════════════════════════════════════════════════
 
   Future<void> start({
     required String title,
     String category = 'general',
+    String? description,  // ✅ NOUVEAU
+    String? tags,         // ✅ NOUVEAU
+    String audience = 'public',  // ✅ NOUVEAU
   }) async {
     // Throttle anti-double-tap
     final now = DateTime.now();
@@ -182,22 +181,52 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
       return;
     }
 
-    _lastAttempt = _LastAttempt(title: title, category: category);
+    _lastAttempt = _LastAttempt(
+      title: title,
+      category: category,
+      description: description,
+      tags: tags,
+      audience: audience,
+    );
     _retryCount = 0;
 
-    await _performStart(title, category);
+    await _performStart(
+      title,
+      category,
+      description,
+      tags,
+      audience,
+    );
   }
 
-  Future<void> _performStart(String title, String category) async {
+  Future<void> _performStart(
+    String title,
+    String category,
+    String? description,
+    String? tags,
+    String audience,
+  ) async {
     state = const GoLiveLoading(progress: 0.1, stage: 'preparing');
-    _GoLiveLogger.info('Starting live attempt',
-        {'title': title, 'category': category, 'retry': _retryCount});
+    _GoLiveLogger.info('Starting live attempt', {
+      'title': title,
+      'category': category,
+      'audience': audience,
+      'descLen': description?.length ?? 0,
+      'tagsLen': tags?.length ?? 0,
+      'retry': _retryCount,
+    });
 
     try {
       state = const GoLiveLoading(progress: 0.3, stage: 'creating');
 
       final result = await _liveService
-          .startLive(title: title, category: category)
+          .startLive(
+            title: title,
+            category: category,
+            description: description,  // ✅ Transmis
+            tags: tags,                // ✅ Transmis
+            audience: audience,        // ✅ Transmis
+          )
           .timeout(_kStartTimeout, onTimeout: () {
         throw TimeoutException('Start live timed out');
       });
@@ -205,14 +234,15 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
       if (!mounted) return;
 
       state = const GoLiveLoading(progress: 0.9, stage: 'fetching_token');
-
-      // Petit délai UX pour voir le "presque fini"
       await Future.delayed(const Duration(milliseconds: 150));
 
       if (!mounted) return;
 
-      _GoLiveLogger.info('Live ready',
-          {'sessionId': result.session.id, 'channel': result.session.channelName});
+      _GoLiveLogger.info('Live ready', {
+        'sessionId': result.session.id,
+        'channel': result.session.channelName,
+        'audience': result.session.audience,
+      });
 
       state = GoLiveReady(result.session, result.creds);
     } on LiveAlreadyActiveException {
@@ -228,7 +258,6 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
           autoRetry: true);
     } catch (e) {
       final msg = e.toString();
-      // Heuristiques pour classifier l'erreur inconnue
       if (msg.contains('SocketException') ||
           msg.contains('Network') ||
           msg.contains('Failed host')) {
@@ -244,7 +273,7 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // ALREADY ACTIVE : récupérer le live existant
+  // ALREADY ACTIVE
   // ════════════════════════════════════════════════════════════
 
   Future<void> _handleAlreadyActive() async {
@@ -259,7 +288,6 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
 
       if (!mounted) return;
 
-      // Tenter de récupérer un token pour ce live existant
       final creds = await _liveService
           .fetchAgoraToken(
             channelName: myActive.channelName,
@@ -283,7 +311,6 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
     }
   }
 
-  /// Reprise directe du live actif (appelé par l'UI après dialog).
   Future<void> resumeActive(LiveSession session) async {
     if (isBusy) return;
     state = const GoLiveLoading(progress: 0.5, stage: 'fetching_token');
@@ -322,10 +349,19 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
       return;
     }
 
-    _GoLiveLogger.info('Retry attempt',
-        {'count': _retryCount, 'title': attempt.title});
+    _GoLiveLogger.info('Retry attempt', {
+      'count': _retryCount,
+      'title': attempt.title,
+      'audience': attempt.audience,
+    });
 
-    await _performStart(attempt.title, attempt.category);
+    await _performStart(
+      attempt.title,
+      attempt.category,
+      attempt.description,
+      attempt.tags,
+      attempt.audience,
+    );
   }
 
   // ════════════════════════════════════════════════════════════
@@ -399,7 +435,17 @@ class GoLiveNotifier extends StateNotifier<GoLiveState> {
 class _LastAttempt {
   final String title;
   final String category;
-  _LastAttempt({required this.title, required this.category});
+  final String? description;  // ✅ NOUVEAU
+  final String? tags;         // ✅ NOUVEAU
+  final String audience;      // ✅ NOUVEAU
+
+  _LastAttempt({
+    required this.title,
+    required this.category,
+    this.description,
+    this.tags,
+    this.audience = 'public',
+  });
 }
 
 // ============================================================================
