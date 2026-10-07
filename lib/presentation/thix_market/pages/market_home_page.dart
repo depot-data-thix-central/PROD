@@ -1,6 +1,10 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v3
+// MARKET HOME PAGE — Production Enterprise v4
+// ----------------------------------------------------------------------------
+//  • Pastilles de notifications : cloche + Commandes / Favoris / Boutiques
+//  • Remise à zéro à l'ouverture de la section
+//  • Bouton panier central entier (n'est plus coupé)
 // ============================================================================
 
 import 'dart:async';
@@ -19,9 +23,11 @@ import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../providers/market_providers.dart';
+import '../providers/market_badges_provider.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
 import 'all_shops_and_supermarkets_page.dart';
+
 // ============================================================================
 // CONSTANTES
 // ============================================================================
@@ -109,7 +115,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   Timer? _bannerTimer;
   bool _bannerReady = false;
   int _currentBanner = 0;
-  int _selectedNav = 0;
   ModalRoute? _currentRoute;
 
   @override
@@ -133,6 +138,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     debugPrint('[Market] 🔙 Returned from pushed route — silent refresh');
     invalidateAllMarketProviders(ref);
     ref.read(forYouProvider.notifier).refresh();
+    ref.read(marketBadgesProvider.notifier).refresh();
   }
 
   // ✅ FIX : garde hasClients
@@ -154,6 +160,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     super.dispose();
   }
 
+  String _t(String fr, String en) {
+    final lang = Localizations.localeOf(context).languageCode;
+    return lang == 'fr' ? fr : en;
+  }
+
   void _safeNavigate(String name, String path) {
     HapticFeedback.selectionClick();
     try {
@@ -168,6 +179,53 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
       }
     }
   }
+
+  // ── Navigation avec remise à zéro de la pastille ─────────────────────────
+  Future<void> _go(MarketBadge kind, Future<dynamic> Function() nav) async {
+    HapticFeedback.lightImpact();
+    final badges = ref.read(marketBadgesProvider.notifier);
+    badges.markSeen(kind); // pastille à 0 immédiatement
+    try {
+      await nav();
+    } catch (e) {
+      debugPrint('[Market] ❌ Nav failed ($kind): $e');
+    }
+    if (mounted) badges.refresh();
+  }
+
+  Future<void> _openNotifications() => _go(MarketBadge.alerts, () async {
+        try {
+          await context.pushNamed('marketNotifications');
+        } catch (_) {
+          await context.push('/market/notifications');
+        }
+      });
+
+  Future<void> _openOrders() =>
+      _go(MarketBadge.orders, () => context.push('/market/orders'));
+
+  Future<void> _openWishlist() => _go(MarketBadge.wishlist, () async {
+        try {
+          await context.pushNamed('marketWishlist');
+        } catch (_) {
+          await context.push('/market/wishlist');
+        }
+      });
+
+  Future<void> _openShops(bool hasShop) => _go(MarketBadge.shops, () async {
+        if (hasShop) {
+          try {
+            await context.pushNamed('vendorDashboard');
+          } catch (_) {
+            await context.push('/market/vendor/dashboard');
+          }
+        } else {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => AllShopsAndSupermarketsPage()),
+          );
+        }
+      });
 
   void _startBannerAuto(int count) {
     if (_bannerReady || count <= 1) return;
@@ -261,6 +319,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     final forYouAsync = ref.watch(forYouProvider);
     final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
     final fallbackProducts = ref.watch(allMarketProductsProvider);
+    final badges = ref.watch(marketBadgesProvider);
 
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
 
@@ -285,13 +344,14 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
               HapticFeedback.mediumImpact();
               debugPrint('[Market] 🔄 Pull-to-refresh');
               invalidateAllMarketProviders(ref);
+              ref.read(marketBadgesProvider.notifier).refresh();
               await ref.read(forYouProvider.notifier).refresh();
             },
             child: CustomScrollView(
               controller: _scroll,
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
-                SliverToBoxAdapter(child: _buildTopSection(l10n)),
+                SliverToBoxAdapter(child: _buildTopSection(l10n, badges)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
                 SliverToBoxAdapter(child: _buildHero(featuredAsync, l10n)),
                 SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, l10n)),
@@ -303,7 +363,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
                 SliverToBoxAdapter(child: _buildPromoBannersRow(l10n)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-                SliverToBoxAdapter(child: _buildB2BTools(l10n)),
+                SliverToBoxAdapter(child: _buildB2BTools(l10n, badges)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
                 SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
                 SliverToBoxAdapter(child: _buildSectionHeader(_allProductsTitle(l10n))),
@@ -314,13 +374,13 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             ),
           ),
 
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomNavBar(l10n)),
+          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomNavBar(l10n, badges)),
         ],
       ),
     );
   }
 
-  Widget _buildTopSection(AppLocalizations l10n) {
+  Widget _buildTopSection(AppLocalizations l10n, MarketBadges badges) {
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(bottom: Radius.circular(ThixPolicy.rXl)),
       child: BackdropFilter(
@@ -333,7 +393,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
           ),
           child: Column(
             children: [
-              _buildTopBar(l10n),
+              _buildTopBar(l10n, badges),
               _buildSearchBar(l10n),
               const SizedBox(height: ThixPolicy.s16),
             ],
@@ -343,7 +403,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  Widget _buildTopBar(AppLocalizations l10n) {
+  Widget _buildTopBar(AppLocalizations l10n, MarketBadges badges) {
     return Container(
       color: Colors.transparent,
       padding: EdgeInsets.fromLTRB(ThixPolicy.s16, MediaQuery.paddingOf(context).top + 12, ThixPolicy.s16, ThixPolicy.s12),
@@ -386,18 +446,34 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             children: [
               Semantics(
                 button: true,
-                label: l10n.t('common_notifications'),
+                label: badges.alerts > 0
+                    ? '${l10n.t('common_notifications')}, ${badges.alerts}'
+                    : l10n.t('common_notifications'),
                 child: InkWell(
-                  onTap: () => _safeNavigate('marketNotifications', '/market/notifications'),
+                  onTap: _openNotifications,
                   borderRadius: BorderRadius.circular(ThixPolicy.rFull),
-                  child: Container(
-                    width: 38, height: 38,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.6),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
-                    ),
-                    child: const Icon(Icons.notifications_none_rounded, size: 20, color: ThixPolicy.textMain),
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        width: 38, height: 38,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.6),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.5),
+                        ),
+                        child: Icon(
+                          badges.alerts > 0 ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
+                          size: 20,
+                          color: ThixPolicy.textMain,
+                        ),
+                      ),
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: _CountBadge(count: badges.alerts),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -826,7 +902,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-    Widget _buildSupermarketSection(AppLocalizations l10n) {
+  Widget _buildSupermarketSection(AppLocalizations l10n) {
     final shopsAsync = ref.watch(featuredShopsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
@@ -994,7 +1070,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  Widget _buildB2BTools(AppLocalizations l10n) {
+  Widget _buildB2BTools(AppLocalizations l10n, MarketBadges badges) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Container(
@@ -1011,17 +1087,17 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             _b2bItem(Icons.compare_arrows_rounded, _MarketValidators.sanitize(l10n.t('market_compare'), maxLength: 20), () => _safeNavigate('marketProductComparator', '/market/compare')),
             _b2bItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(l10n.t('market_price_alert'), maxLength: 20), () => _safeNavigate('marketPriceAlerts', '/market/price-alerts')),
             _b2bItem(Icons.request_quote_rounded, _MarketValidators.sanitize(l10n.t('market_b2b_quote'), maxLength: 20), () => _showComing(l10n.t('market_b2b_quote'))),
-            _b2bItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), () => _safeNavigate('marketWishlist', '/market/wishlist')),
+            _b2bItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), _openWishlist, badge: badges.wishlist),
           ],
         ),
       ),
     );
   }
 
-  Widget _b2bItem(IconData icon, String label, VoidCallback onTap) {
+  Widget _b2bItem(IconData icon, String label, VoidCallback onTap, {int badge = 0}) {
     return Semantics(
       button: true,
-      label: label,
+      label: badge > 0 ? '$label, $badge' : label,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
@@ -1029,10 +1105,20 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
           padding: const EdgeInsets.all(4),
           child: Column(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), shape: BoxShape.circle),
-                child: Icon(icon, color: ThixPolicy.primaryDeep, size: 20),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.8), shape: BoxShape.circle),
+                    child: Icon(icon, color: ThixPolicy.primaryDeep, size: 20),
+                  ),
+                  Positioned(
+                    top: -3,
+                    right: -3,
+                    child: _CountBadge(count: badge),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: ThixPolicy.textMain)),
@@ -1124,7 +1210,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  // ✅ FIX PRINCIPAL : grid robuste (hauteur fixe + variante horizontal + fallback)
+  // ✅ Grid robuste (hauteur fixe + variante horizontal + fallback)
   Widget _buildGrid(
     AsyncValue<List<Map<String, dynamic>>> forYouAsync,
     List<Map<String, dynamic>> fallback,
@@ -1247,101 +1333,158 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  Widget _buildBottomNavBar(AppLocalizations l10n) {
-    return Container(
-      color: Colors.transparent,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-              child: Container(
-                height: 56,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.65),
+  // ==========================================================================
+  // BARRE DU BAS — le bouton panier est HORS du ClipRRect (plus coupé)
+  // ==========================================================================
+  Widget _buildBottomNavBar(AppLocalizations l10n, MarketBadges badges) {
+    const barH = 56.0;
+    const fabSize = 58.0;
+    const lift = 20.0; // dépassement du bouton panier au-dessus de la barre
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        child: SizedBox(
+          height: barH + lift,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.topCenter,
+            children: [
+              // Barre en verre (le clip ne touche que la barre)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: barH,
+                child: ClipRRect(
                   borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.2),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _navItem(Icons.home_rounded, _MarketValidators.sanitize(l10n.t('common_home'), maxLength: 20), 0),
-                        _navItem(Icons.receipt_long_rounded, _MarketValidators.sanitize(l10n.t('market_orders'), maxLength: 20), 1),
-                        const SizedBox(width: 60),
-                        _navItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), 3),
-                        _navItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(l10n.t('market_alerts'), maxLength: 20), 4),
-                      ],
-                    ),
-                    Positioned(
-                      top: -18,
-                      child: Semantics(
-                        button: true,
-                        label: l10n.t('market_cart_semantics'),
-                        child: GestureDetector(
-                          onTap: () {
-                            HapticFeedback.mediumImpact();
-                            context.push('/market/cart');
-                          },
-                          child: Container(
-                            width: 56, height: 56,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              gradient: ThixPolicy.brandGradient,
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white.withOpacity(0.8), width: 3),
-                              boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 4))],
-                            ),
-                            child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 24),
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.65),
+                        borderRadius: BorderRadius.circular(28),
+                        border: Border.all(color: Colors.white.withOpacity(0.8), width: 1.2),
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 20, offset: const Offset(0, 10))],
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                        children: [
+                          _navItem(
+                            icon: Icons.home_rounded,
+                            label: _MarketValidators.sanitize(l10n.t('common_home'), maxLength: 20),
+                            selected: true,
+                            onTap: () {
+                              HapticFeedback.lightImpact();
+                              if (_scroll.hasClients) {
+                                _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
+                              }
+                            },
                           ),
-                        ),
+                          _navItem(
+                            icon: Icons.receipt_long_rounded,
+                            label: _MarketValidators.sanitize(l10n.t('market_orders'), maxLength: 20),
+                            badge: badges.orders,
+                            onTap: _openOrders,
+                          ),
+                          const SizedBox(width: fabSize + 4),
+                          _navItem(
+                            icon: Icons.favorite_rounded,
+                            label: _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20),
+                            badge: badges.wishlist,
+                            onTap: _openWishlist,
+                          ),
+                          _navItem(
+                            icon: Icons.storefront_rounded,
+                            label: _t('Boutiques', 'Shops'),
+                            badge: badges.shops,
+                            onTap: () => _openShops(badges.hasShop),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+
+              // Bouton panier central (au-dessus, jamais rogné)
+              Positioned(
+                top: 0,
+                child: Semantics(
+                  button: true,
+                  label: l10n.t('market_cart_semantics'),
+                  child: GestureDetector(
+                    onTap: () {
+                      HapticFeedback.mediumImpact();
+                      context.push('/market/cart');
+                    },
+                    child: Container(
+                      width: fabSize,
+                      height: fabSize,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        gradient: ThixPolicy.brandGradient,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 3),
+                        boxShadow: [BoxShadow(color: ThixPolicy.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))],
+                      ),
+                      child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 25),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _navItem(IconData icon, String label, int index) {
-    final sel = _selectedNav == index;
+  Widget _navItem({
+    required IconData icon,
+    required String label,
+    required VoidCallback onTap,
+    bool selected = false,
+    int badge = 0,
+  }) {
+    final color = selected ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withOpacity(0.8);
     return Semantics(
       button: true,
-      label: label,
-      selected: sel,
+      label: badge > 0 ? '$label, $badge' : label,
+      selected: selected,
       child: GestureDetector(
-        onTap: () {
-          HapticFeedback.lightImpact();
-          setState(() => _selectedNav = index);
-          if (index == 0 && _scroll.hasClients) {
-            _scroll.animateTo(0, duration: const Duration(milliseconds: 400), curve: Curves.easeOut);
-          }
-          if (index == 1) context.push('/market/orders');
-          if (index == 3) context.push('/market/wishlist');
-          if (index == 4) context.push('/market/price-alerts');
-        },
-        child: Container(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: SizedBox(
           width: 54,
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(icon, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withOpacity(0.8), size: 22),
-              const SizedBox(height: 2),
-              Text(label, maxLines: 1, style: TextStyle(fontSize: 9, color: sel ? ThixPolicy.domainMarket : ThixPolicy.textSecondary.withOpacity(0.8), fontWeight: sel ? FontWeight.w800 : FontWeight.w600)),
-            ],
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Icon(icon, color: color, size: 22),
+                    Positioned(
+                      top: -5,
+                      right: -10,
+                      child: _CountBadge(count: badge),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 9, color: color, fontWeight: selected ? FontWeight.w800 : FontWeight.w600),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1352,6 +1495,32 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 // ============================================================================
 // COMPOSANTS RÉUTILISABLES
 // ============================================================================
+
+/// Pastille rouge de notifications (masquée à 0, "99+" au-delà).
+class _CountBadge extends StatelessWidget {
+  final int count;
+  const _CountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    if (count <= 0) return const SizedBox.shrink();
+    final text = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: ThixPolicy.danger,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.white, width: 1.5),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, height: 1.1),
+      ),
+    );
+  }
+}
 
 class _MarketErrorCard extends StatelessWidget {
   final String message;
@@ -1605,7 +1774,7 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 }
 
-// ✅ FIX : Marquee sans OverflowBox/infinity (Stack + Positioned à largeur fixe)
+// ✅ Marquee sans OverflowBox/infinity (Stack + Positioned à largeur fixe)
 class _MarqueeText extends StatefulWidget {
   final String text;
   const _MarqueeText({required this.text});
