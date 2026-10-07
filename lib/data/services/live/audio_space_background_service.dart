@@ -23,7 +23,7 @@ import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:thix_id/data/services/live/live_service.dart';
 import 'package:thix_id/data/models/live/audio_space_model.dart';
 import 'package:thix_id/data/services/live/audio_space_service.dart';
-
+import 'package:audio_service/audio_service.dart';
 /// Statut du service de fond
 enum BackgroundServiceStatus {
   idle,
