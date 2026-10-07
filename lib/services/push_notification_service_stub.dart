@@ -5,7 +5,6 @@
 
 import 'package:flutter/foundation.dart';
 
-/// Handler FCM background — no-op sur Web (géré par firebase-messaging-sw.js)
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(dynamic message) async {}
 
@@ -13,12 +12,11 @@ class PushNotificationService {
   PushNotificationService._();
   static final PushNotificationService instance = PushNotificationService._();
 
-  // ── Callbacks VoIP (no-op sur Web) ────────────────────────────────
-  // ✅ CES DEUX SETTERS SONT OBLIGATOIRES pour que main.dart compile sur Web
+  // ✅ OBLIGATOIRE : ces deux setters doivent exister dans le stub
+  //    pour que main.dart compile sur Web (même s'ils ne sont jamais appelés)
   static void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
   static void Function(String inviteId)? onVoipDecline;
 
-  // ── Lifecycle ─────────────────────────────────────────────────────
   Future<void> initialize() async {
     debugPrint('[PushNotif-Stub] ℹ️ init skipped (web)');
   }
@@ -35,7 +33,6 @@ class PushNotificationService {
     debugPrint('[PushNotif-Stub] ℹ️ unregisterToken skipped (web)');
   }
 
-  // ── VoIP Bridge (no-op sur Web) ───────────────────────────────────
   Future<void> endVoipCall(String inviteId) async {
     debugPrint('[PushNotif-Stub] ℹ️ endVoipCall skipped (web): $inviteId');
   }
