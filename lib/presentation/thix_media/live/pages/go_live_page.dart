@@ -30,6 +30,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
+import 'package:thix_id/data/models/live/live_model.dart';
 import '../providers/go_live_provider.dart';
 import 'live_host_page.dart';
 
