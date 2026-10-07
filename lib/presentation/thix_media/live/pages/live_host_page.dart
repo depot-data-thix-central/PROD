@@ -275,7 +275,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
             _refreshGuestsFromDb();
           }
         },
-        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReason reason) {
+        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
           _LiveHostLogger.info('Guest left', {'uid': remoteUid, 'reason': reason});
           if (mounted) {
             setState(() => _remoteUids.remove(remoteUid));
