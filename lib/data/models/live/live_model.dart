@@ -20,31 +20,30 @@ class LiveSession {
   final String hostName;
   final String? hostAvatarUrl;
   final String? hostDisplayName;
-  
+
   // Paramètres avancés
   final String? description;
   final String? tags;
-  final String audience;  // 'public' | 'followers' | 'private'
+  final String audience; // 'public' | 'followers' | 'private'
   final String category;
-  
+
   // État du live
-  final String status;  // 'live' | 'ended' | 'cancelled'
+  final String status; // 'live' | 'ended' | 'cancelled'
   final int viewerCount;
   final int likeCount;
   final DateTime startedAt;
   final DateTime? endedAt;
-  
+
   // Certification du host
   final String? certificationTier;
   final String? certificationStatus;
-  
+
   // Guests (co-hosts)
   final List<GuestInfo> guests;
 
-  const
-    
-    
-   LiveSession({
+  // ✅ CORRECTION : suppression de `const` + lignes vides
+  // Raison : DateTime.now() et [] ne sont pas des expressions const
+  LiveSession({
     required this.id,
     required this.channelName,
     required this.title,
@@ -93,14 +92,17 @@ class LiveSession {
       certificationStatus: map['certification_status']?.toString(),
       guests: map['guests'] is List
           ? (map['guests'] as List)
-              .map((g) => g is Map ? GuestInfo.fromMap(Map<String, dynamic>.from(g)) : null)
+              .map((g) => g is Map
+                  ? GuestInfo.fromMap(Map<String, dynamic>.from(g))
+                  : null)
               .whereType<GuestInfo>()
               .toList()
           : [],
     );
   }
 
-  factory LiveSession.fromJson(Map<String, dynamic> json) => LiveSession.fromMap(json);
+  factory LiveSession.fromJson(Map<String, dynamic> json) =>
+      LiveSession.fromMap(json);
 
   Map<String, dynamic> toMap() {
     return {
@@ -121,7 +123,8 @@ class LiveSession {
       'started_at': startedAt.toUtc().toIso8601String(),
       if (endedAt != null) 'ended_at': endedAt!.toUtc().toIso8601String(),
       if (certificationTier != null) 'certification_tier': certificationTier,
-      if (certificationStatus != null) 'certification_status': certificationStatus,
+      if (certificationStatus != null)
+        'certification_status': certificationStatus,
     };
   }
 
@@ -180,7 +183,8 @@ class LiveSession {
   }
 
   @override
-  String toString() => 'LiveSession(id: $id, title: $title, status: $status, viewers: $viewerCount, likes: $likeCount)';
+  String toString() =>
+      'LiveSession(id: $id, title: $title, status: $status, viewers: $viewerCount, likes: $likeCount)';
 }
 
 // ============================================================================
@@ -190,13 +194,15 @@ class LiveSession {
 class GuestInfo {
   final String userId;
   final String username;
-  final String status;  // 'invited' | 'accepted' | 'on_stage' | 'rejected' | 'removed' | 'left'
+  final String status; // 'invited' | 'accepted' | 'on_stage' | 'rejected' | 'removed' | 'left'
   final int? agoraUid;
   final DateTime invitedAt;
   final DateTime? acceptedAt;
   final DateTime? promotedAt;
   final DateTime? removedAt;
 
+  // ⚠️ Note : `invitedAt` est required, donc `const` est valide ici
+  // (contrairement à LiveSession où DateTime.now() est utilisé par défaut)
   const GuestInfo({
     required this.userId,
     required this.username,
@@ -231,7 +237,8 @@ class GuestInfo {
 
   bool get isOnStage => status == 'on_stage' || status == 'accepted';
   bool get isPending => status == 'invited';
-  bool get isRemoved => status == 'removed' || status == 'left' || status == 'rejected';
+  bool get isRemoved =>
+      status == 'removed' || status == 'left' || status == 'rejected';
 
   Map<String, dynamic> toMap() {
     return {
@@ -240,8 +247,10 @@ class GuestInfo {
       'status': status,
       if (agoraUid != null) 'agora_uid': agoraUid,
       'invited_at': invitedAt.toUtc().toIso8601String(),
-      if (acceptedAt != null) 'accepted_at': acceptedAt!.toUtc().toIso8601String(),
-      if (promotedAt != null) 'promoted_at': promotedAt!.toUtc().toIso8601String(),
+      if (acceptedAt != null)
+        'accepted_at': acceptedAt!.toUtc().toIso8601String(),
+      if (promotedAt != null)
+        'promoted_at': promotedAt!.toUtc().toIso8601String(),
       if (removedAt != null) 'removed_at': removedAt!.toUtc().toIso8601String(),
     };
   }
@@ -255,7 +264,7 @@ class LiveComment {
   final String userId;
   final String userName;
   final String text;
-  final String type;  // 'chat' | 'reaction' | 'gift' | 'invite' | 'request_join' | 'promote' | 'demote'
+  final String type; // 'chat' | 'reaction' | 'gift' | 'invite' | 'request_join' | 'promote' | 'demote'
   final DateTime sentAt;
 
   LiveComment({
@@ -279,7 +288,9 @@ class LiveComment {
 
     return LiveComment(
       userId: payload['userId']?.toString() ?? '',
-      userName: payload['userName']?.toString() ?? payload['user']?.toString() ?? 'Invité',
+      userName: payload['userName']?.toString() ??
+          payload['user']?.toString() ??
+          'Invité',
       text: payload['text']?.toString() ?? '',
       type: payload['type']?.toString() ?? 'chat',
       sentAt: parsedSentAt,
@@ -294,7 +305,8 @@ class LiveComment {
         'sentAt': sentAt.toUtc().toIso8601String(),
       };
 
-  bool get isSystemMessage => ['invite', 'request_join', 'promote', 'demote'].contains(type);
+  bool get isSystemMessage =>
+      ['invite', 'request_join', 'promote', 'demote'].contains(type);
   bool get isReaction => type == 'reaction';
   bool get isGift => type == 'gift';
 
@@ -311,8 +323,10 @@ class AgoraCredentials {
   final String token;
   final String channelName;
   final int uid;
-  final String role;  // 'host' | 'audience' | 'broadcaster'
+  final String role; // 'host' | 'audience' | 'broadcaster'
 
+  // ✅ `const` valide ici : tous les paramètres ont des valeurs par défaut const
+  // ou sont required (pas de DateTime.now() ni [])
   const AgoraCredentials({
     required this.appId,
     required this.token,
@@ -325,12 +339,19 @@ class AgoraCredentials {
     final appId = map['appId'];
     final token = map['token'];
     final channelName = map['channelName'] ?? map['channel_name'];
-    
-    if (appId == null || token == null || appId is! String || token is! String || appId.isEmpty || token.isEmpty) {
+
+    if (appId == null ||
+        token == null ||
+        appId is! String ||
+        token is! String ||
+        appId.isEmpty ||
+        token.isEmpty) {
       throw Exception('appId/token manquant ou invalide : $map');
     }
-    
-    if (channelName == null || channelName is! String || channelName.isEmpty) {
+
+    if (channelName == null ||
+        channelName is! String ||
+        channelName.isEmpty) {
       throw Exception('channelName manquant ou invalide : $map');
     }
 
@@ -351,13 +372,15 @@ class AgoraCredentials {
         'role': role,
       };
 
-  bool get isValid => appId.isNotEmpty && token.isNotEmpty && channelName.isNotEmpty;
+  bool get isValid =>
+      appId.isNotEmpty && token.isNotEmpty && channelName.isNotEmpty;
   bool get isHost => role == 'host';
   bool get isAudience => role == 'audience';
   bool get isBroadcaster => role == 'broadcaster';
 
   @override
-  String toString() => 'AgoraCredentials(appId: ${appId.substring(0, 8)}..., channel: $channelName, role: $role)';
+  String toString() =>
+      'AgoraCredentials(appId: ${appId.substring(0, 8)}..., channel: $channelName, role: $role)';
 }
 
 // ============================================================================
@@ -387,6 +410,8 @@ class LiveState {
   final List<int> coHostUids;
   final List<LiveComment> comments;
 
+  // ✅ `const` valide ici : toutes les valeurs par défaut sont const
+  // (pas de DateTime.now(), listes sont `const []`)
   const LiveState({
     this.status = LiveScreenStatus.loading,
     this.errorMessage,
@@ -440,6 +465,8 @@ class GuestInvite {
   final String hostUsername;
   final DateTime receivedAt;
 
+  // ⚠️ Note : `receivedAt` est required, donc `const` est techniquement valide
+  // mais les factory utilisent DateTime.now() → utiliser sans const en pratique
   const GuestInvite({
     required this.liveId,
     required this.hostId,
