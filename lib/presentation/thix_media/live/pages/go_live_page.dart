@@ -1,6 +1,7 @@
 // lib/presentation/thix_media/live/pages/go_live_page.dart
 //
 // GoLivePage — Pré-Live Production Enterprise (niveau TikTok/IG Live)
+// Version finale avec support complet des paramètres avancés
 //
 // Features :
 // - Preview caméra réelle avec permission check
@@ -12,6 +13,8 @@
 // - Countdown avant démarrage
 // - i18n complet (y compris messages d'erreur) + Semantics
 // - Logging structuré + throttling
+// - ✅ Transmission complète des paramètres avancés au provider
+//
 import 'dart:async';
 import 'dart:convert';
 
@@ -40,7 +43,7 @@ const int _kMaxTagsLength = 120;
 const Duration _kThrottle = Duration(milliseconds: 500);
 const Duration _kNetworkCheckInterval = Duration(seconds: 5);
 const Duration _kCountdownDuration = Duration(seconds: 3);
-const String _kDraftKey = 'go_live_draft_v2'; // ✅ v2: format JSON
+const String _kDraftKey = 'go_live_draft_v2';
 
 // ============================================================================
 // LOGGING
@@ -67,9 +70,6 @@ class _GoLiveLogger {
 class _LiveSanitizer {
   _LiveSanitizer._();
 
-  /// ✅ Nettoyage récursif des balises (anti-évasion par imbrication),
-  /// blocage javascript:/data:, suppression caractères de contrôle et
-  /// caractères Unicode d'usurpation (RTL override, largeur nulle).
   static String _clean(String? input, {required int maxLength}) {
     if (input == null) return '';
     var s = input;
@@ -132,7 +132,6 @@ extension _AudienceX on _Audience {
     }
   }
 
-  /// ✅ Clé stable pour sérialisation JSON (indépendante de l'ordre de l'enum)
   String get storageKey => name;
 
   static _Audience fromStorageKey(String? key) {
@@ -264,12 +263,8 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // DRAFT (auto-save) — ✅ FIX: JSON au lieu de '|||' join/split
+  // DRAFT (auto-save)
   // ════════════════════════════════════════════════════════════
-  // L'ancien format concaténait les champs avec '|||' comme séparateur.
-  // Si le titre ou la description contenait accidentellement "|||",
-  // le parsing décalait tous les champs suivants et corrompait le draft
-  // silencieusement. JSON élimine ce risque structurellement.
 
   Future<void> _loadDraft() async {
     try {
@@ -336,7 +331,6 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
         return;
       }
 
-      // Choisir front par défaut
       _cameraIndex = _cameras.indexWhere(
         (c) => c.lensDirection == CameraLensDirection.front,
       );
@@ -459,9 +453,7 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
       return;
     }
 
-    // ✅ Sanitizés même s'ils ne sont pas encore envoyés au backend
-    // (voir TODO plus bas) — évite au minimum de stocker du texte non
-    // nettoyé dans le draft local.
+    // ✅ Sanitizés et prêts à être transmis
     final description = _LiveSanitizer.description(_descCtrl.text);
     final tags = _LiveSanitizer.tags(_tagsCtrl.text);
 
@@ -509,24 +501,17 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
       'title': title,
       'category': _category,
       'audience': _audience.name,
-      // ⚠️ description/tags calculés mais toujours pas envoyés à start()
-      // ci-dessous — voir TODO. On les logue pour visibilité en dev.
       'descLen': description.length,
       'tagsLen': tags.length,
     });
 
-    // ⚠️ TODO (bloquant fonctionnel) : `description`, `tags` et `_audience`
-    // sont saisis par l'utilisateur dans le formulaire "Options avancées"
-    // mais ne sont PAS transmis à goLiveNotifierProvider.start() ci-dessous.
-    // Résultat : un viewer choisit "Live privé" ou tape une description,
-    // clique "Démarrer", et ces choix sont silencieusement ignorés.
-    // → Il faut soit étendre la signature de start() dans
-    //   go_live_provider.dart pour accepter description/tags/audience et
-    //   les répercuter jusqu'à l'INSERT Supabase (table `lives`), soit
-    //   masquer ces champs de l'UI tant qu'ils ne sont pas branchés.
+    // ✅ Transmission complète des paramètres avancés au provider
     await ref.read(goLiveNotifierProvider.notifier).start(
           title: title,
           category: _category,
+          description: description.isEmpty ? null : description,
+          tags: tags.isEmpty ? null : tags,
+          audience: _audience.name,
         );
   }
 
@@ -560,16 +545,12 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
           ),
         );
       } else if (next is GoLiveError) {
-        // ✅ FIX: préfixe "Erreur :" codé en dur en français supprimé.
-        // Le message vient déjà soit du serveur (rawMessage), soit d'une
-        // clé i18n traduite dans les 7 langues de l'app.
         final msg = next.rawMessage.isNotEmpty
             ? next.rawMessage
             : l10n.t(next.i18nKey);
 
         _snack(msg, error: true);
 
-        // Option : proposer de reprendre un live déjà actif
         if (next.code == GoLiveErrorCode.alreadyActive &&
             next.alreadyActiveSession != null) {
           // TODO: Afficher une dialog pour reprendre
@@ -678,7 +659,7 @@ class _GoLivePageState extends ConsumerState<GoLivePage>
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Text(
-                  l10n.t('live_category_${_category}'),
+                  l10n.t('live_category_$_category'),
                   style: const TextStyle(
                     color: Colors.white,
                     fontSize: 11,
