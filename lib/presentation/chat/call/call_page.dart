@@ -1,16 +1,12 @@
 // lib/presentation/chat/call/call_page.dart
 //
 // ============================================================================
-// CALL PAGE — v2.1
+// CALL PAGE — v2.2
 // ============================================================================
-// Corrections :
-//  ✅ ref.listen déplacé dans build() (il était dans initState : non supporté,
-//     l'écouteur disparaissait au premier rafraîchissement)
-//  ✅ Fermeture UNIQUE de la page (plus de double pop → écran noir)
-//  ✅ La page se ferme quand l'appel se termine (l'autre raccroche)
-//  ✅ Erreur déjà présente à l'ouverture : affichée + fermeture
-//  ✅ Vues vidéo avec clés (pas de réutilisation d'une vue entre plein écran et miniature)
-//  ✅ Miniature déplaçable contenue dans l'écran
+// Nouveau : signale son ouverture / fermeture (callPageOpenCount) pour que la
+//           barre « Appel en cours » s'affiche quand la page est réduite.
+// Conserve les corrections v2.1 (ref.listen dans build, fermeture unique,
+// fermeture automatique quand l'appel se termine, vues vidéo avec clés).
 // ============================================================================
 
 import 'dart:async';
@@ -23,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
 import 'package:thix_id/services/chat/call_service.dart';
@@ -57,9 +54,8 @@ class _CallPageState extends ConsumerState<CallPage> {
   void initState() {
     super.initState();
     _media = ref.read(callMediaServiceProvider);
+    markCallPageOpened(); // la barre « Appel en cours » se masque
 
-    // L'erreur a pu survenir AVANT l'ouverture de la page (ex : échec de
-    // connexion pendant l'acceptation) : ref.listen ne la verrait jamais.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final s = ref.read(callProvider);
@@ -70,6 +66,7 @@ class _CallPageState extends ConsumerState<CallPage> {
   @override
   void dispose() {
     _autoCloseTimer?.cancel();
+    markCallPageClosed(); // la barre réapparaît si l'appel continue
     super.dispose();
   }
 
@@ -85,7 +82,7 @@ class _CallPageState extends ConsumerState<CallPage> {
     if (route.isCurrent) {
       nav.pop();
     } else {
-      nav.removeRoute(route); // page réduite : on retire SA route, pas une autre
+      nav.removeRoute(route);
     }
   }
 
@@ -149,7 +146,7 @@ class _CallPageState extends ConsumerState<CallPage> {
     try {
       await ref.read(callProvider.notifier).hangUp();
     } catch (_) {}
-    _closePage(); // sans effet si l'écouteur a déjà fermé la page
+    _closePage();
   }
 
   void _toggleMute() {
@@ -172,11 +169,16 @@ class _CallPageState extends ConsumerState<CallPage> {
     ref.read(callProvider.notifier).toggleSpeaker();
   }
 
+  /// Réduit l'appel : la page se ferme, l'appel continue, la barre apparaît.
+  void _minimize() {
+    HapticFeedback.selectionClick();
+    Navigator.maybePop(context);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ ref.listen DANS build() : seul endroit supporté
     ref.listen<CallState>(callProvider, (prev, next) {
       if (!mounted) return;
       if (next.status == CallStatus.failed && prev?.status != CallStatus.failed) {
@@ -184,7 +186,7 @@ class _CallPageState extends ConsumerState<CallPage> {
       } else if (next.status == CallStatus.idle &&
           prev != null &&
           prev.status != CallStatus.idle) {
-        _closePage(); // appel terminé (l'autre a raccroché, annulation…)
+        _closePage();
       }
     });
 
@@ -352,15 +354,19 @@ class _CallPageState extends ConsumerState<CallPage> {
       right: 16,
       child: Row(
         children: [
-          Material(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              onTap: () => Navigator.maybePop(context),
+          Semantics(
+            button: true,
+            label: 'Réduire l’appel',
+            child: Material(
+              color: Colors.white.withOpacity(0.2),
               borderRadius: BorderRadius.circular(12),
-              child: const Padding(
-                padding: EdgeInsets.all(8),
-                child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 28),
+              child: InkWell(
+                onTap: _minimize,
+                borderRadius: BorderRadius.circular(12),
+                child: const Padding(
+                  padding: EdgeInsets.all(8),
+                  child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 28),
+                ),
               ),
             ),
           ),
