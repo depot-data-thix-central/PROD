@@ -1,16 +1,12 @@
 // lib/presentation/chat/call/global_call_listener.dart
 //
 // ============================================================================
-// GLOBAL CALL LISTENER — v2.1
+// GLOBAL CALL LISTENER — v2.2
 // ============================================================================
-// Corrections :
-//  ✅ Plus de `await push().timeout()` : ce Future ne se termine qu'à la
-//     fermeture de la page, le timeout empilait la MÊME route une 2e fois
-//     (pile de navigation corrompue → écran noir)
-//  ✅ Une seule page d'appel entrant à la fois (pas de doublon à la reprise
-//     de l'app ou à chaque événement d'authentification)
-//  ✅ La page d'appel entrant se ferme si l'appelant annule / manque l'appel
-//  ✅ Plus de délai de 3 s qui ignorait silencieusement un appel
+// Nouveau : barre « Appel en cours » affichée en haut de TOUTE l'app quand
+//           l'appel est réduit (appui = retour à l'écran d'appel).
+// Conserve les corrections v2.1 (plus de double route, page d'appel entrant
+// fermée si l'appelant annule, un seul affichage par invitation).
 // ============================================================================
 
 import 'dart:async';
@@ -23,7 +19,10 @@ import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/presentation/chat/call/call_page.dart';
+import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/incoming_call_page.dart';
+import 'package:thix_id/presentation/chat/call/widgets/active_call_bar.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
 
 // ============================================================================
@@ -53,10 +52,66 @@ class _CallListenerValidators {
 }
 
 // ============================================================================
+// HÔTE DE LA BARRE « APPEL EN COURS »
+// La structure de l'arbre est CONSTANTE (Column + Expanded + MediaQuery) :
+// l'app n'est jamais reconstruite quand la barre apparaît ou disparaît.
+// ============================================================================
+class _CallBarHost extends ConsumerWidget {
+  final Widget child;
+  final GlobalKey<NavigatorState>? navigatorKey;
+
+  const _CallBarHost({required this.child, required this.navigatorKey});
+
+  void _openCallPage(BuildContext context) {
+    final nav = navigatorKey?.currentState ?? Navigator.maybeOf(context, rootNavigator: true);
+    if (nav == null) {
+      debugPrint('[GlobalCallListener] ⚠️ Navigator introuvable : passez navigatorKey à GlobalCallListener');
+      return;
+    }
+    nav.push(MaterialPageRoute<void>(
+      settings: const RouteSettings(name: 'call'),
+      builder: (_) => const CallPage(),
+    ));
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final active = ref.watch(callProvider.select((s) => s.isActive));
+
+    return ValueListenableBuilder<int>(
+      valueListenable: callPageOpenCount,
+      child: child,
+      builder: (ctx, openPages, appChild) {
+        // Barre visible : appel actif ET page d'appel réduite / fermée
+        final show = active && openPages == 0;
+        return Column(
+          children: [
+            if (show) ActiveCallBar(onReturn: () => _openCallPage(ctx)) else const SizedBox.shrink(),
+            Expanded(
+              // La barre occupe déjà la zone de la barre d'état : les écrans
+              // en dessous ne doivent pas la compter une 2e fois.
+              child: MediaQuery.removePadding(
+                context: ctx,
+                removeTop: show,
+                child: appChild!,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+// ============================================================================
 // GLOBAL CALL LISTENER
 // ============================================================================
 class GlobalCallListener extends ConsumerStatefulWidget {
   final Widget child;
+
+  /// Clé du Navigator racine (la même que celle de ton MaterialApp / routeur).
+  /// Nécessaire pour ouvrir la page d'appel entrant et revenir à l'appel
+  /// depuis la barre quand ce widget est placé au-dessus du Navigator.
   final GlobalKey<NavigatorState>? navigatorKey;
 
   const GlobalCallListener({
@@ -69,8 +124,7 @@ class GlobalCallListener extends ConsumerStatefulWidget {
   ConsumerState<GlobalCallListener> createState() => _GlobalCallListenerState();
 }
 
-class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
-    with WidgetsBindingObserver {
+class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with WidgetsBindingObserver {
   CallSignalingService? _signal;
   StreamSubscription<CallInvite>? _callSubscription;
   StreamSubscription<CallStatus>? _inviteStatusSub;
@@ -115,7 +169,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
         if (_isDisposed || previous == next) return;
         debugPrint('[GlobalCallListener] 🔄 Auth changed: ${_obfuscate(previous)} → ${_obfuscate(next)}');
         _currentUserId = next;
-        _lastShownInviteId = null; // autre utilisateur : on repart de zéro
+        _lastShownInviteId = null;
         _syncListen(force: true);
       },
     );
@@ -125,9 +179,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     try {
       _authStreamSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
         if (_isDisposed) return;
-        // Non forcé : un simple rafraîchissement de token ne doit PAS
-        // relancer l'écoute (sinon un appel en cours de sonnerie réapparaît)
-        _syncListen();
+        _syncListen(); // non forcé : un simple rafraîchissement de token ne relance pas l'écoute
       });
     } catch (e) {
       debugPrint('[GlobalCallListener] ⚠️ Supabase auth listener failed: $e');
@@ -138,11 +190,9 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (_isDisposed) return;
     if (state == AppLifecycleState.resumed) {
-      // Les connexions realtime peuvent être mortes après l'arrière-plan
       _syncListen(force: true);
     }
-    // NOTE : en arrière-plan, c'est FCM + notification plein écran qui doit
-    // prendre le relais (voir _triggerIncomingCallNotification).
+    // En arrière-plan : FCM + notification plein écran (voir _triggerIncomingCallNotification)
   }
 
   // ── SYNC LISTEN ──────────────────────────────────────────────────────
@@ -181,7 +231,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   void _cleanupSubscription() {
     _callSubscription?.cancel();
     _callSubscription = null;
-    // _lastShownInviteId volontairement CONSERVÉ : une ré-écoute ne doit pas
+    // _lastShownInviteId conservé volontairement : une ré-écoute ne doit pas
     // réafficher une page d'appel déjà montrée.
   }
 
@@ -189,18 +239,12 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   void _handleIncomingInvite(CallInvite invite) {
     if (_isDisposed) return;
 
-    if (!_CallListenerValidators.isValidInvite(invite)) {
-      debugPrint('[GlobalCallListener] ⚠️ Invalid invite received, skipping');
-      return;
-    }
-
-    // Même invitation déjà traitée (realtime + poll, ou ré-écoute)
+    if (!_CallListenerValidators.isValidInvite(invite)) return;
     if (_lastShownInviteId == invite.id) return;
 
-    // Occupé : appel en cours OU page d'appel entrant déjà affichée
     final busy = ref.read(callProvider).isActive || (_incomingRoute?.isActive ?? false);
     if (busy) {
-      _lastShownInviteId = invite.id; // évite de rejeter plusieurs fois
+      _lastShownInviteId = invite.id;
       _autoRejectBusy(invite);
       return;
     }
@@ -212,7 +256,6 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
   Future<void> _autoRejectBusy(CallInvite invite) async {
     try {
       await _signal?.reject(invite.id);
-      debugPrint('[GlobalCallListener] ✓ Auto-rejected busy invite: ${invite.id}');
     } catch (e) {
       debugPrint('[GlobalCallListener] ❌ Auto-reject failed: $e');
     }
@@ -220,7 +263,6 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
 
   void _handleStreamError(Object error, StackTrace? stackTrace) {
     debugPrint('[GlobalCallListener] ❌ Stream error: $error');
-    // TODO ENTERPRISE : Sentry.captureException(error, stackTrace: stackTrace);
   }
 
   // ── NAVIGATION ───────────────────────────────────────────────────────
@@ -243,9 +285,8 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
       }
 
       if (route == null) {
-        debugPrint('[GlobalCallListener] ⚠️ Navigation failed. Local notification fallback.');
         _triggerIncomingCallNotification(invite);
-        _lastShownInviteId = null; // permet de retenter plus tard
+        _lastShownInviteId = null;
         return;
       }
 
@@ -262,8 +303,6 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     }
   }
 
-  /// Pousse la page SANS attendre : le Future de push() ne se termine qu'à la
-  /// fermeture de la page. Chaque tentative crée une NOUVELLE route.
   MaterialPageRoute<void>? _pushIncoming(NavigatorState nav, CallInvite invite) {
     try {
       final route = MaterialPageRoute<void>(
@@ -279,32 +318,29 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener>
     }
   }
 
-  /// Ferme la page d'appel entrant si l'appelant annule ou si l'appel est manqué.
   void _watchInviteEnd(CallInvite invite, MaterialPageRoute<void> route) {
     _inviteStatusSub?.cancel();
     _inviteStatusSub = _signal?.watchInviteStatus(invite.id).listen((s) {
       if (_isDisposed) return;
       final over = s == CallStatus.canceled || s == CallStatus.missed || s == CallStatus.ended;
       if (over && route.isActive) {
-        debugPrint('[GlobalCallListener] 🔚 Caller ended the invite → closing incoming page');
         route.navigator?.removeRoute(route);
       }
     });
   }
 
-  // ── FALLBACK NOTIFICATION (HOOK) ─────────────────────────────────────
   void _triggerIncomingCallNotification(CallInvite invite) {
-    // TODO ENTERPRISE : flutter_local_notifications avec
-    // priority max, fullScreenIntent: true, category call.
+    // TODO ENTERPRISE : flutter_local_notifications (priority max, fullScreenIntent, category call)
     debugPrint('[GlobalCallListener] 🔔 [MOCK] Notification locale pour ${_obfuscate(invite.callerId)}');
   }
 
-  // ── HELPERS ──────────────────────────────────────────────────────────
   String _obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
   }
 
   @override
-  Widget build(BuildContext context) => widget.child;
+  Widget build(BuildContext context) {
+    return _CallBarHost(navigatorKey: widget.navigatorKey, child: widget.child);
+  }
 }
