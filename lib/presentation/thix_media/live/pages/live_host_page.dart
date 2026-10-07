@@ -1,10 +1,12 @@
 // lib/presentation/thix_media/live/pages/live_host_page.dart
 //
 // LiveHostPage — Host Live Production Enterprise (niveau TikTok/IG Live)
-// Version améliorée avec :
+// Version 2.0 avec :
 // - Like ultra-rapide style TikTok (animation overlay + batching)
 // - Multi-guest / Co-hosting (faire monter les spectateurs)
-// - Split screen automatique quand un guest rejoint
+// - Détection des requêtes "request_join" avec bouton Inviter
+// - Panneau de gestion des guests (inviter / retirer)
+// - Split screen avec noms et avatars des guests
 // - Chat temps réel avec sanitization XSS renforcée
 // - Gestion mémoire optimisée
 //
@@ -36,6 +38,7 @@ const Duration _kStatsPolling = Duration(seconds: 3);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const Duration _kActionThrottle = Duration(milliseconds: 400);
 const Duration _kLikeBatchInterval = Duration(milliseconds: 500);
+const Duration _kGuestsPolling = Duration(seconds: 5);
 const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮'];
 
 // ============================================================================
@@ -64,7 +67,9 @@ class _LiveSanitizer {
   _LiveSanitizer._();
 
   static const int _kMaxUsernameLength = 24;
-  static const List<String> _kAllowedTypes = ['chat', 'reaction', 'gift', 'invite'];
+  static const List<String> _kAllowedTypes = [
+    'chat', 'reaction', 'gift', 'invite', 'request_join', 'promote', 'demote'
+  ];
 
   static String chat(String? input) {
     if (input == null) return '';
@@ -142,6 +147,24 @@ extension _NetQX on _NetQ {
 }
 
 // ============================================================================
+// JOIN REQUEST
+// ============================================================================
+
+class _JoinRequest {
+  final String userId;
+  final String username;
+  final String text;
+  final DateTime receivedAt;
+
+  _JoinRequest({
+    required this.userId,
+    required this.username,
+    required this.text,
+    required this.receivedAt,
+  });
+}
+
+// ============================================================================
 // LIVE HOST PAGE
 // ============================================================================
 
@@ -183,9 +206,13 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   DateTime? _liveStart;
   Duration _liveDuration = Duration.zero;
 
-  // Multi-guest
-  final Map<int, String> _remoteUids = {}; // uid -> username/status
+  // Multi-guest : uid -> GuestInfo (username + status)
+  final Map<int, _GuestState> _remoteUids = {};
   
+  // Requêtes "request_join" en attente (non traitées)
+  final Map<String, _JoinRequest> _pendingRequests = {}; // userId -> request
+  final Set<String> _invitingUsers = {}; // userId en cours d'invitation (anti-spam)
+
   // TikTok-style likes
   final List<_FlyingHeart> _hearts = [];
   int _pendingLikes = 0;
@@ -196,6 +223,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   Timer? _statsTimer;
   Timer? _durationTimer;
   Timer? _netTimer;
+  Timer? _guestsTimer;
   StreamSubscription? _netSub;
 
   @override
@@ -213,6 +241,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
     _statsTimer?.cancel();
     _durationTimer?.cancel();
     _netTimer?.cancel();
+    _guestsTimer?.cancel();
     _netSub?.cancel();
     _likeBatchTimer?.cancel();
     _msgChannel?.unsubscribe();
@@ -237,8 +266,13 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
           _LiveHostLogger.info('Guest joined', {'uid': remoteUid});
           if (mounted) {
             setState(() {
-              _remoteUids[remoteUid] = 'Guest';
+              _remoteUids.putIfAbsent(
+                remoteUid,
+                () => _GuestState(uid: remoteUid, username: 'Guest'),
+              );
             });
+            // Refresh guests depuis la DB pour obtenir le vrai username
+            _refreshGuestsFromDb();
           }
         },
         onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReason reason) {
@@ -254,6 +288,21 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
             'state': state,
             'reason': reason
           });
+          if (mounted && _remoteUids.containsKey(remoteUid)) {
+            setState(() {
+              _remoteUids[remoteUid]!.videoEnabled = 
+                  state == RemoteVideoState.remoteVideoStateDecoding;
+            });
+          }
+        },
+        onRemoteAudioStateChanged: (RtcConnection connection, int remoteUid,
+            RemoteAudioState state, RemoteAudioStateReason reason, int elapsed) {
+          if (mounted && _remoteUids.containsKey(remoteUid)) {
+            setState(() {
+              _remoteUids[remoteUid]!.audioEnabled = 
+                  state == RemoteAudioState.remoteAudioStateDecoding;
+            });
+          }
         },
       ));
       
@@ -264,6 +313,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
       _startDurationTimer();
       _startNetworkMonitor();
       _startLikeBatching();
+      _startGuestsPolling();
       _LiveHostLogger.info('Live started', {'id': widget.session.id});
     } catch (e, stack) {
       _LiveHostLogger.error('Bootstrap failed',
@@ -272,6 +322,42 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
 
       _snack(AppLocalizations.of(context).t('live_error_generic'), error: true);
       Navigator.of(context).pop();
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // GUESTS POLLING (sync noms réels depuis DB)
+  // ════════════════════════════════════════════════════════════
+
+  void _startGuestsPolling() {
+    // Polling initial + périodique pour obtenir les usernames
+    _refreshGuestsFromDb();
+    _guestsTimer = Timer.periodic(_kGuestsPolling, (_) {
+      _refreshGuestsFromDb();
+    });
+  }
+
+  Future<void> _refreshGuestsFromDb() async {
+    try {
+      final guests = await ref
+          .read(liveServiceProvider)
+          .getLiveGuests(widget.session.id);
+      if (!mounted) return;
+
+      setState(() {
+        // Mettre à jour les usernames des guests connectés
+        for (final guest in guests) {
+          if (guest.isOnStage && guest.agoraUid != null) {
+            final uid = guest.agoraUid!;
+            if (_remoteUids.containsKey(uid)) {
+              _remoteUids[uid]!.username = guest.username;
+              _remoteUids[uid]!.userId = guest.userId;
+            }
+          }
+        }
+      });
+    } catch (e) {
+      _LiveHostLogger.warn('Refresh guests failed', {'error': '$e'});
     }
   }
 
@@ -304,7 +390,6 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   void _spawnTikTokLike() {
     HapticFeedback.lightImpact();
     
-    // 1. Animation Locale Instantanée (Pas d'attente serveur)
     final id = UniqueKey();
     final color = Colors.primaries[_random.nextInt(Colors.primaries.length)];
     final offsetX = _random.nextDouble() * 60 - 30;
@@ -316,10 +401,9 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
         offsetX: offsetX,
       ));
       _pendingLikes++;
-      _likeCount++; // Optimistic UI
+      _likeCount++;
     });
 
-    // 2. Suppression après l'animation
     Future.delayed(const Duration(milliseconds: 1500), () {
       if (mounted) {
         setState(() => _hearts.removeWhere((h) => h.id == id));
@@ -349,19 +433,36 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
             final text = _LiveSanitizer.chat(row['text']?.toString());
             final user = _LiveSanitizer.username(row['username']?.toString());
             final type = _LiveSanitizer.messageType(row['type']?.toString());
-            if (!mounted || text.isEmpty) return;
+            final userId = row['user_id']?.toString();
+            if (!mounted || text.isEmpty || userId == null) return;
 
-            // Handle invite messages for multi-guest
-            if (type == 'invite') {
-              _LiveHostLogger.info('Invite received', {'from': user});
-              // TODO: Show invite dialog to accept guest
-              return;
+            // 🔥 Gestion spéciale des requêtes "request_join"
+            if (type == 'request_join') {
+              _LiveHostLogger.info('Join request received', {
+                'from': user,
+                'userId': userId,
+              });
+              setState(() {
+                _pendingRequests[userId] = _JoinRequest(
+                  userId: userId,
+                  username: user,
+                  text: text,
+                  receivedAt: DateTime.now(),
+                );
+              });
+              HapticFeedback.mediumImpact();
+              // Ajouter quand même au chat (sera affiché en highlight)
             }
 
             setState(() {
               _messages = [
                 ..._messages,
-                _ChatLine(username: user, text: text, type: type),
+                _ChatLine(
+                  username: user,
+                  text: text,
+                  type: type,
+                  userId: userId,
+                ),
               ];
               if (_messages.length > _kMaxMessagesInMemory) {
                 _messages = _messages.sublist(
@@ -594,6 +695,139 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
     _snack(l10n.t('live_link_copied'));
   }
 
+  // ════════════════════════════════════════════════════════════
+  // 🎯 INVITE GUEST ACTIONS
+  // ════════════════════════════════════════════════════════════
+
+  Future<void> _inviteUser(String userId, String username) async {
+    if (_invitingUsers.contains(userId)) return;
+    if (!_throttleAction()) return;
+
+    setState(() => _invitingUsers.add(userId));
+    HapticFeedback.mediumImpact();
+    _LiveHostLogger.info('Inviting user', {'userId': userId, 'username': username});
+
+    try {
+      await ref.read(liveServiceProvider).sendGuestInvite(
+            liveId: widget.session.id,
+            guestUserId: userId,
+            guestUsername: username,
+          );
+      if (mounted) {
+        _snack(AppLocalizations.of(context).t('live_invite_sent'));
+        // Retirer de la liste des requests en attente
+        setState(() => _pendingRequests.remove(userId));
+      }
+    } catch (e) {
+      _LiveHostLogger.error('Invite failed', {'error': '$e', 'userId': userId});
+      if (mounted) {
+        String errorMsg;
+        if (e is LiveGuestLimitException) {
+          errorMsg = AppLocalizations.of(context).t('live_guest_limit_reached');
+        } else if (e is LiveGuestAlreadyOnStageException) {
+          errorMsg = AppLocalizations.of(context).t('live_guest_already_on_stage');
+        } else {
+          errorMsg = AppLocalizations.of(context).t('live_invite_failed');
+        }
+        _snack(errorMsg, error: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _invitingUsers.remove(userId));
+      }
+    }
+  }
+
+  Future<void> _removeGuest(int uid, String userId, String username) async {
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(
+          l10n.t('live_remove_guest_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          l10n.t('live_remove_guest_confirm').replaceAll('{name}', username),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              l10n.t('common_cancel'),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: ThixPolicy.danger),
+            child: Text(l10n.t('live_remove_guest_btn')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    HapticFeedback.mediumImpact();
+    try {
+      await ref.read(liveServiceProvider).removeGuest(
+            widget.session.id,
+            userId,
+          );
+      _LiveHostLogger.info('Guest removed', {'uid': uid, 'userId': userId});
+    } catch (e) {
+      _LiveHostLogger.error('Remove guest failed', {'error': '$e'});
+      if (mounted) {
+        _snack(
+          AppLocalizations.of(context).t('live_remove_guest_failed'),
+          error: true,
+        );
+      }
+    }
+  }
+
+  void _dismissRequest(String userId) {
+    if (!mounted) return;
+    setState(() => _pendingRequests.remove(userId));
+  }
+
+  void _showGuestsPanel(AppLocalizations l10n) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: const Color(0xFF1A1A1A),
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _GuestsPanel(
+        requests: _pendingRequests.values.toList(),
+        guests: _remoteUids.values.toList(),
+        invitingUsers: _invitingUsers,
+        onInvite: (req) {
+          Navigator.pop(ctx);
+          _inviteUser(req.userId, req.username);
+        },
+        onDismissRequest: (req) {
+          Navigator.pop(ctx);
+          _dismissRequest(req.userId);
+        },
+        onRemoveGuest: (g) {
+          Navigator.pop(ctx);
+          if (g.userId != null) {
+            _removeGuest(g.uid, g.userId!, g.username);
+          }
+        },
+        l10n: l10n,
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // END LIVE
+  // ════════════════════════════════════════════════════════════
+
   Future<void> _confirmEnd() async {
     final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
@@ -693,19 +927,193 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   }
 
   Widget _buildSplitScreenVideo() {
-    return Row(
-      children: [
-        Expanded(child: _buildLocalVideo()),
-        Expanded(
-          child: Stack(
-            children: _remoteUids.keys.map((uid) => AgoraVideoView(
-              controller: VideoViewController(
-                rtcEngine: _rtc.engine!,
-                canvas: VideoCanvas(uid: uid),
+    final guests = _remoteUids.values.toList();
+    final totalStreams = 1 + guests.length; // host + guests
+    
+    // Layout adaptatif selon le nombre de guests
+    if (totalStreams == 2) {
+      // 2 streams : split vertical
+      return Row(
+        children: [
+          Expanded(child: _buildStreamWithLabel(_buildLocalVideo(), _currentUsername(), isHost: true)),
+          Expanded(child: _buildStreamWithLabel(
+            _buildRemoteVideo(guests[0]),
+            guests[0].username,
+            isHost: false,
+            videoEnabled: guests[0].videoEnabled,
+            audioEnabled: guests[0].audioEnabled,
+            onRemove: () => guests[0].userId != null 
+                ? _removeGuest(guests[0].uid, guests[0].userId!, guests[0].username)
+                : null,
+          )),
+        ],
+      );
+    } else {
+      // 3+ streams : grille 2x2
+      return Column(
+        children: [
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(child: _buildStreamWithLabel(_buildLocalVideo(), _currentUsername(), isHost: true)),
+                if (guests.isNotEmpty)
+                  Expanded(child: _buildStreamWithLabel(
+                    _buildRemoteVideo(guests[0]),
+                    guests[0].username,
+                    isHost: false,
+                    videoEnabled: guests[0].videoEnabled,
+                    audioEnabled: guests[0].audioEnabled,
+                    onRemove: () => guests[0].userId != null
+                        ? _removeGuest(guests[0].uid, guests[0].userId!, guests[0].username)
+                        : null,
+                  )),
+              ],
+            ),
+          ),
+          if (guests.length > 1)
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(child: _buildStreamWithLabel(
+                    _buildRemoteVideo(guests[1]),
+                    guests[1].username,
+                    isHost: false,
+                    videoEnabled: guests[1].videoEnabled,
+                    audioEnabled: guests[1].audioEnabled,
+                    onRemove: () => guests[1].userId != null
+                        ? _removeGuest(guests[1].uid, guests[1].userId!, guests[1].username)
+                        : null,
+                  )),
+                  if (guests.length > 2)
+                    Expanded(child: _buildStreamWithLabel(
+                      _buildRemoteVideo(guests[2]),
+                      guests[2].username,
+                      isHost: false,
+                      videoEnabled: guests[2].videoEnabled,
+                      audioEnabled: guests[2].audioEnabled,
+                      onRemove: () => guests[2].userId != null
+                          ? _removeGuest(guests[2].uid, guests[2].userId!, guests[2].username)
+                          : null,
+                    ))
+                  else
+                    const Expanded(child: SizedBox()),
+                ],
               ),
-            )).toList(),
+            ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildRemoteVideo(_GuestState guest) {
+    final engine = _rtc.engine;
+    if (engine == null || !guest.videoEnabled) {
+      return Container(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 32,
+                backgroundColor: Colors.white24,
+                child: Text(
+                  guest.username.isNotEmpty ? guest.username[0].toUpperCase() : '?',
+                  style: const TextStyle(color: Colors.white, fontSize: 24),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Icon(Icons.videocam_off, color: Colors.white54, size: 20),
+            ],
           ),
         ),
+      );
+    }
+    return AgoraVideoView(
+      controller: VideoViewController(
+        rtcEngine: engine,
+        canvas: VideoCanvas(uid: guest.uid),
+      ),
+    );
+  }
+
+  Widget _buildStreamWithLabel(
+    Widget video,
+    String label, {
+    required bool isHost,
+    bool videoEnabled = true,
+    bool audioEnabled = true,
+    VoidCallback? onRemove,
+  }) {
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        video,
+        // Badge en haut à gauche
+        Positioned(
+          top: 8,
+          left: 8,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: isHost ? const Color(0xFFE11D48) : Colors.black54,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (isHost) ...[
+                  const Text(
+                    'HOST',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                ],
+                if (!audioEnabled)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 4),
+                    child: Icon(Icons.mic_off, color: Colors.red, size: 12),
+                  ),
+                Flexible(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Bouton retirer (uniquement pour les guests, pas le host)
+        if (!isHost && onRemove != null)
+          Positioned(
+            top: 8,
+            right: 8,
+            child: GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.close,
+                  color: Colors.white,
+                  size: 16,
+                ),
+              ),
+            ),
+          ),
       ],
     );
   }
@@ -717,6 +1125,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final pendingRequestsCount = _pendingRequests.length;
+    final guestsCount = _remoteUids.length;
 
     return PopScope(
       canPop: false,
@@ -834,6 +1244,17 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                     ),
                     _NetworkIndicator(q: _netQuality, l10n: l10n),
                     const SizedBox(width: 6),
+                    // 🔥 Nouveau : Panneau de gestion des guests
+                    Semantics(
+                      button: true,
+                      label: l10n.t('live_manage_guests'),
+                      child: _GuestsButton(
+                        requestsCount: pendingRequestsCount,
+                        guestsCount: guestsCount,
+                        onTap: () => _showGuestsPanel(l10n),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
                     _StatChip(
                       icon: Icons.remove_red_eye_outlined,
                       value: _formatCount(_viewerCount),
@@ -910,15 +1331,24 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
             // ── Chat + input ─────────────────────────────────
             Positioned(
               left: 12,
-              right: 80, // Leave space for like button
+              right: 80,
               bottom: 0,
               child: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // 🔥 Bandeau "X personnes veulent monter" si des requests en attente
+                    if (pendingRequestsCount > 0)
+                      _RequestsBanner(
+                        count: pendingRequestsCount,
+                        onTap: () => _showGuestsPanel(l10n),
+                        l10n: l10n,
+                      ),
+                    if (pendingRequestsCount > 0) const SizedBox(height: 6),
+                    
                     SizedBox(
-                      height: 140,
+                      height: pendingRequestsCount > 0 ? 110 : 140,
                       child: _messages.isEmpty
                           ? Center(
                               child: Text(
@@ -937,41 +1367,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                               itemBuilder: (context, i) {
                                 final m =
                                     _messages[_messages.length - 1 - i];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Text.rich(
-                                    TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${m.username} ',
-                                          style: TextStyle(
-                                            color: m.type == 'gift'
-                                                ? Colors.amber
-                                                : m.type == 'reaction'
-                                                    ? Colors.white
-                                                    : ThixPolicy.primary,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: m.type == 'reaction'
-                                                ? 16
-                                                : 13,
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: m.text,
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: m.type == 'reaction'
-                                                ? 18
-                                                : 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
+                                return _buildChatLine(m, l10n);
                               },
                             ),
                     ),
@@ -1109,6 +1505,109 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
       ),
     );
   }
+
+  Widget _buildChatLine(_ChatLine m, AppLocalizations l10n) {
+    // Cas spécial : message request_join (affiché en highlight avec bouton)
+    if (m.type == 'request_join' && m.userId != null) {
+      final hasPendingRequest = _pendingRequests.containsKey(m.userId);
+      final isInviting = _invitingUsers.contains(m.userId);
+      
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: ThixPolicy.domainMedia.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: ThixPolicy.domainMedia.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.hand_raised, color: Colors.white, size: 14),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  '${m.username} ${l10n.t("live_wants_to_join")}',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 6),
+              if (hasPendingRequest)
+                GestureDetector(
+                  onTap: isInviting ? null : () => _inviteUser(m.userId!, m.username),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isInviting ? Colors.grey : const Color(0xFF22C55E),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: isInviting
+                        ? const SizedBox(
+                            width: 10,
+                            height: 10,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 1.5,
+                              color: Colors.white,
+                            ),
+                          )
+                        : Text(
+                            l10n.t('live_invite_btn'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                  ),
+                )
+              else
+                Icon(Icons.check_circle, color: Colors.white54, size: 14),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '${m.username} ',
+              style: TextStyle(
+                color: m.type == 'gift'
+                    ? Colors.amber
+                    : m.type == 'reaction'
+                        ? Colors.white
+                        : ThixPolicy.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: m.type == 'reaction' ? 16 : 13,
+              ),
+            ),
+            TextSpan(
+              text: m.text,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: m.type == 'reaction' ? 18 : 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
+      ),
+    );
+  }
 }
 
 // ============================================================================
@@ -1119,11 +1618,493 @@ class _ChatLine {
   final String username;
   final String text;
   final String type;
+  final String? userId;
   _ChatLine({
     required this.username,
     required this.text,
     this.type = 'chat',
+    this.userId,
   });
+}
+
+// ============================================================================
+// GUEST STATE (tracker local d'un guest)
+// ============================================================================
+
+class _GuestState {
+  final int uid;
+  String username;
+  String? userId;
+  bool videoEnabled;
+  bool audioEnabled;
+
+  _GuestState({
+    required this.uid,
+    required this.username,
+    this.userId,
+    this.videoEnabled = true,
+    this.audioEnabled = true,
+  });
+}
+
+// ============================================================================
+// GUESTS BUTTON (top bar)
+// ============================================================================
+
+class _GuestsButton extends StatelessWidget {
+  final int requestsCount;
+  final int guestsCount;
+  final VoidCallback onTap;
+
+  const _GuestsButton({
+    required this.requestsCount,
+    required this.guestsCount,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.black45,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.group, size: 14, color: Colors.white),
+                const SizedBox(width: 4),
+                Text(
+                  '$guestsCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        // Badge rouge si des requêtes en attente
+        if (requestsCount > 0)
+          Positioned(
+            right: -4,
+            top: -4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xFFEF4444),
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+              child: Text(
+                requestsCount > 9 ? '9+' : '$requestsCount',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// REQUESTS BANNER (au-dessus du chat)
+// ============================================================================
+
+class _RequestsBanner extends StatelessWidget {
+  final int count;
+  final VoidCallback onTap;
+  final AppLocalizations l10n;
+
+  const _RequestsBanner({
+    required this.count,
+    required this.onTap,
+    required this.l10n,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              ThixPolicy.domainMedia,
+              const Color(0xFFE11D48),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: [
+            BoxShadow(
+              color: ThixPolicy.domainMedia.withValues(alpha: 0.4),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.hand_raised, color: Colors.white, size: 16),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                count == 1
+                    ? l10n.t('live_one_request')
+                    : l10n.t('live_multiple_requests').replaceAll('{count}', '$count'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 12),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// GUESTS PANEL (BottomSheet)
+// ============================================================================
+
+class _GuestsPanel extends StatelessWidget {
+  final List<_JoinRequest> requests;
+  final List<_GuestState> guests;
+  final Set<String> invitingUsers;
+  final void Function(_JoinRequest req) onInvite;
+  final void Function(_JoinRequest req) onDismissRequest;
+  final void Function(_GuestState guest) onRemoveGuest;
+  final AppLocalizations l10n;
+
+  const _GuestsPanel({
+    required this.requests,
+    required this.guests,
+    required this.invitingUsers,
+    required this.onInvite,
+    required this.onDismissRequest,
+    required this.onRemoveGuest,
+    required this.l10n,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DraggableScrollableSheet(
+      initialChildSize: 0.7,
+      minChildSize: 0.4,
+      maxChildSize: 0.9,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Color(0xFF1A1A1A),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: ListView(
+            controller: scrollController,
+            padding: const EdgeInsets.all(16),
+            children: [
+              // Handle
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.white24,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+
+              // Titre
+              Text(
+                l10n.t('live_manage_guests'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Section "En direct maintenant" (guests actuels)
+              if (guests.isNotEmpty) ...[
+                Text(
+                  l10n.t('live_on_stage_now'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ...guests.map((g) => _GuestTile(
+                      username: g.username,
+                      isOnStage: true,
+                      onRemove: () => onRemoveGuest(g),
+                    )),
+                const SizedBox(height: 20),
+              ],
+
+              // Section "Demandes en attente"
+              Text(
+                l10n.t('live_pending_requests'),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 8),
+              if (requests.isEmpty)
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.how_to_reg, color: Colors.white38, size: 32),
+                        const SizedBox(height: 8),
+                        Text(
+                          l10n.t('live_no_requests'),
+                          style: const TextStyle(color: Colors.white54, fontSize: 13),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              else
+                ...requests.map((req) => _RequestTile(
+                      request: req,
+                      isInviting: invitingUsers.contains(req.userId),
+                      onInvite: () => onInvite(req),
+                      onDismiss: () => onDismissRequest(req),
+                      l10n: l10n,
+                    )),
+              const SizedBox(height: 20),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _GuestTile extends StatelessWidget {
+  final String username;
+  final bool isOnStage;
+  final VoidCallback? onRemove;
+
+  const _GuestTile({
+    required this.username,
+    required this.isOnStage,
+    this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: const Color(0xFF22C55E),
+            child: Text(
+              username.isNotEmpty ? username[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  username,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Row(
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF22C55E),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    const Text(
+                      'En direct',
+                      style: TextStyle(color: Color(0xFF22C55E), fontSize: 11),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          if (onRemove != null)
+            GestureDetector(
+              onTap: onRemove,
+              child: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEF4444).withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.close, color: Color(0xFFEF4444), size: 16),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequestTile extends StatelessWidget {
+  final _JoinRequest request;
+  final bool isInviting;
+  final VoidCallback onInvite;
+  final VoidCallback onDismiss;
+  final AppLocalizations l10n;
+
+  const _RequestTile({
+    required this.request,
+    required this.isInviting,
+    required this.onInvite,
+    required this.onDismiss,
+    required this.l10n,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: ThixPolicy.domainMedia.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: ThixPolicy.domainMedia.withValues(alpha: 0.3),
+        ),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 20,
+            backgroundColor: ThixPolicy.domainMedia,
+            child: Text(
+              request.username.isNotEmpty ? request.username[0].toUpperCase() : '?',
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  request.username,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                Text(
+                  l10n.t('live_wants_to_join'),
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              GestureDetector(
+                onTap: onDismiss,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.close, color: Colors.white70, size: 16),
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: isInviting ? null : onInvite,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: isInviting ? Colors.grey : const Color(0xFF22C55E),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: isInviting
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.handshake, color: Colors.white, size: 14),
+                            const SizedBox(width: 4),
+                            Text(
+                              l10n.t('live_invite_btn'),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 // ============================================================================
