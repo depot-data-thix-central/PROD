@@ -2678,7 +2678,7 @@ const Map<String, String> _fr = {
 'editor_save': 'Enregistrer',
 
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'Invitation à rejoindre le live',
+  
   'live_invite_desc': 'vous invite à monter sur scène',
   'live_invite_accept': 'Accepter',
   'live_invite_decline': 'Refuser',
@@ -7909,7 +7909,7 @@ const Map<String, String> _sw = {
 'editor_pick_music': 'Muziki',
 'editor_save': 'Hifadhi',
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'Mwaliko wa kujiunga na mubashara',
+  
   'live_invite_desc': 'anakualika upande jukwaani',
   'live_invite_accept': 'Kukubali',
   'live_invite_decline': 'Kukataa',
@@ -10486,7 +10486,7 @@ const Map<String, String> _pt = {
 'editor_pick_music': 'Música',
 'editor_save': 'Salvar',
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'Convite para aderir ao live',
+  
   'live_invite_desc': 'convida-o a subir ao palco',
   'live_invite_accept': 'Aceitar',
   'live_invite_decline': 'Recusar',
@@ -13063,7 +13063,7 @@ const Map<String, String> _ar = {
 'editor_pick_music': 'الموسيقى',
 'editor_save': 'حفظ',
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'دعوة للانضمام إلى البث المباشر',
+  
   'live_invite_desc': 'يدعوك للصعود إلى المنصة',
   'live_invite_accept': 'قبول',
   'live_invite_decline': 'رفض',
@@ -15663,7 +15663,7 @@ const Map<String, String> _zh = {
 'editor_pick_music': '添加背景音乐',
 'editor_save': '保存',
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': '邀请加入直播',
+  
   'live_invite_desc': '邀请您连麦上台',
   'live_invite_accept': '接受',
   'live_invite_decline': '拒绝',
@@ -17482,7 +17482,7 @@ const Map<String, String> _es = {
 'editor_pick_music': 'Música',
 'editor_save': 'Guardar',
   // ── LIVE & REGISTRATION ──
-  'live_invite_title': 'Invitación para unirse al en vivo',
+  
   'live_invite_desc': 'te invita a subir al escenario',
   'live_invite_accept': 'Aceptar',
   'live_invite_decline': 'Rechazar',
