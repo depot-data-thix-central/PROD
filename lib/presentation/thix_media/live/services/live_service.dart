@@ -415,9 +415,12 @@ class LiveService {
   // ════════════════════════════════════════════════════════════
 
   Future<({LiveSession session, AgoraCredentials creds})> startLive({
-    required String title,
-    String category = 'general',
-  }) async {
+  required String title,
+  String category = 'general',
+  String? description,   // ✅ NOUVEAU
+  String? tags,          // ✅ NOUVEAU
+  String audience = 'public',  // ✅ NOUVEAU
+}) async { 
     final userId = _getUserId();
     final safeTitle = _LiveValidators.sanitizeTitle(title);
     final safeCategory = _LiveValidators.sanitizeCategory(category);
