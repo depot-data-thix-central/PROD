@@ -1,31 +1,12 @@
 // lib/services/chat/call_service.dart
 //
 // ============================================================================
-// CALL MEDIA SERVICE — Production Enterprise
+// CALL MEDIA SERVICE — v2.1
 // ============================================================================
-//
-// Service de gestion des appels audio/vidéo avec Agora RTC.
-//
-// Architecture singleton :
-//   - Le SDK Agora ne supporte qu'UN SEUL engine par process
-//   - Pattern singleton manuel GARANTI (factory + static)
-//   - Cycle de vie : create() une fois → join()/leave() multiples
-//   - release() UNIQUEMENT à la fermeture de l'app (disposeEngine)
-//
-// ⚠️ IMPORTANT : Ne JAMAIS faire release() + create() entre deux appels
-// (déclenche le bug "Null check operator" du SDK Agora, issue #2202)
-//
-// Sécurité :
-//   - Validation regex stricte sur channel (alphanum + _ -)
-//   - Validation uid (positive int)
-//   - Sanitization sur appId/token (trim + validation)
-//   - Stack traces masquées en production (kDebugMode)
-//   - Timeout + retry sur tous les appels réseau
-//
-// Robustesse :
-//   - _isDisposed guard sur toutes les méthodes
-//   - _joining flag avec protection double-join
-//   - Cleanup callbacks dans disposeEngine
+// Corrections :
+//  ✅ Création du moteur Agora SÉRIALISÉE (plus de 2 moteurs en parallèle)
+//  ✅ join() idempotent : un 2e appel pour le même canal ne coupe plus l'appel en cours
+//  ✅ disposeEngine() ne rend plus le singleton inutilisable
 // ============================================================================
 
 import 'dart:async';
@@ -54,7 +35,6 @@ const int _kMaxRetries = 2;
 class _CallMediaValidators {
   _CallMediaValidators._();
 
-  /// Valide un channel name Agora (alphanumérique + underscore + tiret).
   static bool isValidChannel(String? channel) {
     if (channel == null) return false;
     final trimmed = channel.trim();
@@ -62,15 +42,8 @@ class _CallMediaValidators {
     return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(trimmed);
   }
 
-  /// Valide un UID Agora (entier positif non-nul).
-  ///
-  /// Note : uid=0 est réservé par Agora pour auto-assignation,
-  /// mais nous exigeons un uid explicite pour la traçabilité.
-  static bool isValidUid(int uid) {
-    return uid > 0 && uid <= 0x7FFFFFFF; // Max int32 positif
-  }
+  static bool isValidUid(int uid) => uid > 0 && uid <= 0x7FFFFFFF;
 
-  /// Valide un appId Agora (non vide, longueur min, alphanumérique).
   static bool isValidAppId(String? appId) {
     if (appId == null) return false;
     final trimmed = appId.trim();
@@ -78,15 +51,12 @@ class _CallMediaValidators {
     return RegExp(r'^[a-zA-Z0-9]{10,}$').hasMatch(trimmed);
   }
 
-  /// Sanitize un token (trim + longueur raisonnable).
   static String sanitizeToken(String? token) {
     if (token == null) return '';
     final trimmed = token.trim();
-    // Les tokens Agora peuvent être longs (JWT), on limite à 2KB
     return trimmed.length > 2048 ? trimmed.substring(0, 2048) : trimmed;
   }
 
-  /// Obfusque un appId pour les logs.
   static String obfuscateAppId(String? appId) {
     if (appId == null || appId.length <= 6) return '***';
     return '${appId.substring(0, 6)}...';
@@ -96,20 +66,7 @@ class _CallMediaValidators {
 // ============================================================================
 // CALL MEDIA SERVICE (Singleton)
 // ============================================================================
-
-/// Service singleton de gestion des appels audio/vidéo Agora.
-///
-/// **Singleton garanti** : Le SDK Agora ne supporte qu'un engine par process.
-/// Le factory retourne toujours la même instance.
-///
-/// **Usage via Riverpod** :
-/// ```dart
-/// final callMediaServiceProvider = Provider<CallMediaService>((ref) {
-///   return CallMediaService(); // Retourne le singleton
-/// });
-/// ```
 class CallMediaService {
-  // Singleton pattern
   static final CallMediaService _instance = CallMediaService._internal();
   factory CallMediaService() => _instance;
   CallMediaService._internal() {
@@ -117,46 +74,31 @@ class CallMediaService {
   }
 
   // ── STATE ────────────────────────────────────────────────────────────
-
   RtcEngine? _engine;
   String? _initializedAppId;
+  Future<void>? _engineInit; // verrou : une seule création de moteur à la fois
   bool _joined = false;
   bool _joining = false;
+  bool _joinIssued = false; // joinChannel déjà envoyé pour _channel
   String? _channel;
   bool _isDisposed = false;
 
-  // Callbacks du call en cours (réassignés à chaque join)
   void Function(int)? _onUserJoined;
   void Function(int)? _onUserLeft;
   void Function(String)? _onError;
 
   // ── PUBLIC GETTERS ───────────────────────────────────────────────────
-
-  /// Instance du moteur Agora (nullable si non-initialisé).
   RtcEngine? get engine => _engine;
-
-  /// Vrai si le moteur a rejoint un canal.
   bool get isJoined => _joined;
-
-  /// Vrai si le service a été disposé.
   bool get isDisposed => _isDisposed;
 
   // ── PERMISSIONS ──────────────────────────────────────────────────────
-
-  /// Demande les permissions micro/caméra selon le type d'appel.
-  ///
-  /// Sur Web, les permissions sont gérées différemment (pas de permission_handler).
   Future<void> _ensurePermissions(CallType type) async {
-    if (_isDisposed) {
-      throw StateError('CallMediaService disposed');
-    }
+    if (_isDisposed) throw StateError('CallMediaService disposed');
 
     try {
-      // Microphone
       if (!kIsWeb) {
-        final mic = await Permission.microphone
-            .request()
-            .timeout(_kPermissionTimeout);
+        final mic = await Permission.microphone.request().timeout(_kPermissionTimeout);
         if (!mic.isGranted) {
           throw PermissionDeniedException('Microphone permission denied');
         }
@@ -168,12 +110,9 @@ class CallMediaService {
       debugPrint('[CallMediaService] ⚠️ Web mic permission: $e');
     }
 
-    // Caméra (uniquement si appel vidéo)
     if (type == CallType.video && !kIsWeb) {
       try {
-        final cam = await Permission.camera
-            .request()
-            .timeout(_kPermissionTimeout);
+        final cam = await Permission.camera.request().timeout(_kPermissionTimeout);
         if (!cam.isGranted) {
           throw PermissionDeniedException('Camera permission denied');
         }
@@ -188,20 +127,32 @@ class CallMediaService {
 
   // ── ENGINE MANAGEMENT ────────────────────────────────────────────────
 
-  /// Crée le moteur RTC UNE SEULE FOIS et le réutilise entre les appels.
-  ///
-  /// Si l'appId change (cas rare), le moteur précédent est nettoyé proprement.
+  /// Retourne le moteur, en le créant UNE SEULE FOIS même si plusieurs
+  /// appels arrivent en même temps (aperçu caméra + join).
   Future<RtcEngine> _ensureEngine(String appId) async {
-    if (_isDisposed) {
-      throw StateError('CallMediaService disposed');
-    }
+    if (_isDisposed) throw StateError('CallMediaService disposed');
 
-    // Réutiliser si déjà initialisé avec le même appId
-    if (_engine != null && _initializedAppId == appId) {
-      return _engine!;
+    // Si une création est en cours, on attend sa fin avant de décider.
+    while (_engineInit != null) {
+      try {
+        await _engineInit;
+      } catch (_) {}
     }
+    if (_isDisposed) throw StateError('CallMediaService disposed');
 
-    // appId différent (cas rare) : nettoyage propre avant recréation
+    if (_engine != null && _initializedAppId == appId) return _engine!;
+
+    final completer = Completer<void>();
+    _engineInit = completer.future;
+    try {
+      return await _createEngine(appId);
+    } finally {
+      _engineInit = null;
+      completer.complete();
+    }
+  }
+
+  Future<RtcEngine> _createEngine(String appId) async {
     if (_engine != null) {
       debugPrint('[CallMediaService] 🔄 AppId changed, recreating engine');
       try {
@@ -213,6 +164,7 @@ class CallMediaService {
       _engine = null;
       _initializedAppId = null;
       _joined = false;
+      _joinIssued = false;
     }
 
     final engine = createAgoraRtcEngine();
@@ -224,13 +176,11 @@ class CallMediaService {
       ),
     );
 
-    // Handler enregistré UNE fois, avec des callbacks null-safe
     engine.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (conn, elapsed) {
           if (_isDisposed) return;
-          debugPrint('[CallMediaService] ✓ Joined ${conn.channelId} '
-              '(elapsed: ${elapsed}ms)');
+          debugPrint('[CallMediaService] ✓ Joined ${conn.channelId} (elapsed: ${elapsed}ms)');
           _joined = true;
         },
         onUserJoined: (conn, remoteUid, elapsed) {
@@ -240,14 +190,14 @@ class CallMediaService {
         },
         onUserOffline: (conn, remoteUid, reason) {
           if (_isDisposed) return;
-          debugPrint('[CallMediaService] 👋 Remote offline: $remoteUid '
-              '(reason: $reason)');
+          debugPrint('[CallMediaService] 👋 Remote offline: $remoteUid (reason: $reason)');
           _onUserLeft?.call(remoteUid);
         },
         onLeaveChannel: (conn, stats) {
           if (_isDisposed) return;
           debugPrint('[CallMediaService] 🚪 Left channel ${conn.channelId}');
           _joined = false;
+          _joinIssued = false;
         },
         onError: (err, msg) {
           if (_isDisposed) return;
@@ -261,7 +211,6 @@ class CallMediaService {
     try {
       await engine.setEnableSpeakerphone(true);
     } catch (e) {
-      // Non supporté sur Web
       debugPrint('[CallMediaService] ⚠️ setEnableSpeakerphone: $e');
     }
 
@@ -272,9 +221,7 @@ class CallMediaService {
     return engine;
   }
 
-  // ── TOKEN RETRIEVAL (avec retry) ─────────────────────────────────────
-
-  /// Récupère un token Agora avec retry automatique.
+  // ── TOKEN RETRIEVAL ──────────────────────────────────────────────────
   Future<CallTokenResult> _getTokenWithRetry({
     required String channel,
     required int uid,
@@ -288,68 +235,40 @@ class CallMediaService {
             .getToken(channel: channel, uid: uid)
             .timeout(_kTokenTimeout);
 
-        // Validation du token reçu
         if (!_CallMediaValidators.isValidAppId(cred.appId)) {
           throw FormatException('Invalid appId received');
         }
         if (_CallMediaValidators.sanitizeToken(cred.token).isEmpty) {
           throw FormatException('Empty token received');
         }
-
-        debugPrint('[CallMediaService] ✓ Token obtained '
-            '(appId=${_CallMediaValidators.obfuscateAppId(cred.appId)}, '
-            'channel=${cred.channel}, uid=${cred.uid})');
-
         return cred;
       } on TimeoutException {
         lastError = TimeoutException('Token request timeout');
         attempt++;
-        if (attempt <= _kMaxRetries) {
-          debugPrint('[CallMediaService] ⏱️ Token timeout, '
-              'retry $attempt/$_kMaxRetries');
-          await Future.delayed(_kRetryDelay);
-        }
+        if (attempt <= _kMaxRetries) await Future.delayed(_kRetryDelay);
       } catch (e) {
         lastError = e;
         attempt++;
-        if (attempt <= _kMaxRetries) {
-          debugPrint('[CallMediaService] ⚠️ Token error, '
-              'retry $attempt/$_kMaxRetries: $e');
-          await Future.delayed(_kRetryDelay);
-        }
+        if (attempt <= _kMaxRetries) await Future.delayed(_kRetryDelay);
       }
     }
-
     throw lastError ?? Exception('Token retrieval failed after retries');
   }
 
   // ── LOCAL PREVIEW ────────────────────────────────────────────────────
-
-  /// Démarre la préview caméra locale AVANT l'acceptation.
-  ///
-  /// Utilisé par l'appelant pendant la sonnerie pour voir sa propre caméra
-  /// en plein écran avant que l'appelé ne décroche.
   Future<void> prepareLocalPreview({
     required String channel,
     required int uid,
   }) async {
-    if (_isDisposed) {
-      throw StateError('CallMediaService disposed');
-    }
-
-    // Validation inputs
+    if (_isDisposed) throw StateError('CallMediaService disposed');
     if (!_CallMediaValidators.isValidChannel(channel)) {
       throw ArgumentError('Invalid channel name');
     }
-    if (!_CallMediaValidators.isValidUid(uid)) {
-      throw ArgumentError('Invalid uid');
-    }
+    if (!_CallMediaValidators.isValidUid(uid)) throw ArgumentError('Invalid uid');
 
-    debugPrint('[CallMediaService] 📹 Preparing local preview '
-        '(channel=${_obfuscateChannel(channel)}, uid=$uid)');
+    debugPrint('[CallMediaService] 📹 Preparing local preview (uid=$uid)');
 
     await _ensurePermissions(CallType.video);
-
     final cred = await _getTokenWithRetry(channel: channel, uid: uid);
 
     try {
@@ -366,8 +285,6 @@ class CallMediaService {
   }
 
   // ── JOIN CHANNEL ─────────────────────────────────────────────────────
-
-  /// Rejoint un canal Agora pour un appel audio ou vidéo.
   Future<void> join({
     required String channel,
     required CallType type,
@@ -376,11 +293,8 @@ class CallMediaService {
     required void Function(int remoteUid) onUserLeft,
     required void Function(String error) onError,
   }) async {
-    if (_isDisposed) {
-      throw StateError('CallMediaService disposed');
-    }
+    if (_isDisposed) throw StateError('CallMediaService disposed');
 
-    // Validation inputs
     if (!_CallMediaValidators.isValidChannel(channel)) {
       onError('Invalid channel name');
       throw ArgumentError('Invalid channel name');
@@ -390,20 +304,26 @@ class CallMediaService {
       throw ArgumentError('Invalid uid');
     }
 
-    // Anti double-join (arrivée d'appel + accept simultanés)
+    // ✅ Idempotence : déjà connecté (ou en cours) à CE canal → on garde
+    // l'appel tel quel, on met seulement les callbacks à jour.
+    if (_channel == channel && (_joined || _joinIssued || _joining)) {
+      _onUserJoined = onUserJoined;
+      _onUserLeft = onUserLeft;
+      _onError = onError;
+      debugPrint('[CallMediaService] ⚠️ join ignored: already in this channel');
+      return;
+    }
     if (_joining) {
-      debugPrint('[CallMediaService] ⚠️ join ignored: already in progress');
+      debugPrint('[CallMediaService] ⚠️ join ignored: another join in progress');
       return;
     }
     _joining = true;
 
-    // Assign callbacks
     _onUserJoined = onUserJoined;
     _onUserLeft = onUserLeft;
     _onError = onError;
 
     try {
-      // Permissions
       await _ensurePermissions(type);
     } catch (e) {
       debugPrint('[CallMediaService] ❌ Permission denied: $e');
@@ -412,7 +332,6 @@ class CallMediaService {
       rethrow;
     }
 
-    // Token
     late final CallTokenResult cred;
     try {
       cred = await _getTokenWithRetry(channel: channel, uid: uid);
@@ -424,9 +343,17 @@ class CallMediaService {
       rethrow;
     }
 
-    // Join channel
     try {
       final engine = await _ensureEngine(cred.appId.trim());
+
+      // Reste d'un ancien canal différent : on le quitte proprement
+      if (_joined && _channel != null && _channel != channel) {
+        try {
+          await engine.leaveChannel();
+        } catch (_) {}
+        _joined = false;
+        _joinIssued = false;
+      }
 
       if (type == CallType.video) {
         await engine.enableVideo();
@@ -436,14 +363,11 @@ class CallMediaService {
         await engine.enableLocalVideo(false);
       }
 
-      await engine.setClientRole(
-        role: ClientRoleType.clientRoleBroadcaster,
-      );
+      await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
 
       _channel = channel;
       _joined = false;
 
-      // Join avec timeout
       await engine
           .joinChannel(
             token: _CallMediaValidators.sanitizeToken(cred.token),
@@ -460,9 +384,8 @@ class CallMediaService {
           )
           .timeout(_kJoinTimeout);
 
-      debugPrint('[CallMediaService] ✓ Joined channel '
-          '(channel=${_obfuscateChannel(channel)}, '
-          'uid=$uid, video=${type == CallType.video})');
+      _joinIssued = true;
+      debugPrint('[CallMediaService] ✓ Join sent (uid=$uid, video=${type == CallType.video})');
     } on TimeoutException {
       debugPrint('[CallMediaService] ❌ Join timeout');
       onError('agora: join timeout');
@@ -482,19 +405,15 @@ class CallMediaService {
   }
 
   // ── MEDIA CONTROLS ───────────────────────────────────────────────────
-
-  /// Active/désactive le micro.
   Future<void> setMuted(bool muted) async {
     if (_isDisposed || _engine == null) return;
     try {
       await _engine!.muteLocalAudioStream(muted);
-      debugPrint('[CallMediaService] 🎤 Mute: $muted');
     } catch (e) {
       debugPrint('[CallMediaService] ❌ setMuted failed: $e');
     }
   }
 
-  /// Active/désactive la caméra.
   Future<void> setVideoOff(bool off) async {
     if (_isDisposed || _engine == null) return;
     try {
@@ -503,31 +422,25 @@ class CallMediaService {
         await _engine!.enableLocalVideo(true);
         await _engine!.startPreview();
       }
-      debugPrint('[CallMediaService] 📹 Video off: $off');
     } catch (e) {
       debugPrint('[CallMediaService] ❌ setVideoOff failed: $e');
     }
   }
 
-  /// Bascule entre caméra avant/arrière.
   Future<void> switchCamera() async {
     if (_isDisposed || _engine == null) return;
     try {
       await _engine!.switchCamera();
-      debugPrint('[CallMediaService] 🔄 Camera switched');
     } catch (e) {
       debugPrint('[CallMediaService] ❌ switchCamera failed: $e');
     }
   }
 
-  /// Active/désactive le haut-parleur.
   Future<void> setSpeaker(bool on) async {
     if (_isDisposed || _engine == null) return;
     try {
       await _engine!.setEnableSpeakerphone(on);
-      debugPrint('[CallMediaService] 🔊 Speaker: $on');
     } catch (e) {
-      // Non supporté sur Web
       debugPrint('[CallMediaService] ⚠️ setSpeaker (web): $e');
     }
   }
@@ -535,14 +448,10 @@ class CallMediaService {
   // ── LEAVE / DISPOSE ──────────────────────────────────────────────────
 
   /// Quitte le canal SANS détruire le moteur (à utiliser entre les appels).
-  ///
-  /// Cette méthode doit être appelée dans hangUp() pour quitter proprement
-  /// le canal sans libérer le moteur RTC (qui sera réutilisé au prochain appel).
   Future<void> leave() async {
     if (_isDisposed) return;
 
     debugPrint('[CallMediaService] 🚪 Leaving channel');
-
     try {
       await _engine?.stopPreview();
     } catch (e) {
@@ -555,22 +464,25 @@ class CallMediaService {
     }
 
     _joined = false;
+    _joinIssued = false;
     _channel = null;
     _joining = false;
   }
 
-  /// Libère complètement le moteur RTC.
-  ///
-  /// ⚠️ À appeler UNIQUEMENT à la fermeture de l'app (dispose())
-  /// Ne jamais appeler entre deux appels (déclenche le bug "Null check operator")
+  /// Libère le moteur RTC (fermeture de l'app uniquement).
+  /// Le singleton reste réutilisable ensuite (si le provider est recréé).
   Future<void> disposeEngine() async {
     if (_isDisposed) return;
 
     debugPrint('[CallMediaService] 🧹 Disposing engine');
-    _isDisposed = true;
+    _isDisposed = true; // bloque les callbacks pendant la libération
 
-    await leave();
-
+    try {
+      await _engine?.stopPreview();
+    } catch (_) {}
+    try {
+      await _engine?.leaveChannel();
+    } catch (_) {}
     try {
       await _engine?.release();
     } catch (e) {
@@ -579,31 +491,23 @@ class CallMediaService {
 
     _engine = null;
     _initializedAppId = null;
+    _engineInit = null;
     _joined = false;
+    _joinIssued = false;
     _joining = false;
     _channel = null;
-
-    // Cleanup callbacks pour éviter fuites mémoire
     _onUserJoined = null;
     _onUserLeft = null;
     _onError = null;
 
+    _isDisposed = false; // ✅ le singleton redevient utilisable
     debugPrint('[CallMediaService] 👋 Engine disposed');
-  }
-
-  // ── HELPERS ──────────────────────────────────────────────────────────
-
-  String _obfuscateChannel(String? s) {
-    if (s == null || s.length <= 8) return '***';
-    return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
   }
 }
 
 // ============================================================================
 // EXCEPTIONS
 // ============================================================================
-
-/// Exception levée quand une permission est refusée.
 class PermissionDeniedException implements Exception {
   final String message;
   const PermissionDeniedException(this.message);
