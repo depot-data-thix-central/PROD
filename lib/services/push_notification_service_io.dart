@@ -1,11 +1,8 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v6 (Production)
-// ✅ FIX v6 : Imports explicites pour CallKitParams/AndroidParams/IOSParams
-// ✅ FIX v6 : Retiré 'const' devant AndroidParams/IOSParams (pas const dans v2.5.8)
-// ✅ FIX v6 : Setters onVoipAccept/onVoipDecline bien présents
-//
-// Compatible : flutter_callkit_incoming 2.5.8, flutter_ringtone_player 4.0.0
+// Push Notification Service IO v7 (Production)
+// ✅ FIX v7 : Tous imports explicites + suppression syntaxes abrégées
+// ✅ Compatible : flutter_callkit_incoming 2.5.8, flutter_ringtone_player 4.0.0
 
 import 'dart:async';
 import 'dart:io';
@@ -15,12 +12,12 @@ import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 
-// ✅ Imports explicites (v2.5.8 ne réexporte pas tout via le barrel)
 import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
 import 'package:flutter_callkit_incoming/entities/call_event.dart';
 import 'package:flutter_callkit_incoming/entities/call_kit_params.dart';
 import 'package:flutter_callkit_incoming/entities/android_params.dart';
 import 'package:flutter_callkit_incoming/entities/ios_params.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
 
 import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:vibration/vibration.dart';
@@ -54,16 +51,24 @@ const int _kCallDurationMs = 60000;
 
 class PushTypes {
   PushTypes._();
-  static const chatMessage = 'chat_message';
-  static const incomingCall = 'incoming_call';
-  static const callHangup = 'call_hangup';
-  static const notification = 'notification';
-  static const sos = 'sos';
+  
+  static const String chatMessage = 'chat_message';
+  static const String incomingCall = 'incoming_call';
+  static const String callHangup = 'call_hangup';
+  static const String notification = 'notification';
+  static const String sos = 'sos';
 
-  static const Set<String> allowed = {
-    chatMessage, incomingCall, callHangup, notification, sos,
+  static const Set<String> allowed = <String>{
+    chatMessage,
+    incomingCall,
+    callHangup,
+    notification,
+    sos,
   };
-  static bool isAllowed(String type) => allowed.contains(type);
+  
+  static bool isAllowed(String type) {
+    return allowed.contains(type);
+  }
 }
 
 // ============================================================================
@@ -85,30 +90,52 @@ class _Validators {
     return RegExp(r'^[A-Za-z0-9_\-:]+$').hasMatch(token);
   }
 
-  static String maskUid(String uid) =>
-      uid.length <= 8 ? '***' : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
+  static String maskUid(String uid) {
+    if (uid.length <= 8) return '***';
+    return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
+  }
 
-  static String maskToken(String token) =>
-      token.length <= 10 ? '***' : '${token.substring(0, 6)}...${token.substring(token.length - 4)}';
+  static String maskToken(String token) {
+    if (token.length <= 10) return '***';
+    return '${token.substring(0, 6)}...${token.substring(token.length - 4)}';
+  }
 
   static String sanitizeString(String? input, {required int maxLength}) {
     if (input == null) return '';
-    final s = input.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
-    return s.length > maxLength ? '${s.substring(0, maxLength)}…' : s;
+    final s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    if (s.length > maxLength) {
+      return '${s.substring(0, maxLength)}…';
+    }
+    return s;
   }
 
   static bool isValidRoute(String? route) {
-    if (route == null || route.isEmpty || route.length > _kMaxPayloadLength) return false;
-    const p = ['call:', 'chat:', '/chat', '/profile', '/notification', '/sos', '/event', '/call'];
-    return p.any((x) => route.startsWith(x));
+    if (route == null || route.isEmpty || route.length > _kMaxPayloadLength) {
+      return false;
+    }
+    const prefixes = <String>[
+      'call:', 'chat:', '/chat', '/profile',
+      '/notification', '/sos', '/event', '/call',
+    ];
+    for (final prefix in prefixes) {
+      if (route.startsWith(prefix)) return true;
+    }
+    return false;
   }
 
-  static String? sanitizePayload(String? payload) =>
-      (payload == null || payload.isEmpty) ? null : sanitizeString(payload, maxLength: _kMaxPayloadLength);
+  static String? sanitizePayload(String? payload) {
+    if (payload == null || payload.isEmpty) return null;
+    return sanitizeString(payload, maxLength: _kMaxPayloadLength);
+  }
 
   static bool isValidUuid(String? id) {
     if (id == null || id.isEmpty) return false;
-    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$').hasMatch(id);
+    return RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    ).hasMatch(id);
   }
 
   static String? sanitizeUrl(String? url) {
@@ -154,7 +181,9 @@ class _VoipCallManager {
     required String channelName,
     bool isVideo = false,
   }) async {
-    if (!_isInitialized) await initialize();
+    if (!_isInitialized) {
+      await initialize();
+    }
 
     final safeInviteId = _Validators.isValidUuid(inviteId) ? inviteId : '';
     final safeChannel = _Validators.sanitizeString(channelName, maxLength: 64);
@@ -162,7 +191,6 @@ class _VoipCallManager {
 
     if (safeInviteId.isEmpty || safeChannel.isEmpty) return;
 
-    // ✅ PAS DE 'const' devant CallKitParams / AndroidParams / IOSParams
     final params = CallKitParams(
       id: safeInviteId,
       nameCaller: safeName,
@@ -195,7 +223,8 @@ class _VoipCallManager {
     );
 
     try {
-      await FlutterCallkitIncoming.showCallkitIncoming(params).timeout(_kCallkitTimeout);
+      await FlutterCallkitIncoming.showCallkitIncoming(params)
+          .timeout(_kCallkitTimeout);
       await _startRinging();
       debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
     } catch (e) {
@@ -204,12 +233,20 @@ class _VoipCallManager {
   }
 
   Future<void> endCall(String inviteId) async {
-    try { await FlutterCallkitIncoming.endCall(inviteId); } catch (e) { debugPrint('[VOIP] ❌ endCall: $e'); }
+    try {
+      await FlutterCallkitIncoming.endCall(inviteId);
+    } catch (e) {
+      debugPrint('[VOIP] ❌ endCall: $e');
+    }
     await stopRinging();
   }
 
   Future<void> endAllCalls() async {
-    try { await FlutterCallkitIncoming.endAllCalls(); } catch (e) { debugPrint('[VOIP] ❌ endAllCalls: $e'); }
+    try {
+      await FlutterCallkitIncoming.endAllCalls();
+    } catch (e) {
+      debugPrint('[VOIP] ❌ endAllCalls: $e');
+    }
     await stopRinging();
   }
 
@@ -218,13 +255,19 @@ class _VoipCallManager {
     _isRinging = true;
     _ringTimeout?.cancel();
     _ringTimeout = Timer(const Duration(milliseconds: _kCallDurationMs), stopRinging);
+    
     try {
       if (Platform.isAndroid) {
-        if ((await Vibration.hasVibrator() ?? false)) {
-          await Vibration.vibrate(pattern: [0, 1000, 500, 1000], repeat: 0);
+        final hasVibrator = await Vibration.hasVibrator() ?? false;
+        if (hasVibrator) {
+          await Vibration.vibrate(pattern: <int>[0, 1000, 500, 1000], repeat: 0);
         }
       }
-      await _ringtone.play(android: AndroidSounds.ringtone, looping: true, volume: 1.0);
+      await _ringtone.play(
+        android: AndroidSounds.ringtone,
+        looping: true,
+        volume: 1.0,
+      );
     } catch (e) {
       debugPrint('[VOIP] ❌ Ringing failed: $e');
     }
@@ -235,9 +278,12 @@ class _VoipCallManager {
     _isRinging = false;
     _ringTimeout?.cancel();
     _ringTimeout = null;
+    
     try {
       await _ringtone.stop();
-      if (Platform.isAndroid) await Vibration.cancel();
+      if (Platform.isAndroid) {
+        await Vibration.cancel();
+      }
     } catch (e) {
       debugPrint('[VOIP] ❌ Stop ringing failed: $e');
     }
@@ -245,8 +291,9 @@ class _VoipCallManager {
 
   void _onCallEvent(CallEvent? event) {
     if (event == null) return;
+    
     final type = event.event;
-    final extra = (event.body?['extra'] as Map?)?.cast<String, dynamic>() ?? {};
+    final extra = (event.body?['extra'] as Map?)?.cast<String, dynamic>() ?? <String, dynamic>{};
     final inviteId = extra['invite_id']?.toString() ?? '';
     final channelName = extra['channel_name']?.toString() ?? '';
     final isVideo = extra['is_video'] == true;
@@ -284,23 +331,41 @@ class _BadgeManager {
     final safe = count < 0 ? 0 : count;
     if (safe == _lastCount) return;
     _lastCount = safe;
+    
     try {
-      if (!(await FlutterAppBadger.isAppBadgeSupported())) return;
-      safe == 0 ? FlutterAppBadger.removeBadge() : FlutterAppBadger.updateBadgeCount(safe);
-    } catch (e) { debugPrint('[Badge] ❌ $e'); }
+      final supported = await FlutterAppBadger.isAppBadgeSupported();
+      if (!supported) return;
+      
+      if (safe == 0) {
+        FlutterAppBadger.removeBadge();
+      } else {
+        FlutterAppBadger.updateBadgeCount(safe);
+      }
+    } catch (e) {
+      debugPrint('[Badge] ❌ $e');
+    }
   }
 
   Future<int> fetchUnreadCount() async {
     final uid = SupabaseConfig.currentUser?.id;
     if (uid == null || !_Validators.isValidUid(uid)) return 0;
+    
     try {
-      return await SupabaseConfig.client.from('notifications')
-          .count(CountOption.exact).eq('user_id', uid).eq('is_read', false)
+      return await SupabaseConfig.client
+          .from('notifications')
+          .count(CountOption.exact)
+          .eq('user_id', uid)
+          .eq('is_read', false)
           .timeout(_kSupabaseTimeout);
-    } catch (e) { return 0; }
+    } catch (e) {
+      return 0;
+    }
   }
 
-  Future<void> refreshFromDb() => sync(await fetchUnreadCount());
+  Future<void> refreshFromDb() async {
+    final count = await fetchUnreadCount();
+    await sync(count);
+  }
 }
 
 // ============================================================================
@@ -311,8 +376,14 @@ class _BadgeManager {
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   var attempts = 0;
   while (attempts < _kMaxRetries) {
-    try { await Firebase.initializeApp().timeout(_kBackgroundInitTimeout); break; }
-    catch (e) { if (++attempts >= _kMaxRetries) return; await Future.delayed(_kRetryDelay); }
+    try {
+      await Firebase.initializeApp().timeout(_kBackgroundInitTimeout);
+      break;
+    } catch (e) {
+      attempts++;
+      if (attempts >= _kMaxRetries) return;
+      await Future.delayed(_kRetryDelay);
+    }
   }
 
   final data = message.data;
@@ -334,15 +405,21 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   if (type == PushTypes.callHangup) {
     final id = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
-    if (id.isNotEmpty) await _VoipCallManager.instance.endCall(id);
+    if (id.isNotEmpty) {
+      await _VoipCallManager.instance.endCall(id);
+    }
     return;
   }
 
   try {
-    await LocalNotificationService.instance.initialize().timeout(_kForegroundInitTimeout);
+    await LocalNotificationService.instance
+        .initialize()
+        .timeout(_kForegroundInitTimeout);
     await _showFromRemoteMessage(message);
     await _BadgeManager.instance.refreshFromDb();
-  } catch (e) { debugPrint('[FCM-BG] ❌ $e'); }
+  } catch (e) {
+    debugPrint('[FCM-BG] ❌ $e');
+  }
 }
 
 // ============================================================================
@@ -353,51 +430,102 @@ Future<void> _showFromRemoteMessage(RemoteMessage message) async {
   final data = message.data;
   final type = (data['type'] ?? '').toString().toLowerCase();
   if (!PushTypes.isAllowed(type)) return;
+  
   try {
+    final title = _Validators.sanitizeString(
+      message.notification?.title ?? data['title']?.toString() ?? _defaultTitle(type),
+      maxLength: _kMaxTitleLength,
+    );
+    final body = _Validators.sanitizeString(
+      message.notification?.body ??
+          data['body']?.toString() ??
+          data['message']?.toString() ??
+          'Notification',
+      maxLength: _kMaxBodyLength,
+    );
+    
     await LocalNotificationService.instance.show(
       id: _generateNotifId(message),
-      title: _Validators.sanitizeString(message.notification?.title ?? data['title']?.toString() ?? _defaultTitle(type), maxLength: _kMaxTitleLength),
-      body: _Validators.sanitizeString(message.notification?.body ?? data['body']?.toString() ?? data['message']?.toString() ?? 'Notification', maxLength: _kMaxBodyLength),
+      title: title,
+      body: body,
       payload: _buildPayload(data),
       channelId: _getChannelForType(type),
     );
   } catch (_) {}
 }
 
-String _getChannelForType(String type) => type == PushTypes.incomingCall
-    ? LocalNotificationService.channelCalls
-    : type == PushTypes.chatMessage ? LocalNotificationService.channelChat : LocalNotificationService.channelDefault;
+String _getChannelForType(String type) {
+  if (type == PushTypes.incomingCall) {
+    return LocalNotificationService.channelCalls;
+  } else if (type == PushTypes.chatMessage) {
+    return LocalNotificationService.channelChat;
+  } else {
+    return LocalNotificationService.channelDefault;
+  }
+}
 
 String _defaultTitle(String type) {
   switch (type) {
-    case PushTypes.incomingCall: return 'Appel entrant';
-    case PushTypes.chatMessage: return 'Nouveau message';
-    case PushTypes.sos: return 'Alerte SOS';
-    default: return 'THIX Hub';
+    case PushTypes.incomingCall:
+      return 'Appel entrant';
+    case PushTypes.chatMessage:
+      return 'Nouveau message';
+    case PushTypes.sos:
+      return 'Alerte SOS';
+    default:
+      return 'THIX Hub';
   }
 }
 
 String? _buildPayload(Map<String, dynamic> data) {
   final route = data['route']?.toString();
-  if (route != null && route.isNotEmpty && _Validators.isValidRoute(route)) return _Validators.sanitizePayload(route);
+  if (route != null && route.isNotEmpty && _Validators.isValidRoute(route)) {
+    return _Validators.sanitizePayload(route);
+  }
+  
   final type = (data['type'] ?? '').toString().toLowerCase();
+  
   if (type == PushTypes.incomingCall) {
-    final i = _Validators.sanitizeString((data['invite_id'] ?? data['inviteId'] ?? '').toString(), maxLength: 64);
-    final c = _Validators.sanitizeString((data['channel_name'] ?? data['channelName'] ?? '').toString(), maxLength: 64);
-    return (i.isNotEmpty && c.isNotEmpty) ? 'call:$i:$c' : null;
+    final inviteId = _Validators.sanitizeString(
+      (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
+      maxLength: 64,
+    );
+    final channel = _Validators.sanitizeString(
+      (data['channel_name'] ?? data['channelName'] ?? '').toString(),
+      maxLength: 64,
+    );
+    if (inviteId.isNotEmpty && channel.isNotEmpty) {
+      return 'call:$inviteId:$channel';
+    }
+    return null;
   }
+  
   if (type == PushTypes.chatMessage) {
-    final c = _Validators.sanitizeString((data['conversation_id'] ?? data['conversationId'] ?? '').toString(), maxLength: 64);
-    return c.isNotEmpty ? 'chat:$c' : null;
+    final convId = _Validators.sanitizeString(
+      (data['conversation_id'] ?? data['conversationId'] ?? '').toString(),
+      maxLength: 64,
+    );
+    if (convId.isNotEmpty) {
+      return 'chat:$convId';
+    }
+    return null;
   }
+  
   final id = data['notification_id']?.toString() ?? data['id']?.toString();
   return id != null ? _Validators.sanitizePayload(id) : null;
 }
 
 int _generateNotifId(RemoteMessage message) {
-  final id = message.messageId ?? message.data['invite_id']?.toString() ?? message.data['conversation_id']?.toString();
-  if (id != null && id.isNotEmpty) return (id.hashCode ^ 0x12345678) & 0x7fffffff;
-  return (DateTime.now().microsecondsSinceEpoch ^ (DateTime.now().microsecondsSinceEpoch >> 16)) & 0x7fffffff;
+  final id = message.messageId ??
+      message.data['invite_id']?.toString() ??
+      message.data['conversation_id']?.toString();
+  
+  if (id != null && id.isNotEmpty) {
+    return (id.hashCode ^ 0x12345678) & 0x7fffffff;
+  }
+  
+  final now = DateTime.now().microsecondsSinceEpoch;
+  return (now ^ (now >> 16)) & 0x7fffffff;
 }
 
 // ============================================================================
@@ -423,31 +551,57 @@ class PushNotificationService {
   static void Function(String inviteId)? onVoipDecline;
 
   Future<void> initialize() async {
-    if (_initialized) { await _registerToken(); return; }
-    if (_initializing) {
-      while (_initializing) await Future.delayed(const Duration(milliseconds: 100));
+    if (_initialized) {
+      await _registerToken();
       return;
     }
+    
+    if (_initializing) {
+      while (_initializing) {
+        await Future.delayed(const Duration(milliseconds: 100));
+      }
+      return;
+    }
+    
     _initializing = true;
+    
     try {
-      await _messaging.requestPermission(alert: true, badge: true, sound: true, criticalAlert: true);
-      try { await LocalNotificationService.instance.requestPermission(); } catch (_) {}
+      await _messaging.requestPermission(
+        alert: true,
+        badge: true,
+        sound: true,
+        criticalAlert: true,
+      );
+      
+      try {
+        await LocalNotificationService.instance.requestPermission();
+      } catch (_) {}
+      
       try {
         await _VoipCallManager.instance.initialize();
         _VoipCallManager.instance.onAcceptCall = _handleVoipAccept;
         _VoipCallManager.instance.onDeclineCall = _handleVoipDecline;
-      } catch (e) { debugPrint('[PushNotif] ⚠️ VoIP: $e'); }
+      } catch (e) {
+        debugPrint('[PushNotif] ⚠️ VoIP: $e');
+      }
 
       await _registerToken();
+      
       _tokenRefreshSub?.cancel();
-      _tokenRefreshSub = _messaging.onTokenRefresh.listen((_) => unawaited(_registerToken()));
+      _tokenRefreshSub = _messaging.onTokenRefresh.listen((_) {
+        unawaited(_registerToken());
+      });
+      
       _foregroundSub?.cancel();
       _foregroundSub = FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      
       _openedAppSub?.cancel();
       _openedAppSub = FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
       final initial = await _messaging.getInitialMessage();
-      if (initial != null) _handleNotificationTap(initial);
+      if (initial != null) {
+        _handleNotificationTap(initial);
+      }
 
       await _BadgeManager.instance.refreshFromDb();
       _initialized = true;
@@ -460,15 +614,24 @@ class PushNotificationService {
 
   void _handleVoipAccept(String id, String ch, bool v) {
     if (_context != null && !_context!.mounted) return;
-    try { onVoipAccept?.call(id, ch, v); } catch (_) {}
+    try {
+      onVoipAccept?.call(id, ch, v);
+    } catch (_) {}
   }
 
   void _handleVoipDecline(String id) {
-    try { onVoipDecline?.call(id); } catch (_) {}
+    try {
+      onVoipDecline?.call(id);
+    } catch (_) {}
   }
 
-  Future<void> endVoipCall(String inviteId) => _VoipCallManager.instance.endCall(inviteId);
-  Future<void> endAllVoipCalls() => _VoipCallManager.instance.endAllCalls();
+  Future<void> endVoipCall(String inviteId) async {
+    await _VoipCallManager.instance.endCall(inviteId);
+  }
+
+  Future<void> endAllVoipCalls() async {
+    await _VoipCallManager.instance.endAllCalls();
+  }
 
   Future<void> onSignedIn({required String userId}) async {
     if (!_Validators.isValidUid(userId)) return;
@@ -486,9 +649,12 @@ class PushNotificationService {
   }
 
   void _cleanupListeners() {
-    _tokenRefreshSub?.cancel(); _tokenRefreshSub = null;
-    _foregroundSub?.cancel(); _foregroundSub = null;
-    _openedAppSub?.cancel(); _openedAppSub = null;
+    _tokenRefreshSub?.cancel();
+    _tokenRefreshSub = null;
+    _foregroundSub?.cancel();
+    _foregroundSub = null;
+    _openedAppSub?.cancel();
+    _openedAppSub = null;
   }
 
   void _handleForegroundMessage(RemoteMessage message) {
@@ -505,12 +671,19 @@ class PushNotificationService {
       ));
       return;
     }
+    
     if (type == PushTypes.callHangup) {
       final id = (data['invite_id'] ?? '').toString();
-      if (id.isNotEmpty) unawaited(_VoipCallManager.instance.endCall(id));
+      if (id.isNotEmpty) {
+        unawaited(_VoipCallManager.instance.endCall(id));
+      }
       return;
     }
-    final hasVisual = message.notification != null || data['title'] != null || data['body'] != null || data['type'] != null;
+    
+    final hasVisual = message.notification != null ||
+        data['title'] != null ||
+        data['body'] != null ||
+        data['type'] != null;
     if (!hasVisual) return;
 
     Future<void> work() async {
@@ -522,9 +695,16 @@ class PushNotificationService {
 
   void _handleNotificationTap(RemoteMessage message) {
     if (_context != null && !_context!.mounted) return;
+    
     final payload = _buildPayload(message.data);
-    try { LocalNotificationService.instance.onNotificationTap?.call(payload); } catch (_) {}
-    try { onPushTap?.call(message.data); } catch (_) {}
+    try {
+      LocalNotificationService.instance.onNotificationTap?.call(payload);
+    } catch (_) {}
+    
+    try {
+      onPushTap?.call(message.data);
+    } catch (_) {}
+    
     unawaited(_BadgeManager.instance.refreshFromDb());
   }
 
@@ -534,16 +714,24 @@ class PushNotificationService {
       try {
         final token = await _messaging.getToken();
         final uid = SupabaseConfig.currentUser?.id;
+        
         if (token == null || !_Validators.isValidToken(token)) return;
         if (uid == null || !_Validators.isValidUid(uid)) return;
-        await SupabaseConfig.client.from(_tokensTable).upsert({
-          'user_id': uid, 'fcm_token': token,
-          'platform': defaultTargetPlatform.name,
-          'updated_at': DateTime.now().toUtc().toIso8601String(),
-        }, onConflict: 'user_id,fcm_token').timeout(_kSupabaseTimeout);
+        
+        await SupabaseConfig.client.from(_tokensTable).upsert(
+          {
+            'user_id': uid,
+            'fcm_token': token,
+            'platform': defaultTargetPlatform.name,
+            'updated_at': DateTime.now().toUtc().toIso8601String(),
+          },
+          onConflict: 'user_id,fcm_token',
+        ).timeout(_kSupabaseTimeout);
+        
         return;
       } catch (e) {
-        if (++attempts >= _kMaxRetries) return;
+        attempts++;
+        if (attempts >= _kMaxRetries) return;
         await Future.delayed(_kRetryDelay);
       }
     }
@@ -553,15 +741,30 @@ class PushNotificationService {
     try {
       final token = await _messaging.getToken();
       if (token == null || !_Validators.isValidToken(token)) return;
-      await SupabaseConfig.client.from(_tokensTable).delete().eq('fcm_token', token).timeout(_kSupabaseTimeout);
+      
+      await SupabaseConfig.client
+          .from(_tokensTable)
+          .delete()
+          .eq('fcm_token', token)
+          .timeout(_kSupabaseTimeout);
     } catch (_) {}
   }
 
-  void registerContext(BuildContext context) => _context = context;
-  void unregisterContext() => _context = null;
+  void registerContext(BuildContext context) {
+    _context = context;
+  }
 
-  Future<void> updateBadge(int count) => _BadgeManager.instance.sync(count);
-  Future<void> refreshBadge() => _BadgeManager.instance.refreshFromDb();
+  void unregisterContext() {
+    _context = null;
+  }
+
+  Future<void> updateBadge(int count) async {
+    await _BadgeManager.instance.sync(count);
+  }
+
+  Future<void> refreshBadge() async {
+    await _BadgeManager.instance.refreshFromDb();
+  }
 
   void dispose() {
     _cleanupListeners();
