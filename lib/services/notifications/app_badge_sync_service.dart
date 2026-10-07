@@ -1,14 +1,14 @@
 // lib/services/notifications/app_badge_sync_service.dart
 //
-// AppBadgeSyncService v2 — Badge d'icône synchronisé (iOS + Android)
+// AppBadgeSyncService v2.1 — Badge d'icône synchronisé (iOS + Android)
 //
+// ✅ FIX BUILD WEB : Supprimé _streamSub (type mismatch RealtimeChannel vs StreamSubscription)
+// ✅ Cleanup Realtime via removeChannel() uniquement
 // ✅ Remplace app_badge_plus par flutter_app_badger (meilleure compatibilité OEM)
 // ✅ Fix: AndroidInitializationSettings utilise 'notification_icon' (res/drawable)
-//        au lieu de '@mipmap/ic_launcher' qui n'est PAS supporté par le plugin
 // ✅ Synchronisation auto depuis Supabase Realtime + polling fallback
 // ✅ Déduplication pour éviter le spam de mises à jour
 // ✅ Safe Web : toutes les méthodes sont no-op sur Web
-// ✅ Cleanup propre avec cancel du stream Realtime
 
 import 'dart:async';
 
@@ -29,13 +29,11 @@ class AppBadgeSyncService {
   static int _lastCount = -1;
 
   /// Notification-résumé silencieuse qui porte le compteur pour les launchers Android
-  /// qui ne supportent pas nativement le badge via ShortcutBadger
   static const int _kSummaryId = 999999;
   static const String _kChannelId = 'thix_badge_sync_v2';
 
-  /// Stream Realtime Supabase pour les notifications non lues
+  // ✅ FIX : Plus de _streamSub. Le channel Realtime se nettoie via removeChannel().
   static RealtimeChannel? _realtimeChannel;
-  static StreamSubscription<List<Map<String, dynamic>>>? _streamSub;
   static Timer? _pollingTimer;
   static bool _isListening = false;
 
@@ -43,11 +41,6 @@ class AppBadgeSyncService {
   // INITIALISATION
   // ═══════════════════════════════════════════════════════════════
 
-  /// Initialise le plugin de notifications locales (nécessaire pour le badge Android).
-  ///
-  /// **Important** : Utilise `'notification_icon'` (fichier dans res/drawable/)
-  /// et NON `'@mipmap/ic_launcher'` qui n'est pas supporté par
-  /// flutter_local_notifications et cause un crash silencieux.
   static Future<void> init() async {
     if (_initialized || kIsWeb) return;
 
@@ -59,7 +52,6 @@ class AppBadgeSyncService {
       );
       await _plugin.initialize(settings);
 
-      // Créer le channel silencieux pour le badge Android
       final android = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
       await android?.createNotificationChannel(
@@ -72,7 +64,6 @@ class AppBadgeSyncService {
         ),
       );
 
-      // Android 13+ : demander la permission notifications
       await android?.requestNotificationsPermission();
 
       _initialized = true;
@@ -86,20 +77,15 @@ class AppBadgeSyncService {
   // SYNCHRONISATION DU BADGE
   // ═══════════════════════════════════════════════════════════════
 
-  /// Met à jour le badge partout (iOS natif + Android launchers compatibles).
-  ///
-  /// Sur Android, si le launcher ne supporte pas le badge natif,
-  /// une notification-résumé silencieuse avec `number` est affichée
-  /// comme fallback visuel.
   static Future<void> sync(int count) async {
     final safe = count < 0 ? 0 : count;
-    if (safe == _lastCount) return; // Évite le spam
+    if (safe == _lastCount) return;
     _lastCount = safe;
 
     if (kIsWeb) return;
     await init();
 
-    // 1) Badge natif via flutter_app_badger (iOS + Samsung, LG, Huawei, Xiaomi, Oppo…)
+    // 1) Badge natif via flutter_app_badger
     try {
       final supported = await FlutterAppBadger.isAppBadgeSupported();
       if (supported) {
@@ -113,7 +99,7 @@ class AppBadgeSyncService {
       debugPrint('[BadgeSync] ⚠️ AppBadger: $e');
     }
 
-    // 2) Android fallback : notification-résumé silencieuse portant `number`
+    // 2) Android fallback : notification-résumé silencieuse
     if (defaultTargetPlatform == TargetPlatform.android) {
       try {
         if (safe == 0) {
@@ -154,15 +140,6 @@ class AppBadgeSyncService {
   // ÉCOUTE REALTIME SUPABASE
   // ═══════════════════════════════════════════════════════════════
 
-  /// Démarre l'écoute des notifications non lues depuis Supabase.
-  ///
-  /// Utilise Realtime PostgreSQL avec fallback polling toutes les 10s
-  /// si le canal Realtime échoue ou se déconnecte.
-  ///
-  /// ```dart
-  /// // À appeler après authentification réussie
-  /// await AppBadgeSyncService.startListening(userId);
-  /// ```
   static Future<void> startListening(String userId) async {
     if (_isListening || kIsWeb) return;
     if (userId.isEmpty) return;
@@ -177,7 +154,9 @@ class AppBadgeSyncService {
     try {
       _realtimeChannel = SupabaseConfig.client.channel('badge_sync:$userId');
 
-      _streamSub = _realtimeChannel!
+      // ✅ FIX : .subscribe() retourne RealtimeChannel, pas StreamSubscription.
+      // On ne stocke PAS le résultat. Le cleanup se fait via removeChannel().
+      _realtimeChannel!
           .onPostgresChanges(
             event: PostgresChangeEvent.all,
             schema: 'public',
@@ -201,15 +180,8 @@ class AppBadgeSyncService {
     }
   }
 
-  /// Arrête l'écoute et nettoie toutes les ressources.
-  ///
-  /// ```dart
-  /// // À appeler au logout
-  /// AppBadgeSyncService.stopListening();
-  /// ```
   static void stopListening() {
-    _streamSub?.cancel();
-    _streamSub = null;
+    // ✅ FIX : Plus de _streamSub?.cancel() — le type était incorrect.
     _pollingTimer?.cancel();
     _pollingTimer = null;
 
@@ -224,7 +196,6 @@ class AppBadgeSyncService {
     debugPrint('[BadgeSync] 🛑 Stopped listening');
   }
 
-  /// Rafraîchit le badge en comptant les notifications non lues en DB.
   static Future<void> _refreshFromDb(String userId) async {
     try {
       final count = await SupabaseConfig.client
@@ -240,7 +211,6 @@ class AppBadgeSyncService {
     }
   }
 
-  /// Fallback polling si Realtime échoue.
   static void _startPolling(String userId) {
     _pollingTimer?.cancel();
     _pollingTimer = Timer.periodic(
@@ -250,7 +220,6 @@ class AppBadgeSyncService {
     debugPrint('[BadgeSync] 🔄 Polling started (10s interval)');
   }
 
-  /// Masque un UID pour les logs (RGPD).
   static String _maskUid(String uid) {
     if (uid.length <= 8) return '***';
     return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
@@ -260,10 +229,6 @@ class AppBadgeSyncService {
   // HELPERS PUBLICS
   // ═══════════════════════════════════════════════════════════════
 
-  /// Force un rafraîchissement immédiat du badge depuis la DB.
-  ///
-  /// Utile après avoir marqué des notifications comme lues
-  /// ou supprimé des notifications depuis le hub.
   static Future<void> refreshNow() async {
     final uid = SupabaseConfig.currentUser?.id;
     if (uid == null || uid.isEmpty) {
@@ -273,9 +238,6 @@ class AppBadgeSyncService {
     await _refreshFromDb(uid);
   }
 
-  /// Nettoie tout : arrête l'écoute, reset le badge, dispose le plugin.
-  ///
-  /// À appeler au logout complet.
   static Future<void> dispose() async {
     stopListening();
     await sync(0);
