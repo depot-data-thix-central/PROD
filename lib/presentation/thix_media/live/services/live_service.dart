@@ -1,12 +1,7 @@
 // lib/presentation/thix_media/live/services/live_service.dart
 //
 // LiveService — Production Enterprise (niveau TikTok/IG Live backend)
-// Version 2.1 avec :
-// - Like Batching (TikTok-style ultra-rapide)
-// - Multi-Guest / Co-hosting (invitations + promotion broadcaster)
-// - Gestion complète des rôles Agora (host/audience/broadcaster)
-// - ✅ Support complet description/tags/audience
-// - ✅ Nouvelle API Realtime Supabase (broadcast)
+// Version 2.2 : Utilise les modèles du data layer
 //
 import 'dart:async';
 import 'dart:math';
@@ -14,7 +9,8 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/l10n/app_localizations.dart';
+// ✅ Import des modèles depuis le data layer
+import 'package:thix_id/data/models/live/live_model.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -136,174 +132,6 @@ class LiveGuestAlreadyOnStageException extends LiveException {
 }
 
 // ============================================================================
-// MODELS
-// ============================================================================
-
-class AgoraCredentials {
-  final String token;
-  final String appId;
-  final String channelName;
-  final int uid;
-  final String role;
-
-  AgoraCredentials({
-    required this.token,
-    required this.appId,
-    required this.channelName,
-    required this.uid,
-    required this.role,
-  });
-
-  factory AgoraCredentials.fromJson(Map<String, dynamic> j) {
-    return AgoraCredentials(
-      token: (j['token'] as String?) ?? '',
-      appId: (j['appId'] as String?) ?? '',
-      channelName: (j['channelName'] as String?) ?? '',
-      uid: (j['uid'] as num?)?.toInt() ?? 0,
-      role: (j['role'] as String?) ?? 'audience',
-    );
-  }
-
-  bool get isValid =>
-      token.isNotEmpty && appId.isNotEmpty && channelName.isNotEmpty;
-
-  bool get isHost => role == 'host';
-  bool get isBroadcaster => role == 'broadcaster' || role == 'host';
-  bool get isAudience => role == 'audience';
-}
-
-class LiveSession {
-  final String id;
-  final String hostId;
-  final String title;
-  final String category;
-  final String status;
-  final String channelName;
-  final int viewerCount;
-  final int likeCount;
-  final String? coverUrl;
-  final String? hostAvatarUrl;
-  final String? hostDisplayName;
-  final DateTime startedAt;
-  final List<GuestInfo> guests;
-
-  LiveSession({
-    required this.id,
-    required this.hostId,
-    required this.title,
-    required this.category,
-    required this.status,
-    required this.channelName,
-    this.viewerCount = 0,
-    this.likeCount = 0,
-    this.coverUrl,
-    this.hostAvatarUrl,
-    this.hostDisplayName,
-    DateTime? startedAt,
-    List<GuestInfo>? guests,
-  })  : startedAt = startedAt ?? DateTime.now(),
-        guests = guests ?? [];
-
-  factory LiveSession.fromJson(Map<String, dynamic> j) {
-    return LiveSession(
-      id: (j['id'] as String?) ?? '',
-      hostId: (j['host_id'] as String?) ?? '',
-      title: (j['title'] as String?) ?? 'Live',
-      category: (j['category'] as String?) ?? 'general',
-      status: (j['status'] as String?) ?? 'live',
-      channelName: (j['channel_name'] as String?) ?? '',
-      viewerCount: (j['viewer_count'] as num?)?.toInt() ?? 0,
-      likeCount: (j['like_count'] as num?)?.toInt() ?? 0,
-      coverUrl: j['cover_url'] as String?,
-      hostAvatarUrl: j['host_avatar_url'] as String?,
-      hostDisplayName: j['host_display_name'] as String?,
-      startedAt: j['started_at'] != null
-          ? DateTime.tryParse(j['started_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-      guests: j['guests'] is List
-          ? (j['guests'] as List)
-              .map((g) => g is Map
-                  ? GuestInfo.fromJson(Map<String, dynamic>.from(g))
-                  : null)
-              .whereType<GuestInfo>()
-              .toList()
-          : [],
-    );
-  }
-
-  bool get isLive => status == 'live';
-  bool get isEnded => status == 'ended';
-  bool get isScheduled => status == 'scheduled';
-  bool get hasGuests => guests.isNotEmpty;
-
-  LiveSession copyWith({
-    int? viewerCount,
-    int? likeCount,
-    String? status,
-    List<GuestInfo>? guests,
-  }) {
-    return LiveSession(
-      id: id,
-      hostId: hostId,
-      title: title,
-      category: category,
-      status: status ?? this.status,
-      channelName: channelName,
-      viewerCount: viewerCount ?? this.viewerCount,
-      likeCount: likeCount ?? this.likeCount,
-      coverUrl: coverUrl,
-      hostAvatarUrl: hostAvatarUrl,
-      hostDisplayName: hostDisplayName,
-      startedAt: startedAt,
-      guests: guests ?? this.guests,
-    );
-  }
-}
-
-class GuestInfo {
-  final String userId;
-  final String username;
-  final int? agoraUid;
-  final String status;
-  final DateTime joinedAt;
-
-  GuestInfo({
-    required this.userId,
-    required this.username,
-    this.agoraUid,
-    this.status = 'invited',
-    DateTime? joinedAt,
-  }) : joinedAt = joinedAt ?? DateTime.now();
-
-  factory GuestInfo.fromJson(Map<String, dynamic> j) {
-    return GuestInfo(
-      userId: (j['user_id'] as String?) ?? '',
-      username: (j['username'] as String?) ?? 'Guest',
-      agoraUid: (j['agora_uid'] as num?)?.toInt(),
-      status: (j['status'] as String?) ?? 'invited',
-      joinedAt: j['joined_at'] != null
-          ? DateTime.tryParse(j['joined_at'].toString()) ?? DateTime.now()
-          : DateTime.now(),
-    );
-  }
-
-  bool get isOnStage => status == 'on_stage' || status == 'accepted';
-
-  GuestInfo copyWith({
-    String? status,
-    int? agoraUid,
-  }) {
-    return GuestInfo(
-      userId: userId,
-      username: username,
-      agoraUid: agoraUid ?? this.agoraUid,
-      status: status ?? this.status,
-      joinedAt: joinedAt,
-    );
-  }
-}
-
-// ============================================================================
 // TOKEN CACHE
 // ============================================================================
 
@@ -415,7 +243,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // START LIVE (avec support complet description/tags/audience)
+  // START LIVE
   // ════════════════════════════════════════════════════════════
 
   Future<({LiveSession session, AgoraCredentials creds})> startLive({
@@ -469,7 +297,6 @@ class LiveService {
 
     final channel = _generateChannelName(userId);
 
-    // ✅ INSERT avec tous les champs (description, tags, audience)
     final insertData = <String, dynamic>{
       'host_id': userId,
       'title': safeTitle,
@@ -500,7 +327,7 @@ class LiveService {
       cacheResult: true,
     );
 
-    final session = LiveSession.fromJson(row);
+    final session = LiveSession.fromMap(row);
     _LiveServiceLogger.info('Live started',
         {'liveId': session.id, 'channel': channel});
 
@@ -508,7 +335,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // JOIN LIVE (audience)
+  // JOIN LIVE
   // ════════════════════════════════════════════════════════════
 
   Future<({LiveSession session, AgoraCredentials creds})> joinLive(
@@ -529,7 +356,7 @@ class LiveService {
       context: 'fetch_live',
     );
 
-    final session = LiveSession.fromJson(row);
+    final session = LiveSession.fromMap(row);
 
     if (session.status != 'live') {
       _LiveServiceLogger.warn('Live not active',
@@ -550,7 +377,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // FETCH AGORA TOKEN (avec cache)
+  // FETCH AGORA TOKEN
   // ════════════════════════════════════════════════════════════
 
   Future<AgoraCredentials> fetchAgoraToken({
@@ -592,7 +419,7 @@ class LiveService {
       }
 
       final creds =
-          AgoraCredentials.fromJson(Map<String, dynamic>.from(data));
+          AgoraCredentials.fromMap(Map<String, dynamic>.from(data));
 
       if (!creds.isValid) {
         throw LiveTokenException('Invalid credentials returned');
@@ -694,7 +521,7 @@ class LiveService {
             invalidCount++;
             continue;
           }
-          final s = LiveSession.fromJson(Map<String, dynamic>.from(row));
+          final s = LiveSession.fromMap(Map<String, dynamic>.from(row));
           if (s.id.isEmpty || s.channelName.isEmpty) {
             invalidCount++;
             continue;
@@ -780,7 +607,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 TIKTOK-STYLE LIKES (Batching)
+  // LIKES BATCH
   // ════════════════════════════════════════════════════════════
 
   Future<void> sendLikeBatch({
@@ -824,7 +651,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 👥 MULTI-GUEST / CO-HOSTING
+  // GUESTS
   // ════════════════════════════════════════════════════════════
 
   Future<void> sendGuestInvite({
@@ -886,7 +713,6 @@ class LiveService {
       context: 'insert_guest_invite',
     );
 
-    // ✅ NOUVELLE API REALTIME : sendBroadcastMessage (remplace channel.send + RealtimeListenTypes)
     try {
       final inviteChannel = _client.channel('live_invite_$guestUserId');
       await inviteChannel.sendBroadcastMessage(
@@ -908,7 +734,6 @@ class LiveService {
       _LiveServiceLogger.warn('Invite broadcast failed (non-critical)', {
         'error': '$e',
       });
-      // Non-critique : l'invitation est en DB, le guest la verra au prochain poll
     }
 
     _LiveServiceLogger.info('Guest invite sent', {
@@ -1086,7 +911,7 @@ class LiveService {
 
       return rows
           .map((r) => r is Map
-              ? GuestInfo.fromJson(Map<String, dynamic>.from(r))
+              ? GuestInfo.fromMap(Map<String, dynamic>.from(r))
               : null)
           .whereType<GuestInfo>()
           .toList();
