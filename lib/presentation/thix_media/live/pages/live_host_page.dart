@@ -23,7 +23,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
+import 'package:thix_id/data/models/live/live_model.dart';
 import '../services/live_rtc_service.dart';
 import '../services/live_service.dart';
 import '../providers/go_live_provider.dart';
