@@ -1,8 +1,7 @@
 // lib/services/push_notification_service_stub.dart
 //
 // Stub Web — Toutes les méthodes VoIP/Badge sont des no-op.
-// La gestion FCM sur Web passe par le service worker JS (firebase-messaging-sw.js),
-// hors du code Dart compilé.
+// La gestion FCM sur Web passe par le service worker JS (firebase-messaging-sw.js).
 
 import 'package:flutter/foundation.dart';
 
@@ -15,6 +14,7 @@ class PushNotificationService {
   static final PushNotificationService instance = PushNotificationService._();
 
   // ── Callbacks VoIP (no-op sur Web) ────────────────────────────────
+  // ✅ CES DEUX SETTERS SONT OBLIGATOIRES pour que main.dart compile sur Web
   static void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
   static void Function(String inviteId)? onVoipDecline;
 
