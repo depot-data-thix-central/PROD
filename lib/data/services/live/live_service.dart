@@ -14,7 +14,11 @@ const Duration _kCredentialsTimeout = Duration(seconds: 12);
 const Duration _kDbTimeout = Duration(seconds: 10);
 const int _kMaxCommentLength = 300;
 const int _kMaxUserNameLength = 50;
+const int _kMaxTitleLength = 80;
+const int _kMaxDescriptionLength = 500;
+const int _kMaxTagsLength = 120;
 const int _kMaxRetries = 1;
+const int _kMaxGuestsPerLive = 4;
 
 // ============================================================================
 // VALIDATEURS
@@ -62,8 +66,6 @@ class LiveService {
 
   // ─── GETTERS ───
 
-  /// ID de l'utilisateur courant, ou empty string si non authentifié.
-  /// ⚠️ Ne jamais utiliser 'host' comme fallback : cela crée de faux users en DB.
   String get currentUserId {
     final uid = _client.auth.currentUser?.id ?? '';
     if (uid.isEmpty) {
@@ -74,20 +76,30 @@ class LiveService {
 
   bool get isAuthenticated => _client.auth.currentUser != null;
 
-  // ─── AGORA CREDENTIALS (avec retry) ───
+  // ════════════════════════════════════════════════════════════
+  // AGORA CREDENTIALS (avec retry)
+  // ════════════════════════════════════════════════════════════
 
-  Future<AgoraCredentials> fetchAgoraCredentials(String channelName, {int attempt = 0}) async {
+  Future<AgoraCredentials> fetchAgoraCredentials(
+    String channelName, {
+    String role = 'audience',
+    int attempt = 0,
+  }) async {
     if (channelName.isEmpty) {
       throw Exception('Nom de canal invalide');
     }
 
     try {
-      debugPrint('[LiveService] 🎟️ Fetching Agora credentials for "$channelName" (attempt ${attempt + 1})');
+      debugPrint('[LiveService] 🎟️ Fetching Agora credentials for "$channelName" (role=$role, attempt ${attempt + 1})');
 
       final response = await _client.functions
           .invoke(
             'agora-token',
-            body: {'channelName': channelName, 'uid': 0},
+            body: {
+              'channelName': channelName,
+              'uid': 0,
+              'role': role,  // ✅ NOUVEAU : Support des rôles (host/audience/broadcaster)
+            },
           )
           .timeout(_kCredentialsTimeout);
 
@@ -107,11 +119,10 @@ class LiveService {
       debugPrint('[LiveService] ✓ Credentials received (appId=${data['appId'].toString().substring(0, 8)}...)');
       return AgoraCredentials.fromMap(data);
     } on TimeoutException catch (e) {
-      // Retry une seule fois sur timeout
       if (attempt < _kMaxRetries) {
         debugPrint('[LiveService] ⏱️ Timeout — retrying (${attempt + 1}/$_kMaxRetries)');
         await Future.delayed(const Duration(milliseconds: 500));
-        return fetchAgoraCredentials(channelName, attempt: attempt + 1);
+        return fetchAgoraCredentials(channelName, role: role, attempt: attempt + 1);
       }
       debugPrint('[LiveService] ❌ Timeout after ${attempt + 1} attempts');
       rethrow;
@@ -121,11 +132,169 @@ class LiveService {
     }
   }
 
-  // ─── SESSIONS ───
+  // ════════════════════════════════════════════════════════════
+  // 🎯 CREATE LIVE SESSION (NOUVEAU)
+  // ════════════════════════════════════════════════════════════
 
-  /// Termine une session live en mettant à jour son statut.
-  /// ⚠️ On ne SUPPRIME pas la session : on la marque 'ended' pour conserver
-  /// l'historique (analytics, replay, modération).
+  /// Crée une nouvelle session live en base de données.
+  /// Retourne la session créée avec son ID.
+  Future<LiveSession> createLiveSession({
+    required String title,
+    String category = 'general',
+    String? description,
+    String? tags,
+    String audience = 'public',
+  }) async {
+    if (currentUserId.isEmpty) {
+      throw Exception('Utilisateur non authentifié');
+    }
+
+    final safeTitle = _LiveServiceValidators.sanitize(title, maxLength: _kMaxTitleLength);
+    if (safeTitle.isEmpty) {
+      throw Exception('Le titre ne peut pas être vide');
+    }
+
+    final safeCategory = _LiveServiceValidators.sanitize(category, maxLength: 40);
+    final safeDescription = description != null
+        ? _LiveServiceValidators.sanitize(description, maxLength: _kMaxDescriptionLength)
+        : null;
+    final safeTags = tags != null
+        ? _LiveServiceValidators.sanitize(tags, maxLength: _kMaxTagsLength)
+        : null;
+    final safeAudience = ['public', 'followers', 'private'].contains(audience)
+        ? audience
+        : 'public';
+
+    try {
+      debugPrint('[LiveService] 🎬 Creating live session', {
+        'title': safeTitle,
+        'category': safeCategory,
+        'audience': safeAudience,
+      });
+
+      // Vérifier qu'aucun live actif n'existe pour ce user
+      final existing = await _client
+          .from('live_sessions')
+          .select('id')
+          .eq('host_id', currentUserId)
+          .eq('status', 'live')
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      if (existing != null) {
+        throw Exception('Vous avez déjà un live actif');
+      }
+
+      // Générer un nom de canal unique
+      final channelName = _generateChannelName(currentUserId);
+
+      final row = await _client
+          .from('live_sessions')
+          .insert({
+            'host_id': currentUserId,
+            'title': safeTitle,
+            'category': safeCategory,
+            'status': 'live',
+            'channel_name': channelName,
+            'started_at': DateTime.now().toUtc().toIso8601String(),
+            if (safeDescription != null && safeDescription.isNotEmpty)
+              'description': safeDescription,
+            if (safeTags != null && safeTags.isNotEmpty)
+              'tags': safeTags,
+            'audience': safeAudience,
+          })
+          .select()
+          .single()
+          .timeout(_kDbTimeout);
+
+      final session = LiveSession.fromMap(row);
+      debugPrint('[LiveService] ✓ Live session created', {
+        'id': session.id,
+        'channel': channelName,
+      });
+
+      return session;
+    } catch (e) {
+      debugPrint('[LiveService] ❌ createLiveSession error: $e');
+      throw Exception(_LiveServiceValidators.parseErrorMessage(e));
+    }
+  }
+
+  String _generateChannelName(String hostId) {
+    final short = hostId.replaceAll('-', '').substring(0, 8);
+    final suffix = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    return 'thix_${short}_$suffix';
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 📋 LIST ACTIVE LIVES (NOUVEAU)
+  // ════════════════════════════════════════════════════════════
+
+  /// Récupère la liste des lives actifs (pour le feed et la page d'accueil).
+  Future<List<LiveSession>> listActiveLives({int limit = 30}) async {
+    try {
+      debugPrint('[LiveService] 📋 Listing active lives (limit=$limit)');
+
+      final rows = await _client
+          .from('live_sessions')
+          .select()
+          .eq('status', 'live')
+          .order('viewer_count', ascending: false)
+          .order('started_at', ascending: false)
+          .limit(limit)
+          .timeout(_kDbTimeout);
+
+      if (rows is! List) {
+        debugPrint('[LiveService] ⚠️ listActiveLives: invalid response type');
+        return [];
+      }
+
+      final sessions = <LiveSession>[];
+      for (final row in rows) {
+        try {
+          if (row is Map) {
+            sessions.add(LiveSession.fromMap(Map<String, dynamic>.from(row)));
+          }
+        } catch (e) {
+          debugPrint('[LiveService] ⚠️ Invalid live skipped: $e');
+        }
+      }
+
+      debugPrint('[LiveService] ✓ Active lives loaded', {'count': sessions.length});
+      return sessions;
+    } catch (e) {
+      debugPrint('[LiveService] ❌ listActiveLives error: $e');
+      return [];
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🔍 GET LIVE SESSION BY ID (NOUVEAU)
+  // ════════════════════════════════════════════════════════════
+
+  Future<LiveSession?> getLiveSession(String liveId) async {
+    if (liveId.isEmpty) return null;
+
+    try {
+      final row = await _client
+          .from('live_sessions')
+          .select()
+          .eq('id', liveId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+
+      if (row == null) return null;
+      return LiveSession.fromMap(Map<String, dynamic>.from(row));
+    } catch (e) {
+      debugPrint('[LiveService] ❌ getLiveSession error: $e');
+      return null;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // SESSIONS
+  // ════════════════════════════════════════════════════════════
+
   Future<void> endLiveSession(String liveId) async {
     if (liveId.isEmpty) {
       debugPrint('[LiveService] ⚠️ endLiveSession called with empty ID');
@@ -142,7 +311,7 @@ class LiveService {
             'ended_at': DateTime.now().toUtc().toIso8601String(),
           })
           .eq('id', liveId)
-          .eq('host_id', currentUserId) // Sécurité : seul l'hôte peut terminer
+          .eq('host_id', currentUserId)
           .timeout(_kDbTimeout);
 
       debugPrint('[LiveService] ✓ Session $liveId marked as ended');
@@ -152,7 +321,6 @@ class LiveService {
     }
   }
 
-  /// Annule une session live qui n'a jamais vraiment démarré (rollback).
   Future<void> cancelLiveSession(String liveId) async {
     if (liveId.isEmpty) return;
 
@@ -173,7 +341,187 @@ class LiveService {
     }
   }
 
-  // ─── REALTIME CHANNEL ───
+  // ════════════════════════════════════════════════════════════
+  // ❤️ LIKES (avec RPC atomique - NOUVEAU)
+  // ════════════════════════════════════════════════════════════
+
+  /// Incrémente le compteur de likes de manière atomique via RPC.
+  /// Utilisé par le système de batching (toutes les 500ms).
+  Future<void> incrementLikes(String liveId, int count) async {
+    if (liveId.isEmpty || count <= 0) return;
+
+    try {
+      await _client
+          .rpc(
+            'increment_live_likes',
+            params: {
+              'p_live_id': liveId,
+              'p_count': count,
+              'p_user_id': currentUserId,
+            },
+          )
+          .timeout(_kDbTimeout);
+
+      debugPrint('[LiveService] ❤️ Likes incremented', {
+        'liveId': liveId,
+        'count': count,
+      });
+    } catch (e) {
+      debugPrint('[LiveService] ⚠️ incrementLikes error: $e');
+      // Ne pas rethrow : les likes sont non-critiques
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 👥 GUESTS / CO-HOSTS (NOUVEAU)
+  // ════════════════════════════════════════════════════════════
+
+  /// Envoie une invitation à un spectateur pour monter sur scène.
+  Future<void> sendGuestInvite({
+    required String liveId,
+    required String guestUserId,
+    required String guestUsername,
+  }) async {
+    if (liveId.isEmpty || guestUserId.isEmpty) {
+      throw Exception('Paramètres invalides');
+    }
+
+    try {
+      debugPrint('[LiveService] 👥 Sending guest invite', {
+        'liveId': liveId,
+        'guestId': guestUserId,
+      });
+
+      // Vérifier la limite de guests
+      final existingGuests = await _client
+          .from('live_guests')
+          .select('user_id')
+          .eq('live_id', liveId)
+          .inFilter('status', ['invited', 'accepted', 'on_stage'])
+          .timeout(_kDbTimeout);
+
+      if (existingGuests is List && existingGuests.length >= _kMaxGuestsPerLive) {
+        throw Exception('Limite d\'invités atteinte (max $_kMaxGuestsPerLive)');
+      }
+
+      // Vérifier que le guest n'est pas déjà invité
+      if (existingGuests is List) {
+        final alreadyInvited = existingGuests.any((g) => g['user_id'] == guestUserId);
+        if (alreadyInvited) {
+          throw Exception('Cette personne est déjà invitée ou sur scène');
+        }
+      }
+
+      // Insérer l'invitation
+      await _client
+          .from('live_guests')
+          .insert({
+            'live_id': liveId,
+            'user_id': guestUserId,
+            'username': _LiveServiceValidators.sanitize(guestUsername, maxLength: _kMaxUserNameLength),
+            'status': 'invited',
+            'invited_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .timeout(_kDbTimeout);
+
+      debugPrint('[LiveService] ✓ Guest invite sent');
+    } catch (e) {
+      debugPrint('[LiveService] ❌ sendGuestInvite error: $e');
+      throw Exception(_LiveServiceValidators.parseErrorMessage(e));
+    }
+  }
+
+  /// Le spectateur accepte l'invitation.
+  Future<void> acceptGuestInvite(String liveId) async {
+    if (liveId.isEmpty || currentUserId.isEmpty) {
+      throw Exception('Paramètres invalides');
+    }
+
+    try {
+      await _client
+          .from('live_guests')
+          .update({
+            'status': 'accepted',
+            'accepted_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('live_id', liveId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+
+      debugPrint('[LiveService] ✓ Guest invite accepted');
+    } catch (e) {
+      debugPrint('[LiveService] ❌ acceptGuestInvite error: $e');
+      throw Exception(_LiveServiceValidators.parseErrorMessage(e));
+    }
+  }
+
+  /// Le spectateur refuse l'invitation.
+  Future<void> rejectGuestInvite(String liveId) async {
+    if (liveId.isEmpty || currentUserId.isEmpty) return;
+
+    try {
+      await _client
+          .from('live_guests')
+          .update({
+            'status': 'rejected',
+            'rejected_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('live_id', liveId)
+          .eq('user_id', currentUserId)
+          .timeout(_kDbTimeout);
+
+      debugPrint('[LiveService] ✓ Guest invite rejected');
+    } catch (e) {
+      debugPrint('[LiveService] ⚠️ rejectGuestInvite error: $e');
+    }
+  }
+
+  /// L'hôte retire un guest de la scène.
+  Future<void> removeGuest(String liveId, String guestUserId) async {
+    if (liveId.isEmpty || guestUserId.isEmpty) return;
+
+    try {
+      await _client
+          .from('live_guests')
+          .update({
+            'status': 'removed',
+            'removed_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('live_id', liveId)
+          .eq('user_id', guestUserId)
+          .timeout(_kDbTimeout);
+
+      debugPrint('[LiveService] ✓ Guest removed');
+    } catch (e) {
+      debugPrint('[LiveService] ❌ removeGuest error: $e');
+      throw Exception(_LiveServiceValidators.parseErrorMessage(e));
+    }
+  }
+
+  /// Récupère la liste des guests d'un live.
+  Future<List<Map<String, dynamic>>> getLiveGuests(String liveId) async {
+    if (liveId.isEmpty) return [];
+
+    try {
+      final rows = await _client
+          .from('live_guests')
+          .select()
+          .eq('live_id', liveId)
+          .inFilter('status', ['invited', 'accepted', 'on_stage'])
+          .order('invited_at', ascending: true)
+          .timeout(_kDbTimeout);
+
+      if (rows is! List) return [];
+      return rows.map((r) => Map<String, dynamic>.from(r)).toList();
+    } catch (e) {
+      debugPrint('[LiveService] ❌ getLiveGuests error: $e');
+      return [];
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // REALTIME CHANNEL
+  // ════════════════════════════════════════════════════════════
 
   RealtimeChannel openRealtimeChannel({
     required String liveId,
@@ -188,7 +536,6 @@ class LiveService {
 
     final channel = _client.channel(channelName);
 
-    // ─── Handlers broadcast avec try/catch ───
     channel
         .onBroadcast(
           event: 'chat',
@@ -231,8 +578,6 @@ class LiveService {
             debugPrint('[LiveService] 📨 CoHost response received: ${payload['accepted']}');
           },
         )
-        // ✅ FIX AGNOSTIQUE : utilise cast dynamique pour contourner les variations
-        // d'API de SinglePresenceState entre les versions de realtime_client
         .onPresenceSync((_) {
           try {
             final presences = channel.presenceState();
@@ -240,27 +585,21 @@ class LiveService {
 
             for (final p in presences) {
               try {
-                // Cast dynamique : contourne le typage statique strict
-                // qui varie selon les versions de realtime_client
                 final dynamic dynP = p;
-
                 Map<String, dynamic>? metadata;
 
-                // Essaie les différentes propriétés possibles
                 try {
                   metadata = dynP.payload as Map<String, dynamic>?;
                 } catch (_) {
                   try {
                     metadata = dynP.state as Map<String, dynamic>?;
                   } catch (_) {
-                    // En dernier recours : si p est directement un Map
                     if (dynP is Map) {
                       metadata = Map<String, dynamic>.from(dynP);
                     }
                   }
                 }
 
-                // Compte seulement les viewers (exclut l'hôte)
                 if (metadata != null && metadata['is_host'] != true) {
                   viewerCount++;
                 }
@@ -305,11 +644,12 @@ class LiveService {
     return channel;
   }
 
-  // ─── ENVOI DE MESSAGES ───
+  // ════════════════════════════════════════════════════════════
+  // ENVOI DE MESSAGES
+  // ════════════════════════════════════════════════════════════
 
   void sendChatMessage(RealtimeChannel channel, LiveComment comment) {
     try {
-      // Validation avant envoi
       final sanitizedComment = LiveComment(
         userId: comment.userId,
         userName: _LiveServiceValidators.sanitize(comment.userName, maxLength: _kMaxUserNameLength),
@@ -387,7 +727,9 @@ class LiveService {
     }
   }
 
-  // ─── PARSING SÉCURISÉ ───
+  // ════════════════════════════════════════════════════════════
+  // PARSING SÉCURISÉ
+  // ════════════════════════════════════════════════════════════
 
   LiveComment? _safeParseComment(Map<String, dynamic> payload) {
     try {
