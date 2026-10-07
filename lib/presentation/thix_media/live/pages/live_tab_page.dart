@@ -24,6 +24,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../providers/go_live_provider.dart';
@@ -183,7 +184,7 @@ class _LiveTabPageState extends ConsumerState<LiveTabPage> {
     final currentUid = Supabase.instance.client.auth.currentUser?.id;
 
     return Scaffold(
-      backgroundColor: Colors.black, // Ou Color(0xFF0B0B0F)
+      backgroundColor: Colors.black,
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
