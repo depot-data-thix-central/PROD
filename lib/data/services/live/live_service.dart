@@ -94,7 +94,7 @@ class LiveService {
 
       final response = await _client.functions
           .invoke(
-            'agora-token',
+            'thix-media-live-token',
             body: {
               'channelName': channelName,
               'uid': 0,
