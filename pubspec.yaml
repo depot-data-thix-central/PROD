@@ -106,6 +106,14 @@ dependencies:
   share_plus: ^10.1.2
   app_badge_plus: ^1.1.2
   app_links: ^6.3.2
+  # ✅ AJOUTÉ : VoIP natif (CallKit iOS + Telecom Android)
+  flutter_callkit_incoming: ^2.0.4
+  # ✅ AJOUTÉ : Sonnerie persistante même app fermée
+  flutter_ringtone_player: ^4.0.0
+  # ✅ AJOUTÉ : Vibration en arrière-plan (pattern WhatsApp)
+  vibration: ^2.0.0
+  # ✅ AJOUTÉ : Badge d'icône fiable (Samsung, LG, Huawei, Xiaomi, Oppo)
+  flutter_app_badger: ^1.5.0
 
   # ═══════════════════════════════════════════════════════════════════════
   # NOTIFICATIONS PUSH (Firebase)
@@ -190,3 +198,7 @@ flutter:
     - assets/icons/
     - assets/sounds/ringtone.mp3
     - assets/sounds/offline.mp3
+    # ✅ AJOUTÉ : Sonnerie iOS CallKit
+    - assets/sounds/ringtone.caf
+    # ✅ AJOUTÉ : Son notification messages (optionnel)
+    - assets/sounds/notification.mp3
