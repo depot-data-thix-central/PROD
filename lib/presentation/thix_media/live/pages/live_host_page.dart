@@ -1525,7 +1525,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
           ),
           child: Row(
             children: [
-              const Icon(Icons.hand_raised, color: Colors.white, size: 14),
+              const Icon(Icons.front_hand, color: Colors.white, size: 14),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -1759,7 +1759,7 @@ class _RequestsBanner extends StatelessWidget {
         ),
         child: Row(
           children: [
-            const Icon(Icons.hand_raised, color: Colors.white, size: 16),
+            const Icon(Icons.front_hand, color: Colors.white, size: 16),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
