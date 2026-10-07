@@ -5,21 +5,19 @@
 // ============================================================================
 // Gère la persistance audio en arrière-plan :
 //   ✅ Agora continue quand l'app est en background
-//   ✅ Notification persistante "Space en cours"
 //   ✅ Wake lock (empêche la veille de l'écran)
 //   ✅ Détection appels entrants → pause auto
 //   ✅ Audio session iOS (mix avec autres apps)
 //   ✅ Émet stream lifecycle pour le manager
+//   ⚠️ Notification persistante DÉSACTIVÉE (crash Drawable resource ID = 0)
 // ============================================================================
 
 import 'dart:async';
 
-import 'package:audio_service/audio_service.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:wakelock_plus/wakelock_plus.dart';
 import 'package:thix_id/data/services/live/live_service.dart';
@@ -38,7 +36,8 @@ enum BackgroundServiceStatus {
 
 class AudioSpaceBackgroundService with WidgetsBindingObserver {
   AudioSpaceBackgroundService._internal();
-  static final AudioSpaceBackgroundService instance = AudioSpaceBackgroundService._internal();
+  static final AudioSpaceBackgroundService instance =
+      AudioSpaceBackgroundService._internal();
 
   factory AudioSpaceBackgroundService() => instance;
 
@@ -59,63 +58,12 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
       StreamController<bool>.broadcast();
   Stream<bool> get onAppLifecycleChanged => _lifecycleController.stream;
 
-  // Notifications
-  final FlutterLocalNotificationsPlugin _notifications =
-      FlutterLocalNotificationsPlugin();
-  bool _notificationsInitialized = false;
-
-  static const String _channelId = 'thix_audio_space';
-  static const String _channelName = 'THIX Audio Space';
-  static const int _notificationId = 9001;
-
   // ─────────────────────────────────────────────────────────────
   // INITIALISATION
   // ─────────────────────────────────────────────────────────────
   Future<void> _ensureInitialized() async {
-    if (_notificationsInitialized) return;
-
     WidgetsBinding.instance.addObserver(this);
-
-    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
-    const iosSettings = DarwinInitializationSettings(
-      requestAlertPermission: false,
-      requestBadgePermission: false,
-      requestSoundPermission: false,
-    );
-    const settings = InitializationSettings(
-      android: androidSettings,
-      iOS: iosSettings,
-    );
-
-    await _notifications.initialize(
-      settings,
-      onDidReceiveNotificationResponse: _onNotificationTap,
-    );
-
-    // Créer le canal Android (requis pour Android 8+)
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      final androidPlugin =
-          _notifications.resolvePlatformSpecificImplementation<
-              AndroidFlutterLocalNotificationsPlugin>();
-      await androidPlugin?.createNotificationChannel(
-        const AndroidNotificationChannel(
-          _channelId,
-          _channelName,
-          description: 'Notifications des salons audio THIX',
-          importance: Importance.low,
-          playSound: false,
-          enableVibration: false,
-        ),
-      );
-    }
-
-    _notificationsInitialized = true;
-    debugPrint('[BGService] ✓ Initialisé');
-  }
-
-  void _onNotificationTap(NotificationResponse response) {
-    debugPrint('[BGService] Notification tap → ramener l\'app au premier plan');
-    // Le manager peut écouter ce stream pour naviguer vers la page space
+    debugPrint('[BGService] ✓ Initialisé (notifications désactivées)');
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -139,7 +87,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     if (_status != BackgroundServiceStatus.background) return;
     _status = BackgroundServiceStatus.active;
     debugPrint('[BGService] ✓ Retour au premier plan');
-    await _updateNotification();
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -154,9 +101,8 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
       }
 
       if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-        final notif = await Permission.notification.request();
         final phone = await Permission.phone.request();
-        debugPrint('[BGService] Permissions → notif: ${notif.isGranted}, phone: ${phone.isGranted}');
+        debugPrint('[BGService] Permissions → phone: ${phone.isGranted}');
       }
 
       return true;
@@ -205,7 +151,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     // 3. Audio session iOS
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       try {
-        // Permet le mix avec d'autres apps audio (Spotify, etc.)
         await SystemChannels.platform.invokeMethod(
           'setAudioSessionCategory',
           'playAndRecord',
@@ -224,8 +169,12 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
       rethrow;
     }
 
-    // 5. Notification persistante
-    await _showPersistentNotification();
+    // 5. Notification persistante → DÉSACTIVÉE
+    // Le plugin flutter_local_notifications crash avec
+    // "Drawable resource ID must not be 0" car les icônes
+    // @mipmap/ic_launcher et @drawable/ic_close n'existent pas
+    // dans res/drawable/. L'audio fonctionne sans notification.
+    debugPrint('[BGService] ℹ️ Notification persistante désactivée');
 
     _status = BackgroundServiceStatus.active;
     debugPrint('[BGService] ✓ Agora démarré pour ${space.title}');
@@ -291,8 +240,12 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     await _engine!.enableAudio();
 
     if (!kIsWeb) {
-      try { await _engine!.disableVideo(); } catch (_) {}
-      try { await _engine!.setEnableSpeakerphone(true); } catch (_) {}
+      try {
+        await _engine!.disableVideo();
+      } catch (_) {}
+      try {
+        await _engine!.setEnableSpeakerphone(true);
+      } catch (_) {}
     }
 
     final role = canSpeak
@@ -327,7 +280,9 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
   Future<void> stopAgora() async {
     debugPrint('[BGService] Arrêt Agora...');
 
-    try { await WakelockPlus.disable(); } catch (_) {}
+    try {
+      await WakelockPlus.disable();
+    } catch (_) {}
 
     try {
       await _engine?.leaveChannel();
@@ -336,8 +291,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
       debugPrint('[BGService] ⚠️ Agora cleanup: $e');
     }
     _engine = null;
-
-    await _cancelNotification();
 
     _currentSpace = null;
     _currentMe = null;
@@ -355,7 +308,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     try {
       await _engine?.muteLocalAudioStream(muted);
       debugPrint('[BGService] ${muted ? "🔇 Muted" : "🎙️ Unmuted"}');
-      await _updateNotification();
     } catch (e) {
       debugPrint('[BGService] ⚠️ setMuted: $e');
     }
@@ -385,7 +337,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
   // MODE BACKGROUND
   // ─────────────────────────────────────────────────────────────
   Future<void> prepareBackgroundMode() async {
-    // Préparation pour iOS : audio session "playback" pour continuer en bg
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS) {
       try {
         await SystemChannels.platform.invokeMethod(
@@ -405,10 +356,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
 
     _status = BackgroundServiceStatus.background;
     debugPrint('[BGService] 🔽 Entrée en mode background');
-
-    await _updateNotification(
-      subtitle: 'En arrière-plan — $spaceTitle',
-    );
   }
 
   Future<void> exitBackgroundMode() async {
@@ -416,104 +363,34 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
 
     _status = BackgroundServiceStatus.active;
     debugPrint('[BGService] 🔼 Sortie du mode background');
-
-    await _updateNotification();
   }
 
   // ─────────────────────────────────────────────────────────────
-  // NOTIFICATION PERSISTANTE
+  // NOTIFICATION PERSISTANTE → DÉSACTIVÉE
   // ─────────────────────────────────────────────────────────────
+  // Les méthodes ci-dessous sont conservées comme no-op pour
+  // éviter les erreurs d'appel depuis le manager.
+  // Pour réactiver les notifications plus tard :
+  //   1. Créer res/drawable/notification_icon.png (blanc + alpha)
+  //   2. Remplacer icon: '@mipmap/ic_launcher' par 'notification_icon'
+  //   3. Supprimer les actions Android (ic_close, ic_mic_off manquants)
+  //   4. Changer channelId en 'thix_audio_space_v2'
+
   Future<void> _showPersistentNotification() async {
-    if (_currentSpace == null) return;
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Salon audio en cours',
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: true,          // Persistante
-      autoCancel: false,      // Ne disparaît pas au tap
-      playSound: false,
-      enableVibration: false,
-      onlyAlertOnce: true,
-      icon: '@mipmap/ic_launcher',
-      color: const Color(0xFF1E3A8A),
-      actions: [
-        const AndroidNotificationAction(
-          'leave',
-          'Quitter',
-          icon: const DrawableResourceAndroidBitmap('@drawable/ic_close'),
-          cancelNotification: true,
-        ),
-        const AndroidNotificationAction(
-          'mute',
-          'Mute',
-          icon: const DrawableResourceAndroidBitmap('@drawable/ic_mic_off'),
-        ),
-      ],
-    );
-
-    const iosDetails = DarwinNotificationDetails(
-      presentAlert: false,
-      presentBadge: false,
-      presentSound: false,
-    );
-
-    final details = NotificationDetails(
-      android: androidDetails,
-      iOS: iosDetails,
-    );
-
-    await _notifications.show(
-      _notificationId,
-      _currentSpace!.title,
-      '🎙️ Salon audio en cours${_isMuted ? ' (muet)' : ''}',
-      details,
-    );
+    // No-op : notification désactivée
   }
 
   Future<void> _updateNotification({String? subtitle}) async {
-    if (_currentSpace == null) return;
-
-    final androidDetails = AndroidNotificationDetails(
-      _channelId,
-      _channelName,
-      channelDescription: 'Salon audio en cours',
-      importance: Importance.low,
-      priority: Priority.low,
-      ongoing: true,
-      autoCancel: false,
-      playSound: false,
-      enableVibration: false,
-      onlyAlertOnce: true,
-      icon: '@mipmap/ic_launcher',
-    );
-
-    const iosDetails = DarwinNotificationDetails();
-    final details = NotificationDetails(android: androidDetails, iOS: iosDetails);
-
-    final title = subtitle ?? _currentSpace!.title;
-    final body = _isMuted
-        ? '🔇 Vous êtes en muet'
-        : '🎙️ ${_currentMe?.displayName ?? "Participant"} — Salon actif';
-
-    await _notifications.show(_notificationId, title, body, details);
+    // No-op : notification désactivée
   }
 
   Future<void> _cancelNotification() async {
-    try {
-      await _notifications.cancel(_notificationId);
-    } catch (e) {
-      debugPrint('[BGService] ⚠️ cancel notif: $e');
-    }
+    // No-op : notification désactivée
   }
 
   // ─────────────────────────────────────────────────────────────
   // DÉTECTION APPELS ENTRANTS (pause auto)
   // ─────────────────────────────────────────────────────────────
-
-  /// À appeler depuis le manager quand un appel téléphonique arrive
   void onIncomingPhoneCall() {
     if (_status != BackgroundServiceStatus.active &&
         _status != BackgroundServiceStatus.background) {
@@ -523,10 +400,7 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
     debugPrint('[BGService] 📞 Appel entrant → pause audio');
     _status = BackgroundServiceStatus.pausedByCall;
 
-    // Mute automatiquement
     _engine?.muteLocalAudioStream(true).catchError((_) {});
-
-    // Optionnel : diminuer volume
     _engine?.adjustPlaybackSignalVolume(0).catchError((_) {});
   }
 
@@ -553,7 +427,6 @@ class AudioSpaceBackgroundService with WidgetsBindingObserver {
 // ─────────────────────────────────────────────────────────────
 // AUDIO HANDLER (pour audio_service)
 // ─────────────────────────────────────────────────────────────
-/// Gestionnaire audio global — permet au système de contrôler la lecture
 class ThixAudioHandler extends BaseAudioHandler {
   @override
   Future<void> stop() async {
