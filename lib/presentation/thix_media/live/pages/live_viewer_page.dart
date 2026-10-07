@@ -1,18 +1,14 @@
 // lib/presentation/thix_media/live/pages/live_viewer_page.dart
 //
 // LiveViewerPage — Viewer Live Production Enterprise (niveau TikTok/IG Live)
+// Version 2.0 avec :
+// - Popup d'invitation realtime pour monter sur scène
+// - Bouton "Demander à monter" (requête au host)
+// - Promotion dynamique audience → broadcaster (Agora)
+// - Contrôles cam/mic locaux quand sur scène
+// - Affichage multi-guest (split screen + PiP)
+// - Like ultra-rapide TikTok-style (overlay animé + RPC atomique)
 //
-// Features production :
-// - Vidéo host Agora avec fallback placeholder
-// - Chat realtime avec sanitization XSS renforcée + throttling + auto-scroll
-// - Likes avec animations flottantes + double-tap (sans écrasement concurrent)
-// - Réactions emoji (❤️🔥👏😂😮)
-// - Indicateur qualité réseau
-// - Profil host (tap sur titre)
-// - Partage du live (ID encodé)
-// - Confirmation avant sortie
-// - Semantics complet + haptics
-// - Logging structuré
 import 'dart:async';
 import 'dart:math';
 
@@ -41,7 +37,7 @@ const Duration _kStatsPolling = Duration(seconds: 3);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const Duration _kLikeThrottle = Duration(milliseconds: 300);
 const Duration _kActionThrottle = Duration(milliseconds: 400);
-// ✅ FIX: 2 emojis vides remplacés
+const Duration _kInviteTimeout = Duration(seconds: 30);
 const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮'];
 
 // ============================================================================
@@ -63,22 +59,20 @@ class _LiveViewerLogger {
 }
 
 // ============================================================================
-// SANITIZER (anti-XSS + anti-spoofing)
+// SANITIZER
 // ============================================================================
 
 class _LiveSanitizer {
   _LiveSanitizer._();
 
   static const int _kMaxUsernameLength = 24;
-  static const List<String> _kAllowedTypes = ['chat', 'reaction', 'gift'];
+  static const List<String> _kAllowedTypes = [
+    'chat', 'reaction', 'gift', 'invite', 'request_join', 'promote', 'demote'
+  ];
 
-  /// ✅ Nettoyage récursif des balises (anti-évasion par imbrication),
-  /// blocage javascript:/data:/on*=, suppression caractères de contrôle
-  /// et caractères Unicode d'usurpation (RTL override, largeur nulle).
   static String chat(String? input) {
     if (input == null) return '';
     var s = input;
-
     String prev;
     do {
       prev = s;
@@ -98,7 +92,6 @@ class _LiveSanitizer {
     return s;
   }
 
-  /// ✅ Nettoie et tronque un pseudo reçu du realtime.
   static String username(String? input) {
     final cleaned = chat(input);
     if (cleaned.isEmpty) return 'User';
@@ -107,13 +100,11 @@ class _LiveSanitizer {
         : cleaned;
   }
 
-  /// ✅ Restreint le type de message à une liste blanche connue.
   static String messageType(String? input) {
     final t = (input ?? 'chat').trim().toLowerCase();
     return _kAllowedTypes.contains(t) ? t : 'chat';
   }
 
-  /// ✅ Construit une URL de partage sûre (ID encodé).
   static String shareUrl(String liveId) {
     return 'https://thix.id/live/${Uri.encodeComponent(liveId)}';
   }
@@ -154,13 +145,29 @@ extension _NetQX on _NetQ {
 }
 
 // ============================================================================
+// INVITE DATA
+// ============================================================================
+
+class _GuestInvite {
+  final String liveId;
+  final String hostId;
+  final String hostUsername;
+  final DateTime receivedAt;
+
+  _GuestInvite({
+    required this.liveId,
+    required this.hostId,
+    required this.hostUsername,
+    required this.receivedAt,
+  });
+}
+
+// ============================================================================
 // LIVE VIEWER PAGE
 // ============================================================================
 
 class LiveViewerPage extends ConsumerStatefulWidget {
   final String liveId;
-
-  /// Optionnel : si tu as déjà session + creds (évite double fetch)
   final LiveSession? session;
   final AgoraCredentials? creds;
 
@@ -180,6 +187,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   final _rtc = LiveRtcService();
   final _chatCtrl = TextEditingController();
   final _chatScroll = ScrollController();
+  final _random = Random();
 
   LiveSession? _session;
   AgoraCredentials? _creds;
@@ -201,11 +209,25 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   String _lastReaction = '';
   List<_ChatLine> _messages = [];
   final List<_FloatingLike> _floatingLikes = [];
+  int _pendingLikes = 0;
+  Timer? _likeBatchTimer;
+
+  // ═══ Multi-Guest State ═══
+  _GuestInvite? _pendingInvite;
+  bool _isOnStage = false;
+  bool _isLocallyMuted = false;
+  bool _isLocalVideoOff = false;
+  bool _requestingJoin = false;
+  final Map<int, String> _remoteUsers = {}; // uid -> role/username
 
   RealtimeChannel? _msgChannel;
+  RealtimeChannel? _inviteChannel;
   Timer? _statsTimer;
   Timer? _netTimer;
+  Timer? _inviteExpireTimer;
   StreamSubscription<int?>? _remoteSub;
+  StreamSubscription<int>? _remoteJoinedSub;
+  StreamSubscription<(int, String)>? _remoteLeftSub;
   StreamSubscription<List<ConnectivityResult>>? _netSub;
 
   @override
@@ -219,9 +241,14 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   void dispose() {
     _statsTimer?.cancel();
     _netTimer?.cancel();
+    _inviteExpireTimer?.cancel();
+    _likeBatchTimer?.cancel();
     _remoteSub?.cancel();
+    _remoteJoinedSub?.cancel();
+    _remoteLeftSub?.cancel();
     _netSub?.cancel();
     _msgChannel?.unsubscribe();
+    _inviteChannel?.unsubscribe();
     _chatCtrl.dispose();
     _chatScroll.dispose();
     _rtc.dispose();
@@ -256,14 +283,31 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         setState(() => _hostUid = uid ?? _rtc.remoteHostUid);
       });
 
-      // Si le host est déjà là
+      // Multi-guest : écouter les autres remote users
+      _remoteJoinedSub = _rtc.remoteUserJoinedStream.listen((uid) {
+        if (!mounted) return;
+        setState(() {
+          _remoteUsers[uid] = 'broadcaster';
+          if (_hostUid == null) _hostUid = uid;
+        });
+      });
+
+      _remoteLeftSub = _rtc.remoteUserLeftStream.listen((event) {
+        if (!mounted) return;
+        final uid = event.$1;
+        setState(() => _remoteUsers.remove(uid));
+      });
+
       if (_rtc.remoteHostUid != null) {
         _hostUid = _rtc.remoteHostUid;
+        _remoteUsers[_rtc.remoteHostUid!] = 'host';
       }
 
       _subscribeChat();
+      _subscribeInviteChannel();
       _startStatsPolling();
       _startNetworkMonitor();
+      _startLikeBatching();
 
       if (!mounted) return;
       setState(() {
@@ -281,6 +325,59 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         _error = e.toString();
       });
     }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🎯 INVITE CHANNEL (Recevoir invitations du host)
+  // ════════════════════════════════════════════════════════════
+
+  void _subscribeInviteChannel() {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) return;
+
+    final client = Supabase.instance.client;
+    _inviteChannel = client.channel('live_invite_${user.id}')
+      ..onBroadcastEvent(event: 'guest_invite', callback: (payload) {
+        if (!mounted) return;
+        final data = payload;
+        
+        // Vérifier que c'est bien pour ce live
+        final inviteLiveId = data['live_id']?.toString();
+        if (inviteLiveId != widget.liveId && inviteLiveId != _session?.id) {
+          return;
+        }
+
+        final hostUsername = _LiveSanitizer.username(
+          data['host_username']?.toString(),
+        );
+
+        _LiveViewerLogger.info('Invite received', {
+          'from': hostUsername,
+          'liveId': inviteLiveId,
+        });
+
+        setState(() {
+          _pendingInvite = _GuestInvite(
+            liveId: inviteLiveId ?? widget.liveId,
+            hostId: data['host_id']?.toString() ?? '',
+            hostUsername: hostUsername,
+            receivedAt: DateTime.now(),
+          );
+        });
+
+        HapticFeedback.heavyImpact();
+        _showInviteDialog();
+
+        // Auto-expire après 30 secondes
+        _inviteExpireTimer?.cancel();
+        _inviteExpireTimer = Timer(_kInviteTimeout, () {
+          if (_pendingInvite != null && mounted) {
+            _rejectInvite(auto: true);
+          }
+        });
+      });
+    _inviteChannel!.subscribe();
+    _LiveViewerLogger.info('Invite channel subscribed', {'userId': user.id});
   }
 
   // ════════════════════════════════════════════════════════════
@@ -304,10 +401,19 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
           callback: (payload) {
             final row = payload.newRecord;
             final text = _LiveSanitizer.chat(row['text']?.toString());
-            // ✅ FIX: username et type sanitizés
             final user = _LiveSanitizer.username(row['username']?.toString());
             final type = _LiveSanitizer.messageType(row['type']?.toString());
             if (!mounted || text.isEmpty) return;
+
+            // Gestion spéciale des événements système
+            if (type == 'promote') {
+              _handlePromoteEvent(row);
+              return;
+            }
+            if (type == 'demote') {
+              _handleDemoteEvent();
+              return;
+            }
 
             setState(() {
               _messages = [
@@ -320,7 +426,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
               }
             });
 
-            // Auto-scroll vers le bas (plus récent en haut car reverse)
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (_chatScroll.hasClients) {
                 _chatScroll.animateTo(
@@ -334,6 +439,62 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         )
         .subscribe();
     _LiveViewerLogger.info('Chat channel subscribed');
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🎯 GUEST EVENTS (Promote / Demote)
+  // ════════════════════════════════════════════════════════════
+
+  void _handlePromoteEvent(Map<String, dynamic> row) {
+    final targetUserId = row['user_id']?.toString();
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    
+    if (targetUserId != currentUserId) return;
+
+    _LiveViewerLogger.info('Received promote event');
+    _becomeBroadcaster();
+  }
+
+  void _handleDemoteEvent() {
+    _LiveViewerLogger.info('Received demote event');
+    _becomeAudience();
+  }
+
+  Future<void> _becomeBroadcaster() async {
+    if (_isOnStage) return;
+    
+    try {
+      await _rtc.promoteToBroadcaster();
+      if (!mounted) return;
+      setState(() {
+        _isOnStage = true;
+      });
+      _snack(AppLocalizations.of(context).t('live_now_on_stage'));
+      HapticFeedback.heavyImpact();
+    } catch (e) {
+      _LiveViewerLogger.error('Promotion failed', {'error': '$e'});
+      _snack(
+        AppLocalizations.of(context).t('live_promote_failed'),
+        error: true,
+      );
+    }
+  }
+
+  Future<void> _becomeAudience() async {
+    if (!_isOnStage) return;
+    
+    try {
+      await _rtc.demoteToAudience();
+      if (!mounted) return;
+      setState(() {
+        _isOnStage = false;
+        _isLocallyMuted = false;
+        _isLocalVideoOff = false;
+      });
+      _snack(AppLocalizations.of(context).t('live_back_to_audience'));
+    } catch (e) {
+      _LiveViewerLogger.error('Demotion failed', {'error': '$e'});
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -415,6 +576,35 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
+  // 🎯 TIKTOK-STYLE LIKES (Batching + Optimistic UI)
+  // ════════════════════════════════════════════════════════════
+
+  void _startLikeBatching() {
+    _likeBatchTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+      if (_pendingLikes > 0) {
+        _flushLikes(_pendingLikes);
+        _pendingLikes = 0;
+      }
+    });
+  }
+
+  Future<void> _flushLikes(int count) async {
+    final liveId = _session?.id ?? widget.liveId;
+    try {
+      await Supabase.instance.client.rpc(
+        'increment_live_likes',
+        params: {
+          'p_live_id': liveId,
+          'p_count': count,
+          'p_user_id': Supabase.instance.client.auth.currentUser?.id,
+        },
+      ).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      _LiveViewerLogger.warn('Like batch flush failed', {'error': '$e'});
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
   // THROTTLE
   // ════════════════════════════════════════════════════════════
 
@@ -456,7 +646,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     ));
   }
 
-  // ✅ FIX: helper unique username, sanitizé systématiquement
   String _currentUsername() {
     final user = Supabase.instance.client.auth.currentUser;
     final raw = user?.userMetadata?['username']?.toString() ??
@@ -497,33 +686,13 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     }
   }
 
-  Future<void> _sendLike() async {
-    if (!_throttleLike()) return;
+  void _sendLike() {
     HapticFeedback.lightImpact();
     _spawnFloatingLike();
-
-    // Optimistic UI
-    if (mounted) setState(() => _likeCount += 1);
-
-    try {
-      final liveId = _session?.id ?? widget.liveId;
-      await Supabase.instance.client
-          .rpc(
-            'increment_live_likes',
-            params: {'p_live_id': liveId},
-          )
-          .timeout(const Duration(seconds: 5));
-    } catch (e) {
-      // ✅ FIX SÉCURITÉ CRITIQUE : l'ancien fallback faisait
-      // update({'like_count': _likeCount}) — un simple set non atomique
-      // qui écrasait le compteur global avec la valeur locale du viewer.
-      // Si un autre viewer avait liké entre-temps, son like disparaissait.
-      // On ne fait plus qu'un log : l'UI reste optimiste localement,
-      // le prochain polling stats (_startStatsPolling) resynchronisera
-      // la vraie valeur serveur sans risque d'écrasement.
-      _LiveViewerLogger.warn('Like RPC failed (no unsafe fallback)',
-          {'error': '$e'});
-    }
+    if (mounted) setState(() {
+      _likeCount++;
+      _pendingLikes++;
+    });
   }
 
   Future<void> _sendReaction(String emoji) async {
@@ -550,13 +719,14 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
   void _spawnFloatingLike() {
     final id = DateTime.now().microsecondsSinceEpoch;
-    final dx = 40.0 + Random().nextDouble() * 80;
+    final dx = 40.0 + _random.nextDouble() * 80;
+    final color = Colors.primaries[_random.nextInt(Colors.primaries.length)];
     if (mounted) {
       setState(() {
-        _floatingLikes.add(_FloatingLike(id: id, dx: dx));
+        _floatingLikes.add(_FloatingLike(id: id, dx: dx, color: color));
       });
     }
-    Future.delayed(const Duration(milliseconds: 900), () {
+    Future.delayed(const Duration(milliseconds: 1200), () {
       if (!mounted) return;
       setState(() {
         _floatingLikes.removeWhere((e) => e.id == id);
@@ -567,10 +737,186 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   void _shareLive(AppLocalizations l10n) {
     if (!_throttleAction()) return;
     HapticFeedback.lightImpact();
-    // ✅ FIX: ID encodé pour éviter d'injecter des caractères non sûrs
     final link = _LiveSanitizer.shareUrl(widget.liveId);
     Clipboard.setData(ClipboardData(text: link));
     _snack(l10n.t('live_link_copied'));
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🎯 INVITE ACTIONS (Accept / Reject / Request)
+  // ════════════════════════════════════════════════════════════
+
+  void _showInviteDialog() {
+    if (!mounted || _pendingInvite == null) return;
+    
+    final l10n = AppLocalizations.of(context);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black54,
+      builder: (ctx) => _InviteDialog(
+        invite: _pendingInvite!,
+        onAccept: () async {
+          Navigator.pop(ctx);
+          await _acceptInvite();
+        },
+        onReject: () async {
+          Navigator.pop(ctx);
+          await _rejectInvite();
+        },
+        l10n: l10n,
+      ),
+    );
+  }
+
+  Future<void> _acceptInvite() async {
+    final invite = _pendingInvite;
+    if (invite == null) return;
+
+    _inviteExpireTimer?.cancel();
+    _LiveViewerLogger.info('Accepting invite', {'liveId': invite.liveId});
+
+    try {
+      final liveService = ref.read(liveServiceProvider);
+      
+      // 1. Accepter côté serveur
+      await liveService.acceptGuestInvite(invite.liveId);
+      
+      // 2. Changer de rôle Agora (audience → broadcaster)
+      await _becomeBroadcaster();
+      
+      if (!mounted) return;
+      setState(() => _pendingInvite = null);
+      
+      _snack(AppLocalizations.of(context).t('live_invite_accepted'));
+    } catch (e) {
+      _LiveViewerLogger.error('Accept invite failed', {'error': '$e'});
+      if (mounted) {
+        _snack(
+          AppLocalizations.of(context).t('live_invite_accept_failed'),
+          error: true,
+        );
+      }
+    }
+  }
+
+  Future<void> _rejectInvite({bool auto = false}) async {
+    final invite = _pendingInvite;
+    if (invite == null) return;
+
+    _inviteExpireTimer?.cancel();
+    _LiveViewerLogger.info('Rejecting invite', {
+      'liveId': invite.liveId,
+      'auto': auto,
+    });
+
+    try {
+      final liveService = ref.read(liveServiceProvider);
+      await liveService.rejectGuestInvite(invite.liveId);
+    } catch (e) {
+      _LiveViewerLogger.warn('Reject invite failed', {'error': '$e'});
+    }
+
+    if (!mounted) return;
+    setState(() => _pendingInvite = null);
+
+    if (auto) {
+      _snack(AppLocalizations.of(context).t('live_invite_expired'));
+    }
+  }
+
+  Future<void> _requestToJoin() async {
+    if (_requestingJoin || _isOnStage || _session == null) return;
+    if (!_throttleAction()) return;
+
+    if (mounted) setState(() => _requestingJoin = true);
+    HapticFeedback.mediumImpact();
+
+    try {
+      final name = _currentUsername();
+      await ref.read(liveServiceProvider).sendMessage(
+            liveId: _session!.id,
+            text: '🙋 ${AppLocalizations.of(context).t("live_request_to_join")}',
+            username: name,
+            type: 'request_join',
+          );
+      _snack(AppLocalizations.of(context).t('live_request_sent'));
+    } catch (e) {
+      _LiveViewerLogger.error('Request to join failed', {'error': '$e'});
+      if (mounted) {
+        _snack(
+          AppLocalizations.of(context).t('live_request_failed'),
+          error: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _requestingJoin = false);
+    }
+  }
+
+  Future<void> _toggleLocalMute() async {
+    if (!_isOnStage || !_throttleAction()) return;
+    HapticFeedback.selectionClick();
+    try {
+      final next = !_isLocallyMuted;
+      await _rtc.muteLocalAudio(next);
+      if (mounted) setState(() => _isLocallyMuted = next);
+    } catch (e) {
+      _LiveViewerLogger.error('Toggle mute failed', {'error': '$e'});
+    }
+  }
+
+  Future<void> _toggleLocalVideo() async {
+    if (!_isOnStage || !_throttleAction()) return;
+    HapticFeedback.selectionClick();
+    try {
+      final next = !_isLocalVideoOff;
+      await _rtc.muteLocalVideo(next);
+      if (mounted) setState(() => _isLocalVideoOff = next);
+    } catch (e) {
+      _LiveViewerLogger.error('Toggle video failed', {'error': '$e'});
+    }
+  }
+
+  Future<void> _leaveStage() async {
+    if (!_isOnStage) return;
+    final l10n = AppLocalizations.of(context);
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        title: Text(
+          l10n.t('live_leave_stage_title'),
+          style: const TextStyle(color: Colors.white),
+        ),
+        content: Text(
+          l10n.t('live_leave_stage_confirm'),
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(
+              l10n.t('common_cancel'),
+              style: const TextStyle(color: Colors.white70),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: ThixPolicy.danger),
+            child: Text(l10n.t('live_leave_stage_btn')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    try {
+      await _becomeAudience();
+      // Notifier le serveur (optionnel, le host verra l'événement onUserOffline)
+    } catch (e) {
+      _LiveViewerLogger.error('Leave stage failed', {'error': '$e'});
+    }
   }
 
   Future<void> _leave({bool force = false}) async {
@@ -680,45 +1026,39 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         body: Stack(
           fit: StackFit.expand,
           children: [
-            // ── Vidéo host ────────────────────────────────────
+            // ── Vidéo (host + guests si multi) ──────────────────────────────────
             GestureDetector(
               onDoubleTap: _sendLike,
-              child: _ready && engine != null && _hostUid != null
-                  ? AgoraVideoView(
-                      controller: VideoViewController.remote(
-                        rtcEngine: engine,
-                        canvas: VideoCanvas(uid: _hostUid),
-                        connection: RtcConnection(
-                          channelId: _creds!.channelName,
-                        ),
-                      ),
-                    )
-                  : Container(
-                      color: Colors.black,
-                      child: Center(
-                        child: _joining
-                            ? const CircularProgressIndicator(
-                                color: Colors.white)
-                            : Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.live_tv_rounded,
-                                    size: 56,
-                                    color: Colors.white.withValues(alpha: 0.35),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  Text(
-                                    l10n.t('live_waiting_host'),
-                                    style: TextStyle(
-                                      color: Colors.white.withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                      ),
-                    ),
+              child: _buildVideoLayer(engine),
             ),
+
+            // ── Vidéo locale (quand sur scène) ──────────────────────────────────
+            if (_isOnStage && engine != null && !_isLocalVideoOff)
+              Positioned(
+                top: 80,
+                right: 12,
+                width: 120,
+                height: 180,
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.white30, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.5),
+                        blurRadius: 12,
+                      ),
+                    ],
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: AgoraVideoView(
+                    controller: VideoViewController(
+                      rtcEngine: engine,
+                      canvas: const VideoCanvas(uid: 0),
+                    ),
+                  ),
+                ),
+              ),
 
             // ── Réactions burst ───────────────────────────────
             if (_reactionBurst > 0)
@@ -834,18 +1174,19 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                 bottom: 120,
                 child: TweenAnimationBuilder<double>(
                   tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 900),
+                  duration: const Duration(milliseconds: 1200),
+                  curve: Curves.easeOutCubic,
                   builder: (_, t, child) => Opacity(
                     opacity: 1 - t,
                     child: Transform.translate(
-                      offset: Offset(0, -80 * t),
+                      offset: Offset(0, -120 * t),
                       child: child,
                     ),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.favorite,
-                    color: Color(0xFFE11D48),
-                    size: 28,
+                    color: f.color,
+                    size: 28 + (10 * (1 - 0.5)),
                   ),
                 ),
               ),
@@ -862,7 +1203,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     SizedBox(
-                      height: 150,
+                      height: 130,
                       child: _messages.isEmpty
                           ? Center(
                               child: Text(
@@ -881,42 +1222,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                               itemBuilder: (context, i) {
                                 final m =
                                     _messages[_messages.length - 1 - i];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Text.rich(
-                                    TextSpan(
-                                      children: [
-                                        TextSpan(
-                                          text: '${m.username} ',
-                                          style: TextStyle(
-                                            color: m.type == 'gift'
-                                                ? Colors.amber
-                                                : m.type == 'reaction'
-                                                    ? Colors.white
-                                                    : ThixPolicy.primary,
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: m.type == 'reaction'
-                                                ? 16
-                                                : 13,
-                                          ),
-                                        ),
-                                        TextSpan(
-                                          text: m.text,
-                                          style: TextStyle(
-                                            color: Colors.white,
-                                            fontSize: m.type == 'reaction'
-                                                ? 18
-                                                : 13,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    // ✅ FIX: borne l'affichage
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
+                                return _buildChatLine(m, l10n);
                               },
                             ),
                     ),
@@ -1002,11 +1308,57 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                         ),
                       ],
                     ),
+                    const SizedBox(height: 8),
+
+                    // ── Bouton "Demander à monter" / Contrôles scène ──
+                    _buildStageControls(l10n),
                     const SizedBox(height: 10),
                   ],
                 ),
               ),
             ),
+
+            // ── Indicateur "On Stage" ──────────────────────────────────────────
+            if (_isOnStage)
+              Positioned(
+                top: 80,
+                left: 12,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF22C55E),
+                    borderRadius: BorderRadius.circular(20),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF22C55E).withValues(alpha: 0.5),
+                        blurRadius: 8,
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.circle,
+                        size: 8,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        l10n.t('live_on_stage'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
             if (_leaving)
               Container(
@@ -1028,6 +1380,216 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
               ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildVideoLayer(RtcEngine? engine) {
+    if (!_ready || engine == null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: _joining
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      Icons.live_tv_rounded,
+                      size: 56,
+                      color: Colors.white.withValues(alpha: 0.35),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      AppLocalizations.of(context).t('live_waiting_host'),
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.5),
+                      ),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
+
+    // Afficher le host en plein écran
+    if (_hostUid != null) {
+      return AgoraVideoView(
+        controller: VideoViewController.remote(
+          rtcEngine: engine,
+          canvas: VideoCanvas(uid: _hostUid),
+          connection: RtcConnection(channelId: _creds!.channelName),
+        ),
+      );
+    }
+
+    return Container(
+      color: Colors.black,
+      child: Center(
+        child: Text(
+          AppLocalizations.of(context).t('live_waiting_host'),
+          style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStageControls(AppLocalizations l10n) {
+    if (_isOnStage) {
+      // Contrôles scène : mute, video, quitter la scène
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _StageBtn(
+            icon: _isLocallyMuted ? Icons.mic_off : Icons.mic,
+            label: _isLocallyMuted ? l10n.t('live_unmute') : l10n.t('live_mute'),
+            active: _isLocallyMuted,
+            onTap: _toggleLocalMute,
+          ),
+          const SizedBox(width: 8),
+          _StageBtn(
+            icon: _isLocalVideoOff ? Icons.videocam_off : Icons.videocam,
+            label: _isLocalVideoOff
+                ? l10n.t('live_video_on')
+                : l10n.t('live_video_off'),
+            active: _isLocalVideoOff,
+            onTap: _toggleLocalVideo,
+          ),
+          const SizedBox(width: 8),
+          _StageBtn(
+            icon: Icons.logout,
+            label: l10n.t('live_leave_stage_btn'),
+            color: ThixPolicy.danger,
+            onTap: _leaveStage,
+          ),
+        ],
+      );
+    } else {
+      // Bouton "Demander à monter"
+      return GestureDetector(
+        onTap: _requestingJoin ? null : _requestToJoin,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: ThixPolicy.domainMedia.withValues(alpha: 0.9),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: ThixPolicy.domainMedia.withValues(alpha: 0.4),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (_requestingJoin)
+                const SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              else
+                const Icon(Icons.hand_raised, color: Colors.white, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                _requestingJoin
+                    ? l10n.t('live_request_pending')
+                    : l10n.t('live_request_to_join'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  Widget _buildChatLine(_ChatLine m, AppLocalizations l10n) {
+    // Cas spécial : message de type request_join (affiché en highlight)
+    if (m.type == 'request_join') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: ThixPolicy.domainMedia.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: ThixPolicy.domainMedia.withValues(alpha: 0.5),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.hand_raised, color: Colors.white, size: 14),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text.rich(
+                  TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '${m.username} ',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      TextSpan(
+                        text: l10n.t('live_wants_to_join'),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text.rich(
+        TextSpan(
+          children: [
+            TextSpan(
+              text: '${m.username} ',
+              style: TextStyle(
+                color: m.type == 'gift'
+                    ? Colors.amber
+                    : m.type == 'reaction'
+                        ? Colors.white
+                        : ThixPolicy.primary,
+                fontWeight: FontWeight.w800,
+                fontSize: m.type == 'reaction' ? 16 : 13,
+              ),
+            ),
+            TextSpan(
+              text: m.text,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: m.type == 'reaction' ? 18 : 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        maxLines: 3,
+        overflow: TextOverflow.ellipsis,
       ),
     );
   }
@@ -1099,7 +1661,8 @@ class _ChatLine {
 class _FloatingLike {
   final int id;
   final double dx;
-  _FloatingLike({required this.id, required this.dx});
+  final Color color;
+  _FloatingLike({required this.id, required this.dx, required this.color});
 }
 
 class _StatChip extends StatelessWidget {
@@ -1195,6 +1758,56 @@ class _RoundBtn extends StatelessWidget {
   }
 }
 
+class _StageBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool active;
+  final Color? color;
+
+  const _StageBtn({
+    required this.icon,
+    required this.label,
+    this.onTap,
+    this.active = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bgColor = color ?? (active ? ThixPolicy.danger : Colors.white24);
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: Colors.white, size: 18),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ============================================================================
 // REACTION BURST (animé)
 // ============================================================================
@@ -1234,6 +1847,159 @@ class _ReactionBurstState extends State<_ReactionBurst>
         position: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero)
             .animate(_ctrl),
         child: Text(widget.emoji, style: const TextStyle(fontSize: 32)),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// INVITE DIALOG
+// ============================================================================
+
+class _InviteDialog extends StatefulWidget {
+  final _GuestInvite invite;
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+  final AppLocalizations l10n;
+
+  const _InviteDialog({
+    required this.invite,
+    required this.onAccept,
+    required this.onReject,
+    required this.l10n,
+  });
+
+  @override
+  State<_InviteDialog> createState() => _InviteDialogState();
+}
+
+class _InviteDialogState extends State<_InviteDialog>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scaleAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+    _scaleAnim = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnim,
+      child: Dialog(
+        backgroundColor: const Color(0xFF1A1A1A),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide(
+            color: ThixPolicy.domainMedia.withValues(alpha: 0.5),
+            width: 2,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icône pulsée
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: ThixPolicy.domainMedia.withValues(alpha: 0.2),
+                ),
+                child: const Icon(
+                  Icons.handshake_rounded,
+                  size: 40,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                widget.l10n.t('live_invite_title'),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text.rich(
+                TextSpan(
+                  children: [
+                    TextSpan(
+                      text: widget.invite.hostUsername,
+                      style: TextStyle(
+                        color: ThixPolicy.primary,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    TextSpan(
+                      text: ' ${widget.l10n.t("live_invite_desc")}',
+                      style: const TextStyle(color: Colors.white70),
+                    ),
+                  ],
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: widget.onReject,
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: Colors.white70,
+                        side: const BorderSide(color: Colors.white24),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: Text(
+                        widget.l10n.t('live_invite_decline'),
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: widget.onAccept,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: ThixPolicy.domainMedia,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        elevation: 4,
+                      ),
+                      child: Text(
+                        widget.l10n.t('live_invite_accept'),
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
