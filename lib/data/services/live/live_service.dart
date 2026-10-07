@@ -98,7 +98,7 @@ class LiveService {
             body: {
               'channelName': channelName,
               'uid': 0,
-              'role': role,  // ✅ NOUVEAU : Support des rôles (host/audience/broadcaster)
+              'role': role,
             },
           )
           .timeout(_kCredentialsTimeout);
@@ -133,11 +133,9 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 CREATE LIVE SESSION (NOUVEAU)
+  // 🎯 CREATE LIVE SESSION
   // ════════════════════════════════════════════════════════════
 
-  /// Crée une nouvelle session live en base de données.
-  /// Retourne la session créée avec son ID.
   Future<LiveSession> createLiveSession({
     required String title,
     String category = 'general',
@@ -166,13 +164,8 @@ class LiveService {
         : 'public';
 
     try {
-      debugPrint('[LiveService] 🎬 Creating live session', {
-        'title': safeTitle,
-        'category': safeCategory,
-        'audience': safeAudience,
-      });
+      debugPrint('[LiveService] 🎬 Creating live session title=$safeTitle category=$safeCategory audience=$safeAudience');
 
-      // Vérifier qu'aucun live actif n'existe pour ce user
       final existing = await _client
           .from('live_sessions')
           .select('id')
@@ -185,7 +178,6 @@ class LiveService {
         throw Exception('Vous avez déjà un live actif');
       }
 
-      // Générer un nom de canal unique
       final channelName = _generateChannelName(currentUserId);
 
       final row = await _client
@@ -208,10 +200,7 @@ class LiveService {
           .timeout(_kDbTimeout);
 
       final session = LiveSession.fromMap(row);
-      debugPrint('[LiveService] ✓ Live session created', {
-        'id': session.id,
-        'channel': channelName,
-      });
+      debugPrint('[LiveService] ✓ Live session created id=${session.id} channel=$channelName');
 
       return session;
     } catch (e) {
@@ -227,10 +216,9 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 📋 LIST ACTIVE LIVES (NOUVEAU)
+  // 📋 LIST ACTIVE LIVES
   // ════════════════════════════════════════════════════════════
 
-  /// Récupère la liste des lives actifs (pour le feed et la page d'accueil).
   Future<List<LiveSession>> listActiveLives({int limit = 30}) async {
     try {
       debugPrint('[LiveService] 📋 Listing active lives (limit=$limit)');
@@ -260,7 +248,7 @@ class LiveService {
         }
       }
 
-      debugPrint('[LiveService] ✓ Active lives loaded', {'count': sessions.length});
+      debugPrint('[LiveService] ✓ Active lives loaded count=${sessions.length}');
       return sessions;
     } catch (e) {
       debugPrint('[LiveService] ❌ listActiveLives error: $e');
@@ -269,7 +257,7 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🔍 GET LIVE SESSION BY ID (NOUVEAU)
+  // 🔍 GET LIVE SESSION BY ID
   // ════════════════════════════════════════════════════════════
 
   Future<LiveSession?> getLiveSession(String liveId) async {
@@ -342,11 +330,9 @@ class LiveService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // ❤️ LIKES (avec RPC atomique - NOUVEAU)
+  // ❤️ LIKES (avec RPC atomique)
   // ════════════════════════════════════════════════════════════
 
-  /// Incrémente le compteur de likes de manière atomique via RPC.
-  /// Utilisé par le système de batching (toutes les 500ms).
   Future<void> incrementLikes(String liveId, int count) async {
     if (liveId.isEmpty || count <= 0) return;
 
@@ -362,21 +348,16 @@ class LiveService {
           )
           .timeout(_kDbTimeout);
 
-      debugPrint('[LiveService] ❤️ Likes incremented', {
-        'liveId': liveId,
-        'count': count,
-      });
+      debugPrint('[LiveService] ❤️ Likes incremented liveId=$liveId count=$count');
     } catch (e) {
       debugPrint('[LiveService] ⚠️ incrementLikes error: $e');
-      // Ne pas rethrow : les likes sont non-critiques
     }
   }
 
   // ════════════════════════════════════════════════════════════
-  // 👥 GUESTS / CO-HOSTS (NOUVEAU)
+  // 👥 GUESTS / CO-HOSTS
   // ════════════════════════════════════════════════════════════
 
-  /// Envoie une invitation à un spectateur pour monter sur scène.
   Future<void> sendGuestInvite({
     required String liveId,
     required String guestUserId,
@@ -387,12 +368,8 @@ class LiveService {
     }
 
     try {
-      debugPrint('[LiveService] 👥 Sending guest invite', {
-        'liveId': liveId,
-        'guestId': guestUserId,
-      });
+      debugPrint('[LiveService] 👥 Sending guest invite liveId=$liveId guestId=$guestUserId');
 
-      // Vérifier la limite de guests
       final existingGuests = await _client
           .from('live_guests')
           .select('user_id')
@@ -404,7 +381,6 @@ class LiveService {
         throw Exception('Limite d\'invités atteinte (max $_kMaxGuestsPerLive)');
       }
 
-      // Vérifier que le guest n'est pas déjà invité
       if (existingGuests is List) {
         final alreadyInvited = existingGuests.any((g) => g['user_id'] == guestUserId);
         if (alreadyInvited) {
@@ -412,7 +388,6 @@ class LiveService {
         }
       }
 
-      // Insérer l'invitation
       await _client
           .from('live_guests')
           .insert({
@@ -431,7 +406,6 @@ class LiveService {
     }
   }
 
-  /// Le spectateur accepte l'invitation.
   Future<void> acceptGuestInvite(String liveId) async {
     if (liveId.isEmpty || currentUserId.isEmpty) {
       throw Exception('Paramètres invalides');
@@ -455,7 +429,6 @@ class LiveService {
     }
   }
 
-  /// Le spectateur refuse l'invitation.
   Future<void> rejectGuestInvite(String liveId) async {
     if (liveId.isEmpty || currentUserId.isEmpty) return;
 
@@ -476,7 +449,6 @@ class LiveService {
     }
   }
 
-  /// L'hôte retire un guest de la scène.
   Future<void> removeGuest(String liveId, String guestUserId) async {
     if (liveId.isEmpty || guestUserId.isEmpty) return;
 
@@ -498,7 +470,6 @@ class LiveService {
     }
   }
 
-  /// Récupère la liste des guests d'un live.
   Future<List<Map<String, dynamic>>> getLiveGuests(String liveId) async {
     if (liveId.isEmpty) return [];
 
