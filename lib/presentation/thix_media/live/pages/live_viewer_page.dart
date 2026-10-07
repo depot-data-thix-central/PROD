@@ -26,7 +26,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import '../providers/go_live_provider.dart';
 import '../services/live_rtc_service.dart';
 import '../services/live_service.dart';
-
+import 'package:thix_id/data/models/live/live_model.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
