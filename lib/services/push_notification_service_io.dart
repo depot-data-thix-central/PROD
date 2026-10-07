@@ -1,7 +1,10 @@
-/// Push Notification Service IO (Production Enterprise)
+/// Push Notification Service IO (Production Enterprise v2)
 /// ✅ SÉCURISÉ : Validation stricte, sanitization, whitelist, route validation
 /// ✅ ROBUSTE : Timeouts, retry, error handling, mounted checks
 /// ✅ OBSERVABLE : Logs structurés avec emojis et masquage UID (RGPD)
+/// ✅ VOIP NATIF : CallKit iOS + Telecom Android pour appels entrants
+/// ✅ SONNERIE PERSISTANTE : Fonctionne même app fermée
+/// ✅ BADGE SYNCHRONISÉ : Badge temps réel sur l'icône
 ///
 /// Service pour gérer les notifications push via Firebase Cloud Messaging.
 ///
@@ -10,10 +13,14 @@
 /// - Foreground handler pour notifications en premier plan
 /// - Token management avec Supabase
 /// - Callback sur tap avec mounted check
+/// - **VoIP natif** : CallKit (iOS) + Telecom Manager (Android) pour appels
+/// - **Sonnerie + vibration** natives persistantes
+/// - **Badge synchronisé** via flutter_app_badger
 ///
 /// **Types de notifications supportés** :
 /// - `chat_message` : Messages chat (channel: thix_chat)
-/// - `incoming_call` : Appels entrants (channel: thix_calls)
+/// - `incoming_call` : Appels entrants (CallKit natif + channel: thix_calls)
+/// - `call_hangup` : Fin d'appel distant
 /// - `notification` : Notifications générales (channel: thix_id_default)
 /// - `sos` : Alertes SOS (channel: thix_id_default)
 ///
@@ -24,12 +31,20 @@
 /// - Validation des routes (whitelist)
 /// - Mounted check avant callbacks
 /// - Masquage UID dans les logs (RGPD)
+/// - Sonnerie automatique arrêtée si appel manqué/raccroché
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
+import 'package:flutter_callkit_incoming/entities/call_event.dart';
+import 'package:flutter_callkit_incoming/entities/entities.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
+import 'package:vibration/vibration.dart';
+import 'package:flutter_app_badger/flutter_app_badger.dart';
 
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
@@ -41,6 +56,7 @@ import 'package:thix_id/supabase/supabase_config.dart';
 const Duration _kSupabaseTimeout = Duration(seconds: 15);
 const Duration _kBackgroundInitTimeout = Duration(seconds: 10);
 const Duration _kForegroundInitTimeout = Duration(seconds: 5);
+const Duration _kCallkitTimeout = Duration(seconds: 8);
 const int _kMaxRetries = 3;
 const Duration _kRetryDelay = Duration(seconds: 2);
 const int _kMaxTitleLength = 100;
@@ -49,6 +65,7 @@ const int _kMaxPayloadLength = 500;
 const int _kMaxTokenLength = 500;
 const int _kMinUidLength = 20;
 const int _kMaxUidLength = 64;
+const int _kCallDurationMs = 60000; // 60s sonnerie max
 
 // ============================================================================
 // TYPES & WHITELIST
@@ -60,6 +77,7 @@ class PushTypes {
 
   static const chatMessage = 'chat_message';
   static const incomingCall = 'incoming_call';
+  static const callHangup = 'call_hangup';
   static const notification = 'notification';
   static const sos = 'sos';
 
@@ -67,12 +85,19 @@ class PushTypes {
   static const Set<String> allowed = {
     chatMessage,
     incomingCall,
+    callHangup,
     notification,
     sos,
   };
 
   /// Vérifie si un type est autorisé
   static bool isAllowed(String type) => allowed.contains(type);
+
+  /// Types qui déclenchent CallKit natif
+  static const Set<String> voipTypes = {incomingCall};
+
+  /// Vérifie si c'est un type VoIP
+  static bool isVoip(String type) => voipTypes.contains(type);
 }
 
 // ============================================================================
@@ -82,7 +107,6 @@ class PushTypes {
 class _Validators {
   _Validators._();
 
-  /// Valide le format d'un UID Firebase/Supabase
   static bool isValidUid(String? uid) {
     if (uid == null || uid.isEmpty) return false;
     if (uid.length < _kMinUidLength || uid.length > _kMaxUidLength) return false;
@@ -90,47 +114,36 @@ class _Validators {
     return regex.hasMatch(uid);
   }
 
-  /// Valide un token FCM
   static bool isValidToken(String? token) {
     if (token == null || token.isEmpty) return false;
     if (token.length > _kMaxTokenLength) return false;
-    // FCM tokens sont alphanumériques avec quelques caractères spéciaux
     final regex = RegExp(r'^[A-Za-z0-9_\-:]+$');
     return regex.hasMatch(token);
   }
 
-  /// Masque un UID pour les logs (RGPD)
-  ///
-  /// Exemple : `abc123def456ghi789` → `abc1...789`
   static String maskUid(String uid) {
     if (uid.length <= 8) return '***';
     return '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
   }
 
-  /// Masque un token FCM pour les logs
-  ///
-  /// Exemple : `abc123def456ghi789xyz` → `abc1...xyz`
   static String maskToken(String token) {
     if (token.length <= 10) return '***';
     return '${token.substring(0, 6)}...${token.substring(token.length - 4)}';
   }
 
-  /// Sanitize un string pour éviter XSS
   static String sanitizeString(String? input, {required int maxLength}) {
     if (input == null) return '';
     final s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '') // Strip HTML tags
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '') // Strip control chars
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .trim();
     return s.length > maxLength ? '${s.substring(0, maxLength)}…' : s;
   }
 
-  /// Valide une route de navigation (whitelist)
   static bool isValidRoute(String? route) {
     if (route == null || route.isEmpty) return false;
     if (route.length > _kMaxPayloadLength) return false;
 
-    // Whitelist des préfixes autorisés
     const allowedPrefixes = [
       'call:',
       'chat:',
@@ -139,15 +152,372 @@ class _Validators {
       '/notification',
       '/sos',
       '/event',
+      '/call',
     ];
 
     return allowedPrefixes.any((prefix) => route.startsWith(prefix));
   }
 
-  /// Sanitize un payload
   static String? sanitizePayload(String? payload) {
     if (payload == null || payload.isEmpty) return null;
     return sanitizeString(payload, maxLength: _kMaxPayloadLength);
+  }
+
+  /// Valide un UUID (invite_id, call_id, etc.)
+  static bool isValidUuid(String? id) {
+    if (id == null || id.isEmpty) return false;
+    final regex = RegExp(
+      r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+    );
+    return regex.hasMatch(id);
+  }
+
+  /// Sanitize URL (avatar)
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.isEmpty) return null;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return null;
+    if (url.length > 500) return null;
+    return url;
+  }
+}
+
+// ============================================================================
+// VOIP CALL MANAGER (CallKit natif)
+// ============================================================================
+
+/// Gestionnaire d'appels VoIP natif (CallKit iOS + Telecom Android)
+///
+/// **Responsabilités** :
+/// - Affiche l'écran d'appel entrant natif
+/// - Gère sonnerie + vibration persistantes
+/// - Intercepte les événements (accept/decline/timeout)
+/// - Stoppe sonnerie sur fin d'appel
+class _VoipCallManager {
+  _VoipCallManager._();
+  static final _VoipCallManager instance = _VoipCallManager._();
+
+  final FlutterRingtonePlayer _ringtone = FlutterRingtonePlayer();
+  bool _isInitialized = false;
+  bool _isRinging = false;
+  Timer? _ringTimeout;
+
+  // Callbacks pour navigation dans l'app
+  void Function(String inviteId, String channelName, bool isVideo)? onAcceptCall;
+  void Function(String inviteId)? onDeclineCall;
+
+  /// Initialise CallKit et écoute les événements
+  Future<void> initialize() async {
+    if (_isInitialized) return;
+
+    try {
+      final params = CallKitParams(
+        handle: 'THIX Hub',
+        nameCaller: 'THIX Hub',
+        appName: 'THIX Hub',
+        avatar: '',
+        duration: _kCallDurationMs,
+        textAccept: 'Accepter',
+        textDecline: 'Refuser',
+        textMissedCall: 'Appel manqué',
+        textCallback: 'Rappeler',
+        extra: <String, dynamic>{'userId': 'thix'},
+        headers: <String, dynamic>{'apiKey': 'thix-api-key'},
+        android: const AndroidParams(
+          isCustomNotification: true,
+          isShowLogo: true,
+          ringtonePath: 'ringtone.mp3',
+          backgroundColor: '#0A2F5C',
+          actionColor: '#4CAF50',
+          textColor: '#FFFFFF',
+          isShowMissedCallNotification: true,
+          isShowCallback: false,
+          isCustomSmallAvatar: false,
+        ),
+        ios: const IOSParams(
+          iconName: 'AppIcon',
+          handleType: 'generic',
+          supportsVideo: true,
+          maximumCallGroups: 2,
+          maximumCallsPerCallGroup: 1,
+          audioSessionMode: AVAudioSessionMode.defaultMode,
+          audioSessionActive: true,
+          audioSessionPreferredSampleRate: 44100.0,
+          audioSessionPreferredIOBufferDuration: 0.005,
+          supportsDTMF: true,
+          supportsHolding: true,
+          supportsGrouping: false,
+          supportsUngrouping: false,
+          ringtonePath: 'ringtone.caf',
+        ),
+      );
+
+      await FlutterCallkitIncoming.init(params).timeout(_kCallkitTimeout);
+
+      // Écoute les événements CallKit
+      FlutterCallkitIncoming.onEvent.listen(_onCallEvent);
+
+      _isInitialized = true;
+      debugPrint('[VOIP] ✓ CallKit initialized');
+    } catch (e, stackTrace) {
+      debugPrint('[VOIP] ❌ Init failed: $e');
+      if (kDebugMode) {
+        debugPrint('[VOIP] Stack: ${stackTrace.toString().split('\n').first}');
+      }
+    }
+  }
+
+  /// Affiche l'écran d'appel entrant natif
+  Future<void> showIncomingCall({
+    required String inviteId,
+    required String callerName,
+    String? callerAvatar,
+    required String channelName,
+    bool isVideo = false,
+  }) async {
+    if (!_isInitialized) {
+      await initialize();
+    }
+
+    debugPrint('[VOIP] 🔔 Showing incoming call: $callerName');
+
+    // Validation stricte
+    final safeInviteId = _Validators.isValidUuid(inviteId) ? inviteId : '';
+    final safeChannel = _Validators.sanitizeString(channelName, maxLength: 64);
+    final safeName = _Validators.sanitizeString(callerName, maxLength: 50);
+
+    if (safeInviteId.isEmpty || safeChannel.isEmpty) {
+      debugPrint('[VOIP] ⚠️ Invalid invite/channel data, skipping CallKit');
+      return;
+    }
+
+    final params = CallKitParams(
+      id: safeInviteId,
+      nameCaller: safeName,
+      appName: 'THIX Hub',
+      avatar: _Validators.sanitizeUrl(callerAvatar) ?? '',
+      handle: safeName,
+      type: isVideo ? 1 : 0, // 0 = audio, 1 = video
+      duration: _kCallDurationMs,
+      textAccept: 'Accepter',
+      textDecline: 'Refuser',
+      extra: <String, dynamic>{
+        'invite_id': safeInviteId,
+        'channel_name': safeChannel,
+        'caller_name': safeName,
+        'is_video': isVideo,
+      },
+      android: const AndroidParams(
+        isCustomNotification: true,
+        isShowLogo: true,
+        ringtonePath: 'ringtone.mp3',
+        backgroundColor: '#0A2F5C',
+        actionColor: '#4CAF50',
+        isShowMissedCallNotification: true,
+      ),
+      ios: IOSParams(
+        iconName: 'AppIcon',
+        handleType: 'generic',
+        supportsVideo: isVideo,
+        ringtonePath: 'ringtone.caf',
+      ),
+    );
+
+    try {
+      await FlutterCallkitIncoming.showCallkitIncoming(params)
+          .timeout(_kCallkitTimeout);
+      await _startRinging(isVideo: isVideo);
+      debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
+    } catch (e) {
+      debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e');
+    }
+  }
+
+  /// Termine un appel spécifique
+  Future<void> endCall(String inviteId) async {
+    try {
+      await FlutterCallkitIncoming.endCall(inviteId);
+      await stopRinging();
+      debugPrint('[VOIP] ✓ Call ended: $inviteId');
+    } catch (e) {
+      debugPrint('[VOIP] ❌ endCall failed: $e');
+    }
+  }
+
+  /// Termine tous les appels en cours
+  Future<void> endAllCalls() async {
+    try {
+      await FlutterCallkitIncoming.endAllCalls();
+      await stopRinging();
+      debugPrint('[VOIP] ✓ All calls ended');
+    } catch (e) {
+      debugPrint('[VOIP] ❌ endAllCalls failed: $e');
+    }
+  }
+
+  /// Démarre sonnerie + vibration persistantes (pattern WhatsApp)
+  Future<void> _startRinging({required bool isVideo}) async {
+    if (_isRinging) return;
+    _isRinging = true;
+
+    // Timer de sécurité : stop auto après 60s (match avec CallKit)
+    _ringTimeout?.cancel();
+    _ringTimeout = Timer(const Duration(milliseconds: _kCallDurationMs), () {
+      stopRinging();
+    });
+
+    try {
+      // Vibration Android en pattern (1s sonne, 0.5s silence, boucle)
+      if (Platform.isAndroid) {
+        final hasVibrator = await Vibration.hasVibrator() ?? false;
+        if (hasVibrator) {
+          // Pattern WhatsApp : [0ms start, 1000ms vibrate, 500ms pause]
+          await Vibration.vibrate(
+            pattern: [0, 1000, 500, 1000],
+            repeat: 0, // boucle tant qu'on ne fait pas cancel()
+            intensities: [0, 128, 0, 128],
+          );
+        }
+      }
+
+      // Sonnerie en boucle (utilise les sons système par défaut)
+      await _ringtone.play(
+        android: AndroidSounds.ringtone,
+        ios: IosSounds.alert,
+        looping: true,
+        volume: 1.0,
+      );
+
+      debugPrint('[VOIP] 🔊 Ringing started (video=$isVideo)');
+    } catch (e) {
+      debugPrint('[VOIP] ❌ Start ringing failed: $e');
+    }
+  }
+
+  /// Arrête sonnerie + vibration
+  Future<void> stopRinging() async {
+    if (!_isRinging) return;
+    _isRinging = false;
+    _ringTimeout?.cancel();
+    _ringTimeout = null;
+
+    try {
+      await _ringtone.stop();
+      if (Platform.isAndroid) {
+        await Vibration.cancel();
+      }
+      debugPrint('[VOIP] 🔕 Ringing stopped');
+    } catch (e) {
+      debugPrint('[VOIP] ❌ Stop ringing failed: $e');
+    }
+  }
+
+  /// Handler des événements CallKit
+  void _onCallEvent(CallEvent? event) {
+    if (event == null) return;
+    debugPrint('[VOIP] Event: ${event.event}');
+
+    final extra = (event.body?['extra'] as Map?)?.cast<String, dynamic>() ?? {};
+    final inviteId = extra['invite_id']?.toString() ?? '';
+    final channelName = extra['channel_name']?.toString() ?? '';
+    final isVideo = extra['is_video'] == true;
+
+    switch (event.event) {
+      case Event.actionCallAccept:
+        stopRinging();
+        onAcceptCall?.call(inviteId, channelName, isVideo);
+        break;
+
+      case Event.actionCallDecline:
+        stopRinging();
+        onDeclineCall?.call(inviteId);
+        break;
+
+      case Event.actionCallEnd:
+      case Event.actionCallTimeout:
+        stopRinging();
+        onDeclineCall?.call(inviteId);
+        break;
+
+      case Event.actionCallToggleHold:
+      case Event.actionCallToggleMute:
+      case Event.actionCallToggleDmtf:
+      case Event.actionCallToggleGroup:
+      case Event.actionCallToggleAudioSession:
+      case Event.actionCallCustom:
+        // Événements ignorés
+        break;
+
+      case null:
+        break;
+    }
+  }
+
+  /// Dispose toutes les ressources
+  void dispose() {
+    _ringTimeout?.cancel();
+    _ringTimeout = null;
+    stopRinging();
+    _isInitialized = false;
+    onAcceptCall = null;
+    onDeclineCall = null;
+  }
+}
+
+// ============================================================================
+// BADGE MANAGER
+// ============================================================================
+
+/// Gestionnaire du badge d'icône synchronisé
+class _BadgeManager {
+  _BadgeManager._();
+  static final _BadgeManager instance = _BadgeManager._();
+
+  int _lastCount = -1;
+
+  /// Met à jour le badge (iOS + Android launchers compatibles)
+  Future<void> sync(int count) async {
+    final safe = count < 0 ? 0 : count;
+    if (safe == _lastCount) return; // Évite le spam
+    _lastCount = safe;
+
+    try {
+      final supported = await FlutterAppBadger.isAppBadgeSupported();
+      if (!supported) return;
+
+      if (safe == 0) {
+        FlutterAppBadger.removeBadge();
+      } else {
+        FlutterAppBadger.updateBadgeCount(safe);
+      }
+      debugPrint('[Badge] 🔢 Icon badge → $safe');
+    } catch (e) {
+      debugPrint('[Badge] ❌ Update failed: $e');
+    }
+  }
+
+  /// Récupère le nombre de notifications non lues depuis Supabase
+  Future<int> fetchUnreadCount() async {
+    final uid = SupabaseConfig.currentUser?.id;
+    if (uid == null || !_Validators.isValidUid(uid)) return 0;
+
+    try {
+      final count = await SupabaseConfig.client
+          .from('notifications')
+          .count(CountOption.exact)
+          .eq('user_id', uid)
+          .eq('is_read', false)
+          .timeout(_kSupabaseTimeout);
+      return count;
+    } catch (e) {
+      debugPrint('[Badge] ❌ Fetch count failed: $e');
+      return 0;
+    }
+  }
+
+  /// Synchronise le badge depuis la DB (à appeler après chaque notif)
+  Future<void> refreshFromDb() async {
+    final count = await fetchUnreadCount();
+    await sync(count);
   }
 }
 
@@ -161,11 +531,12 @@ class _Validators {
 /// - Exécuté dans un isolate séparé
 /// - Doit ré-initialiser Firebase
 /// - Timeout agressif pour éviter blocages
+/// - **VoIP natif** : utilise CallKit pour les appels entrants
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   debugPrint('[FCM-BG] 🚀 Background handler triggered: ${message.messageId}');
 
-  // Initialiser Firebase avec retry
+  // 1) Initialiser Firebase avec retry
   var firebaseInitAttempts = 0;
   while (firebaseInitAttempts < _kMaxRetries) {
     try {
@@ -174,7 +545,7 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       break;
     } catch (e) {
       firebaseInitAttempts++;
-      debugPrint('[FCM-BG] ❌ Firebase init failed (attempt $firebaseInitAttempts/$_kMaxRetries): $e');
+      debugPrint('[FCM-BG] ❌ Firebase init failed ($firebaseInitAttempts/$_kMaxRetries): $e');
       if (firebaseInitAttempts >= _kMaxRetries) {
         debugPrint('[FCM-BG] ❌ Max Firebase init attempts reached, aborting');
         return;
@@ -183,7 +554,39 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     }
   }
 
-  // Afficher la notification avec timeout
+  final data = message.data;
+  final type = (data['type'] ?? '').toString().toLowerCase();
+
+  // 2) 📞 APPEL ENTRANT → CallKit natif (iOS + Android)
+  if (type == PushTypes.incomingCall) {
+    try {
+      await _VoipCallManager.instance.initialize();
+      await _VoipCallManager.instance.showIncomingCall(
+        inviteId: (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
+        callerName: (data['caller_name'] ?? data['callerName'] ?? 'Appel entrant').toString(),
+        callerAvatar: data['caller_avatar']?.toString(),
+        channelName: (data['channel_name'] ?? data['channelName'] ?? '').toString(),
+        isVideo: (data['is_video'] ?? data['isVideo'] ?? 'false').toString() == 'true',
+      );
+      debugPrint('[FCM-BG] ✓ CallKit shown: ${message.messageId}');
+      return; // ⛔ PAS de notification locale → CallKit gère
+    } catch (e) {
+      debugPrint('[FCM-BG] ❌ CallKit failed, fallback to local notif: $e');
+      // Fallback : affiche une notification locale classique
+    }
+  }
+
+  // 3) 📞 FIN D'APPEL DISTANTE → arrête sonnerie + CallKit
+  if (type == PushTypes.callHangup) {
+    final inviteId = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
+    if (inviteId.isNotEmpty) {
+      await _VoipCallManager.instance.endCall(inviteId);
+      debugPrint('[FCM-BG] ✓ Remote hangup: $inviteId');
+    }
+    return;
+  }
+
+  // 4) Autres notifications → affichage classique
   try {
     await LocalNotificationService.instance
         .initialize()
@@ -193,6 +596,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
     await _showFromRemoteMessage(message);
     debugPrint('[FCM-BG] ✓ Notification shown: ${message.messageId}');
+
+    // 5) Synchroniser le badge après affichage
+    await _BadgeManager.instance.refreshFromDb();
   } on TimeoutException {
     debugPrint('[FCM-BG] ❌ Timeout showing notification: ${message.messageId}');
   } catch (e, stackTrace) {
@@ -208,16 +614,10 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 // ============================================================================
 
 /// Affiche une notification locale depuis un RemoteMessage FCM.
-///
-/// **Sécurité** :
-/// - Validation stricte du type (whitelist)
-/// - Sanitization de title/body (XSS protection)
-/// - Validation de la route (whitelist)
 Future<void> _showFromRemoteMessage(RemoteMessage message) async {
   final data = message.data;
   final type = (data['type'] ?? '').toString().toLowerCase();
 
-  // Validation du type (whitelist)
   if (!PushTypes.isAllowed(type)) {
     debugPrint('[FCM] ⚠️ Unknown notification type: $type');
     return;
@@ -267,7 +667,6 @@ Future<void> _showFromRemoteMessage(RemoteMessage message) async {
   }
 }
 
-/// Retourne le channel approprié pour un type de notification
 String _getChannelForType(String type) {
   switch (type) {
     case PushTypes.incomingCall:
@@ -279,7 +678,6 @@ String _getChannelForType(String type) {
   }
 }
 
-/// Retourne le titre par défaut pour un type de notification
 String _defaultTitle(String type) {
   switch (type) {
     case PushTypes.incomingCall:
@@ -293,14 +691,7 @@ String _defaultTitle(String type) {
   }
 }
 
-/// Construit le payload de navigation depuis les données FCM.
-///
-/// **Sécurité** :
-/// - Validation stricte des routes (whitelist)
-/// - Sanitization des IDs
-/// - Rejet des routes non autorisées
 String? _buildPayload(Map<String, dynamic> data) {
-  // Priorité : route explicite
   final route = data['route']?.toString();
   if (route != null && route.isNotEmpty) {
     if (_Validators.isValidRoute(route)) {
@@ -310,7 +701,6 @@ String? _buildPayload(Map<String, dynamic> data) {
     }
   }
 
-  // Construction selon le type
   final type = (data['type'] ?? '').toString().toLowerCase();
   switch (type) {
     case PushTypes.incomingCall:
@@ -343,24 +733,16 @@ String? _buildPayload(Map<String, dynamic> data) {
   }
 }
 
-/// Génère un ID unique pour la notification.
-///
-/// **Stratégie** :
-/// - Utilise messageId si disponible
-/// - Sinon utilise timestamp + random pour éviter collisions
-/// - Masque le bit de signe pour garantir positif
 int _generateNotifId(RemoteMessage message) {
   final id = message.messageId ??
       message.data['invite_id']?.toString() ??
       message.data['conversation_id']?.toString();
 
   if (id != null && id.isNotEmpty) {
-    // Hash avec sel pour réduire collisions
     final hash = id.hashCode ^ 0x12345678;
     return hash & 0x7fffffff;
   }
 
-  // Fallback : timestamp + random
   final now = DateTime.now().microsecondsSinceEpoch;
   return (now ^ (now >> 16)) & 0x7fffffff;
 }
@@ -380,6 +762,11 @@ int _generateNotifId(RemoteMessage message) {
 /// PushNotificationService.instance.onPushTap = (data) {
 ///   // Navigation custom
 /// };
+///
+/// // Callback VoIP
+/// PushNotificationService.instance.onVoipAccept = (inviteId, channelName, isVideo) {
+///   // Naviguer vers l'écran d'appel
+/// };
 /// ```
 class PushNotificationService {
   PushNotificationService._();
@@ -396,21 +783,15 @@ class PushNotificationService {
   BuildContext? _context;
 
   /// Callback global pour navigation avancée sur tap.
-  ///
-  /// **Important** :
-  /// - Le callback est appelé avec mounted check automatique
-  /// - Les erreurs dans le callback sont catchées et loggées
   static void Function(Map<String, dynamic> data)? onPushTap;
 
+  /// Callback pour appel VoIP accepté (CallKit)
+  static void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
+
+  /// Callback pour appel VoIP refusé/manqué
+  static void Function(String inviteId)? onVoipDecline;
+
   /// Initialise le service de notifications push.
-  ///
-  /// **Comportement** :
-  /// - Demande les permissions FCM
-  /// - Enregistre le token dans Supabase
-  /// - Configure les listeners foreground/tap
-  /// - Gère le message initial (app launched from notification)
-  ///
-  /// **Idempotent** : Safe to call multiple times.
   Future<void> initialize() async {
     if (_initialized) {
       debugPrint('[PushNotif] ℹ️ Already initialized');
@@ -430,20 +811,32 @@ class PushNotificationService {
     debugPrint('[PushNotif] 🚀 Initializing...');
 
     try {
-      // Demander permissions FCM
+      // Demander permissions FCM (inclut VoIP sur iOS)
       final settings = await _messaging.requestPermission(
         alert: true,
         badge: true,
         sound: true,
         criticalAlert: true,
+        announcement: true,
+        carPlay: false,
       );
       debugPrint('[PushNotif] ✓ FCM permission: ${settings.authorizationStatus}');
 
-      // Android 13+ : permission via LocalNotificationService
+      // Android 13+ : permission notifications via LocalNotificationService
       try {
         await LocalNotificationService.instance.requestPermission();
       } catch (e) {
         debugPrint('[PushNotif] ⚠️ LocalNotificationService permission failed: $e');
+      }
+
+      // Initialiser CallKit (VoIP natif)
+      try {
+        await _VoipCallManager.instance.initialize();
+        _VoipCallManager.instance.onAcceptCall = _handleVoipAccept;
+        _VoipCallManager.instance.onDeclineCall = _handleVoipDecline;
+        debugPrint('[PushNotif] ✓ VoIP CallKit initialized');
+      } catch (e) {
+        debugPrint('[PushNotif] ⚠️ VoIP init failed: $e');
       }
 
       // Enregistrer token
@@ -471,6 +864,9 @@ class PushNotificationService {
         _handleNotificationTap(initialMessage);
       }
 
+      // Synchroniser le badge au démarrage
+      await _BadgeManager.instance.refreshFromDb();
+
       _initialized = true;
       debugPrint('[PushNotif] ✓ Initialized successfully');
     } catch (e, stackTrace) {
@@ -483,11 +879,34 @@ class PushNotificationService {
     }
   }
 
-  /// Appelé quand l'utilisateur se connecte.
-  ///
-  /// **Important** :
-  /// - Cleanup les anciens listeners pour éviter les fuites mémoire
-  /// - Ré-initialise le service
+  /// Handler VoIP : appel accepté depuis CallKit
+  void _handleVoipAccept(String inviteId, String channelName, bool isVideo) {
+    debugPrint('[PushNotif] 📞 VoIP accepted: $inviteId');
+    
+    // Mounted check
+    if (_context != null && !_context!.mounted) {
+      debugPrint('[PushNotif] ⚠️ Accept ignored: context not mounted');
+      return;
+    }
+
+    try {
+      onVoipAccept?.call(inviteId, channelName, isVideo);
+    } catch (e) {
+      debugPrint('[PushNotif] ❌ onVoipAccept callback error: $e');
+    }
+  }
+
+  /// Handler VoIP : appel refusé/manqué
+  void _handleVoipDecline(String inviteId) {
+    debugPrint('[PushNotif] 📞 VoIP declined: $inviteId');
+    
+    try {
+      onVoipDecline?.call(inviteId);
+    } catch (e) {
+      debugPrint('[PushNotif] ❌ onVoipDecline callback error: $e');
+    }
+  }
+
   Future<void> onSignedIn({required String userId}) async {
     if (!_Validators.isValidUid(userId)) {
       debugPrint('[PushNotif] ⚠️ onSignedIn: invalid userId');
@@ -495,24 +914,20 @@ class PushNotificationService {
     }
 
     debugPrint('[PushNotif] 🔐 User signed in: ${_Validators.maskUid(userId)}');
-
-    // Cleanup anciens listeners
     _cleanupListeners();
-
-    // Reset et ré-initialiser
     _initialized = false;
     await initialize();
   }
 
-  /// Appelé quand l'utilisateur se déconnecte.
   Future<void> onSignedOut() async {
     debugPrint('[PushNotif] 🔓 User signed out');
     _cleanupListeners();
     await unregisterToken();
+    await _BadgeManager.instance.sync(0);
+    await _VoipCallManager.instance.endAllCalls();
     _initialized = false;
   }
 
-  /// Cleanup tous les listeners pour éviter les fuites mémoire
   void _cleanupListeners() {
     _tokenRefreshSub?.cancel();
     _tokenRefreshSub = null;
@@ -523,13 +938,36 @@ class PushNotificationService {
     debugPrint('[PushNotif] 🧹 Listeners cleaned up');
   }
 
-  /// Gère les notifications en premier plan
   void _handleForegroundMessage(RemoteMessage message) {
-    // Vérifier si la notification a du contenu visuel
+    final data = message.data;
+    final type = (data['type'] ?? '').toString().toLowerCase();
+
+    // Appel entrant en foreground → CallKit aussi (cohérence)
+    if (type == PushTypes.incomingCall) {
+      debugPrint('[PushNotif] 📞 Foreground incoming call → CallKit');
+      _VoipCallManager.instance.showIncomingCall(
+        inviteId: (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
+        callerName: (data['caller_name'] ?? 'Appel entrant').toString(),
+        callerAvatar: data['caller_avatar']?.toString(),
+        channelName: (data['channel_name'] ?? '').toString(),
+        isVideo: (data['is_video'] ?? 'false') == 'true',
+      );
+      return;
+    }
+
+    // Fin d'appel distante en foreground
+    if (type == PushTypes.callHangup) {
+      final inviteId = (data['invite_id'] ?? '').toString();
+      if (inviteId.isNotEmpty) {
+        _VoipCallManager.instance.endCall(inviteId);
+      }
+      return;
+    }
+
     final hasVisual = message.notification != null ||
-        message.data['title'] != null ||
-        message.data['body'] != null ||
-        message.data['type'] != null;
+        data['title'] != null ||
+        data['body'] != null ||
+        data['type'] != null;
 
     if (!hasVisual) {
       debugPrint('[PushNotif] ⏭️ Foreground ignored (empty): ${message.messageId}');
@@ -537,10 +975,12 @@ class PushNotificationService {
     }
 
     debugPrint('[PushNotif] 📥 Foreground notification: ${message.messageId}');
-    unawaited(_showFromRemoteMessage(message));
+    unawaited(() async {
+      await _showFromRemoteMessage(message);
+      await _BadgeManager.instance.refreshFromDb();
+    });
   }
 
-  /// Gère le tap sur une notification
   void _handleNotificationTap(RemoteMessage message) {
     final data = message.data;
     final type = (data['type'] ?? '').toString();
@@ -548,13 +988,11 @@ class PushNotificationService {
 
     debugPrint('[PushNotif] 👆 Notification tap: type=$type, payload=$payload');
 
-    // Mounted check si context disponible
     if (_context != null && !_context!.mounted) {
       debugPrint('[PushNotif] ⚠️ Tap ignored: context not mounted');
       return;
     }
 
-    // Callback LocalNotificationService
     try {
       LocalNotificationService.instance.onNotificationTap?.call(payload);
     } catch (e, stackTrace) {
@@ -564,7 +1002,6 @@ class PushNotificationService {
       }
     }
 
-    // Callback global onPushTap
     try {
       onPushTap?.call(data);
     } catch (e, stackTrace) {
@@ -573,14 +1010,11 @@ class PushNotificationService {
         debugPrint('[PushNotif] Stack: ${stackTrace.toString().split('\n').first}');
       }
     }
+
+    // Sync badge après ouverture (potentiellement marquée comme lue)
+    unawaited(_BadgeManager.instance.refreshFromDb());
   }
 
-  /// Enregistre le token FCM dans Supabase avec retry.
-  ///
-  /// **Sécurité** :
-  /// - Validation stricte du token et de l'UID
-  /// - Masquage dans les logs (RGPD)
-  /// - Retry automatique sur échec (3 tentatives)
   Future<void> _registerToken() async {
     var attempts = 0;
 
@@ -589,7 +1023,6 @@ class PushNotificationService {
         final token = await _messaging.getToken();
         final uid = SupabaseConfig.currentUser?.id;
 
-        // Validation
         if (token == null || !_Validators.isValidToken(token)) {
           debugPrint('[PushNotif] ⚠️ Invalid or null token');
           return;
@@ -609,16 +1042,16 @@ class PushNotificationService {
                 'platform': defaultTargetPlatform.name,
                 'updated_at': DateTime.now().toUtc().toIso8601String(),
               },
-              onConflict: 'user_id,fcm_token', // Composite key pour éviter conflits
+              onConflict: 'user_id,fcm_token',
             )
             .timeout(_kSupabaseTimeout);
 
         debugPrint('[PushNotif] ✓ Token registered: uid=${_Validators.maskUid(uid)}, '
             'token=${_Validators.maskToken(token)}');
-        return; // Succès
+        return;
       } on TimeoutException {
         attempts++;
-        debugPrint('[PushNotif] ⏱️ Token registration timeout (attempt $attempts/$_kMaxRetries)');
+        debugPrint('[PushNotif] ⏱️ Token registration timeout ($attempts/$_kMaxRetries)');
         if (attempts >= _kMaxRetries) {
           debugPrint('[PushNotif] ❌ Max token registration attempts reached');
           return;
@@ -626,7 +1059,7 @@ class PushNotificationService {
         await Future.delayed(_kRetryDelay);
       } catch (e, stackTrace) {
         attempts++;
-        debugPrint('[PushNotif] ❌ Token registration failed (attempt $attempts/$_kMaxRetries): $e');
+        debugPrint('[PushNotif] ❌ Token registration failed ($attempts/$_kMaxRetries): $e');
         if (kDebugMode && attempts == 1) {
           debugPrint('[PushNotif] Stack: ${stackTrace.toString().split('\n').first}');
         }
@@ -639,11 +1072,6 @@ class PushNotificationService {
     }
   }
 
-  /// Désenregistre le token FCM de Supabase.
-  ///
-  /// **Usage** :
-  /// - Appelé automatiquement sur logout
-  /// - Peut être appelé manuellement si besoin
   Future<void> unregisterToken() async {
     try {
       final token = await _messaging.getToken();
@@ -669,38 +1097,36 @@ class PushNotificationService {
     }
   }
 
-  /// Enregistre un BuildContext pour mounted check dans les callbacks.
-  ///
-  /// **Usage** :
-  /// ```dart
-  /// PushNotificationService.instance.registerContext(context);
-  /// ```
   void registerContext(BuildContext context) {
     _context = context;
   }
 
-  /// Désenregistre le BuildContext.
   void unregisterContext() {
     _context = null;
   }
 
-  /// Dispose le service et cleanup tous les listeners.
-  ///
-  /// **Important** :
-  /// - Appeler dans `dispose()` du widget principal
-  /// - Annule tous les listeners pour éviter les fuites mémoire
+  /// Met à jour manuellement le badge
+  Future<void> updateBadge(int count) async {
+    await _BadgeManager.instance.sync(count);
+  }
+
+  /// Rafraîchit le badge depuis la DB
+  Future<void> refreshBadge() async {
+    await _BadgeManager.instance.refreshFromDb();
+  }
+
   void dispose() {
     debugPrint('[PushNotif] 🗑️ Disposing service');
     _cleanupListeners();
+    _VoipCallManager.instance.dispose();
     onPushTap = null;
+    onVoipAccept = null;
+    onVoipDecline = null;
     _context = null;
     _initialized = false;
     _initializing = false;
   }
 
-  /// Reset le service pour les tests unitaires.
-  ///
-  /// ⚠️ **Usage interne uniquement** (tests unitaires).
   @visibleForTesting
   Future<void> resetForTesting() async {
     debugPrint('[PushNotif] 🔄 Resetting for testing...');
