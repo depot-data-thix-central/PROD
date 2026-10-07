@@ -20,15 +20,16 @@ class LiveSession {
   final String hostName;
   final String? hostAvatarUrl;
   final String? hostDisplayName;
+  final String? coverUrl; // ✅ AJOUTÉ
 
   // Paramètres avancés
   final String? description;
   final String? tags;
-  final String audience; // 'public' | 'followers' | 'private'
+  final String audience;
   final String category;
 
   // État du live
-  final String status; // 'live' | 'ended' | 'cancelled'
+  final String status;
   final int viewerCount;
   final int likeCount;
   final DateTime startedAt;
@@ -41,8 +42,6 @@ class LiveSession {
   // Guests (co-hosts)
   final List<GuestInfo> guests;
 
-  // ✅ CORRECTION : suppression de `const` + lignes vides
-  // Raison : DateTime.now() et [] ne sont pas des expressions const
   LiveSession({
     required this.id,
     required this.channelName,
@@ -51,6 +50,7 @@ class LiveSession {
     required this.hostName,
     this.hostAvatarUrl,
     this.hostDisplayName,
+    this.coverUrl, // ✅ AJOUTÉ
     this.description,
     this.tags,
     this.audience = 'public',
@@ -75,6 +75,7 @@ class LiveSession {
       hostName: map['host_name']?.toString() ?? 'Hôte THIX',
       hostAvatarUrl: map['host_avatar_url']?.toString(),
       hostDisplayName: map['host_display_name']?.toString(),
+      coverUrl: map['cover_url']?.toString(), // ✅ AJOUTÉ
       description: map['description']?.toString(),
       tags: map['tags']?.toString(),
       audience: map['audience']?.toString() ?? 'public',
@@ -113,6 +114,7 @@ class LiveSession {
       'host_name': hostName,
       if (hostAvatarUrl != null) 'host_avatar_url': hostAvatarUrl,
       if (hostDisplayName != null) 'host_display_name': hostDisplayName,
+      if (coverUrl != null) 'cover_url': coverUrl, // ✅ AJOUTÉ
       if (description != null) 'description': description,
       if (tags != null) 'tags': tags,
       'audience': audience,
@@ -146,6 +148,7 @@ class LiveSession {
     String? hostName,
     String? hostAvatarUrl,
     String? hostDisplayName,
+    String? coverUrl, // ✅ AJOUTÉ
     String? description,
     String? tags,
     String? audience,
@@ -167,6 +170,7 @@ class LiveSession {
       hostName: hostName ?? this.hostName,
       hostAvatarUrl: hostAvatarUrl ?? this.hostAvatarUrl,
       hostDisplayName: hostDisplayName ?? this.hostDisplayName,
+      coverUrl: coverUrl ?? this.coverUrl, // ✅ AJOUTÉ
       description: description ?? this.description,
       tags: tags ?? this.tags,
       audience: audience ?? this.audience,
@@ -186,7 +190,6 @@ class LiveSession {
   String toString() =>
       'LiveSession(id: $id, title: $title, status: $status, viewers: $viewerCount, likes: $likeCount)';
 }
-
 // ============================================================================
 // GUEST INFO
 // ============================================================================
