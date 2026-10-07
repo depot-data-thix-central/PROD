@@ -1,22 +1,20 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2)
+//
+// ✅ NOUVEAU : Initialisation VoIP natif (CallKit + sonnerie) avant runApp
+// ✅ NOUVEAU : Badge Realtime Supabase démarré à l'auth, arrêté au logout
+// ✅ NOUVEAU : Callback onVoipAccept câblé pour navigation depuis CallKit
+// ✅ NOUVEAU : Cleanup VoIP sur pause/dispose
+//
+// EXISTANT PRÉSERVÉ :
 //  localeControllerProvider injecté via ProviderScope (fix UnimplementedError)
 //  Coexistence Provider (legacy listeners) + Riverpod
 //  Erreurs UI visibles (plus jamais d'écran gris silencieux)
-// Gardes kIsWeb (Firebase/push non supportés sur Web)
+//  Gardes kIsWeb (Firebase/push non supportés sur Web)
 //  Timeouts sur toutes les initialisations
-//
-// CORRECTIONS APPORTÉES :
-//  Utilisation de ref.watch() au lieu de ref.read() pour écouter les changements de locale
-//  Support RTL automatique pour l'Arabe via Directionality
-// localeListResolutionCallback pour meilleur fallback
-//  Rebuild automatique de MaterialApp lors du changement de langue
 //  CORRECTIF ANR OFFLINE : le catch de runZonedGuarded ne relance plus runApp()
-//    si l'app a déjà démarré — évite le double arbre de widgets / blocage UI
-//    quand une erreur réseau (ex. AuthRetryableFetchException lors du refresh
-//    token en mode offline) remonte hors des try/catch internes.
-//  MODE JOUR FORCÉ : themeMode = ThemeMode.light (ignore le mode sombre du téléphone)
+//  MODE JOUR FORCÉ : themeMode = ThemeMode.light
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -37,7 +35,8 @@ import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
-import 'package:thix_id/services/push_notification_service.dart';
+// ✅ CHANGÉ : import direct de l'implémentation IO pour accéder aux méthodes VoIP bridge
+import 'package:thix_id/services/notifications/push_fcm_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
@@ -60,9 +59,6 @@ void _log(String message) => debugPrint('[MAIN] $message');
 late final LocaleController _localeController;
 
 // ⚠️ CORRECTIF : flag pour savoir si l'app a déjà été lancée avec succès.
-// Empêche le catch global de runZonedGuarded de relancer un second runApp()
-// par-dessus l'app déjà en cours d'exécution (cause du blocage UI/ANR
-// observé en mode offline lors d'erreurs de refresh token non catchables).
 bool _appLaunched = false;
 
 // ============================================================================
@@ -110,11 +106,10 @@ Future<void> main() async {
 
         if (isNetworkAuthError) {
           _log('⚠️ FlutterError network/stream ignored: ${details.exception}');
-          return; // on ne présente pas l'erreur rouge pour ces cas
+          return;
         }
 
         FlutterError.presentError(details);
-        // 🛡️ AJOUT : traque des crashs de l'application
         SecurityReporter.reportClientError(
           source: 'flutter_error',
           message: '${details.exception}',
@@ -134,15 +129,25 @@ Future<void> main() async {
           _log('⚠️ Firebase: $e');
         }
 
-        // ✅ NOUVEAU : Initialiser le service de badge (notifications locales pour le compteur)
+        // ✅ NOUVEAU : Initialiser le service de badge
         try {
           await AppBadgeSyncService.init().timeout(_kInitTimeout);
           _log('✓ Badge sync OK');
         } catch (e) {
           _log('⚠️ Badge sync: $e');
         }
+
+        // ✅ NOUVEAU : Initialiser VoIP natif (CallKit + sonnerie) AVANT runApp
+        // Cela permet au background handler FCM d'afficher CallKit même si
+        // l'app est totalement fermée et que runApp n'a pas encore tourné.
+        try {
+          await PushFcmService.instance.initialize(onOpenRoute: (_) async {});
+          _log('✓ VoIP/Push OK');
+        } catch (e) {
+          _log('⚠️ VoIP/Push init: $e');
+        }
       } else {
-        _log('ℹ️ Web: Firebase push skipped');
+        _log('ℹ️ Web: Firebase/VoIP skipped');
       }
 
       try {
@@ -177,15 +182,10 @@ Future<void> main() async {
         _log('⚠️ Auth: $e');
       }
 
-      // ⚠️ CORRECTIF : on marque l'app comme lancée AVANT runApp,
-      // pour que toute erreur survenant pendant ou après runApp()
-      // (y compris pendant le build initial) soit traitée comme
-      // "post-lancement" par le catch ci-dessous.
       _appLaunched = true;
 
       runApp(
         ProviderScope(
-          // INJECTION : le provider reçoit la vraie instance
           overrides: [
             localeControllerProvider.overrideWith((ref) => _localeController),
           ],
@@ -195,16 +195,12 @@ Future<void> main() async {
       _log('✓ runApp called');
     },
     (error, stack) {
-      // 🛡️ AJOUT : traque des erreurs non interceptées
       SecurityReporter.reportClientError(
         source: 'zone_error',
         message: '$error',
       );
       _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
 
-      // ✅ CORRECTIF FORT : une fois l'app lancée, on ignore complètement
-      // les erreurs réseau de refresh token (cas typique après inactivité / offline).
-      // Ça évite l'ANR "Thix Hub isn't responding" et l'écran rouge inutile.
       final errorStr = error.toString().toLowerCase();
       final isNetworkAuthError = errorStr.contains('authretryablefetchexception') ||
           errorStr.contains('socketexception') ||
@@ -215,10 +211,9 @@ Future<void> main() async {
 
       if (_appLaunched && isNetworkAuthError) {
         _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
-        return; // ← ne fait rien, pas de runApp, pas d'écran d'erreur
+        return;
       }
 
-      // Seulement si l'app n'a JAMAIS réussi à démarrer
       if (!_appLaunched) {
         runApp(MaterialApp(
           theme: ThixPolicy.lightTheme(),
@@ -262,42 +257,39 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     _auth = AuthController.instance;
-
-    // ✅ Observer les changements de locale système
     WidgetsBinding.instance.addObserver(this);
-
     _init();
   }
 
   @override
   void didChangeLocales(List<Locale>? locales) {
-    // ✅ Quand la langue du système change, rafraîchir si on utilise le système
     final localeController = ref.read(localeControllerProvider);
     if (locales != null && locales.isNotEmpty) {
       localeController.refreshSystemLocale(locales);
     }
   }
 
-  // ✅ CORRECTIF : Ajout de la gestion du cycle de vie
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     super.didChangeAppLifecycleState(state);
     _log('Lifecycle: $state');
 
-    // Quand l'app revient au premier plan après inactivité
     if (state == AppLifecycleState.resumed) {
-      // On laisse AuthController gérer (il a déjà des fallbacks offline).
-      // L'important est de ne PAS forcer un refresh token ici.
-      // Si tu as un ConnectivityService, tu peux checker ici et passer
-      // un flag offline à AuthController.
       _log('App resumed → session handled by AuthController (offline-safe)');
+      // ✅ Rafraîchir le badge au retour au premier plan
+      if (!kIsWeb && _pushRegistered) {
+        unawaited(AppBadgeSyncService.refreshNow());
+      }
+    }
+
+    // ✅ Cleanup VoIP si l'app est suspendue (évite sonnerie fantôme)
+    if (state == AppLifecycleState.paused && !kIsWeb) {
+      unawaited(PushFcmService.instance.endAllVoipCalls());
     }
   }
 
   Future<void> _init() async {
-    // Router (les controllers sont déjà initialisés dans main)
     try {
-      // ✅ LIRE le LocaleController depuis le provider (pas de ref.read dans initState)
       final localeController = ref.read(localeControllerProvider);
 
       _router = AppRouter.create(
@@ -310,6 +302,25 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       _log('❌ Router: $e');
     }
 
+    // ✅ Câbler le callback VoIP pour naviguer depuis CallKit
+    if (!kIsWeb) {
+      PushFcmService.instance.onVoipAccept = (inviteId, channelName, isVideo) {
+        _log('📞 VoIP accepted → navigating to call screen');
+        rootNavigatorKey.currentContext?.push(
+          '/call/$inviteId',
+          extra: {
+            'channelName': channelName,
+            'isVideo': isVideo,
+            'isIncoming': true,
+          },
+        );
+      };
+
+      PushFcmService.instance.onVoipDecline = (inviteId) {
+        _log('📞 VoIP declined: $inviteId');
+      };
+    }
+
     // Sync push ↔ auth
     _auth.addListener(_syncPush);
     _syncPush();
@@ -320,36 +331,60 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   }
 
   /// Enregistre / retire le token FCM selon l'état de connexion.
+  /// ✅ NOUVEAU : Démarre/arrête aussi le badge Realtime.
   Future<void> _syncPush() async {
-    if (kIsWeb) return; //  push non géré sur Web
+    if (kIsWeb) return;
 
     final isAuthenticated = _auth.isAuthenticated;
 
     try {
       if (isAuthenticated && !_pushRegistered) {
         _pushRegistered = true;
-        await PushNotificationService.instance.initialize();
+        await PushFcmService.instance.initialize(
+          onOpenRoute: (route) async {
+            if (route != null && route.isNotEmpty) {
+              rootNavigatorKey.currentContext?.push(route);
+            }
+          },
+        );
         _log('✓ Push registered');
+
+        // ✅ Démarrer le badge Realtime Supabase
+        final uid = _auth.userId;
+        if (uid != null && uid.isNotEmpty) {
+          await AppBadgeSyncService.startListening(uid);
+          _log('✓ Badge Realtime started for ${_maskUid(uid)}');
+        }
       } else if (!isAuthenticated && _pushRegistered) {
         _pushRegistered = false;
-        await PushNotificationService.instance.unregisterToken();
-        _log('✓ Push unregistered');
+        await PushFcmService.instance.unregister();
+        await PushFcmService.instance.endAllVoipCalls();
+        AppBadgeSyncService.stopListening();
+        await AppBadgeSyncService.sync(0);
+        _log('✓ Push/Badge unregistered');
       }
     } catch (e) {
-      _log('⚠️ Push: $e');
+      _log('⚠️ Push sync: $e');
     }
   }
+
+  String _maskUid(String uid) =>
+      uid.length <= 8 ? '***' : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
 
   @override
   void dispose() {
     _auth.removeListener(_syncPush);
     WidgetsBinding.instance.removeObserver(this);
+    // ✅ Cleanup VoIP + badge à la destruction
+    if (!kIsWeb) {
+      unawaited(PushFcmService.instance.endAllVoipCalls());
+      AppBadgeSyncService.stopListening();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ CRUCIAL : ref.watch() déclenche un rebuild quand la locale change
     final localeController = ref.watch(localeControllerProvider);
 
     if (!_ready || _router == null) {
@@ -357,7 +392,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
-        themeMode: ThemeMode.light, // mode jour forcé
+        themeMode: ThemeMode.light,
         home: const Scaffold(
           body: Center(child: CircularProgressIndicator()),
         ),
@@ -365,12 +400,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
 
     return app_provider.MultiProvider(
-      //  COMPAT : les 3 listeners globaux legacy utilisent package:provider
       providers: [
         app_provider.ChangeNotifierProvider<AuthController>.value(
           value: _auth,
         ),
-        // ✅ LocaleController est maintenant écouté par Provider aussi
         app_provider.ChangeNotifierProvider<LocaleController>.value(
           value: localeController,
         ),
@@ -383,9 +416,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         debugShowCheckedModeBanner: false,
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
-        themeMode: ThemeMode.light, // mode jour forcé, ignore le sombre système
+        themeMode: ThemeMode.light,
         routerConfig: _router!,
-        // ✅ Utilise la locale du controller écouté
         locale: localeController.locale,
         supportedLocales: LocaleController.supportedLocales,
         localizationsDelegates: const [
@@ -394,11 +426,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        // ✅ Fallback intelligent pour la résolution de locale
         localeListResolutionCallback: (locales, supportedLocales) {
           if (locales != null && locales.isNotEmpty) {
             for (final locale in locales) {
-              // Chercher d'abord une correspondance exacte
               for (final supportedLocale in supportedLocales) {
                 if (supportedLocale.languageCode == locale.languageCode) {
                   return supportedLocale;
@@ -406,11 +436,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
               }
             }
           }
-          // Fallback : première locale supportée (français)
           return supportedLocales.first;
         },
         builder: (context, child) {
-          // ✅ Support RTL automatique pour l'Arabe
           return Directionality(
             textDirection: localeController.textDirection,
             child: NotifBannerListener(
