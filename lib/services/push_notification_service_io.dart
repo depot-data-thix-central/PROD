@@ -1,9 +1,10 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8 (Production)
+// Push Notification Service IO v8.1 (Production)
 // FIX : CallKit gère seul sonnerie + vibration (plus de doublon)
 // FIX : ringtonePath = sonnerie système (pas de fichier res/raw requis)
 // FIX : permission plein écran Android 14+
+// FIX : types like / follow / comment / connection autorisés
 // ============================================================================
 
 import 'dart:async';
@@ -59,6 +60,10 @@ class PushTypes {
   static const String callHangup = 'call_hangup';
   static const String notification = 'notification';
   static const String sos = 'sos';
+  static const String like = 'like';
+  static const String follow = 'follow';
+  static const String comment = 'comment';
+  static const String connection = 'connection';
 
   static const Set<String> allowed = <String>{
     chatMessage,
@@ -66,6 +71,10 @@ class PushTypes {
     callHangup,
     notification,
     sos,
+    like,
+    follow,
+    comment,
+    connection,
   };
 
   static bool isAllowed(String type) => allowed.contains(type);
@@ -454,6 +463,14 @@ String _defaultTitle(String type) {
       return 'Nouveau message';
     case PushTypes.sos:
       return 'Alerte SOS';
+    case PushTypes.like:
+      return 'Nouveau like';
+    case PushTypes.follow:
+      return 'Nouvel abonné';
+    case PushTypes.comment:
+      return 'Nouveau commentaire';
+    case PushTypes.connection:
+      return 'Nouvelle connexion';
     default:
       return 'THIX Hub';
   }
