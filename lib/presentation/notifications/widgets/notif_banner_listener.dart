@@ -1,8 +1,10 @@
 // lib/presentation/notifications/widgets/notif_banner_listener.dart
+//
+// FIX : dépendance à PushFcmService supprimée (service jamais initialisé).
+// La bannière in-app est alimentée par le flux Realtime `notifications`.
 import 'dart:async';
 import 'dart:collection';
 
-import 'package:flutter/foundation.dart'; // ✅ AJOUT : accès à kIsWeb
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -12,7 +14,6 @@ import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/services/notifications/notification_catalog.dart';
-import 'package:thix_id/services/notifications/push_fcm_service.dart';
 
 class NotifBannerListener extends StatefulWidget {
   final Widget child;
@@ -26,7 +27,6 @@ class _NotifBannerListenerState extends State<NotifBannerListener> {
   StreamSubscription<AuthState>? _authSub;
   StreamSubscription<SectionBadgeCounts>? _countsSub;
   StreamSubscription<List<Map<String, dynamic>>>? _notifSub;
-  StreamSubscription<Map<String, dynamic>>? _pushSub;
 
   String? _uid;
   bool _firstLoad = true;
@@ -60,18 +60,11 @@ class _NotifBannerListenerState extends State<NotifBannerListener> {
 
     // 2) Flux notifications → bannière in-app
     _notifSub = NotificationService().streamForUser(uid).listen(_onList);
-
-    // 3) ✅ Push foreground → bannière in-app (MOBILE UNIQUEMENT)
-    // Sur Web : Firebase n'est jamais initialisé, donc on skip
-    if (!kIsWeb) {
-      _pushSub = PushFcmService.instance.foregroundStream.listen(_onPush);
-    }
   }
 
   void _unsubscribe() {
     _countsSub?.cancel();
     _notifSub?.cancel();
-    _pushSub?.cancel();
   }
 
   @override
@@ -103,22 +96,6 @@ class _NotifBannerListenerState extends State<NotifBannerListener> {
       _showBanner(n);
       break; // une bannière à la fois
     }
-  }
-
-  void _onPush(Map<String, dynamic> data) {
-    final id = data['notification_id']?.toString() ??
-        data['id']?.toString() ??
-        '${DateTime.now().millisecondsSinceEpoch}';
-    if (_seen.containsKey(id)) return;
-    _remember(id);
-    _showBanner({
-      'id': id,
-      'title': data['title'] ?? 'THIX',
-      'body': data['body'] ?? '',
-      'type': data['type'],
-      'route': data['route'],
-      'read': false,
-    });
   }
 
   void _remember(String? id) {
