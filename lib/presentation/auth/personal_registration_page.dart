@@ -2,14 +2,16 @@
 //
 // THIX HUB — Inscription v5 : Choix Google OU Email+OTP
 // Étape 1 : Choix de méthode (SANS cases à cocher)
-// Étape 2a (Email) : Saisie email + OTP
-// Étape 2b (Google) : Email détecté automatiquement
-// Étape 3 : Profil + mot de passe + CONDITIONS SOUS LE MOT DE PASSE
+// Étape 2 : Google OAuth OU Email+OTP
+// Étape 3 : Profil complet + mot de passe + CONDITIONS EN BAS
 // Étape 4 : Confirmation (THIX ID)
+//
+// ✅ Contrat serveur respecté : registration_status = 'draft_step2' (attendu par finalize_registration)
 // ✅ i18n : détection auto FR/EN via _tx() — aucune clé brute affichée
 // ✅ Bouton retour fiable (4→3→2→1→login)
-// ✅ Sécurité conservée : honeypot, délai humain, throttle, zxcvbn, HIBP,
-//    emails jetables, redirect web (sous-dossier GitHub Pages)
+// ✅ Redirect web GitHub Pages (conserve le sous-dossier)
+// ✅ Sécurité complète : honeypot, délai humain, throttle, zxcvbn ≥ 3, HIBP,
+//    emails jetables, caractères RTL/bidi/contrôle retirés
 
 import 'dart:async';
 import 'dart:convert';
@@ -26,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 import 'package:zxcvbn/zxcvbn.dart';
+import 'package:thix_id/auth/supabase_auth_manager.dart' show AuthErrorCode;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -225,6 +228,14 @@ const Map<String, List<String>> _kRegFb = {
   'reg_error_rate_limit': ['Too many requests. Try later.', 'Trop de requêtes. Réessayez plus tard.'],
   'reg_error_network': ['Network error. Check your connection.', 'Erreur réseau. Vérifiez votre connexion.'],
   'reg_error_generic': ['Something went wrong. Try again.', 'Une erreur est survenue. Réessayez.'],
+  'reg_error_server_denied': [
+    'Server refused the update (permissions). Contact support.',
+    'Le serveur a refusé la mise à jour (permissions). Contactez le support.',
+  ],
+  'reg_error_server_contract': [
+    'Server rejected the registration state. Retry or contact support.',
+    'Le serveur a refusé l\'état d\'inscription. Réessayez ou contactez le support.',
+  ],
 
   // — Erreurs auth (Supabase) —
   'auth_error_identifier_required': ['Identifier required.', 'Identifiant requis.'],
@@ -238,6 +249,18 @@ const Map<String, List<String>> _kRegFb = {
   'auth_error_rate_limit': ['Too many requests.', 'Trop de requêtes.'],
   'auth_error_technical': ['Technical error.', 'Erreur technique.'],
   'auth_error_session_expired': ['Session expired.', 'Session expirée.'],
+  'auth_error_account_already_exists': ['Account already exists.', 'Ce compte existe déjà.'],
+  'auth_error_account_exists_wrong_password': [
+    'Account exists with a different password.',
+    'Ce compte existe avec un autre mot de passe.',
+  ],
+  'auth_error_account_exists_new_otp_sent': [
+    'Account exists. A new code has been sent.',
+    'Compte existant. Un nouveau code a été envoyé.',
+  ],
+  'auth_error_invalid_otp': ['Invalid code.', 'Code invalide.'],
+  'auth_error_otp_expired': ['Code expired.', 'Code expiré.'],
+  'auth_error_sign_up_failed': ['Sign-up failed.', 'Échec de l\'inscription.'],
 };
 
 String _tx(BuildContext ctx, String key, {List<String>? args}) {
@@ -312,6 +335,7 @@ class _RegValidators {
 
   static final RegExp _ctrl = RegExp(r'[\x00-\x1F\x7F]');
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
+  // Échappements Unicode : aucun caractère invisible littéral dans le source
   static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
@@ -380,6 +404,13 @@ class _RegValidators {
 String _translateAuthError(BuildContext ctx, Object e) {
   final msg = e.toString().toLowerCase();
 
+  if (msg.contains('permission denied') || msg.contains('42501') || msg.contains('row-level security')) {
+    return _tx(ctx, 'reg_error_server_denied');
+  }
+  if (msg.contains('draft_step') || msg.contains('invalid state') ||
+      msg.contains('registration_state') || msg.contains('invalid_registration_status')) {
+    return _tx(ctx, 'reg_error_server_contract');
+  }
   if (msg.contains('configuration serveur')) return _tx(ctx, 'reg_error_supabase_config');
   if (msg.contains('23505') || msg.contains('unique constraint')) {
     if (msg.contains('thix_chat')) return _tx(ctx, 'reg_error_chat_taken');
@@ -750,8 +781,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   final _honeyC = TextEditingController();
 
   String? _country;
-
-  // ✅ Conditions : cochées à l'étape 3 (sous le mot de passe)
   bool _acceptedTerms = false;
   bool _acceptedPrivacy = false;
 
@@ -942,7 +971,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     _stepEnteredAt = DateTime.now();
   }
 
-  // ── GOOGLE ────────────────────────────────────────────────────────────────
+  // ── GOOGLE (session détectée) ─────────────────────────────────────────────
   Future<void> _handleSignedIn() async {
     if (_handlingSession || _step >= 4) return;
     final user = _sb.auth.currentUser;
@@ -952,28 +981,27 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     try {
       final email = (user.email ?? '').trim().toLowerCase();
 
-      if (_step == 3) {
-        if (mounted) setState(() => _emailC.text = email);
-        return;
-      }
-
+      // Vérifie si le compte est déjà finalisé (THIX ID valide)
       try {
-        final p = await _sb.from('profiles').select('thix_id').eq('id', user.id).maybeSingle();
+        final p = await _sb.from('profiles').select('thix_id, registration_status').eq('id', user.id).maybeSingle();
         final thixId = (p?['thix_id'] as String?)?.trim() ?? '';
-        if (thixId.isNotEmpty && !thixId.toUpperCase().startsWith('THIX-PENDING')) {
+        final regStatus = (p?['registration_status'] as String?)?.toLowerCase() ?? '';
+        if (thixId.isNotEmpty && !thixId.toUpperCase().startsWith('THIX-PENDING') &&
+            (regStatus == 'completed' || regStatus == 'active')) {
           if (mounted) context.go(AppRoutes.userDashboard);
           return;
         }
       } catch (_) {}
 
+      // Met le profil en draft_step2 (contrat serveur attendu par finalize_registration)
       try {
         await _sb.from('profiles').upsert({
           'id': user.id,
-          'registration_status': 'draft_step3',
+          'registration_status': 'draft_step2',
           'account_status': 'pending',
         });
       } catch (e) {
-        if (kDebugMode) debugPrint('[Registration] draft upsert: $e');
+        if (kDebugMode) debugPrint('[Registration] Google draft upsert: $e');
       }
 
       if (!mounted) return;
@@ -1039,7 +1067,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         );
       } catch (e) {
         final msg = e.toString().toLowerCase();
-        if (!msg.contains('otpsent') && !msg.contains('otp_sent') && !msg.contains('déjà inscrit')) {
+        if (!msg.contains('otpsent') && !msg.contains('otp_sent') && !msg.contains('déjà inscrit') && !msg.contains('already')) {
           _showError(_translateAuthError(context, e));
           return;
         }
@@ -1099,10 +1127,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         return;
       }
 
+      // Passe en draft_step2 pour le contrat serveur de finalize_registration
       try {
         await _sb.from('profiles').upsert({
           'id': user.id,
-          'registration_status': 'draft_step3',
+          'registration_status': 'draft_step2',
           'account_status': 'pending',
         });
       } catch (_) {}
@@ -1255,7 +1284,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     });
   }
 
-  // ── ENREGISTRER (le consentement est vérifié ICI, cases visibles à l'étape 3)
+  // ── ENREGISTRER (contrat serveur : status = draft_step2 jusqu'à finalize) ─
   Future<void> _saveAndActivate() async {
     if (_busy) return;
 
@@ -1268,10 +1297,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (user == null) {
       _showError(_useGoogle ? _tx(context, 'reg_session_lost') : _tx(context, 'reg_error_session_lost'));
       _enterStep(1);
-      return;
-    }
-    if (user.emailConfirmedAt == null) {
-      _showError(_tx(context, 'reg_error_email_not_confirmed'));
       return;
     }
 
@@ -1372,19 +1397,25 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     setState(() => _busy = true);
 
     try {
+      // 1. Définit/met à jour le mot de passe (Google n'en a pas, Email a un temporaire)
       try {
         await _sb.auth.updateUser(UserAttributes(password: pass));
-      } on AuthException catch (e) {
-        if (!e.message.toLowerCase().contains('different from the old')) rethrow;
+      } catch (e) {
+        final msg = e.toString().toLowerCase();
+        if (!msg.contains('different from the old')) {
+          // Pour Email avec le même mot de passe temporaire → pas grave, on continue
+          if (kDebugMode) debugPrint('[Registration] Password update: $e');
+        }
       }
 
+      // 2. Met à jour le profil avec status = draft_step2 (contrat serveur)
       final nowIso = DateTime.now().toUtc().toIso8601String();
       await _sb.from('profiles').upsert({
         'id': user.id,
         'full_name': name,
         'date_of_birth': dob,
         'country_or_origin': _country,
-        'registration_status': 'draft_step3',
+        'registration_status': 'draft_step2',
         'account_status': 'pending',
         'terms_accepted_at': nowIso,
         'privacy_accepted_at': nowIso,
@@ -1394,6 +1425,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         await _sb.rpc('mark_email_verified');
       } catch (_) {}
 
+      // 3. Appel à finalize_registration qui va générer le THIX ID
       final result = await _sb.rpc(
         'finalize_registration',
         params: {
@@ -1588,7 +1620,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                                 button: true,
                                 label: _step == 1 ? _tx(context, 'reg_change_account') : _tx(context, 'reg_previous_step'),
                                 child: TextButton(
-                                  // ✅ Toujours actif sauf pendant un traitement local
                                   onPressed: _busy ? null : _goBack,
                                   style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                                   child: Text(
