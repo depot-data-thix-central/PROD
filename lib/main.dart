@@ -1,19 +1,14 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.1)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.2)
 //
-// ✅ COMPATIBLE WEB : Toutes les APIs VoIP/Firebase/Badge wrappées dans !kIsWeb
-// ✅ Utilise le stub conditionnel push_notification_service.dart (stub sur Web, io sur mobile)
-// ✅ FIX : AuthController.userId → SupabaseConfig.currentUser?.id
-// ✅ FIX : AppBadgeSyncService RealtimeChannel type error
+// FIX : handler local FCM supprimé → on utilise le vrai handler
+//       (CallKit) exporté par push_notification_service.dart
+// FIX : plus de endAllVoipCalls() quand l'app passe en pause
+// FIX : PushNotificationService.initialize() après Supabase + Auth
 //
-// EXISTANT PRÉSERVÉ INTÉGRALEMENT :
-//  localeControllerProvider injecté via ProviderScope (fix UnimplementedError)
-//  Coexistence Provider (legacy listeners) + Riverpod
-//  Erreurs UI visibles (plus jamais d'écran gris silencieux)
-//  Timeouts sur toutes les initialisations
-//  CORRECTIF ANR OFFLINE : runZonedGuarded ne relance plus runApp()
-//  MODE JOUR FORCÉ : themeMode = ThemeMode.light
+// EXISTANT PRÉSERVÉ : Web safe, Riverpod + Provider, timeouts,
+// runZonedGuarded sans second runApp, mode jour forcé.
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -34,7 +29,8 @@ import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
-// ✅ Stub conditionnel : _stub.dart sur Web (no-op), _io.dart sur mobile (VoIP+FCM)
+// Stub conditionnel : _stub.dart sur Web (no-op), _io.dart sur mobile (VoIP+FCM)
+// Exporte aussi firebaseMessagingBackgroundHandler (vrai handler sur mobile)
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
@@ -54,18 +50,6 @@ void _log(String message) => debugPrint('[MAIN] $message');
 
 late final LocaleController _localeController;
 bool _appLaunched = false;
-
-// ============================================================================
-// BACKGROUND HANDLER FCM (top-level, requis par Firebase)
-// ============================================================================
-
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // Ce handler est enregistré uniquement sur mobile (voir main()).
-  // Sur Web, il n'est jamais référencé donc pas de problème de compilation.
-  await Firebase.initializeApp();
-  debugPrint('[FCM-BG] 🚀 Background message: ${message.messageId}');
-}
 
 // ============================================================================
 // MAIN
@@ -124,11 +108,13 @@ Future<void> main() async {
         _log('❌ FlutterError: ${details.exception}');
       };
 
-      // ── MOBILE ONLY : Firebase + VoIP + Badge ─────────────────────
+      // ── MOBILE ONLY : Firebase + handler background + Badge ───────
       if (!kIsWeb) {
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
-          FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+          // ✅ Vrai handler (CallKit + notifications locales)
+          FirebaseMessaging.onBackgroundMessage(
+              firebaseMessagingBackgroundHandler);
           _log('✓ Firebase OK');
         } catch (e) {
           _log('⚠️ Firebase: $e');
@@ -139,14 +125,6 @@ Future<void> main() async {
           _log('✓ Badge sync OK');
         } catch (e) {
           _log('⚠️ Badge sync: $e');
-        }
-
-        // ✅ VoIP natif (CallKit + sonnerie) — mobile uniquement
-        try {
-          await PushNotificationService.instance.initialize();
-          _log('✓ Push/VoIP OK');
-        } catch (e) {
-          _log('⚠️ Push/VoIP init: $e');
         }
       } else {
         _log('ℹ️ Web: Firebase/VoIP/Badge skipped');
@@ -162,7 +140,9 @@ Future<void> main() async {
 
       // ── Local notifications ────────────────────────────────────────
       try {
-        await LocalNotificationService.instance.initialize().timeout(_kInitTimeout);
+        await LocalNotificationService.instance
+            .initialize()
+            .timeout(_kInitTimeout);
         _log('✓ LocalNotif OK');
       } catch (e) {
         _log('⚠️ LocalNotif: $e');
@@ -185,6 +165,18 @@ Future<void> main() async {
         _log('⚠️ Auth: $e');
       }
 
+      // ── VoIP + Push (après Supabase/Auth : le token a besoin de l'uid) ─
+      if (!kIsWeb) {
+        try {
+          await PushNotificationService.instance
+              .initialize()
+              .timeout(_kInitTimeout);
+          _log('✓ Push/VoIP OK');
+        } catch (e) {
+          _log('⚠️ Push/VoIP init: $e');
+        }
+      }
+
       _appLaunched = true;
 
       runApp(
@@ -198,19 +190,22 @@ Future<void> main() async {
       _log('✓ runApp called');
     },
     (error, stack) {
-      SecurityReporter.reportClientError(source: 'zone_error', message: '$error');
+      SecurityReporter.reportClientError(
+          source: 'zone_error', message: '$error');
       _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
 
       final errorStr = error.toString().toLowerCase();
-      final isNetworkAuthError = errorStr.contains('authretryablefetchexception') ||
-          errorStr.contains('socketexception') ||
-          errorStr.contains('connection reset') ||
-          errorStr.contains('clientexception') ||
-          errorStr.contains('failed host lookup') ||
-          errorStr.contains('network is unreachable');
+      final isNetworkAuthError =
+          errorStr.contains('authretryablefetchexception') ||
+              errorStr.contains('socketexception') ||
+              errorStr.contains('connection reset') ||
+              errorStr.contains('clientexception') ||
+              errorStr.contains('failed host lookup') ||
+              errorStr.contains('network is unreachable');
 
       if (_appLaunched && isNetworkAuthError) {
-        _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
+        _log(
+            '⚠️ Network/Auth error ignored (app already running, likely offline)');
         return;
       }
 
@@ -224,7 +219,8 @@ Future<void> main() async {
                 padding: const EdgeInsets.all(24),
                 child: SelectableText(
                   '❌ Erreur de démarrage :\n$error',
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                  style:
+                      const TextStyle(color: Colors.redAccent, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -276,16 +272,14 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     if (state == AppLifecycleState.resumed) {
       _log('App resumed → session handled by AuthController (offline-safe)');
-      // ✅ Rafraîchir badge au retour premier plan (mobile uniquement)
+      // Rafraîchir badge au retour premier plan (mobile uniquement)
       if (!kIsWeb && _pushRegistered) {
         unawaited(AppBadgeSyncService.refreshNow());
       }
     }
 
-    // ✅ Cleanup VoIP si app suspendue (mobile uniquement)
-    if (state == AppLifecycleState.paused && !kIsWeb) {
-      unawaited(PushNotificationService.instance.endAllVoipCalls());
-    }
+    // ✅ FIX : plus de endAllVoipCalls() sur "paused".
+    // Cela coupait l'appel entrant dès que l'écran se verrouillait.
   }
 
   Future<void> _init() async {
@@ -302,13 +296,18 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       _log('❌ Router: $e');
     }
 
-    // ✅ Câbler callbacks VoIP (MOBILE UNIQUEMENT)
+    // Câbler callbacks VoIP (MOBILE UNIQUEMENT)
     if (!kIsWeb) {
-      PushNotificationService.instance.onVoipAccept = (inviteId, channelName, isVideo) {
+      PushNotificationService.instance.onVoipAccept =
+          (inviteId, channelName, isVideo) {
         _log('📞 VoIP accepted → navigating to call screen');
         rootNavigatorKey.currentContext?.push(
           '/call/$inviteId',
-          extra: {'channelName': channelName, 'isVideo': isVideo, 'isIncoming': true},
+          extra: {
+            'channelName': channelName,
+            'isVideo': isVideo,
+            'isIncoming': true
+          },
         );
       };
       PushNotificationService.instance.onVoipDecline = (inviteId) {
@@ -335,7 +334,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         await PushNotificationService.instance.initialize();
         _log('✓ Push registered');
 
-        // ✅ FIX : currentUser?.id au lieu de _auth.userId
         final uid = SupabaseConfig.currentUser?.id;
         if (uid != null && uid.isNotEmpty) {
           await AppBadgeSyncService.startListening(uid);
@@ -354,16 +352,15 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
   }
 
-  String _maskUid(String uid) =>
-      uid.length <= 8 ? '***' : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
+  String _maskUid(String uid) => uid.length <= 8
+      ? '***'
+      : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
 
   @override
   void dispose() {
     _auth.removeListener(_syncPush);
     WidgetsBinding.instance.removeObserver(this);
-    // ✅ Cleanup VoIP + badge (mobile uniquement)
     if (!kIsWeb) {
-      unawaited(PushNotificationService.instance.endAllVoipCalls());
       AppBadgeSyncService.stopListening();
     }
     super.dispose();
@@ -386,7 +383,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     return app_provider.MultiProvider(
       providers: [
         app_provider.ChangeNotifierProvider<AuthController>.value(value: _auth),
-        app_provider.ChangeNotifierProvider<LocaleController>.value(value: localeController),
+        app_provider.ChangeNotifierProvider<LocaleController>.value(
+            value: localeController),
         app_provider.Provider<ProfileService>(create: (_) => ProfileService()),
       ],
       child: MaterialApp.router(
@@ -408,7 +406,9 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
           if (locales != null && locales.isNotEmpty) {
             for (final locale in locales) {
               for (final supportedLocale in supportedLocales) {
-                if (supportedLocale.languageCode == locale.languageCode) return supportedLocale;
+                if (supportedLocale.languageCode == locale.languageCode) {
+                  return supportedLocale;
+                }
               }
             }
           }
