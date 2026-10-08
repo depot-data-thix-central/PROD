@@ -1,15 +1,13 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v2.1
+// CALL PROVIDER — v2.2
 // ============================================================================
-// Corrections :
-//  ✅ Fin de la boucle de double connexion Agora (cause de l'écran noir) :
-//     le listener de statut ne lance la connexion qu'UNE fois par appel
-//  ✅ acceptIncoming() ne bloque plus pendant toute la connexion Agora
-//  ✅ Échecs : message + raccrochage propre unique (plus de timers en double)
-//  ✅ hangUp() protégé contre les appels simultanés (bouton + fin distante)
-//  ✅ Erreur Agora non fatale pendant un appel établi : n'interrompt plus l'appel
+// Nouveau : le NOM et la PHOTO de l'interlocuteur sont chargés depuis `profiles`
+//           quand l'invitation / la conversation ne les fournit pas
+//           (appelé : l'invitation realtime ne contient ni nom ni photo).
+// Conserve v2.1 : une seule connexion Agora par appel (fin de l'écran noir),
+// acceptIncoming non bloquant, hangUp protégé contre les doubles appels.
 // ============================================================================
 
 import 'dart:async';
@@ -21,6 +19,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/presentation/chat/call/call_peer_profile.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/services/chat/call_service.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
@@ -37,6 +36,7 @@ const int _kMaxRetries = 2;
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxNameLength = 100;
 const int _kMaxChannelLength = 100;
+const String _kPeerPlaceholder = 'Contact THIX';
 
 // ============================================================================
 // VALIDATORS
@@ -75,6 +75,15 @@ class _CallValidators {
     }
     final uid = hash & 0x7fffffff;
     return uid == 0 ? 1 : uid;
+  }
+
+  /// URL http/https uniquement, sinon null.
+  static String? sanitizeAvatar(String? url) {
+    final t = (url ?? '').trim().replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    if (t.isEmpty || t.length > 2048) return null;
+    final u = Uri.tryParse(t);
+    if (u == null || !u.hasAuthority || (u.scheme != 'http' && u.scheme != 'https')) return null;
+    return t;
   }
 }
 
@@ -177,7 +186,7 @@ class CallNotifier extends StateNotifier<CallState> {
   Timer? _ringTimeout;
   StreamSubscription? _statusSub;
   bool _isDisposed = false;
-  bool _agoraJoinStarted = false; // ✅ une seule connexion Agora par appel
+  bool _agoraJoinStarted = false;
   bool _hangingUp = false;
 
   CallNotifier(this._ref, this._media, this._signal) : super(const CallState()) {
@@ -245,6 +254,29 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
+  bool _blankOrPlaceholder(String? s) {
+    final t = (s ?? '').trim();
+    return t.isEmpty || t == _kPeerPlaceholder;
+  }
+
+  /// Complète le NOM et la PHOTO de l'interlocuteur depuis `profiles`
+  /// quand l'invitation ne les contient pas.
+  Future<void> _hydratePeer(String userId) async {
+    if (_isDisposed) return;
+    final needsName = _blankOrPlaceholder(state.remoteName);
+    final needsAvatar = (state.remoteAvatar ?? '').trim().isEmpty;
+    if (!needsName && !needsAvatar) return;
+
+    final peer = await fetchCallPeer(_db, userId);
+    if (_isDisposed || peer == null) return;
+    if (state.remoteUserId != userId) return; // l'appel a changé entre-temps
+
+    state = state.copyWith(
+      remoteName: (needsName && peer.name.isNotEmpty) ? peer.name : null,
+      remoteAvatar: (needsAvatar && peer.avatarUrl != null) ? peer.avatarUrl : null,
+    );
+  }
+
   void _fail(String where, Object e) {
     final msg = _friendlyError(e);
     debugPrint('[CallProvider] ❌ FAIL [$where]: $msg');
@@ -253,7 +285,7 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
-  /// Échec + raccrochage propre UNIQUE (la page d'appel se ferme ensuite).
+  /// Échec + raccrochage propre UNIQUE.
   void _failAndClose(String where, Object e) {
     if (_isDisposed || state.status == CallStatus.failed) return;
     _fail(where, e);
@@ -315,7 +347,7 @@ class CallNotifier extends StateNotifier<CallState> {
         channel: channel,
         uid: _CallValidators.uidFromUuid(myUserId),
       );
-      if (!_isDisposed) state = state.copyWith(); // force un rafraîchissement
+      if (!_isDisposed) state = state.copyWith();
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Local preview failed: $e');
     }
@@ -360,11 +392,12 @@ class CallNotifier extends StateNotifier<CallState> {
         type: type,
         isCaller: true,
         remoteUserId: calleeId,
-        remoteName: sanitizedName,
-        remoteAvatar: calleeAvatar,
+        remoteName: sanitizedName.isEmpty ? _kPeerPlaceholder : sanitizedName,
+        remoteAvatar: _CallValidators.sanitizeAvatar(calleeAvatar),
         conversationId: convId,
         clearError: true,
       );
+      unawaited(_hydratePeer(calleeId)); // nom/photo manquants → chargés depuis profiles
 
       final invite = await _retry(
         () => _signal.startCall(calleeId: calleeId, type: type),
@@ -411,13 +444,11 @@ class CallNotifier extends StateNotifier<CallState> {
       _statusSub?.cancel();
       _statusSub = _signal.watchInviteStatus(watchedInvite).listen((s) async {
         if (_isDisposed) return;
-        // Événement tardif d'un autre appel ou d'un appel terminé : on ignore
         if (state.inviteId != watchedInvite || !state.isActive) return;
 
         if (s == CallStatus.accepted || s == CallStatus.ongoing) {
-          // ✅ CLÉ DU CORRECTIF : markOngoing() provoque une 2e mise à jour
-          // « accepted » en base. Sans ce garde-fou, on rejoignait le canal
-          // Agora une 2e fois, ce qui coupait l'appel (écran noir).
+          // markOngoing() provoque une 2e mise à jour « accepted » : sans ce
+          // garde-fou on rejoignait Agora 2 fois (écran noir).
           if (_agoraJoinStarted) return;
           _ringTimeout?.cancel();
           _stopRingtone();
@@ -472,7 +503,12 @@ class CallNotifier extends StateNotifier<CallState> {
     }
 
     _agoraJoinStarted = false;
-    final sanitizedName = _CallValidators.sanitizeName(callerName ?? invite.callerName);
+    final sanitizedName = _CallValidators.sanitizeName(
+      (callerName ?? '').trim().isNotEmpty ? callerName : invite.callerName,
+    );
+    final avatar = _CallValidators.sanitizeAvatar(
+      (callerAvatar ?? '').trim().isNotEmpty ? callerAvatar : invite.callerAvatar,
+    );
     debugPrint('[CallProvider] 📞 Accepting call ${invite.id} channel=$channelName');
 
     try {
@@ -486,19 +522,19 @@ class CallNotifier extends StateNotifier<CallState> {
         inviteId: invite.id,
         channelName: channelName,
         remoteUserId: invite.callerId,
-        remoteName: sanitizedName,
-        remoteAvatar: callerAvatar ?? invite.callerAvatar,
+        remoteName: sanitizedName.isEmpty ? _kPeerPlaceholder : sanitizedName,
+        remoteAvatar: avatar,
         conversationId: convId,
         clearError: true,
       );
+      unawaited(_hydratePeer(invite.callerId)); // l'invitation realtime ne contient ni nom ni photo
 
       _stopRingtone();
 
       await _retry(() => _signal.accept(invite.id), label: 'accept');
       if (_isDisposed) return;
 
-      // ✅ On ne BLOQUE plus l'écran pendant permission + token + join Agora :
-      // la page d'appel s'ouvre tout de suite (« Connexion… ») et les erreurs
+      // Non bloquant : la page d'appel s'ouvre tout de suite, les erreurs
       // arrivent par l'état (failed).
       unawaited(_joinAgora(myUserId));
     } catch (e) {
@@ -578,7 +614,6 @@ class CallNotifier extends StateNotifier<CallState> {
         },
         onError: _onMediaError,
       );
-      // Le passage à « ongoing » se fait quand l'autre est réellement dans le canal
     } catch (e) {
       debugPrint('[CallProvider] ❌ _joinAgora failed: $e');
       _agoraJoinStarted = false;
@@ -589,7 +624,6 @@ class CallNotifier extends StateNotifier<CallState> {
   void _onMediaError(String err) {
     if (_isDisposed) return;
     debugPrint('[CallProvider] ❌ media onError: $err');
-    // Appel déjà établi : une erreur SDK non fatale ne doit pas le couper
     if (state.status == CallStatus.ongoing || state.status == CallStatus.failed) return;
     _agoraJoinStarted = false;
     _failAndClose('media', err);
