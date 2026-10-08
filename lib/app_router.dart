@@ -594,7 +594,23 @@ class AppRouter {
         GoRoute(path: AppRoutes.callIncoming, name: AppRoutes.callIncomingName, builder: (c, s) => IncomingCallPage(invite: s.extra as CallInvite)),
         GoRoute(path: AppRoutes.callOngoing, name: AppRoutes.callOngoingName, builder: (c, s) => const CallPage()),
         GoRoute(path: AppRoutes.callHistory, name: AppRoutes.callHistoryName, builder: (c, s) => const CallHistoryPage()),
-
+GoRoute(
+  path: '/conversation/:conversationId',
+  name: 'conversationStandalone',
+  pageBuilder: (_, state) => NoTransitionPage(
+    child: ThixChat.ChatScreen(
+      conversationId: state.pathParameters['conversationId']!,
+      conversation: (state.extra as ChatConversation?) ??
+          ChatConversation(
+            id: state.pathParameters['conversationId']!,
+            isGroup: false,
+            participantIds: [],
+            updatedAt: DateTime.now(),
+          ),
+    ),
+  ),
+),
+        
         // === JOBS & OPPORTUNITIES ===
         GoRoute(path: '/opportunities/admin', builder: (context, state) => const OpportunityAdminDashboard()),
         GoRoute(path: '/opportunities/admin/create', builder: (context, state) => const OpportunityAdminPage()),
