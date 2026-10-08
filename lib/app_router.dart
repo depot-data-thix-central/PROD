@@ -410,6 +410,54 @@ class AppRouter {
           final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
           final isLifecycleBlocked = isDeactivated || isPendingDeletion;
 
+redirect: (context, state) {
+        try {
+          final loc = state.matchedLocation;
+          final isLoginPage = loc == AppRoutes.login;
+          final isStartPage = loc == AppRoutes.start;
+          final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+          const accountStatusPath = '/settings/account-status';
+          final isAccountStatusRoute = loc == accountStatusPath;
+
+          // Définition des routes accessibles sans connexion
+          final isPublic = isStartPage ||
+              isLoginPage ||
+              isRegPage ||
+              loc == AppRoutes.publicProfile ||
+              loc == AppRoutes.jobs ||
+              loc == AppRoutes.opportunities ||
+              loc == AppRoutes.education ||
+              loc == AppRoutes.trainingHome ||
+              loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+              loc == AppRoutes.monPays ||
+              loc.startsWith('${AppRoutes.monPays}/') ||
+              loc.startsWith('/thix-event') ||
+              loc.startsWith('/thix-retrouve') ||
+              loc.startsWith('/thix-weeding') ||
+              loc.startsWith('/thix-reservation/delivery');
+
+          final logged = auth.isAuthenticated;
+          final currentUser = auth.currentUser;
+
+          // 1. PAS CONNECTÉ
+          if (!logged) {
+            return isPublic ? null : AppRoutes.login;
+          }
+
+          // 2. CONNECTÉ MAIS PROFIL EN CHARGEMENT (OU HORS-LIGNE)
+          if (currentUser == null) {
+            if (isLoginPage || isStartPage) {
+              return AppRoutes.home;
+            }
+            return null; 
+          }
+
+          // --- ANALYSE DU STATUT DU COMPTE ---
+          final rawLifecycle = currentUser.accountStatus?.toLowerCase();
+          final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
+          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
+          final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+
           // --- ANALYSE DE L'INSCRIPTION ---
           final regStatus = currentUser.registrationStatus?.toLowerCase() ?? '';
           final isRegistrationCompleted = (regStatus == 'active' || regStatus == 'completed');
@@ -449,7 +497,6 @@ class AppRouter {
               !isLoginPage &&
               !isStartPage &&
               !isAccountStatusRoute &&
-              !isNoConnectionRoute &&
               !isRegistrationCompleted &&
               currentUser.registrationStatus != null) {
                 
