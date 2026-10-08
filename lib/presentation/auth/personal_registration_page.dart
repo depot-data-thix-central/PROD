@@ -1,13 +1,15 @@
 // lib/presentation/auth/personal_registration_page.dart
 //
-// THIX HUB — Inscription v4 : Choix Google OU Email+OTP
-// Étape 1 : Choix de méthode + conditions
+// THIX HUB — Inscription v5 : Choix Google OU Email+OTP
+// Étape 1 : Choix de méthode (SANS cases à cocher)
 // Étape 2a (Email) : Saisie email + OTP
 // Étape 2b (Google) : Email détecté automatiquement
-// Étape 3 : Profil complet (nom, DOB, pays, THIX Chat, password)
+// Étape 3 : Profil + mot de passe + CONDITIONS SOUS LE MOT DE PASSE
 // Étape 4 : Confirmation (THIX ID)
-// Sécurité conservée : honeypot, délai humain, throttle, zxcvbn, HIBP
-// ✅ Redirect web = URL de base réelle (sous-dossier GitHub Pages conservé)
+// ✅ i18n : détection auto FR/EN via _tx() — aucune clé brute affichée
+// ✅ Bouton retour fiable (4→3→2→1→login)
+// ✅ Sécurité conservée : honeypot, délai humain, throttle, zxcvbn, HIBP,
+//    emails jetables, redirect web (sous-dossier GitHub Pages)
 
 import 'dart:async';
 import 'dart:convert';
@@ -74,57 +76,58 @@ const Set<String> _kDisposableDomains = {
 };
 
 // ============================================================================
-// i18n
+// i18n — clé l10n d'abord, sinon repli [EN, FR] (détection auto de la langue)
 // ============================================================================
 const Map<String, List<String>> _kRegFb = {
+  // — Générique / UI —
+  'common_or': ['or', 'ou'],
+  'common_select': ['Select', 'Sélectionner'],
+  'common_show_password': ['Show password', 'Afficher le mot de passe'],
+  'common_hide_password': ['Hide password', 'Masquer le mot de passe'],
+  'auth_accept_terms': ['I accept the', 'J\'accepte les'],
+  'auth_terms_required': ['You must accept the terms.', 'Vous devez accepter les conditions.'],
+  'settings_terms': ['Terms of Use', 'Conditions d\'utilisation'],
+  'settings_privacy_policy': ['Privacy Policy', 'Politique de confidentialité'],
+
+  // — Navigation / étapes —
+  'reg_step_of': ['Step {0} of 4', 'Étape {0} sur 4'],
+  'reg_change_account': ['Back to login', 'Retour à la connexion'],
+  'reg_previous_step': ['Previous step', 'Étape précédente'],
+  'reg_go_to_dashboard': ['Go to dashboard', 'Aller au tableau de bord'],
+  'reg_minutes_short': ['min', 'min'],
+  'reg_seconds_short': ['s', 's'],
+
+  // — Étape 1 : méthode —
+  'reg_step1_title': ['Create your account', 'Créez votre compte'],
   'reg_choose_method': ['Choose your sign-up method', 'Choisissez votre méthode d\'inscription'],
   'reg_google_continue': ['Continue with Google', 'Continuer avec Google'],
-  'reg_email_continue': ['Sign up with Email', 'S\'inscrire avec Email'],
   'reg_google_hint': [
     'Your email is detected and verified by Google. No code to type.',
     'Votre email est détecté et vérifié par Google. Aucun code à saisir.',
-  ],
-  'reg_email_hint': [
-    'Enter your email to receive a verification code.',
-    'Entrez votre email pour recevoir un code de vérification.',
   ],
   'reg_google_waiting': [
     'Finish signing in with Google, then come back to the app.',
     'Terminez la connexion avec Google, puis revenez dans l\'application.',
   ],
-  'reg_google_failed': [
-    'Google sign-in failed. Please try again.',
-    'La connexion Google a échoué. Veuillez réessayer.',
-  ],
-  'reg_email_detected': ['Detected email', 'Email détecté'],
-  'reg_save': ['Save', 'Enregistrer'],
-  'reg_saving': ['Saving…', 'Enregistrement…'],
-  'reg_session_lost': [
-    'Your Google session expired. Please sign in again.',
-    'Votre session Google a expiré. Reconnectez-vous.',
-  ],
-  'reg_error_chat_required': ['Choose your THIX Chat.', 'Choisissez votre THIX Chat.'],
-  'reg_error_too_many_attempts': [
-    'Too many attempts. Try again in {0}.',
-    'Trop de tentatives. Réessayez dans {0}.',
-  ],
-  'reg_error_wait_a_moment': ['Please take a moment and try again.', 'Veuillez patienter un instant puis réessayer.'],
-  'reg_error_password_chars': ['Password contains invalid characters.', 'Le mot de passe contient des caractères invalides.'],
-  'reg_error_name_chars': ['Name can only contain letters.', 'Le nom ne peut contenir que des lettres.'],
-  'reg_error_disposable_email': [
-    'Temporary email addresses are not accepted.',
-    'Les adresses email temporaires ne sont pas acceptées.',
-  ],
-  'reg_step_of': ['Step {0} of 4', 'Étape {0} sur 4'],
-  'reg_minutes_short': ['min', 'min'],
-  'reg_step1_title': ['Create your account', 'Créez votre compte'],
+  'reg_google_failed': ['Google sign-in failed. Please try again.', 'La connexion Google a échoué. Veuillez réessayer.'],
+  'reg_email_continue': ['Sign up with Email', 'S\'inscrire avec Email'],
+  'reg_email_hint': ['your.email@example.com', 'votre.email@exemple.com'],
+
+  // — Étape 2 : email + OTP —
   'reg_step2_email_title': ['Verify your email', 'Vérifiez votre email'],
-  'reg_step2_google_title': ['Email verified', 'Email vérifié'],
-  'reg_step3_title': ['Complete your profile', 'Complétez votre profil'],
-  'reg_step3_subtitle': [
-    'Choose your name, THIX Chat and password.',
-    'Choisissez votre nom, THIX Chat et mot de passe.',
+  'reg_step2_email_subtitle': [
+    'We will send you an 8-digit code.',
+    'Nous vous enverrons un code à 8 chiffres.',
   ],
+  'reg_email_label': ['Email address', 'Adresse email'],
+  'reg_otp_label': ['8-digit code', 'Code à 8 chiffres'],
+  'reg_send_otp': ['Send code', 'Envoyer le code'],
+  'reg_sending': ['Sending…', 'Envoi…'],
+  'reg_verify_otp': ['Verify code', 'Vérifier le code'],
+  'reg_verifying': ['Verifying…', 'Vérification…'],
+  'reg_resend_code': ['Resend code', 'Renvoyer le code'],
+  'reg_resend_in': ['Resend in', 'Renvoi dans'],
+  'reg_otp_sent': ['Code sent. Check your inbox.', 'Code envoyé. Vérifiez votre boîte mail.'],
   'reg_otp_notice_title': ['Check your inbox', 'Vérifiez votre boîte mail'],
   'reg_otp_notice_body': [
     'We sent an 8-digit code to {0}. Open your email to find it.',
@@ -134,6 +137,107 @@ const Map<String, List<String>> _kRegFb = {
     'Not there? Check your Spam / Junk folder, and the Promotions tab.',
     'Introuvable ? Regardez dans le dossier Spam / Courrier indésirable et l\'onglet Promotions.',
   ],
+
+  // — Étape 3 : profil —
+  'reg_step3_title': ['Complete your profile', 'Complétez votre profil'],
+  'reg_step3_subtitle': [
+    'Choose your name, THIX Chat and password.',
+    'Choisissez votre nom, THIX Chat et mot de passe.',
+  ],
+  'reg_email_detected': ['Detected email', 'Email détecté'],
+  'reg_full_name_label': ['Full name', 'Nom complet'],
+  'reg_full_name_hint': ['e.g. Amina Diallo', 'ex. Amina Diallo'],
+  'reg_dob_label': ['Date of birth', 'Date de naissance'],
+  'reg_country_label': ['Country of residence', 'Pays de résidence'],
+  'reg_thix_chat_label': ['THIX Chat Username', 'Identifiant THIX Chat'],
+  'reg_thix_chat_hint': ['@username', '@identifiant'],
+  'reg_chat_format_error': [
+    'Format: @name (3-20 chars: a-z, 0-9, . _)',
+    'Format : @nom (3-20 caractères : a-z, 0-9, . _)',
+  ],
+  'reg_chat_reserved_error': ['This username is reserved.', 'Cet identifiant est réservé.'],
+  'reg_chat_taken_error': ['Username already taken.', 'Identifiant déjà pris.'],
+  'reg_chat_available': ['Username available', 'Identifiant disponible'],
+  'reg_password_label': ['Password', 'Mot de passe'],
+  'reg_password_hint': ['Min. 8 characters', 'Min. 8 caractères'],
+  'reg_password_too_short': ['Minimum length:', 'Longueur minimale :'],
+  'reg_password_too_weak': ['Password too weak.', 'Mot de passe trop faible.'],
+  'reg_password_pwned': [
+    'This password was leaked. Choose another.',
+    'Ce mot de passe a fuité. Choisissez-en un autre.',
+  ],
+  'reg_strength_label': ['Password strength', 'Robustesse'],
+  'reg_strength_very_weak': ['Very weak', 'Très faible'],
+  'reg_strength_weak': ['Weak', 'Faible'],
+  'reg_strength_medium': ['Medium', 'Moyenne'],
+  'reg_strength_strong': ['Strong', 'Forte'],
+  'reg_strength_excellent': ['Excellent', 'Excellente'],
+  'reg_confirm_password_label': ['Confirm password', 'Confirmer le mot de passe'],
+  'reg_confirm_password_hint': ['Re-type password', 'Ressaisissez le mot de passe'],
+  'reg_save': ['Save', 'Enregistrer'],
+  'reg_saving': ['Saving…', 'Enregistrement…'],
+
+  // — Étape 4 : confirmation —
+  'reg_congrats': ['Congratulations!', 'Félicitations !'],
+  'reg_welcome_message': ['Welcome aboard', 'Bienvenue à bord'],
+  'reg_id_card_title': ['THIX ID CARD', 'CARTE THIX ID'],
+  'reg_official_thix_id': ['OFFICIAL THIX ID', 'THIX ID OFFICIEL'],
+  'reg_generating': ['Generating…', 'Génération…'],
+  'reg_copy_thix_id': ['Copy THIX ID', 'Copier le THIX ID'],
+  'reg_thix_id_copied': ['THIX ID copied', 'THIX ID copié'],
+  'reg_summary': ['Summary', 'Récapitulatif'],
+  'reg_account_activated': ['Account activated!', 'Compte activé !'],
+
+  // — Erreurs métier —
+  'reg_error_too_many_attempts': ['Too many attempts. Try again in {0}.', 'Trop de tentatives. Réessayez dans {0}.'],
+  'reg_error_wait_a_moment': [
+    'Please take a moment and try again.',
+    'Veuillez patienter un instant puis réessayer.',
+  ],
+  'reg_error_disposable_email': [
+    'Temporary email addresses are not accepted.',
+    'Les adresses email temporaires ne sont pas acceptées.',
+  ],
+  'reg_error_password_chars': [
+    'Password contains invalid characters.',
+    'Le mot de passe contient des caractères invalides.',
+  ],
+  'reg_error_name_chars': ['Name can only contain letters.', 'Le nom ne peut contenir que des lettres.'],
+  'reg_error_chat_required': ['Choose your THIX Chat.', 'Choisissez votre THIX Chat.'],
+  'reg_error_email_invalid': ['Invalid email address.', 'Adresse email invalide.'],
+  'reg_error_otp_format': ['Enter the 8-digit code.', 'Saisissez le code à 8 chiffres.'],
+  'reg_error_email_not_confirmed': ['Email not confirmed.', 'Email non confirmé.'],
+  'reg_error_name_invalid': ['Invalid name.', 'Nom invalide.'],
+  'reg_error_dob_required': ['Date of birth required.', 'Date de naissance requise.'],
+  'reg_error_dob_invalid': ['Invalid date of birth.', 'Date de naissance invalide.'],
+  'reg_error_underage': ['You must be 18 or older.', 'Vous devez avoir 18 ans ou plus.'],
+  'reg_error_country_required': ['Select your country.', 'Sélectionnez votre pays.'],
+  'reg_error_fix_chat': ['Fix the THIX Chat username first.', 'Corrigez d\'abord l\'identifiant THIX Chat.'],
+  'reg_error_chat_format': ['Invalid THIX Chat format.', 'Format THIX Chat invalide.'],
+  'reg_error_passwords_mismatch': ['Passwords do not match.', 'Les mots de passe ne correspondent pas.'],
+  'reg_error_session_lost': ['Session lost. Please start again.', 'Session perdue. Recommencez.'],
+  'reg_session_lost': ['Your Google session expired. Please sign in again.', 'Votre session Google a expiré. Reconnectez-vous.'],
+  'reg_error_supabase_config': ['Server misconfiguration.', 'Configuration serveur incorrecte.'],
+  'reg_error_info_used': ['These details are already in use.', 'Ces informations sont déjà utilisées.'],
+  'reg_error_chat_taken': ['Username already taken.', 'Identifiant déjà pris.'],
+  'reg_error_chat_reserved': ['This username is reserved.', 'Cet identifiant est réservé.'],
+  'reg_error_thix_id_failed': ['Could not generate THIX ID.', 'Impossible de générer le THIX ID.'],
+  'reg_error_rate_limit': ['Too many requests. Try later.', 'Trop de requêtes. Réessayez plus tard.'],
+  'reg_error_network': ['Network error. Check your connection.', 'Erreur réseau. Vérifiez votre connexion.'],
+  'reg_error_generic': ['Something went wrong. Try again.', 'Une erreur est survenue. Réessayez.'],
+
+  // — Erreurs auth (Supabase) —
+  'auth_error_identifier_required': ['Identifier required.', 'Identifiant requis.'],
+  'auth_error_password_required': ['Password required.', 'Mot de passe requis.'],
+  'auth_error_invalid_email': ['Invalid email.', 'Email invalide.'],
+  'auth_error_password_too_short': ['Password too short (min.', 'Mot de passe trop court (min.'],
+  'auth_error_sign_in_failed': ['Sign-in failed.', 'Échec de la connexion.'],
+  'auth_error_email_not_verified': ['Email not verified.', 'Email non vérifié.'],
+  'auth_error_server_misconfiguration': ['Server misconfiguration.', 'Configuration serveur incorrecte.'],
+  'auth_error_network': ['Network error.', 'Erreur réseau.'],
+  'auth_error_rate_limit': ['Too many requests.', 'Trop de requêtes.'],
+  'auth_error_technical': ['Technical error.', 'Erreur technique.'],
+  'auth_error_session_expired': ['Session expired.', 'Session expirée.'],
 };
 
 String _tx(BuildContext ctx, String key, {List<String>? args}) {
@@ -154,7 +258,7 @@ String _tx(BuildContext ctx, String key, {List<String>? args}) {
 
 String _fmtWait(BuildContext ctx, int seconds) {
   if (seconds >= 60) return '${(seconds / 60).ceil()} ${_tx(ctx, 'reg_minutes_short')}';
-  return '$seconds${AppLocalizations.of(ctx).t('reg_seconds_short')}';
+  return '$seconds${_tx(ctx, 'reg_seconds_short')}';
 }
 
 // ============================================================================
@@ -208,13 +312,7 @@ class _RegValidators {
 
   static final RegExp _ctrl = RegExp(r'[\x00-\x1F\x7F]');
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
-  
-  // ✅ Échappements Unicode : aucun caractère invisible littéral dans le source.
-  //    (zero-width space, LRM, RLM, LRE-RLE, LRI-PDI, BOM)
-  static final RegExp _bidi = RegExp(
-    r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
-  );
-  
+  static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
 
@@ -277,29 +375,29 @@ class _RegValidators {
 }
 
 // ============================================================================
-// ERREURS
+// ERREURS (traduction auto FR/EN)
 // ============================================================================
-String _translateAuthError(Object e, AppLocalizations l10n) {
+String _translateAuthError(BuildContext ctx, Object e) {
   final msg = e.toString().toLowerCase();
 
-  if (msg.contains('configuration serveur')) return l10n.t('reg_error_supabase_config');
+  if (msg.contains('configuration serveur')) return _tx(ctx, 'reg_error_supabase_config');
   if (msg.contains('23505') || msg.contains('unique constraint')) {
-    if (msg.contains('thix_chat')) return l10n.t('reg_error_chat_taken');
-    if (msg.contains('thix_id')) return l10n.t('reg_error_thix_id_failed');
-    return l10n.t('reg_error_info_used');
+    if (msg.contains('thix_chat')) return _tx(ctx, 'reg_error_chat_taken');
+    if (msg.contains('thix_id')) return _tx(ctx, 'reg_error_thix_id_failed');
+    return _tx(ctx, 'reg_error_info_used');
   }
   if (msg.contains('invalid_chat') || msg.contains('reserved') || msg.contains('réservé')) {
-    return l10n.t('reg_error_chat_reserved');
+    return _tx(ctx, 'reg_error_chat_reserved');
   }
-  if (msg.contains('chat_taken')) return l10n.t('reg_error_chat_taken');
-  if (msg.contains('thix_id_failed')) return l10n.t('reg_error_thix_id_failed');
-  if (msg.contains('rate limit') || msg.contains('too many')) return l10n.t('reg_error_rate_limit');
+  if (msg.contains('chat_taken')) return _tx(ctx, 'reg_error_chat_taken');
+  if (msg.contains('thix_id_failed')) return _tx(ctx, 'reg_error_thix_id_failed');
+  if (msg.contains('rate limit') || msg.contains('too many')) return _tx(ctx, 'reg_error_rate_limit');
   if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable') || msg.contains('socket')) {
-    return l10n.t('reg_error_network');
+    return _tx(ctx, 'reg_error_network');
   }
 
   debugPrint('[Registration] ⚠️ Unmapped error: $e');
-  return l10n.t('reg_error_generic');
+  return _tx(ctx, 'reg_error_generic');
 }
 
 // ============================================================================
@@ -439,8 +537,6 @@ class _PremiumFieldState extends State<_PremiumField> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -476,7 +572,7 @@ class _PremiumFieldState extends State<_PremiumField> {
                   (widget.isPassword
                       ? Semantics(
                           button: true,
-                          label: _obscured ? l10n.t('common_show_password') : l10n.t('common_hide_password'),
+                          label: _obscured ? _tx(context, 'common_show_password') : _tx(context, 'common_hide_password'),
                           child: IconButton(
                             splashRadius: 20,
                             icon: Icon(
@@ -529,7 +625,6 @@ class _PremiumDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -552,7 +647,7 @@ class _PremiumDropdown extends StatelessWidget {
               enabledBorder: _border(ThixPolicy.border),
               focusedBorder: _border(ThixPolicy.primary, 1.6),
             ),
-            hint: Text(l10n.t('common_select'), style: ThixPolicy.bodySmallStyle),
+            hint: Text(_tx(context, 'common_select'), style: ThixPolicy.bodySmallStyle),
             items: items.map((c) => DropdownMenuItem(value: c, child: Text(c, overflow: TextOverflow.ellipsis))).toList(),
             onChanged: (v) {
               HapticFeedback.selectionClick();
@@ -645,7 +740,6 @@ class PersonalRegistrationPage extends ConsumerStatefulWidget {
 }
 
 class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationPage> {
-  // Controllers
   final _nameC = TextEditingController();
   final _dobC = TextEditingController();
   final _emailC = TextEditingController();
@@ -655,11 +749,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   final _otpC = TextEditingController();
   final _honeyC = TextEditingController();
 
-  // State
   String? _country;
+
+  // ✅ Conditions : cochées à l'étape 3 (sous le mot de passe)
   bool _acceptedTerms = false;
   bool _acceptedPrivacy = false;
-  bool _consentInStep3 = false;
 
   String _thixIdGenerated = '';
   String _otpEmail = '';
@@ -679,7 +773,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   bool _handlingSession = false;
   bool _busy = false;
   int _step = 1;
-  bool _useGoogle = false; // true = Google, false = Email+OTP
+  bool _useGoogle = false;
 
   Timer? _resendTimer;
   int _resendCooldown = 0;
@@ -783,8 +877,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   bool _humanDelayOk(int minSeconds) => DateTime.now().difference(_stepEnteredAt).inSeconds >= minSeconds;
 
-  // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ─────────
-  /// Ex: https://org.github.io/PROD/  (et non https://org.github.io/)
+  // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ──────────────────
   String _webRedirectBase() {
     final base = Uri.base;
     var path = base.path;
@@ -798,15 +891,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return base.origin + path;
   }
 
-  // ── MÉTHODE D'INSCRIPTION ─────────────────────────────────────────────────
+  // ── MÉTHODE D'INSCRIPTION (étape 1 : SANS consentement ici) ───────────────
   Future<void> _chooseGoogle() async {
     if (_busy) return;
     if (_looksLikeBot || !_humanDelayOk(_kMinStep1Seconds)) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
-      return;
-    }
-    if (!_acceptedTerms || !_acceptedPrivacy) {
-      _showError(AppLocalizations.of(context).t('auth_terms_required'));
       return;
     }
 
@@ -822,8 +911,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     try {
       await _sb.auth.signInWithOAuth(
         OAuthProvider.google,
-        // ✅ Web : redirect vers l'URL de base RÉELLE (conserve /REPO/)
-        //    Mobile : deep-link thix://login-callback
         redirectTo: kIsWeb ? _webRedirectBase() : _kOAuthRedirect,
         authScreenLaunchMode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
         queryParams: const {'prompt': 'select_account'},
@@ -846,11 +933,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
-    if (!_acceptedTerms || !_acceptedPrivacy) {
-      _showError(AppLocalizations.of(context).t('auth_terms_required'));
-      return;
-    }
 
+    HapticFeedback.selectionClick();
     setState(() {
       _useGoogle = false;
       _step = 2;
@@ -904,7 +988,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         _googleWaiting = false;
         _emailC.text = email;
         if (_nameC.text.isEmpty && googleName.isNotEmpty) _nameC.text = googleName;
-        _consentInStep3 = !_acceptedTerms || !_acceptedPrivacy;
       });
       _enterStep(3);
     } finally {
@@ -914,7 +997,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   // ── EMAIL + OTP ───────────────────────────────────────────────────────────
   Future<void> _sendOtp() async {
-    final l10n = AppLocalizations.of(context);
     if (_busy || _resendCooldown > 0) return;
 
     if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
@@ -927,7 +1009,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     final email = _RegValidators.sanitize(_emailC.text.trim().toLowerCase(), maxLength: _kMaxEmailLength);
 
     if (!_RegValidators.isValidEmail(email)) {
-      _showError(l10n.t('reg_error_email_invalid'));
+      _showError(_tx(context, 'reg_error_email_invalid'));
       return;
     }
 
@@ -958,7 +1040,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       } catch (e) {
         final msg = e.toString().toLowerCase();
         if (!msg.contains('otpsent') && !msg.contains('otp_sent') && !msg.contains('déjà inscrit')) {
-          _showError(_translateAuthError(e, l10n));
+          _showError(_translateAuthError(context, e));
           return;
         }
       }
@@ -970,14 +1052,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         _otpEmail = email;
       });
       _startResendCooldown();
-      _showSuccess(l10n.t('reg_otp_sent'));
+      _showSuccess(_tx(context, 'reg_otp_sent'));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   Future<void> _verifyOtp() async {
-    final l10n = AppLocalizations.of(context);
     if (_busy) return;
 
     if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
@@ -989,7 +1070,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
     final code = _RegValidators.sanitize(_otpC.text.trim(), maxLength: _kMaxOtpLength);
     if (!RegExp(r'^\d{8}$').hasMatch(code)) {
-      _showError(l10n.t('reg_error_otp_format'));
+      _showError(_tx(context, 'reg_error_otp_format'));
       return;
     }
 
@@ -1014,7 +1095,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
       final user = _sb.auth.currentUser;
       if (user == null) {
-        _showError(l10n.t('reg_error_email_not_confirmed'));
+        _showError(_tx(context, 'reg_error_email_not_confirmed'));
         return;
       }
 
@@ -1026,14 +1107,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         });
       } catch (_) {}
 
-      setState(() {
-        _consentInStep3 = !_acceptedTerms || !_acceptedPrivacy;
-      });
       _enterStep(3);
     } catch (e) {
       await _Throttle.hit('reg_otp_verify', _kMaxOtpFailures, _kOtpLockSeconds);
       if (kDebugMode) debugPrint('[Registration] OTP error: $e');
-      if (mounted) _showError(_translateAuthError(e, l10n));
+      if (mounted) _showError(_translateAuthError(context, e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1058,7 +1136,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   // ── VALIDATION TEMPS RÉEL ─────────────────────────────────────────────────
   Future<void> _onChatChanged(String value) async {
-    final l10n = AppLocalizations.of(context);
     _chatDebounce?.cancel();
     final raw = _RegValidators.sanitize(value.trim().toLowerCase(), maxLength: _kMaxChatLength);
 
@@ -1075,7 +1152,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
     if (!_RegValidators.isValidThixChat(chat)) {
       setState(() {
-        _chatError = l10n.t('reg_chat_format_error');
+        _chatError = _tx(context, 'reg_chat_format_error');
         _chatSuccess = null;
         _chatValidating = false;
       });
@@ -1084,7 +1161,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
     if (_kReservedChats.contains(chat)) {
       setState(() {
-        _chatError = l10n.t('reg_chat_reserved_error');
+        _chatError = _tx(context, 'reg_chat_reserved_error');
         _chatSuccess = null;
         _chatValidating = false;
       });
@@ -1106,12 +1183,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
         if (res != null && res['id']?.toString() != myId) {
           setState(() {
-            _chatError = l10n.t('reg_chat_taken_error');
+            _chatError = _tx(context, 'reg_chat_taken_error');
             _chatValidating = false;
           });
         } else {
           setState(() {
-            _chatSuccess = l10n.t('reg_chat_available');
+            _chatSuccess = _tx(context, 'reg_chat_available');
             _chatValidating = false;
           });
         }
@@ -1124,7 +1201,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   }
 
   Future<void> _onPasswordChanged(String value) async {
-    final l10n = AppLocalizations.of(context);
     _passwordDebounce?.cancel();
     if (value.isEmpty) {
       setState(() {
@@ -1158,13 +1234,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       String? errorMsg;
       switch (result.code) {
         case PasswordErrorCode.tooShort:
-          errorMsg = '${l10n.t('reg_password_too_short')} $_kMinPasswordLength';
+          errorMsg = '${_tx(context, 'reg_password_too_short')} $_kMinPasswordLength';
           break;
         case PasswordErrorCode.tooWeak:
-          errorMsg = l10n.t('reg_password_too_weak');
+          errorMsg = _tx(context, 'reg_password_too_weak');
           break;
         case PasswordErrorCode.pwned:
-          errorMsg = l10n.t('reg_password_pwned');
+          errorMsg = _tx(context, 'reg_password_pwned');
           break;
         case PasswordErrorCode.valid:
           errorMsg = null;
@@ -1179,9 +1255,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     });
   }
 
-  // ── ENREGISTRER ───────────────────────────────────────────────────────────
+  // ── ENREGISTRER (le consentement est vérifié ICI, cases visibles à l'étape 3)
   Future<void> _saveAndActivate() async {
-    final l10n = AppLocalizations.of(context);
     if (_busy) return;
 
     if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
@@ -1191,12 +1266,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
     final user = _sb.auth.currentUser;
     if (user == null) {
-      _showError(_useGoogle ? _tx(context, 'reg_session_lost') : l10n.t('reg_error_session_lost'));
+      _showError(_useGoogle ? _tx(context, 'reg_session_lost') : _tx(context, 'reg_error_session_lost'));
       _enterStep(1);
       return;
     }
     if (user.emailConfirmedAt == null) {
-      _showError(l10n.t('reg_error_email_not_confirmed'));
+      _showError(_tx(context, 'reg_error_email_not_confirmed'));
       return;
     }
 
@@ -1207,7 +1282,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     final confirm = _confirmC.text;
 
     if (name.length < _kMinNameLength || name.length > _kMaxNameLength) {
-      _showError(l10n.t('reg_error_name_invalid'));
+      _showError(_tx(context, 'reg_error_name_invalid'));
       return;
     }
     if (!_RegValidators.isValidName(name)) {
@@ -1216,12 +1291,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
 
     if (dob.isEmpty) {
-      _showError(l10n.t('reg_error_dob_required'));
+      _showError(_tx(context, 'reg_error_dob_required'));
       return;
     }
     final parsed = DateTime.tryParse(dob);
     if (parsed == null) {
-      _showError(l10n.t('reg_error_dob_invalid'));
+      _showError(_tx(context, 'reg_error_dob_invalid'));
       return;
     }
     final today = DateTime.now();
@@ -1229,17 +1304,17 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         parsed.year -
         ((today.month < parsed.month || (today.month == parsed.month && today.day < parsed.day)) ? 1 : 0);
     if (age < _kMinAgeYears || age > _kMaxAgeYears) {
-      _showError(age < _kMinAgeYears ? l10n.t('reg_error_underage') : l10n.t('reg_error_dob_invalid'));
+      _showError(age < _kMinAgeYears ? _tx(context, 'reg_error_underage') : _tx(context, 'reg_error_dob_invalid'));
       return;
     }
 
     if (_country == null) {
-      _showError(l10n.t('reg_error_country_required'));
+      _showError(_tx(context, 'reg_error_country_required'));
       return;
     }
 
     if (_chatError != null) {
-      _showError(l10n.t('reg_error_fix_chat'));
+      _showError(_tx(context, 'reg_error_fix_chat'));
       return;
     }
     final rawChat = _RegValidators.sanitize(_thixChatC.text.trim().toLowerCase(), maxLength: _kMaxChatLength);
@@ -1249,11 +1324,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
     final chat = _RegValidators.normalizeChat(rawChat);
     if (!_RegValidators.isValidThixChat(chat)) {
-      _showError(l10n.t('reg_error_chat_format'));
+      _showError(_tx(context, 'reg_error_chat_format'));
       return;
     }
     if (_kReservedChats.contains(chat)) {
-      _showError(l10n.t('reg_chat_reserved_error'));
+      _showError(_tx(context, 'reg_chat_reserved_error'));
       return;
     }
 
@@ -1266,26 +1341,27 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (!passResult.isValid) {
       switch (passResult.code) {
         case PasswordErrorCode.tooShort:
-          _showError('${l10n.t('reg_password_too_short')} $_kMinPasswordLength');
+          _showError('${_tx(context, 'reg_password_too_short')} $_kMinPasswordLength');
           break;
         case PasswordErrorCode.tooWeak:
-          _showError(l10n.t('reg_password_too_weak'));
+          _showError(_tx(context, 'reg_password_too_weak'));
           break;
         case PasswordErrorCode.pwned:
-          _showError(l10n.t('reg_password_pwned'));
+          _showError(_tx(context, 'reg_password_pwned'));
           break;
         default:
-          _showError(l10n.t('reg_error_generic'));
+          _showError(_tx(context, 'reg_error_generic'));
       }
       return;
     }
     if (pass != confirm) {
-      _showError(l10n.t('reg_error_passwords_mismatch'));
+      _showError(_tx(context, 'reg_error_passwords_mismatch'));
       return;
     }
 
+    // ✅ Consentement : cases cochées à l'étape 3 (sous le mot de passe)
     if (!_acceptedTerms || !_acceptedPrivacy) {
-      _showError(l10n.t('auth_terms_required'));
+      _showError(_tx(context, 'auth_terms_required'));
       return;
     }
 
@@ -1360,10 +1436,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         _thixChatC.text = claimedChat;
       });
       _enterStep(4);
-      _showSuccess(l10n.t('reg_account_activated'));
+      _showSuccess(_tx(context, 'reg_account_activated'));
     } catch (e) {
       if (kDebugMode) debugPrint('[Registration] Activation error: $e');
-      if (mounted) _showError(_translateAuthError(e, l10n));
+      if (mounted) _showError(_translateAuthError(context, e));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1393,31 +1469,44 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
+  // ── RETOUR FIABLE : 4→3→2→1→login ─────────────────────────────────────────
   Future<void> _goBack() async {
+    if (_busy) return;
     HapticFeedback.selectionClick();
-    if (_step == 3 && _useGoogle) {
-      setState(() => _busy = true);
-      try {
-        await ref.read(authControllerProvider.notifier).signOut();
-      } catch (_) {}
-      if (!mounted) return;
-      _passwordC.clear();
-      _confirmC.clear();
-      setState(() {
-        _busy = false;
-        _googleWaiting = false;
-        _emailC.clear();
-      });
-      _enterStep(1);
-    } else if (_step == 2 || (_step == 3 && !_useGoogle)) {
-      _enterStep(_step - 1);
-    } else {
-      if (_sb.auth.currentUser != null) {
-        try {
-          await ref.read(authControllerProvider.notifier).signOut();
-        } catch (_) {}
-      }
-      if (mounted) context.go(AppRoutes.login);
+
+    switch (_step) {
+      case 4:
+        return;
+      case 3:
+        if (_useGoogle) {
+          setState(() => _busy = true);
+          try {
+            await ref.read(authControllerProvider.notifier).signOut();
+          } catch (_) {}
+          if (!mounted) return;
+          _passwordC.clear();
+          _confirmC.clear();
+          _emailC.clear();
+          setState(() {
+            _busy = false;
+            _googleWaiting = false;
+          });
+          _enterStep(1);
+        } else {
+          _enterStep(2);
+        }
+        return;
+      case 2:
+        _enterStep(1);
+        return;
+      default:
+        if (_sb.auth.currentUser != null) {
+          try {
+            await ref.read(authControllerProvider.notifier).signOut();
+          } catch (_) {}
+        }
+        if (mounted) context.go(AppRoutes.login);
+        return;
     }
   }
 
@@ -1434,7 +1523,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   // ── BUILD ─────────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final isLoading = ref.watch(authControllerProvider).isLoading || _busy;
 
     return Scaffold(
@@ -1468,7 +1556,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _buildTopBar(l10n),
+                      _buildTopBar(),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(ThixPolicy.s24, ThixPolicy.s8, ThixPolicy.s24, ThixPolicy.s24),
                         child: Column(
@@ -1488,22 +1576,23 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                                 switchOutCurve: Curves.easeInCubic,
                                 child: KeyedSubtree(
                                   key: ValueKey(_step),
-                                  child: _buildStepContent(l10n),
+                                  child: _buildStepContent(),
                                 ),
                               ),
                             ),
                             const SizedBox(height: ThixPolicy.s20),
-                            _buildMainButton(isLoading, l10n),
+                            _buildMainButton(isLoading),
                             const SizedBox(height: ThixPolicy.s8),
                             if (_step < 4)
                               Semantics(
                                 button: true,
-                                label: _step == 1 ? l10n.t('reg_change_account') : l10n.t('reg_previous_step'),
+                                label: _step == 1 ? _tx(context, 'reg_change_account') : _tx(context, 'reg_previous_step'),
                                 child: TextButton(
-                                  onPressed: isLoading ? null : _goBack,
+                                  // ✅ Toujours actif sauf pendant un traitement local
+                                  onPressed: _busy ? null : _goBack,
                                   style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                                   child: Text(
-                                    _step == 1 ? l10n.t('reg_change_account') : l10n.t('reg_previous_step'),
+                                    _step == 1 ? _tx(context, 'reg_change_account') : _tx(context, 'reg_previous_step'),
                                     style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
                                   ),
                                 ),
@@ -1523,7 +1612,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  Widget _buildTopBar(AppLocalizations l10n) {
+  Widget _buildTopBar() {
     return Padding(
       padding: const EdgeInsets.fromLTRB(ThixPolicy.s24, ThixPolicy.s20, ThixPolicy.s24, ThixPolicy.s12),
       child: Column(
@@ -1584,17 +1673,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     );
   }
 
-  Widget _buildStepContent(AppLocalizations l10n) {
+  Widget _buildStepContent() {
     switch (_step) {
       case 1:
         return _Step1Method(
           waiting: _googleWaiting,
-          acceptedTerms: _acceptedTerms,
-          acceptedPrivacy: _acceptedPrivacy,
-          onAcceptedTermsChanged: (v) => setState(() => _acceptedTerms = v ?? false),
-          onAcceptedPrivacyChanged: (v) => setState(() => _acceptedPrivacy = v ?? false),
-          onOpenTerms: () => _openPolicy('terms'),
-          onOpenPrivacy: () => _openPolicy('privacy'),
           onChooseGoogle: _chooseGoogle,
           onChooseEmail: _chooseEmail,
         );
@@ -1629,7 +1712,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           chatError: _chatError,
           chatSuccess: _chatSuccess,
           chatValidating: _chatValidating,
-          showConsent: _consentInStep3,
           acceptedTerms: _acceptedTerms,
           acceptedPrivacy: _acceptedPrivacy,
           onAcceptedTermsChanged: (v) => setState(() => _acceptedTerms = v ?? false),
@@ -1649,7 +1731,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
           onCopyId: () {
             HapticFeedback.mediumImpact();
             Clipboard.setData(ClipboardData(text: _thixIdGenerated));
-            _showSuccess(l10n.t('reg_thix_id_copied'));
+            _showSuccess(_tx(context, 'reg_thix_id_copied'));
           },
         );
       default:
@@ -1657,23 +1739,19 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  Widget _buildMainButton(bool isLoading, AppLocalizations l10n) {
+  Widget _buildMainButton(bool isLoading) {
     String label;
     VoidCallback? onPressed;
     IconData? icon;
 
     switch (_step) {
-      case 1:
-        label = '';
-        onPressed = null;
-        break;
       case 2:
         if (_otpSent) {
-          label = isLoading ? l10n.t('reg_verifying') : l10n.t('reg_verify_otp');
+          label = isLoading ? _tx(context, 'reg_verifying') : _tx(context, 'reg_verify_otp');
           onPressed = _verifyOtp;
           icon = Icons.check_rounded;
         } else {
-          label = isLoading ? l10n.t('reg_sending') : l10n.t('reg_send_otp');
+          label = isLoading ? _tx(context, 'reg_sending') : _tx(context, 'reg_send_otp');
           onPressed = _sendOtp;
           icon = Icons.send_rounded;
         }
@@ -1684,16 +1762,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         icon = Icons.check_rounded;
         break;
       case 4:
-        label = l10n.t('reg_go_to_dashboard');
+        label = _tx(context, 'reg_go_to_dashboard');
         onPressed = _goToDashboard;
         icon = Icons.arrow_forward_rounded;
         break;
       default:
-        label = '';
-        onPressed = null;
+        return const SizedBox.shrink();
     }
-
-    if (_step == 1) return const SizedBox.shrink();
 
     return Semantics(
       button: true,
@@ -1752,36 +1827,21 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 }
 
 // ============================================================================
-// SOUS-WIDGETS
+// ÉTAPE 1 — Choix de méthode (SANS cases à cocher)
 // ============================================================================
 class _Step1Method extends StatelessWidget {
   final bool waiting;
-  final bool acceptedTerms;
-  final bool acceptedPrivacy;
-  final ValueChanged<bool?> onAcceptedTermsChanged;
-  final ValueChanged<bool?> onAcceptedPrivacyChanged;
-  final VoidCallback onOpenTerms;
-  final VoidCallback onOpenPrivacy;
   final VoidCallback onChooseGoogle;
   final VoidCallback onChooseEmail;
 
   const _Step1Method({
     required this.waiting,
-    required this.acceptedTerms,
-    required this.acceptedPrivacy,
-    required this.onAcceptedTermsChanged,
-    required this.onAcceptedPrivacyChanged,
-    required this.onOpenTerms,
-    required this.onOpenPrivacy,
     required this.onChooseGoogle,
     required this.onChooseEmail,
   });
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final canProceed = acceptedTerms && acceptedPrivacy;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1790,15 +1850,14 @@ class _Step1Method extends StatelessWidget {
         Text(_tx(context, 'reg_choose_method'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
 
-        // Bouton Google
         Semantics(
           button: true,
           label: _tx(context, 'reg_google_continue'),
-          enabled: canProceed && !waiting,
+          enabled: !waiting,
           child: SizedBox(
             height: 54,
             child: OutlinedButton.icon(
-              onPressed: canProceed && !waiting ? onChooseGoogle : null,
+              onPressed: !waiting ? onChooseGoogle : null,
               icon: const Icon(Icons.account_circle_outlined, size: 22),
               label: Flexible(
                 child: Text(
@@ -1809,7 +1868,7 @@ class _Step1Method extends StatelessWidget {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: ThixPolicy.textMain,
-                side: BorderSide(color: canProceed ? ThixPolicy.border : ThixPolicy.border.withOpacity(0.5)),
+                side: BorderSide(color: ThixPolicy.border),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
               ),
             ),
@@ -1824,14 +1883,13 @@ class _Step1Method extends StatelessWidget {
 
         const SizedBox(height: ThixPolicy.s20),
 
-        // Séparateur
         Row(
           children: [
             const Expanded(child: Divider(color: ThixPolicy.border)),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               child: Text(
-                l10n.t('common_or'),
+                _tx(context, 'common_or'),
                 style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: ThixPolicy.semiBold),
               ),
             ),
@@ -1841,15 +1899,14 @@ class _Step1Method extends StatelessWidget {
 
         const SizedBox(height: ThixPolicy.s20),
 
-        // Bouton Email
         Semantics(
           button: true,
           label: _tx(context, 'reg_email_continue'),
-          enabled: canProceed && !waiting,
+          enabled: !waiting,
           child: SizedBox(
             height: 54,
             child: OutlinedButton.icon(
-              onPressed: canProceed && !waiting ? onChooseEmail : null,
+              onPressed: !waiting ? onChooseEmail : null,
               icon: const Icon(Icons.email_outlined, size: 22),
               label: Flexible(
                 child: Text(
@@ -1860,7 +1917,7 @@ class _Step1Method extends StatelessWidget {
               ),
               style: OutlinedButton.styleFrom(
                 foregroundColor: ThixPolicy.textMain,
-                side: BorderSide(color: canProceed ? ThixPolicy.border : ThixPolicy.border.withOpacity(0.5)),
+                side: BorderSide(color: ThixPolicy.border),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
               ),
             ),
@@ -1896,33 +1953,14 @@ class _Step1Method extends StatelessWidget {
             ),
           ),
         ],
-
-        const SizedBox(height: ThixPolicy.s20),
-        const Divider(color: ThixPolicy.border, height: 1),
-        const SizedBox(height: ThixPolicy.s12),
-
-        _ConsentCheckboxRow(
-          value: acceptedTerms,
-          onChanged: onAcceptedTermsChanged,
-          prefixText: l10n.t('auth_accept_terms'),
-          linkText: l10n.t('settings_terms'),
-          onLinkTap: onOpenTerms,
-          semanticsLabel: l10n.t('settings_terms'),
-        ),
-        const SizedBox(height: ThixPolicy.s6),
-        _ConsentCheckboxRow(
-          value: acceptedPrivacy,
-          onChanged: onAcceptedPrivacyChanged,
-          prefixText: l10n.t('auth_accept_terms'),
-          linkText: l10n.t('settings_privacy_policy'),
-          onLinkTap: onOpenPrivacy,
-          semanticsLabel: l10n.t('settings_privacy_policy'),
-        ),
       ],
     );
   }
 }
 
+// ============================================================================
+// CASE À COCHER + LIEN POLITIQUE
+// ============================================================================
 class _ConsentCheckboxRow extends StatefulWidget {
   final bool value;
   final ValueChanged<bool?> onChanged;
@@ -2006,6 +2044,9 @@ class _ConsentCheckboxRowState extends State<_ConsentCheckboxRow> {
   }
 }
 
+// ============================================================================
+// ÉTAPE 2 — Email + OTP
+// ============================================================================
 class _Step2Email extends StatelessWidget {
   final TextEditingController emailC;
   final TextEditingController otpC;
@@ -2029,7 +2070,6 @@ class _Step2Email extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final canResend = !isLoading && resendCountdown == 0;
 
     return Column(
@@ -2037,12 +2077,12 @@ class _Step2Email extends StatelessWidget {
       children: [
         Text(_tx(context, 'reg_step2_email_title'), style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primaryDeep)),
         const SizedBox(height: ThixPolicy.s6),
-        Text(l10n.t('reg_step2_email_subtitle'), style: ThixPolicy.bodySmallStyle),
+        Text(_tx(context, 'reg_step2_email_subtitle'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
 
         _PremiumField(
-          label: l10n.t('reg_email_label'),
-          hint: l10n.t('reg_email_hint'),
+          label: _tx(context, 'reg_email_label'),
+          hint: _tx(context, 'reg_email_hint'),
           icon: Icons.email_outlined,
           controller: emailC,
           keyboardType: TextInputType.emailAddress,
@@ -2057,7 +2097,7 @@ class _Step2Email extends StatelessWidget {
           _OtpNoticeBanner(email: otpEmail),
           const SizedBox(height: ThixPolicy.s20),
           _PremiumField(
-            label: l10n.t('reg_otp_label'),
+            label: _tx(context, 'reg_otp_label'),
             hint: '00000000',
             icon: Icons.confirmation_number_outlined,
             controller: otpC,
@@ -2069,18 +2109,18 @@ class _Step2Email extends StatelessWidget {
           const SizedBox(height: ThixPolicy.s16),
           Semantics(
             button: true,
-            label: l10n.t('reg_resend_code'),
+            label: _tx(context, 'reg_resend_code'),
             enabled: canResend,
             child: SizedBox(
               height: 50,
               child: OutlinedButton.icon(
                 onPressed: canResend ? onSendOtp : null,
-                icon: Icon(isOtpSent ? Icons.refresh_rounded : Icons.send_rounded, size: 20),
+                icon: const Icon(Icons.refresh_rounded, size: 20),
                 label: Flexible(
                   child: Text(
                     !canResend && resendCountdown > 0
-                        ? '${l10n.t('reg_resend_in')} $resendCountdown${l10n.t('reg_seconds_short')}'
-                        : l10n.t('reg_resend_code'),
+                        ? '${_tx(context, 'reg_resend_in')} $resendCountdown${_tx(context, 'reg_seconds_short')}'
+                        : _tx(context, 'reg_resend_code'),
                     overflow: TextOverflow.ellipsis,
                     style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
                   ),
@@ -2099,6 +2139,9 @@ class _Step2Email extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// ÉTAPE 3 — Profil + mot de passe + CONDITIONS EN BAS
+// ============================================================================
 class _Step3Profile extends StatelessWidget {
   final TextEditingController emailC;
   final TextEditingController nameC;
@@ -2118,7 +2161,6 @@ class _Step3Profile extends StatelessWidget {
   final String? chatError;
   final String? chatSuccess;
   final bool chatValidating;
-  final bool showConsent;
   final bool acceptedTerms;
   final bool acceptedPrivacy;
   final ValueChanged<bool?> onAcceptedTermsChanged;
@@ -2146,7 +2188,6 @@ class _Step3Profile extends StatelessWidget {
     required this.chatError,
     required this.chatSuccess,
     required this.chatValidating,
-    required this.showConsent,
     required this.acceptedTerms,
     required this.acceptedPrivacy,
     required this.onAcceptedTermsChanged,
@@ -2172,18 +2213,18 @@ class _Step3Profile extends StatelessWidget {
     }
   }
 
-  String _scoreLabel(int score, AppLocalizations l10n) {
+  String _scoreLabel(int score, BuildContext ctx) {
     switch (score) {
       case 0:
-        return l10n.t('reg_strength_very_weak');
+        return _tx(ctx, 'reg_strength_very_weak');
       case 1:
-        return l10n.t('reg_strength_weak');
+        return _tx(ctx, 'reg_strength_weak');
       case 2:
-        return l10n.t('reg_strength_medium');
+        return _tx(ctx, 'reg_strength_medium');
       case 3:
-        return l10n.t('reg_strength_strong');
+        return _tx(ctx, 'reg_strength_strong');
       case 4:
-        return l10n.t('reg_strength_excellent');
+        return _tx(ctx, 'reg_strength_excellent');
       default:
         return '';
     }
@@ -2191,7 +2232,6 @@ class _Step3Profile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     final bars = passwordScore < 0 ? 0 : (passwordScore == 0 ? 1 : passwordScore);
 
     return Column(
@@ -2203,7 +2243,7 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s24),
 
         _PremiumField(
-          label: useGoogle ? _tx(context, 'reg_email_detected') : l10n.t('reg_email_label'),
+          label: useGoogle ? _tx(context, 'reg_email_detected') : _tx(context, 'reg_email_label'),
           icon: Icons.email_outlined,
           controller: emailC,
           readOnly: true,
@@ -2212,8 +2252,8 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumField(
-          label: l10n.t('reg_full_name_label'),
-          hint: l10n.t('reg_full_name_hint'),
+          label: _tx(context, 'reg_full_name_label'),
+          hint: _tx(context, 'reg_full_name_hint'),
           icon: Icons.person_outline_rounded,
           controller: nameC,
           maxLength: _kMaxNameLength,
@@ -2223,7 +2263,7 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumField(
-          label: l10n.t('reg_dob_label'),
+          label: _tx(context, 'reg_dob_label'),
           hint: 'AAAA-MM-JJ',
           icon: Icons.calendar_today_rounded,
           controller: dobC,
@@ -2234,7 +2274,7 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumDropdown(
-          label: l10n.t('reg_country_label'),
+          label: _tx(context, 'reg_country_label'),
           icon: Icons.public_rounded,
           value: country,
           items: countries,
@@ -2243,8 +2283,8 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumField(
-          label: l10n.t('reg_thix_chat_label'),
-          hint: l10n.t('reg_thix_chat_hint'),
+          label: _tx(context, 'reg_thix_chat_label'),
+          hint: _tx(context, 'reg_thix_chat_hint'),
           icon: Icons.alternate_email_rounded,
           controller: thixChatC,
           onChanged: onChatChanged,
@@ -2264,8 +2304,8 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumField(
-          label: l10n.t('reg_password_label'),
-          hint: l10n.t('reg_password_hint'),
+          label: _tx(context, 'reg_password_label'),
+          hint: _tx(context, 'reg_password_hint'),
           icon: Icons.lock_outline_rounded,
           controller: passwordC,
           isPassword: true,
@@ -2300,15 +2340,15 @@ class _Step3Profile extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            '${l10n.t('reg_strength_label')}: ${_scoreLabel(passwordScore, l10n)}',
+            '${_tx(context, 'reg_strength_label')}: ${_scoreLabel(passwordScore, context)}',
             style: ThixPolicy.captionStyle.copyWith(color: _scoreColor(passwordScore), fontWeight: ThixPolicy.medium),
           ),
         ],
         const SizedBox(height: ThixPolicy.s16),
 
         _PremiumField(
-          label: l10n.t('reg_confirm_password_label'),
-          hint: l10n.t('reg_confirm_password_hint'),
+          label: _tx(context, 'reg_confirm_password_label'),
+          hint: _tx(context, 'reg_confirm_password_hint'),
           icon: Icons.lock_outline_rounded,
           controller: confirmC,
           isPassword: true,
@@ -2316,33 +2356,35 @@ class _Step3Profile extends StatelessWidget {
           autofillHints: const [AutofillHints.newPassword],
         ),
 
-        if (showConsent) ...[
-          const SizedBox(height: ThixPolicy.s20),
-          const Divider(color: ThixPolicy.border, height: 1),
-          const SizedBox(height: ThixPolicy.s12),
-          _ConsentCheckboxRow(
-            value: acceptedTerms,
-            onChanged: onAcceptedTermsChanged,
-            prefixText: l10n.t('auth_accept_terms'),
-            linkText: l10n.t('settings_terms'),
-            onLinkTap: onOpenTerms,
-            semanticsLabel: l10n.t('settings_terms'),
-          ),
-          const SizedBox(height: ThixPolicy.s6),
-          _ConsentCheckboxRow(
-            value: acceptedPrivacy,
-            onChanged: onAcceptedPrivacyChanged,
-            prefixText: l10n.t('auth_accept_terms'),
-            linkText: l10n.t('settings_privacy_policy'),
-            onLinkTap: onOpenPrivacy,
-            semanticsLabel: l10n.t('settings_privacy_policy'),
-          ),
-        ],
+        // ✅ CONDITIONS SOUS LE MOT DE PASSE (toujours visibles à l'étape 3)
+        const SizedBox(height: ThixPolicy.s20),
+        const Divider(color: ThixPolicy.border, height: 1),
+        const SizedBox(height: ThixPolicy.s12),
+        _ConsentCheckboxRow(
+          value: acceptedTerms,
+          onChanged: onAcceptedTermsChanged,
+          prefixText: _tx(context, 'auth_accept_terms'),
+          linkText: _tx(context, 'settings_terms'),
+          onLinkTap: onOpenTerms,
+          semanticsLabel: _tx(context, 'settings_terms'),
+        ),
+        const SizedBox(height: ThixPolicy.s6),
+        _ConsentCheckboxRow(
+          value: acceptedPrivacy,
+          onChanged: onAcceptedPrivacyChanged,
+          prefixText: _tx(context, 'auth_accept_terms'),
+          linkText: _tx(context, 'settings_privacy_policy'),
+          onLinkTap: onOpenPrivacy,
+          semanticsLabel: _tx(context, 'settings_privacy_policy'),
+        ),
       ],
     );
   }
 }
 
+// ============================================================================
+// ÉTAPE 4 — Confirmation
+// ============================================================================
 class _Step4Final extends StatelessWidget {
   final String thixId;
   final String thixChat;
@@ -2364,8 +2406,6 @@ class _Step4Final extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -2378,13 +2418,13 @@ class _Step4Final extends StatelessWidget {
         ),
         const SizedBox(height: ThixPolicy.s16),
         Text(
-          l10n.t('reg_congrats'),
+          _tx(context, 'reg_congrats'),
           textAlign: TextAlign.center,
           style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.primaryDeep, fontWeight: ThixPolicy.bold),
         ),
         const SizedBox(height: ThixPolicy.s8),
         Text(
-          '${l10n.t('reg_welcome_message')} $name',
+          '${_tx(context, 'reg_welcome_message')} $name',
           textAlign: TextAlign.center,
           style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
         ),
@@ -2404,7 +2444,7 @@ class _Step4Final extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      l10n.t('reg_id_card_title'),
+                      _tx(context, 'reg_id_card_title'),
                       style: ThixPolicy.microStyle.copyWith(
                         color: Colors.white70,
                         fontWeight: ThixPolicy.bold,
@@ -2414,7 +2454,7 @@ class _Step4Final extends StatelessWidget {
                     ),
                     const SizedBox(height: ThixPolicy.s16),
                     Text(
-                      l10n.t('reg_official_thix_id'),
+                      _tx(context, 'reg_official_thix_id'),
                       style: ThixPolicy.microStyle.copyWith(
                         color: ThixPolicy.gold,
                         fontWeight: ThixPolicy.bold,
@@ -2427,7 +2467,7 @@ class _Step4Final extends StatelessWidget {
                       children: [
                         Expanded(
                           child: Text(
-                            thixId.isEmpty ? l10n.t('reg_generating') : thixId,
+                            thixId.isEmpty ? _tx(context, 'reg_generating') : thixId,
                             style: ThixPolicy.bodyStyle.copyWith(
                               color: ThixPolicy.onBrand,
                               fontWeight: ThixPolicy.bold,
@@ -2441,7 +2481,7 @@ class _Step4Final extends StatelessWidget {
                         if (thixId.isNotEmpty)
                           Semantics(
                             button: true,
-                            label: l10n.t('reg_copy_thix_id'),
+                            label: _tx(context, 'reg_copy_thix_id'),
                             child: InkWell(
                               onTap: onCopyId,
                               child: const Padding(
@@ -2477,7 +2517,7 @@ class _Step4Final extends StatelessWidget {
           ),
         ),
         const SizedBox(height: ThixPolicy.s24),
-        Text(l10n.t('reg_summary'), style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
+        Text(_tx(context, 'reg_summary'), style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
         const SizedBox(height: ThixPolicy.s12),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s6),
@@ -2488,13 +2528,13 @@ class _Step4Final extends StatelessWidget {
           ),
           child: Column(
             children: [
-              _SummaryRow(label: l10n.t('reg_full_name_label'), value: name),
+              _SummaryRow(label: _tx(context, 'reg_full_name_label'), value: name),
               const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: l10n.t('reg_email_label'), value: email),
+              _SummaryRow(label: _tx(context, 'reg_email_label'), value: email),
               const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: l10n.t('reg_dob_label'), value: dob),
+              _SummaryRow(label: _tx(context, 'reg_dob_label'), value: dob),
               const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: l10n.t('reg_country_label'), value: country),
+              _SummaryRow(label: _tx(context, 'reg_country_label'), value: country),
             ],
           ),
         ),
