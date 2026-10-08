@@ -1,4 +1,6 @@
 // lib/app_router.dart
+import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -317,20 +319,76 @@ class NoTransitionPage<T> extends Page<T> {
         transitionsBuilder: (c, a, s, ch) => ch,
       );
 }
+// ============================================================================
+// RÉSEAU GLOBAL : sans réseau, le routeur affiche la page "Pas de connexion"
+// ============================================================================
+const String kNoConnectionPath = '/no-connection';
 
+class AppConnectivity extends ChangeNotifier {
+  AppConnectivity._();
+  static final AppConnectivity instance = AppConnectivity._();
+
+  bool _offline = false;
+  bool _started = false;
+  StreamSubscription<List<ConnectivityResult>>? _sub;
+
+  bool get offline => _offline;
+
+  void start() {
+    if (_started) return;
+    _started = true;
+    unawaited(_check());
+    _sub = Connectivity().onConnectivityChanged.listen(_apply);
+  }
+
+  Future<void> _check() async {
+    try {
+      _apply(await Connectivity().checkConnectivity());
+    } catch (_) {}
+  }
+
+  void _apply(List<ConnectivityResult> results) {
+    final off = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
+    if (off != _offline) {
+      _offline = off;
+      notifyListeners();
+    }
+  }
+}
+
+class _NoConnectionPage extends StatelessWidget {
+  const _NoConnectionPage();
+
+  @override
+  Widget build(BuildContext context) {
+    return const PopScope(
+      canPop: false,
+      child: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [NoConnectionOverlay()],
+        ),
+      ),
+    );
+  }
+}
 class AppRouter {
   static GoRouter create(
     AuthController auth, {
     Listenable? extraRefreshListenable,
     GlobalKey<NavigatorState>? navigatorKey,
   }) {
-    final refresh = extraRefreshListenable ?? auth;
-    
+        AppConnectivity.instance.start();
+    final refresh = Listenable.merge([
+      extraRefreshListenable ?? auth,
+      AppConnectivity.instance,
+    ]);
+
     return GoRouter(
       navigatorKey: navigatorKey,
       initialLocation: AppRoutes.home,
       refreshListenable: refresh,
-      
+
       errorBuilder: (context, state) => Scaffold(
         backgroundColor: const Color(0xFF0B3D91),
         body: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -341,19 +399,44 @@ class AppRouter {
           ElevatedButton(onPressed: () => context.go(AppRoutes.home), child: const Text('Accueil')),
         ])),
       ),
-      
+
       redirect: (context, state) {
         try {
           final loc = state.matchedLocation;
+
+          // 0) RÉSEAU : sans connexion → page "Pas de connexion" ; retour auto quand le réseau revient
+          final offline = AppConnectivity.instance.offline;
+          if (offline && loc != kNoConnectionPath) {
+            return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
+          }
+          if (!offline && loc == kNoConnectionPath) {
+            final from = state.uri.queryParameters['from'];
+            if (from != null &&
+                from.startsWith('/') &&
+                !from.startsWith('//') &&
+                !from.startsWith(kNoConnectionPath)) {
+              return from;
+            }
+            return AppRoutes.home;
+          }
+          if (offline) return null;
+
+          // 1) RETOUR OAUTH (thix://login-callback) : on laisse les règles login/inscription décider
+          if (loc.startsWith('/login-callback')) {
+            return AppRoutes.login;
+          }
+
           final isLoginPage = loc == AppRoutes.login;
           final isStartPage = loc == AppRoutes.start;
           final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
           const accountStatusPath = '/settings/account-status';
           final isAccountStatusRoute = loc == accountStatusPath;
+          final isPolicyRoute = loc.startsWith('/settings/policy/');
 
           final isPublic = isStartPage ||
               isLoginPage ||
               isRegPage ||
+              isPolicyRoute ||
               loc == AppRoutes.publicProfile ||
               loc == AppRoutes.jobs ||
               loc == AppRoutes.opportunities ||
@@ -370,73 +453,57 @@ class AppRouter {
           final logged = auth.isAuthenticated;
           final currentUser = auth.currentUser;
 
+          // 2) PAS CONNECTÉ
           if (!logged) {
             return isPublic ? null : AppRoutes.login;
           }
 
+          // 3) CONNECTÉ MAIS PROFIL EN CHARGEMENT / HORS-LIGNE
           if (currentUser == null) {
-            if (isLoginPage || isStartPage) {
-              return AppRoutes.home;
-            }
-            return null; 
+            if (isLoginPage || isStartPage) return AppRoutes.home;
+            return null;
           }
 
+          // 4) STATUT DU COMPTE
           final rawLifecycle = currentUser.accountStatus?.toLowerCase();
           final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
           final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
           final isLifecycleBlocked = isDeactivated || isPendingDeletion;
 
-          final regStatus = currentUser.registrationStatus?.toLowerCase() ?? '';
-          final isRegistrationCompleted = (regStatus == 'active' || regStatus == 'completed');
-          
-          final targetDashboard = AppRoutes.userDashboard;
+          // 5) STATUT D'INSCRIPTION
+          final regStatus = currentUser.registrationStatus?.trim().toLowerCase() ?? '';
+          final isRegistrationCompleted = regStatus == 'active' || regStatus == 'completed';
+          final needsOnboarding = regStatus.isNotEmpty && !isRegistrationCompleted;
 
+          final targetDashboard = AppRoutes.userDashboard;
+          final resumeRegistration = '${AppRoutes.personalReg}?step=3';
+
+          // 6) COMPTE DÉSACTIVÉ / SUPPRESSION
           if (isLifecycleBlocked) {
-            if (isAccountStatusRoute || isLoginPage || isStartPage) {
-              return null; 
-            }
+            if (isAccountStatusRoute || isLoginPage || isStartPage) return null;
             return accountStatusPath;
           }
 
-          if (!isLifecycleBlocked && isAccountStatusRoute) {
-            return targetDashboard;
-          }
+          // 7) COMPTE SAIN SUR LA PAGE STATUT
+          if (isAccountStatusRoute) return targetDashboard;
 
+          // 8) CONNECTÉ + SUR LOGIN / START
           if (isLoginPage || isStartPage) {
-            if (isRegistrationCompleted) {
-              return targetDashboard;
-            }
+            if (isRegistrationCompleted) return targetDashboard;
+            if (needsOnboarding) return resumeRegistration; // ex. Google depuis le login
             return null;
           }
 
+          // 9) INSCRIPTION TERMINÉE MAIS SUR LA PAGE D'INSCRIPTION
           if (isRegPage && isRegistrationCompleted) {
-            if (state.uri.queryParameters['step'] == '4') return null;
+            // l'étape 4 (THIX ID) reste affichée tant que la page l'indique
+            if (registrationFinalStepActive) return null;
             return targetDashboard;
           }
 
-          if (!isRegPage &&
-              !isLoginPage &&
-              !isStartPage &&
-              !isAccountStatusRoute &&
-              !isRegistrationCompleted &&
-              currentUser.registrationStatus != null) {
-                
-            if (loc == AppRoutes.home || loc == AppRoutes.userDashboard) {
-              if (regStatus == 'draft_step1') {
-                return '${AppRoutes.personalReg}?step=1';
-              }
-              if (regStatus == 'draft_step2') {
-                return '${AppRoutes.personalReg}?step=3';
-              }
-              return '${AppRoutes.personalReg}?step=1';
-            }
-            if (regStatus == 'draft_step1') {
-              return '${AppRoutes.personalReg}?step=1';
-            }
-            if (regStatus == 'draft_step2') {
-              return '${AppRoutes.personalReg}?step=3';
-            }
-            return '${AppRoutes.personalReg}?step=1';
+          // 10) ONBOARDING INACHEVÉ → reprendre à l'étape 3
+          if (!isRegPage && !isPolicyRoute && !isAccountStatusRoute && needsOnboarding) {
+            return resumeRegistration;
           }
 
           return null;
@@ -445,6 +512,8 @@ class AppRouter {
           return null;
         }
       },
+
+          
 
       routes: [
         // === CORE, AUTH & MAIN ===
@@ -485,6 +554,11 @@ class AppRouter {
           path: '/settings/activity',
           name: 'activityLog',
           pageBuilder: (_, __) => const NoTransitionPage(child: ActivityLogPage()),
+        ),
+                GoRoute(
+          path: kNoConnectionPath,
+          name: 'noConnection',
+          pageBuilder: (_, __) => const NoTransitionPage(child: _NoConnectionPage()),
         ),
 
         StatefulShellRoute.indexedStack(
