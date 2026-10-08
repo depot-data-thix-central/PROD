@@ -88,14 +88,12 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
-        <!-- Métadonnées Firebase Messaging -->
+        <!-- Firebase Messaging : channel par défaut (notifications générales) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="thix_calls_v2" />
+            android:value="thix_id_default_v2" />
 
-        <!-- ✅ CORRIGÉ : icône monochrome blanche au lieu de l'icône launcher couleur -->
-        <!-- Avant : @mipmap/ic_launcher → carré blanc/gris dans la barre de notif -->
-        <!-- Après : @drawable/notification_icon → rendu correct Android 8+ -->
+        <!-- Icône monochrome blanche pour la barre de notification -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/notification_icon" />
@@ -163,14 +161,8 @@
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
 
-        <!-- Service Firebase Messaging pour notifications en arrière-plan -->
-        <service
-            android:name="com.google.firebase.messaging.FirebaseMessagingService"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.google.firebase.MESSAGING_EVENT" />
-            </intent-filter>
-        </service>
+        <!-- Service FCM : NE PAS redéclarer ici.
+             firebase_messaging déclare déjà son propre service (via manifest merge). -->
 
         <!-- Flutter Embedder -->
         <meta-data
