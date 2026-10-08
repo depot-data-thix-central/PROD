@@ -92,10 +92,13 @@
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="thix_calls_v2" />
-        
+
+        <!-- ✅ CORRIGÉ : icône monochrome blanche au lieu de l'icône launcher couleur -->
+        <!-- Avant : @mipmap/ic_launcher → carré blanc/gris dans la barre de notif -->
+        <!-- Après : @drawable/notification_icon → rendu correct Android 8+ -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:resource="@mipmap/ic_launcher" />
+            android:resource="@drawable/notification_icon" />
 
         <!-- Activité principale -->
         <activity
@@ -145,7 +148,7 @@
         </activity>
 
         <!-- Récepteurs pour Flutter Local Notifications -->
-        <receiver 
+        <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver"
             android:exported="true">
             <intent-filter>
@@ -155,8 +158,8 @@
                 <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
             </intent-filter>
         </receiver>
-        
-        <receiver 
+
+        <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
 
