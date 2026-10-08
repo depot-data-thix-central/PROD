@@ -161,33 +161,26 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
-      # ✅ FIX : Secrets passés via env intermédiaire pour éviter la corruption
-      # des caractères spéciaux (+, /, =) dans la clé JWT par le shell bash
+      # ⚠️ CLÉS SUPABASE EN DUR (comme demandé)
       - name: Build release App Bundle (Obfuscated)
-        env:
-          D_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          D_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="$D_SUPABASE_URL" \
-            --dart-define=SUPABASE_ANON_KEY="$D_SUPABASE_ANON_KEY"
+            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
+            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
       - name: Build release APKs (Obfuscated & Split by ABI)
-        env:
-          D_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          D_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="$D_SUPABASE_URL" \
-            --dart-define=SUPABASE_ANON_KEY="$D_SUPABASE_ANON_KEY"
+            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
+            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
       - name: Verify artifacts
         run: |
@@ -211,7 +204,6 @@ jobs:
           sha256sum *.apk > checksums.sha256
           cd -
 
-          # Recherche robuste des symboles (Flutter 3.24+)
           SYMBOLS_FOUND=""
           for dir in "build/app/outputs/symbols" "build/debug_info" "build/app/intermediates/merged_java_res/release/out/META-INF"; do
             if [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
@@ -231,15 +223,16 @@ jobs:
           fi
 
       - name: Upload symbols to Firebase Crashlytics
-        if: github.event_name != 'pull_request' && secrets.FIREBASE_APP_ID != ''
+        if: github.event_name != 'pull_request' && env.FIREBASE_APP_ID != ''
+        env:
+          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         uses: wzieba/firebase-action@v1.7.0
         with:
           args: >
             crashlytics:symbols:upload
-            --app=${{ secrets.FIREBASE_APP_ID }}
+            --app=${{ env.FIREBASE_APP_ID }}
             ${{ env.SYMBOLS_DIR }}
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
         continue-on-error: true
 
       - name: Upload App Bundle
@@ -282,7 +275,7 @@ jobs:
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
             echo "**R8 Full Mode:** Enabled ✅"
-            echo "**Supabase Keys:** GitHub Secrets ✅"
+            echo "**Supabase Keys:** Hardcoded (TEST) ⚠️"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
