@@ -19,9 +19,6 @@ concurrency:
 env:
   JAVA_VERSION: "17"
   SYMBOLS_DIR: "build/app/outputs/symbols"
-  # --- TEST TEMPORAIRE : clés en dur (à remettre en secrets après le test) ---
-  SUPABASE_URL: "https://lldgnysfiabakhaibgzq.supabase.co"
-  SUPABASE_ANON_KEY: "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
 jobs:
   test-and-analyze:
@@ -102,12 +99,12 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # --- CRÉATION DU FICHIER .ENV (clés en dur pour le test) ---
-      - name: Create .env file (hardcoded test)
+      # ✅ SÉCURISÉ : Clés depuis GitHub Secrets (pas en dur)
+      - name: Create .env file
         run: |
           echo "Creating .env file..."
-          echo "SUPABASE_URL=${{ env.SUPABASE_URL }}" > .env
-          echo "SUPABASE_ANON_KEY=${{ env.SUPABASE_ANON_KEY }}" >> .env
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
           echo "✅ .env file created successfully."
           echo "Lines in .env: $(wc -l < .env)"
 
@@ -180,8 +177,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ env.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
@@ -190,8 +187,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ env.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ env.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
+            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
 
       - name: Verify artifacts
         run: |
@@ -207,6 +204,7 @@ jobs:
             echo "WARNING: Symbols directory not found!"
           fi
 
+      # ✅ AMÉLIORÉ : Recherche robuste des symboles (Flutter 3.24+)
       - name: Generate checksums & Compress symbols
         run: |
           sha256sum build/app/outputs/bundle/release/app-release.aab > build/app/outputs/bundle/release/app-release.aab.sha256
@@ -215,10 +213,38 @@ jobs:
           sha256sum *.apk > checksums.sha256
           cd -
 
-          if [ -d "${{ env.SYMBOLS_DIR }}" ]; then
-            tar -czf build/app/outputs/symbols.tar.gz -C build/app/outputs symbols
+          # 🔧 Recherche des symboles dans tous les emplacements possibles
+          SYMBOLS_FOUND=""
+          for dir in "build/app/outputs/symbols" "build/debug_info" "build/app/intermediates/merged_java_res/release/out/META-INF"; do
+            if [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+              echo "✅ Found symbols in: $dir"
+              SYMBOLS_FOUND="$dir"
+              break
+            fi
+          done
+
+          if [ -n "$SYMBOLS_FOUND" ]; then
+            tar -czf build/app/outputs/symbols.tar.gz -C "$(dirname "$SYMBOLS_FOUND")" "$(basename "$SYMBOLS_FOUND")"
             sha256sum build/app/outputs/symbols.tar.gz > build/app/outputs/symbols.tar.gz.sha256
+            echo "✅ Symbols compressed successfully"
+          else
+            echo "⚠️ WARNING: No symbols directory found!"
+            echo "Checking for app.so.symbols files..."
+            find build -name "*.symbols" -type f 2>/dev/null || echo "No .symbols files found"
           fi
+
+      # ✅ NOUVEAU : Upload symboles vers Firebase Crashlytics (stack traces lisibles)
+      - name: Upload symbols to Firebase Crashlytics
+        if: github.event_name != 'pull_request' && secrets.FIREBASE_APP_ID != ''
+        uses: wzieba/firebase-action@v1.7.0
+        with:
+          args: >
+            crashlytics:symbols:upload
+            --app=${{ secrets.FIREBASE_APP_ID }}
+            ${{ env.SYMBOLS_DIR }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        continue-on-error: true
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -259,7 +285,8 @@ jobs:
             echo "**Commit:** ${{ github.sha }}"
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
-            echo "**Environment:** Supabase hardcoded (TEST) ⚠️"
+            echo "**R8 Full Mode:** Enabled ✅"
+            echo "**Environment:** Supabase (GitHub Secrets) ✅"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
