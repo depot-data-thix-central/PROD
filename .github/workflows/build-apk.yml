@@ -222,18 +222,9 @@ jobs:
             find build -name "*.symbols" -type f 2>/dev/null || echo "No .symbols files found"
           fi
 
-      - name: Upload symbols to Firebase Crashlytics
-        if: github.event_name != 'pull_request' && env.FIREBASE_APP_ID != ''
-        env:
-          FIREBASE_APP_ID: ${{ secrets.FIREBASE_APP_ID }}
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-        uses: wzieba/firebase-action@v1.7.0
-        with:
-          args: >
-            crashlytics:symbols:upload
-            --app=${{ env.FIREBASE_APP_ID }}
-            ${{ env.SYMBOLS_DIR }}
-        continue-on-error: true
+      # ✅ CORRIGÉ : action wzieba/firebase-action supprimée de GitHub
+      # Remplacée par une instruction commentée (non-bloquante pour le build)
+      # Les symboles restent disponibles en artifact GitHub pendant 90 jours
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -276,12 +267,13 @@ jobs:
             echo "**Obfuscation:** Enabled ✅"
             echo "**R8 Full Mode:** Enabled ✅"
             echo "**Supabase Keys:** Hardcoded (TEST) ⚠️"
+            echo "**Debug Symbols:** Stored in GitHub artifacts (90 days) ✅"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
             APK_COUNT=$(ls -1 build/app/outputs/flutter-apk/*.apk 2>/dev/null | wc -l)
             echo "- APKs (split by ABI): $APK_COUNT files"
-            echo "- Debug Symbols: Generated in \`symbols.tar.gz\`"
+            echo "- Debug Symbols: \`symbols.tar.gz\` (pour déchiffrer les stack traces)"
             echo ""
             echo "### Checksums"
             echo '```'
