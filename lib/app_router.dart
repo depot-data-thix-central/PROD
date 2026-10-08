@@ -358,7 +358,7 @@ class AppRouter {
           // 📡 Vérification Offline
           bool isOffline = false;
           try {
-            isOffline = !(NetworkService().isConnected ?? true);
+            isOffline = !(NetworkService(Supabase.instance.client).isConnected ?? true);
           } catch (_) {
             isOffline = false; // Fallback safe
           }
