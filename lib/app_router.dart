@@ -21,6 +21,7 @@ import 'package:thix_id/presentation/payment/payment_gateway_page.dart';
 import 'package:thix_id/presentation/payment/activation_receipt_page.dart';
 import 'package:thix_id/presentation/profile/public_profile_page.dart' as public_profile;
 import 'package:thix_id/presentation/dashboard/user_dashboard_page.dart';
+import 'package:thix_id/presentation/enterprise/enterprise_dashboard_page.dart';
 import 'package:thix_id/presentation/enterprise/enterprise_portal_page.dart';
 import 'package:thix_id/presentation/enterprise/enterprise_dashboard_shell_page.dart';
 import 'package:thix_id/presentation/vault/document_vault_page.dart';
@@ -30,7 +31,6 @@ import 'package:thix_id/presentation/certification/certification_tiers_page.dart
 import 'package:thix_id/presentation/settings/settings_account_status_screen.dart';
 import 'package:thix_id/presentation/settings/data_export_page.dart';
 import 'package:thix_id/presentation/settings/activity_log_page.dart';
-import 'package:thix_id/widgets/no_connection_overlay.dart';
 
 // === THIX CHAT ===
 import 'package:thix_id/models/chat/chat_conversation.dart';
@@ -127,7 +127,6 @@ import 'package:thix_id/presentation/thix_market/pages/flash_sales_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/create_supermarket_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/supermarket_space_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/supermarket_manage_page.dart';
-
 // === THIX SANTE ===
 import 'package:thix_id/presentation/thix_sante/patient/patient_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_sante/patient/screens/mon_medecin_traitant_page.dart';
@@ -261,6 +260,7 @@ import 'package:thix_id/presentation/mon_pays/mon_pays_routes.dart';
 import 'package:thix_id/presentation/mon_pays/pages/citizens_page.dart';
 import 'package:thix_id/presentation/mon_pays/pages/historical_figures_page.dart';
 
+
 // === THIX RETROUVE & IA ===
 import 'package:thix_id/presentation/thix_retrouve/thix_retrouve_screen.dart';
 import 'package:thix_id/presentation/thix_retrouve/pages/object_detail_page.dart';
@@ -298,7 +298,7 @@ import 'package:thix_id/presentation/thix_money/thix_money_router.dart';
 import 'package:thix_id/presentation/thix_weeding/thix_weeding_routes.dart';
 import 'package:thix_id/presentation/thix_home_swipe_screen.dart';
 
-// === THIX IA NEW MODULE ===
+// === THIX IA NEW MODULE - 15 PAGES + 21 WIDGETS - FULL PROD ===
 import 'package:thix_id/presentation/thix_ia/thix_ia_routes.dart'; 
 
 // === SETTINGS & POLITIQUES ===
@@ -342,6 +342,9 @@ class AppRouter {
         ])),
       ),
       
+      // ========================================================
+      // LE GARDIEN UNIQUE - GESTION DES REDIRECTIONS ET SÉCURITÉ
+      // ========================================================
       redirect: (context, state) {
         try {
           final loc = state.matchedLocation;
@@ -351,6 +354,7 @@ class AppRouter {
           const accountStatusPath = '/settings/account-status';
           final isAccountStatusRoute = loc == accountStatusPath;
 
+          // Définition des routes accessibles sans connexion
           final isPublic = isStartPage ||
               isLoginPage ||
               isRegPage ||
@@ -370,27 +374,39 @@ class AppRouter {
           final logged = auth.isAuthenticated;
           final currentUser = auth.currentUser;
 
+          // 1. PAS CONNECTÉ
           if (!logged) {
             return isPublic ? null : AppRoutes.login;
           }
 
+          // 2. CONNECTÉ MAIS PROFIL EN CHARGEMENT (OU HORS-LIGNE)
+          // Grâce au Correctif 2, isAuthenticated est true via la session locale
+          // même si currentUser est null le temps de s'hydrater.
           if (currentUser == null) {
+            // On redirige vers l'accueil (qui gère le mode hors-ligne via le cache)
+            // pour éviter de rester bloqué sur l'écran de login.
             if (isLoginPage || isStartPage) {
               return AppRoutes.home;
             }
-            return null; 
+            return null; // On laisse l'utilisateur où il est
           }
 
+          // --- ANALYSE DU STATUT DU COMPTE ---
           final rawLifecycle = currentUser.accountStatus?.toLowerCase();
           final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
           final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
           final isLifecycleBlocked = isDeactivated || isPendingDeletion;
 
+          // --- ANALYSE DE L'INSCRIPTION ---
           final regStatus = currentUser.registrationStatus?.toLowerCase() ?? '';
           final isRegistrationCompleted = (regStatus == 'active' || regStatus == 'completed');
           
-          final targetDashboard = AppRoutes.userDashboard;
+          // Détermination sécurisée du dashboard cible
+          final targetDashboard = currentUser.accountType == AccountType.enterprise
+              ? AppRoutes.enterpriseDashboard
+              : AppRoutes.userDashboard;
 
+          // 3. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
           if (isLifecycleBlocked) {
             if (isAccountStatusRoute || isLoginPage || isStartPage) {
               return null; 
@@ -398,10 +414,12 @@ class AppRouter {
             return accountStatusPath;
           }
 
+          // 4. DÉVERROUILLAGE : COMPTE SAIN
           if (!isLifecycleBlocked && isAccountStatusRoute) {
             return targetDashboard;
           }
 
+          // 5. DÉJÀ CONNECTÉ + SUR LOGIN/START
           if (isLoginPage || isStartPage) {
             if (isRegistrationCompleted) {
               return targetDashboard;
@@ -409,11 +427,13 @@ class AppRouter {
             return null;
           }
 
+          // 6. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
           if (isRegPage && isRegistrationCompleted) {
-            if (state.uri.queryParameters['step'] == '4') return null;
+            if (state.uri.queryParameters['step'] == '3') return null;
             return targetDashboard;
           }
 
+          // 7. ONBOARDING INACHEVÉ
           if (!isRegPage &&
               !isLoginPage &&
               !isStartPage &&
@@ -421,22 +441,18 @@ class AppRouter {
               !isRegistrationCompleted &&
               currentUser.registrationStatus != null) {
                 
-            if (loc == AppRoutes.home || loc == AppRoutes.userDashboard) {
+            if (loc == AppRoutes.home) {
+              // NE PAS appeler auth.signOut() ici ! Cela crée des bugs de routing (le "bordel").
+              // Rediriger proprement vers l'étape manquante.
               if (regStatus == 'draft_step1') {
                 return '${AppRoutes.personalReg}?step=1';
               }
-              if (regStatus == 'draft_step2') {
-                return '${AppRoutes.personalReg}?step=3';
-              }
-              return '${AppRoutes.personalReg}?step=1';
+              return '${AppRoutes.personalReg}?step=2';
             }
             if (regStatus == 'draft_step1') {
               return '${AppRoutes.personalReg}?step=1';
             }
-            if (regStatus == 'draft_step2') {
-              return '${AppRoutes.personalReg}?step=3';
-            }
-            return '${AppRoutes.personalReg}?step=1';
+            return '${AppRoutes.personalReg}?step=2';
           }
 
           return null;
@@ -466,17 +482,22 @@ class AppRouter {
         GoRoute(
           path: '/settings/account-status',
           name: 'accountStatus', 
-          pageBuilder: (_, __) => const NoTransitionPage(child: SettingsAccountStatusScreen()),
+          pageBuilder: (_, __) => const NoTransitionPage(
+            child: SettingsAccountStatusScreen(),
+          ),
         ),
+
         GoRoute(
           path: '/settings/policy/:slug',
-          builder: (_, s) => PolicyViewerPage(slug: s.pathParameters['slug']!),
+          builder: (_, s) => PolicyViewerPage(
+            slug: s.pathParameters['slug']!,
+          ),
         ),
         GoRoute(
           path: '/settings/admin/policies',
           builder: (_, __) => const AdminPolicyManagerPage(),
         ),
-        GoRoute(
+                GoRoute(
           path: '/settings/export',
           name: 'dataExport',
           pageBuilder: (_, __) => const NoTransitionPage(child: DataExportPage()),
@@ -493,6 +514,7 @@ class AppRouter {
             StatefulShellBranch(routes: [
               GoRoute(path: AppRoutes.home, name: 'home', pageBuilder: (_, __) => const NoTransitionPage(child: HomePagePremium())),
             ]),
+            // === THIX NETWORK ===
             StatefulShellBranch(routes: [
               GoRoute(
                 path: AppRoutes.network,
@@ -528,6 +550,9 @@ class AppRouter {
                   GoRoute(path: 'community/:communityId', name: 'networkCommunityDetail', pageBuilder: (_, state) => NoTransitionPage(child: CommunityDetailPage(communityId: state.pathParameters['communityId']!))),
                   GoRoute(path: 'story/:storyId', name: 'networkStoryViewer', pageBuilder: (_, state) => NoTransitionPage(child: StoryViewerScreen(storyId: state.pathParameters['storyId']!))),
                   GoRoute(path: 'comments/:postId', name: 'networkComments', pageBuilder: (_, state) => NoTransitionPage(child: CommentsPage(postId: state.pathParameters['postId']!, currentProfileId: Supabase.instance.client.auth.currentUser?.id ?? ''))),
+                  
+                  
+                  
                   GoRoute(path: 'post/:postId', name: 'networkPostDetail', pageBuilder: (_, state) => NoTransitionPage(child: PostDetailPage(postId: state.pathParameters['postId']!, currentProfileId: auth.currentUser?.id ?? ''))),
                   GoRoute(path: 'profile/:userId', name: 'networkProfile', pageBuilder: (_, state) => NoTransitionPage(child: ProfilePage(userId: state.pathParameters['userId']!))),
                   GoRoute(path: 'followers/:uid', name: 'networkFollowers', pageBuilder: (_, state) => NoTransitionPage(child: FollowersListPage(userId: state.pathParameters['uid']!))),
@@ -535,6 +560,9 @@ class AppRouter {
                 ],
               ),
             ]),
+
+            
+            // === THIX CHAT ===
             StatefulShellBranch(routes: [
               GoRoute(path: AppRoutes.chat, name: 'chat', pageBuilder: (_, __) => const NoTransitionPage(child: ChatListPage()), routes: [
                 GoRoute(path: 'new', name: 'chat_new', pageBuilder: (_, __) => const NoTransitionPage(child: NewConversationPage())),
@@ -562,25 +590,26 @@ class AppRouter {
           ],
         ),
 
+        // === THIX CHAT (Extra) ===
         GoRoute(path: AppRoutes.callIncoming, name: AppRoutes.callIncomingName, builder: (c, s) => IncomingCallPage(invite: s.extra as CallInvite)),
         GoRoute(path: AppRoutes.callOngoing, name: AppRoutes.callOngoingName, builder: (c, s) => const CallPage()),
         GoRoute(path: AppRoutes.callHistory, name: AppRoutes.callHistoryName, builder: (c, s) => const CallHistoryPage()),
-        GoRoute(
-          path: '/conversation/:conversationId',
-          name: 'conversationStandalone',
-          pageBuilder: (_, state) => NoTransitionPage(
-            child: ThixChat.ChatScreen(
-              conversationId: state.pathParameters['conversationId']!,
-              conversation: (state.extra as ChatConversation?) ??
-                  ChatConversation(
-                    id: state.pathParameters['conversationId']!,
-                    isGroup: false,
-                    participantIds: [],
-                    updatedAt: DateTime.now(),
-                  ),
-            ),
+GoRoute(
+  path: '/conversation/:conversationId',
+  name: 'conversationStandalone',
+  pageBuilder: (_, state) => NoTransitionPage(
+    child: ThixChat.ChatScreen(
+      conversationId: state.pathParameters['conversationId']!,
+      conversation: (state.extra as ChatConversation?) ??
+          ChatConversation(
+            id: state.pathParameters['conversationId']!,
+            isGroup: false,
+            participantIds: [],
+            updatedAt: DateTime.now(),
           ),
-        ),
+    ),
+  ),
+),
         
         // === JOBS & OPPORTUNITIES ===
         GoRoute(path: '/opportunities/admin', builder: (context, state) => const OpportunityAdminDashboard()),
@@ -611,6 +640,7 @@ class AppRouter {
           ]),
           GoRoute(path: 'incidents', name: 'thixSosIncidents', builder: (context, state) => const MesIncidentsPage()),
         ]),
+
         GoRoute(
           path: 'chambre-secours/:id',
           name: 'thixSosChambreSecours',
@@ -619,6 +649,7 @@ class AppRouter {
             victimUserId: state.uri.queryParameters['victim'],
           ),
         ),
+        
         GoRoute(path: '/thix-retrouve', name: 'thixRetrouve', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 2), routes: [
           GoRoute(path: 'detail', name: 'thixRetrouveDetail', pageBuilder: (_, __) => const NoTransitionPage(child: ObjectDetailPage())),
           GoRoute(path: 'ai-match', name: 'thixRetrouveAiMatch', pageBuilder: (_, __) => const NoTransitionPage(child: AiMatchPage())),
@@ -629,23 +660,23 @@ class AppRouter {
         ]),
         GoRoute(path: '/thix-recherche', name: 'thixRecherche', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 1), routes: [
           GoRoute(
-            name: 'thixRetrouveDetailAlt',
-            path: '/thix-retrouve/detail-alt',
-            builder: (context, state) {
-              final e = (state.extra is Map<String, dynamic>)
-                  ? state.extra as Map<String, dynamic>
-                  : (state.extra is Map ? Map<String, dynamic>.from(state.extra as Map) : <String, dynamic>{});
-              return ObjectDetailPage(
-                title: (e['title'] ?? '') as String,
-                status: (e['status'] ?? '') as String,
-                location: (e['location'] ?? '') as String,
-                time: (e['time'] ?? '') as String,
-                description: (e['description'] ?? '') as String,
-                reward: (e['reward'] ?? '') as String,
-                imageUrl: e['imageUrl'] as String?,
-              );
-            },
-          ),
+  name: 'thixRetrouveDetail',
+  path: '/thix-retrouve/detail',
+  builder: (context, state) {
+    final e = (state.extra is Map<String, dynamic>)
+        ? state.extra as Map<String, dynamic>
+        : (state.extra is Map ? Map<String, dynamic>.from(state.extra as Map) : <String, dynamic>{});
+    return ObjectDetailPage(
+      title: (e['title'] ?? '') as String,
+      status: (e['status'] ?? '') as String,
+      location: (e['location'] ?? '') as String,
+      time: (e['time'] ?? '') as String,
+      description: (e['description'] ?? '') as String,
+      reward: (e['reward'] ?? '') as String,
+      imageUrl: e['imageUrl'] as String?,
+    );
+  },
+),
           GoRoute(path: 'signaler/:id', name: 'thixRechercheSignaler', builder: (context, state) => SignalerPage(personneId: state.pathParameters['id']!)),
           GoRoute(path: 'creer', name: 'thixRechercheCreer', builder: (context, state) => const CreerAlertePage()),
           GoRoute(path: 'mes-alertes', name: 'thixRechercheMesAlertes', builder: (context, state) => const MesAlertesPage()),
@@ -715,20 +746,43 @@ class AppRouter {
         GoRoute(path: '/thix-event/admin/analytics', name: 'thixEventAdminAnalytics', pageBuilder: (_, __) => const NoTransitionPage(child: AnalyticsPage())),
         GoRoute(path: '/thix-event/payment', builder: (context, state) => EventPaymentPage(bookingId: ((state.extra as Map<String, dynamic>?) ?? {})['bookingId'] as String? ?? '', amount: ((state.extra as Map<String, dynamic>?) ?? {})['amount'] as double? ?? 0.0, currency: ((state.extra as Map<String, dynamic>?) ?? {})['currency'] as String? ?? 'USD')),
         GoRoute(path: '/thix-event/ticket/:id', builder: (context, state) => EventTicketPage(bookingId: state.pathParameters['id']!)),
-        GoRoute(path: AppRoutes.thixInfoSpace, name: 'thixInfoSpace', pageBuilder: (_, state) => NoTransitionPage(child: ThixInfoSpacePage(space: state.pathParameters['space']!))),
-        GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads', pageBuilder: (_, __) => const NoTransitionPage(child: ThixDownloadsPage())),
+GoRoute(path: AppRoutes.thixInfoSpace, name: 'thixInfoSpace',
+    pageBuilder: (_, state) => NoTransitionPage(
+        child: ThixInfoSpacePage(space: state.pathParameters['space']!))),
+GoRoute(path: '/thix-info/downloads', name: 'thixInfoDownloads',
+    pageBuilder: (_, __) => const NoTransitionPage(child: ThixDownloadsPage())),
+        GoRoute(
+          path: AppRoutes.thixInfoSpace,
+          name: 'thixInfoSpace',
+          pageBuilder: (_, state) => NoTransitionPage(
+            child: ThixInfoSpacePage(space: state.pathParameters['space']!),
+          ),
+        ),
         GoRoute(path: AppRoutes.thixInfoMagazine, name: 'thixInfoMagazine', pageBuilder: (_, state) => NoTransitionPage(child: ThixMagazineReaderPage(articleId: state.pathParameters['articleId']!))),
-        
         // === THIX RESERVATION (BUS & GENERAL) ===
-        GoRoute(path: AppRoutes.reservation, name: 'thixreservation', pageBuilder: (_, __) => const NoTransitionPage(child: ThixReservationHomePage())),
-        GoRoute(path: '/thix-reservation/bus', name: 'bus-home', pageBuilder: (_, __) => const NoTransitionPage(child: BusHomePage())),
-        GoRoute(path: '/thix-reservation/bus/search', name: 'bus-search', pageBuilder: (_, __) => const NoTransitionPage(child: BusSearchResultPage())),
+        GoRoute(
+          path: AppRoutes.reservation,
+          name: 'thixreservation',
+          pageBuilder: (_, __) => const NoTransitionPage(child: ThixReservationHomePage()),
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus',
+          name: 'bus-home',
+          pageBuilder: (_, __) => const NoTransitionPage(child: BusHomePage()),
+        ),
+        GoRoute(
+          path: '/thix-reservation/bus/search',
+          name: 'bus-search',
+          pageBuilder: (_, __) => const NoTransitionPage(child: BusSearchResultPage()),
+        ),
         GoRoute(
           path: '/thix-reservation/bus/detail',
           name: 'bus-detail',
           pageBuilder: (_, state) {
             final extra = state.extra;
-            if (extra is BusTripModel) return NoTransitionPage(child: BusTripDetailPage(trip: extra));
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusTripDetailPage(trip: extra));
+            }
             return const NoTransitionPage(child: BusTripDetailPage());
           },
         ),
@@ -737,8 +791,12 @@ class AppRouter {
           name: 'bus-trip-by-id',
           pageBuilder: (_, state) {
             final extra = state.extra;
-            if (extra is BusTripModel) return NoTransitionPage(child: BusTripDetailPage(trip: extra));
-            return NoTransitionPage(child: BusTripDetailPage(tripId: state.pathParameters['tripId']));
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusTripDetailPage(trip: extra));
+            }
+            return NoTransitionPage(
+              child: BusTripDetailPage(tripId: state.pathParameters['tripId']),
+            );
           },
         ),
         GoRoute(
@@ -746,7 +804,9 @@ class AppRouter {
           name: 'bus-seats',
           pageBuilder: (_, state) {
             final extra = state.extra;
-            if (extra is BusTripModel) return NoTransitionPage(child: BusSeatSelectionPage(trip: extra));
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusSeatSelectionPage(trip: extra));
+            }
             return const NoTransitionPage(child: BusSeatSelectionPage());
           },
         ),
@@ -763,7 +823,9 @@ class AppRouter {
                 ),
               );
             }
-            if (extra is BusTripModel) return NoTransitionPage(child: BusPaymentPage(trip: extra, seats: const []));
+            if (extra is BusTripModel) {
+              return NoTransitionPage(child: BusPaymentPage(trip: extra, seats: const []));
+            }
             return const NoTransitionPage(child: BusHomePage());
           },
         ),
@@ -772,14 +834,34 @@ class AppRouter {
           name: 'bus-ticket',
           pageBuilder: (_, state) {
             final extra = state.extra;
-            if (extra is BookingModel) return NoTransitionPage(child: BusTicketPage(booking: extra));
-            return NoTransitionPage(child: BusTicketPage(bookingId: state.pathParameters['id']));
+            if (extra is BookingModel) {
+              return NoTransitionPage(child: BusTicketPage(booking: extra));
+            }
+            return NoTransitionPage(
+              child: BusTicketPage(bookingId: state.pathParameters['id']),
+            );
           },
         ),
-        GoRoute(path: '/agency/onboarding', name: 'agency-onboarding', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyOnboardingPage())),
-        GoRoute(path: '/agency/dashboard', name: 'agency-dashboard', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyDashboardPage())),
-        GoRoute(path: '/agency/trip/create', name: 'agency-create-trip', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage())),
-        GoRoute(path: '/agency/scan', name: 'agency-scan', pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage())),
+        GoRoute(
+          path: '/agency/onboarding',
+          name: 'agency-onboarding',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyOnboardingPage()),
+        ),
+        GoRoute(
+          path: '/agency/dashboard',
+          name: 'agency-dashboard',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyDashboardPage()),
+        ),
+        GoRoute(
+          path: '/agency/trip/create',
+          name: 'agency-create-trip',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyCreateTripPage()),
+        ),
+        GoRoute(
+          path: '/agency/scan',
+          name: 'agency-scan',
+          pageBuilder: (_, __) => const NoTransitionPage(child: AgencyQrScanPage()),
+        ),
         GoRoute(
           path: '/agency/seats',
           name: 'agency-seats',
@@ -788,7 +870,11 @@ class AppRouter {
             return NoTransitionPage(child: AgencySeatsPage(tripId: tripId));
           },
         ),
-        GoRoute(path: '/thix-ia', name: 'thix-ia-home', builder: (context, state) => const ThixIaHomePage()),
+        GoRoute(
+          path: '/thix-ia',
+          name: 'thix-ia-home',
+          builder: (context, state) => const ThixIaHomePage(), 
+        ),
 
         // === THIX RESERVATION (DELIVERY) ===
         GoRoute(path: AppRoutes.deliveryHome, name: 'delivery-home', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryClientProvider()..init(), child: const DeliveryHomePage()))),
@@ -801,52 +887,73 @@ class AppRouter {
         GoRoute(path: AppRoutes.deliveryAdminScan, name: 'delivery-admin-scan', pageBuilder: (_, __) => NoTransitionPage(child: app_provider.ChangeNotifierProvider(create: (_) => DeliveryAdminProvider(), child: const DeliveryAdminScanPage()))),
 
         // === THIX MARKET ===
+        GoRoute(path: AppRoutes.thixMarket, name: 'thixMarket', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()), routes: [
+          GoRoute(path: 'home', name: 'marketHome', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage())),
+          GoRoute(path: 'search', name: 'marketSearch', pageBuilder: (_, __) => const NoTransitionPage(child: marketSearch.SearchPage())),
+          GoRoute(path: 'shops', name: 'marketShops', pageBuilder: (_, __) => const NoTransitionPage(child: ShopsPage())),
+          GoRoute(path: 'buy', name: 'marketBuy', pageBuilder: (_, __) => const NoTransitionPage(child: BuyPage())),
+          GoRoute(path: 'sell', name: 'marketSell', pageBuilder: (_, __) => const NoTransitionPage(child: SellPage())),
+          GoRoute(path: 'compare', name: 'marketProductComparator', pageBuilder: (_, __) => const NoTransitionPage(child: ProductComparatorPage())),
+          GoRoute(path: 'price-alerts', name: 'marketPriceAlerts', pageBuilder: (_, __) => const NoTransitionPage(child: PriceAlertsPage())),
+          GoRoute(path: 'wishlist', name: 'marketWishlist', pageBuilder: (_, __) => const NoTransitionPage(child: WishlistPage())),
+          GoRoute(path: 'cart', name: 'marketCart', pageBuilder: (_, __) => const NoTransitionPage(child: CartPage())),
+          GoRoute(path: 'orders', name: 'marketOrders', pageBuilder: (_, __) => const NoTransitionPage(child: OrderHistoryPage())),
+          GoRoute(path: 'checkout', name: 'marketCheckout', pageBuilder: (_, __) => const NoTransitionPage(child: CheckoutPage())),
+          GoRoute(path: 'tracking/:orderId', name: 'marketDeliveryTracking', pageBuilder: (_, state) => NoTransitionPage(child: market_delivery.DeliveryTrackingPage(orderId: state.pathParameters['orderId']!))),
+          GoRoute(path: 'shop/create', name: 'marketCreateShop', pageBuilder: (_, __) => const NoTransitionPage(child: CreateShopPage())),
+          GoRoute(path: 'announcement/publish', name: 'marketPublishAnnouncement', pageBuilder: (_, __) => const NoTransitionPage(child: PublishAnnouncementPage())),
+          GoRoute(path: 'live/create', name: 'marketCreateLive', pageBuilder: (_, __) => const NoTransitionPage(child: CreateLivePage())),
+          GoRoute(path: 'live', name: 'marketLive', pageBuilder: (_, __) => const NoTransitionPage(child: LivePage())),
+          GoRoute(path: 'messages', name: 'marketMessages', pageBuilder: (_, __) => const NoTransitionPage(child: MessagesPage())),
+          GoRoute(path: 'notifications', name: 'marketNotifications', pageBuilder: (_, __) => const NoTransitionPage(child: NotificationPage())),
+          GoRoute(path: 'activity', name: 'marketActivity', pageBuilder: (_, __) => const NoTransitionPage(child: MyActivityPage())),
+          GoRoute(path: 'settings', name: 'marketSettings', pageBuilder: (_, __) => const NoTransitionPage(child: MarketSettingsPage())),
+          GoRoute(path: 'help', name: 'marketHelp', pageBuilder: (_, __) => const NoTransitionPage(child: HelpSupportPage())),
+          GoRoute(path: 'vendor/dashboard', name: 'vendorDashboard', pageBuilder: (_, __) => const NoTransitionPage(child: VendorDashboard())),
+          GoRoute(path: 'vendor/orders', name: 'vendorOrders', pageBuilder: (_, __) => const NoTransitionPage(child: VendorOrdersPage())),
+          GoRoute(path: 'deliveries', name: 'deliveryManagement', pageBuilder: (_, __) => const NoTransitionPage(child: DeliveryManagementPage())),
+          GoRoute(path: 'shop/:shopId/manage', name: 'marketManageShop', pageBuilder: (_, state) => NoTransitionPage(child: ManageShopPage(shopId: state.pathParameters['shopId']!))),
+          GoRoute(path: 'shop/:shopId/stats', name: 'marketShopStats', pageBuilder: (_, state) => NoTransitionPage(child: ShopStatisticsPage(shopId: state.pathParameters['shopId']!))),
+          GoRoute(path: 'shop/:shopId', name: 'marketShopDetail', pageBuilder: (_, state) => NoTransitionPage(child: ShopDetailPage(shopId: state.pathParameters['shopId']!))),
+          GoRoute(path: 'product/:productId', name: 'marketProductDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProductDetailPage(productId: state.pathParameters['productId']!))),
+          GoRoute(path: 'order/:orderId', name: 'marketOrderDetail', pageBuilder: (_, state) => NoTransitionPage(child: OrderDetailPage(orderId: state.pathParameters['orderId']!))),
+          GoRoute(path: 'auction/:auctionId', name: 'marketAuction', pageBuilder: (_, state) => NoTransitionPage(child: AuctionPage(auctionId: state.pathParameters['auctionId']!))),
+          GoRoute(path: 'dispute/:disputeId', name: 'marketDispute', pageBuilder: (_, state) => NoTransitionPage(child: DisputeDetailPage(disputeId: state.pathParameters['disputeId']!))),
+          GoRoute(path: 'announcement/:announcementId/edit', name: 'marketEditAnnouncement', pageBuilder: (_, state) => NoTransitionPage(child: EditAnnouncementPage(announcementId: state.pathParameters['announcementId']!))),
+          GoRoute(path: 'live/:liveId/replay', name: 'marketLiveReplay', pageBuilder: (_, state) => NoTransitionPage(child: LiveReplayPage(liveId: state.pathParameters['liveId']!))),
+          GoRoute(path: 'live/:liveId', name: 'marketLiveStream', pageBuilder: (_, state) => NoTransitionPage(child: LiveStreamPage(liveId: state.pathParameters['liveId']!))),
+          GoRoute(path: 'chat/:conversationId', name: 'marketChat', pageBuilder: (_, state) => NoTransitionPage(child: ChatPage(conversationId: state.pathParameters['conversationId']!))),
         GoRoute(
-          path: AppRoutes.thixMarket,
-          name: 'thixMarket',
-          pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()),
-          routes: [
-            GoRoute(path: 'home', name: 'marketHome', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage())),
-            GoRoute(path: 'search', name: 'marketSearch', pageBuilder: (_, __) => const NoTransitionPage(child: marketSearch.SearchPage())),
-            GoRoute(path: 'shops', name: 'marketShops', pageBuilder: (_, __) => const NoTransitionPage(child: ShopsPage())),
-            GoRoute(path: 'buy', name: 'marketBuy', pageBuilder: (_, __) => const NoTransitionPage(child: BuyPage())),
-            GoRoute(path: 'sell', name: 'marketSell', pageBuilder: (_, __) => const NoTransitionPage(child: SellPage())),
-            GoRoute(path: 'compare', name: 'marketProductComparator', pageBuilder: (_, __) => const NoTransitionPage(child: ProductComparatorPage())),
-            GoRoute(path: 'price-alerts', name: 'marketPriceAlerts', pageBuilder: (_, __) => const NoTransitionPage(child: PriceAlertsPage())),
-            GoRoute(path: 'wishlist', name: 'marketWishlist', pageBuilder: (_, __) => const NoTransitionPage(child: WishlistPage())),
-            GoRoute(path: 'cart', name: 'marketCart', pageBuilder: (_, __) => const NoTransitionPage(child: CartPage())),
-            GoRoute(path: 'orders', name: 'marketOrders', pageBuilder: (_, __) => const NoTransitionPage(child: OrderHistoryPage())),
-            GoRoute(path: 'checkout', name: 'marketCheckout', pageBuilder: (_, __) => const NoTransitionPage(child: CheckoutPage())),
-            GoRoute(path: 'tracking/:orderId', name: 'marketDeliveryTracking', pageBuilder: (_, state) => NoTransitionPage(child: market_delivery.DeliveryTrackingPage(orderId: state.pathParameters['orderId']!))),
-            GoRoute(path: 'shop/create', name: 'marketCreateShop', pageBuilder: (_, __) => const NoTransitionPage(child: CreateShopPage())),
-            GoRoute(path: 'announcement/publish', name: 'marketPublishAnnouncement', pageBuilder: (_, __) => const NoTransitionPage(child: PublishAnnouncementPage())),
-            GoRoute(path: 'live/create', name: 'marketCreateLive', pageBuilder: (_, __) => const NoTransitionPage(child: CreateLivePage())),
-            GoRoute(path: 'live', name: 'marketLive', pageBuilder: (_, __) => const NoTransitionPage(child: LivePage())),
-            GoRoute(path: 'messages', name: 'marketMessages', pageBuilder: (_, __) => const NoTransitionPage(child: MessagesPage())),
-            GoRoute(path: 'notifications', name: 'marketNotifications', pageBuilder: (_, __) => const NoTransitionPage(child: NotificationPage())),
-            GoRoute(path: 'activity', name: 'marketActivity', pageBuilder: (_, __) => const NoTransitionPage(child: MyActivityPage())),
-            GoRoute(path: 'settings', name: 'marketSettings', pageBuilder: (_, __) => const NoTransitionPage(child: MarketSettingsPage())),
-            GoRoute(path: 'help', name: 'marketHelp', pageBuilder: (_, __) => const NoTransitionPage(child: HelpSupportPage())),
-            GoRoute(path: 'vendor/dashboard', name: 'vendorDashboard', pageBuilder: (_, __) => const NoTransitionPage(child: VendorDashboard())),
-            GoRoute(path: 'vendor/orders', name: 'vendorOrders', pageBuilder: (_, __) => const NoTransitionPage(child: VendorOrdersPage())),
-            GoRoute(path: 'deliveries', name: 'deliveryManagement', pageBuilder: (_, __) => const NoTransitionPage(child: DeliveryManagementPage())),
-            GoRoute(path: 'shop/:shopId/manage', name: 'marketManageShop', pageBuilder: (_, state) => NoTransitionPage(child: ManageShopPage(shopId: state.pathParameters['shopId']!))),
-            GoRoute(path: 'shop/:shopId/stats', name: 'marketShopStats', pageBuilder: (_, state) => NoTransitionPage(child: ShopStatisticsPage(shopId: state.pathParameters['shopId']!))),
-            GoRoute(path: 'shop/:shopId', name: 'marketShopDetail', pageBuilder: (_, state) => NoTransitionPage(child: ShopDetailPage(shopId: state.pathParameters['shopId']!))),
-            GoRoute(path: 'product/:productId', name: 'marketProductDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProductDetailPage(productId: state.pathParameters['productId']!))),
-            GoRoute(path: 'order/:orderId', name: 'marketOrderDetail', pageBuilder: (_, state) => NoTransitionPage(child: OrderDetailPage(orderId: state.pathParameters['orderId']!))),
-            GoRoute(path: 'auction/:auctionId', name: 'marketAuction', pageBuilder: (_, state) => NoTransitionPage(child: AuctionPage(auctionId: state.pathParameters['auctionId']!))),
-            GoRoute(path: 'dispute/:disputeId', name: 'marketDispute', pageBuilder: (_, state) => NoTransitionPage(child: DisputeDetailPage(disputeId: state.pathParameters['disputeId']!))),
-            GoRoute(path: 'announcement/:announcementId/edit', name: 'marketEditAnnouncement', pageBuilder: (_, state) => NoTransitionPage(child: EditAnnouncementPage(announcementId: state.pathParameters['announcementId']!))),
-            GoRoute(path: 'live/:liveId/replay', name: 'marketLiveReplay', pageBuilder: (_, state) => NoTransitionPage(child: LiveReplayPage(liveId: state.pathParameters['liveId']!))),
-            GoRoute(path: 'live/:liveId', name: 'marketLiveStream', pageBuilder: (_, state) => NoTransitionPage(child: LiveStreamPage(liveId: state.pathParameters['liveId']!))),
-            GoRoute(path: 'chat/:conversationId', name: 'marketChat', pageBuilder: (_, state) => NoTransitionPage(child: ChatPage(conversationId: state.pathParameters['conversationId']!))),
-            GoRoute(path: 'flash-sales', name: 'marketFlashSales', pageBuilder: (_, __) => const NoTransitionPage(child: FlashSalesPage())),
-            GoRoute(path: 'supermarket/create', name: 'createSupermarket', builder: (c, s) => const CreateSupermarketPage()),
-            GoRoute(path: 'supermarket/:id/manage', name: 'supermarketManage', builder: (c, s) => SupermarketManagePage(supermarketId: s.pathParameters['id']!)),
-            GoRoute(path: 'supermarket/:id', name: 'supermarketSpace', builder: (c, s) => SupermarketSpacePage(supermarketId: s.pathParameters['id']!)),
-          ],
+  path: 'flash-sales',
+  name: 'marketFlashSales',
+  pageBuilder: (context, state) => const NoTransitionPage(
+    child: FlashSalesPage(), // Votre page dédiée aux offres flash
+  ),
+),
+          GoRoute(
+        path: 'supermarket/create',
+        name: 'createSupermarket',
+        builder: (c, s) => const CreateSupermarketPage(),
+      ),
+      GoRoute(
+        path: 'supermarket/:id/manage',
+        name: 'supermarketManage',
+        builder: (c, s) => SupermarketManagePage(
+            supermarketId: s.pathParameters['id']!),
+      ),
+            GoRoute(
+        path: 'supermarket/:id',
+        name: 'supermarketSpace',
+        builder: (c, s) => SupermarketSpacePage(
+          supermarketId: s.pathParameters['id']!,
         ),
+      ),
+
+            
+
+        ]),
+        
+
 
         // === ADMIN SYSTEM GLOBAL ===
         GoRoute(path: '/admin', builder: (context, state) => const thix_admin.AdminHomePage()),
@@ -857,34 +964,45 @@ class AppRouter {
         GoRoute(path: AppRoutes.admin, name: 'adminRoot', redirect: (_, __) => '${AppRoutes.admin}/${AdminModule.overview.slug}'),
 
         // === MON PAYS ===
-        GoRoute(
-          path: AppRoutes.monPays,
-          name: 'monPays',
-          pageBuilder: (_, __) => const NoTransitionPage(child: MonPaysPage()),
-          routes: [
-            GoRoute(path: 'citizens', name: 'monPaysCitizens', pageBuilder: (_, __) => const NoTransitionPage(child: CitizensPage())),
-            GoRoute(path: 'historical-figures', name: 'monPaysHistoricalFigures', pageBuilder: (_, __) => const NoTransitionPage(child: HistoricalFiguresPage())),
-            GoRoute(path: 'authorities', name: 'monPaysAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AuthoritiesPage())),
-            GoRoute(path: 'authorities/:id', name: 'monPaysAuthorityProfile', pageBuilder: (_, state) => NoTransitionPage(child: AuthorityProfilePage(authorityId: state.pathParameters['id']!))),
-            GoRoute(path: 'laws', name: 'monPaysLaws', pageBuilder: (_, __) => const NoTransitionPage(child: LawsPage())),
-            GoRoute(path: 'laws/:type', name: 'monPaysArticleType', pageBuilder: (_, state) => NoTransitionPage(child: ArticleTypePage(type: ArticleType.fromString(state.pathParameters['type']!), title: ArticleType.fromString(state.pathParameters['type']!).label))),
-            GoRoute(path: 'laws/article/:id', name: 'monPaysArticleDetail', pageBuilder: (_, state) => NoTransitionPage(child: monPaysArticle.ArticleDetailPage(articleId: state.pathParameters['id']!))),
-            GoRoute(path: 'provinces', name: 'monPaysProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: ProvincesPage())),
-            GoRoute(path: 'provinces/:id', name: 'monPaysProvinceDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProvinceDetailPage(provinceId: state.pathParameters['id']!))),
-            GoRoute(path: 'admin', name: 'monPaysAdmin', pageBuilder: (_, __) => const NoTransitionPage(child: AdminDashboardPage())),
-            GoRoute(path: 'admin/authorities', name: 'monPaysAdminAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AdminAuthoritiesPage())),
-            GoRoute(path: 'admin/form', name: 'monPaysAdminForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminAuthorityFormPage(authority: state.extra as dynamic))),
-            GoRoute(path: 'admin/articles', name: 'monPaysAdminArticles', pageBuilder: (_, __) => const NoTransitionPage(child: monpays_articles.AdminArticlesPage())),
-            GoRoute(path: 'admin/articles/form', name: 'monPaysAdminArticleForm', pageBuilder: (_, state) => NoTransitionPage(child: monpays_form.AdminArticleFormPage(article: state.extra as Article?))),
-            GoRoute(path: 'admin/provinces', name: 'monPaysAdminProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: AdminProvincesPage())),
-            GoRoute(path: 'admin/provinces/form', name: 'monPaysAdminProvinceForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminProvinceFormPage(province: state.extra as Province?))),
-          ],
-        ),
+GoRoute(
+  path: AppRoutes.monPays,
+  name: 'monPays',
+  pageBuilder: (_, __) => const NoTransitionPage(child: MonPaysPage()),
+  routes: [
+    // ✅ FIERTÉ DE LA NATION — chemin RELATIF obligatoire
+    GoRoute(
+      path: 'citizens',
+      name: 'monPaysCitizens',
+      pageBuilder: (_, __) => const NoTransitionPage(child: CitizensPage()),
+    ),
+    GoRoute(
+  path: 'historical-figures',
+  name: 'monPaysHistoricalFigures',
+  pageBuilder: (_, __) => const NoTransitionPage(child: HistoricalFiguresPage()),
+),
+    GoRoute(path: 'authorities', name: 'monPaysAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AuthoritiesPage())),
+    GoRoute(path: 'authorities/:id', name: 'monPaysAuthorityProfile', pageBuilder: (_, state) => NoTransitionPage(child: AuthorityProfilePage(authorityId: state.pathParameters['id']!))),
+    GoRoute(path: 'laws', name: 'monPaysLaws', pageBuilder: (_, __) => const NoTransitionPage(child: LawsPage())),
+    GoRoute(path: 'laws/:type', name: 'monPaysArticleType', pageBuilder: (_, state) => NoTransitionPage(child: ArticleTypePage(type: ArticleType.fromString(state.pathParameters['type']!), title: ArticleType.fromString(state.pathParameters['type']!).label))),
+    GoRoute(path: 'laws/article/:id', name: 'monPaysArticleDetail', pageBuilder: (_, state) => NoTransitionPage(child: monPaysArticle.ArticleDetailPage(articleId: state.pathParameters['id']!))),
+    GoRoute(path: 'provinces', name: 'monPaysProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: ProvincesPage())),
+    GoRoute(path: 'provinces/:id', name: 'monPaysProvinceDetail', pageBuilder: (_, state) => NoTransitionPage(child: ProvinceDetailPage(provinceId: state.pathParameters['id']!))),
+    GoRoute(path: 'admin', name: 'monPaysAdmin', pageBuilder: (_, __) => const NoTransitionPage(child: AdminDashboardPage())),
+    GoRoute(path: 'admin/authorities', name: 'monPaysAdminAuthorities', pageBuilder: (_, __) => const NoTransitionPage(child: AdminAuthoritiesPage())),
+    GoRoute(path: 'admin/form', name: 'monPaysAdminForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminAuthorityFormPage(authority: state.extra as dynamic))),
+    GoRoute(path: 'admin/articles', name: 'monPaysAdminArticles', pageBuilder: (_, __) => const NoTransitionPage(child: monpays_articles.AdminArticlesPage())),
+    GoRoute(path: 'admin/articles/form', name: 'monPaysAdminArticleForm', pageBuilder: (_, state) => NoTransitionPage(child: monpays_form.AdminArticleFormPage(article: state.extra as Article?))),
+    GoRoute(path: 'admin/provinces', name: 'monPaysAdminProvinces', pageBuilder: (_, __) => const NoTransitionPage(child: AdminProvincesPage())),
+    GoRoute(path: 'admin/provinces/form', name: 'monPaysAdminProvinceForm', pageBuilder: (_, state) => NoTransitionPage(child: AdminProvinceFormPage(province: state.extra as Province?))),
+  ],
+),
         
-        // === THIX IA NEW MODULE ===
+        // ============================================================
+        // === THIX IA NEW MODULE - 15 PAGES - FULL PROD ENTERPRISE ===
+        // ============================================================
         ...ThixIaRouter.routes,
 
-        // === OTHER SPREAD ROUTES ===
+        // === OTHER SPREAD ROUTES (Education, Money, Weeding) ===
         GoRoute(path: AppRoutes.certification, name: 'certification', pageBuilder: (_, __) => const NoTransitionPage(child: CertificationTiersPage())),
         ...educationRoutes,
         ...instructorRoutes,
