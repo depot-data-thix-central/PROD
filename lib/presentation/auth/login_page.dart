@@ -4,6 +4,8 @@
 // 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly)
 // ============================================================================
 // ✅ Design unifié avec personal_registration_page.dart
+// ✅ Nouveau design centré (header bleu + courbes) — sans illustration
+// ✅ Ajout : connexion via Google (Supabase OAuth) — mobile + web
 // ✅ Anti-bot : honeypot hors écran + timing tolérant + rate limit silencieux
 // ✅ Rate limiting serveur (check_login_allowed) = source de vérité
 // ✅ Throttle local léger : garde-fou anti-burst uniquement (pas de double lock)
@@ -12,6 +14,7 @@
 // ============================================================================
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
@@ -54,6 +57,9 @@ const int _kUiBurstPauseSeconds = 10;     // → pause 10 s (pas 15 min !)
 // Reset — allégé
 const int _kResetMaxAttempts = 5;         // 3 → 5
 const int _kResetLockSeconds = 300;       // 10 min → 5 min
+
+// Google OAuth — attente du retour deep-link (mobile)
+const int _kGoogleAuthTimeoutSeconds = 60;
 
 // ════════════════════════════════════════════════════════════════════════════
 // i18n FALLBACK (défauts [EN, FR])
@@ -99,6 +105,15 @@ const Map<String, List<String>> _kLoginFb = {
   'login_error_empty_otp': [
     'Enter the 8-digit code you received by email.',
     'Entrez le code à 8 chiffres reçu par email.',
+  ],
+  'login_or': ['OR', 'OU'],
+  'login_google_button': [
+    'Sign in with Google',
+    'Se connecter avec Google',
+  ],
+  'login_google_cancelled': [
+    'Google sign-in cancelled or timed out.',
+    'Connexion Google annulée ou expirée.',
   ],
 };
 
@@ -477,6 +492,140 @@ class _PremiumFieldState extends State<_PremiumField> {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// DESIGN — HEADER WAVE (dégradé bleu + courbes, sans illustration)
+// ════════════════════════════════════════════════════════════════════════════
+class _HeaderWavePainter extends CustomPainter {
+  const _HeaderWavePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final rect = Offset.zero & size;
+    final shader = LinearGradient(
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+      colors: [ThixPolicy.primaryDeep, ThixPolicy.primary],
+    ).createShader(rect);
+
+    // Halo discret en haut à droite
+    canvas.drawCircle(
+      Offset(size.width * 0.92, size.height * 0.10),
+      size.width * 0.35,
+      Paint()..color = Colors.white.withOpacity(0.05),
+    );
+
+    // Fond principal avec courbe basse
+    final main = Path()
+      ..moveTo(0, 0)
+      ..lineTo(0, size.height * 0.78)
+      ..cubicTo(
+        size.width * 0.28, size.height * 1.02,
+        size.width * 0.62, size.height * 0.58,
+        size.width, size.height * 0.86,
+      )
+      ..lineTo(size.width, 0)
+      ..close();
+    canvas.drawPath(main, Paint()..shader = shader);
+
+    // Voile translucide 1 (arc premium dans le bleu)
+    final veil1 = Path()
+      ..moveTo(0, size.height * 0.60)
+      ..cubicTo(
+        size.width * 0.28, size.height * 0.84,
+        size.width * 0.62, size.height * 0.40,
+        size.width, size.height * 0.68,
+      )
+      ..lineTo(size.width, size.height * 0.86)
+      ..cubicTo(
+        size.width * 0.62, size.height * 0.58,
+        size.width * 0.28, size.height * 1.02,
+        0, size.height * 0.78,
+      )
+      ..close();
+    canvas.drawPath(veil1, Paint()..color = Colors.white.withOpacity(0.07));
+
+    // Voile translucide 2 (seconde couche)
+    final veil2 = Path()
+      ..moveTo(0, size.height * 0.70)
+      ..cubicTo(
+        size.width * 0.30, size.height * 0.94,
+        size.width * 0.64, size.height * 0.50,
+        size.width, size.height * 0.78,
+      )
+      ..lineTo(size.width, size.height * 0.86)
+      ..cubicTo(
+        size.width * 0.62, size.height * 0.58,
+        size.width * 0.28, size.height * 1.02,
+        0, size.height * 0.78,
+      )
+      ..close();
+    canvas.drawPath(veil2, Paint()..color = Colors.white.withOpacity(0.06));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// DESIGN — LOGO GOOGLE (peint, sans asset)
+// ════════════════════════════════════════════════════════════════════════════
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  static double _rad(double deg) => deg * math.pi / 180.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final stroke = size.shortestSide * 0.20;
+    final radius = (size.shortestSide - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    void segment(Color color, double startDeg, double sweepDeg) {
+      canvas.drawArc(
+        rect,
+        _rad(startDeg),
+        _rad(sweepDeg),
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+    }
+
+    segment(const Color(0xFFEA4335), 195, 120); // rouge  (haut gauche)
+    segment(const Color(0xFF4285F4), 315, 85);  // bleu   (droite)
+    segment(const Color(0xFF34A853), 40, 90);   // vert   (bas)
+    segment(const Color(0xFFFBBC05), 130, 65);  // jaune  (gauche)
+
+    // Barre horizontale bleue du « G »
+    canvas.drawRect(
+      Rect.fromLTWH(
+        center.dx,
+        center.dy - stroke / 2,
+        radius + stroke / 2,
+        stroke,
+      ),
+      Paint()..color = const Color(0xFF4285F4),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _GoogleLogo extends StatelessWidget {
+  final double size;
+  const _GoogleLogo({this.size = 20});
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(
+        size: Size.square(size),
+        painter: const _GoogleLogoPainter(),
+      );
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // LOGIN PAGE
 // ════════════════════════════════════════════════════════════════════════════
 class LoginPage extends ConsumerStatefulWidget {
@@ -501,6 +650,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   Timer? _resetCooldownTimer;
 
   bool _isInitialVerifying = true;
+  bool _googleLoading = false;
   String? _identifierError;
   String? _passwordError;
 
@@ -680,7 +830,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── SIGN IN ──────────────────────────────────────────────────────
+  // ── SIGN IN (mot de passe) ───────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
     FocusScope.of(context).unfocus();
@@ -886,6 +1036,118 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  // ── SIGN IN GOOGLE (Supabase OAuth) ──────────────────────────────
+  Future<void> _signInWithGoogle() async {
+    final l10n = AppLocalizations.of(context);
+    FocusScope.of(context).unfocus();
+
+    if (_googleLoading || _lockoutSecondsLeft > 0) return;
+    setState(() => _googleLoading = true);
+    HapticFeedback.mediumImpact();
+
+    try {
+      if (kIsWeb) {
+        // Web : redirection complète, le retour est géré au reload
+        // (via _checkInitialSession + garde de navigation).
+        await Supabase.instance.client.auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: Uri.base.origin,
+        );
+        return;
+      }
+
+      // Mobile / desktop : onglet externe + retour par deep-link.
+      await Supabase.instance.client.auth.signInWithOAuth(
+        OAuthProvider.google,
+      );
+
+      if (Supabase.instance.client.auth.currentSession == null) {
+        try {
+          await Supabase.instance.client.auth.onAuthStateChange
+              .firstWhere((s) => s.event == AuthChangeEvent.signedIn)
+              .timeout(Duration(seconds: _kGoogleAuthTimeoutSeconds));
+        } on TimeoutException {
+          if (mounted) _showInfo(_tx(context, 'login_google_cancelled'));
+          return;
+        }
+      }
+
+      if (!mounted) return;
+      await ref
+          .read(authControllerProvider.notifier)
+          .refreshCurrentUser()
+          .timeout(const Duration(seconds: 5));
+      if (!mounted) return;
+
+      final user = ref.read(authControllerProvider).value;
+      if (user == null) throw Exception('user_not_found_after_login');
+
+      // Mêmes contrôles que le flux mot de passe (statut / inscription / MFA)
+      final status = user.accountStatus?.toLowerCase() ?? '';
+      if (status == 'deactivated' || status == 'pending_deletion') {
+        await _logLoginAttempt(
+          identifier: 'google-oauth',
+          success: false,
+          failureReason: 'account_suspended',
+        );
+        SecurityReporter.reportLoginBlocked(
+          identifier: 'google-oauth',
+          reason: 'compte désactivé / en suppression',
+        );
+        throw Exception('account_suspended');
+      }
+
+      final regStatus = user.registrationStatus?.toLowerCase() ?? '';
+      const completedStatuses = {'completed', 'active'};
+      if (!completedStatuses.contains(regStatus)) {
+        await _logLoginAttempt(
+          identifier: 'google-oauth',
+          success: false,
+          failureReason: 'registration_not_completed',
+        );
+        context.go('${AppRoutes.personalReg}?step=3');
+        _showError(l10n.t('login_error_finalize_registration'));
+        return;
+      }
+
+      if (user.twoFaEnabled == true) {
+        await _logLoginAttempt(
+          identifier: 'google-oauth',
+          success: false,
+          failureReason: 'mfa_required',
+        );
+        _showError(l10n.t('login_error_mfa_not_supported'));
+        return;
+      }
+
+      await _logLoginAttempt(identifier: 'google-oauth', success: true);
+      await _Throttle.clear('login_ui_burst');
+
+      final target = user.accountType == AccountType.enterprise
+          ? AppRoutes.enterpriseDashboard
+          : AppRoutes.userDashboard;
+
+      debugPrint('[Login] ✓ Google sign in successful → $target');
+      context.go(target);
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Login] ❌ Google sign in error: $e');
+      if (!mounted) return;
+      final reason = e is AuthException ? e.code.name : e.toString();
+      await _logLoginAttempt(
+        identifier: 'google-oauth',
+        success: false,
+        failureReason: reason,
+      );
+      SecurityReporter.reportLoginFailure(
+        identifier: 'google-oauth',
+        reason: reason,
+      );
+      _showError(_translateAuthError(e, l10n));
+    } finally {
+      if (mounted) setState(() => _googleLoading = false);
+    }
+  }
+
   // ── PASSWORD RESET ───────────────────────────────────────────────
   Future<bool> _sendPasswordReset(String email) async {
     final l10n = AppLocalizations.of(context);
@@ -956,8 +1218,9 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     final isLoading = authState.isLoading || _isInitialVerifying;
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
+      backgroundColor: Colors.white,
       body: SafeArea(
+        bottom: false,
         child: Stack(
           children: [
             // 🍯 Honeypot hors écran
@@ -981,47 +1244,33 @@ class _LoginPageState extends ConsumerState<LoginPage> {
             Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 480),
-                child: Column(
-                  children: [
-                    _buildTopBar(l10n),
-                    Expanded(
-                      child: SingleChildScrollView(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      _buildHeader(l10n),
+                      Padding(
                         padding: const EdgeInsets.fromLTRB(
-                          ThixPolicy.s20,
+                          ThixPolicy.s24,
                           ThixPolicy.s8,
-                          ThixPolicy.s20,
+                          ThixPolicy.s24,
                           ThixPolicy.s24,
                         ),
-                        physics: const BouncingScrollPhysics(),
-                        keyboardDismissBehavior:
-                            ScrollViewKeyboardDismissBehavior.onDrag,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Container(
-                              padding: const EdgeInsets.all(ThixPolicy.s24),
-                              decoration: BoxDecoration(
-                                color: Colors.white,
-                                borderRadius:
-                                    BorderRadius.circular(ThixPolicy.rXl),
-                                border: Border.all(
-                                    color: ThixPolicy.border.withOpacity(0.7)),
-                                boxShadow: ThixPolicy.shadowSoft(),
-                              ),
-                              child: _buildFormCard(isLoading, l10n),
-                            ),
-                            const SizedBox(height: ThixPolicy.s16),
+                            _buildFormContent(isLoading, l10n),
+                            const SizedBox(height: ThixPolicy.s20),
                             _buildSecurityBanner(l10n),
-                            const SizedBox(height: ThixPolicy.s20),
-                            _buildRegisterRow(l10n),
-                            const SizedBox(height: ThixPolicy.s20),
-                            _buildLangChips(),
-                            const SizedBox(height: ThixPolicy.s24),
+                            const SizedBox(height: ThixPolicy.s8),
                           ],
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1031,21 +1280,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _buildTopBar(AppLocalizations l10n) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        ThixPolicy.s20,
-        ThixPolicy.s20,
-        ThixPolicy.s20,
-        ThixPolicy.s12,
-      ),
-      child: Column(
-        children: [
-          Semantics(
-            header: true,
-            label: 'THIX HUB',
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+  // ── HEADER BLEU (titre + sous-titre + langues, courbes premium) ──
+  Widget _buildHeader(AppLocalizations l10n) {
+    return CustomPaint(
+      painter: const _HeaderWavePainter(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(
+          ThixPolicy.s24,
+          ThixPolicy.s16,
+          ThixPolicy.s24,
+          110,
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
                 Container(
                   width: 10,
@@ -1056,48 +1305,53 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  'THIX HUB',
-                  style: ThixPolicy.h2Style.copyWith(
-                    color: ThixPolicy.primaryDeep,
-                    fontWeight: ThixPolicy.bold,
-                    letterSpacing: 2,
+                Semantics(
+                  header: true,
+                  label: 'THIX HUB',
+                  child: Text(
+                    'THIX HUB',
+                    style: ThixPolicy.labelStyle.copyWith(
+                      color: Colors.white,
+                      fontWeight: ThixPolicy.bold,
+                      letterSpacing: 2,
+                    ),
                   ),
                 ),
+                const Spacer(),
+                _buildLangChips(onDark: true),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            l10n.t('login_subtitle'),
-            textAlign: TextAlign.center,
-            style: ThixPolicy.captionStyle.copyWith(
-              color: ThixPolicy.textSecondary,
+            const SizedBox(height: 32),
+            Text(
+              l10n.t('login_title'),
+              style: ThixPolicy.h2Style.copyWith(
+                fontSize: 34,
+                color: Colors.white,
+                fontWeight: ThixPolicy.bold,
+                letterSpacing: 0.2,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(height: 8),
+            Text(
+              l10n.t('login_subtitle'),
+              style: ThixPolicy.bodySmallStyle.copyWith(
+                color: Colors.white.withOpacity(0.85),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildFormCard(bool isLoading, AppLocalizations l10n) {
+  // ── FORMULAIRE CENTRÉ (champs + CTA + Google + Sign Up) ──────────
+  Widget _buildFormContent(bool isLoading, AppLocalizations l10n) {
+    final busy = isLoading || _googleLoading;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          l10n.t('login_title'),
-          style: ThixPolicy.h2Style.copyWith(
-            color: ThixPolicy.primaryDeep,
-            fontWeight: ThixPolicy.bold,
-          ),
-        ),
-        const SizedBox(height: ThixPolicy.s6),
-        Text(
-          _tx(context, 'login_welcome_back'),
-          style: ThixPolicy.bodySmallStyle,
-        ),
-        const SizedBox(height: ThixPolicy.s24),
-
         // Identifiant (email / téléphone / THIX ID)
         _PremiumField(
           key: const ValueKey('identifier'),
@@ -1151,9 +1405,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       width: 18,
                       height: 18,
                       decoration: BoxDecoration(
-                        color: _rememberMe
-                            ? ThixPolicy.primary
-                            : Colors.white,
+                        color: _rememberMe ? ThixPolicy.primary : Colors.white,
                         borderRadius: BorderRadius.circular(5),
                         border: Border.all(
                           color: _rememberMe
@@ -1166,8 +1418,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       child: Icon(
                         Icons.check_rounded,
                         size: 14,
-                        color:
-                            _rememberMe ? Colors.white : Colors.transparent,
+                        color: _rememberMe ? Colors.white : Colors.transparent,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -1199,21 +1450,19 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s24),
 
-        // Bouton principal
+        // Bouton principal — « Login Now → »
         Semantics(
           button: true,
           label: l10n.t('login_button'),
-          enabled: !isLoading && _lockoutSecondsLeft == 0,
+          enabled: !busy && _lockoutSecondsLeft == 0,
           child: SizedBox(
             height: 54,
             child: ElevatedButton(
-              onPressed:
-                  (isLoading || _lockoutSecondsLeft > 0) ? null : _signIn,
+              onPressed: (busy || _lockoutSecondsLeft > 0) ? null : _signIn,
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
                 foregroundColor: ThixPolicy.onBrand,
-                disabledBackgroundColor:
-                    ThixPolicy.primary.withOpacity(0.35),
+                disabledBackgroundColor: ThixPolicy.primary.withOpacity(0.35),
                 elevation: 0,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -1228,8 +1477,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       height: 20,
                       child: CircularProgressIndicator(
                         strokeWidth: 2.5,
-                        valueColor:
-                            AlwaysStoppedAnimation<Color>(Colors.white),
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                       ),
                     ),
                     const SizedBox(width: ThixPolicy.s12),
@@ -1262,7 +1510,74 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s20),
 
-        // Biométrie
+        // Séparateur « OR »
+        Row(
+          children: [
+            const Expanded(child: Divider(color: ThixPolicy.border)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Text(
+                _tx(context, 'login_or'),
+                style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textMuted,
+                  fontWeight: ThixPolicy.bold,
+                  fontSize: 10,
+                  letterSpacing: 1.0,
+                ),
+              ),
+            ),
+            const Expanded(child: Divider(color: ThixPolicy.border)),
+          ],
+        ),
+        const SizedBox(height: ThixPolicy.s16),
+
+        // Bouton Google
+        Semantics(
+          button: true,
+          label: _tx(context, 'login_google_button'),
+          enabled: !busy && _lockoutSecondsLeft == 0,
+          child: SizedBox(
+            height: 54,
+            child: OutlinedButton(
+              onPressed: (busy || _lockoutSecondsLeft > 0)
+                  ? null
+                  : _signInWithGoogle,
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
+                side: BorderSide(color: ThixPolicy.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _googleLoading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        )
+                      : const _GoogleLogo(size: 20),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      _tx(context, 'login_google_button'),
+                      overflow: TextOverflow.ellipsis,
+                      style: ThixPolicy.bodyStyle.copyWith(
+                        color: ThixPolicy.textMain,
+                        fontWeight: ThixPolicy.semiBold,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: ThixPolicy.s20),
+
+        // Biométrie (stub conservé)
         Row(
           children: [
             const Expanded(child: Divider(color: ThixPolicy.border)),
@@ -1297,6 +1612,47 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               onTap: () => _handleBiometric('touch_id'),
             ),
           ],
+        ),
+        const SizedBox(height: ThixPolicy.s20),
+
+        // Sign Up outlined — « New Here ? Sign Up »
+        Semantics(
+          button: true,
+          label: l10n.t('login_create_account'),
+          child: SizedBox(
+            height: 54,
+            child: OutlinedButton(
+              onPressed: () {
+                HapticFeedback.selectionClick();
+                context.push(AppRoutes.personalReg);
+              },
+              style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
+                side: BorderSide(color: ThixPolicy.border),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                ),
+              ),
+              child: Text.rich(
+                TextSpan(
+                  text: '${l10n.t('login_new_user')} ',
+                  style: ThixPolicy.bodyStyle.copyWith(
+                    color: ThixPolicy.textSecondary,
+                    fontWeight: ThixPolicy.semiBold,
+                  ),
+                  children: [
+                    TextSpan(
+                      text: l10n.t('login_create_account'),
+                      style: ThixPolicy.bodyStyle.copyWith(
+                        color: ThixPolicy.primary,
+                        fontWeight: ThixPolicy.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -1352,39 +1708,17 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  Widget _buildRegisterRow(AppLocalizations l10n) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+  Widget _buildLangChips({bool onDark = false}) {
+    final chips = Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          l10n.t('login_new_user'),
-          style: ThixPolicy.bodySmallStyle.copyWith(
-            color: ThixPolicy.textSecondary,
-          ),
-        ),
-        const SizedBox(width: 6),
-        Semantics(
-          button: true,
-          label: l10n.t('login_create_account'),
-          child: GestureDetector(
-            onTap: () {
-              HapticFeedback.selectionClick();
-              context.push(AppRoutes.personalReg);
-            },
-            child: Text(
-              l10n.t('login_create_account'),
-              style: ThixPolicy.bodyStyle.copyWith(
-                color: ThixPolicy.primary,
-                fontWeight: ThixPolicy.bold,
-              ),
-            ),
-          ),
-        ),
+        _LangChip(label: 'FR', active: true, onDark: onDark, onTap: () {}),
+        _LangChip(label: 'EN', onDark: onDark, onTap: () {}),
+        _LangChip(label: 'SW', onDark: onDark, onTap: () {}),
+        _LangChip(label: 'LN', onDark: onDark, onTap: () {}),
       ],
     );
-  }
-
-  Widget _buildLangChips() {
+    if (onDark) return chips;
     return Center(
       child: Container(
         padding: const EdgeInsets.all(4),
@@ -1393,15 +1727,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: ThixPolicy.border),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _LangChip(label: 'FR', active: true, onTap: () {}),
-            _LangChip(label: 'EN', onTap: () {}),
-            _LangChip(label: 'SW', onTap: () {}),
-            _LangChip(label: 'LN', onTap: () {}),
-          ],
-        ),
+        child: chips,
       ),
     );
   }
@@ -1464,16 +1790,28 @@ class _BiometricButton extends StatelessWidget {
 class _LangChip extends StatelessWidget {
   final String label;
   final bool active;
+  final bool onDark;
   final VoidCallback onTap;
 
   const _LangChip({
     required this.label,
     this.active = false,
+    this.onDark = false,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final Color fg;
+    final Color bg;
+    if (onDark) {
+      fg = active ? ThixPolicy.primaryDeep : Colors.white70;
+      bg = active ? Colors.white : Colors.transparent;
+    } else {
+      fg = active ? Colors.white : ThixPolicy.textSecondary;
+      bg = active ? ThixPolicy.primary : Colors.transparent;
+    }
+
     return Semantics(
       button: true,
       selected: active,
@@ -1485,15 +1823,15 @@ class _LangChip extends StatelessWidget {
         },
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
           decoration: BoxDecoration(
-            color: active ? ThixPolicy.primary : Colors.transparent,
+            color: bg,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: active ? Colors.white : ThixPolicy.textSecondary,
+              color: fg,
               fontWeight: active ? FontWeight.w700 : FontWeight.w600,
               fontSize: 11,
             ),
