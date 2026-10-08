@@ -43,18 +43,20 @@ jobs:
             echo "No build_runner — skip"
           fi
 
-      # ✅ FIX : Secrets passés via env intermédiaire pour éviter la corruption
-      # des caractères spéciaux (+, /, =) dans la clé JWT par le shell bash
-      # ❌ SUPPRIMÉ : step "Create .env file" avec clés en dur (inutile + risque sécurité)
+      # ⚠️ CLÉS EN DUR RESTAURÉES (comme demandé)
+      - name: Create .env file
+        run: |
+          echo "Creating .env file..."
+          echo "SUPABASE_URL=https://lldgnysfiabakhaibgzq.supabase.co" >> .env
+          echo "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo" >> .env
+          echo "✅ .env file created successfully for Web deployment."
+
       - name: Build Web
-        env:
-          D_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          D_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           flutter build web --release \
             --base-href /PROD/ \
-            --dart-define=SUPABASE_URL="$D_SUPABASE_URL" \
-            --dart-define=SUPABASE_ANON_KEY="$D_SUPABASE_ANON_KEY"
+            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
+            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
