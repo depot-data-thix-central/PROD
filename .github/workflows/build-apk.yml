@@ -99,15 +99,6 @@ jobs:
       - name: Flutter pub get
         run: flutter pub get
 
-      # ✅ SÉCURISÉ : Clés depuis GitHub Secrets (pas en dur)
-      - name: Create .env file
-        run: |
-          echo "Creating .env file..."
-          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" > .env
-          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
-          echo "✅ .env file created successfully."
-          echo "Lines in .env: $(wc -l < .env)"
-
       - name: Generate code (build_runner)
         run: |
           if grep -q "build_runner" pubspec.yaml; then
@@ -170,25 +161,33 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
+      # ✅ FIX : Secrets passés via env intermédiaire pour éviter la corruption
+      # des caractères spéciaux (+, /, =) dans la clé JWT par le shell bash
       - name: Build release App Bundle (Obfuscated)
+        env:
+          D_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          D_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           flutter build appbundle --release \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="$D_SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$D_SUPABASE_ANON_KEY"
 
       - name: Build release APKs (Obfuscated & Split by ABI)
+        env:
+          D_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          D_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
           flutter build apk --release --split-per-abi \
             --build-name=${{ steps.version.outputs.version }} \
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="${{ secrets.SUPABASE_URL }}" \
-            --dart-define=SUPABASE_ANON_KEY="${{ secrets.SUPABASE_ANON_KEY }}"
+            --dart-define=SUPABASE_URL="$D_SUPABASE_URL" \
+            --dart-define=SUPABASE_ANON_KEY="$D_SUPABASE_ANON_KEY"
 
       - name: Verify artifacts
         run: |
@@ -204,7 +203,6 @@ jobs:
             echo "WARNING: Symbols directory not found!"
           fi
 
-      # ✅ AMÉLIORÉ : Recherche robuste des symboles (Flutter 3.24+)
       - name: Generate checksums & Compress symbols
         run: |
           sha256sum build/app/outputs/bundle/release/app-release.aab > build/app/outputs/bundle/release/app-release.aab.sha256
@@ -213,7 +211,7 @@ jobs:
           sha256sum *.apk > checksums.sha256
           cd -
 
-          # 🔧 Recherche des symboles dans tous les emplacements possibles
+          # Recherche robuste des symboles (Flutter 3.24+)
           SYMBOLS_FOUND=""
           for dir in "build/app/outputs/symbols" "build/debug_info" "build/app/intermediates/merged_java_res/release/out/META-INF"; do
             if [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
@@ -229,11 +227,9 @@ jobs:
             echo "✅ Symbols compressed successfully"
           else
             echo "⚠️ WARNING: No symbols directory found!"
-            echo "Checking for app.so.symbols files..."
             find build -name "*.symbols" -type f 2>/dev/null || echo "No .symbols files found"
           fi
 
-      # ✅ NOUVEAU : Upload symboles vers Firebase Crashlytics (stack traces lisibles)
       - name: Upload symbols to Firebase Crashlytics
         if: github.event_name != 'pull_request' && secrets.FIREBASE_APP_ID != ''
         uses: wzieba/firebase-action@v1.7.0
@@ -286,7 +282,7 @@ jobs:
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
             echo "**R8 Full Mode:** Enabled ✅"
-            echo "**Environment:** Supabase (GitHub Secrets) ✅"
+            echo "**Supabase Keys:** GitHub Secrets ✅"
             echo ""
             echo "### Artifacts"
             echo "- App Bundle (AAB)"
@@ -361,7 +357,7 @@ jobs:
       - name: Notify failure
         run: |
           {
-            echo "## Build Failed"
+            echo "## ❌ Build Failed"
             echo ""
             echo "**Workflow:** ${{ github.workflow }}"
             echo "**Run:** ${{ github.run_id }}"
