@@ -4,13 +4,13 @@
 // 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly)
 // ============================================================================
 // ✅ Design unifié avec personal_registration_page.dart
-// ✅ Nouveau design centré (header bleu + courbes) — sans illustration
+// ✅ Header bleu + courbes — marque THIX HUB une seule fois (pas de doublon)
+// ✅ Langues retirées du header (gérées par les paramètres de l'app)
 // ✅ Ajout : connexion via Google (Supabase OAuth) — mobile + web
+// ✅ Redirect web = URL de base réelle (sous-dossier GitHub Pages conservé)
 // ✅ Anti-bot : honeypot hors écran + timing tolérant + rate limit silencieux
 // ✅ Rate limiting serveur (check_login_allowed) = source de vérité
-// ✅ Throttle local léger : garde-fou anti-burst uniquement (pas de double lock)
 // ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
-// ✅ Fail-open sur erreurs réseau (ne bloque jamais l'utilisateur légitime)
 // ============================================================================
 
 import 'dart:async';
@@ -38,7 +38,7 @@ import 'package:thix_id/nav.dart';
 // ════════════════════════════════════════════════════════════════════════════
 // CONSTANTS — UX-first (les protections serveur restent strictes)
 // ════════════════════════════════════════════════════════════════════════════
-const int _kResetCooldownDuration = 30;   // 45 → 30 s
+const int _kResetCooldownDuration = 30;
 const int _kMaxEmailLength = 254;
 const int _kMinPasswordLength = 8;
 const int _kMaxPasswordLength = 128;
@@ -46,17 +46,17 @@ const int _kMaxOtpLength = 8;
 const int _kMaxIdentifierLength = 100;
 
 // Anti-bot — tolérant, silencieux
-const int _kMinFormFillSeconds = 1;       // 2 → 1 s (bots headless collent instantanément)
-const int _kMaxSubmissionsPerMinute = 15; // 5 → 15 (tolère les fautes de frappe)
+const int _kMinFormFillSeconds = 1;
+const int _kMaxSubmissionsPerMinute = 15;
 
-// Garde-fou UI local (en plus du serveur, mais léger)
-const int _kUiBurstMaxAttempts = 5;       // 5 tentatives
-const int _kUiBurstWindowSeconds = 60;    // en 60 s
-const int _kUiBurstPauseSeconds = 10;     // → pause 10 s (pas 15 min !)
+// Garde-fou UI local
+const int _kUiBurstMaxAttempts = 5;
+const int _kUiBurstWindowSeconds = 60;
+const int _kUiBurstPauseSeconds = 10;
 
 // Reset — allégé
-const int _kResetMaxAttempts = 5;         // 3 → 5
-const int _kResetLockSeconds = 300;       // 10 min → 5 min
+const int _kResetMaxAttempts = 5;
+const int _kResetLockSeconds = 300;
 
 // Google OAuth — attente du retour deep-link (mobile)
 const int _kGoogleAuthTimeoutSeconds = 60;
@@ -65,6 +65,7 @@ const int _kGoogleAuthTimeoutSeconds = 60;
 // i18n FALLBACK (défauts [EN, FR])
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, List<String>> _kLoginFb = {
+  'login_title_short': ['Log In', 'Connexion'],
   'login_error_too_many_attempts': [
     'Too many attempts. Try again in {0}.',
     'Trop de tentatives. Réessayez dans {0}.',
@@ -194,7 +195,7 @@ class _LoginValidators {
 
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
   static final RegExp _bidi = RegExp(
-    r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
+    r'[​‎‏‪-‮⁦-⁩﻿]',
   );
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
   static final RegExp _jsScheme =
@@ -257,13 +258,11 @@ class _AntiBotEngine {
 
   /// true = humain probable. Pas de message, pas de lockout local.
   bool isLikelyHuman() {
-    // 1. Honeypot rempli → robot
     if (_honeypot.trim().isNotEmpty) {
       debugPrint('[AntiBot] 🤖 honeypot filled');
       return false;
     }
 
-    // 2. Timing : uniquement sur web (bots headless y sont majoritaires)
     if (kIsWeb) {
       final elapsed = DateTime.now().difference(_formOpenedAt).inSeconds;
       if (elapsed < _kMinFormFillSeconds) {
@@ -272,7 +271,6 @@ class _AntiBotEngine {
       }
     }
 
-    // 3. Burst rate : tolérant (15/min)
     _submissionAttempts.add(DateTime.now());
     _submissionAttempts.removeWhere(
       (t) => DateTime.now().difference(t).inSeconds > 60,
@@ -284,7 +282,6 @@ class _AntiBotEngine {
     return true;
   }
 
-  /// +1 uniquement (jamais +5 comme avant : c'était un bug).
   void registerFailure() {
     _submissionAttempts.add(DateTime.now());
   }
@@ -830,6 +827,21 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
+  // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ─────────
+  /// Ex: https://org.github.io/PROD/  (et non https://org.github.io/)
+  String _webRedirectBase() {
+    final base = Uri.base;
+    var path = base.path;
+    try {
+      final loc = GoRouterState.of(context).matchedLocation; // ex: '/login'
+      if (loc.isNotEmpty && loc != '/' && path.endsWith(loc)) {
+        path = path.substring(0, path.length - loc.length);
+      }
+    } catch (_) {}
+    if (!path.endsWith('/')) path = '$path/';
+    return base.origin + path;
+  }
+
   // ── SIGN IN (mot de passe) ───────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
@@ -843,7 +855,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       return;
     }
 
-    // 🔒 Garde-fou UI léger : 5 échecs en 60 s → pause 10 s (le serveur décide du vrai lockout).
+    // 🔒 Garde-fou UI léger : 5 échecs en 60 s → pause 10 s.
     final uiPause = await _Throttle.blockedSeconds('login_ui_burst');
     if (uiPause > 0) {
       _showError(_tx(context, 'login_error_too_many_attempts',
@@ -1047,11 +1059,11 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
     try {
       if (kIsWeb) {
-        // Web : redirection complète, le retour est géré au reload
-        // (via _checkInitialSession + garde de navigation).
+        // Web : redirection complète vers l'URL de base RÉELLE
+        // (conserve le sous-dossier GitHub Pages → plus de 404).
         await Supabase.instance.client.auth.signInWithOAuth(
           OAuthProvider.google,
-          redirectTo: Uri.base.origin,
+          redirectTo: _webRedirectBase(),
         );
         return;
       }
@@ -1210,7 +1222,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     _showInfo(l10n.t('login_biometric_not_supported'));
   }
 
-  // ── BUILD ────────────────────────────────────────────────────────
+  // ── BUILD ───────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1280,7 +1292,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
   }
 
-  // ── HEADER BLEU (titre + sous-titre + langues, courbes premium) ──
+  // ── HEADER BLEU (marque centrée UNE seule fois + titre court) ────
   Widget _buildHeader(AppLocalizations l10n) {
     return CustomPaint(
       painter: const _HeaderWavePainter(),
@@ -1294,21 +1306,23 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                Container(
-                  width: 10,
-                  height: 10,
-                  decoration: const BoxDecoration(
-                    color: ThixPolicy.gold,
-                    shape: BoxShape.circle,
+            // Marque centrée (une seule occurrence de « THIX »)
+            Semantics(
+              header: true,
+              label: 'THIX HUB',
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      color: ThixPolicy.gold,
+                      shape: BoxShape.circle,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Semantics(
-                  header: true,
-                  label: 'THIX HUB',
-                  child: Text(
+                  const SizedBox(width: 10),
+                  Text(
                     'THIX HUB',
                     style: ThixPolicy.labelStyle.copyWith(
                       color: Colors.white,
@@ -1316,14 +1330,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       letterSpacing: 2,
                     ),
                   ),
-                ),
-                const Spacer(),
-                _buildLangChips(onDark: true),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 32),
+            // Titre court : pas de répétition de la marque
             Text(
-              l10n.t('login_title'),
+              _tx(context, 'login_title_short'),
               style: ThixPolicy.h2Style.copyWith(
                 fontSize: 34,
                 color: Colors.white,
@@ -1707,30 +1720,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       ),
     );
   }
-
-  Widget _buildLangChips({bool onDark = false}) {
-    final chips = Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        _LangChip(label: 'FR', active: true, onDark: onDark, onTap: () {}),
-        _LangChip(label: 'EN', onDark: onDark, onTap: () {}),
-        _LangChip(label: 'SW', onDark: onDark, onTap: () {}),
-        _LangChip(label: 'LN', onDark: onDark, onTap: () {}),
-      ],
-    );
-    if (onDark) return chips;
-    return Center(
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: ThixPolicy.border),
-        ),
-        child: chips,
-      ),
-    );
-  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -1777,64 +1766,6 @@ class _BiometricButton extends StatelessWidget {
                 ),
               ),
             ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════════
-// LANGUAGE CHIP
-// ════════════════════════════════════════════════════════════════════════════
-class _LangChip extends StatelessWidget {
-  final String label;
-  final bool active;
-  final bool onDark;
-  final VoidCallback onTap;
-
-  const _LangChip({
-    required this.label,
-    this.active = false,
-    this.onDark = false,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final Color fg;
-    final Color bg;
-    if (onDark) {
-      fg = active ? ThixPolicy.primaryDeep : Colors.white70;
-      bg = active ? Colors.white : Colors.transparent;
-    } else {
-      fg = active ? Colors.white : ThixPolicy.textSecondary;
-      bg = active ? ThixPolicy.primary : Colors.transparent;
-    }
-
-    return Semantics(
-      button: true,
-      selected: active,
-      label: '${AppLocalizations.of(context).t('common_language')}: $label',
-      child: InkWell(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: fg,
-              fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-              fontSize: 11,
-            ),
           ),
         ),
       ),
