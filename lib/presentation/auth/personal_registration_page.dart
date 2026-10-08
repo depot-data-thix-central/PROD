@@ -1,19 +1,24 @@
 // lib/presentation/auth/personal_registration_page.dart
 //
-// THIX HUB — Inscription v6 : Choix Google OU Email+OTP
-// Étape 1 : Choix de méthode (SANS cases à cocher)
-// Étape 2 : Google OAuth OU Email+OTP
-// Étape 3 : Profil complet + mot de passe + CONDITIONS EN BAS
+// THIX HUB — Inscription v7 (production)
+// Étape 1 : Google OU Email (SANS cases à cocher)
+// Étape 2 : Email + code OTP (si méthode Email)
+// Étape 3 : Nom, date de naissance, pays, THIX Chat, mot de passe + conditions → Enregistrer
 // Étape 4 : Confirmation (THIX ID)
 //
-// ✅ FIX v6 : "Back to login" fiable (signOut Supabase direct + controller, go en finally)
-// ✅ FIX v6 : jamais de step 0 / step 3 sans session (clamp + garde initState)
-// ✅ Contrat serveur : registration_status = 'draft_step2' jusqu'à finalize_registration
-// ✅ i18n auto FR/EN via _tx() — aucune clé brute
-// ✅ Sécurité : honeypot, délais humains, throttles, zxcvbn ≥ 3, HIBP, jetables, bidi
+// v7 :
+//  - compte déjà complet → direct dans l'app (Google) / login (Email, via RPC email_registration_state)
+//  - Save : display_name (pas full_name), SupabaseSafeWrite, password + metadata, finalize_registration
+//  - les DEUX AuthController (routeur + Riverpod) sont rafraîchis
+//  - registrationFinalStepActive : le routeur ne saute plus l'étape 4
+//  - reprise de session (redirect ?step=3) : email, nom, méthode détectés
+//  - retour login fiable (context.go), plus de remise à zéro des compteurs anti-abus
+//  - mot de passe temporaire aléatoire (Random.secure), mot de passe compatible avec le login
+//  - sécurité : honeypot, délais humains, throttles persistants, zxcvbn >= 3, HIBP, jetables, bidi
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -27,11 +32,19 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 import 'package:zxcvbn/zxcvbn.dart';
+import 'package:thix_id/auth/auth_controller.dart' as legacy_auth show AuthController;
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
+import 'package:thix_id/services/supabase_safe_write.dart';
+
+// ============================================================================
+// DRAPEAU LU PAR LE ROUTEUR (app_router.dart)
+// true pendant l'étape 4 : le routeur ne doit pas expulser vers le dashboard
+// ============================================================================
+bool registrationFinalStepActive = false;
 
 // ============================================================================
 // CONSTANTS
@@ -53,16 +66,20 @@ const int _kMinPasswordScore = 3;
 const int _kResendCooldownDuration = 60;
 
 // Anti-bot
-const int _kMinStep1Seconds = 1;  // ✅ FIX: Réduit de 3 à 1
-const int _kMinStep2Seconds = 2;  // ✅ FIX: Réduit de 6 à 2
+const int _kMinStep1Seconds = 1;
+const int _kMinStep2Seconds = 2;
+const int _kMinStep3Seconds = 5;
 const int _kMaxSendAttempts = 5;
 const int _kSendLockSeconds = 900;
 const int _kMaxOtpFailures = 5;
 const int _kOtpLockSeconds = 300;
 const int _kMaxFinalizeAttempts = 6;
 const int _kFinalizeLockSeconds = 300;
+const int _kMaxGoogleAttempts = 8;
+const int _kGoogleLockSeconds = 600;
 
 const String _kOAuthRedirect = 'thix://login-callback';
+const String _kDefaultName = 'Utilisateur THIX';
 
 const List<String> _kReservedChats = [
   '@admin', '@thix', '@thixhub', '@support', '@root', '@system',
@@ -77,7 +94,7 @@ const Set<String> _kDisposableDomains = {
 };
 
 // ============================================================================
-// i18n — clé l10n d'abord, sinon repli [EN, FR] (détection auto)
+// i18n — clé l10n d'abord, sinon repli [EN, FR]
 // ============================================================================
 const Map<String, List<String>> _kRegFb = {
   'common_or': ['or', 'ou'],
@@ -178,6 +195,10 @@ const Map<String, List<String>> _kRegFb = {
     'Registration in progress detected. Continue your profile.',
     'Inscription en cours détectée. Complétez votre profil.',
   ],
+  'reg_account_exists': [
+    'This email already has an account. Please sign in.',
+    'Cet email a déjà un compte. Connectez-vous.',
+  ],
   'reg_error_too_many_attempts': ['Too many attempts. Try again in {0}.', 'Trop de tentatives. Réessayez dans {0}.'],
   'reg_error_wait_a_moment': [
     'Please wait a few seconds before submitting.',
@@ -192,13 +213,14 @@ const Map<String, List<String>> _kRegFb = {
     'Les adresses email temporaires ne sont pas acceptées.',
   ],
   'reg_error_password_chars': [
-    'Password contains invalid characters.',
-    'Le mot de passe contient des caractères invalides.',
+    'Password contains unsupported characters (<>, spaces at start/end).',
+    'Le mot de passe contient des caractères non supportés (<>, espaces au début/fin).',
   ],
   'reg_error_name_chars': ['Name can only contain letters.', 'Le nom ne peut contenir que des lettres.'],
   'reg_error_chat_required': ['Choose your THIX Chat.', 'Choisissez votre THIX Chat.'],
   'reg_error_email_invalid': ['Invalid email address.', 'Adresse email invalide.'],
   'reg_error_otp_format': ['Enter the 8-digit code.', 'Saisissez le code à 8 chiffres.'],
+  'reg_error_otp_invalid': ['Invalid or expired code.', 'Code invalide ou expiré.'],
   'reg_error_email_not_confirmed': ['Email not confirmed.', 'Email non confirmé.'],
   'reg_error_name_invalid': ['Invalid name.', 'Nom invalide.'],
   'reg_error_dob_required': ['Date of birth required.', 'Date de naissance requise.'],
@@ -209,7 +231,7 @@ const Map<String, List<String>> _kRegFb = {
   'reg_error_chat_format': ['Invalid THIX Chat format.', 'Format THIX Chat invalide.'],
   'reg_error_passwords_mismatch': ['Passwords do not match.', 'Les mots de passe ne correspondent pas.'],
   'reg_error_session_lost': ['Session lost. Please start again.', 'Session perdue. Recommencez.'],
-  'reg_session_lost': ['Your Google session expired. Please sign in again.', 'Votre session Google a expiré. Reconnectez-vous.'],
+  'reg_session_lost': ['Your session expired. Please sign in again.', 'Votre session a expiré. Reconnectez-vous.'],
   'reg_error_supabase_config': ['Server misconfiguration.', 'Configuration serveur incorrecte.'],
   'reg_error_info_used': ['These details are already in use.', 'Ces informations sont déjà utilisées.'],
   'reg_error_chat_taken': ['Username already taken.', 'Identifiant déjà pris.'],
@@ -250,7 +272,7 @@ String _fmtWait(BuildContext ctx, int seconds) {
 }
 
 // ============================================================================
-// ANTI-ABUS
+// ANTI-ABUS (compteurs persistés : ne PAS les remettre à zéro sur "retour")
 // ============================================================================
 class _Throttle {
   _Throttle._();
@@ -302,7 +324,9 @@ class _RegValidators {
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
   static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
+  static final RegExp _anyTag = RegExp(r'<[^>]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
+  static final RegExp _onAttr = RegExp(r'on\w+\s*=', caseSensitive: false);
 
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
@@ -316,8 +340,17 @@ class _RegValidators {
     return s;
   }
 
+  /// Le mot de passe n'est JAMAIS modifié à l'inscription. Le login (SupabaseAuthManager)
+  /// nettoie <…>, javascript:, onxxx= et les espaces de bord : on refuse donc ces cas ici,
+  /// sinon le mot de passe saisi à la connexion serait différent de celui enregistré.
   static bool isSafePassword(String p) =>
-      p.length <= _kMaxPasswordLength && !_ctrl.hasMatch(p) && !_bidi.hasMatch(p);
+      p.length <= _kMaxPasswordLength &&
+      p == p.trim() &&
+      !_ctrl.hasMatch(p) &&
+      !_bidi.hasMatch(p) &&
+      !_anyTag.hasMatch(p) &&
+      !_jsScheme.hasMatch(p) &&
+      !_onAttr.hasMatch(p);
 
   static bool isValidEmail(String email) {
     final e = sanitize(email, maxLength: _kMaxEmailLength).toLowerCase();
@@ -340,6 +373,14 @@ class _RegValidators {
     final s = raw.trim().toLowerCase();
     if (s.isEmpty) return '';
     return s.startsWith('@') ? s : '@$s';
+  }
+
+  /// Mot de passe temporaire pour l'inscription par OTP : aléatoire, jamais affiché.
+  /// Remplacé par le vrai mot de passe à l'étape 3.
+  static String randomTempPassword() {
+    final r = Random.secure();
+    final bytes = List<int>.generate(36, (_) => r.nextInt(256));
+    return 'Tp9${base64UrlEncode(bytes).replaceAll('=', '')}';
   }
 
   static String mapCountryToCode(String? name) {
@@ -386,8 +427,16 @@ String _translateAuthError(BuildContext ctx, Object e) {
   }
   if (msg.contains('chat_taken')) return _tx(ctx, 'reg_error_chat_taken');
   if (msg.contains('thix_id_failed')) return _tx(ctx, 'reg_error_thix_id_failed');
-  if (msg.contains('rate limit') || msg.contains('too many')) return _tx(ctx, 'reg_error_rate_limit');
-  if (msg.contains('network') || msg.contains('timeout') || msg.contains('unavailable') || msg.contains('socket')) {
+  if (msg.contains('weak_password') || msg.contains('weakpassword')) return _tx(ctx, 'reg_password_too_weak');
+  if (msg.contains('invalidotp') || msg.contains('otpexpired') || msg.contains('otp_expired') ||
+      msg.contains('token has expired') || msg.contains('invalid or expired')) {
+    return _tx(ctx, 'reg_error_otp_invalid');
+  }
+  if (msg.contains('ratelimit') || msg.contains('rate limit') || msg.contains('too many')) {
+    return _tx(ctx, 'reg_error_rate_limit');
+  }
+  if (msg.contains('networkerror') || msg.contains('network') || msg.contains('timeout') ||
+      msg.contains('unavailable') || msg.contains('socket')) {
     return _tx(ctx, 'reg_error_network');
   }
 
@@ -441,6 +490,7 @@ class PasswordPolicy {
     return (result.score ?? 0).toInt();
   }
 
+  /// k-anonymity : seuls 5 caractères du hash SHA-1 quittent l'appareil.
   static Future<bool> _isPasswordPwned(String password) async {
     int attempt = 0;
     while (attempt <= _kHibpMaxRetries) {
@@ -734,7 +784,8 @@ class PersonalRegistrationPage extends ConsumerStatefulWidget {
   ConsumerState<PersonalRegistrationPage> createState() => _PersonalRegistrationPageState();
 }
 
-class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationPage> {
+class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationPage>
+    with WidgetsBindingObserver {
   final _nameC = TextEditingController();
   final _dobC = TextEditingController();
   final _emailC = TextEditingController();
@@ -751,6 +802,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   String _thixIdGenerated = '';
   String _otpEmail = '';
   bool _otpSent = false;
+  String _otpMode = 'signup'; // 'signup' (nouveau compte) | 'email' (compte confirmé à finir)
 
   String? _passwordError;
   bool _passwordValidating = false;
@@ -767,15 +819,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   bool _busy = false;
   int _step = 1;
   bool _useGoogle = false;
+  bool _isNavigatingAway = false;
 
   Timer? _resendTimer;
   int _resendCooldown = 0;
 
   StreamSubscription<AuthState>? _authSub;
   late DateTime _stepEnteredAt = DateTime.now();
-  
-  // ✅ FIX: Flag pour éviter les conflits de navigation
-  bool _isNavigatingAway = false;
 
   static const List<String> _countries = [
     'Afrique du Sud', 'Algérie', 'Angola', 'Bénin', 'Botswana', 'Burkina Faso',
@@ -791,59 +841,33 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   SupabaseClient get _sb => Supabase.instance.client;
 
+  // ── CYCLE DE VIE ──────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    registrationFinalStepActive = false;
 
-    // ✅ FIX v6 : clamp strict 1..4 (jamais de step 0 / step vide)
+    // Étape de départ : 1..3 (l'étape 4 ne se reprend jamais), et pas d'étape 3 sans session
     int start = widget.initialStep ?? 1;
     if (start < 1) start = 1;
-    if (start > 4) start = 3;
-    if (start == 4) start = 3;
-
-    // ✅ FIX v6 : pas de step 3 sans session (sinon Save échouerait toujours)
-    final hasSession = _sb.auth.currentUser != null;
-    if (start == 3 && !hasSession) start = 1;
-
+    if (start > 3) start = 3;
+    if (start == 3 && _sb.auth.currentUser == null) start = 1;
     _step = start;
     _stepEnteredAt = DateTime.now();
 
-    // ✅ FIX: Listener plus prudent - évite navigation automatique
-    _authSub = _sb.auth.onAuthStateChange.listen((s) {
-      if (!mounted || _isNavigatingAway) return;
-      
-      if (s.event == AuthChangeEvent.signedOut) {
-        // ✅ FIX: Si session terminée, retour au login
-        _handleSessionEnded();
-      } else if (s.event == AuthChangeEvent.signedIn && s.session != null && _useGoogle && (_step == 1 || _step == 2)) {
-        unawaited(_handleSignedIn());
-      }
-    });
+    _authSub = _sb.auth.onAuthStateChange.listen(_onAuthEvent);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final user = _sb.auth.currentUser;
-      if (user != null && _useGoogle) {
-        unawaited(_handleSignedIn());
-        return;
-      }
-      // ✅ FIX v6 : reprise de session — email déjà vérifié → on saute à l'étape 3
-      if (user != null && _step == 2 && user.emailConfirmedAt != null) {
-        _emailC.text = (user.email ?? '').trim().toLowerCase();
-        _enterStep(3);
-        _showInfo(_tx(context, 'reg_session_restored'));
-        return;
-      }
-      // ✅ FIX v6 : step 3 sans session (race) → retour propre à l'étape 1
-      if (user == null && _step == 3) {
-        _enterStep(1);
-      }
+      if (mounted) unawaited(_bootstrapSession());
     });
   }
 
   @override
   void dispose() {
-    _isNavigatingAway = true; // ✅ FIX: Marquer comme en train de naviguer
+    WidgetsBinding.instance.removeObserver(this);
+    _isNavigatingAway = true;
+    registrationFinalStepActive = false;
     _authSub?.cancel();
     _nameC.dispose();
     _dobC.dispose();
@@ -859,16 +883,22 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     super.dispose();
   }
 
-  // ✅ FIX: Gestion propre de fin de session
-  void _handleSessionEnded() {
-    if (_isNavigatingAway) return;
-    _goBackToLogin();
+  /// Retour de Google annulé : on débloque l'écran si aucune session n'arrive.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _googleWaiting) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted && _googleWaiting && _sb.auth.currentUser == null) {
+          setState(() => _googleWaiting = false);
+        }
+      });
+    }
   }
 
-  // ✅ FIX v6 : clamp centralisé
   void _enterStep(int s) {
-    final clamped = s.clamp(1, 4);
-    setState(() => _step = clamped);
+    final c = s < 1 ? 1 : (s > 4 ? 4 : s);
+    if (!mounted) return;
+    setState(() => _step = c);
     _stepEnteredAt = DateTime.now();
   }
 
@@ -910,14 +940,144 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return true;
   }
 
-  // ✅ FIX: Meilleur message avec temps restant
   bool _humanDelayOk(int minSeconds) {
     final elapsed = DateTime.now().difference(_stepEnteredAt).inSeconds;
     if (elapsed >= minSeconds) return true;
-    
-    final remaining = minSeconds - elapsed;
-    _showError(_tx(context, 'reg_error_wait_seconds', args: [remaining.toString()]));
+    _showError(_tx(context, 'reg_error_wait_seconds', args: ['${minSeconds - elapsed}']));
     return false;
+  }
+
+  // ── SESSION / COMPTE EXISTANT ─────────────────────────────────────────────
+  bool _isGoogleUser(User u) => u.appMetadata['provider']?.toString() == 'google';
+
+  /// true = compte complet · false = inscription à finir · null = inconnu (réseau)
+  Future<bool?> _isFinalized(String uid) async {
+    try {
+      final p = await _sb.from('profiles').select('registration_status').eq('id', uid).maybeSingle();
+      final s = (p?['registration_status'] as String?)?.trim().toLowerCase() ?? '';
+      return s == 'active' || s == 'completed';
+    } catch (e) {
+      if (kDebugMode) debugPrint('[Registration] isFinalized: $e');
+      return null;
+    }
+  }
+
+  Future<void> _writeProfile(Map<String, dynamic> payload) async {
+    await SupabaseSafeWrite.upsert(
+      client: _sb,
+      table: 'profiles',
+      payload: payload,
+      criticalColumns: SupabaseSafeWrite.profilesCriticalColumns,
+      onUnknownColumn: () async {
+        try {
+          await _sb.functions.invoke('pgrst_schema_reload', body: const {});
+        } catch (_) {}
+      },
+    );
+  }
+
+  Future<void> _refreshControllers() async {
+    // 1) contrôleur lu par le routeur  2) contrôleur Riverpod
+    try {
+      await legacy_auth.AuthController.instance.refreshCurrentUser();
+    } catch (_) {}
+    try {
+      await ref.read(authControllerProvider.notifier).refreshCurrentUser();
+    } catch (_) {}
+  }
+
+  /// Compte déjà complet : on va DIRECTEMENT dans l'application.
+  Future<void> _goToApp() async {
+    _isNavigatingAway = true;
+    registrationFinalStepActive = false;
+    try {
+      await legacy_auth.AuthController.instance.refreshCurrentUser().timeout(const Duration(seconds: 8));
+    } catch (_) {}
+    if (!mounted) return;
+    context.go(AppRoutes.userDashboard);
+  }
+
+  void _prefillFrom(User user) {
+    final email = (user.email ?? '').trim().toLowerCase();
+    final meta = user.userMetadata ?? const <String, dynamic>{};
+    final metaName = _RegValidators.sanitize(
+      (meta['full_name'] ?? meta['name'] ?? meta['display_name'] ?? '').toString(),
+      maxLength: _kMaxNameLength,
+    );
+    _emailC.text = email;
+    if (_nameC.text.isEmpty && metaName.isNotEmpty && metaName != _kDefaultName) {
+      _nameC.text = metaName;
+    }
+  }
+
+  /// Session présente à l'ouverture de la page (redirect ?step=3, app relancée…).
+  Future<void> _bootstrapSession() async {
+    final user = _sb.auth.currentUser;
+    if (user == null) {
+      if (_step == 3) _enterStep(1);
+      return;
+    }
+    await _resumeWithSession(user, notice: true);
+  }
+
+  /// Session détectée (Google, OTP, reprise) : compte complet → app ; sinon → étape 3.
+  Future<void> _resumeWithSession(User user, {bool notice = false}) async {
+    if (_handlingSession || _isNavigatingAway) return;
+    _handlingSession = true;
+    try {
+      final done = await _isFinalized(user.id);
+      if (done == true) {
+        await _goToApp();
+        return;
+      }
+      if (done == null) {
+        if (mounted) {
+          setState(() => _googleWaiting = false);
+          _showError(_tx(context, 'reg_error_network'));
+        }
+        return; // on n'écrit rien tant qu'on ne connaît pas l'état du compte
+      }
+
+      try {
+        await _writeProfile({
+          'id': user.id,
+          'registration_status': 'draft_step2',
+          'account_status': 'pending',
+        });
+      } catch (e) {
+        if (kDebugMode) debugPrint('[Registration] draft upsert: $e');
+      }
+
+      if (!mounted || _isNavigatingAway) return;
+
+      setState(() {
+        _googleWaiting = false;
+        _useGoogle = _isGoogleUser(user);
+        _prefillFrom(user);
+      });
+      if (_step != 3) _enterStep(3);
+      if (notice) _showInfo(_tx(context, 'reg_session_restored'));
+    } finally {
+      _handlingSession = false;
+    }
+  }
+
+  void _onAuthEvent(AuthState s) {
+    if (!mounted || _isNavigatingAway) return;
+
+    if (s.event == AuthChangeEvent.signedOut) {
+      // Session perdue pendant l'étape 3 (expiration…) : retour au login
+      if (_step >= 3 && !_busy && !registrationFinalStepActive) {
+        _isNavigatingAway = true;
+        context.go(AppRoutes.login);
+      }
+      return;
+    }
+
+    if (s.event == AuthChangeEvent.signedIn && s.session != null && _step <= 2) {
+      final u = s.session!.user;
+      if (_googleWaiting || _isGoogleUser(u)) unawaited(_resumeWithSession(u));
+    }
   }
 
   // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ──────────────────
@@ -934,18 +1094,22 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return base.origin + path;
   }
 
-  // ── MÉTHODES ÉTAPE 1 ──────────────────────────────────────────────────────
+  // ── ÉTAPE 1 : CHOIX DE MÉTHODE ────────────────────────────────────────────
   Future<void> _chooseGoogle() async {
     if (_busy) return;
     if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
+    if (!_humanDelayOk(_kMinStep1Seconds)) return;
+    if (!await _notBlocked('reg_google')) return;
+    await _Throttle.hit('reg_google', _kMaxGoogleAttempts, _kGoogleLockSeconds);
 
     setState(() => _useGoogle = true);
 
-    if (_sb.auth.currentUser != null) {
-      await _handleSignedIn();
+    final existing = _sb.auth.currentUser;
+    if (existing != null) {
+      await _resumeWithSession(existing);
       return;
     }
 
@@ -976,66 +1140,39 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
+    if (!_humanDelayOk(_kMinStep1Seconds)) return;
 
     HapticFeedback.selectionClick();
     setState(() {
       _useGoogle = false;
-      _step = 2;
+      _googleWaiting = false;
     });
-    _stepEnteredAt = DateTime.now();
+    _enterStep(2);
   }
 
-  // ── GOOGLE (session détectée) ─────────────────────────────────────────────
-  Future<void> _handleSignedIn() async {
-    if (_handlingSession || _step >= 4 || _isNavigatingAway) return;
-    final user = _sb.auth.currentUser;
-    if (user == null) return;
-    _handlingSession = true;
+  // ── ÉTAPE 2 : EMAIL + OTP ─────────────────────────────────────────────────
 
+  /// 'none' | 'unconfirmed' | 'incomplete' | 'complete' | 'unknown'
+  /// Nécessite la fonction SQL email_registration_state ; sinon 'unknown' (flux normal).
+  Future<String> _emailState(String email) async {
     try {
-      final email = (user.email ?? '').trim().toLowerCase();
-
-      try {
-        final p = await _sb.from('profiles').select('thix_id, registration_status').eq('id', user.id).maybeSingle();
-        final thixId = (p?['thix_id'] as String?)?.trim() ?? '';
-        final regStatus = (p?['registration_status'] as String?)?.toLowerCase() ?? '';
-        if (thixId.isNotEmpty && !thixId.toUpperCase().startsWith('THIX-PENDING') &&
-            (regStatus == 'completed' || regStatus == 'active')) {
-          if (mounted) context.go(AppRoutes.userDashboard);
-          return;
-        }
-      } catch (_) {}
-
-      try {
-        await _sb.from('profiles').upsert({
-          'id': user.id,
-          'registration_status': 'draft_step2',
-          'account_status': 'pending',
-        });
-      } catch (e) {
-        if (kDebugMode) debugPrint('[Registration] Google draft upsert: $e');
-      }
-
-      if (!mounted || _isNavigatingAway) return;
-
-      final meta = user.userMetadata ?? const <String, dynamic>{};
-      final googleName = _RegValidators.sanitize(
-        (meta['full_name'] ?? meta['name'] ?? '').toString(),
-        maxLength: _kMaxNameLength,
-      );
-
-      setState(() {
-        _googleWaiting = false;
-        _emailC.text = email;
-        if (_nameC.text.isEmpty && googleName.isNotEmpty) _nameC.text = googleName;
-      });
-      _enterStep(3);
-    } finally {
-      _handlingSession = false;
+      final r = await _sb
+          .rpc('email_registration_state', params: {'p_email': email})
+          .timeout(const Duration(seconds: 8));
+      final s = r?.toString().trim().toLowerCase() ?? '';
+      const ok = {'none', 'unconfirmed', 'incomplete', 'complete'};
+      return ok.contains(s) ? s : 'unknown';
+    } catch (_) {
+      return 'unknown';
     }
   }
 
-  // ── EMAIL + OTP ───────────────────────────────────────────────────────────
+  void _accountExistsGoLogin() {
+    _isNavigatingAway = true;
+    _showInfo(_tx(context, 'reg_account_exists'));
+    context.go(AppRoutes.login);
+  }
+
   Future<void> _sendOtp() async {
     if (_busy || _resendCooldown > 0) return;
 
@@ -1043,7 +1180,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
-
+    if (!_humanDelayOk(_kMinStep2Seconds)) return;
     if (!await _notBlocked('reg_otp_send')) return;
 
     final email = _RegValidators.sanitize(_emailC.text.trim().toLowerCase(), maxLength: _kMaxEmailLength);
@@ -1052,7 +1189,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_email_invalid'));
       return;
     }
-
     if (_RegValidators.isDisposableEmail(email)) {
       _showError(_tx(context, 'reg_error_disposable_email'));
       return;
@@ -1064,24 +1200,51 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     try {
       await _Throttle.hit('reg_otp_send', _kMaxSendAttempts, _kSendLockSeconds);
 
-      try {
-        await ref.read(authControllerProvider.notifier).registerPersonal(
-          email: email,
-          password: 'TEMP_' + DateTime.now().millisecondsSinceEpoch.toString(),
-          displayName: '',
-          rememberMe: true,
-          profileDraft: {
-            'registration_status': 'draft_step2',
-            'account_status': 'pending',
-            'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
-            'privacy_accepted_at': DateTime.now().toUtc().toIso8601String(),
-          },
-        );
-      } catch (e) {
-        final msg = e.toString().toLowerCase();
-        if (!msg.contains('otpsent') && !msg.contains('otp_sent') && !msg.contains('déjà inscrit') && !msg.contains('already')) {
+      // Détection du compte (seulement au premier envoi ; au renvoi on garde le mode)
+      var mode = _otpSent ? _otpMode : 'signup';
+      if (!_otpSent) {
+        final state = await _emailState(email);
+        if (!mounted) return;
+        if (state == 'complete') {
+          _accountExistsGoLogin();
+          return;
+        }
+        if (state == 'incomplete') mode = 'email';
+      }
+
+      if (mode == 'email') {
+        // Compte confirmé mais inscription non terminée : code de connexion par email
+        try {
+          await _sb.auth.signInWithOtp(email: email, shouldCreateUser: false);
+        } catch (e) {
           _showError(_translateAuthError(context, e));
           return;
+        }
+      } else {
+        try {
+          await ref.read(authControllerProvider.notifier).registerPersonal(
+            email: email,
+            password: _RegValidators.randomTempPassword(),
+            displayName: '',
+            rememberMe: true,
+            profileDraft: {
+              'registration_status': 'draft_step2',
+              'account_status': 'pending',
+              'terms_accepted_at': DateTime.now().toUtc().toIso8601String(),
+              'privacy_accepted_at': DateTime.now().toUtc().toIso8601String(),
+            },
+          );
+        } catch (e) {
+          final msg = e.toString().toLowerCase();
+          if (msg.contains('accountalreadyexists') || msg.contains('accountexistswrongpassword')) {
+            if (mounted) _accountExistsGoLogin();
+            return;
+          }
+          // otpSent / accountExistsNewOtpSent = succès (le code a été envoyé)
+          if (!msg.contains('otpsent') && !msg.contains('otp_sent')) {
+            if (mounted) _showError(_translateAuthError(context, e));
+            return;
+          }
         }
       }
 
@@ -1089,6 +1252,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
       setState(() {
         _otpSent = true;
+        _otpMode = mode;
         _otpEmail = email;
       });
       _startResendCooldown();
@@ -1105,7 +1269,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
-
     if (!await _notBlocked('reg_otp_verify')) return;
 
     final code = _RegValidators.sanitize(_otpC.text.trim(), maxLength: _kMaxOtpLength);
@@ -1118,19 +1281,18 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     setState(() => _busy = true);
 
     try {
-      await ref.read(authControllerProvider.notifier).verifyOTP(
-        email: _otpEmail,
-        token: code,
-      );
+      if (_otpMode == 'email') {
+        final res = await _sb.auth.verifyOTP(email: _otpEmail, token: code, type: OtpType.email);
+        if (res.session == null) throw Exception('invalidotp');
+      } else {
+        await ref.read(authControllerProvider.notifier).verifyOTP(email: _otpEmail, token: code);
+      }
 
       try {
         await _sb.rpc('mark_email_verified');
       } catch (_) {}
 
-      try {
-        await ref.read(authControllerProvider.notifier).refreshCurrentUser();
-      } catch (_) {}
-
+      await _refreshControllers();
       if (!mounted) return;
 
       final user = _sb.auth.currentUser;
@@ -1139,15 +1301,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         return;
       }
 
-      try {
-        await _sb.from('profiles').upsert({
-          'id': user.id,
-          'registration_status': 'draft_step2',
-          'account_status': 'pending',
-        });
-      } catch (_) {}
-
-      _enterStep(3);
+      await _Throttle.clear('reg_otp_verify');
+      await _resumeWithSession(user);
     } catch (e) {
       await _Throttle.hit('reg_otp_verify', _kMaxOtpFailures, _kOtpLockSeconds);
       if (kDebugMode) debugPrint('[Registration] OTP error: $e');
@@ -1295,7 +1450,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     });
   }
 
-  // ── ENREGISTRER ───────────────────────────────────────────────────────────
+  // ── ÉTAPE 3 : ENREGISTRER ─────────────────────────────────────────────────
   Future<void> _saveAndActivate() async {
     if (_busy) return;
 
@@ -1303,10 +1458,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
+    if (!_humanDelayOk(_kMinStep3Seconds)) return;
 
     final user = _sb.auth.currentUser;
     if (user == null) {
-      _showError(_useGoogle ? _tx(context, 'reg_session_lost') : _tx(context, 'reg_error_session_lost'));
+      _showError(_tx(context, 'reg_session_lost'));
       _enterStep(1);
       return;
     }
@@ -1314,9 +1470,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     final email = (user.email ?? _emailC.text).trim().toLowerCase();
     final name = _RegValidators.sanitize(_nameC.text.trim(), maxLength: _kMaxNameLength);
     final dob = _RegValidators.sanitize(_dobC.text.trim(), maxLength: 20);
-    final pass = _passwordC.text;
+    final pass = _passwordC.text; // jamais sanitisé
     final confirm = _confirmC.text;
 
+    // ── Validations ──
     if (name.length < _kMinNameLength || name.length > _kMaxNameLength) {
       _showError(_tx(context, 'reg_error_name_invalid'));
       return;
@@ -1325,7 +1482,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_name_chars'));
       return;
     }
-
     if (dob.isEmpty) {
       _showError(_tx(context, 'reg_error_dob_required'));
       return;
@@ -1343,12 +1499,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(age < _kMinAgeYears ? _tx(context, 'reg_error_underage') : _tx(context, 'reg_error_dob_invalid'));
       return;
     }
-
     if (_country == null) {
       _showError(_tx(context, 'reg_error_country_required'));
       return;
     }
-
     if (_chatError != null) {
       _showError(_tx(context, 'reg_error_fix_chat'));
       return;
@@ -1367,7 +1521,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_chat_reserved_error'));
       return;
     }
-
     if (!_RegValidators.isSafePassword(pass)) {
       _showError(_tx(context, 'reg_error_password_chars'));
       return;
@@ -1394,7 +1547,6 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _showError(_tx(context, 'reg_error_passwords_mismatch'));
       return;
     }
-
     if (!_acceptedTerms || !_acceptedPrivacy) {
       _showError(_tx(context, 'auth_terms_required'));
       return;
@@ -1406,32 +1558,63 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     HapticFeedback.mediumImpact();
     setState(() => _busy = true);
 
+    var stage = 'S0';
+    var success = false;
     try {
-      try {
-        await _sb.auth.updateUser(UserAttributes(password: pass));
-      } catch (e) {
-        final msg = e.toString().toLowerCase();
-        if (!msg.contains('different from the old')) {
-          if (kDebugMode) debugPrint('[Registration] Password update: $e');
-        }
+      // S1 — jamais rétrograder un compte déjà complet
+      stage = 'S1';
+      final done = await _isFinalized(user.id);
+      if (done == true) {
+        await _goToApp();
+        return;
       }
 
+      // S2 — mot de passe + métadonnées (nom, conditions acceptées)
+      stage = 'S2';
       final nowIso = DateTime.now().toUtc().toIso8601String();
-      await _sb.from('profiles').upsert({
+      try {
+        await _sb.auth.updateUser(
+          UserAttributes(
+            password: pass,
+            data: {
+              'display_name': name,
+              'full_name': name,
+              'date_of_birth': dob,
+              'country_or_origin': _country,
+              'terms_accepted_at': nowIso,
+              'privacy_accepted_at': nowIso,
+            },
+          ),
+        );
+      } on AuthException catch (e) {
+        final m = '${e.code} ${e.message}'.toLowerCase();
+        // Même mot de passe qu'avant (nouvelle tentative) : ce n'est pas une erreur
+        if (!m.contains('same_password') && !m.contains('different from the old')) rethrow;
+      }
+
+      // S3 — profil (colonne display_name, comme SupabaseAuthManager)
+      stage = 'S3';
+      await _writeProfile({
         'id': user.id,
-        'full_name': name,
+        'display_name': name,
         'date_of_birth': dob,
         'country_or_origin': _country,
         'registration_status': 'draft_step2',
         'account_status': 'pending',
         'terms_accepted_at': nowIso,
         'privacy_accepted_at': nowIso,
+        'updated_at': nowIso,
       });
 
+      // S4 — email déjà vérifié (OTP ou Google)
+      stage = 'S4';
       try {
         await _sb.rpc('mark_email_verified');
       } catch (_) {}
 
+      // S5 — THIX ID + THIX Chat officiels
+      stage = 'S5';
+      registrationFinalStepActive = true; // le routeur ne doit pas sauter l'étape 4
       final result = await _sb.rpc(
         'finalize_registration',
         params: {
@@ -1441,10 +1624,10 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       );
 
       Map<String, dynamic> data;
-      if (result is Map<String, dynamic>) {
-        data = result;
-      } else if (result is Map) {
+      if (result is Map) {
         data = Map<String, dynamic>.from(result);
+      } else if (result is List && result.isNotEmpty && result.first is Map) {
+        data = Map<String, dynamic>.from(result.first as Map);
       } else {
         throw Exception('Invalid server response');
       }
@@ -1453,12 +1636,13 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       final claimedChat = (data['thix_chat'] as String?) ?? chat;
 
       if (officialThixId.isEmpty || officialThixId.toUpperCase().startsWith('THIX-PENDING')) {
-        throw Exception('thix_id_failed');
+        final err = data['error']?.toString() ?? '';
+        throw Exception(err.isNotEmpty ? err : 'thix_id_failed');
       }
 
-      try {
-        await ref.read(authControllerProvider.notifier).refreshCurrentUser();
-      } catch (_) {}
+      // S6 — le routeur ET Riverpod doivent connaître le nouveau statut
+      stage = 'S6';
+      await _refreshControllers();
 
       if (!mounted) return;
 
@@ -1469,6 +1653,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       await _Throttle.clear('reg_otp_send');
       await _Throttle.clear('reg_otp_verify');
 
+      success = true;
       setState(() {
         _thixIdGenerated = officialThixId;
         _thixChatC.text = claimedChat;
@@ -1476,8 +1661,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       _enterStep(4);
       _showSuccess(_tx(context, 'reg_account_activated'));
     } catch (e) {
-      if (kDebugMode) debugPrint('[Registration] Activation error: $e');
-      if (mounted) _showError(_translateAuthError(context, e));
+      if (!success) registrationFinalStepActive = false;
+      if (kDebugMode) debugPrint('[Registration] Save error at $stage: $e');
+      if (mounted) _showError('${_translateAuthError(context, e)} [$stage]');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1507,62 +1693,67 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  // ── ✅ FIX v6 : RETOUR À LA CONNEXION GARANTI ─────────────────────────────
-  Future<void> _goBackToLogin() async {
-    if (_busy || _isNavigatingAway) return;
-    
-    _isNavigatingAway = true; // ✅ FIX: Marquer comme en cours de navigation
-    setState(() => _busy = true);
-    
-    try {
-      // ✅ FIX: Annuler le listener AVANT le signOut pour éviter les conflits
-      await _authSub?.cancel();
-      _authSub = null;
-      
-      if (_sb.auth.currentUser != null) {
-        // 1) SignOut Supabase DIRECT (ne dépend d'aucun provider)
-        try {
-          await _sb.auth.signOut().timeout(const Duration(seconds: 5));
-        } catch (e) {
-          debugPrint('[Registration] SignOut Supabase error: $e');
-        }
-        
-        // 2) SignOut controller (état UI + push notifications)
-        try {
-          await ref.read(authControllerProvider.notifier).signOut();
-        } catch (e) {
-          debugPrint('[Registration] SignOut controller error: $e');
-        }
-      }
-      
-      // 3) Nettoyage des compteurs locaux
-      await _Throttle.clear('reg_otp_send');
-      await _Throttle.clear('reg_otp_verify');
-      await _Throttle.clear('reg_finalize');
-      
-    } catch (e) {
-      debugPrint('[Registration] Cleanup error: $e');
-    } finally {
-      // 4) Navigation GARANTIE (même si un signOut a échoué)
-      if (!mounted) return;
-      
-      setState(() => _busy = false);
-      
-      // ✅ FIX: Utiliser pushReplacement pour forcer la navigation
+  // ── NAVIGATION ────────────────────────────────────────────────────────────
+
+  /// Déconnexion fiable (listener coupé avant, navigation GoRouter garantie).
+  /// Les compteurs anti-abus ne sont PAS remis à zéro ici (sinon contournement).
+  Future<void> _signOutQuietly() async {
+    await _authSub?.cancel();
+    _authSub = null;
+    registrationFinalStepActive = false;
+    if (_sb.auth.currentUser != null) {
       try {
-        Navigator.of(context).pushNamedAndRemoveUntil(
-          AppRoutes.login,
-          (route) => false, // Supprime toutes les routes précédentes
-        );
+        await ref.read(authControllerProvider.notifier).signOut().timeout(const Duration(seconds: 8));
       } catch (e) {
-        debugPrint('[Registration] Navigator error, fallback to GoRouter: $e');
-        // Fallback: GoRouter
+        debugPrint('[Registration] controller signOut: $e');
+      }
+      try {
+        if (_sb.auth.currentSession != null) {
+          await _sb.auth.signOut().timeout(const Duration(seconds: 5));
+        }
+      } catch (e) {
+        debugPrint('[Registration] supabase signOut: $e');
+      }
+    }
+  }
+
+  Future<void> _goBackToLogin() async {
+    if (_isNavigatingAway) return;
+    _isNavigatingAway = true;
+    if (mounted) setState(() => _busy = true);
+    try {
+      await _signOutQuietly();
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
         context.go(AppRoutes.login);
       }
     }
   }
 
-  // ── RETOUR : 4→3→2→1→login ────────────────────────────────────────────────
+  /// Étape 3 → étape 1 : on se déconnecte proprement et on repart de zéro.
+  Future<void> _restartFromStep1() async {
+    setState(() => _busy = true);
+    try {
+      await _signOutQuietly();
+    } finally {
+      if (mounted) {
+        _passwordC.clear();
+        _confirmC.clear();
+        _otpC.clear();
+        _authSub = _sb.auth.onAuthStateChange.listen(_onAuthEvent);
+        setState(() {
+          _busy = false;
+          _otpSent = false;
+          _otpMode = 'signup';
+          _useGoogle = false;
+          _googleWaiting = false;
+        });
+        _enterStep(1);
+      }
+    }
+  }
+
   Future<void> _goBack() async {
     if (_busy || _isNavigatingAway) return;
     HapticFeedback.selectionClick();
@@ -1571,13 +1762,14 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       case 4:
         return;
       case 3:
-        if (_useGoogle) {
-          await _goBackToLogin(); // changement de compte Google = retour login
-        } else {
-          _enterStep(2);
-        }
+        await _restartFromStep1();
         return;
       case 2:
+        _otpC.clear();
+        setState(() {
+          _otpSent = false;
+          _otpMode = 'signup';
+        });
         _enterStep(1);
         return;
       default:
@@ -1586,8 +1778,11 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  void _goToDashboard() {
+  Future<void> _goToDashboard() async {
     HapticFeedback.mediumImpact();
+    await _refreshControllers(); // le routeur doit voir "active/completed" avant de naviguer
+    registrationFinalStepActive = false;
+    if (!mounted) return;
     context.go(AppRoutes.userDashboard);
   }
 
@@ -1606,6 +1801,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       body: SafeArea(
         child: Stack(
           children: [
+            // Champ piège hors écran : ignoré des lecteurs d'écran et du focus clavier
             Positioned(
               left: -3000,
               top: 0,
@@ -1873,7 +2069,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                   ),
                 ),
                 const SizedBox(width: ThixPolicy.s12),
-              ] else if (icon != null && _step != 4) ...[
+              ] else if (_step != 4) ...[
                 Icon(icon, size: 20),
                 const SizedBox(width: ThixPolicy.s8),
               ],
@@ -1924,7 +2120,6 @@ class _Step1Method extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s6),
         Text(_tx(context, 'reg_choose_method'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
-
         Semantics(
           button: true,
           label: _tx(context, 'reg_google_continue'),
@@ -1955,9 +2150,7 @@ class _Step1Method extends StatelessWidget {
           style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
           textAlign: TextAlign.center,
         ),
-
         const SizedBox(height: ThixPolicy.s20),
-
         Row(
           children: [
             const Expanded(child: Divider(color: ThixPolicy.border)),
@@ -1971,9 +2164,7 @@ class _Step1Method extends StatelessWidget {
             const Expanded(child: Divider(color: ThixPolicy.border)),
           ],
         ),
-
         const SizedBox(height: ThixPolicy.s20),
-
         Semantics(
           button: true,
           label: _tx(context, 'reg_email_continue'),
@@ -2004,7 +2195,6 @@ class _Step1Method extends StatelessWidget {
           style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
           textAlign: TextAlign.center,
         ),
-
         if (waiting) ...[
           const SizedBox(height: ThixPolicy.s20),
           Container(
@@ -2154,7 +2344,6 @@ class _Step2Email extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s6),
         Text(_tx(context, 'reg_step2_email_subtitle'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
-
         _PremiumField(
           label: _tx(context, 'reg_email_label'),
           hint: _tx(context, 'reg_email_hint'),
@@ -2166,7 +2355,6 @@ class _Step2Email extends StatelessWidget {
           textInputAction: isOtpSent ? TextInputAction.next : TextInputAction.done,
           readOnly: isOtpSent,
         ),
-
         if (isOtpSent) ...[
           const SizedBox(height: ThixPolicy.s20),
           _OtpNoticeBanner(email: otpEmail),
@@ -2316,16 +2504,14 @@ class _Step3Profile extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s6),
         Text(_tx(context, 'reg_step3_subtitle'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
-
         _PremiumField(
           label: useGoogle ? _tx(context, 'reg_email_detected') : _tx(context, 'reg_email_label'),
           icon: Icons.email_outlined,
           controller: emailC,
           readOnly: true,
-          trailing: useGoogle ? const Icon(Icons.verified_rounded, color: ThixPolicy.success, size: 20) : null,
+          trailing: const Icon(Icons.verified_rounded, color: ThixPolicy.success, size: 20),
         ),
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumField(
           label: _tx(context, 'reg_full_name_label'),
           hint: _tx(context, 'reg_full_name_hint'),
@@ -2336,7 +2522,6 @@ class _Step3Profile extends StatelessWidget {
           textInputAction: TextInputAction.next,
         ),
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumField(
           label: _tx(context, 'reg_dob_label'),
           hint: 'AAAA-MM-JJ',
@@ -2347,7 +2532,6 @@ class _Step3Profile extends StatelessWidget {
           trailing: const Icon(Icons.expand_more_rounded, color: ThixPolicy.textSecondary),
         ),
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumDropdown(
           label: _tx(context, 'reg_country_label'),
           icon: Icons.public_rounded,
@@ -2356,7 +2540,6 @@ class _Step3Profile extends StatelessWidget {
           onChanged: onCountryChanged,
         ),
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumField(
           label: _tx(context, 'reg_thix_chat_label'),
           hint: _tx(context, 'reg_thix_chat_hint'),
@@ -2377,7 +2560,6 @@ class _Step3Profile extends StatelessWidget {
                   : null),
         ),
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumField(
           label: _tx(context, 'reg_password_label'),
           hint: _tx(context, 'reg_password_hint'),
@@ -2420,7 +2602,6 @@ class _Step3Profile extends StatelessWidget {
           ),
         ],
         const SizedBox(height: ThixPolicy.s16),
-
         _PremiumField(
           label: _tx(context, 'reg_confirm_password_label'),
           hint: _tx(context, 'reg_confirm_password_hint'),
@@ -2430,8 +2611,6 @@ class _Step3Profile extends StatelessWidget {
           maxLength: _kMaxPasswordLength,
           autofillHints: const [AutofillHints.newPassword],
         ),
-
-        // ✅ CONDITIONS SOUS LE MOT DE PASSE
         const SizedBox(height: ThixPolicy.s20),
         const Divider(color: ThixPolicy.border, height: 1),
         const SizedBox(height: ThixPolicy.s12),
