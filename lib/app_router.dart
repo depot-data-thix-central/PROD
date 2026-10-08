@@ -21,7 +21,6 @@ import 'package:thix_id/presentation/payment/payment_gateway_page.dart';
 import 'package:thix_id/presentation/payment/activation_receipt_page.dart';
 import 'package:thix_id/presentation/profile/public_profile_page.dart' as public_profile;
 import 'package:thix_id/presentation/dashboard/user_dashboard_page.dart';
-import 'package:thix_id/presentation/enterprise/enterprise_dashboard_page.dart';
 import 'package:thix_id/presentation/enterprise/enterprise_portal_page.dart';
 import 'package:thix_id/presentation/enterprise/enterprise_dashboard_shell_page.dart';
 import 'package:thix_id/presentation/vault/document_vault_page.dart';
@@ -31,6 +30,7 @@ import 'package:thix_id/presentation/certification/certification_tiers_page.dart
 import 'package:thix_id/presentation/settings/settings_account_status_screen.dart';
 import 'package:thix_id/presentation/settings/data_export_page.dart';
 import 'package:thix_id/presentation/settings/activity_log_page.dart';
+import 'package:thix_id/widgets/no_connection_overlay.dart';
 
 // === THIX CHAT ===
 import 'package:thix_id/models/chat/chat_conversation.dart';
@@ -353,11 +353,28 @@ class AppRouter {
           final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
           const accountStatusPath = '/settings/account-status';
           final isAccountStatusRoute = loc == accountStatusPath;
+          final isNoConnectionRoute = loc == '/no-connection';
+
+          // 📡 Vérification Offline
+          bool isOffline = false;
+          try {
+            isOffline = !(NetworkService().isConnected ?? true);
+          } catch (_) {
+            isOffline = false; // Fallback safe
+          }
+
+          if (isOffline && !isNoConnectionRoute && !isLoginPage && !isStartPage && !isRegPage) {
+            return '/no-connection';
+          }
+          if (!isOffline && isNoConnectionRoute) {
+            return AppRoutes.home;
+          }
 
           // Définition des routes accessibles sans connexion
           final isPublic = isStartPage ||
               isLoginPage ||
               isRegPage ||
+              isNoConnectionRoute ||
               loc == AppRoutes.publicProfile ||
               loc == AppRoutes.jobs ||
               loc == AppRoutes.opportunities ||
@@ -380,15 +397,11 @@ class AppRouter {
           }
 
           // 2. CONNECTÉ MAIS PROFIL EN CHARGEMENT (OU HORS-LIGNE)
-          // Grâce au Correctif 2, isAuthenticated est true via la session locale
-          // même si currentUser est null le temps de s'hydrater.
           if (currentUser == null) {
-            // On redirige vers l'accueil (qui gère le mode hors-ligne via le cache)
-            // pour éviter de rester bloqué sur l'écran de login.
             if (isLoginPage || isStartPage) {
               return AppRoutes.home;
             }
-            return null; // On laisse l'utilisateur où il est
+            return null; 
           }
 
           // --- ANALYSE DU STATUT DU COMPTE ---
@@ -401,10 +414,8 @@ class AppRouter {
           final regStatus = currentUser.registrationStatus?.toLowerCase() ?? '';
           final isRegistrationCompleted = (regStatus == 'active' || regStatus == 'completed');
           
-          // Détermination sécurisée du dashboard cible
-          final targetDashboard = currentUser.accountType == AccountType.enterprise
-              ? AppRoutes.enterpriseDashboard
-              : AppRoutes.userDashboard;
+          // Détermination sécurisée du dashboard cible (Enterprise Dashboard retiré)
+          final targetDashboard = AppRoutes.userDashboard;
 
           // 3. VERROUILLAGE STRICT : COMPTE DÉSACTIVÉ / SUPPRESSION
           if (isLifecycleBlocked) {
@@ -429,30 +440,35 @@ class AppRouter {
 
           // 6. INSCRIPTION DÉJÀ TERMINÉE MAIS SUR PAGE D'INSCRIPTION
           if (isRegPage && isRegistrationCompleted) {
-            if (state.uri.queryParameters['step'] == '3') return null;
+            if (state.uri.queryParameters['step'] == '4') return null;
             return targetDashboard;
           }
 
-          // 7. ONBOARDING INACHEVÉ
+          // 7. ONBOARDING INACHEVÉ (Adapté au nouveau parcours 4 étapes)
           if (!isRegPage &&
               !isLoginPage &&
               !isStartPage &&
               !isAccountStatusRoute &&
+              !isNoConnectionRoute &&
               !isRegistrationCompleted &&
               currentUser.registrationStatus != null) {
                 
-            if (loc == AppRoutes.home) {
-              // NE PAS appeler auth.signOut() ici ! Cela crée des bugs de routing (le "bordel").
-              // Rediriger proprement vers l'étape manquante.
+            if (loc == AppRoutes.home || loc == AppRoutes.userDashboard) {
               if (regStatus == 'draft_step1') {
                 return '${AppRoutes.personalReg}?step=1';
               }
-              return '${AppRoutes.personalReg}?step=2';
+              if (regStatus == 'draft_step2') {
+                return '${AppRoutes.personalReg}?step=3'; // Email vérifié/Google OK -> Profil
+              }
+              return '${AppRoutes.personalReg}?step=1';
             }
             if (regStatus == 'draft_step1') {
               return '${AppRoutes.personalReg}?step=1';
             }
-            return '${AppRoutes.personalReg}?step=2';
+            if (regStatus == 'draft_step2') {
+              return '${AppRoutes.personalReg}?step=3';
+            }
+            return '${AppRoutes.personalReg}?step=1';
           }
 
           return null;
@@ -463,6 +479,13 @@ class AppRouter {
       },
 
       routes: [
+        // === OFFLINE ROUTE ===
+        GoRoute(
+          path: '/no-connection',
+          name: 'noConnection',
+          pageBuilder: (_, __) => const NoTransitionPage(child: NoConnectionOverlay()),
+        ),
+
         // === CORE, AUTH & MAIN ===
         GoRoute(path: AppRoutes.start, name: 'start', pageBuilder: (_, __) => const NoTransitionPage(child: ThixIdStartPage())),
         GoRoute(path: AppRoutes.login, name: 'login', pageBuilder: (_, __) => const NoTransitionPage(child: LoginPage())),
