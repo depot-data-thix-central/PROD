@@ -118,7 +118,6 @@ class _CertificationInfo {
     required this.isLegacyVerified,
   });
 
-  /// ✅ NOUVEAU : factory depuis ConnectionUserProfile (objet typé)
   factory _CertificationInfo.fromUserProfile(ConnectionUserProfile? user) {
     if (user == null) {
       return const _CertificationInfo(
@@ -128,8 +127,6 @@ class _CertificationInfo {
         isLegacyVerified: false,
       );
     }
-    // Les champs certification ne sont pas dans ConnectionUserProfile actuel
-    // On pourrait les ajouter au modèle, mais pour l'instant on retourne false
     return const _CertificationInfo(
       tier: null,
       status: null,
@@ -138,7 +135,6 @@ class _CertificationInfo {
     );
   }
 
-  /// Legacy : factory depuis Map (pour ConnectionRequest.sender/receiver)
   factory _CertificationInfo.fromMap(Map<String, dynamic>? user) {
     if (user == null) {
       return const _CertificationInfo(
@@ -170,12 +166,12 @@ class _CertificationInfo {
 }
 
 // ============================================================================
-// STATE — ✅ TYPÉ CORRECTEMENT
+// STATE
 // ============================================================================
 class ConnectionsState {
   final List<ConnectionRequest> received;
   final List<ConnectionRequest> sent;
-  final List<ConnectionView> connections; // ✅ Typé au lieu de List<dynamic>
+  final List<ConnectionView> connections;
   final bool loading;
   final bool loadingMore;
   final bool hasMoreConnections;
@@ -456,55 +452,88 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // COMMUNICATION ACTIONS — ✅ CORRIGÉES POUR UTILISER ConnectionView
+  // ✅ COMMUNICATION ACTIONS — CORRIGÉES AVEC NAVIGATION DIRECTE VERS CHAT
   // ══════════════════════════════════════════════════════════════════════════
 
+  /// ✅ Ouvre directement la discussion (création si nécessaire + navigation)
   Future<void> _startChat(ConnectionView connection) async {
-  if (_isStartingChat) {
-    debugPrint('[Connections] ⚠️ Chat creation already in progress');
-    return;
-  }
+    if (_isStartingChat) {
+      debugPrint('[Connections] ⚠️ Chat creation already in progress');
+      return;
+    }
 
-  final l10n = AppLocalizations.of(context);
-  final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-  if (currentUserId == null) {
-    _showError(l10n.t('escalation_not_authenticated'));
-    return;
-  }
+    final l10n = AppLocalizations.of(context);
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      _showError(l10n.t('escalation_not_authenticated'));
+      return;
+    }
 
-  final otherUserId = connection.otherUserId;
-  if (otherUserId.isEmpty) {
-    _showError(l10n.t('escalation_invalid_conversation'));
-    return;
-  }
+    final otherUserId = connection.otherUserId;
+    if (otherUserId.isEmpty) {
+      _showError(l10n.t('escalation_invalid_conversation'));
+      return;
+    }
 
-  setState(() => _isStartingChat = true);
-  _showInfo(l10n.t('chat_new_message'));
+    setState(() => _isStartingChat = true);
 
-  try {
-    // ✅ "Get or create" : renvoie la conv existante sinon la crée
-    //    (RPC create_direct_conversation, idempotent)
-    final conv = await _connRetry(
-      () => ChatService(Supabase.instance.client)
-          .createDirectConversation(otherUserId),
-      label: 'openOrCreateDM',
+    // ✅ Loader visible pendant l'aller-retour réseau (feedback immédiat)
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: CircularProgressIndicator(),
+          ),
+        ),
+      ),
     );
 
-    if (!mounted) return;
+    try {
+      debugPrint('[Connections] 💬 Opening/creating DM with $otherUserId');
+      
+      // ✅ "Get or create" : renvoie la conv existante sinon la crée
+      //    (RPC create_direct_conversation, idempotent)
+      final conv = await _connRetry(
+        () => ChatService(Supabase.instance.client)
+            .createDirectConversation(otherUserId),
+        label: 'openOrCreateDM',
+      );
 
-    if (conv.id.isNotEmpty) {
-      debugPrint('[Connections] 💬 Opening conversation: ${conv.id}');
-      context.push('/chat/${conv.id}');
-    } else {
-      _showError(l10n.t('escalation_conversation_not_found'));
+      if (!mounted) return;
+      
+      // ✅ Fermer le loader avant de naviguer
+      Navigator.of(context).pop();
+
+      if (conv.id.isNotEmpty) {
+        debugPrint('[Connections] 💬 Pushing to conversation: ${conv.id}');
+        
+        // ✅ Navigation vers l'écran de chat avec go_router
+        final route = '/chat/${conv.id}';
+        debugPrint('[Connections] 🧭 Navigating to: $route');
+        
+        try {
+          context.push(route);
+        } catch (e) {
+          debugPrint('[Connections] ❌ Navigation failed: $e');
+          _showError('Navigation impossible. Vérifiez que la route $route existe.');
+        }
+      } else {
+        debugPrint('[Connections] ❌ Conversation ID is empty');
+        _showError(l10n.t('escalation_conversation_not_found'));
+      }
+    } catch (e) {
+      debugPrint('[Connections] ❌ Start chat error: $e');
+      if (mounted) {
+        Navigator.of(context).pop(); // Fermer le loader
+        _showError(_ConnValidators.friendlyError(e));
+      }
+    } finally {
+      if (mounted) setState(() => _isStartingChat = false);
     }
-  } catch (e) {
-    debugPrint('[Connections] ❌ Start chat error: $e');
-    if (mounted) _showError(_ConnValidators.friendlyError(e));
-  } finally {
-    if (mounted) setState(() => _isStartingChat = false);
   }
-}
 
   void _startAudioCall(ConnectionView connection) {
     final l10n = AppLocalizations.of(context);
@@ -773,7 +802,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BOTTOM SHEET (ACTIONS MENU) — ✅ CORRIGÉ POUR ConnectionView
+  // BOTTOM SHEET (ACTIONS MENU)
   // ══════════════════════════════════════════════════════════════════════════
 
   void _showConnectionActions(ConnectionView connection) {
@@ -870,7 +899,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BUILD — ✅ CORRIGÉ
+  // BUILD
   // ══════════════════════════════════════════════════════════════════════════
 
   @override
@@ -1025,7 +1054,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                       const SizedBox(height: 16),
                     ],
 
-                    // SECTION: CONNEXIONS ACTIVES — ✅ CORRIGÉ
+                    // SECTION: CONNEXIONS ACTIVES
                     _SectionTitle(
                         title:
                             "${l10n.t('connections_active')} (${state.connections.length})"),
@@ -1043,13 +1072,13 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                           children: state.connections.asMap().entries.map(
                               (entry) {
                             final i = entry.key;
-                            final c = entry.value; // ✅ Déjà typé ConnectionView
+                            final c = entry.value;
                             final isLast = i == state.connections.length - 1;
 
                             return Column(
                               children: [
                                 _ConnectionItem(
-                                  connection: c, // ✅ Passé directement
+                                  connection: c,
                                   onTap: () => _showConnectionActions(c),
                                 ),
                                 if (!isLast)
@@ -1152,10 +1181,8 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-
-                            
 // ============================================================================
-// RECEIVED REQUEST CARD — ✅ CORRIGÉ
+// RECEIVED REQUEST CARD
 // ============================================================================
 class _ReceivedRequestCard extends StatelessWidget {
   final ConnectionRequest request;
@@ -1345,7 +1372,7 @@ class _ReceivedRequestCard extends StatelessWidget {
 }
 
 // ============================================================================
-// SENT REQUEST CARD — ✅ CORRIGÉ
+// SENT REQUEST CARD
 // ============================================================================
 class _SentRequestCard extends StatelessWidget {
   final ConnectionRequest request;
@@ -1465,11 +1492,9 @@ class _SentRequestCard extends StatelessWidget {
     );
   }
 }
-    
-                
 
 // ============================================================================
-// CONNECTION ITEM — ✅ CORRIGÉ POUR UTILISER ConnectionView
+// CONNECTION ITEM
 // ============================================================================
 class _ConnectionItem extends StatelessWidget {
   final ConnectionView connection;
@@ -1484,7 +1509,7 @@ class _ConnectionItem extends StatelessWidget {
 
     final name = _ConnValidators.sanitize(connection.otherUser.displayName,
         maxLength: _kMaxNameLength);
-    final role = ''; // Le modèle ConnectionUserProfile n'a pas de role
+    final role = '';
     final avatarUrl =
         _ConnValidators.sanitizeUrl(connection.otherUser.avatarUrl);
     final safeInitial = _ConnValidators.safeInitial(name);
@@ -1577,7 +1602,7 @@ class _ConnectionItem extends StatelessWidget {
 }
 
 // ============================================================================
-// CONNECTION ACTIONS SHEET — ✅ CORRIGÉ POUR ConnectionView
+// CONNECTION ACTIONS SHEET
 // ============================================================================
 class _ConnectionActionsSheet extends StatelessWidget {
   final ConnectionView connection;
