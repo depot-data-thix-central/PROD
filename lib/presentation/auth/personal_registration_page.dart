@@ -53,8 +53,8 @@ const int _kMinPasswordScore = 3;
 const int _kResendCooldownDuration = 60;
 
 // Anti-bot
-const int _kMinStep1Seconds = 3;
-const int _kMinStep2Seconds = 6;
+const int _kMinStep1Seconds = 1;  // ✅ FIX: Réduit de 3 à 1
+const int _kMinStep2Seconds = 2;  // ✅ FIX: Réduit de 6 à 2
 const int _kMaxSendAttempts = 5;
 const int _kSendLockSeconds = 900;
 const int _kMaxOtpFailures = 5;
@@ -180,8 +180,12 @@ const Map<String, List<String>> _kRegFb = {
   ],
   'reg_error_too_many_attempts': ['Too many attempts. Try again in {0}.', 'Trop de tentatives. Réessayez dans {0}.'],
   'reg_error_wait_a_moment': [
-    'Please take a moment and try again.',
-    'Veuillez patienter un instant puis réessayer.',
+    'Please wait a few seconds before submitting.',
+    'Veuillez patienter quelques secondes avant de soumettre.',
+  ],
+  'reg_error_wait_seconds': [
+    'Please wait {0} second(s) before submitting.',
+    'Veuillez patienter {0} seconde(s) avant de soumettre.',
   ],
   'reg_error_disposable_email': [
     'Temporary email addresses are not accepted.',
@@ -769,6 +773,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   StreamSubscription<AuthState>? _authSub;
   late DateTime _stepEnteredAt = DateTime.now();
+  
+  // ✅ FIX: Flag pour éviter les conflits de navigation
+  bool _isNavigatingAway = false;
 
   static const List<String> _countries = [
     'Afrique du Sud', 'Algérie', 'Angola', 'Bénin', 'Botswana', 'Burkina Faso',
@@ -801,8 +808,14 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     _step = start;
     _stepEnteredAt = DateTime.now();
 
+    // ✅ FIX: Listener plus prudent - évite navigation automatique
     _authSub = _sb.auth.onAuthStateChange.listen((s) {
-      if (s.event == AuthChangeEvent.signedIn && s.session != null && _useGoogle && (_step == 1 || _step == 2)) {
+      if (!mounted || _isNavigatingAway) return;
+      
+      if (s.event == AuthChangeEvent.signedOut) {
+        // ✅ FIX: Si session terminée, retour au login
+        _handleSessionEnded();
+      } else if (s.event == AuthChangeEvent.signedIn && s.session != null && _useGoogle && (_step == 1 || _step == 2)) {
         unawaited(_handleSignedIn());
       }
     });
@@ -830,6 +843,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   @override
   void dispose() {
+    _isNavigatingAway = true; // ✅ FIX: Marquer comme en train de naviguer
     _authSub?.cancel();
     _nameC.dispose();
     _dobC.dispose();
@@ -843,6 +857,12 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     _chatDebounce?.cancel();
     _resendTimer?.cancel();
     super.dispose();
+  }
+
+  // ✅ FIX: Gestion propre de fin de session
+  void _handleSessionEnded() {
+    if (_isNavigatingAway) return;
+    _goBackToLogin();
   }
 
   // ✅ FIX v6 : clamp centralisé
@@ -890,7 +910,15 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     return true;
   }
 
-  bool _humanDelayOk(int minSeconds) => DateTime.now().difference(_stepEnteredAt).inSeconds >= minSeconds;
+  // ✅ FIX: Meilleur message avec temps restant
+  bool _humanDelayOk(int minSeconds) {
+    final elapsed = DateTime.now().difference(_stepEnteredAt).inSeconds;
+    if (elapsed >= minSeconds) return true;
+    
+    final remaining = minSeconds - elapsed;
+    _showError(_tx(context, 'reg_error_wait_seconds', args: [remaining.toString()]));
+    return false;
+  }
 
   // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ──────────────────
   String _webRedirectBase() {
@@ -909,7 +937,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   // ── MÉTHODES ÉTAPE 1 ──────────────────────────────────────────────────────
   Future<void> _chooseGoogle() async {
     if (_busy) return;
-    if (_looksLikeBot || !_humanDelayOk(_kMinStep1Seconds)) {
+    if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
@@ -944,7 +972,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   Future<void> _chooseEmail() async {
     if (_busy) return;
-    if (_looksLikeBot || !_humanDelayOk(_kMinStep1Seconds)) {
+    if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
@@ -959,7 +987,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   // ── GOOGLE (session détectée) ─────────────────────────────────────────────
   Future<void> _handleSignedIn() async {
-    if (_handlingSession || _step >= 4) return;
+    if (_handlingSession || _step >= 4 || _isNavigatingAway) return;
     final user = _sb.auth.currentUser;
     if (user == null) return;
     _handlingSession = true;
@@ -988,7 +1016,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         if (kDebugMode) debugPrint('[Registration] Google draft upsert: $e');
       }
 
-      if (!mounted) return;
+      if (!mounted || _isNavigatingAway) return;
 
       final meta = user.userMetadata ?? const <String, dynamic>{};
       final googleName = _RegValidators.sanitize(
@@ -1011,7 +1039,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _sendOtp() async {
     if (_busy || _resendCooldown > 0) return;
 
-    if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
+    if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
@@ -1073,7 +1101,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _verifyOtp() async {
     if (_busy) return;
 
-    if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
+    if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
@@ -1271,7 +1299,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
   Future<void> _saveAndActivate() async {
     if (_busy) return;
 
-    if (_looksLikeBot || !_humanDelayOk(_kMinStep2Seconds)) {
+    if (_looksLikeBot) {
       _showError(_tx(context, 'reg_error_wait_a_moment'));
       return;
     }
@@ -1481,33 +1509,62 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   // ── ✅ FIX v6 : RETOUR À LA CONNEXION GARANTI ─────────────────────────────
   Future<void> _goBackToLogin() async {
-    if (_busy) return;
+    if (_busy || _isNavigatingAway) return;
+    
+    _isNavigatingAway = true; // ✅ FIX: Marquer comme en cours de navigation
     setState(() => _busy = true);
+    
     try {
+      // ✅ FIX: Annuler le listener AVANT le signOut pour éviter les conflits
+      await _authSub?.cancel();
+      _authSub = null;
+      
       if (_sb.auth.currentUser != null) {
         // 1) SignOut Supabase DIRECT (ne dépend d'aucun provider)
         try {
           await _sb.auth.signOut().timeout(const Duration(seconds: 5));
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[Registration] SignOut Supabase error: $e');
+        }
+        
         // 2) SignOut controller (état UI + push notifications)
         try {
           await ref.read(authControllerProvider.notifier).signOut();
-        } catch (_) {}
+        } catch (e) {
+          debugPrint('[Registration] SignOut controller error: $e');
+        }
       }
+      
       // 3) Nettoyage des compteurs locaux
       await _Throttle.clear('reg_otp_send');
       await _Throttle.clear('reg_otp_verify');
+      await _Throttle.clear('reg_finalize');
+      
+    } catch (e) {
+      debugPrint('[Registration] Cleanup error: $e');
     } finally {
-      if (!mounted) return;
-      setState(() => _busy = false);
       // 4) Navigation GARANTIE (même si un signOut a échoué)
-      context.go(AppRoutes.login);
+      if (!mounted) return;
+      
+      setState(() => _busy = false);
+      
+      // ✅ FIX: Utiliser pushReplacement pour forcer la navigation
+      try {
+        Navigator.of(context).pushNamedAndRemoveUntil(
+          AppRoutes.login,
+          (route) => false, // Supprime toutes les routes précédentes
+        );
+      } catch (e) {
+        debugPrint('[Registration] Navigator error, fallback to GoRouter: $e');
+        // Fallback: GoRouter
+        context.go(AppRoutes.login);
+      }
     }
   }
 
   // ── RETOUR : 4→3→2→1→login ────────────────────────────────────────────────
   Future<void> _goBack() async {
-    if (_busy) return;
+    if (_busy || _isNavigatingAway) return;
     HapticFeedback.selectionClick();
 
     switch (_step) {
@@ -1607,7 +1664,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
                                 button: true,
                                 label: _step == 1 ? _tx(context, 'reg_change_account') : _tx(context, 'reg_previous_step'),
                                 child: TextButton(
-                                  onPressed: _busy ? null : _goBack,
+                                  onPressed: _busy || _isNavigatingAway ? null : _goBack,
                                   style: TextButton.styleFrom(foregroundColor: ThixPolicy.textSecondary),
                                   child: Text(
                                     _step == 1 ? _tx(context, 'reg_change_account') : _tx(context, 'reg_previous_step'),
@@ -1795,7 +1852,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
       child: SizedBox(
         height: 54,
         child: ElevatedButton(
-          onPressed: isLoading ? null : onPressed,
+          onPressed: isLoading || _isNavigatingAway ? null : onPressed,
           style: ElevatedButton.styleFrom(
             backgroundColor: ThixPolicy.primary,
             foregroundColor: ThixPolicy.onBrand,
