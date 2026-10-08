@@ -13,6 +13,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
@@ -452,7 +453,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ✅ COMMUNICATION ACTIONS — CORRIGÉES AVEC NAVIGATION DIRECTE VERS CHAT
+  // ✅ COMMUNICATION ACTIONS — CORRIGÉES AVEC NAVIGATION VERS CHAT
   // ══════════════════════════════════════════════════════════════════════════
 
   /// ✅ Ouvre directement la discussion (création si nécessaire + navigation)
@@ -508,14 +509,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       Navigator.of(context).pop();
 
       if (conv.id.isNotEmpty) {
-        debugPrint('[Connections] 💬 Pushing to conversation: ${conv.id}');
+        debugPrint('[Connections] 💬 Conversation ready: ${conv.id}');
         
-        // ✅ Navigation vers l'écran de chat avec go_router
-        final route = '/chat/${conv.id}';
-        debugPrint('[Connections] 🧭 Navigating to: $route');
+        // ✅ FIX : Route STANDALONE (hors StatefulShellRoute) + extra avec conversation complète
+        // Contourne le bug go_router : push() d'une sous-route de StatefulShellRoute
+        // depuis une page hors-shell rend un navigationShell VIDE (écran gris).
+        final route = '/conversation/${conv.id}';
+        debugPrint('[Connections] 🧭 Navigating to standalone route: $route');
         
         try {
-          context.push(route);
+          context.push(route, extra: conv);
         } catch (e) {
           debugPrint('[Connections] ❌ Navigation failed: $e');
           _showError('Navigation impossible. Vérifiez que la route $route existe.');
