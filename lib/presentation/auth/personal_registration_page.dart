@@ -7,6 +7,7 @@
 // Étape 3 : Profil complet (nom, DOB, pays, THIX Chat, password)
 // Étape 4 : Confirmation (THIX ID)
 // Sécurité conservée : honeypot, délai humain, throttle, zxcvbn, HIBP
+// ✅ Redirect web = URL de base réelle (sous-dossier GitHub Pages conservé)
 
 import 'dart:async';
 import 'dart:convert';
@@ -207,7 +208,13 @@ class _RegValidators {
 
   static final RegExp _ctrl = RegExp(r'[\x00-\x1F\x7F]');
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
-  static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
+  
+  // ✅ Échappements Unicode : aucun caractère invisible littéral dans le source.
+  //    (zero-width space, LRM, RLM, LRE-RLE, LRI-PDI, BOM)
+  static final RegExp _bidi = RegExp(
+    r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
+  );
+  
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
 
@@ -776,6 +783,21 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
   bool _humanDelayOk(int minSeconds) => DateTime.now().difference(_stepEnteredAt).inSeconds >= minSeconds;
 
+  // ── REDIRECT WEB (conserve le sous-dossier GitHub Pages) ─────────
+  /// Ex: https://org.github.io/PROD/  (et non https://org.github.io/)
+  String _webRedirectBase() {
+    final base = Uri.base;
+    var path = base.path;
+    try {
+      final loc = GoRouterState.of(context).matchedLocation;
+      if (loc.isNotEmpty && loc != '/' && path.endsWith(loc)) {
+        path = path.substring(0, path.length - loc.length);
+      }
+    } catch (_) {}
+    if (!path.endsWith('/')) path = '$path/';
+    return base.origin + path;
+  }
+
   // ── MÉTHODE D'INSCRIPTION ─────────────────────────────────────────────────
   Future<void> _chooseGoogle() async {
     if (_busy) return;
@@ -800,7 +822,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     try {
       await _sb.auth.signInWithOAuth(
         OAuthProvider.google,
-        redirectTo: kIsWeb ? null : _kOAuthRedirect,
+        // ✅ Web : redirect vers l'URL de base RÉELLE (conserve /REPO/)
+        //    Mobile : deep-link thix://login-callback
+        redirectTo: kIsWeb ? _webRedirectBase() : _kOAuthRedirect,
         authScreenLaunchMode: kIsWeb ? LaunchMode.platformDefault : LaunchMode.externalApplication,
         queryParams: const {'prompt': 'select_account'},
       );
