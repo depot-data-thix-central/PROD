@@ -1,23 +1,24 @@
 // lib/presentation/auth/login_page.dart
 //
 // ============================================================================
-// 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly)
+// 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly) — v2
 // ============================================================================
-// ✅ Design unifié avec personal_registration_page.dart
-// ✅ Header bleu + courbes — marque THIX HUB une seule fois (pas de doublon)
-// ✅ Langues retirées du header (gérées par les paramètres de l'app)
-// ✅ Ajout : connexion via Google (Supabase OAuth) — mobile + web
-// ✅ Redirect web = URL de base réelle (sous-dossier GitHub Pages conservé)
+// ✅ FIX Google : redirectTo = thix://login-callback (deep link) sur mobile
+//    → plus de page web / 404 : authentification puis retour dans l'application
+// ✅ FIX Google : écoute de la session AVANT l'ouverture du navigateur
+// ✅ FIX Google : annulation détectée au retour dans l'app (écran débloqué)
+// ✅ FIX : le contrôleur du routeur est rafraîchi avant navigation (plus de rebond)
+// ✅ FIX : 2FA activée mais non supportée → déconnexion (plus de contournement)
+// ✅ Contrôles post-connexion factorisés (mot de passe + Google identiques)
 // ✅ Anti-bot : honeypot hors écran + timing tolérant + rate limit silencieux
 // ✅ Rate limiting serveur (check_login_allowed) = source de vérité
-// ✅ Sécurité : liste noire, MFA, statuts de compte, journalisation
+// ✅ Sécurité : liste noire, statuts de compte, journalisation
 // ============================================================================
 
 import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -25,13 +26,16 @@ import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthException;
+import 'package:url_launcher/url_launcher.dart' show LaunchMode;
 
+import 'package:thix_id/auth/auth_controller.dart' as legacy_auth show AuthController;
 import 'package:thix_id/auth/supabase_auth_manager.dart'
     show AuthException, AuthErrorCode;
 import 'package:thix_id/core/security/security_reporter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/nav.dart';
 
@@ -58,14 +62,21 @@ const int _kUiBurstPauseSeconds = 10;
 const int _kResetMaxAttempts = 5;
 const int _kResetLockSeconds = 300;
 
-// Google OAuth — attente du retour deep-link (mobile)
+// Google OAuth
 const int _kGoogleAuthTimeoutSeconds = 60;
+const int _kGoogleMaxAttempts = 8;
+const int _kGoogleLockSeconds = 600;
+
+/// Deep link de retour OAuth (scheme "thix" déclaré dans le Manifest Android).
+/// À ajouter dans Supabase → Authentication → URL Configuration → Redirect URLs.
+const String _kOAuthRedirect = 'thix://login-callback';
 
 // ════════════════════════════════════════════════════════════════════════════
 // i18n FALLBACK (défauts [EN, FR])
 // ════════════════════════════════════════════════════════════════════════════
 const Map<String, List<String>> _kLoginFb = {
   'login_title_short': ['Log In', 'Connexion'],
+  'login_seconds_suffix': ['s', 's'],
   'login_error_too_many_attempts': [
     'Too many attempts. Try again in {0}.',
     'Trop de tentatives. Réessayez dans {0}.',
@@ -116,6 +127,10 @@ const Map<String, List<String>> _kLoginFb = {
     'Google sign-in cancelled or timed out.',
     'Connexion Google annulée ou expirée.',
   ],
+  'login_google_failed': [
+    'Google sign-in failed. Please try again.',
+    'La connexion Google a échoué. Veuillez réessayer.',
+  ],
 };
 
 String _tx(BuildContext ctx, String key, {List<String>? args}) {
@@ -138,7 +153,7 @@ String _fmtWait(BuildContext ctx, int seconds) {
   if (seconds >= 60) {
     return '${(seconds / 60).ceil()} ${_tx(ctx, 'login_minutes_short')}';
   }
-  return '$seconds${AppLocalizations.of(ctx).t('login_seconds_suffix')}';
+  return '$seconds${_tx(ctx, 'login_seconds_suffix')}';
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -195,8 +210,7 @@ class _LoginValidators {
 
   static final RegExp _ctrlKeepTab = RegExp(r'[\x00-\x08\x0B-\x1F\x7F]');
 
-  // ✅ Échappements Unicode : aucun caractère invisible littéral dans le source.
-  //    (zero-width space, LRM, RLM, LRE-RLE, LRI-PDI, BOM)
+  // Échappements Unicode : aucun caractère invisible littéral dans le source.
   static final RegExp _bidi = RegExp(
     r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]',
   );
@@ -247,6 +261,7 @@ class _LoginValidators {
       RegExp(r'^THIX-[A-Z0-9\-]{6,}$', caseSensitive: false)
           .hasMatch(sanitize(s, maxLength: 64));
 }
+
 // ════════════════════════════════════════════════════════════════════════════
 // ANTI-BOT ENGINE — silencieux (jamais de snackbar, jamais de double lock)
 // ════════════════════════════════════════════════════════════════════════════
@@ -526,7 +541,7 @@ class _HeaderWavePainter extends CustomPainter {
       ..close();
     canvas.drawPath(main, Paint()..shader = shader);
 
-    // Voile translucide 1 (arc premium dans le bleu)
+    // Voile translucide 1
     final veil1 = Path()
       ..moveTo(0, size.height * 0.60)
       ..cubicTo(
@@ -543,7 +558,7 @@ class _HeaderWavePainter extends CustomPainter {
       ..close();
     canvas.drawPath(veil1, Paint()..color = Colors.white.withOpacity(0.07));
 
-    // Voile translucide 2 (seconde couche)
+    // Voile translucide 2
     final veil2 = Path()
       ..moveTo(0, size.height * 0.70)
       ..cubicTo(
@@ -635,14 +650,14 @@ class LoginPage extends ConsumerStatefulWidget {
   ConsumerState<LoginPage> createState() => _LoginPageState();
 }
 
-class _LoginPageState extends ConsumerState<LoginPage> {
+class _LoginPageState extends ConsumerState<LoginPage>
+    with WidgetsBindingObserver {
   final _identifierC = TextEditingController();
   final _passwordC = TextEditingController();
   final _honeyC = TextEditingController();
   late final _AntiBotEngine _antiBot = _AntiBotEngine();
 
   bool _rememberMe = true;
-  bool _obscurePassword = true;
   int _lockoutSecondsLeft = 0;
   Timer? _lockoutTimer;
 
@@ -654,9 +669,15 @@ class _LoginPageState extends ConsumerState<LoginPage> {
   String? _identifierError;
   String? _passwordError;
 
+  // Attente du retour Google (deep link)
+  Completer<bool>? _googleWait;
+  StreamSubscription<AuthState>? _googleSub;
+  Timer? _googleTimer;
+
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _checkInitialSession();
   }
 
@@ -678,12 +699,55 @@ class _LoginPageState extends ConsumerState<LoginPage> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _endGoogleWait(false);
     _identifierC.dispose();
     _passwordC.dispose();
     _honeyC.dispose();
     _lockoutTimer?.cancel();
     _resetCooldownTimer?.cancel();
     super.dispose();
+  }
+
+  /// Retour dans l'app : si Google a été annulé (aucune session), on débloque l'écran.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _googleLoading) {
+      Future.delayed(const Duration(seconds: 3), () {
+        if (!mounted || !_googleLoading) return;
+        if (Supabase.instance.client.auth.currentSession == null) {
+          _endGoogleWait(false);
+        }
+      });
+    }
+  }
+
+  // ── ATTENTE DU RETOUR GOOGLE ─────────────────────────────────────
+  /// Abonnement créé AVANT l'ouverture du navigateur (aucun événement manqué).
+  Future<bool> _beginGoogleWait() {
+    _endGoogleWait(false);
+    final c = Completer<bool>();
+    _googleWait = c;
+    _googleSub = Supabase.instance.client.auth.onAuthStateChange.listen((s) {
+      if (s.event == AuthChangeEvent.signedIn && s.session != null) {
+        _endGoogleWait(true);
+      }
+    });
+    _googleTimer = Timer(
+      const Duration(seconds: _kGoogleAuthTimeoutSeconds),
+      () => _endGoogleWait(false),
+    );
+    return c.future;
+  }
+
+  void _endGoogleWait(bool ok) {
+    _googleSub?.cancel();
+    _googleSub = null;
+    _googleTimer?.cancel();
+    _googleTimer = null;
+    final c = _googleWait;
+    _googleWait = null;
+    if (c != null && !c.isCompleted) c.complete(ok);
   }
 
   // ── FEEDBACK ─────────────────────────────────────────────────────
@@ -845,6 +909,95 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     return base.origin + path;
   }
 
+  // ── SYNCHRO DU CONTRÔLEUR LU PAR LE ROUTEUR ──────────────────────
+  /// Le routeur lit auth/auth_controller.dart (différent du contrôleur Riverpod).
+  /// On le rafraîchit avant de naviguer pour éviter un rebond de redirection.
+  Future<void> _syncRouterController() async {
+    try {
+      await legacy_auth.AuthController.instance
+          .refreshCurrentUser()
+          .timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('[Login] ⚠️ router controller sync: $e');
+    }
+  }
+
+  // ── CONTRÔLES POST-CONNEXION (mot de passe ET Google) ────────────
+  Future<void> _routeAfterLogin(
+    AppUser user,
+    String identifier,
+    AppLocalizations l10n, {
+    required bool clearServerAttempts,
+  }) async {
+    // 1. Statut compte
+    final status = user.accountStatus?.toLowerCase() ?? '';
+    if (status == 'deactivated' || status == 'pending_deletion') {
+      await _logLoginAttempt(
+        identifier: identifier,
+        success: false,
+        failureReason: 'account_suspended',
+      );
+      SecurityReporter.reportLoginBlocked(
+        identifier: identifier.trim(),
+        reason: 'compte désactivé / en suppression',
+      );
+      throw Exception('account_suspended');
+    }
+
+    // 2. Inscription terminée ?
+    final regStatus = user.registrationStatus?.toLowerCase() ?? '';
+    const completedStatuses = {'completed', 'active'};
+    if (!completedStatuses.contains(regStatus)) {
+      await _logLoginAttempt(
+        identifier: identifier,
+        success: false,
+        failureReason: 'registration_not_completed',
+      );
+      await _syncRouterController();
+      if (!mounted) return;
+      context.go('${AppRoutes.personalReg}?step=3');
+      _showError(l10n.t('login_error_finalize_registration'));
+      return;
+    }
+
+    // 3. 2FA activée mais non supportée → on déconnecte (pas de contournement)
+    if (user.twoFaEnabled == true) {
+      await _logLoginAttempt(
+        identifier: identifier,
+        success: false,
+        failureReason: 'mfa_required',
+      );
+      try {
+        await ref
+            .read(authControllerProvider.notifier)
+            .signOut()
+            .timeout(const Duration(seconds: 8));
+      } catch (_) {
+        try {
+          await Supabase.instance.client.auth.signOut();
+        } catch (_) {}
+      }
+      _showError(l10n.t('login_error_mfa_not_supported'));
+      return;
+    }
+
+    // 4. Succès
+    await _logLoginAttempt(identifier: identifier, success: true);
+    if (clearServerAttempts) {
+      await _clearLoginAttempts(identifier.toLowerCase());
+    }
+    await _Throttle.clear('login_ui_burst');
+    await _syncRouterController();
+    if (!mounted) return;
+
+    final target = user.accountType == AccountType.enterprise
+        ? AppRoutes.enterpriseDashboard
+        : AppRoutes.userDashboard;
+
+    debugPrint('[Login] ✓ Sign in successful → $target');
+    context.go(target);
+  }
+
   // ── SIGN IN (mot de passe) ───────────────────────────────────────
   Future<void> _signIn() async {
     final l10n = AppLocalizations.of(context);
@@ -883,7 +1036,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     );
     final password = _passwordC.text; // ne jamais sanitiser
 
-    // Validation inline (UX pro)
+    // Validation inline
     if (identifier.isEmpty) {
       setState(() => _identifierError = l10n.t('login_error_empty_fields'));
       return;
@@ -903,7 +1056,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     if (!allowed) {
       _showError(
         '${l10n.t('login_error_too_many_attempts_prefix')} '
-        '$_lockoutSecondsLeft${l10n.t('login_seconds_suffix')}',
+        '$_lockoutSecondsLeft${_tx(context, 'login_seconds_suffix')}',
       );
       return;
     }
@@ -966,59 +1119,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final user = ref.read(authControllerProvider).value;
       if (user == null) throw Exception('user_not_found_after_login');
 
-      // 4. Statut compte
-      final status = user.accountStatus?.toLowerCase() ?? '';
-      if (status == 'deactivated' || status == 'pending_deletion') {
-        await _logLoginAttempt(
-          identifier: finalIdentifier,
-          success: false,
-          failureReason: 'account_suspended',
-        );
-        SecurityReporter.reportLoginBlocked(
-          identifier: finalIdentifier.trim(),
-          reason: 'compte désactivé / en suppression',
-        );
-        throw Exception('account_suspended');
-      }
-
-      final regStatus = user.registrationStatus?.toLowerCase() ?? '';
-      const completedStatuses = {'completed', 'active'};
-      if (!completedStatuses.contains(regStatus)) {
-        await _logLoginAttempt(
-          identifier: finalIdentifier,
-          success: false,
-          failureReason: 'registration_not_completed',
-        );
-        context.go('${AppRoutes.personalReg}?step=3');
-        _showError(l10n.t('login_error_finalize_registration'));
-        return;
-      }
-
-      // 5. MFA
-      if (user.twoFaEnabled == true) {
-        await _logLoginAttempt(
-          identifier: finalIdentifier,
-          success: false,
-          failureReason: 'mfa_required',
-        );
-        _showError(l10n.t('login_error_mfa_not_supported'));
-        return;
-      }
-
-      // 6. Succès
-      await _logLoginAttempt(
-        identifier: finalIdentifier,
-        success: true,
+      // 4. Statut / inscription / 2FA / navigation
+      await _routeAfterLogin(
+        user,
+        finalIdentifier,
+        l10n,
+        clearServerAttempts: true,
       );
-      await _clearLoginAttempts(finalIdentifier.toLowerCase());
-      await _Throttle.clear('login_ui_burst');
-
-      final target = user.accountType == AccountType.enterprise
-          ? AppRoutes.enterpriseDashboard
-          : AppRoutes.userDashboard;
-
-      debugPrint('[Login] ✓ Sign in successful → $target');
-      context.go(target);
     } catch (e) {
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
@@ -1051,40 +1158,64 @@ class _LoginPageState extends ConsumerState<LoginPage> {
     }
   }
 
-  // ── SIGN IN GOOGLE (Supabase OAuth) ──────────────────────────────
+  // ── SIGN IN GOOGLE (Supabase OAuth + deep link) ──────────────────
   Future<void> _signInWithGoogle() async {
     final l10n = AppLocalizations.of(context);
     FocusScope.of(context).unfocus();
 
     if (_googleLoading || _lockoutSecondsLeft > 0) return;
+
+    // 🤖 Anti-bot silencieux + garde-fou UI
+    _antiBot.setHoneypot(_honeyC.text);
+    if (!_antiBot.isLikelyHuman()) {
+      debugPrint('[Login] 🤖 google dropped (anti-bot)');
+      return;
+    }
+    if (!await _notBlocked('login_google')) return;
+    await _Throttle.hit('login_google', _kGoogleMaxAttempts, _kGoogleLockSeconds);
+
     setState(() => _googleLoading = true);
     HapticFeedback.mediumImpact();
 
     try {
+      final auth = Supabase.instance.client.auth;
+
       if (kIsWeb) {
         // Web : redirection complète vers l'URL de base RÉELLE
         // (conserve le sous-dossier GitHub Pages → plus de 404).
-        await Supabase.instance.client.auth.signInWithOAuth(
+        await auth.signInWithOAuth(
           OAuthProvider.google,
           redirectTo: _webRedirectBase(),
+          queryParams: const {'prompt': 'select_account'},
         );
         return;
       }
 
-      // Mobile / desktop : onglet externe + retour par deep-link.
-      await Supabase.instance.client.auth.signInWithOAuth(
-        OAuthProvider.google,
-      );
+      // Mobile : navigateur externe + RETOUR PAR DEEP LINK dans l'application.
+      // (Sans redirectTo, Supabase renvoyait vers le Site URL = version web → 404.)
+      final waitForSession = _beginGoogleWait(); // avant l'ouverture du navigateur
 
-      if (Supabase.instance.client.auth.currentSession == null) {
-        try {
-          await Supabase.instance.client.auth.onAuthStateChange
-              .firstWhere((s) => s.event == AuthChangeEvent.signedIn)
-              .timeout(Duration(seconds: _kGoogleAuthTimeoutSeconds));
-        } on TimeoutException {
-          if (mounted) _showInfo(_tx(context, 'login_google_cancelled'));
-          return;
-        }
+      bool launched;
+      try {
+        launched = await auth.signInWithOAuth(
+          OAuthProvider.google,
+          redirectTo: _kOAuthRedirect,
+          authScreenLaunchMode: LaunchMode.externalApplication,
+          queryParams: const {'prompt': 'select_account'},
+        );
+      } catch (e) {
+        _endGoogleWait(false);
+        rethrow;
+      }
+      if (!launched) {
+        _endGoogleWait(false);
+        throw Exception('google_launch_failed');
+      }
+
+      final ok = await waitForSession;
+      if (!ok) {
+        if (mounted) _showInfo(_tx(context, 'login_google_cancelled'));
+        return;
       }
 
       if (!mounted) return;
@@ -1097,53 +1228,13 @@ class _LoginPageState extends ConsumerState<LoginPage> {
       final user = ref.read(authControllerProvider).value;
       if (user == null) throw Exception('user_not_found_after_login');
 
-      // Mêmes contrôles que le flux mot de passe (statut / inscription / MFA)
-      final status = user.accountStatus?.toLowerCase() ?? '';
-      if (status == 'deactivated' || status == 'pending_deletion') {
-        await _logLoginAttempt(
-          identifier: 'google-oauth',
-          success: false,
-          failureReason: 'account_suspended',
-        );
-        SecurityReporter.reportLoginBlocked(
-          identifier: 'google-oauth',
-          reason: 'compte désactivé / en suppression',
-        );
-        throw Exception('account_suspended');
-      }
-
-      final regStatus = user.registrationStatus?.toLowerCase() ?? '';
-      const completedStatuses = {'completed', 'active'};
-      if (!completedStatuses.contains(regStatus)) {
-        await _logLoginAttempt(
-          identifier: 'google-oauth',
-          success: false,
-          failureReason: 'registration_not_completed',
-        );
-        context.go('${AppRoutes.personalReg}?step=3');
-        _showError(l10n.t('login_error_finalize_registration'));
-        return;
-      }
-
-      if (user.twoFaEnabled == true) {
-        await _logLoginAttempt(
-          identifier: 'google-oauth',
-          success: false,
-          failureReason: 'mfa_required',
-        );
-        _showError(l10n.t('login_error_mfa_not_supported'));
-        return;
-      }
-
-      await _logLoginAttempt(identifier: 'google-oauth', success: true);
-      await _Throttle.clear('login_ui_burst');
-
-      final target = user.accountType == AccountType.enterprise
-          ? AppRoutes.enterpriseDashboard
-          : AppRoutes.userDashboard;
-
-      debugPrint('[Login] ✓ Google sign in successful → $target');
-      context.go(target);
+      // Mêmes contrôles que le flux mot de passe (statut / inscription / 2FA)
+      await _routeAfterLogin(
+        user,
+        'google-oauth',
+        l10n,
+        clearServerAttempts: false,
+      );
     } catch (e) {
       if (kDebugMode) debugPrint('[Login] ❌ Google sign in error: $e');
       if (!mounted) return;
@@ -1157,8 +1248,14 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         identifier: 'google-oauth',
         reason: reason,
       );
-      _showError(_translateAuthError(e, l10n));
+      final msg = e.toString().toLowerCase();
+      _showError(
+        msg.contains('google_launch_failed') || msg.contains('oauth')
+            ? _tx(context, 'login_google_failed')
+            : _translateAuthError(e, l10n),
+      );
     } finally {
+      _endGoogleWait(false);
       if (mounted) setState(() => _googleLoading = false);
     }
   }
@@ -1309,7 +1406,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Marque centrée (une seule occurrence de « THIX »)
             Semantics(
               header: true,
               label: 'THIX HUB',
@@ -1337,7 +1433,6 @@ class _LoginPageState extends ConsumerState<LoginPage> {
               ),
             ),
             const SizedBox(height: 32),
-            // Titre court : pas de répétition de la marque
             Text(
               _tx(context, 'login_title_short'),
               style: ThixPolicy.h2Style.copyWith(
@@ -1383,7 +1478,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s16),
 
-        // Mot de passe (une seule fois)
+        // Mot de passe
         _PremiumField(
           key: const ValueKey('password'),
           label: l10n.t('login_password_label'),
@@ -1466,7 +1561,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s24),
 
-        // Bouton principal — « Login Now → »
+        // Bouton principal
         Semantics(
           button: true,
           label: l10n.t('login_button'),
@@ -1503,7 +1598,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
                       _lockoutSecondsLeft > 0
                           ? '${l10n.t('login_retry_in')} '
                               '$_lockoutSecondsLeft'
-                              '${l10n.t('login_seconds_suffix')}'
+                              '${_tx(context, 'login_seconds_suffix')}'
                           : (isLoading
                               ? l10n.t('login_verifying')
                               : l10n.t('login_button')),
@@ -1631,7 +1726,7 @@ class _LoginPageState extends ConsumerState<LoginPage> {
         ),
         const SizedBox(height: ThixPolicy.s20),
 
-        // Sign Up outlined — « New Here ? Sign Up »
+        // Sign Up
         Semantics(
           button: true,
           label: l10n.t('login_create_account'),
@@ -1986,7 +2081,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                                 : (!canSend && widget.resetCooldown > 0
                                     ? '${l10n.t('login_wait_prefix')} '
                                         '${widget.resetCooldown}'
-                                        '${l10n.t('login_seconds_suffix')}'
+                                        '${_tx(context, 'login_seconds_suffix')}'
                                     : l10n.t('login_send'))),
                         style: ThixPolicy.bodyStyle.copyWith(
                           fontWeight: ThixPolicy.bold,
