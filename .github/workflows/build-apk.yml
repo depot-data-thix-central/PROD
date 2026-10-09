@@ -41,7 +41,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -94,7 +94,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -122,7 +122,7 @@ jobs:
             echo "Secret ANDROID_KEYSTORE_BASE64 is empty."
             exit 1
           fi
-          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
+          if [ -z "\( {STORE_PASSWORD}" ] || [ -z " \){KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
             echo "Missing ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD or ANDROID_KEY_ALIAS."
             exit 1
           fi
@@ -161,7 +161,7 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
-      # ⚠️ CLÉS SUPABASE EN DUR (comme demandé)
+      # ✅ Utilise les secrets GitHub (plus de clés en dur)
       - name: Build release App Bundle (Obfuscated)
         run: |
           flutter build appbundle --release \
@@ -169,8 +169,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
-            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Build release APKs (Obfuscated & Split by ABI)
         run: |
@@ -179,8 +179,8 @@ jobs:
             --build-number=${{ steps.version.outputs.build_number }} \
             --obfuscate \
             --split-debug-info=${{ env.SYMBOLS_DIR }} \
-            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
-            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Verify artifacts
         run: |
@@ -206,7 +206,7 @@ jobs:
 
           SYMBOLS_FOUND=""
           for dir in "build/app/outputs/symbols" "build/debug_info" "build/app/intermediates/merged_java_res/release/out/META-INF"; do
-            if [ -d "$dir" ] && [ -n "$(ls -A "$dir" 2>/dev/null)" ]; then
+            if [ -d "\( dir" ] && [ -n " \)(ls -A "$dir" 2>/dev/null)" ]; then
               echo "✅ Found symbols in: $dir"
               SYMBOLS_FOUND="$dir"
               break
@@ -214,17 +214,13 @@ jobs:
           done
 
           if [ -n "$SYMBOLS_FOUND" ]; then
-            tar -czf build/app/outputs/symbols.tar.gz -C "$(dirname "$SYMBOLS_FOUND")" "$(basename "$SYMBOLS_FOUND")"
+            tar -czf build/app/outputs/symbols.tar.gz -C "$(dirname "\( SYMBOLS_FOUND")" " \)(basename "$SYMBOLS_FOUND")"
             sha256sum build/app/outputs/symbols.tar.gz > build/app/outputs/symbols.tar.gz.sha256
             echo "✅ Symbols compressed successfully"
           else
             echo "⚠️ WARNING: No symbols directory found!"
             find build -name "*.symbols" -type f 2>/dev/null || echo "No .symbols files found"
           fi
-
-      # ✅ CORRIGÉ : action wzieba/firebase-action supprimée de GitHub
-      # Remplacée par une instruction commentée (non-bloquante pour le build)
-      # Les symboles restent disponibles en artifact GitHub pendant 90 jours
 
       - name: Upload App Bundle
         uses: actions/upload-artifact@v4
@@ -266,7 +262,7 @@ jobs:
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
             echo "**R8 Full Mode:** Enabled ✅"
-            echo "**Supabase Keys:** Hardcoded (TEST) ⚠️"
+            echo "**Supabase Keys:** From GitHub Secrets ✅"
             echo "**Debug Symbols:** Stored in GitHub artifacts (90 days) ✅"
             echo ""
             echo "### Artifacts"
@@ -347,5 +343,5 @@ jobs:
             echo "**Workflow:** ${{ github.workflow }}"
             echo "**Run:** ${{ github.run_id }}"
             echo ""
-            echo "[View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "[View logs](\( {{ github.server_url }}/ \){{ github.repository }}/actions/runs/${{ github.run_id }})"
           } >> "$GITHUB_STEP_SUMMARY"
