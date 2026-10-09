@@ -27,7 +27,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-web-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-web-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
 
       - name: Enable Web
         run: flutter config --enable-web
@@ -43,20 +43,24 @@ jobs:
             echo "No build_runner — skip"
           fi
 
-      # ⚠️ CLÉS EN DUR RESTAURÉES (comme demandé)
+      # ✅ Utilise les secrets GitHub (plus de clés en dur)
       - name: Create .env file
         run: |
           echo "Creating .env file..."
-          echo "SUPABASE_URL=https://lldgnysfiabakhaibgzq.supabase.co" >> .env
-          echo "SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo" >> .env
+          if [ -z "\( {{ secrets.SUPABASE_URL }}" ] || [ -z " \){{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "❌ Error: SUPABASE_URL or SUPABASE_ANON_KEY secret is missing."
+            exit 1
+          fi
+          echo "SUPABASE_URL=${{ secrets.SUPABASE_URL }}" >> .env
+          echo "SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}" >> .env
           echo "✅ .env file created successfully for Web deployment."
 
       - name: Build Web
         run: |
           flutter build web --release \
             --base-href /PROD/ \
-            --dart-define=SUPABASE_URL="https://lldgnysfiabakhaibgzq.supabase.co" \
-            --dart-define=SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxsZGdueXNmaWFiYWtoYWliZ3pxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI1NzgxNjcsImV4cCI6MjA5ODE1NDE2N30.AmrEd5RECLsamIjYiUBk_F4azYtBeMV3drL5RPzFhjo"
+            --dart-define=SUPABASE_URL=${{ secrets.SUPABASE_URL }} \
+            --dart-define=SUPABASE_ANON_KEY=${{ secrets.SUPABASE_ANON_KEY }}
 
       - name: Deploy to gh-pages
         uses: peaceiris/actions-gh-pages@v4
