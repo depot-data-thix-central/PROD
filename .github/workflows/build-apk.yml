@@ -161,7 +161,7 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
-      # ✅ Utilise les secrets GitHub (plus de clés en dur)
+      # ✅ Secrets + Obfuscation
       - name: Build release App Bundle (Obfuscated)
         run: |
           flutter build appbundle --release \
@@ -198,28 +198,49 @@ jobs:
 
       - name: Generate checksums & Compress symbols
         run: |
-          sha256sum build/app/outputs/bundle/release/app-release.aab > build/app/outputs/bundle/release/app-release.aab.sha256
+          set -euo pipefail
 
+          # Checksums AAB
+          sha256sum build/app/outputs/bundle/release/app-release.aab \
+            > build/app/outputs/bundle/release/app-release.aab.sha256
+
+          # Checksums APKs
           cd build/app/outputs/flutter-apk
           sha256sum *.apk > checksums.sha256
           cd -
 
+          # Cherche les symboles (plusieurs emplacements possibles)
           SYMBOLS_FOUND=""
-          for dir in "build/app/outputs/symbols" "build/debug_info" "build/app/intermediates/merged_java_res/release/out/META-INF"; do
-            if [ -d "\( dir" ] && [ -n " \)(ls -A "$dir" 2>/dev/null)" ]; then
-              echo "✅ Found symbols in: $dir"
+          for dir in \
+            "build/app/outputs/symbols" \
+            "build/debug_info" \
+            "build/app/outputs/flutter-apk" \
+            "."; do
+            if [ -d "$dir" ] && find "$dir" -name "*.symbols" -o -name "app.android-*.symbols" 2>/dev/null | grep -q .; then
+              echo "✅ Found symbols files in: $dir"
               SYMBOLS_FOUND="$dir"
               break
             fi
           done
 
+          # Fallback : tout le dossier SYMBOLS_DIR s'il existe et n'est pas vide
+          if [ -z "\( SYMBOLS_FOUND" ] && [ -d " \){{ env.SYMBOLS_DIR }}" ] && [ -n "\( (ls -A " \){{ env.SYMBOLS_DIR }}" 2>/dev/null)" ]; then
+            echo "✅ Using SYMBOLS_DIR: ${{ env.SYMBOLS_DIR }}"
+            SYMBOLS_FOUND="${{ env.SYMBOLS_DIR }}"
+          fi
+
           if [ -n "$SYMBOLS_FOUND" ]; then
+            mkdir -p build/app/outputs
             tar -czf build/app/outputs/symbols.tar.gz -C "$(dirname "\( SYMBOLS_FOUND")" " \)(basename "$SYMBOLS_FOUND")"
             sha256sum build/app/outputs/symbols.tar.gz > build/app/outputs/symbols.tar.gz.sha256
-            echo "✅ Symbols compressed successfully"
+            echo "✅ Symbols compressed: build/app/outputs/symbols.tar.gz"
+            ls -lh build/app/outputs/symbols.tar.gz
           else
-            echo "⚠️ WARNING: No symbols directory found!"
-            find build -name "*.symbols" -type f 2>/dev/null || echo "No .symbols files found"
+            echo "⚠️ WARNING: No symbols directory/files found!"
+            echo "Listing possible locations:"
+            find build -type d -name "*symbol*" 2>/dev/null || true
+            find build -name "*.symbols" 2>/dev/null || true
+            ls -la build/app/outputs/ 2>/dev/null || true
           fi
 
       - name: Upload App Bundle
