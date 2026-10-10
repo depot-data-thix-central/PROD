@@ -6,7 +6,7 @@ on:
       create_release:
         description: 'Create GitHub release'
         required: false
-        default: 'false'
+        default: false
         type: boolean
   push:
     branches: [main]
@@ -41,7 +41,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -94,7 +94,7 @@ jobs:
         with:
           channel: stable
           cache: true
-          cache-key: flutter-\( {{ runner.os }}- \){{ hashFiles('**/pubspec.lock') }}
+          cache-key: flutter-${{ runner.os }}-${{ hashFiles('**/pubspec.lock') }}
 
       - name: Flutter pub get
         run: flutter pub get
@@ -122,7 +122,7 @@ jobs:
             echo "Secret ANDROID_KEYSTORE_BASE64 is empty."
             exit 1
           fi
-          if [ -z "\( {STORE_PASSWORD}" ] || [ -z " \){KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
+          if [ -z "${STORE_PASSWORD}" ] || [ -z "${KEY_PASSWORD}" ] || [ -z "${KEY_ALIAS}" ]; then
             echo "Missing ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_PASSWORD or ANDROID_KEY_ALIAS."
             exit 1
           fi
@@ -161,7 +161,6 @@ jobs:
           echo "full_version=$VERSION+$BUILD_NUMBER" >> "$GITHUB_OUTPUT"
           echo "Version: $VERSION (build $BUILD_NUMBER)"
 
-      # ✅ Secrets + Obfuscation
       - name: Build release App Bundle (Obfuscated)
         run: |
           flutter build appbundle --release \
@@ -191,7 +190,7 @@ jobs:
 
           if [ -d "${{ env.SYMBOLS_DIR }}" ]; then
             echo "Symbols directory found."
-            ls -la ${{ env.SYMBOLS_DIR }}
+            ls -la "${{ env.SYMBOLS_DIR }}"
           else
             echo "WARNING: Symbols directory not found!"
           fi
@@ -209,35 +208,16 @@ jobs:
           sha256sum *.apk > checksums.sha256
           cd -
 
-          # Cherche les symboles (plusieurs emplacements possibles)
-          SYMBOLS_FOUND=""
-          for dir in \
-            "build/app/outputs/symbols" \
-            "build/debug_info" \
-            "build/app/outputs/flutter-apk" \
-            "."; do
-            if [ -d "$dir" ] && find "$dir" -name "*.symbols" -o -name "app.android-*.symbols" 2>/dev/null | grep -q .; then
-              echo "✅ Found symbols files in: $dir"
-              SYMBOLS_FOUND="$dir"
-              break
-            fi
-          done
-
-          # Fallback : tout le dossier SYMBOLS_DIR s'il existe et n'est pas vide
-          if [ -z "\( SYMBOLS_FOUND" ] && [ -d " \){{ env.SYMBOLS_DIR }}" ] && [ -n "\( (ls -A " \){{ env.SYMBOLS_DIR }}" 2>/dev/null)" ]; then
-            echo "✅ Using SYMBOLS_DIR: ${{ env.SYMBOLS_DIR }}"
-            SYMBOLS_FOUND="${{ env.SYMBOLS_DIR }}"
-          fi
-
-          if [ -n "$SYMBOLS_FOUND" ]; then
-            mkdir -p build/app/outputs
-            tar -czf build/app/outputs/symbols.tar.gz -C "$(dirname "\( SYMBOLS_FOUND")" " \)(basename "$SYMBOLS_FOUND")"
+          # Compression des symboles (--split-debug-info écrit dans SYMBOLS_DIR)
+          if [ -d "$SYMBOLS_DIR" ] && [ -n "$(ls -A "$SYMBOLS_DIR")" ]; then
+            echo "✅ Using SYMBOLS_DIR: $SYMBOLS_DIR"
+            tar -czf build/app/outputs/symbols.tar.gz \
+              -C "$(dirname "$SYMBOLS_DIR")" "$(basename "$SYMBOLS_DIR")"
             sha256sum build/app/outputs/symbols.tar.gz > build/app/outputs/symbols.tar.gz.sha256
             echo "✅ Symbols compressed: build/app/outputs/symbols.tar.gz"
             ls -lh build/app/outputs/symbols.tar.gz
           else
-            echo "⚠️ WARNING: No symbols directory/files found!"
-            echo "Listing possible locations:"
+            echo "⚠️ WARNING: No symbols found in $SYMBOLS_DIR"
             find build -type d -name "*symbol*" 2>/dev/null || true
             find build -name "*.symbols" 2>/dev/null || true
             ls -la build/app/outputs/ 2>/dev/null || true
@@ -282,7 +262,6 @@ jobs:
             echo "**Commit:** ${{ github.sha }}"
             echo "**Branch:** ${{ github.ref_name }}"
             echo "**Obfuscation:** Enabled ✅"
-            echo "**R8 Full Mode:** Enabled ✅"
             echo "**Supabase Keys:** From GitHub Secrets ✅"
             echo "**Debug Symbols:** Stored in GitHub artifacts (90 days) ✅"
             echo ""
@@ -310,6 +289,8 @@ jobs:
       (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) ||
       (github.event_name == 'workflow_dispatch' && github.event.inputs.create_release == 'true')
     timeout-minutes: 10
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout
@@ -364,5 +345,5 @@ jobs:
             echo "**Workflow:** ${{ github.workflow }}"
             echo "**Run:** ${{ github.run_id }}"
             echo ""
-            echo "[View logs](\( {{ github.server_url }}/ \){{ github.repository }}/actions/runs/${{ github.run_id }})"
+            echo "[View logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
           } >> "$GITHUB_STEP_SUMMARY"
