@@ -105,27 +105,27 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
     bool isValid = true;
 
     if (_fromCity == null || _fromCity!.isEmpty) {
-      setState(() => _fromError = l10n.agencyTripErrorCityRequired);
+      setState(() => _fromError = l10n.t('agencyTripErrorCityRequired'));
       isValid = false;
     } else {
       setState(() => _fromError = null);
     }
 
     if (_toCity == null || _toCity!.isEmpty) {
-      setState(() => _toError = l10n.agencyTripErrorCityRequired);
+      setState(() => _toError = l10n.t('agencyTripErrorCityRequired'));
       isValid = false;
     } else if (_fromCity == _toCity) {
-      setState(() => _toError = l10n.agencyTripErrorSameCity);
+      setState(() => _toError = l10n.t('agencyTripErrorSameCity'));
       isValid = false;
     } else {
       setState(() => _toError = null);
     }
 
     if (!_arrDate.isAfter(_depDate)) {
-      setState(() => _dateError = l10n.agencyTripErrorDateOrder);
+      setState(() => _dateError = l10n.t('agencyTripErrorDateOrder'));
       isValid = false;
     } else if (_depDate.isBefore(DateTime.now())) {
-      setState(() => _dateError = l10n.agencyTripErrorDatePast);
+      setState(() => _dateError = l10n.t('agencyTripErrorDatePast'));
       isValid = false;
     } else {
       setState(() => _dateError = null);
@@ -133,10 +133,10 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
 
     final price = int.tryParse(_priceCtrl.text.trim());
     if (price == null || price <= 0) {
-      setState(() => _priceError = l10n.agencyTripErrorPriceInvalid);
+      setState(() => _priceError = l10n.t('agencyTripErrorPriceInvalid'));
       isValid = false;
     } else if (price < 1000) {
-      setState(() => _priceError = l10n.agencyTripErrorPriceTooLow);
+      setState(() => _priceError = l10n.t('agencyTripErrorPriceTooLow'));
       isValid = false;
     } else {
       setState(() => _priceError = null);
@@ -144,10 +144,10 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
 
     final seats = int.tryParse(_seatsCtrl.text.trim());
     if (seats == null || seats <= 0) {
-      setState(() => _seatsError = l10n.agencyTripErrorSeatsInvalid);
+      setState(() => _seatsError = l10n.t('agencyTripErrorSeatsInvalid'));
       isValid = false;
     } else if (seats > 100) {
-      setState(() => _seatsError = l10n.agencyTripErrorSeatsTooMany);
+      setState(() => _seatsError = l10n.t('agencyTripErrorSeatsTooMany'));
       isValid = false;
     } else {
       setState(() => _seatsError = null);
@@ -206,7 +206,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
             children: [
               const Icon(Icons.check_circle_rounded, color: Colors.white),
               SizedBox(width: ThixPolicy.s8),
-              Expanded(child: Text(l10n.agencyTripSuccessMessage)),
+              Expanded(child: Text(l10n.t('agencyTripSuccessMessage'))),
             ],
           ),
           backgroundColor: ThixPolicy.success,
@@ -224,7 +224,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
             children: [
               const Icon(Icons.error_outline_rounded, color: Colors.white),
               SizedBox(width: ThixPolicy.s8),
-              Expanded(child: Text(error ?? l10n.agencyTripErrorMessage)),
+              Expanded(child: Text(error ?? l10n.t('agencyTripErrorMessage'))),
             ],
           ),
           backgroundColor: ThixPolicy.danger,
@@ -290,7 +290,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _CitySelectorSheet(
-        title: isDeparture ? l10n.agencyTripSelectDeparture : l10n.agencyTripSelectArrival,
+        title: isDeparture ? l10n.t('agencyTripSelectDeparture') : l10n.t('agencyTripSelectArrival'),
         cities: _kCities,
         currentCity: isDeparture ? _fromCity : _toCity,
       ),
@@ -332,12 +332,12 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
             HapticFeedback.lightImpact();
             context.pop();
           },
-          tooltip: l10n.commonBack,
+          tooltip: l10n.t('common_back'),
         ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(l10n.agencyTripCreateTitle, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
+            Text(l10n.t('agencyTripCreateTitle'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
             if (state.myAgency?.name != null)
               Text(state.myAgency!.name, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary)),
           ],
@@ -354,31 +354,31 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                 padding: EdgeInsets.only(bottom: ThixPolicy.s16),
                 child: _TripPreviewCard(fromCity: _fromCity!, toCity: _toCity!, depDate: _depDate, arrDate: _arrDate, domainColor: domainColor),
               ),
-            _FormSection(icon: Icons.route_rounded, title: l10n.agencyTripSectionRoute, domainColor: domainColor, children: [
-              _CitySelector(label: l10n.agencyTripDepartureCity, value: _fromCity, placeholder: l10n.agencyTripSelectDeparture, icon: Icons.my_location_rounded, error: _fromError, onTap: () => _showCitySelector(isDeparture: true), domainColor: domainColor),
+            _FormSection(icon: Icons.route_rounded, title: l10n.t('agencyTripSectionRoute'), domainColor: domainColor, children: [
+              _CitySelector(label: l10n.t('agencyTripDepartureCity'), value: _fromCity, placeholder: l10n.t('agencyTripSelectDeparture'), icon: Icons.my_location_rounded, error: _fromError, onTap: () => _showCitySelector(isDeparture: true), domainColor: domainColor),
               SizedBox(height: ThixPolicy.s14),
-              _CitySelector(label: l10n.agencyTripArrivalCity, value: _toCity, placeholder: l10n.agencyTripSelectArrival, icon: Icons.location_on_rounded, error: _toError, onTap: () => _showCitySelector(isDeparture: false), domainColor: domainColor),
+              _CitySelector(label: l10n.t('agencyTripArrivalCity'), value: _toCity, placeholder: l10n.t('agencyTripSelectArrival'), icon: Icons.location_on_rounded, error: _toError, onTap: () => _showCitySelector(isDeparture: false), domainColor: domainColor),
               SizedBox(height: ThixPolicy.s14),
-              _StationInput(label: l10n.agencyTripDepartureStation, controller: _depStationCtrl, hint: _fromCity ?? l10n.agencyTripStationHint, icon: Icons.departure_board_rounded, domainColor: domainColor),
+              _StationInput(label: l10n.t('agencyTripDepartureStation'), controller: _depStationCtrl, hint: _fromCity ?? l10n.t('agencyTripStationHint'), icon: Icons.departure_board_rounded, domainColor: domainColor),
               SizedBox(height: ThixPolicy.s14),
-              _StationInput(label: l10n.agencyTripArrivalStation, controller: _arrStationCtrl, hint: _toCity ?? l10n.agencyTripStationHint, icon: Icons.place_rounded, domainColor: domainColor),
+              _StationInput(label: l10n.t('agencyTripArrivalStation'), controller: _arrStationCtrl, hint: _toCity ?? l10n.t('agencyTripStationHint'), icon: Icons.place_rounded, domainColor: domainColor),
             ]),
             SizedBox(height: ThixPolicy.s20),
-            _FormSection(icon: Icons.schedule_rounded, title: l10n.agencyTripSectionSchedule, domainColor: domainColor, children: [
-              _DateTimeTile(label: l10n.agencyTripDepartureDateTime, value: _depDate, icon: Icons.flight_takeoff_rounded, onTap: () => _pickDateTime(isDeparture: true), domainColor: domainColor),
+            _FormSection(icon: Icons.schedule_rounded, title: l10n.t('agencyTripSectionSchedule'), domainColor: domainColor, children: [
+              _DateTimeTile(label: l10n.t('agencyTripDepartureDateTime'), value: _depDate, icon: Icons.flight_takeoff_rounded, onTap: () => _pickDateTime(isDeparture: true), domainColor: domainColor),
               SizedBox(height: ThixPolicy.s10),
-              _DateTimeTile(label: l10n.agencyTripArrivalDateTime, value: _arrDate, icon: Icons.flight_land_rounded, onTap: () => _pickDateTime(isDeparture: false), domainColor: domainColor),
+              _DateTimeTile(label: l10n.t('agencyTripArrivalDateTime'), value: _arrDate, icon: Icons.flight_land_rounded, onTap: () => _pickDateTime(isDeparture: false), domainColor: domainColor),
               if (_dateError != null) ...[SizedBox(height: ThixPolicy.s8), _ErrorText(message: _dateError!)],
               if (_depDate.isBefore(_arrDate)) ...[SizedBox(height: ThixPolicy.s10), _DurationInfo(duration: _arrDate.difference(_depDate), domainColor: domainColor)],
             ]),
             SizedBox(height: ThixPolicy.s20),
-            _FormSection(icon: Icons.payments_rounded, title: l10n.agencyTripSectionPricing, domainColor: domainColor, children: [
+            _FormSection(icon: Icons.payments_rounded, title: l10n.t('agencyTripSectionPricing'), domainColor: domainColor, children: [
               _PriceInput(controller: _priceCtrl, currencyCode: currencyState.currency.code, currencySymbol: currencyState.currency.symbol, exchangeRates: currencyState.exchangeRates, error: _priceError, domainColor: domainColor),
               SizedBox(height: ThixPolicy.s14),
               _SeatsInput(controller: _seatsCtrl, error: _seatsError, domainColor: domainColor),
             ]),
             SizedBox(height: ThixPolicy.s20),
-            _FormSection(icon: Icons.directions_bus_rounded, title: l10n.agencyTripSectionBusConfig, domainColor: domainColor, children: [
+            _FormSection(icon: Icons.directions_bus_rounded, title: l10n.t('agencyTripSectionBusConfig'), domainColor: domainColor, children: [
               _BusTypeSelector(selected: _busType, onChanged: (type) { HapticFeedback.selectionClick(); setState(() => _busType = type); }, domainColor: domainColor),
               SizedBox(height: ThixPolicy.s16),
               _AmenitiesSelector(selected: _selectedAmenities, onChanged: (a) { HapticFeedback.selectionClick(); setState(() { _selectedAmenities.clear(); _selectedAmenities.addAll(a); }); }, domainColor: domainColor),
@@ -391,8 +391,8 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
                 onPressed: state.isCreating ? null : _submit,
                 icon: state.isCreating ? const SizedBox.shrink() : const Icon(Icons.check_rounded, color: Colors.white),
                 label: state.isCreating
-                    ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), SizedBox(width: ThixPolicy.s10), Text(l10n.agencyTripCreating, style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold))])
-                    : Text(l10n.agencyTripPublishButton, style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
+                    ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)), SizedBox(width: ThixPolicy.s10), Text(l10n.t('agencyTripCreating'), style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold))])
+                    : Text(l10n.t('agencyTripPublishButton'), style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
                 style: ElevatedButton.styleFrom(backgroundColor: domainColor, disabledBackgroundColor: ThixPolicy.textMuted, disabledForegroundColor: Colors.white70, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd))),
               ),
             ),
@@ -482,10 +482,10 @@ class _CitySelectorSheetState extends State<_CitySelectorSheet> {
         SizedBox(height: ThixPolicy.s20),
         Padding(padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20), child: Row(children: [Icon(Icons.location_city_rounded, color: domainColor, size: 24), SizedBox(width: ThixPolicy.s10), Text(widget.title, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16))])),
         SizedBox(height: ThixPolicy.s16),
-        Padding(padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20), child: TextField(onChanged: (v) => setState(() => _searchQuery = v), decoration: InputDecoration(hintText: l10n.agencyTripSearchCity, prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textSecondary), filled: true, fillColor: ThixPolicy.surfaceSoft, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12)))),
+        Padding(padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20), child: TextField(onChanged: (v) => setState(() => _searchQuery = v), decoration: InputDecoration(hintText: l10n.t('agencyTripSearchCity'), prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textSecondary), filled: true, fillColor: ThixPolicy.surfaceSoft, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), contentPadding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s12)))),
         SizedBox(height: ThixPolicy.s16),
         Expanded(child: _filteredCities.isEmpty
-            ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.search_off_rounded, size: 48, color: ThixPolicy.textMuted), SizedBox(height: ThixPolicy.s12), Text(l10n.agencyTripNoCityFound, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary))]))
+            ? Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(Icons.search_off_rounded, size: 48, color: ThixPolicy.textMuted), SizedBox(height: ThixPolicy.s12), Text(l10n.t('agencyTripNoCityFound'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary))]))
             : ListView.builder(itemCount: _filteredCities.length, itemBuilder: (_, i) {
                 final city = _filteredCities[i];
                 final isSelected = city == widget.currentCity;
@@ -539,7 +539,7 @@ class _DurationInfo extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return Container(padding: EdgeInsets.all(ThixPolicy.s12), decoration: BoxDecoration(color: domainColor.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(ThixPolicy.rSm), border: Border.all(color: domainColor.withValues(alpha: 0.2))), child: Row(children: [Icon(Icons.timer_outlined, size: 16, color: domainColor), SizedBox(width: ThixPolicy.s8), Expanded(child: Text(l10n.agencyTripEstimatedDuration(duration.inHours, duration.inMinutes % 60), style: ThixPolicy.bodySmallStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.semiBold)))]));
+    return Container(padding: EdgeInsets.all(ThixPolicy.s12), decoration: BoxDecoration(color: domainColor.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(ThixPolicy.rSm), border: Border.all(color: domainColor.withValues(alpha: 0.2))), child: Row(children: [Icon(Icons.timer_outlined, size: 16, color: domainColor), SizedBox(width: ThixPolicy.s8), Expanded(child: Text(l10n.t('agencyTripEstimatedDuration', args: [duration.inHours.toString(), (duration.inMinutes % 60).toString()]), style: ThixPolicy.bodySmallStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.semiBold)))]));
   }
 }
 
@@ -570,13 +570,14 @@ class _PriceInput extends StatelessWidget {
     if (price != null && price > 0 && currencyCode != 'CDF') {
       final rate = exchangeRates['${currencyCode}_CDF'];
       final priceInCdf = rate != null ? (price * rate).round() : price;
-      conversionPreview = l10n.agencyTripPriceConversion(
-        CurrencyFormatter.format(priceInCdf, currency: 'CDF'),
+      conversionPreview = l10n.t(
+        'agencyTripPriceConversion',
+        args: [CurrencyFormatter.format(priceInCdf, currency: 'CDF')],
       );
     }
 
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FieldLabel(label: l10n.agencyTripPricePerSeat, required: true),
+      _FieldLabel(label: l10n.t('agencyTripPricePerSeat'), required: true),
       SizedBox(height: ThixPolicy.s6),
       TextFormField(controller: controller, keyboardType: TextInputType.number, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 16), decoration: InputDecoration(hintText: '0', hintStyle: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted), prefixIcon: Icon(Icons.payments_rounded, size: 18, color: domainColor), suffixIcon: Container(padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s12), alignment: Alignment.centerRight, child: Text(currencySymbol, style: ThixPolicy.labelStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.bold))), errorText: error, filled: true, fillColor: ThixPolicy.surfaceSoft, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: error != null ? ThixPolicy.danger : ThixPolicy.border)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: error != null ? ThixPolicy.danger : domainColor, width: 1.5)), contentPadding: EdgeInsets.symmetric(horizontal: ThixPolicy.s14, vertical: ThixPolicy.s14))),
       if (conversionPreview != null) ...[
@@ -597,7 +598,7 @@ class _SeatsInput extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FieldLabel(label: l10n.agencyTripTotalSeats, required: true),
+      _FieldLabel(label: l10n.t('agencyTripTotalSeats'), required: true),
       SizedBox(height: ThixPolicy.s6),
       TextFormField(controller: controller, keyboardType: TextInputType.number, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, fontSize: 16), decoration: InputDecoration(hintText: '50', hintStyle: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted), prefixIcon: Icon(Icons.event_seat_rounded, size: 18, color: domainColor), suffixIcon: Icon(Icons.people_outline_rounded, size: 18, color: ThixPolicy.textSecondary), errorText: error, filled: true, fillColor: ThixPolicy.surfaceSoft, border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: error != null ? ThixPolicy.danger : ThixPolicy.border)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: error != null ? ThixPolicy.danger : domainColor, width: 1.5)), contentPadding: EdgeInsets.symmetric(horizontal: ThixPolicy.s14, vertical: ThixPolicy.s14))),
     ]);
@@ -615,7 +616,7 @@ class _BusTypeSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FieldLabel(label: l10n.agencyTripBusType, required: true),
+      _FieldLabel(label: l10n.t('agencyTripBusType'), required: true),
       SizedBox(height: ThixPolicy.s10),
       Wrap(spacing: ThixPolicy.s10, runSpacing: ThixPolicy.s10, children: _kBusTypes.map((type) {
         final (value, labelKey, icon, defaultLabel) = type;
@@ -629,10 +630,10 @@ class _BusTypeSelector extends StatelessWidget {
   String? _translateBusLabel(dynamic l10n, String key) {
     try {
       switch (key) {
-        case 'agencyTripBusStandard': return l10n.agencyTripBusStandard;
-        case 'agencyTripBusClim': return l10n.agencyTripBusClim;
-        case 'agencyTripBusVip': return l10n.agencyTripBusVip;
-        case 'agencyTripBusSleeper': return l10n.agencyTripBusSleeper;
+        case 'agencyTripBusStandard': return l10n.t('agencyTripBusStandard');
+        case 'agencyTripBusClim': return l10n.t('agencyTripBusClim');
+        case 'agencyTripBusVip': return l10n.t('agencyTripBusVip');
+        case 'agencyTripBusSleeper': return l10n.t('agencyTripBusSleeper');
         default: return null;
       }
     } catch (_) { return null; }
@@ -650,7 +651,7 @@ class _AmenitiesSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      _FieldLabel(label: l10n.agencyTripAmenities, required: false),
+      _FieldLabel(label: l10n.t('agencyTripAmenities'), required: false),
       SizedBox(height: ThixPolicy.s10),
       Wrap(spacing: ThixPolicy.s8, runSpacing: ThixPolicy.s8, children: _kAmenities.map((amenity) {
         final (value, labelKey, icon) = amenity;
@@ -664,14 +665,14 @@ class _AmenitiesSelector extends StatelessWidget {
   String _translateAmenityLabel(dynamic l10n, String key) {
     try {
       switch (key) {
-        case 'amenityWifi': return l10n.amenityWifi;
-        case 'amenityAc': return l10n.amenityAc;
-        case 'amenityUsb': return l10n.amenityUsb;
-        case 'amenityToilet': return l10n.amenityToilet;
-        case 'amenityTv': return l10n.amenityTv;
-        case 'agencyTripAmenitySnack': return l10n.agencyTripAmenitySnack;
-        case 'agencyTripAmenityLuggage': return l10n.agencyTripAmenityLuggage;
-        case 'agencyTripAmenityReclining': return l10n.agencyTripAmenityReclining;
+        case 'amenityWifi': return l10n.t('amenityWifi');
+        case 'amenityAc': return l10n.t('amenityAc');
+        case 'amenityUsb': return l10n.t('amenityUsb');
+        case 'amenityToilet': return l10n.t('amenityToilet');
+        case 'amenityTv': return l10n.t('amenityTv');
+        case 'agencyTripAmenitySnack': return l10n.t('agencyTripAmenitySnack');
+        case 'agencyTripAmenityLuggage': return l10n.t('agencyTripAmenityLuggage');
+        case 'agencyTripAmenityReclining': return l10n.t('agencyTripAmenityReclining');
         default: return key;
       }
     } catch (_) { return key; }
@@ -695,7 +696,7 @@ class _TripPreviewCard extends StatelessWidget {
     final depDay = DateFormat('d MMM', locale).format(depDate);
     final arrDay = DateFormat('d MMM', locale).format(arrDate);
 
-    return Container(padding: EdgeInsets.all(ThixPolicy.s16), decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [domainColor, domainColor.withValues(alpha: 0.85)]), borderRadius: BorderRadius.circular(ThixPolicy.rLg), boxShadow: [BoxShadow(color: domainColor.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))]), child: Column(children: [Row(children: [Icon(Icons.directions_bus_rounded, color: Colors.white, size: 20), SizedBox(width: ThixPolicy.s8), Text(l10n.agencyTripPreviewTitle, style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold))]), SizedBox(height: ThixPolicy.s14), Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(depTime, style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 20)), SizedBox(height: ThixPolicy.s4), Text(fromCity, style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold)), Text(depDay, style: ThixPolicy.microStyle.copyWith(color: Colors.white.withValues(alpha: 0.8)))])), Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 24), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(arrTime, style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 20)), SizedBox(height: ThixPolicy.s4), Text(toCity, style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold)), Text(arrDay, style: ThixPolicy.microStyle.copyWith(color: Colors.white.withValues(alpha: 0.8)))]))])]));
+    return Container(padding: EdgeInsets.all(ThixPolicy.s16), decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [domainColor, domainColor.withValues(alpha: 0.85)]), borderRadius: BorderRadius.circular(ThixPolicy.rLg), boxShadow: [BoxShadow(color: domainColor.withValues(alpha: 0.25), blurRadius: 12, offset: const Offset(0, 4))]), child: Column(children: [Row(children: [Icon(Icons.directions_bus_rounded, color: Colors.white, size: 20), SizedBox(width: ThixPolicy.s8), Text(l10n.t('agencyTripPreviewTitle'), style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold))]), SizedBox(height: ThixPolicy.s14), Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(depTime, style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 20)), SizedBox(height: ThixPolicy.s4), Text(fromCity, style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold)), Text(depDay, style: ThixPolicy.microStyle.copyWith(color: Colors.white.withValues(alpha: 0.8)))])), Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 24), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [Text(arrTime, style: ThixPolicy.h2Style.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold, fontSize: 20)), SizedBox(height: ThixPolicy.s4), Text(toCity, style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold)), Text(arrDay, style: ThixPolicy.microStyle.copyWith(color: Colors.white.withValues(alpha: 0.8)))]))])]));
   }
 }
 
@@ -710,7 +711,7 @@ class _FieldLabel extends StatelessWidget {
     return Row(children: [
       Text(label, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold, fontSize: 12)),
       if (required) ...[SizedBox(width: ThixPolicy.s4), Text('*', style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold))],
-      if (!required) ...[SizedBox(width: ThixPolicy.s4), Text('(${l10n.commonOptional})', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted))],
+      if (!required) ...[SizedBox(width: ThixPolicy.s4), Text('(${l10n.t('common_optional')})', style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted))],
     ]);
   }
 }
