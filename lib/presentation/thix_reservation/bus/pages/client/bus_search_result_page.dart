@@ -94,8 +94,8 @@ class _BusSearchResultPageState extends ConsumerState<BusSearchResultPage> {
     final locale = Localizations.localeOf(context).toString();
 
     final dateFormatted = DateFormat('d MMM', locale).format(state.departureDate);
-    final passengersLabel = l10n.busSearchResultsPassengers(state.passengers);
-    final tripsLabel = l10n.busSearchResultsTrips(state.filteredResults.length);
+    final passengersLabel = '${state.passengers} ${l10n.t('reservation_guests')}';
+    final tripsLabel = l10n.plural('common_items', state.filteredResults.length);
 
     final routeLabel =
         '${state.departureCity ?? '-'} → ${state.arrivalCity ?? '-'}';
@@ -108,7 +108,7 @@ class _BusSearchResultPageState extends ConsumerState<BusSearchResultPage> {
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
         onPressed: () => context.pop(),
-        tooltip: l10n.commonBack,
+        tooltip: l10n.t('common_back'),
       ),
       title: Semantics(
         label: '$routeLabel, $dateFormatted, $passengersLabel, $tripsLabel',
@@ -175,7 +175,7 @@ class _BusSearchResultPageState extends ConsumerState<BusSearchResultPage> {
             ),
           ),
           onPressed: _openFilters,
-          tooltip: l10n.busSearchFilters,
+          tooltip: l10n.t('market_filters'),
         ),
         SizedBox(width: ThixPolicy.s8),
       ],
@@ -262,7 +262,7 @@ class _SortChipsBar extends ConsumerWidget {
           Icon(Icons.sort_rounded, size: 14, color: ThixPolicy.textSecondary),
           SizedBox(width: ThixPolicy.s6),
           Text(
-            l10n.busSearchSortBy,
+            l10n.t('market_filters'),
             style: ThixPolicy.microStyle.copyWith(
               color: ThixPolicy.textSecondary,
               fontWeight: ThixPolicy.semiBold,
@@ -276,7 +276,7 @@ class _SortChipsBar extends ConsumerWidget {
               child: Row(
                 children: [
                   _SortChip(
-                    label: l10n.busSearchSortDeparture,
+                    label: l10n.t('reservation_check_out'),
                     value: 'departure',
                     icon: Icons.access_time_rounded,
                     currentSort: state.sortBy,
@@ -286,7 +286,7 @@ class _SortChipsBar extends ConsumerWidget {
                   ),
                   SizedBox(width: ThixPolicy.s6),
                   _SortChip(
-                    label: l10n.busSearchSortPrice,
+                    label: l10n.t('money_amount'),
                     value: 'price',
                     icon: Icons.payments_outlined,
                     currentSort: state.sortBy,
@@ -296,7 +296,7 @@ class _SortChipsBar extends ConsumerWidget {
                   ),
                   SizedBox(width: ThixPolicy.s6),
                   _SortChip(
-                    label: l10n.busSearchSortDuration,
+                    label: l10n.t('training_duration'),
                     value: 'duration',
                     icon: Icons.timer_outlined,
                     currentSort: state.sortBy,
@@ -618,9 +618,7 @@ class _EmptyResultsView extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s20),
             Text(
-              hasFilters
-                  ? l10n.busSearchNoResultsWithFilters
-                  : l10n.busSearchNoResults,
+              l10n.t('edu_no_result'),
               style: ThixPolicy.h3Style.copyWith(
                 fontWeight: ThixPolicy.bold,
               ),
@@ -630,9 +628,7 @@ class _EmptyResultsView extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 300),
               child: Text(
-                hasFilters
-                    ? l10n.busSearchNoResultsFiltersHint
-                    : l10n.busSearchNoResultsHint,
+                l10n.t('network_empty_feed'),
                 style: ThixPolicy.bodySmallStyle.copyWith(
                   color: ThixPolicy.textSecondary,
                 ),
@@ -647,7 +643,7 @@ class _EmptyResultsView extends StatelessWidget {
                 child: OutlinedButton.icon(
                   onPressed: onClearFilters,
                   icon: const Icon(Icons.filter_alt_off_rounded, size: 18),
-                  label: Text(l10n.busSearchClearFilters),
+                  label: Text(l10n.t('common_clear')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: ThixPolicy.domainReservation,
                     side:
@@ -666,7 +662,7 @@ class _EmptyResultsView extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onNewSearch,
                 icon: const Icon(Icons.search_rounded, size: 18),
-                label: Text(l10n.busSearchNewSearch),
+                label: Text(l10n.t('common_search')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ThixPolicy.domainReservation,
                   foregroundColor: Colors.white,
@@ -720,7 +716,7 @@ class _ErrorResultsView extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s20),
             Text(
-              l10n.commonError,
+              l10n.t('common_error'),
               style: ThixPolicy.h3Style.copyWith(
                 fontWeight: ThixPolicy.bold,
               ),
@@ -744,7 +740,7 @@ class _ErrorResultsView extends StatelessWidget {
               child: ElevatedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded, size: 18),
-                label: Text(l10n.commonRetry),
+                label: Text(l10n.t('common_retry')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ThixPolicy.domainReservation,
                   foregroundColor: Colors.white,
