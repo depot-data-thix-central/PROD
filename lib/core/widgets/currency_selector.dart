@@ -8,12 +8,6 @@ import '../utils/currency_registry.dart';
 /// ============================================================================
 /// CurrencySelector
 /// ============================================================================
-///
-/// Widget de sélection de devise avec :
-/// - Version compacte (bouton dans l'AppBar)
-/// - Version sheet (modal groupé par région)
-/// - Recherche par nom/code/pays
-/// ============================================================================
 class CurrencySelector extends ConsumerWidget {
   final bool compact;
 
@@ -66,7 +60,8 @@ class CurrencySelector extends ConsumerWidget {
       );
     }
 
-    return _CurrencySheetContent();
+    // Utilisation directe du widget extrait
+    return const _CurrencySheetContent();
   }
 
   void _showSheet(BuildContext context) {
@@ -91,158 +86,196 @@ class _CurrencySheetState extends ConsumerState<_CurrencySheet> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final current = ref.watch(currencyProvider).currency;
-
-    final filtered = _search.isEmpty
-        ? CurrencyRegistry.all
-        : CurrencyRegistry.all.where((c) {
-            final q = _search.toLowerCase();
-            return c.code.toLowerCase().contains(q) ||
-                c.name.toLowerCase().contains(q) ||
-                c.symbol.toLowerCase().contains(q) ||
-                c.countries.any((co) => co.toLowerCase().contains(q));
-          }).toList();
-
     return DraggableScrollableSheet(
       initialChildSize: 0.75,
       maxChildSize: 0.95,
       minChildSize: 0.5,
       expand: false,
       builder: (context, scrollController) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(ThixPolicy.r2Xl)),
-          ),
-          child: Column(
-            children: [
-              // Drag handle
-              Padding(
-                padding: EdgeInsets.only(top: ThixPolicy.s12),
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: ThixPolicy.border,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-
-              // Title
-              Padding(
-                padding: EdgeInsets.all(ThixPolicy.s16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.currency_exchange_rounded,
-                      color: ThixPolicy.domainReservation,
-                    ),
-                    SizedBox(width: ThixPolicy.s8),
-                    Text(l10n.currencySelectTitle, style: ThixPolicy.h3Style),
-                  ],
-                ),
-              ),
-
-              // Search
-              Padding(
-                padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-                child: TextField(
-                  onChanged: (v) => setState(() => _search = v),
-                  decoration: InputDecoration(
-                    hintText: l10n.currencySearchHint,
-                    prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textSecondary),
-                    suffixIcon: _search.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.close_rounded),
-                            onPressed: () => setState(() => _search = ''),
-                          )
-                        : null,
-                    filled: true,
-                    fillColor: ThixPolicy.surfaceSoft,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
-                ),
-              ),
-
-              SizedBox(height: ThixPolicy.s12),
-
-              // Popular section (si pas de recherche)
-              if (_search.isEmpty) ...[
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: Text(
-                      l10n.currencyPopular,
-                      style: ThixPolicy.labelStyle.copyWith(
-                        color: ThixPolicy.textSecondary,
-                      ),
-                    ),
-                  ),
-                ),
-                SizedBox(height: ThixPolicy.s8),
-                SizedBox(
-                  height: 50,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-                    itemCount: CurrencyRegistry.popular.length,
-                    separatorBuilder: (_, __) => SizedBox(width: ThixPolicy.s8),
-                    itemBuilder: (ctx, i) {
-                      final c = CurrencyRegistry.popular[i];
-                      final isSelected = c.code == current.code;
-                      return _PopularChip(
-                        currency: c,
-                        isSelected: isSelected,
-                        onTap: () => _select(c),
-                      );
-                    },
-                  ),
-                ),
-                SizedBox(height: ThixPolicy.s16),
-              ],
-
-              // List
-              Expanded(
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          l10n.currencyNoResult,
-                          style: ThixPolicy.bodySmallStyle.copyWith(
-                            color: ThixPolicy.textMuted,
-                          ),
-                        ),
-                      )
-                    : ListView.builder(
-                        controller: scrollController,
-                        padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
-                        itemCount: filtered.length,
-                        itemBuilder: (ctx, i) {
-                          final c = filtered[i];
-                          final isSelected = c.code == current.code;
-                          return _CurrencyTile(
-                            currency: c,
-                            isSelected: isSelected,
-                            onTap: () => _select(c),
-                          );
-                        },
-                      ),
-              ),
-            ],
-          ),
+        // On passe le contrôleur de recherche et le scroll au contenu
+        return _CurrencySheetContent(
+          searchControllerValue: _search,
+          onSearchChanged: (v) => setState(() => _search = v),
+          scrollController: scrollController,
         );
       },
     );
   }
+}
 
-  void _select(ThixCurrency c) {
+/// ============================================================================
+/// _CurrencySheetContent — Contenu réutilisable de la feuille de sélection
+/// ============================================================================
+class _CurrencySheetContent extends ConsumerWidget {
+  final String? searchControllerValue;
+  final Function(String)? onSearchChanged;
+  final ScrollController? scrollController;
+
+  const _CurrencySheetContent({
+    this.searchControllerValue,
+    this.onSearchChanged,
+    this.scrollController,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final current = ref.watch(currencyProvider).currency;
+    
+    // Gestion de l'état de recherche : soit via callback (depuis _CurrencySheet), soit vide (depuis CurrencySelector non compact)
+    final search = searchControllerValue ?? '';
+
+    final filtered = search.isEmpty
+        ? CurrencyRegistry.all
+        : CurrencyRegistry.all.where((c) {
+            final q = search.toLowerCase();
+            return c.code.toLowerCase().contains(q) ||
+                c.name.toLowerCase().contains(q) ||
+                c.symbol.toLowerCase().contains(q) ||
+                c.countries.any((co) => co.toLowerCase().contains(q));
+          }).toList();
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(ThixPolicy.r2Xl)),
+      ),
+      child: Column(
+        children: [
+          // Drag handle
+          Padding(
+            padding: EdgeInsets.only(top: ThixPolicy.s12),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: ThixPolicy.border,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+          ),
+
+          // Title
+          Padding(
+            padding: EdgeInsets.all(ThixPolicy.s16),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.currency_exchange_rounded,
+                  color: ThixPolicy.domainReservation,
+                ),
+                SizedBox(width: ThixPolicy.s8),
+                // Correction: Utilisation de t() avec fallback
+                Text(
+                  l10n.t('wallet_currency_title', 'Sélectionner une devise'), 
+                  style: ThixPolicy.h3Style
+                ),
+              ],
+            ),
+          ),
+
+          // Search
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+            child: TextField(
+              onChanged: onSearchChanged,
+              decoration: InputDecoration(
+                // Correction: Utilisation de t() avec fallback
+                hintText: l10n.t('common_search_hint', 'Rechercher une devise...'),
+                prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textSecondary),
+                suffixIcon: search.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => onSearchChanged?.call(''),
+                      )
+                    : null,
+                filled: true,
+                fillColor: ThixPolicy.surfaceSoft,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  borderSide: BorderSide.none,
+                ),
+              ),
+            ),
+          ),
+
+          SizedBox(height: ThixPolicy.s12),
+
+          // Popular section (si pas de recherche)
+          if (search.isEmpty) ...[
+            Padding(
+              padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  // Correction: Utilisation de t() avec fallback
+                  l10n.t('market_popular', 'Populaires'),
+                  style: ThixPolicy.labelStyle.copyWith(
+                    color: ThixPolicy.textSecondary,
+                  ),
+                ),
+              ),
+            ),
+            SizedBox(height: ThixPolicy.s8),
+            SizedBox(
+              height: 50,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                itemCount: CurrencyRegistry.popular.length,
+                separatorBuilder: (_, __) => SizedBox(width: ThixPolicy.s8),
+                itemBuilder: (ctx, i) {
+                  final c = CurrencyRegistry.popular[i];
+                  final isSelected = c.code == current.code;
+                  return _PopularChip(
+                    currency: c,
+                    isSelected: isSelected,
+                    onTap: () => _select(ref, c),
+                  );
+                },
+              ),
+            ),
+            SizedBox(height: ThixPolicy.s16),
+          ],
+
+          // List
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      // Correction: Utilisation de t() avec fallback
+                      l10n.t('edu_no_result', 'Aucun résultat'),
+                      style: ThixPolicy.bodySmallStyle.copyWith(
+                        color: ThixPolicy.textMuted,
+                      ),
+                    ),
+                  )
+                : ListView.builder(
+                    controller: scrollController,
+                    padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                    itemCount: filtered.length,
+                    itemBuilder: (ctx, i) {
+                      final c = filtered[i];
+                      final isSelected = c.code == current.code;
+                      return _CurrencyTile(
+                        currency: c,
+                        isSelected: isSelected,
+                        onTap: () => _select(ref, c),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _select(WidgetRef ref, ThixCurrency c) {
     ref.read(currencyProvider.notifier).setCurrencyObj(c);
-    Navigator.pop(context);
+    // Vérifie si on est dans un contexte navigable avant de pop
+    if (Navigator.canPop(ref.context)) {
+      Navigator.pop(ref.context);
+    }
   }
 }
 
