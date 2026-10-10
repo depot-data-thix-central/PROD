@@ -319,6 +319,7 @@ class NoTransitionPage<T> extends Page<T> {
         transitionsBuilder: (c, a, s, ch) => ch,
       );
 }
+
 // ============================================================================
 // RÉSEAU GLOBAL : sans réseau, le routeur affiche la page "Pas de connexion"
 // ============================================================================
@@ -372,13 +373,14 @@ class _NoConnectionPage extends StatelessWidget {
     );
   }
 }
+
 class AppRouter {
   static GoRouter create(
     AuthController auth, {
     Listenable? extraRefreshListenable,
     GlobalKey<NavigatorState>? navigatorKey,
   }) {
-        AppConnectivity.instance.start();
+    AppConnectivity.instance.start();
     final refresh = Listenable.merge([
       extraRefreshListenable ?? auth,
       AppConnectivity.instance,
@@ -400,74 +402,6 @@ class AppRouter {
         ])),
       ),
 
-      redirect: (context, state) {
-        try {
-          final loc = state.matchedLocation;
-
-          // 0) RÉSEAU : sans connexion → page "Pas de connexion" ; retour auto quand le réseau revient
-          final offline = AppConnectivity.instance.offline;
-          if (offline && loc != kNoConnectionPath) {
-            return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
-          }
-          if (!offline && loc == kNoConnectionPath) {
-            final from = state.uri.queryParameters['from'];
-            if (from != null &&
-                from.startsWith('/') &&
-                !from.startsWith('//') &&
-                !from.startsWith(kNoConnectionPath)) {
-              return from;
-            }
-            return AppRoutes.home;
-          }
-          if (offline) return null;
-
-          // 1) RETOUR OAUTH (thix://login-callback) : on laisse les règles login/inscription décider
-          if (loc.startsWith('/login-callback')) {
-            return AppRoutes.login;
-          }
-
-          final isLoginPage = loc == AppRoutes.login;
-          final isStartPage = loc == AppRoutes.start;
-          final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-          const accountStatusPath = '/settings/account-status';
-          final isAccountStatusRoute = loc == accountStatusPath;
-          final isPolicyRoute = loc.startsWith('/settings/policy/');
-
-          final isPublic = isStartPage ||
-              isLoginPage ||
-              isRegPage ||
-              isPolicyRoute ||
-              loc == AppRoutes.publicProfile ||
-              loc == AppRoutes.jobs ||
-              loc == AppRoutes.opportunities ||
-              loc == AppRoutes.education ||
-              loc == AppRoutes.trainingHome ||
-              loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
-              loc == AppRoutes.monPays ||
-              loc.startsWith('${AppRoutes.monPays}/') ||
-              loc.startsWith('/thix-event') ||
-              loc.startsWith('/thix-retrouve') ||
-              loc.startsWith('/thix-weeding') ||
-              loc.startsWith('/thix-reservation/delivery');
-
-          final logged = auth.isAuthenticated;
-          final currentUser = auth.currentUser;
-
-          // 2) PAS CONNECTÉ
-          if (!logged) {
-            return isPublic ? null : AppRoutes.login;
-          }
-
-          // 3) CONNECTÉ MAIS PROFIL EN CHARGEMENT / HORS-LIGNE
-          if (currentUser == null) {
-            if (isLoginPage || isStartPage) return AppRoutes.home;
-            return null;
-          }
-
-          // 4) STATUT DU COMPTE
-          final rawLifecycle = currentUser.accountStatus?.toLowerCase();
-          final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
-          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
       redirect: (context, state) {
         try {
           final loc = state.matchedLocation;
@@ -583,9 +517,7 @@ class AppRouter {
           debugPrint('GoRouter redirect error: $e');
           return null;
         }
-      },
-          
-
+      },     
       routes: [
         // === CORE, AUTH & MAIN ===
         GoRoute(path: AppRoutes.start, name: 'start', pageBuilder: (_, __) => const NoTransitionPage(child: ThixIdStartPage())),
