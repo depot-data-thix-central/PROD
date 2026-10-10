@@ -12,6 +12,8 @@ import 'package:thix_id/core/providers/currency_provider.dart';
 
 import '../../providers/agency_dashboard_provider.dart';
 import '../../data/models/booking_model.dart';
+// Import math pour les constantes
+import 'dart:math' as math;
 
 /// ============================================================================
 /// AgencyQrScanPage
@@ -697,8 +699,6 @@ class _ScannerOverlayPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// Import math pour les constantes
-import 'dart:math' as math;
 
 /// ============================================================================
 /// _InstructionsPanel — Panel d'instructions sous le scanner
