@@ -108,15 +108,15 @@ class _AgencyQrScanPageState extends ConsumerState<AgencyQrScanPage>
           color: ThixPolicy.warning,
           size: 36,
         ),
-        title: Text(l10n.qrScanAgencyRequiredTitle),
-        content: Text(l10n.qrScanAgencyRequiredMessage),
+        title: Text(l10n.t('qrScanAgencyRequiredTitle')),
+        content: Text(l10n.t('qrScanAgencyRequiredMessage')),
         actions: [
           FilledButton(
             onPressed: () {
               Navigator.pop(ctx);
               context.go('/agency/dashboard');
             },
-            child: Text(l10n.qrScanGoToAgency),
+            child: Text(l10n.t('qrScanGoToAgency')),
           ),
         ],
       ),
@@ -289,13 +289,13 @@ class _AgencyQrScanPageState extends ConsumerState<AgencyQrScanPage>
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
         onPressed: () => context.pop(),
-        tooltip: l10n.commonBack,
+        tooltip: l10n.t('common_back'),
       ),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.qrScanTitle,
+            l10n.t('qrScanTitle'),
             style: ThixPolicy.titleStyle.copyWith(
               fontWeight: ThixPolicy.bold,
               fontSize: 15,
@@ -329,7 +329,7 @@ class _AgencyQrScanPageState extends ConsumerState<AgencyQrScanPage>
         if (_currentResult == null && !_isProcessing) ...[
           IconButton(
             icon: const Icon(Icons.edit_note_rounded, color: ThixPolicy.textMain),
-            tooltip: l10n.qrScanManualEntry,
+            tooltip: l10n.t('qrScanManualEntry'),
             onPressed: _openManualEntry,
           ),
         ],
@@ -515,7 +515,7 @@ class _ScannerView extends StatelessWidget {
                   final isOn = state == TorchState.on;
                   return _ControlButton(
                     icon: isOn ? Icons.flash_on_rounded : Icons.flash_off_rounded,
-                    label: isOn ? l10n.qrScanTorchOn : l10n.qrScanTorchOff,
+                    label: isOn ? l10n.t('qrScanTorchOn') : l10n.t('qrScanTorchOff'),
                     isActive: isOn,
                     onTap: onToggleTorch,
                   );
@@ -544,7 +544,7 @@ class _ScannerView extends StatelessWidget {
                     ),
                     SizedBox(height: ThixPolicy.s12),
                     Text(
-                      l10n.qrScanValidating,
+                      l10n.t('qrScanValidating'),
                       style: ThixPolicy.titleStyle.copyWith(
                         color: Colors.white,
                         fontWeight: ThixPolicy.bold,
@@ -741,7 +741,7 @@ class _InstructionsPanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.qrScanInstructionTitle,
+                  l10n.t('qrScanInstructionTitle'),
                   style: ThixPolicy.bodyStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
                     color: ThixPolicy.textMain,
@@ -749,7 +749,7 @@ class _InstructionsPanel extends StatelessWidget {
                 ),
                 SizedBox(height: ThixPolicy.s2),
                 Text(
-                  l10n.qrScanInstructionSubtitle,
+                  l10n.t('qrScanInstructionSubtitle'),
                   style: ThixPolicy.microStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                   ),
@@ -800,7 +800,7 @@ class _RecentScansList extends StatelessWidget {
                 ),
                 SizedBox(width: ThixPolicy.s6),
                 Text(
-                  l10n.qrScanRecentTitle,
+                  l10n.t('qrScanRecentTitle'),
                   style: ThixPolicy.labelStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                     fontWeight: ThixPolicy.bold,
@@ -880,7 +880,7 @@ class _ScanHistoryTile extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    b.passengerName ?? l10n.qrScanUnknownPassenger,
+                    b.passengerName ?? l10n.t('qrScanUnknownPassenger'),
                     style: ThixPolicy.bodySmallStyle.copyWith(
                       fontWeight: ThixPolicy.bold,
                       color: ThixPolicy.textMain,
@@ -932,7 +932,7 @@ class _ScanHistoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.qrScanFailed,
+                  l10n.t('qrScanFailed'),
                   style: ThixPolicy.bodySmallStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
                     color: ThixPolicy.danger,
@@ -1034,7 +1034,7 @@ class _SuccessResultView extends ConsumerWidget {
           SizedBox(height: ThixPolicy.s20),
 
           Text(
-            l10n.qrScanSuccessTitle,
+            l10n.t('qrScanSuccessTitle'),
             style: ThixPolicy.h2Style.copyWith(
               fontWeight: ThixPolicy.bold,
               color: ThixPolicy.success,
@@ -1042,7 +1042,7 @@ class _SuccessResultView extends ConsumerWidget {
           ),
           SizedBox(height: ThixPolicy.s4),
           Text(
-            l10n.qrScanSuccessSubtitle,
+            l10n.t('qrScanSuccessSubtitle'),
             style: ThixPolicy.bodySmallStyle.copyWith(
               color: ThixPolicy.textSecondary,
             ),
@@ -1081,7 +1081,7 @@ class _SuccessResultView extends ConsumerWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            booking.passengerName ?? l10n.qrScanUnknownPassenger,
+                            booking.passengerName ?? l10n.t('qrScanUnknownPassenger'),
                             style: ThixPolicy.titleStyle.copyWith(
                               fontWeight: ThixPolicy.bold,
                             ),
@@ -1104,14 +1104,14 @@ class _SuccessResultView extends ConsumerWidget {
 
                 _InfoRow(
                   icon: Icons.event_seat_rounded,
-                  label: l10n.qrScanSeats,
+                  label: l10n.t('qrScanSeats'),
                   value: booking.seats.join(', '),
                   domainColor: domainColor,
                 ),
                 SizedBox(height: ThixPolicy.s10),
                 _InfoRow(
                   icon: Icons.payments_rounded,
-                  label: l10n.qrScanAmount,
+                  label: l10n.t('qrScanAmount'),
                   value: formattedPrice,
                   domainColor: domainColor,
                   valueColor: ThixPolicy.success,
@@ -1120,14 +1120,14 @@ class _SuccessResultView extends ConsumerWidget {
                   SizedBox(height: ThixPolicy.s10),
                   _InfoRow(
                     icon: Icons.route_rounded,
-                    label: l10n.qrScanRoute,
+                    label: l10n.t('qrScanRoute'),
                     value: '${trip.departureCity} → ${trip.arrivalCity}',
                     domainColor: domainColor,
                   ),
                   SizedBox(height: ThixPolicy.s10),
                   _InfoRow(
                     icon: Icons.access_time_rounded,
-                    label: l10n.qrScanDeparture,
+                    label: l10n.t('qrScanDeparture'),
                     value: DateFormat('HH:mm • d MMM').format(trip.departureTime),
                     domainColor: domainColor,
                   ),
@@ -1145,7 +1145,7 @@ class _SuccessResultView extends ConsumerWidget {
               onPressed: onResume,
               icon: const Icon(Icons.qr_code_scanner_rounded, size: 20),
               label: Text(
-                l10n.qrScanNext,
+                l10n.t('qrScanNext'),
                 style: ThixPolicy.titleStyle.copyWith(
                   color: Colors.white,
                   fontWeight: ThixPolicy.bold,
@@ -1260,7 +1260,7 @@ class _FailureResultView extends StatelessWidget {
               onPressed: onResume,
               icon: const Icon(Icons.refresh_rounded, size: 20),
               label: Text(
-                l10n.qrScanRetry,
+                l10n.t('qrScanRetry'),
                 style: ThixPolicy.titleStyle.copyWith(
                   color: Colors.white,
                   fontWeight: ThixPolicy.bold,
@@ -1286,36 +1286,36 @@ class _FailureResultView extends StatelessWidget {
         return _FailureInfo(
           icon: Icons.hourglass_top_rounded,
           color: ThixPolicy.warning,
-          title: l10n.qrScanFailAlreadyUsedTitle,
-          message: l10n.qrScanFailAlreadyUsedMessage,
+          title: l10n.t('qrScanFailAlreadyUsedTitle'),
+          message: l10n.t('qrScanFailAlreadyUsedMessage'),
         );
       case _ScanFailureReason.expired:
         return _FailureInfo(
           icon: Icons.timer_off_rounded,
           color: ThixPolicy.warning,
-          title: l10n.qrScanFailExpiredTitle,
-          message: l10n.qrScanFailExpiredMessage,
+          title: l10n.t('qrScanFailExpiredTitle'),
+          message: l10n.t('qrScanFailExpiredMessage'),
         );
       case _ScanFailureReason.cancelled:
         return _FailureInfo(
           icon: Icons.cancel_rounded,
           color: ThixPolicy.danger,
-          title: l10n.qrScanFailCancelledTitle,
-          message: l10n.qrScanFailCancelledMessage,
+          title: l10n.t('qrScanFailCancelledTitle'),
+          message: l10n.t('qrScanFailCancelledMessage'),
         );
       case _ScanFailureReason.network:
         return _FailureInfo(
           icon: Icons.cloud_off_rounded,
           color: ThixPolicy.danger,
-          title: l10n.qrScanFailNetworkTitle,
-          message: l10n.qrScanFailNetworkMessage,
+          title: l10n.t('qrScanFailNetworkTitle'),
+          message: l10n.t('qrScanFailNetworkMessage'),
         );
       case _ScanFailureReason.invalid:
         return _FailureInfo(
           icon: Icons.error_outline_rounded,
           color: ThixPolicy.danger,
-          title: l10n.qrScanFailInvalidTitle,
-          message: l10n.qrScanFailInvalidMessage,
+          title: l10n.t('qrScanFailInvalidTitle'),
+          message: l10n.t('qrScanFailInvalidMessage'),
         );
     }
   }
@@ -1409,11 +1409,11 @@ class _ManualEntrySheetState extends State<_ManualEntrySheet> {
   void _submit() {
     final code = _controller.text.trim();
     if (code.isEmpty) {
-      setState(() => _error = context.l10n.qrScanManualEmpty);
+      setState(() => _error = context.l10n.t('qrScanManualEmpty'));
       return;
     }
     if (code.length < 6) {
-      setState(() => _error = context.l10n.qrScanManualTooShort);
+      setState(() => _error = context.l10n.t('qrScanManualTooShort'));
       return;
     }
     Navigator.pop(context, code);
@@ -1467,7 +1467,7 @@ class _ManualEntrySheetState extends State<_ManualEntrySheet> {
               ),
               SizedBox(width: ThixPolicy.s12),
               Text(
-                l10n.qrScanManualTitle,
+                l10n.t('qrScanManualTitle'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                 ),
@@ -1478,7 +1478,7 @@ class _ManualEntrySheetState extends State<_ManualEntrySheet> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              l10n.qrScanManualSubtitle,
+              l10n.t('qrScanManualSubtitle'),
               style: ThixPolicy.bodySmallStyle.copyWith(
                 color: ThixPolicy.textSecondary,
               ),
@@ -1531,7 +1531,7 @@ class _ManualEntrySheetState extends State<_ManualEntrySheet> {
                 ),
               ),
               child: Text(
-                l10n.qrScanManualValidate,
+                l10n.t('qrScanManualValidate'),
                 style: ThixPolicy.titleStyle.copyWith(
                   color: Colors.white,
                   fontWeight: ThixPolicy.bold,
@@ -1573,7 +1573,7 @@ class _CameraError extends StatelessWidget {
               ),
               SizedBox(height: ThixPolicy.s12),
               Text(
-                l10n.qrScanCameraError,
+                l10n.t('qrScanCameraError'),
                 style: ThixPolicy.titleStyle.copyWith(
                   color: Colors.white,
                   fontWeight: ThixPolicy.bold,
