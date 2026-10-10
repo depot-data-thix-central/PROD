@@ -76,7 +76,7 @@ class _BusTicketPageState extends ConsumerState<BusTicketPage> {
     if (id.isEmpty) {
       setState(() {
         _loading = false;
-        _error = context.l10n.ticketNotFound;
+        _error = context.l10n.t('ticket_not_found');
       });
       return;
     }
@@ -99,7 +99,7 @@ class _BusTicketPageState extends ConsumerState<BusTicketPage> {
         if (mounted) {
           setState(() {
             _loading = false;
-            _error = context.l10n.ticketNotFound;
+            _error = context.l10n.t('ticket_not_found');
           });
         }
         return;
@@ -136,7 +136,7 @@ class _BusTicketPageState extends ConsumerState<BusTicketPage> {
         backgroundColor: ThixPolicy.surface,
         appBar: _buildAppBar(l10n),
         body: _TicketErrorView(
-          error: _error ?? l10n.ticketNotFound,
+          error: _error ?? l10n.t('ticket_not_found'),
           onRetry: _load,
         ),
       );
@@ -168,10 +168,10 @@ class _BusTicketPageState extends ConsumerState<BusTicketPage> {
             context.go('/thix-reservation/bus');
           }
         },
-        tooltip: l10n.commonBack,
+        tooltip: l10n.t('common_back'),
       ),
       title: Text(
-        l10n.ticketTitle,
+        l10n.t('tickets_ticket'),
         style: ThixPolicy.titleStyle.copyWith(
           fontSize: 16,
           fontWeight: ThixPolicy.bold,
@@ -248,31 +248,31 @@ class _TicketContent extends ConsumerWidget {
     switch (status.toLowerCase()) {
       case 'confirmed':
         return _TicketStatusInfo(
-          labelKey: 'ticketStatusConfirmed',
+          labelKey: 'admin_bookings_status_valid',
           color: ThixPolicy.success,
           icon: Icons.check_circle_rounded,
         );
       case 'pending':
         return _TicketStatusInfo(
-          labelKey: 'ticketStatusPending',
+          labelKey: 'status_pending',
           color: ThixPolicy.warning,
           icon: Icons.schedule_rounded,
         );
       case 'completed':
         return _TicketStatusInfo(
-          labelKey: 'ticketStatusCompleted',
+          labelKey: 'tickets_completed',
           color: ThixPolicy.textSecondary,
           icon: Icons.history_rounded,
         );
       case 'cancelled':
         return _TicketStatusInfo(
-          labelKey: 'ticketStatusCancelled',
+          labelKey: 'admin_bookings_status_cancelled',
           color: ThixPolicy.danger,
           icon: Icons.cancel_rounded,
         );
       default:
         return _TicketStatusInfo(
-          labelKey: 'ticketStatusPending',
+          labelKey: 'status_pending',
           color: ThixPolicy.warning,
           icon: Icons.schedule_rounded,
         );
@@ -314,7 +314,7 @@ class _TicketCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final trip = booking.trip;
-    final agencyName = trip?.agency?.name ?? l10n.tripUnknownAgency;
+    final agencyName = trip?.agency?.name ?? l10n.t('common_unknown');
 
     final locale = Localizations.localeOf(context).toString();
     final dateFormatted = trip != null
@@ -404,7 +404,7 @@ class _TicketCard extends StatelessWidget {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              '${l10n.ticketBookingId} ${booking.id.substring(0, 8).toUpperCase()}',
+              '${l10n.t('ticket_booking_id')} ${booking.id.substring(0, 8).toUpperCase()}',
               style: ThixPolicy.microStyle.copyWith(
                 color: ThixPolicy.textMuted,
                 fontFamily: 'monospace',
@@ -418,22 +418,7 @@ class _TicketCard extends StatelessWidget {
   }
 
   String _translateStatus(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'ticketStatusConfirmed':
-          return l10n.ticketStatusConfirmed;
-        case 'ticketStatusPending':
-          return l10n.ticketStatusPending;
-        case 'ticketStatusCompleted':
-          return l10n.ticketStatusCompleted;
-        case 'ticketStatusCancelled':
-          return l10n.ticketStatusCancelled;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
+    return l10n.t(key);
   }
 
   String _capitalize(String s) {
@@ -709,9 +694,7 @@ class _TicketDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
 
-    final seatsLabel = seats.length == 1
-        ? l10n.ticketSeat(seats.join(', '))
-        : l10n.ticketSeats(seats.join(', '));
+    final seatsLabel = '${l10n.t('admin_action_seats')}: ${seats.join(', ')}';
 
     return Container(
       padding: EdgeInsets.all(ThixPolicy.s14),
@@ -760,7 +743,7 @@ class _TicketDetails extends StatelessWidget {
               ),
               if (originalCurrency != 'CDF' || formattedPrice.contains('CDF'))
                 Text(
-                  l10n.ticketTotalPaid,
+                  l10n.t('reservation_total'),
                   style: ThixPolicy.microStyle.copyWith(
                     color: ThixPolicy.textMuted,
                   ),
@@ -794,7 +777,7 @@ class _TicketActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.copy_rounded,
-            label: l10n.ticketCopyCode,
+            label: l10n.t('common_copy'),
             onTap: () => _copyCode(context),
             domainColor: domainColor,
           ),
@@ -803,7 +786,7 @@ class _TicketActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.share_rounded,
-            label: l10n.ticketShare,
+            label: l10n.t('ticket_share'),
             onTap: () => _share(context),
             domainColor: domainColor,
           ),
@@ -812,7 +795,7 @@ class _TicketActions extends StatelessWidget {
         Expanded(
           child: _ActionButton(
             icon: Icons.calendar_today_rounded,
-            label: l10n.ticketAddCalendar,
+            label: l10n.t('common_add'),
             onTap: () => _showCalendarComingSoon(context),
             domainColor: domainColor,
           ),
@@ -832,7 +815,7 @@ class _TicketActions extends StatelessWidget {
           children: [
             Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
             SizedBox(width: ThixPolicy.s8),
-            Text(l10n.ticketCodeCopied),
+            Text(l10n.t('common_copied')),
           ],
         ),
         backgroundColor: ThixPolicy.success,
@@ -849,11 +832,7 @@ class _TicketActions extends StatelessWidget {
     final l10n = context.l10n;
     final trip = booking.trip;
 
-    final message = l10n.ticketShareMessage(
-      trip?.departureCity ?? '-',
-      trip?.arrivalCity ?? '-',
-      booking.qrCode,
-    );
+    final message = '${l10n.t('ticket_share_text')} - ${trip?.departureCity ?? '-'} → ${trip?.arrivalCity ?? '-'} (${booking.qrCode})';
 
     await Share.share(message);
   }
@@ -862,7 +841,7 @@ class _TicketActions extends StatelessWidget {
     final l10n = context.l10n;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(l10n.ticketCalendarComingSoon),
+        content: Text(l10n.t('market_coming_soon', args: ['Calendrier'])),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(ThixPolicy.rSm),
@@ -948,7 +927,7 @@ class _QrDisclaimer extends StatelessWidget {
         SizedBox(width: ThixPolicy.s6),
         Flexible(
           child: Text(
-            l10n.ticketDisclaimer,
+            l10n.t('ticket_scan_info'),
             style: ThixPolicy.microStyle.copyWith(
               color: ThixPolicy.textSecondary,
               fontWeight: ThixPolicy.medium,
@@ -1119,7 +1098,7 @@ class _TicketErrorView extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s20),
             Text(
-              l10n.ticketNotFound,
+              l10n.t('ticket_not_found'),
               style: ThixPolicy.h3Style.copyWith(
                 fontWeight: ThixPolicy.bold,
               ),
@@ -1137,7 +1116,7 @@ class _TicketErrorView extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded, size: 18),
-              label: Text(l10n.commonRetry),
+              label: Text(l10n.t('common_retry')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.domainReservation,
                 foregroundColor: Colors.white,
