@@ -568,8 +568,8 @@ class BookingNotifier extends Notifier<BookingState> {
     try {
       await _service.cancelBooking(bookingId, reason: reason).timeout(_timeout);
 
-      // Mettre à jour localement
-      final updatedBookings = state.myBookings.map((b) {
+      // ✅ CORRECTION : annotation de type explicite <BookingModel>
+      final updatedBookings = state.myBookings.map<BookingModel>((b) {
         if (b.id == bookingId) {
           return BookingModel(
             id: b.id,
@@ -618,8 +618,8 @@ class BookingNotifier extends Notifier<BookingState> {
     try {
       final booking = await _service.getBookingById(bookingId).timeout(_timeout);
 
-      // Mettre à jour le cache local
-      final updatedBookings = state.myBookings.map((b) {
+      // ✅ CORRECTION : annotation de type explicite <BookingModel>
+      final updatedBookings = state.myBookings.map<BookingModel>((b) {
         return b.id == bookingId ? booking : b;
       }).toList();
 
