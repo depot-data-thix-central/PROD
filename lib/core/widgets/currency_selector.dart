@@ -165,9 +165,9 @@ class _CurrencySheetContent extends ConsumerWidget {
                   color: ThixPolicy.domainReservation,
                 ),
                 SizedBox(width: ThixPolicy.s8),
-                // Correction: Utilisation de t() avec fallback
+                // CORRECTION: Suppression du 2ème argument (fallback) car la clé existe
                 Text(
-                  l10n.t('wallet_currency_title', 'Sélectionner une devise'), 
+                  l10n.t('wallet_currency_title'), 
                   style: ThixPolicy.h3Style
                 ),
               ],
@@ -180,8 +180,8 @@ class _CurrencySheetContent extends ConsumerWidget {
             child: TextField(
               onChanged: onSearchChanged,
               decoration: InputDecoration(
-                // Correction: Utilisation de t() avec fallback
-                hintText: l10n.t('common_search_hint', 'Rechercher une devise...'),
+                // CORRECTION: Suppression du 2ème argument
+                hintText: l10n.t('common_search_hint'),
                 prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textSecondary),
                 suffixIcon: search.isNotEmpty
                     ? IconButton(
@@ -208,8 +208,8 @@ class _CurrencySheetContent extends ConsumerWidget {
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  // Correction: Utilisation de t() avec fallback
-                  l10n.t('market_popular', 'Populaires'),
+                  // CORRECTION: Suppression du 2ème argument
+                  l10n.t('market_popular'),
                   style: ThixPolicy.labelStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                   ),
@@ -243,8 +243,8 @@ class _CurrencySheetContent extends ConsumerWidget {
             child: filtered.isEmpty
                 ? Center(
                     child: Text(
-                      // Correction: Utilisation de t() avec fallback
-                      l10n.t('edu_no_result', 'Aucun résultat'),
+                      // CORRECTION: Suppression du 2ème argument
+                      l10n.t('edu_no_result'),
                       style: ThixPolicy.bodySmallStyle.copyWith(
                         color: ThixPolicy.textMuted,
                       ),
