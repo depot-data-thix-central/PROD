@@ -104,7 +104,7 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
     final agencyState = ref.watch(agencyDashboardProvider);
     final hasAgency = agencyState.hasAgency;
     final domainColor = ThixPolicy.domainReservation;
-    final displayName = _userName ?? l10n.defaultUserName;
+    final displayName = _userName ?? l10n.t('dashboard_user_default');
 
     return Scaffold(
       backgroundColor: ThixPolicy.surface,
@@ -142,13 +142,13 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
               ),
               SizedBox(height: ThixPolicy.s24),
               _buildSectionHeader(
-                title: l10n.busPopularRoutes,
+                title: l10n.t('bus_popular_routes'),
                 onSeeAll: () => context.push("/thix-reservation/bus/routes"),
               ),
               SizedBox(height: ThixPolicy.s12),
               _buildPopularRoutesSection(),
               SizedBox(height: ThixPolicy.s24),
-              _buildSectionHeader(title: l10n.busComfortTitle),
+              _buildSectionHeader(title: l10n.t('bus_comfort_title')),
               SizedBox(height: ThixPolicy.s12),
               const AmenityRow(),
             ],
@@ -160,8 +160,10 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
 
   Widget _buildGreetingHeader(String userName) {
     final l10n = context.l10n;
+    final greetingText = '${l10n.t('home_greeting')} $userName';
+    
     return Semantics(
-      label: l10n.busHomeGreeting(userName),
+      label: greetingText,
       child: Row(
         children: [
           Expanded(
@@ -169,18 +171,18 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.busHomeGreeting(userName),
+                  greetingText,
                   style: ThixPolicy.bodySmallStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                   ),
                 ),
                 SizedBox(height: ThixPolicy.s2),
-                Text(l10n.busHomeHeading, style: ThixPolicy.h3Style),
+                Text(l10n.t('bus_home_heading'), style: ThixPolicy.h3Style),
               ],
             ),
           ),
           IconButton(
-            tooltip: l10n.notificationsTooltip,
+            tooltip: l10n.t('common_notifications'),
             onPressed: () => context.push("/notifications"),
             icon: Badge(
               backgroundColor: ThixPolicy.danger,
@@ -212,7 +214,7 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    l10n.commonSeeAll,
+                    l10n.t('common_see_all'),
                     style: ThixPolicy.labelStyle.copyWith(
                       color: ThixPolicy.domainReservation,
                       fontWeight: ThixPolicy.bold,
@@ -253,7 +255,7 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
             Icon(Icons.route_outlined, color: ThixPolicy.textMuted, size: 28),
             SizedBox(height: ThixPolicy.s4),
             Text(
-              l10n.busNoPopularRoutes,
+              l10n.t('bus_no_popular_routes'),
               style: ThixPolicy.bodySmallStyle.copyWith(
                 color: ThixPolicy.textMuted,
               ),
@@ -330,7 +332,7 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
               ),
               children: [
                 const TextSpan(text: "THIX ", style: TextStyle(color: ThixPolicy.textMain)),
-                TextSpan(text: l10n.busHomeTitle.split(" ").last, style: TextStyle(color: domainColor)),
+                TextSpan(text: l10n.t('svc_booking'), style: TextStyle(color: domainColor)),
               ],
             ),
           ),
@@ -340,7 +342,7 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
         const CurrencySelectorInline(),
         SizedBox(width: ThixPolicy.s4),
         IconButton(
-          tooltip: hasAgency ? l10n.agencyTooltipActive : l10n.agencyTooltipInactive,
+          tooltip: hasAgency ? l10n.t('agency_tooltip_active') : l10n.t('agency_tooltip_inactive'),
           onPressed: _openAgencySpace,
           icon: Container(
             padding: const EdgeInsets.all(6),
