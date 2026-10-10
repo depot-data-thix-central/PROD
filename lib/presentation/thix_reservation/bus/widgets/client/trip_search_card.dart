@@ -51,7 +51,7 @@ class TripSearchCard extends ConsumerWidget {
                     Icon(Icons.directions_bus_rounded, size: 14, color: domainColor),
                     SizedBox(width: ThixPolicy.s4),
                     Text(
-                      l10n.busSearchLabel,
+                      l10n.t('svc_booking'),
                       style: ThixPolicy.labelStyle.copyWith(
                         color: domainColor,
                         fontWeight: ThixPolicy.bold,
@@ -61,34 +61,36 @@ class TripSearchCard extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              Text(l10n.busSearchQuickBooking, style: ThixPolicy.captionStyle),
+              Text(l10n.t('reservation_book'), style: ThixPolicy.captionStyle),
             ],
           ),
           SizedBox(height: ThixPolicy.s14),
-
           Row(
             children: [
               Expanded(
                 child: _FieldBox(
                   icon: Icons.my_location_rounded,
-                  label: l10n.busSearchDeparture,
-                  value: state.departureCity ?? l10n.busSearchChoose,
+                  label: l10n.t('reservation_check_out'),
+                  value: state.departureCity ?? l10n.t('market_discover'),
                   domainColor: domainColor,
                   onTap: () => _showCityPicker(context, ref, isDep: true),
                 ),
               ),
               SizedBox(width: ThixPolicy.s8),
-              _SwapButton(domainColor: domainColor, onTap: () {
-                if (state.departureCity != null && state.arrivalCity != null) {
-                  ref.read(busSearchProvider.notifier).swapCities();
-                }
-              }),
+              _SwapButton(
+                domainColor: domainColor,
+                onTap: () {
+                  if (state.departureCity != null && state.arrivalCity != null) {
+                    ref.read(busSearchProvider.notifier).swapCities();
+                  }
+                },
+              ),
               SizedBox(width: ThixPolicy.s8),
               Expanded(
                 child: _FieldBox(
                   icon: Icons.location_on_rounded,
-                  label: l10n.busSearchArrival,
-                  value: state.arrivalCity ?? l10n.busSearchChoose,
+                  label: l10n.t('reservation_check_in'),
+                  value: state.arrivalCity ?? l10n.t('market_discover'),
                   domainColor: domainColor,
                   onTap: () => _showCityPicker(context, ref, isDep: false),
                 ),
@@ -96,13 +98,12 @@ class TripSearchCard extends ConsumerWidget {
             ],
           ),
           SizedBox(height: ThixPolicy.s10),
-
           Row(
             children: [
               Expanded(
                 child: _FieldBox(
                   icon: Icons.calendar_today_rounded,
-                  label: l10n.busSearchDate,
+                  label: l10n.t('events_date'),
                   value: _formatDate(context, state.departureDate),
                   domainColor: domainColor,
                   onTap: () => _pickDate(context, ref),
@@ -112,7 +113,7 @@ class TripSearchCard extends ConsumerWidget {
               Expanded(
                 child: _FieldBox(
                   icon: Icons.person_outline_rounded,
-                  label: l10n.busSearchPassengers,
+                  label: l10n.t('reservation_guests'),
                   value: "${state.passengers}",
                   domainColor: domainColor,
                   onTap: () => _pickPassengers(context, ref),
@@ -136,7 +137,7 @@ class TripSearchCard extends ConsumerWidget {
                     Icons.search_rounded,
                     color: Colors.white,
                     size: 20,
-                    semanticLabel: l10n.busSearchButton,
+                    semanticLabel: l10n.t('common_search'),
                   ),
                 ),
               ),
@@ -169,7 +170,9 @@ class TripSearchCard extends ConsumerWidget {
       lastDate: DateTime.now().add(const Duration(days: 365)),
       locale: Localizations.localeOf(context),
       builder: (ctx, child) => Theme(
-        data: Theme.of(ctx).copyWith(colorScheme: ColorScheme.light(primary: domainColor)),
+        data: Theme.of(ctx).copyWith(
+          colorScheme: ColorScheme.light(primary: domainColor),
+        ),
         child: child!,
       ),
     );
@@ -188,13 +191,14 @@ class TripSearchCard extends ConsumerWidget {
 class _SwapButton extends StatelessWidget {
   final Color domainColor;
   final VoidCallback onTap;
+  
   const _SwapButton({required this.domainColor, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     return Semantics(
       button: true,
-      label: context.l10n.busSearchSwap,
+      label: context.l10n.t('common_refresh'),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
