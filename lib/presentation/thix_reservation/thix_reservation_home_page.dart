@@ -13,23 +13,6 @@ import 'providers/reservation_home_provider.dart';
 /// ============================================================================
 /// ThixReservationHomePage
 /// ============================================================================
-///
-/// Page d'accueil unifiée de THIX Reservation.
-///
-/// Features :
-/// - Riverpod (ConsumerStatefulWidget)
-/// - Background animé GPU-optimized (RadialGradient)
-/// - Hero carousel auto-scroll (5s)
-/// - Counts en temps réel (Supabase Realtime)
-/// - Glassmorphism cohérent
-/// - Bottom nav avec action centrale
-/// - i18n FR/EN/LN complète
-/// - Accessibilité (Semantics)
-/// - Haptic feedback
-/// - Pull-to-refresh
-/// - Design system ThixPolicy
-///
-/// ============================================================================
 class ThixReservationHomePage extends ConsumerStatefulWidget {
   const ThixReservationHomePage({super.key});
 
@@ -81,13 +64,11 @@ class _ThixReservationHomePageState
   }
 
   void _onNavTap(int index) {
-    final l10n = context.l10n;
     HapticFeedback.lightImpact();
     ref.read(reservationHomeProvider.notifier).setSelectedNav(index);
 
     switch (index) {
       case 0:
-        // Accueil : déjà sur la page
         break;
       case 1:
         context.push('/thix-reservation/explore');
@@ -103,7 +84,6 @@ class _ThixReservationHomePageState
 
   void _onCentralAction() {
     HapticFeedback.mediumImpact();
-    // Ouvre le sélecteur de service rapide
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -138,7 +118,7 @@ class _ThixReservationHomePageState
                 ThixPolicy.s14,
                 MediaQuery.paddingOf(context).top + 66,
                 ThixPolicy.s14,
-                ThixPolicy.s110,
+                110.0,
               ),
               physics: const BouncingScrollPhysics(
                 parent: AlwaysScrollableScrollPhysics(),
@@ -186,7 +166,7 @@ class _ThixReservationHomePageState
 }
 
 /// ============================================================================
-/// _HomeAppBar — AppBar glassmorphique
+/// _HomeAppBar
 /// ============================================================================
 class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
   final int notificationsCount;
@@ -244,7 +224,7 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                   ),
                   Text(
-                    l10n.reservationBrandSuffix,
+                    l10n.t('reservationBrandSuffix'),
                     style: ThixPolicy.labelStyle.copyWith(
                       fontWeight: ThixPolicy.bold,
                       fontSize: 13,
@@ -255,7 +235,7 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
                 ],
               ),
               Text(
-                l10n.reservationBrandTagline,
+                l10n.t('reservationBrandTagline'),
                 style: ThixPolicy.microStyle.copyWith(
                   fontSize: 9,
                   color: ThixPolicy.textSecondary,
@@ -269,7 +249,7 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
       actions: [
         Semantics(
           button: true,
-          label: '${l10n.reservationNotifications} ($notificationsCount)',
+          label: '${l10n.t('reservationNotifications')} ($notificationsCount)',
           child: IconButton(
             onPressed: () {
               HapticFeedback.lightImpact();
@@ -292,7 +272,7 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
         Semantics(
           button: true,
-          label: l10n.reservationProfile,
+          label: l10n.t('reservationProfile'),
           child: IconButton(
             onPressed: () {
               HapticFeedback.lightImpact();
@@ -346,7 +326,7 @@ class _BrandLogo extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _HeroCarousel — Carrousel hero auto-scroll
+/// _HeroCarousel
 /// ============================================================================
 class _HeroCarousel extends StatelessWidget {
   final PageController controller;
@@ -402,8 +382,6 @@ class _HeroSlideCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-
     return Semantics(
       button: true,
       label: '${slide.titleKey}, ${slide.subtitleKey}',
@@ -431,7 +409,6 @@ class _HeroSlideCard extends StatelessWidget {
           ),
           child: Stack(
             children: [
-              // Background icon
               Positioned(
                 right: -8,
                 bottom: -8,
@@ -455,7 +432,7 @@ class _HeroSlideCard extends StatelessWidget {
                           Container(
                             padding: EdgeInsets.symmetric(
                               horizontal: ThixPolicy.s8,
-                              vertical: ThixPolicy.s3,
+                              vertical: ThixPolicy.s4,
                             ),
                             decoration: BoxDecoration(
                               color: Colors.white.withValues(alpha: 0.2),
@@ -473,7 +450,7 @@ class _HeroSlideCard extends StatelessWidget {
                                   size: 11,
                                   color: ThixPolicy.gold,
                                 ),
-                                SizedBox(width: ThixPolicy.s3),
+                                SizedBox(width: ThixPolicy.s4),
                                 Text(
                                   slide.badgeKey,
                                   style: TextStyle(
@@ -530,7 +507,7 @@ class _HeroSlideCard extends StatelessWidget {
                                       BorderRadius.circular(ThixPolicy.rSm - 3),
                                 ),
                                 padding: EdgeInsets.symmetric(
-                                  horizontal: ThixPolicy.s13,
+                                  horizontal: ThixPolicy.s14,
                                 ),
                               ),
                               child: Text(
@@ -576,7 +553,7 @@ class _HeroIndicators extends StatelessWidget {
         count,
         (i) => AnimatedContainer(
           duration: const Duration(milliseconds: 300),
-          margin: EdgeInsets.symmetric(horizontal: ThixPolicy.s3),
+          margin: EdgeInsets.symmetric(horizontal: ThixPolicy.s4),
           width: i == current ? 18 : 5,
           height: 4.5,
           decoration: BoxDecoration(
@@ -592,7 +569,7 @@ class _HeroIndicators extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _CategoriesGrid — Grille des catégories
+/// _CategoriesGrid
 /// ============================================================================
 class _CategoriesGrid extends StatelessWidget {
   final Color domainColor;
@@ -600,8 +577,6 @@ class _CategoriesGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-
     return Container(
       padding: EdgeInsets.symmetric(
         vertical: ThixPolicy.s12,
@@ -678,33 +653,10 @@ class _CategoryItem extends StatelessWidget {
     }
   }
 
-  String _translateLabel(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'reservationCatBus':
-          return l10n.reservationCatBus;
-        case 'reservationCatFlights':
-          return l10n.reservationCatFlights;
-        case 'reservationCatHotels':
-          return l10n.reservationCatHotels;
-        case 'reservationCatTaxi':
-          return l10n.reservationCatTaxi;
-        case 'reservationCatDelivery':
-          return l10n.reservationCatDelivery;
-        case 'reservationCatMore':
-          return l10n.reservationCatMore;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final label = _translateLabel(l10n, category.labelKey);
+    final label = l10n.t(category.labelKey);
 
     return Semantics(
       button: true,
@@ -764,7 +716,7 @@ class _CategoryItem extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _BookingsSection — Section "Mes réservations"
+/// _BookingsSection
 /// ============================================================================
 class _BookingsSection extends StatelessWidget {
   final ReservationHomeState state;
@@ -780,7 +732,7 @@ class _BookingsSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          title: l10n.reservationMyBookings,
+          title: l10n.t('reservationMyBookings'),
           onSeeAll: () {
             HapticFeedback.lightImpact();
             context.push('/thix-reservation/bookings');
@@ -791,28 +743,28 @@ class _BookingsSection extends StatelessWidget {
         Row(
           children: [
             _BookingStatTile(
-              label: l10n.reservationUpcoming,
+              label: l10n.t('reservationUpcoming'),
               count: state.getCount('upcoming'),
               color: domainColor,
               icon: Icons.luggage_rounded,
             ),
             SizedBox(width: ThixPolicy.s8),
             _BookingStatTile(
-              label: l10n.reservationOngoing,
+              label: l10n.t('reservationOngoing'),
               count: state.getCount('ongoing'),
               color: ThixPolicy.warning,
               icon: Icons.access_time_filled_rounded,
             ),
             SizedBox(width: ThixPolicy.s8),
             _BookingStatTile(
-              label: l10n.reservationCompleted,
+              label: l10n.t('reservationCompleted'),
               count: state.getCount('completed'),
               color: ThixPolicy.success,
               icon: Icons.check_circle_rounded,
             ),
             SizedBox(width: ThixPolicy.s8),
             _BookingStatTile(
-              label: l10n.reservationCancelled,
+              label: l10n.t('reservationCancelled'),
               count: state.getCount('cancelled'),
               color: ThixPolicy.textSecondary,
               icon: Icons.cancel_rounded,
@@ -843,7 +795,7 @@ class _BookingStatTile extends StatelessWidget {
       child: Container(
         padding: EdgeInsets.symmetric(
           vertical: ThixPolicy.s10,
-          horizontal: ThixPolicy.s5,
+          horizontal: ThixPolicy.s6,
         ),
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.65),
@@ -900,7 +852,7 @@ class _BookingStatTile extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _SpecialOffersSection — Offres spéciales
+/// _SpecialOffersSection
 /// ============================================================================
 class _SpecialOffersSection extends StatelessWidget {
   final Color domainColor;
@@ -914,7 +866,7 @@ class _SpecialOffersSection extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _SectionHeader(
-          title: l10n.reservationSpecialOffers,
+          title: l10n.t('reservationSpecialOffers'),
           onSeeAll: () {
             HapticFeedback.lightImpact();
             context.push('/thix-reservation/offers');
@@ -930,30 +882,30 @@ class _SpecialOffersSection extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               _OfferCard(
-                title: l10n.reservationOfferHotels,
+                title: l10n.t('reservationOfferHotels'),
                 discount: '-30%',
-                subtitle: l10n.reservationOfferHotelsSub,
+                subtitle: l10n.t('reservationOfferHotelsSub'),
                 colors: _kOfferColors[0],
               ),
               SizedBox(width: ThixPolicy.s10),
               _OfferCard(
-                title: l10n.reservationOfferFlights,
+                title: l10n.t('reservationOfferFlights'),
                 discount: '-20%',
-                subtitle: l10n.reservationOfferFlightsSub,
+                subtitle: l10n.t('reservationOfferFlightsSub'),
                 colors: _kOfferColors[1],
               ),
               SizedBox(width: ThixPolicy.s10),
               _OfferCard(
-                title: l10n.reservationOfferBus,
+                title: l10n.t('reservationOfferBus'),
                 discount: '-15%',
-                subtitle: l10n.reservationOfferBusSub,
+                subtitle: l10n.t('reservationOfferBusSub'),
                 colors: _kOfferColors[2],
               ),
               SizedBox(width: ThixPolicy.s10),
               _OfferCard(
-                title: l10n.reservationOfferDelivery,
+                title: l10n.t('reservationOfferDelivery'),
                 discount: '-10%',
-                subtitle: l10n.reservationOfferDeliverySub,
+                subtitle: l10n.t('reservationOfferDeliverySub'),
                 colors: _kOfferColors[3],
               ),
             ],
@@ -1014,7 +966,7 @@ class _OfferCard extends StatelessWidget {
                   letterSpacing: 0.4,
                 ),
               ),
-              SizedBox(height: ThixPolicy.s3),
+              SizedBox(height: ThixPolicy.s4),
               Text(
                 discount,
                 style: TextStyle(
@@ -1043,7 +995,7 @@ class _OfferCard extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _ReferralCard — Carte parrainage
+/// _ReferralCard
 /// ============================================================================
 class _ReferralCard extends StatelessWidget {
   final Color domainColor;
@@ -1055,14 +1007,14 @@ class _ReferralCard extends StatelessWidget {
 
     return Semantics(
       button: true,
-      label: l10n.reservationReferralTitle,
+      label: l10n.t('reservationReferralTitle'),
       child: GestureDetector(
         onTap: () {
           HapticFeedback.lightImpact();
           context.push('/thix-reservation/referral');
         },
         child: Container(
-          padding: EdgeInsets.all(ThixPolicy.s13),
+          padding: EdgeInsets.all(ThixPolicy.s14),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.65),
             borderRadius: BorderRadius.circular(ThixPolicy.rMd + 2),
@@ -1105,7 +1057,7 @@ class _ReferralCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      l10n.reservationReferralTitle,
+                      l10n.t('reservationReferralTitle'),
                       style: ThixPolicy.labelStyle.copyWith(
                         fontWeight: ThixPolicy.bold,
                         color: domainColor,
@@ -1122,7 +1074,7 @@ class _ReferralCard extends StatelessWidget {
                           fontWeight: ThixPolicy.medium,
                         ),
                         children: [
-                          TextSpan(text: l10n.reservationReferralPrefix),
+                          TextSpan(text: l10n.t('reservationReferralPrefix')),
                           TextSpan(
                             text: '10.000 FC',
                             style: TextStyle(
@@ -1130,7 +1082,7 @@ class _ReferralCard extends StatelessWidget {
                               fontWeight: ThixPolicy.bold,
                             ),
                           ),
-                          TextSpan(text: l10n.reservationReferralSuffix),
+                          TextSpan(text: l10n.t('reservationReferralSuffix')),
                         ],
                       ),
                     ),
@@ -1151,7 +1103,7 @@ class _ReferralCard extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _SectionHeader — Header de section avec "Voir tout"
+/// _SectionHeader
 /// ============================================================================
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -1192,7 +1144,7 @@ class _SectionHeader extends StatelessWidget {
               child: Row(
                 children: [
                   Text(
-                    l10n.commonSeeAll,
+                    l10n.t('common_see_all'),
                     style: ThixPolicy.labelStyle.copyWith(
                       fontSize: 11,
                       color: domainColor,
@@ -1214,7 +1166,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _GlassBottomBar — Bottom navigation glassmorphique
+/// _GlassBottomBar
 /// ============================================================================
 class _GlassBottomBar extends StatelessWidget {
   final int selectedIndex;
@@ -1274,7 +1226,7 @@ class _GlassBottomBar extends StatelessWidget {
                       children: [
                         _NavItem(
                           icon: Icons.home_rounded,
-                          label: l10n.reservationNavHome,
+                          label: l10n.t('reservationNavHome'),
                           index: 0,
                           selectedIndex: selectedIndex,
                           onTap: onTap,
@@ -1282,7 +1234,7 @@ class _GlassBottomBar extends StatelessWidget {
                         ),
                         _NavItem(
                           icon: Icons.explore_outlined,
-                          label: l10n.reservationNavExplore,
+                          label: l10n.t('reservationNavExplore'),
                           index: 1,
                           selectedIndex: selectedIndex,
                           onTap: onTap,
@@ -1291,7 +1243,7 @@ class _GlassBottomBar extends StatelessWidget {
                         const SizedBox(width: 60),
                         _NavItem(
                           icon: Icons.receipt_long_rounded,
-                          label: l10n.reservationNavBookings,
+                          label: l10n.t('reservationNavBookings'),
                           index: 3,
                           selectedIndex: selectedIndex,
                           onTap: onTap,
@@ -1299,7 +1251,7 @@ class _GlassBottomBar extends StatelessWidget {
                         ),
                         _NavItem(
                           icon: Icons.person_outline_rounded,
-                          label: l10n.reservationNavProfile,
+                          label: l10n.t('reservationNavProfile'),
                           index: 4,
                           selectedIndex: selectedIndex,
                           onTap: onTap,
@@ -1311,7 +1263,7 @@ class _GlassBottomBar extends StatelessWidget {
                       top: -18,
                       child: Semantics(
                         button: true,
-                        label: l10n.reservationNavQuickBook,
+                        label: l10n.t('reservationNavQuickBook'),
                         child: GestureDetector(
                           onTap: onCentralTap,
                           child: Container(
@@ -1382,7 +1334,7 @@ class _NavItem extends StatelessWidget {
         onTap: () => onTap(index),
         child: Container(
           width: 52,
-          padding: EdgeInsets.symmetric(vertical: ThixPolicy.s3),
+          padding: EdgeInsets.symmetric(vertical: ThixPolicy.s4),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1394,7 +1346,7 @@ class _NavItem extends StatelessWidget {
                     : ThixPolicy.textSecondary.withValues(alpha: 0.8),
                 size: 20,
               ),
-              SizedBox(height: ThixPolicy.s3),
+              SizedBox(height: ThixPolicy.s4),
               Text(
                 label,
                 maxLines: 1,
@@ -1416,7 +1368,7 @@ class _NavItem extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _TravelAmbientBackground — Background animé GPU-optimized
+/// _TravelAmbientBackground
 /// ============================================================================
 class _TravelAmbientBackground extends StatefulWidget {
   const _TravelAmbientBackground();
@@ -1485,24 +1437,32 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground>
     return IgnorePointer(
       child: RepaintBoundary(
         child: AnimatedBuilder(
-          animation: _controller,
+          listenable: _controller,
           builder: (context, child) {
             final t = _controller.value * 2 * math.pi;
 
             final globeX = size.width * 0.7 + math.cos(t * 0.7) * 130.0;
             final globeY = size.height * 0.48 + math.sin(t * 0.9) * 160.0;
 
-            final ticketX = size.width * 0.15 + math.sin(t * 0.6 + 1.2) * 90.0;
-            final ticketY = size.height * 0.82 + math.cos(t * 0.5) * 110.0;
+            final ticketX =
+                size.width * 0.15 + math.sin(t * 0.6 + 1.2) * 90.0;
+            final ticketY =
+                size.height * 0.82 + math.cos(t * 0.5) * 110.0;
 
-            final busX = size.width * 0.3 + math.sin(t * 1.1) * (size.width * 0.45);
-            final busY = size.height * 0.62 + math.cos(t) * (size.height * 0.14);
+            final busX = size.width * 0.3 +
+                math.sin(t * 1.1) * (size.width * 0.45);
+            final busY = size.height * 0.62 +
+                math.cos(t) * (size.height * 0.14);
 
-            final planeX = size.width * 0.5 + math.cos(t * 1.4) * (size.width * 0.38);
-            final planeY = size.height * 0.28 + math.sin(t * 1.8) * (size.height * 0.19);
+            final planeX = size.width * 0.5 +
+                math.cos(t * 1.4) * (size.width * 0.38);
+            final planeY = size.height * 0.28 +
+                math.sin(t * 1.8) * (size.height * 0.19);
 
-            final planeSmallX = size.width * 0.85 + math.sin(t * 1.6 + 2.0) * 80.0;
-            final planeSmallY = size.height * 0.16 + math.cos(t * 1.3) * 60.0;
+            final planeSmallX =
+                size.width * 0.85 + math.sin(t * 1.6 + 2.0) * 80.0;
+            final planeSmallY =
+                size.height * 0.16 + math.cos(t * 1.3) * 60.0;
 
             return Stack(
               children: [
@@ -1571,7 +1531,7 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground>
 }
 
 /// ============================================================================
-/// _MoreSheet — Bottom sheet "Plus"
+/// _MoreSheet
 /// ============================================================================
 class _MoreSheet extends StatelessWidget {
   const _MoreSheet();
@@ -1619,17 +1579,17 @@ class _MoreSheet extends StatelessWidget {
                 children: [
                   _MoreSheetItem(
                     icon: Icons.restaurant_rounded,
-                    label: l10n.reservationMoreRestaurant,
+                    label: l10n.t('reservationMoreRestaurant'),
                     onTap: () => Navigator.pop(context),
                   ),
                   _MoreSheetItem(
                     icon: Icons.storefront_rounded,
-                    label: l10n.reservationMoreAds,
+                    label: l10n.t('reservationMoreAds'),
                     onTap: () => Navigator.pop(context),
                   ),
                   _MoreSheetItem(
                     icon: Icons.event_rounded,
-                    label: l10n.reservationMoreEvents,
+                    label: l10n.t('reservationMoreEvents'),
                     onTap: () {
                       Navigator.pop(context);
                       context.push('/thix-event');
@@ -1637,7 +1597,7 @@ class _MoreSheet extends StatelessWidget {
                   ),
                   _MoreSheetItem(
                     icon: Icons.delivery_dining_rounded,
-                    label: l10n.reservationMoreDelivery,
+                    label: l10n.t('reservationMoreDelivery'),
                     onTap: () {
                       Navigator.pop(context);
                       context.push('/delivery');
@@ -1713,7 +1673,7 @@ class _MoreSheetItem extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _QuickActionSheet — Action rapide centrale
+/// _QuickActionSheet
 /// ============================================================================
 class _QuickActionSheet extends StatelessWidget {
   const _QuickActionSheet();
@@ -1756,7 +1716,7 @@ class _QuickActionSheet extends StatelessWidget {
               ),
               SizedBox(height: ThixPolicy.s20),
               Text(
-                l10n.reservationQuickBookTitle,
+                l10n.t('reservationQuickBookTitle'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 16,
@@ -1764,7 +1724,7 @@ class _QuickActionSheet extends StatelessWidget {
               ),
               SizedBox(height: ThixPolicy.s6),
               Text(
-                l10n.reservationQuickBookSubtitle,
+                l10n.t('reservationQuickBookSubtitle'),
                 style: ThixPolicy.bodySmallStyle.copyWith(
                   color: ThixPolicy.textSecondary,
                 ),
@@ -1816,31 +1776,10 @@ class _QuickActionTile extends StatelessWidget {
     }
   }
 
-  String _translateLabel(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'reservationCatBus':
-          return l10n.reservationCatBus;
-        case 'reservationCatFlights':
-          return l10n.reservationCatFlights;
-        case 'reservationCatHotels':
-          return l10n.reservationCatHotels;
-        case 'reservationCatTaxi':
-          return l10n.reservationCatTaxi;
-        case 'reservationCatDelivery':
-          return l10n.reservationCatDelivery;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final label = _translateLabel(l10n, category.labelKey);
+    final label = l10n.t(category.labelKey);
 
     return Padding(
       padding: EdgeInsets.only(bottom: ThixPolicy.s8),
@@ -1894,7 +1833,7 @@ class _QuickActionTile extends StatelessWidget {
 }
 
 /// ============================================================================
-/// Données statiques (hero slides, offres, couleurs)
+/// Données statiques
 /// ============================================================================
 class _HeroSlide {
   final String badgeKey;
@@ -1946,10 +1885,10 @@ const _kHeroSlides = [
 ];
 
 const _kOfferColors = [
-  [Color(0xFF0A3D91), Color(0xFF2A7FFF)], // Hôtels
-  [Color(0xFF123B7A), Color(0xFF3A8DFF)], // Vols
-  [Color(0xFF0E4DA4), Color(0xFF4A90E2)], // Bus
-  [Color(0xFF0A2F6B), Color(0xFF2D6CDF)], // Livraison
+  [Color(0xFF0A3D91), Color(0xFF2A7FFF)],
+  [Color(0xFF123B7A), Color(0xFF3A8DFF)],
+  [Color(0xFF0E4DA4), Color(0xFF4A90E2)],
+  [Color(0xFF0A2F6B), Color(0xFF2D6CDF)],
 ];
 
 /// ============================================================================
