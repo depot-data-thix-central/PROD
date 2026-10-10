@@ -140,7 +140,7 @@ class _AgencyEntryButtonState extends ConsumerState<AgencyEntryButton>
                 borderRadius: BorderRadius.circular(ThixPolicy.rXs),
               ),
               child: Text(
-                l10n.agencyEntryPendingBadge,
+                l10n.t('agencyEntryPendingBadge'),
                 style: ThixPolicy.microStyle.copyWith(
                   color: mode.foregroundColor,
                   fontWeight: ThixPolicy.bold,
@@ -205,14 +205,14 @@ class _AgencyEntryButtonState extends ConsumerState<AgencyEntryButton>
     try {
       switch (mode) {
         case _AgencyMode.none:
-          return l10n.agencyEntryBecomePartner;
+          return l10n.t('agencyEntryBecomePartner');
         case _AgencyMode.pending:
-          return l10n.agencyEntryPending;
+          return l10n.t('agencyEntryPending');
         case _AgencyMode.active:
           final name = state.myAgency?.name ?? '';
           return name.isNotEmpty
-              ? l10n.agencyEntryManageWithName(name)
-              : l10n.agencyEntryManage;
+              ? l10n.t('agencyEntryManageWithName', args: [name])
+              : l10n.t('agencyEntryManage');
       }
     } catch (_) {
       return 'Agency';
@@ -223,11 +223,11 @@ class _AgencyEntryButtonState extends ConsumerState<AgencyEntryButton>
     try {
       switch (mode) {
         case _AgencyMode.none:
-          return l10n.agencyEntryTooltipNone;
+          return l10n.t('agencyEntryTooltipNone');
         case _AgencyMode.pending:
-          return l10n.agencyEntryTooltipPending;
+          return l10n.t('agencyEntryTooltipPending');
         case _AgencyMode.active:
-          return l10n.agencyEntryTooltipActive;
+          return l10n.t('agencyEntryTooltipActive');
       }
     } catch (_) {
       return 'Agency';
