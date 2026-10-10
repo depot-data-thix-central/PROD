@@ -1,8 +1,10 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/core/extensions/context_ext.dart';
 import 'package:thix_id/core/utils/currency_formatter.dart';
+import 'package:thix_id/core/providers/currency_provider.dart';
 
 /// ============================================================================
 /// PopularRouteCard
@@ -13,20 +15,30 @@ import 'package:thix_id/core/utils/currency_formatter.dart';
 /// Features :
 /// - Layout compact (168x~172px) optimisé pour le scroll horizontal
 /// - Image distante avec cache (CachedNetworkImage) + fallback élégant
-/// - Prix formaté selon la locale et la devise (FCFA/USD)
+/// - Prix formaté selon la devise GLOBALE de l'utilisateur (via currencyProvider)
+/// - Conversion automatique depuis la devise source (CDF par défaut)
 /// - Animation scale + hero transition vers la page détail
 /// - Accessibilité complète (Semantics, label concaténé)
 /// - i18n intégrée (FR/EN/LN)
 /// - Responsive (taille adaptée selon le parent)
 /// - Badge "Populaire" optionnel
 ///
+/// Architecture devise :
+/// - `price` : montant stocké en devise SOURCE (par défaut CDF)
+/// - `sourceCurrency` : devise du montant stocké (par défaut 'CDF')
+/// - `currencyProvider` : devise d'AFFICHAGE choisie par l'utilisateur
+///
 /// ============================================================================
-class PopularRouteCard extends StatefulWidget {
+class PopularRouteCard extends ConsumerStatefulWidget {
   final String from;
   final String to;
   final String dateLabel;
   final int price;
-  final String currency;
+
+  /// Devise SOURCE du prix stocké (par défaut 'CDF').
+  /// Utilisée pour la conversion vers la devise d'affichage.
+  final String sourceCurrency;
+
   final String? imageUrl;
   final bool isPopular;
   final VoidCallback onTap;
@@ -39,7 +51,7 @@ class PopularRouteCard extends StatefulWidget {
     required this.to,
     required this.dateLabel,
     required this.price,
-    this.currency = 'CDF',
+    this.sourceCurrency = 'CDF',
     this.imageUrl,
     this.isPopular = false,
     required this.onTap,
@@ -48,10 +60,10 @@ class PopularRouteCard extends StatefulWidget {
   });
 
   @override
-  State<PopularRouteCard> createState() => _PopularRouteCardState();
+  ConsumerState<PopularRouteCard> createState() => _PopularRouteCardState();
 }
 
-class _PopularRouteCardState extends State<PopularRouteCard>
+class _PopularRouteCardState extends ConsumerState<PopularRouteCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _scaleCtrl;
   late final Animation<double> _scaleAnim;
@@ -79,13 +91,35 @@ class _PopularRouteCardState extends State<PopularRouteCard>
   void _onTapUp(TapUpDetails _) => _scaleCtrl.reverse();
   void _onTapCancel() => _scaleCtrl.reverse();
 
+  /// Calcule le prix à afficher en tenant compte de la devise globale.
+  ///
+  /// - Si source == cible : pas de conversion
+  /// - Sinon : utilise les taux du currencyProvider
+  /// - Fallback : devise source si taux indisponible
+  ({num amount, String currency}) _computeDisplayPrice() {
+    final globalCurrency = ref.watch(currencyProvider).currency;
+    final source = widget.sourceCurrency.toUpperCase();
+    final target = globalCurrency.code.toUpperCase();
+
+    if (source == target) {
+      return (amount: widget.price, currency: target);
+    }
+
+    final state = ref.watch(currencyProvider);
+    final converted = state.convert(widget.price, fromCurrency: source);
+
+    return (amount: converted, currency: target);
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     final accent = widget.domainColor ?? ThixPolicy.domainReservation;
+
+    final display = _computeDisplayPrice();
     final formattedPrice = CurrencyFormatter.format(
-      widget.price,
-      currency: widget.currency,
+      display.amount,
+      currency: display.currency,
       compact: true,
     );
 
@@ -242,7 +276,7 @@ class _ImageSection extends StatelessWidget {
           Positioned(
             top: ThixPolicy.s8,
             left: ThixPolicy.s8,
-            child: _PopularBadge(accent: accent),
+            child: _PopularBadge(),
           ),
       ],
     );
@@ -284,8 +318,7 @@ class _Placeholder extends StatelessWidget {
 /// _PopularBadge — Badge "Populaire" optionnel
 /// ============================================================================
 class _PopularBadge extends StatelessWidget {
-  final Color accent;
-  const _PopularBadge({required this.accent});
+  const _PopularBadge();
 
   @override
   Widget build(BuildContext context) {
