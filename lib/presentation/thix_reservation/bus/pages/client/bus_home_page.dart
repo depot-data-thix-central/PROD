@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/core/extensions/context_ext.dart';
+import 'package:thix_id/core/widgets/currency_selector.dart';
 
 import '../../providers/bus_search_provider.dart';
 import '../../providers/agency_dashboard_provider.dart';
@@ -275,10 +276,14 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
           return PopularRouteCard(
             from: (r["departure_city"] as String?) ?? "Kinshasa",
             to: (r["arrival_city"] as String?) ?? "Matadi",
-            date: (r["next_departure_label"] as String?) ?? "08:00",
-            price: r["min_price"] ?? 5000,
+            dateLabel: (r["next_departure_label"] as String?) ?? "08:00",
+            price: (r["min_price"] as int?) ?? 5000,
+            sourceCurrency: 'CDF',
             imageUrl: (r["arrival_city_image"] as String?) ??
                 "https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=400",
+            isPopular: (r["is_popular"] as bool?) ?? true,
+            domainColor: ThixPolicy.domainReservation,
+            heroTag: 'route_${r["id"] ?? i}',
             onTap: () {
               ref.read(busSearchProvider.notifier)
                 ..setDeparture(r["departure_city"] as String)
@@ -332,13 +337,15 @@ class _BusHomePageState extends ConsumerState<BusHomePage> {
         ],
       ),
       actions: [
+        const CurrencySelectorInline(),
+        SizedBox(width: ThixPolicy.s4),
         IconButton(
           tooltip: hasAgency ? l10n.agencyTooltipActive : l10n.agencyTooltipInactive,
           onPressed: _openAgencySpace,
           icon: Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: hasAgency ? ThixPolicy.tint : ThixPolicy.warning.withOpacity(0.12),
+              color: hasAgency ? ThixPolicy.tint : ThixPolicy.warning.withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(
