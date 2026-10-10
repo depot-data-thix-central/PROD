@@ -11,7 +11,7 @@ import 'package:thix_id/core/providers/currency_provider.dart';
 import '../../providers/agency_dashboard_provider.dart';
 
 // ============================================================================
-// CONSTANTES TOP-LEVEL (accessibles par tous les widgets privés du fichier)
+// CONSTANTES TOP-LEVEL (Classes simples au lieu de Records pour compatibilité)
 // ============================================================================
 
 const List<String> _kCities = [
@@ -31,22 +31,37 @@ const List<String> _kCities = [
   'Addis-Abeba',
 ];
 
-const List<(String, String, IconData)> _kAmenities = [
-  ('wifi', 'amenityWifi', Icons.wifi_rounded),
-  ('ac', 'amenityAc', Icons.ac_unit_rounded),
-  ('usb', 'amenityUsb', Icons.usb_rounded),
-  ('toilet', 'amenityToilet', Icons.wc_rounded),
-  ('tv', 'amenityTv', Icons.tv_rounded),
-  ('snack', 'agencyTripAmenitySnack', Icons.restaurant_rounded),
-  ('luggage', 'agencyTripAmenityLuggage', Icons.luggage_rounded),
-  ('reclining', 'agencyTripAmenityReclining', Icons.airline_seat_recline_extra_rounded),
+class _AmenityDef {
+  final String value;
+  final String labelKey;
+  final IconData icon;
+  const _AmenityDef(this.value, this.labelKey, this.icon);
+}
+
+const List<_AmenityDef> _kAmenities = [
+  _AmenityDef('wifi', 'amenityWifi', Icons.wifi_rounded),
+  _AmenityDef('ac', 'amenityAc', Icons.ac_unit_rounded),
+  _AmenityDef('usb', 'amenityUsb', Icons.usb_rounded),
+  _AmenityDef('toilet', 'amenityToilet', Icons.wc_rounded),
+  _AmenityDef('tv', 'amenityTv', Icons.tv_rounded),
+  _AmenityDef('snack', 'agencyTripAmenitySnack', Icons.restaurant_rounded),
+  _AmenityDef('luggage', 'agencyTripAmenityLuggage', Icons.luggage_rounded),
+  _AmenityDef('reclining', 'agencyTripAmenityReclining', Icons.airline_seat_recline_extra_rounded),
 ];
 
-const List<(String, String, IconData, String)> _kBusTypes = [
-  ('standard', 'agencyTripBusStandard', Icons.directions_bus_rounded, 'Standard'),
-  ('climatise', 'agencyTripBusClim', Icons.ac_unit_rounded, 'Climatisé'),
-  ('vip', 'agencyTripBusVip', Icons.star_rounded, 'VIP'),
-  ('sleeper', 'agencyTripBusSleeper', Icons.bed_rounded, 'Couchette'),
+class _BusTypeDef {
+  final String value;
+  final String labelKey;
+  final IconData icon;
+  final String defaultLabel;
+  const _BusTypeDef(this.value, this.labelKey, this.icon, this.defaultLabel);
+}
+
+const List<_BusTypeDef> _kBusTypes = [
+  _BusTypeDef('standard', 'agencyTripBusStandard', Icons.directions_bus_rounded, 'Standard'),
+  _BusTypeDef('climatise', 'agencyTripBusClim', Icons.ac_unit_rounded, 'Climatisé'),
+  _BusTypeDef('vip', 'agencyTripBusVip', Icons.star_rounded, 'VIP'),
+  _BusTypeDef('sleeper', 'agencyTripBusSleeper', Icons.bed_rounded, 'Couchette'),
 ];
 
 /// ============================================================================
@@ -216,7 +231,9 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
       );
       context.pop();
     } else {
-      final error = ref.read(agencyDashboardProvider).error;
+      // CORRECTION: error est AgencyError?, utiliser .message pour obtenir la String
+      final agencyError = ref.read(agencyDashboardProvider).error;
+      final errorMessage = agencyError?.message ?? l10n.t('agencyTripErrorMessage');
       HapticFeedback.mediumImpact();
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -224,7 +241,7 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
             children: [
               const Icon(Icons.error_outline_rounded, color: Colors.white),
               SizedBox(width: ThixPolicy.s8),
-              Expanded(child: Text(error ?? l10n.t('agencyTripErrorMessage'))),
+              Expanded(child: Text(errorMessage)),
             ],
           ),
           backgroundColor: ThixPolicy.danger,
@@ -543,7 +560,6 @@ class _DurationInfo extends StatelessWidget {
   }
 }
 
-/// ✅ CORRECTION : paramètres explicites au lieu de Currency object + conversion corrigée
 class _PriceInput extends StatelessWidget {
   final TextEditingController controller;
   final String currencyCode;
@@ -605,7 +621,7 @@ class _SeatsInput extends StatelessWidget {
   }
 }
 
-/// ✅ CORRECTION : utilise _kBusTypes (top-level) au lieu de _busTypes
+// CORRECTION: Accès via propriétés de classe au lieu de déstructuration de Record
 class _BusTypeSelector extends StatelessWidget {
   final String selected;
   final ValueChanged<String> onChanged;
@@ -619,10 +635,9 @@ class _BusTypeSelector extends StatelessWidget {
       _FieldLabel(label: l10n.t('agencyTripBusType'), required: true),
       SizedBox(height: ThixPolicy.s10),
       Wrap(spacing: ThixPolicy.s10, runSpacing: ThixPolicy.s10, children: _kBusTypes.map((type) {
-        final (value, labelKey, icon, defaultLabel) = type;
-        final isSelected = value == selected;
-        final label = _translateBusLabel(l10n, labelKey) ?? defaultLabel;
-        return Semantics(button: true, selected: isSelected, label: label, child: Material(color: Colors.transparent, child: InkWell(onTap: () => onChanged(value), borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: AnimatedContainer(duration: const Duration(milliseconds: 180), width: (MediaQuery.of(context).size.width - 62) / 2, padding: EdgeInsets.all(ThixPolicy.s14), decoration: BoxDecoration(color: isSelected ? domainColor.withValues(alpha: 0.12) : ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: isSelected ? domainColor : ThixPolicy.border, width: isSelected ? 2 : 1)), child: Column(children: [Icon(icon, size: 28, color: isSelected ? domainColor : ThixPolicy.textSecondary), SizedBox(height: ThixPolicy.s8), Text(label, style: ThixPolicy.labelStyle.copyWith(color: isSelected ? domainColor : ThixPolicy.textMain, fontWeight: ThixPolicy.bold))])))));
+        final isSelected = type.value == selected;
+        final label = _translateBusLabel(l10n, type.labelKey) ?? type.defaultLabel;
+        return Semantics(button: true, selected: isSelected, label: label, child: Material(color: Colors.transparent, child: InkWell(onTap: () => onChanged(type.value), borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: AnimatedContainer(duration: const Duration(milliseconds: 180), width: (MediaQuery.of(context).size.width - 62) / 2, padding: EdgeInsets.all(ThixPolicy.s14), decoration: BoxDecoration(color: isSelected ? domainColor.withValues(alpha: 0.12) : ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: isSelected ? domainColor : ThixPolicy.border, width: isSelected ? 2 : 1)), child: Column(children: [Icon(type.icon, size: 28, color: isSelected ? domainColor : ThixPolicy.textSecondary), SizedBox(height: ThixPolicy.s8), Text(label, style: ThixPolicy.labelStyle.copyWith(color: isSelected ? domainColor : ThixPolicy.textMain, fontWeight: ThixPolicy.bold))])))));
       }).toList()),
     ]);
   }
@@ -640,7 +655,7 @@ class _BusTypeSelector extends StatelessWidget {
   }
 }
 
-/// ✅ CORRECTION : utilise _kAmenities (top-level) au lieu de _amenities
+// CORRECTION: Accès via propriétés de classe au lieu de déstructuration de Record
 class _AmenitiesSelector extends StatelessWidget {
   final Set<String> selected;
   final ValueChanged<Set<String>> onChanged;
@@ -654,10 +669,9 @@ class _AmenitiesSelector extends StatelessWidget {
       _FieldLabel(label: l10n.t('agencyTripAmenities'), required: false),
       SizedBox(height: ThixPolicy.s10),
       Wrap(spacing: ThixPolicy.s8, runSpacing: ThixPolicy.s8, children: _kAmenities.map((amenity) {
-        final (value, labelKey, icon) = amenity;
-        final isSelected = selected.contains(value);
-        final label = _translateAmenityLabel(l10n, labelKey);
-        return Semantics(button: true, selected: isSelected, label: label, child: Material(color: Colors.transparent, child: InkWell(onTap: () { final s = Set<String>.from(selected); isSelected ? s.remove(value) : s.add(value); onChanged(s); }, borderRadius: BorderRadius.circular(ThixPolicy.rFull), child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s8), decoration: BoxDecoration(color: isSelected ? domainColor.withValues(alpha: 0.12) : ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rFull), border: Border.all(color: isSelected ? domainColor : ThixPolicy.border, width: isSelected ? 1.5 : 1)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: isSelected ? domainColor : ThixPolicy.textSecondary), SizedBox(width: ThixPolicy.s6), Text(label, style: ThixPolicy.labelStyle.copyWith(color: isSelected ? domainColor : ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold, fontSize: 12))])))));
+        final isSelected = selected.contains(amenity.value);
+        final label = _translateAmenityLabel(l10n, amenity.labelKey);
+        return Semantics(button: true, selected: isSelected, label: label, child: Material(color: Colors.transparent, child: InkWell(onTap: () { final s = Set<String>.from(selected); isSelected ? s.remove(amenity.value) : s.add(amenity.value); onChanged(s); }, borderRadius: BorderRadius.circular(ThixPolicy.rFull), child: AnimatedContainer(duration: const Duration(milliseconds: 180), padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: ThixPolicy.s8), decoration: BoxDecoration(color: isSelected ? domainColor.withValues(alpha: 0.12) : ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rFull), border: Border.all(color: isSelected ? domainColor : ThixPolicy.border, width: isSelected ? 1.5 : 1)), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(amenity.icon, size: 14, color: isSelected ? domainColor : ThixPolicy.textSecondary), SizedBox(width: ThixPolicy.s6), Text(label, style: ThixPolicy.labelStyle.copyWith(color: isSelected ? domainColor : ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold, fontSize: 12))])))));
       }).toList()),
     ]);
   }
