@@ -6,15 +6,9 @@
 // Étape 3 : Nom, date de naissance, pays, THIX Chat, mot de passe + conditions → Enregistrer
 // Étape 4 : Confirmation (THIX ID)
 //
-// v7 :
-//  - compte déjà complet → direct dans l'app (Google) / login (Email, via RPC email_registration_state)
-//  - Save : display_name (pas full_name), SupabaseSafeWrite, password + metadata, finalize_registration
-//  - les DEUX AuthController (routeur + Riverpod) sont rafraîchis
-//  - registrationFinalStepActive : le routeur ne saute plus l'étape 4
-//  - reprise de session (redirect ?step=3) : email, nom, méthode détectés
-//  - retour login fiable (context.go), plus de remise à zéro des compteurs anti-abus
-//  - mot de passe temporaire aléatoire (Random.secure), mot de passe compatible avec le login
-//  - sécurité : honeypot, délais humains, throttles persistants, zxcvbn >= 3, HIBP, jetables, bidi
+// v7.1 :
+//  - retour Google : oauthReturnPath ramène le routeur sur l'inscription (étape 3)
+//  - logo Google sur le bouton de l'étape 1
 
 import 'dart:async';
 import 'dart:convert';
@@ -41,10 +35,14 @@ import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
 import 'package:thix_id/services/supabase_safe_write.dart';
 
 // ============================================================================
-// DRAPEAU LU PAR LE ROUTEUR (app_router.dart)
-// true pendant l'étape 4 : le routeur ne doit pas expulser vers le dashboard
+// DRAPEAUX LUS PAR LE ROUTEUR (app_router.dart)
 // ============================================================================
+/// true pendant l'étape 4 : le routeur ne doit pas expulser vers le dashboard
 bool registrationFinalStepActive = false;
+
+/// Chemin de retour après OAuth (lu par le routeur pour /login-callback).
+/// Renseigné quand Google est lancé depuis l'inscription ; remis à null par le routeur.
+String? oauthReturnPath;
 
 // ============================================================================
 // CONSTANTS
@@ -527,6 +525,63 @@ class PasswordPolicy {
 }
 
 // ============================================================================
+// LOGO GOOGLE (peint, sans asset)
+// ============================================================================
+class _GoogleLogoPainter extends CustomPainter {
+  const _GoogleLogoPainter();
+
+  static double _rad(double deg) => deg * pi / 180.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final stroke = size.shortestSide * 0.20;
+    final radius = (size.shortestSide - stroke) / 2;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
+    void segment(Color color, double startDeg, double sweepDeg) {
+      canvas.drawArc(
+        rect,
+        _rad(startDeg),
+        _rad(sweepDeg),
+        false,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = stroke,
+      );
+    }
+
+    segment(const Color(0xFFEA4335), 195, 120); // rouge (haut gauche)
+    segment(const Color(0xFF4285F4), 315, 85); // bleu (droite)
+    segment(const Color(0xFF34A853), 40, 90); // vert (bas)
+    segment(const Color(0xFFFBBC05), 130, 65); // jaune (gauche)
+
+    // Barre horizontale bleue du « G »
+    canvas.drawRect(
+      Rect.fromLTWH(center.dx, center.dy - stroke / 2, radius + stroke / 2, stroke),
+      Paint()..color = const Color(0xFF4285F4),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _GoogleLogo extends StatelessWidget {
+  final double size;
+  const _GoogleLogo({this.size = 22});
+
+  @override
+  Widget build(BuildContext context) => ExcludeSemantics(
+        child: CustomPaint(
+          size: Size.square(size),
+          painter: const _GoogleLogoPainter(),
+        ),
+      );
+}
+
+// ============================================================================
 // DESIGN COMPONENTS
 // ============================================================================
 class _PremiumField extends StatefulWidget {
@@ -868,6 +923,8 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     WidgetsBinding.instance.removeObserver(this);
     _isNavigatingAway = true;
     registrationFinalStepActive = false;
+    // oauthReturnPath n'est PAS remis à null ici : le routeur peut recréer la page
+    // pendant le retour de Google et doit encore lire cette valeur.
     _authSub?.cancel();
     _nameC.dispose();
     _dobC.dispose();
@@ -889,6 +946,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     if (state == AppLifecycleState.resumed && _googleWaiting) {
       Future.delayed(const Duration(seconds: 3), () {
         if (mounted && _googleWaiting && _sb.auth.currentUser == null) {
+          oauthReturnPath = null;
           setState(() => _googleWaiting = false);
         }
       });
@@ -1010,7 +1068,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     }
   }
 
-  /// Session présente à l'ouverture de la page (redirect ?step=3, app relancée…).
+  /// Session présente à l'ouverture de la page (redirect ?step=3, retour Google, app relancée…).
   Future<void> _bootstrapSession() async {
     final user = _sb.auth.currentUser;
     if (user == null) {
@@ -1050,6 +1108,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 
       if (!mounted || _isNavigatingAway) return;
 
+      oauthReturnPath = null;
       setState(() {
         _googleWaiting = false;
         _useGoogle = _isGoogleUser(user);
@@ -1116,6 +1175,9 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     HapticFeedback.mediumImpact();
     setState(() => _busy = true);
     try {
+      // Au retour de Google, le routeur ramène ici (et non sur le login)
+      oauthReturnPath = AppRoutes.personalReg;
+
       await _sb.auth.signInWithOAuth(
         OAuthProvider.google,
         redirectTo: kIsWeb ? _webRedirectBase() : _kOAuthRedirect,
@@ -1127,6 +1189,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
         _showInfo(_tx(context, 'reg_google_waiting'));
       }
     } catch (e) {
+      oauthReturnPath = null;
       if (kDebugMode) debugPrint('[Registration] Google error: $e');
       if (mounted) _showError(_tx(context, 'reg_google_failed'));
     } finally {
@@ -1701,6 +1764,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
     await _authSub?.cancel();
     _authSub = null;
     registrationFinalStepActive = false;
+    oauthReturnPath = null;
     if (_sb.auth.currentUser != null) {
       try {
         await ref.read(authControllerProvider.notifier).signOut().timeout(const Duration(seconds: 8));
@@ -2098,7 +2162,7 @@ class _PersonalRegistrationPageState extends ConsumerState<PersonalRegistrationP
 }
 
 // ============================================================================
-// ÉTAPE 1 — Choix de méthode (SANS cases à cocher)
+// ÉTAPE 1 — Choix de méthode (SANS cases à cocher) + LOGO GOOGLE
 // ============================================================================
 class _Step1Method extends StatelessWidget {
   final bool waiting;
@@ -2120,26 +2184,38 @@ class _Step1Method extends StatelessWidget {
         const SizedBox(height: ThixPolicy.s6),
         Text(_tx(context, 'reg_choose_method'), style: ThixPolicy.bodySmallStyle),
         const SizedBox(height: ThixPolicy.s24),
+
+        // ── Bouton Google (avec logo Google) ──
         Semantics(
           button: true,
           label: _tx(context, 'reg_google_continue'),
           enabled: !waiting,
           child: SizedBox(
             height: 54,
-            child: OutlinedButton.icon(
+            child: OutlinedButton(
               onPressed: !waiting ? onChooseGoogle : null,
-              icon: const Icon(Icons.account_circle_outlined, size: 22),
-              label: Flexible(
-                child: Text(
-                  _tx(context, 'reg_google_continue'),
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
-                ),
-              ),
               style: OutlinedButton.styleFrom(
+                backgroundColor: Colors.white,
                 foregroundColor: ThixPolicy.textMain,
                 side: BorderSide(color: ThixPolicy.border),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const _GoogleLogo(size: 22),
+                  const SizedBox(width: 12),
+                  Flexible(
+                    child: Text(
+                      _tx(context, 'reg_google_continue'),
+                      overflow: TextOverflow.ellipsis,
+                      style: ThixPolicy.bodyStyle.copyWith(
+                        color: ThixPolicy.textMain,
+                        fontWeight: ThixPolicy.semiBold,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -2165,6 +2241,8 @@ class _Step1Method extends StatelessWidget {
           ],
         ),
         const SizedBox(height: ThixPolicy.s20),
+
+        // ── Bouton Email ──
         Semantics(
           button: true,
           label: _tx(context, 'reg_email_continue'),
@@ -2702,124 +2780,89 @@ class _Step4Final extends StatelessWidget {
                       style: ThixPolicy.microStyle.copyWith(
                         color: Colors.white70,
                         fontWeight: ThixPolicy.bold,
-                        letterSpacing: 1.0,
-                        fontSize: 10,
+                        letterSpacing: 1.5,
                       ),
                     ),
-                    const SizedBox(height: ThixPolicy.s16),
+                    const SizedBox(height: ThixPolicy.s12),
                     Text(
                       _tx(context, 'reg_official_thix_id'),
-                      style: ThixPolicy.microStyle.copyWith(
-                        color: ThixPolicy.gold,
-                        fontWeight: ThixPolicy.bold,
-                        letterSpacing: 1.2,
-                        fontSize: 10,
-                      ),
+                      style: ThixPolicy.microStyle.copyWith(color: Colors.white70, letterSpacing: 1),
                     ),
                     const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            thixId.isEmpty ? _tx(context, 'reg_generating') : thixId,
-                            style: ThixPolicy.bodyStyle.copyWith(
-                              color: ThixPolicy.onBrand,
-                              fontWeight: ThixPolicy.bold,
-                              letterSpacing: 0.8,
-                              fontSize: 15,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        if (thixId.isNotEmpty)
-                          Semantics(
-                            button: true,
-                            label: _tx(context, 'reg_copy_thix_id'),
-                            child: InkWell(
-                              onTap: onCopyId,
-                              child: const Padding(
-                                padding: EdgeInsets.only(left: 4),
-                                child: Icon(Icons.copy_rounded, color: Colors.white, size: 16),
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: ThixPolicy.s16),
-                    Text(
-                      'THIX CHAT',
-                      style: ThixPolicy.microStyle.copyWith(
-                        color: Colors.white70,
+                    SelectableText(
+                      thixId.isEmpty ? _tx(context, 'reg_generating') : thixId,
+                      style: ThixPolicy.h2Style.copyWith(
+                        color: Colors.white,
                         fontWeight: ThixPolicy.bold,
-                        fontSize: 10,
+                        letterSpacing: 1,
                       ),
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      thixChat,
-                      style: ThixPolicy.bodyStyle.copyWith(
-                        color: ThixPolicy.onBrand,
-                        fontWeight: ThixPolicy.semiBold,
-                        fontSize: 14,
+                    if (thixChat.isNotEmpty) ...[
+                      const SizedBox(height: ThixPolicy.s8),
+                      Text(
+                        thixChat,
+                        style: ThixPolicy.bodyStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.semiBold),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),
             ),
           ),
         ),
-        const SizedBox(height: ThixPolicy.s24),
-        Text(_tx(context, 'reg_summary'), style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain)),
-        const SizedBox(height: ThixPolicy.s12),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s6),
-          decoration: BoxDecoration(
-            color: ThixPolicy.surfaceSoft,
-            borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-            border: Border.all(color: ThixPolicy.border),
-          ),
-          child: Column(
-            children: [
-              _SummaryRow(label: _tx(context, 'reg_full_name_label'), value: name),
-              const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: _tx(context, 'reg_email_label'), value: email),
-              const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: _tx(context, 'reg_dob_label'), value: dob),
-              const Divider(height: 1, color: ThixPolicy.border),
-              _SummaryRow(label: _tx(context, 'reg_country_label'), value: country),
-            ],
+        const SizedBox(height: ThixPolicy.s16),
+        SizedBox(
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: thixId.isEmpty ? null : onCopyId,
+            icon: const Icon(Icons.copy_rounded, size: 18),
+            label: Text(
+              _tx(context, 'reg_copy_thix_id'),
+              style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.semiBold),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: ThixPolicy.primary,
+              side: BorderSide(color: ThixPolicy.primary, width: 1.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+            ),
           ),
         ),
+        const SizedBox(height: ThixPolicy.s20),
+        Text(
+          _tx(context, 'reg_summary'),
+          style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primaryDeep, fontWeight: ThixPolicy.bold),
+        ),
+        const SizedBox(height: ThixPolicy.s8),
+        _SummaryRow(icon: Icons.person_outline_rounded, value: name),
+        _SummaryRow(icon: Icons.email_outlined, value: email),
+        _SummaryRow(icon: Icons.alternate_email_rounded, value: thixChat),
+        _SummaryRow(icon: Icons.calendar_today_rounded, value: dob),
+        _SummaryRow(icon: Icons.public_rounded, value: country),
       ],
     );
   }
 }
 
 class _SummaryRow extends StatelessWidget {
-  final String label;
+  final IconData icon;
   final String value;
 
-  const _SummaryRow({required this.label, required this.value});
+  const _SummaryRow({required this.icon, required this.value});
 
   @override
   Widget build(BuildContext context) {
+    if (value.trim().isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: ThixPolicy.s12),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Icon(icon, size: 18, color: ThixPolicy.textSecondary),
+          const SizedBox(width: ThixPolicy.s12),
           Expanded(
-            flex: 2,
-            child: Text(label, style: ThixPolicy.bodySmallStyle.copyWith(fontWeight: ThixPolicy.medium)),
-          ),
-          Expanded(
-            flex: 3,
             child: Text(
-              value.isEmpty ? '—' : value,
-              textAlign: TextAlign.right,
-              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold),
+              value,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMain),
             ),
           ),
         ],
