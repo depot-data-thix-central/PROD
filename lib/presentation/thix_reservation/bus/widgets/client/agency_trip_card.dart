@@ -100,7 +100,7 @@ class _AgencyTripCardState extends ConsumerState<AgencyTripCard>
       compact: false,
     );
 
-    final agencyName = widget.trip.agency?.name ?? l10n.tripUnknownAgency;
+    final agencyName = widget.trip.agency?.name ?? l10n.t('common_unknown');
     final initial = agencyName.isNotEmpty ? agencyName[0].toUpperCase() : 'A';
     final logo = widget.trip.agency?.logoUrl;
 
@@ -196,7 +196,7 @@ class _AgencyTripCardState extends ConsumerState<AgencyTripCard>
                   borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                 ),
                 child: Text(
-                  l10n.tripFull,
+                  l10n.t('events_sold_out'),
                   style: ThixPolicy.labelStyle.copyWith(
                     color: Colors.white,
                     fontWeight: ThixPolicy.bold,
@@ -227,7 +227,7 @@ class _AgencyTripCardState extends ConsumerState<AgencyTripCard>
         onTapCancel: _onTapCancel,
         onTap: _handleTap,
         child: AnimatedBuilder(
-          animation: _scaleAnim,
+          listenable: _scaleAnim,
           builder: (context, child) => Transform.scale(
             scale: widget.trip.isFull ? 1.0 : _scaleAnim.value,
             child: child,
@@ -245,18 +245,7 @@ class _AgencyTripCardState extends ConsumerState<AgencyTripCard>
     String depTime,
     String arrTime,
   ) {
-    try {
-      return l10n.tripCardSemanticLabel(
-        agencyName,
-        widget.trip.departureCity,
-        widget.trip.arrivalCity,
-        depTime,
-        arrTime,
-        price,
-      );
-    } catch (_) {
-      return '$agencyName: ${widget.trip.departureCity} → ${widget.trip.arrivalCity}';
-    }
+    return '$agencyName: ${widget.trip.departureCity} → ${widget.trip.arrivalCity} • $depTime - $arrTime • ${l10n.t('events_ticket_price')}: $price';
   }
 }
 
@@ -388,7 +377,7 @@ class _CardHeader extends StatelessWidget {
             SizedBox(height: ThixPolicy.s4),
             if (isFull)
               Text(
-                l10n.tripFull,
+                l10n.t('events_sold_out'),
                 style: ThixPolicy.microStyle.copyWith(
                   color: ThixPolicy.danger,
                   fontWeight: ThixPolicy.bold,
@@ -414,7 +403,7 @@ class _CardHeader extends StatelessWidget {
                     ),
                     SizedBox(width: ThixPolicy.s2),
                     Text(
-                      l10n.tripAlmostFull(availableSeats),
+                      l10n.t('event_remaining_seats', args: [availableSeats.toString()]),
                       style: ThixPolicy.microStyle.copyWith(
                         color: ThixPolicy.danger,
                         fontWeight: ThixPolicy.bold,
@@ -435,7 +424,7 @@ class _CardHeader extends StatelessWidget {
                   ),
                   SizedBox(width: ThixPolicy.s2),
                   Text(
-                    l10n.tripAvailableSeats(availableSeats, 0),
+                    l10n.t('event_remaining_seats', args: [availableSeats.toString()]),
                     style: ThixPolicy.microStyle.copyWith(
                       color: ThixPolicy.textSecondary,
                       fontWeight: ThixPolicy.medium,
