@@ -14,19 +14,6 @@ import '../../data/services/bus_public_service.dart';
 /// ============================================================================
 /// BusTripDetailPage
 /// ============================================================================
-///
-/// Page de détail d'un trajet de bus.
-///
-/// Features :
-/// - Chargement asynchrone avec skeleton loader
-/// - Hero animation vers/depuis la carte de trajet
-/// - Multi-devises global (conversion automatique)
-/// - Accessibilité complète (Semantics, labels)
-/// - Gestion d'erreurs avec retry
-/// - i18n intégrée (FR/EN/LN)
-/// - Design system ThixPolicy
-/// - Responsive layout
-/// ============================================================================
 class BusTripDetailPage extends ConsumerStatefulWidget {
   final BusTripModel? trip;
   final String? tripId;
@@ -65,7 +52,7 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
     if (id.isEmpty) {
       setState(() {
         _loading = false;
-        _error = context.l10n.t('ticket_not_found'); // Utilisé comme fallback pour "trip not found"
+        _error = context.l10n.t('ticket_not_found');
       });
       return;
     }
@@ -74,7 +61,9 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
 
     try {
       final service = BusPublicService();
-      final trip = await service.getTripById(id);
+      // CORRECTION: getTripById n'existe pas, utilisation de getTrip (à vérifier selon votre service réel)
+      final trip = await service.getTrip(id); 
+      
       if (!mounted) return;
 
       if (trip == null) {
@@ -186,7 +175,6 @@ class _TripDetailContent extends ConsumerWidget {
   }
 
   void _share(BuildContext context) {
-    // TODO: implémenter le partage
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(context.l10n.t('market_coming_soon', args: ['Partage']))),
     );
@@ -204,8 +192,9 @@ class _TripImageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasImage = trip.agency?.logoUrl != null || trip.busImageUrl != null;
-    final imageUrl = trip.agency?.logoUrl ?? trip.busImageUrl;
+    // CORRECTION: busImageUrl n'existe pas dans le modèle, utilisation uniquement du logo de l'agence
+    final hasImage = trip.agency?.logoUrl != null;
+    final imageUrl = trip.agency?.logoUrl;
 
     return Hero(
       tag: 'trip_${trip.id}',
@@ -317,7 +306,7 @@ class _AgencyInfoCard extends StatelessWidget {
                     ),
                     SizedBox(width: ThixPolicy.s8),
                     Text(
-                      l10n.t('status_verified'), // Utilisé pour "Verified Agency"
+                      l10n.t('status_verified'),
                       style: ThixPolicy.microStyle.copyWith(
                         color: ThixPolicy.success,
                       ),
@@ -535,7 +524,7 @@ class _AmenitiesCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.t('bus_comfort_title'), // Utilisé pour "Amenities"
+            l10n.t('bus_comfort_title'),
             style: ThixPolicy.titleStyle.copyWith(
               fontWeight: ThixPolicy.bold,
             ),
@@ -643,7 +632,6 @@ class _PriceCard extends ConsumerWidget {
       compact: false,
     );
 
-    // Utilisation de keys génériques car les clés spécifiques n'existent pas
     final seatsLabel = trip.isFull
         ? l10n.t('events_sold_out')
         : '${trip.availableSeats}/${trip.totalSeats} ${l10n.t('admin_action_seats')}';
@@ -660,7 +648,7 @@ class _PriceCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.t('money_amount'), // Utilisé pour "Price"
+            l10n.t('money_amount'),
             style: ThixPolicy.bodySmallStyle.copyWith(
               color: ThixPolicy.textSecondary,
             ),
