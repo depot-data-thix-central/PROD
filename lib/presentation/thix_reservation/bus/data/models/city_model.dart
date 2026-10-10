@@ -22,6 +22,10 @@
 /// - Validation des champs
 ///
 /// ============================================================================
+
+// Import math pour les calculs de distance
+import 'dart:math' as _math;
+
 class CityModel {
   // ─── Identifiants ─────────────────────────────────────────
   final String id;
@@ -231,8 +235,6 @@ class CityModel {
   static double _atan2(double y, double x) => _math.atan2(y, x);
 }
 
-// Import math pour les calculs de distance
-import 'dart:math' as _math;
 
 /// ============================================================================
 /// CityExtensions — Extensions utilitaires pour List<CityModel>
