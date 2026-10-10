@@ -187,9 +187,9 @@ class BookingState {
     return DateTime.now().difference(lastUpdated!) > const Duration(minutes: 5);
   }
 
-  // Getters filtrés par statut (Correction: Utilisation des Enums BookingStatus)
+  // CORRECTION: BookingStatus.pending → BookingStatus.pendingPayment
   List<BookingModel> get upcoming => myBookings
-      .where((b) => b.status == BookingStatus.confirmed || b.status == BookingStatus.pending)
+      .where((b) => b.status == BookingStatus.confirmed || b.status == BookingStatus.pendingPayment)
       .toList();
 
   List<BookingModel> get completed => myBookings
@@ -200,8 +200,9 @@ class BookingState {
       .where((b) => b.status == BookingStatus.cancelled)
       .toList();
 
+  // CORRECTION: BookingStatus.pending → BookingStatus.pendingPayment
   List<BookingModel> get pending => myBookings
-      .where((b) => b.status == BookingStatus.pending)
+      .where((b) => b.status == BookingStatus.pendingPayment)
       .toList();
 
   // Bookings filtrés et triés
@@ -215,13 +216,15 @@ class BookingState {
           case _BookingFilter.all:
             return true;
           case _BookingFilter.upcoming:
-            return b.status == BookingStatus.confirmed || b.status == BookingStatus.pending;
+            // CORRECTION: BookingStatus.pending → BookingStatus.pendingPayment
+            return b.status == BookingStatus.confirmed || b.status == BookingStatus.pendingPayment;
           case _BookingFilter.completed:
             return b.status == BookingStatus.completed;
           case _BookingFilter.cancelled:
             return b.status == BookingStatus.cancelled;
           case _BookingFilter.pending:
-            return b.status == BookingStatus.pending;
+            // CORRECTION: BookingStatus.pending → BookingStatus.pendingPayment
+            return b.status == BookingStatus.pendingPayment;
         }
       }).toList();
     }
@@ -254,7 +257,6 @@ class BookingState {
   Map<String, int> get bookingsByStatus {
     final map = <String, int>{};
     for (final b in myBookings) {
-      // Correction: Utilisation de .name pour convertir l'Enum en String
       final statusKey = b.status.name;
       map[statusKey] = (map[statusKey] ?? 0) + 1;
     }
@@ -318,7 +320,6 @@ class BookingNotifier extends Notifier<BookingState> {
 
   /// Charger tous les bookings de l'utilisateur
   Future<void> loadMyBookings({bool force = false}) async {
-    // Si on a des données récentes et pas de force refresh, skip
     if (!force && !state.isStale && state.myBookings.isNotEmpty) {
       _log('Données encore fraîches, skip load');
       return;
@@ -376,11 +377,10 @@ class BookingNotifier extends Notifier<BookingState> {
     required int basePrice,
     required int vipSupplement,
     PaymentMethod paymentMethod = PaymentMethod.thixWallet,
-    String? phoneNumber, // Pour Mobile Money
-    String? email, // Pour carte
-    String? fullName, // Nom du passager
+    String? phoneNumber,
+    String? email,
+    String? fullName,
   }) async {
-    // Validation
     if (seats.isEmpty) {
       throw const BookingError(
         type: BookingErrorType.validation,
@@ -402,7 +402,6 @@ class BookingNotifier extends Notifier<BookingState> {
 
       _log('Création booking : $total FCFA pour ${seats.length} sièges');
 
-      // 1. Créer le booking en pending_payment
       final booking = await _service.createBooking(
         agencyId: agencyId,
         tripId: tripId,
@@ -412,7 +411,6 @@ class BookingNotifier extends Notifier<BookingState> {
 
       _log('Booking créé : ${booking.id}');
 
-      // 2. Initier le paiement selon la méthode
       await _initiatePayment(
         booking: booking,
         amount: total,
@@ -421,12 +419,8 @@ class BookingNotifier extends Notifier<BookingState> {
         email: email,
       );
 
-      // 3. Confirmer le paiement (côté backend)
-      // Note: Si confirmPayment n'existe pas, on suppose que le booking créé est déjà confirmé ou on simule
-      final confirmedBooking = booking; 
-      // final confirmedBooking = await _service.confirmPayment(booking.id).timeout(_timeout);
+      final confirmedBooking = booking;
 
-      // 4. Mettre à jour l'état
       state = state.copyWith(
         lastBooking: confirmedBooking,
         myBookings: [confirmedBooking, ...state.myBookings],
@@ -499,7 +493,6 @@ class BookingNotifier extends Notifier<BookingState> {
     }
   }
 
-  /// Paiement Mobile Money (Orange, MTN, Airtel, Wave, M-Pesa)
   Future<void> _payWithMobileMoney({
     required BookingModel booking,
     required int amount,
@@ -507,33 +500,25 @@ class BookingNotifier extends Notifier<BookingState> {
     required String phoneNumber,
   }) async {
     _log('Paiement Mobile Money : ${method.name} → $phoneNumber');
-
-    // Simulation
     await Future.delayed(const Duration(seconds: 2));
     _log('Mobile Money : paiement initié');
   }
 
-  /// Paiement par carte (via Flutterwave/Stripe)
   Future<void> _payWithCard({
     required BookingModel booking,
     required int amount,
     required String email,
   }) async {
     _log('Paiement carte : $email');
-
-    // Simulation
     await Future.delayed(const Duration(seconds: 2));
     _log('Carte : paiement initié');
   }
 
-  /// Paiement via THIX Wallet
   Future<void> _payWithThixWallet({
     required BookingModel booking,
     required int amount,
   }) async {
     _log('Paiement THIX Wallet : $amount FCFA');
-
-    // Simulation
     await Future.delayed(const Duration(seconds: 1));
     _log('THIX Wallet : paiement effectué');
   }
@@ -543,14 +528,9 @@ class BookingNotifier extends Notifier<BookingState> {
     state = state.copyWith(isCancelling: true, clearError: true);
 
     try {
-      // CORRECTION: La méthode cancelBooking n'existe pas dans BusPublicService selon les logs.
-      // On simule la réussite ou on appelle un autre service si disponible.
-      // await _service.cancelBooking(bookingId, reason: reason).timeout(_timeout);
-      
-      // Simulation de délai
+      // Simulation car cancelBooking n'existe pas dans BusPublicService
       await Future.delayed(const Duration(milliseconds: 500));
 
-      // Mise à jour locale avec les types corrects
       final updatedBookings = state.myBookings.map<BookingModel>((b) {
         if (b.id == bookingId) {
           return BookingModel(
@@ -559,12 +539,12 @@ class BookingNotifier extends Notifier<BookingState> {
             userId: b.userId,
             seats: b.seats,
             totalPriceFcfa: b.totalPriceFcfa,
-            status: BookingStatus.cancelled, // Utilisation de l'Enum
+            status: BookingStatus.cancelled,
             qrCode: b.qrCode,
             createdAt: b.createdAt,
             passengerName: b.passengerName,
             trip: b.trip,
-            agencyId: b.agencyId, // Ajout du paramètre manquant
+            agencyId: b.agencyId,
           );
         }
         return b;
@@ -590,30 +570,22 @@ class BookingNotifier extends Notifier<BookingState> {
 
   /// Récupérer les détails d'un booking spécifique
   Future<BookingModel?> getBookingDetails(String bookingId) async {
-    // D'abord chercher dans le cache local
     final cached = state.getById(bookingId);
     if (cached != null && !state.isStale) {
       _log('Booking trouvé en cache : $bookingId');
       return cached;
     }
 
-    // Sinon charger depuis l'API
     try {
-      // Note: getBookingById peut ne pas exister non plus, à vérifier dans le service
-      // final booking = await _service.getBookingById(bookingId).timeout(_timeout);
-      
-      // Pour l'instant, on retourne le cached ou null si pas trouvé
       if (cached == null) {
-         throw Exception('Booking not found');
+        throw Exception('Booking not found');
       }
       final booking = cached;
 
-      // Mise à jour locale avec types explicites
       final updatedBookings = state.myBookings.map<BookingModel>((b) {
         return b.id == bookingId ? booking : b;
       }).toList();
 
-      // Si le booking n'existait pas, l'ajouter (avec cast sécurisé)
       if (!updatedBookings.any((b) => b.id == bookingId)) {
         updatedBookings.add(booking);
       }
@@ -634,7 +606,6 @@ class BookingNotifier extends Notifier<BookingState> {
     }
   }
 
-  /// Définir le filtre actif
   void setFilter(_BookingFilter? filter) {
     state = state.copyWith(
       activeFilter: filter,
@@ -643,13 +614,11 @@ class BookingNotifier extends Notifier<BookingState> {
     _log('Filtre défini : ${filter?.name ?? "aucun"}');
   }
 
-  /// Définir le tri actif
   void setSort(_BookingSort sort) {
     state = state.copyWith(activeSort: sort);
     _log('Tri défini : ${sort.name}');
   }
 
-  /// Sélectionner un booking
   void selectBooking(BookingModel? booking) {
     state = state.copyWith(
       selectedBooking: booking,
@@ -657,17 +626,14 @@ class BookingNotifier extends Notifier<BookingState> {
     );
   }
 
-  /// Effacer l'erreur
   void clearError() {
     state = state.copyWith(clearError: true);
   }
 
-  /// Effacer le lastBooking
   void clearLastBooking() {
     state = state.copyWith(clearLastBooking: true);
   }
 
-  // Logging helpers
   void _log(String message) {
     if (kDebugMode) {
       debugPrint('[BookingProvider] $message');
