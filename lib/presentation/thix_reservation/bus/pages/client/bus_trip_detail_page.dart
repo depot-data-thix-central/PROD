@@ -3,13 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/core/extensions/context_ext.dart';
 import 'package:thix_id/core/utils/currency_formatter.dart';
 import 'package:thix_id/core/providers/currency_provider.dart';
 
 import '../../data/models/bus_trip_model.dart';
-import '../../data/services/bus_public_service.dart';
 
 /// ============================================================================
 /// BusTripDetailPage
@@ -60,19 +60,26 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
     setState(() => _loading = true);
 
     try {
-      final service = BusPublicService();
-      // CORRECTION: getTripById n'existe pas, utilisation de getTrip (à vérifier selon votre service réel)
-      final trip = await service.getTrip(id); 
-      
+      // CORRECTION: Utilisation directe de Supabase au lieu de service.getTrip()
+      // qui n'existe pas dans BusPublicService
+      final res = await Supabase.instance.client
+          .from('bus_trips')
+          .select('*, agencies(*)')
+          .eq('id', id)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 10));
+
       if (!mounted) return;
 
-      if (trip == null) {
+      if (res == null) {
         setState(() {
           _loading = false;
           _error = context.l10n.t('ticket_not_found');
         });
         return;
       }
+
+      final trip = BusTripModel.fromJson(Map<String, dynamic>.from(res));
 
       setState(() {
         _trip = trip;
@@ -118,7 +125,6 @@ class _TripDetailContent extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final currency = ref.watch(currencyProvider).currency;
     final domainColor = ThixPolicy.domainReservation;
 
     final displayPrice = CurrencyFormatter.format(
@@ -192,7 +198,6 @@ class _TripImageHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // CORRECTION: busImageUrl n'existe pas dans le modèle, utilisation uniquement du logo de l'agence
     final hasImage = trip.agency?.logoUrl != null;
     final imageUrl = trip.agency?.logoUrl;
 
@@ -333,7 +338,6 @@ class _RouteInfoCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final locale = Localizations.localeOf(context).toString();
 
     final departureTime = DateFormat('HH:mm', locale).format(trip.departureTime);
@@ -351,7 +355,6 @@ class _RouteInfoCard extends StatelessWidget {
       ),
       child: Column(
         children: [
-          // Date
           Row(
             children: [
               Icon(Icons.calendar_today_rounded, size: 16, color: domainColor),
@@ -365,8 +368,6 @@ class _RouteInfoCard extends StatelessWidget {
             ],
           ),
           SizedBox(height: ThixPolicy.s16),
-
-          // Route
           Row(
             children: [
               Expanded(
@@ -624,7 +625,6 @@ class _PriceCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final currency = ref.watch(currencyProvider).currency;
 
     final displayPrice = CurrencyFormatter.format(
       trip.priceFcfa,
@@ -697,7 +697,6 @@ class _BottomBar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
-    final currency = ref.watch(currencyProvider).currency;
 
     final displayPrice = CurrencyFormatter.format(
       trip.priceFcfa,
