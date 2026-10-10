@@ -15,23 +15,6 @@ import '../../widgets/client/seat_map_widget.dart';
 /// ============================================================================
 /// BusSeatSelectionPage
 /// ============================================================================
-///
-/// Page de sélection des sièges dans un bus.
-///
-/// Features :
-/// - Thème CLAIR aligné avec ThixPolicy (migration depuis sombre)
-/// - Multi-devises global (currencyProvider) avec breakdown prix détaillé
-/// - Countdown circulaire animé pour le verrouillage des sièges
-/// - Skeleton loader pendant le chargement initial
-/// - Feedback haptique au tap sur les sièges
-/// - Validation max seats (6 par défaut)
-/// - Hero animation optionnelle
-/// - i18n complète (FR/EN/LN)
-/// - Accessibilité complète (Semantics)
-/// - Responsive avec LayoutBuilder
-/// - Design system ThixPolicy
-///
-/// ============================================================================
 class BusSeatSelectionPage extends ConsumerStatefulWidget {
   final BusTripModel? trip;
   final String? tripId;
@@ -193,7 +176,8 @@ class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
         ThixPolicy.s16,
         ThixPolicy.s12,
         ThixPolicy.s16,
-        ThixPolicy.s120,
+        // CORRECTION: s120 n'existe pas, remplacé par s32
+        ThixPolicy.s32, 
       ),
       physics: const BouncingScrollPhysics(),
       children: [
@@ -830,8 +814,9 @@ class _BottomBar extends ConsumerWidget {
 
     String totalLabel = l10n.t('event_choose_seats_btn');
     if (trip != null && state.selectedSeats.isNotEmpty) {
+      // CORRECTION: Ajout de ! car trip est nullable mais vérifié non-null ci-dessus
       final baseInDisplay = currencyState.convert(
-        trip.priceFcfa,
+        trip!.priceFcfa,
         fromCurrency: 'CDF',
       );
       final vipInDisplay = currencyState.convert(
@@ -942,8 +927,9 @@ class _SeatSelectionSkeletonState extends State<_SeatSelectionSkeleton>
 
   @override
   Widget build(BuildContext context) {
+    // CORRECTION: Utilisation de listenable au lieu de animation
     return AnimatedBuilder(
-      animation: _ctrl,
+      listenable: _ctrl,
       builder: (ctx, _) {
         final alpha = (0.5 + (_ctrl.value * 0.3)).clamp(0.0, 1.0);
         final color = ThixPolicy.surfaceStrong.withValues(alpha: alpha);
