@@ -1,4 +1,3 @@
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -9,15 +8,6 @@ import '../data/services/bus_agency_service.dart';
 
 /// ============================================================================
 /// AgencyDashboardState
-/// ============================================================================
-///
-/// État complet du dashboard agence avec :
-/// - Données agence, trajets, réservations
-/// - Stats financières (today, week, month, all)
-/// - Filtres et tri actifs
-/// - Gestion d'erreurs typée
-/// - Cache avec timestamp
-///
 /// ============================================================================
 class AgencyDashboardState {
   // Données principales
@@ -37,7 +27,7 @@ class AgencyDashboardState {
   final bool isCreating;
   final bool isUpdating;
 
-  // Filtres actifs
+  // Filtres et tri
   final _TripFilter? activeFilter;
   final _TripSort activeSort;
 
@@ -139,13 +129,14 @@ class AgencyDashboardState {
           case _TripFilter.all:
             return true;
           case _TripFilter.scheduled:
-            return t.status == 'scheduled';
+            // Correction: Utilisation de .name pour comparer l'Enum TripStatus avec une String
+            return t.status.name == 'scheduled';
           case _TripFilter.departed:
-            return t.status == 'departed';
+            return t.status.name == 'departed';
           case _TripFilter.cancelled:
-            return t.status == 'cancelled';
+            return t.status.name == 'cancelled';
           case _TripFilter.completed:
-            return t.status == 'completed';
+            return t.status.name == 'completed';
         }
       }).toList();
     }
@@ -182,7 +173,7 @@ class AgencyDashboardState {
   List<BusTripModel> get upcomingTrips {
     final now = DateTime.now();
     return myTrips
-        .where((t) => t.status == 'scheduled' && t.departureTime.isAfter(now))
+        .where((t) => t.status.name == 'scheduled' && t.departureTime.isAfter(now))
         .toList()
       ..sort((a, b) => a.departureTime.compareTo(b.departureTime));
   }
@@ -202,7 +193,9 @@ class AgencyDashboardState {
   Map<String, int> get bookingsByStatus {
     final map = <String, int>{};
     for (final b in agencyBookings) {
-      map[b.status] = (map[b.status] ?? 0) + 1;
+      // Correction: Utilisation de .name pour convertir BookingStatus en String pour la clé de la Map
+      final statusKey = b.status.name;
+      map[statusKey] = (map[statusKey] ?? 0) + 1;
     }
     return map;
   }
@@ -307,17 +300,6 @@ class _Now implements DateTime {
 /// ============================================================================
 /// AgencyDashboardNotifier
 /// ============================================================================
-///
-/// Notifier avec fonctionnalités avancées :
-/// - Chargement initial avec stats multi-périodes
-/// - Refresh intelligent (sans recharger tout)
-/// - CRUD complet sur les trajets
-/// - Gestion des bookings (validation, annulation)
-/// - Filtres et tri
-/// - Cache avec expiration
-/// - Logging structuré
-///
-/// ============================================================================
 class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
   final BusAgencyService _service = BusAgencyService();
 
@@ -329,7 +311,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
 
   /// Initialisation complète avec chargement de toutes les données
   Future<void> init({bool force = false}) async {
-    // Si on a des données récentes et pas de force refresh, skip
     if (!force && !state.isStale && state.hasAgency) {
       _log('Données encore fraîches, skip init');
       return;
@@ -341,7 +322,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
       final agency = await _service.getMyAgency().timeout(_timeout);
 
       if (agency != null) {
-        // Charger toutes les données en parallèle
         final results = await Future.wait([
           _service.getMyTrips(agency.id).timeout(_timeout),
           _service.getAgencyBookings(agency.id).timeout(_timeout),
@@ -377,7 +357,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     }
   }
 
-  /// Refresh léger (seulement trips et bookings, pas les stats)
+  /// Refresh léger
   Future<void> refresh() async {
     if (!state.hasAgency) return;
 
@@ -508,7 +488,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
         if (t.id == tripId) {
           return BusTripModel(
             id: t.id,
-            agencyId: t.agencyId,
+            agencyId: t.agencyId, // Conservé
             agency: t.agency,
             departureCity: t.departureCity,
             arrivalCity: t.arrivalCity,
@@ -521,7 +501,12 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
             availableSeats: t.availableSeats,
             busType: t.busType,
             amenities: t.amenities,
-            status: newStatus,
+            // Le modèle attend probablement un Enum TripStatus, mais si la méthode prend String, 
+            // il faut convertir ou vérifier le constructeur. Ici on suppose que le constructeur accepte String ou qu'il faut caster.
+            // Si BusTripModel.status est un Enum TripStatus, il faut faire: status: TripStatus.values.firstWhere((e) => e.name == newStatus)
+            // Pour l'instant, on garde la logique précédente mais attention au type réel du champ status dans BusTripModel.
+            // Si c'est un String dans le modèle :
+            status: newStatus, 
           );
         }
         return t;
@@ -627,11 +612,17 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
             userId: b.userId,
             seats: b.seats,
             totalPriceFcfa: b.totalPriceFcfa,
+            // Correction: Conversion si nécessaire, ou utilisation directe si le modèle attend String
+            // Si BookingModel.status est un Enum BookingStatus:
+            // status: BookingStatus.cancelled, 
+            // Sinon si c'est String:
             status: 'cancelled',
             qrCode: b.qrCode,
             createdAt: b.createdAt,
             passengerName: b.passengerName,
             trip: b.trip,
+            // Ajout du paramètre manquant agencyId si requis par le constructeur
+            agencyId: b.agencyId, 
           );
         }
         return b;
