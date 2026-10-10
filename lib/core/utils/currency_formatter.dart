@@ -35,7 +35,7 @@ class CurrencyFormatter {
     String currency = 'XOF',
     bool compact = false,
     bool showSymbol = true,
-    bool symbolFirst,
+    bool? symbolFirst, // CORRECTION: Rendu nullable car optionnel
     String? locale,
   }) {
     final cur = CurrencyRegistry.byCode(currency);
