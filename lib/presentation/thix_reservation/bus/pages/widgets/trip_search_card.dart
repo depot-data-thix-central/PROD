@@ -37,27 +37,27 @@ class TripSearchCard extends ConsumerWidget {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(Icons.directions_bus_rounded, size: 14, color: domainColor),
                 SizedBox(width: ThixPolicy.s4),
-                Text(l10n.busSearchLabel, style: ThixPolicy.labelStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.bold)),
+                Text(l10n.t('svc_booking'), style: ThixPolicy.labelStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.bold)),
               ]),
             ),
             const Spacer(),
-            Text(l10n.busSearchQuickBooking, style: ThixPolicy.captionStyle),
+            Text(l10n.t('reservation_book'), style: ThixPolicy.captionStyle),
           ]),
           SizedBox(height: ThixPolicy.s14),
           Row(children: [
-            Expanded(child: _FieldBox(icon: Icons.my_location_rounded, label: l10n.busSearchDeparture, value: state.departureCity ?? l10n.busSearchChoose, domainColor: domainColor, onTap: () => _showCityPicker(context, ref, isDep: true))),
+            Expanded(child: _FieldBox(icon: Icons.my_location_rounded, label: l10n.t('reservation_check_out'), value: state.departureCity ?? l10n.t('market_discover'), domainColor: domainColor, onTap: () => _showCityPicker(context, ref, isDep: true))),
             SizedBox(width: ThixPolicy.s8),
             _SwapButton(domainColor: domainColor, onTap: () { if (state.departureCity != null && state.arrivalCity != null) ref.read(busSearchProvider.notifier).swapCities(); }),
             SizedBox(width: ThixPolicy.s8),
-            Expanded(child: _FieldBox(icon: Icons.location_on_rounded, label: l10n.busSearchArrival, value: state.arrivalCity ?? l10n.busSearchChoose, domainColor: domainColor, onTap: () => _showCityPicker(context, ref, isDep: false))),
+            Expanded(child: _FieldBox(icon: Icons.location_on_rounded, label: l10n.t('reservation_check_in'), value: state.arrivalCity ?? l10n.t('market_discover'), domainColor: domainColor, onTap: () => _showCityPicker(context, ref, isDep: false))),
           ]),
           SizedBox(height: ThixPolicy.s10),
           Row(children: [
-            Expanded(child: _FieldBox(icon: Icons.calendar_today_rounded, label: l10n.busSearchDate, value: DateFormat('dd/MM', Localizations.localeOf(context).toString()).format(state.departureDate), domainColor: domainColor, onTap: () => _pickDate(context, ref))),
+            Expanded(child: _FieldBox(icon: Icons.calendar_today_rounded, label: l10n.t('events_date'), value: DateFormat('dd/MM', Localizations.localeOf(context).toString()).format(state.departureDate), domainColor: domainColor, onTap: () => _pickDate(context, ref))),
             SizedBox(width: ThixPolicy.s8),
-            Expanded(child: _FieldBox(icon: Icons.person_outline_rounded, label: l10n.busSearchPassengers, value: '${state.passengers}', domainColor: domainColor, onTap: () => _showPassengerPicker(context))),
+            Expanded(child: _FieldBox(icon: Icons.person_outline_rounded, label: l10n.t('reservation_guests'), value: '${state.passengers}', domainColor: domainColor, onTap: () => _showPassengerPicker(context))),
             SizedBox(width: ThixPolicy.s10),
-            SizedBox(height: 48, child: ElevatedButton(onPressed: onSearch, style: ElevatedButton.styleFrom(backgroundColor: domainColor, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)), padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s14)), child: Icon(Icons.search_rounded, color: Colors.white, size: 20, semanticLabel: l10n.busSearchButton))),
+            SizedBox(height: 48, child: ElevatedButton(onPressed: onSearch, style: ElevatedButton.styleFrom(backgroundColor: domainColor, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)), padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s14)), child: Icon(Icons.search_rounded, color: Colors.white, size: 20, semanticLabel: l10n.t('common_search')))),
           ]),
         ],
       ),
@@ -103,7 +103,7 @@ class _SwapButtonState extends State<_SwapButton> with SingleTickerProviderState
 
   @override
   Widget build(BuildContext context) {
-    return Semantics(button: true, label: context.l10n.busSearchSwap, child: Material(color: Colors.transparent, child: InkWell(onTap: () { _ctrl.forward(from: 0); widget.onTap(); }, borderRadius: BorderRadius.circular(999), child: RotationTransition(turns: _rotation, child: Container(width: 32, height: 32, decoration: BoxDecoration(color: widget.domainColor.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(Icons.swap_horiz_rounded, color: widget.domainColor, size: 16))))));
+    return Semantics(button: true, label: context.l10n.t('common_refresh'), child: Material(color: Colors.transparent, child: InkWell(onTap: () { _ctrl.forward(from: 0); widget.onTap(); }, borderRadius: BorderRadius.circular(999), child: RotationTransition(turns: _rotation, child: Container(width: 32, height: 32, decoration: BoxDecoration(color: widget.domainColor.withValues(alpha: 0.1), shape: BoxShape.circle), child: Icon(Icons.swap_horiz_rounded, color: widget.domainColor, size: 16))))));
   }
 }
 
