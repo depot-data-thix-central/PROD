@@ -78,7 +78,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
       if (!mounted) return;
       setState(() {
         _isLoadingAgencies = false;
-        _error = context.l10n.agencyOnboardingAuthRequired;
+        _error = context.l10n.t('agencyOnboardingAuthRequired');
       });
       return;
     }
@@ -150,10 +150,10 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
 
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      setState(() => _nameError = l10n.agencyOnboardingNameRequired);
+      setState(() => _nameError = l10n.t('agencyOnboardingNameRequired'));
       valid = false;
     } else if (name.length < 2) {
-      setState(() => _nameError = l10n.agencyOnboardingNameTooShort);
+      setState(() => _nameError = l10n.t('agencyOnboardingNameTooShort'));
       valid = false;
     } else {
       setState(() => _nameError = null);
@@ -161,7 +161,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
 
     final phone = _phoneCtrl.text.trim();
     if (phone.isNotEmpty && phone.length < 8) {
-      setState(() => _phoneError = l10n.agencyOnboardingPhoneInvalid);
+      setState(() => _phoneError = l10n.t('agencyOnboardingPhoneInvalid'));
       valid = false;
     } else {
       setState(() => _phoneError = null);
@@ -177,7 +177,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
     if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.agencyOnboardingAuthRequired),
+          content: Text(context.l10n.t('agencyOnboardingAuthRequired')),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -210,7 +210,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
         context.go('/agency/dashboard');
       } else {
         final err = ref.read(agencyDashboardProvider).error ??
-            context.l10n.agencyOnboardingCreateFailed;
+            context.l10n.t('agencyOnboardingCreateFailed');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Row(
@@ -249,10 +249,10 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
           onPressed: () => context.pop(),
-          tooltip: l10n.commonBack,
+          tooltip: l10n.t('common_back'),
         ),
         title: Text(
-          l10n.agencyOnboardingTitle,
+          l10n.t('agencyOnboardingTitle'),
           style: ThixPolicy.titleStyle.copyWith(
             fontWeight: ThixPolicy.bold,
             fontSize: 16,
@@ -263,7 +263,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textMain),
             onPressed: _isLoadingAgencies ? null : _loadAgencies,
-            tooltip: l10n.commonRetry,
+            tooltip: l10n.t('common_retry'),
           ),
           SizedBox(width: ThixPolicy.s4),
         ],
@@ -396,7 +396,7 @@ class _HeroHeader extends StatelessWidget {
           ),
           SizedBox(height: ThixPolicy.s14),
           Text(
-            l10n.agencyOnboardingHeroTitle,
+            l10n.t('agencyOnboardingHeroTitle'),
             style: ThixPolicy.h2Style.copyWith(
               color: Colors.white,
               fontWeight: ThixPolicy.bold,
@@ -406,7 +406,7 @@ class _HeroHeader extends StatelessWidget {
           ),
           SizedBox(height: ThixPolicy.s6),
           Text(
-            l10n.agencyOnboardingHeroSubtitle,
+            l10n.t('agencyOnboardingHeroSubtitle'),
             style: ThixPolicy.bodySmallStyle.copyWith(
               color: Colors.white.withValues(alpha: 0.9),
             ),
@@ -457,7 +457,7 @@ class _BenefitsSection extends StatelessWidget {
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
-                l10n.agencyOnboardingBenefitsTitle,
+                l10n.t('agencyOnboardingBenefitsTitle'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -468,22 +468,22 @@ class _BenefitsSection extends StatelessWidget {
           SizedBox(height: ThixPolicy.s14),
           _BenefitItem(
             icon: Icons.trending_up_rounded,
-            title: l10n.agencyOnboardingBenefit1Title,
-            description: l10n.agencyOnboardingBenefit1Desc,
+            title: l10n.t('agencyOnboardingBenefit1Title'),
+            description: l10n.t('agencyOnboardingBenefit1Desc'),
             color: domainColor,
           ),
           SizedBox(height: ThixPolicy.s10),
           _BenefitItem(
             icon: Icons.people_outline_rounded,
-            title: l10n.agencyOnboardingBenefit2Title,
-            description: l10n.agencyOnboardingBenefit2Desc,
+            title: l10n.t('agencyOnboardingBenefit2Title'),
+            description: l10n.t('agencyOnboardingBenefit2Desc'),
             color: ThixPolicy.domainJobs,
           ),
           SizedBox(height: ThixPolicy.s10),
           _BenefitItem(
             icon: Icons.analytics_rounded,
-            title: l10n.agencyOnboardingBenefit3Title,
-            description: l10n.agencyOnboardingBenefit3Desc,
+            title: l10n.t('agencyOnboardingBenefit3Title'),
+            description: l10n.t('agencyOnboardingBenefit3Desc'),
             color: ThixPolicy.domainMoney,
           ),
         ],
@@ -590,7 +590,7 @@ class _MyAgenciesSection extends StatelessWidget {
             ),
             SizedBox(width: ThixPolicy.s8),
             Text(
-              l10n.agencyOnboardingMyAgencies,
+              l10n.t('agencyOnboardingMyAgencies'),
               style: ThixPolicy.titleStyle.copyWith(
                 fontWeight: ThixPolicy.bold,
                 fontSize: 15,
@@ -644,7 +644,7 @@ class _MyAgenciesSection extends StatelessWidget {
             child: OutlinedButton.icon(
               onPressed: onOpenDashboard,
               icon: const Icon(Icons.dashboard_customize_rounded, size: 18),
-              label: Text(l10n.agencyOnboardingOpenDashboard),
+              label: Text(l10n.t('agencyOnboardingOpenDashboard')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: domainColor,
                 side: BorderSide(color: domainColor),
@@ -808,25 +808,26 @@ class _AgencyCardState extends State<_AgencyCard>
   }
 
   _StatusInfo _getStatusInfo(_AgencyStatus status) {
+    final l10n = context.l10n;
     switch (status) {
       case _AgencyStatus.active:
         return _StatusInfo(
-          label: context.l10n.agencyStatusActive,
+          label: l10n.t('agencyStatusActive'),
           color: ThixPolicy.success,
         );
       case _AgencyStatus.pending:
         return _StatusInfo(
-          label: context.l10n.agencyStatusPending,
+          label: l10n.t('agencyStatusPending'),
           color: ThixPolicy.warning,
         );
       case _AgencyStatus.rejected:
         return _StatusInfo(
-          label: context.l10n.agencyStatusRejected,
+          label: l10n.t('agencyStatusRejected'),
           color: ThixPolicy.danger,
         );
       case _AgencyStatus.suspended:
         return _StatusInfo(
-          label: context.l10n.agencyStatusSuspended,
+          label: l10n.t('agencyStatusSuspended'),
           color: ThixPolicy.textMuted,
         );
     }
@@ -975,7 +976,7 @@ class _AgenciesError extends StatelessWidget {
           ),
           SizedBox(height: ThixPolicy.s8),
           Text(
-            l10n.commonError,
+            l10n.t('common_error'),
             style: ThixPolicy.bodySmallStyle.copyWith(
               fontWeight: ThixPolicy.bold,
               color: ThixPolicy.danger,
@@ -996,7 +997,7 @@ class _AgenciesError extends StatelessWidget {
           OutlinedButton.icon(
             onPressed: onRetry,
             icon: const Icon(Icons.refresh_rounded, size: 16),
-            label: Text(l10n.commonRetry),
+            label: Text(l10n.t('common_retry')),
             style: OutlinedButton.styleFrom(
               foregroundColor: ThixPolicy.danger,
               side: BorderSide(color: ThixPolicy.danger),
@@ -1053,7 +1054,7 @@ class _AgenciesEmpty extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.agencyOnboardingEmptyTitle,
+                  l10n.t('agencyOnboardingEmptyTitle'),
                   style: ThixPolicy.bodySmallStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
                     color: ThixPolicy.textMain,
@@ -1061,7 +1062,7 @@ class _AgenciesEmpty extends StatelessWidget {
                 ),
                 SizedBox(height: ThixPolicy.s2),
                 Text(
-                  l10n.agencyOnboardingEmptyMessage,
+                  l10n.t('agencyOnboardingEmptyMessage'),
                   style: ThixPolicy.microStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                   ),
@@ -1134,7 +1135,7 @@ class _CreateAgencyForm extends StatelessWidget {
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
-                l10n.agencyOnboardingCreateTitle,
+                l10n.t('agencyOnboardingCreateTitle'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -1156,7 +1157,7 @@ class _CreateAgencyForm extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 // Nom agence
-                _FieldLabel(label: '${l10n.agencyOnboardingFieldName} *'),
+                _FieldLabel(label: '${l10n.t('agencyOnboardingFieldName')} *'),
                 SizedBox(height: ThixPolicy.s6),
                 TextField(
                   controller: nameCtrl,
@@ -1166,7 +1167,7 @@ class _CreateAgencyForm extends StatelessWidget {
                     fontWeight: ThixPolicy.medium,
                   ),
                   decoration: InputDecoration(
-                    hintText: l10n.agencyOnboardingFieldNameHint,
+                    hintText: l10n.t('agencyOnboardingFieldNameHint'),
                     prefixIcon: Icon(Icons.business_rounded, color: domainColor),
                     errorText: nameError,
                     filled: true,
@@ -1188,7 +1189,7 @@ class _CreateAgencyForm extends StatelessWidget {
                 SizedBox(height: ThixPolicy.s14),
 
                 // Pays
-                _FieldLabel(label: l10n.agencyOnboardingFieldCountry),
+                _FieldLabel(label: l10n.t('agencyOnboardingFieldCountry')),
                 SizedBox(height: ThixPolicy.s6),
                 _CountryDropdown(
                   value: countryCode,
@@ -1199,7 +1200,7 @@ class _CreateAgencyForm extends StatelessWidget {
 
                 // Téléphone (optionnel)
                 _FieldLabel(
-                  label: l10n.agencyOnboardingFieldPhone,
+                  label: l10n.t('agencyOnboardingFieldPhone'),
                   optional: true,
                 ),
                 SizedBox(height: ThixPolicy.s6),
@@ -1211,7 +1212,7 @@ class _CreateAgencyForm extends StatelessWidget {
                     fontWeight: ThixPolicy.medium,
                   ),
                   decoration: InputDecoration(
-                    hintText: l10n.agencyOnboardingFieldPhoneHint,
+                    hintText: l10n.t('agencyOnboardingFieldPhoneHint'),
                     prefixIcon: Icon(Icons.phone_rounded, color: domainColor),
                     errorText: phoneError,
                     filled: true,
@@ -1234,7 +1235,7 @@ class _CreateAgencyForm extends StatelessWidget {
 
                 // Description (optionnelle)
                 _FieldLabel(
-                  label: l10n.agencyOnboardingFieldDescription,
+                  label: l10n.t('agencyOnboardingFieldDescription'),
                   optional: true,
                 ),
                 SizedBox(height: ThixPolicy.s6),
@@ -1246,7 +1247,7 @@ class _CreateAgencyForm extends StatelessWidget {
                     fontWeight: ThixPolicy.medium,
                   ),
                   decoration: InputDecoration(
-                    hintText: l10n.agencyOnboardingFieldDescriptionHint,
+                    hintText: l10n.t('agencyOnboardingFieldDescriptionHint'),
                     prefixIcon: Icon(Icons.description_rounded, color: domainColor),
                     filled: true,
                     fillColor: ThixPolicy.surfaceSoft,
@@ -1289,7 +1290,7 @@ class _CreateAgencyForm extends StatelessWidget {
                               ),
                               SizedBox(width: ThixPolicy.s10),
                               Text(
-                                l10n.agencyOnboardingCreating,
+                                l10n.t('agencyOnboardingCreating'),
                                 style: ThixPolicy.titleStyle.copyWith(
                                   color: Colors.white,
                                   fontWeight: ThixPolicy.bold,
@@ -1298,7 +1299,7 @@ class _CreateAgencyForm extends StatelessWidget {
                             ],
                           )
                         : Text(
-                            l10n.agencyOnboardingCreateButton,
+                            l10n.t('agencyOnboardingCreateButton'),
                             style: ThixPolicy.titleStyle.copyWith(
                               color: Colors.white,
                               fontWeight: ThixPolicy.bold,
@@ -1337,7 +1338,7 @@ class _CreateAgencyForm extends StatelessWidget {
                       SizedBox(width: ThixPolicy.s8),
                       Expanded(
                         child: Text(
-                          l10n.agencyOnboardingTestMode,
+                          l10n.t('agencyOnboardingTestMode'),
                           style: ThixPolicy.microStyle.copyWith(
                             color: ThixPolicy.success,
                             fontWeight: ThixPolicy.bold,
@@ -1378,7 +1379,7 @@ class _FieldLabel extends StatelessWidget {
         if (optional) ...[
           SizedBox(width: ThixPolicy.s4),
           Text(
-            '(${l10n.commonOptional})',
+            '(${l10n.t('common_optional')})',
             style: ThixPolicy.microStyle.copyWith(
               color: ThixPolicy.textMuted,
             ),
