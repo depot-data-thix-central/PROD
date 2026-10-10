@@ -5,6 +5,14 @@ import 'package:thix_id/core/extensions/context_ext.dart';
 
 import '../../data/models/seat_model.dart';
 
+/// Helper de traduction tolérant.
+/// Si la clé n'existe pas encore dans le dictionnaire, `l10n.t()` retourne la clé elle-même.
+/// Cette méthode détecte ce cas et retourne le texte de secours pour ne pas casser l'UI.
+String _tr(BuildContext context, String key, String fallback) {
+  final translated = context.l10n.t(key);
+  return translated == key ? fallback : translated;
+}
+
 /// ============================================================================
 /// SeatMapWidget
 /// ============================================================================
@@ -20,15 +28,6 @@ import '../../data/models/seat_model.dart';
 /// - i18n intégrée (FR/EN/LN)
 /// - Responsive (taille adaptée selon la largeur)
 ///
-/// Utilisation :
-/// ```dart
-/// SeatMapWidget(
-///   seats: state.seats,
-///   selected: state.selectedSeats,
-///   onTap: (seat) => notifier.toggleSeat(seat),
-///   domainColor: ThixPolicy.domainReservation,
-/// )
-/// ```
 /// ============================================================================
 class SeatMapWidget extends StatelessWidget {
   final List<SeatModel> seats;
@@ -104,7 +103,7 @@ class SeatMapWidget extends StatelessWidget {
           ),
           SizedBox(height: ThixPolicy.s8),
           Text(
-            context.l10n.seatMapEmpty,
+            _tr(context, 'admin_seat_no_seats', 'Aucun siège disponible'),
             style: ThixPolicy.bodySmallStyle.copyWith(
               color: ThixPolicy.textMuted,
             ),
@@ -223,11 +222,9 @@ class _SeatCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final state = _computeState();
     final isInteractive = state.isInteractive && (canSelect || selected);
-
-    final semanticLabel = _buildSemanticLabel(l10n, state);
+    final semanticLabel = _buildSemanticLabel(context, state);
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s2),
@@ -333,31 +330,24 @@ class _SeatCell extends StatelessWidget {
     );
   }
 
-  String _buildSemanticLabel(dynamic l10n, _SeatVisualState state) {
-    final statusLabel = _statusLabel(l10n, state.stateLabelKey);
-    try {
-      return l10n.seatLabel(seat.seatNumber, statusLabel);
-    } catch (_) {
-      return "Siège ${seat.seatNumber}, $statusLabel";
-    }
+  String _buildSemanticLabel(BuildContext context, _SeatVisualState state) {
+    final statusLabel = _statusLabel(context, state.stateLabelKey);
+    // Construction manuelle et universelle du label pour les lecteurs d'écran
+    return '${seat.seatNumber} - $statusLabel';
   }
 
-  String _statusLabel(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'available':
-          return l10n.seatAvailable;
-        case 'booked':
-          return l10n.seatBooked;
-        case 'selected':
-          return l10n.seatSelected;
-        case 'vip':
-          return l10n.seatVip;
-        default:
-          return '';
-      }
-    } catch (_) {
-      return key;
+  String _statusLabel(BuildContext context, String key) {
+    switch (key) {
+      case 'available':
+        return _tr(context, 'sos_available', 'Disponible');
+      case 'booked':
+        return _tr(context, 'admin_seat_legend_reserved', 'Réservé');
+      case 'selected':
+        return _tr(context, 'seat_status_selected', 'Sélectionné');
+      case 'vip':
+        return _tr(context, 'ticket_vip', 'VIP');
+      default:
+        return '';
     }
   }
 }
