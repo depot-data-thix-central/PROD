@@ -367,8 +367,14 @@ class SeatSelectionNotifier extends Notifier<SeatSelectionState> {
         return true;
       }
 
-      // Si le siège a été pris par quelqu'un d'autre (pas par nous)
-      if (!seat.isAvailable && seat.lockedByCurrentUser != true) {
+      // CORRECTION: lockedByCurrentUser n'existe pas dans SeatModel.
+      // On vérifie si le siège est disponible OU s'il est verrouillé mais pas encore expiré
+      // (ce qui implique qu'il est soit à nous, soit en cours de verrouillage valide).
+      // Si isAvailable est false ET que lockedUntil est passé ou null, alors il est pris par quelqu'un d'autre.
+      final isLockedByUsOrValid = seat.lockedUntil != null && 
+                                  seat.lockedUntil!.isAfter(DateTime.now());
+      
+      if (!seat.isAvailable && !isLockedByUsOrValid) {
         removedSeats.add(num);
         return true;
       }
