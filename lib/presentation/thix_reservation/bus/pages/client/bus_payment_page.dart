@@ -13,25 +13,6 @@ import '../../providers/booking_provider.dart';
 /// ============================================================================
 /// BusPaymentPage
 /// ============================================================================
-///
-/// Page de paiement pour finaliser une réservation de bus.
-///
-/// Features :
-/// - Multi-devises global (currencyProvider) avec conversion auto
-/// - Sélection de moyen de paiement (Mobile Money, Carte, THIX Wallet)
-/// - Formulaire dynamique selon la méthode choisie (téléphone, email, etc.)
-/// - Breakdown prix détaillé (base + VIP + service fee)
-/// - Hero animation depuis la page de sélection
-/// - Skeleton loader pendant le paiement
-/// - Validation du formulaire avant soumission
-/// - Haptic feedback sur les interactions
-/// - Accessibilité complète (Semantics)
-/// - i18n intégrée (FR/EN/LN)
-/// - Design system ThixPolicy
-/// - Gestion d'erreurs enrichie avec retry
-/// - Terms & Conditions obligatoires
-///
-/// ============================================================================
 class BusPaymentPage extends ConsumerStatefulWidget {
   final BusTripModel trip;
   final List<String> seats;
@@ -117,6 +98,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
     try {
       final notifier = ref.read(bookingProvider.notifier);
 
+      // CORRECTION: passengerName n'existe probablement pas, utilisation de fullName
       final booking = await notifier.createBookingAndPay(
         agencyId: widget.trip.agencyId,
         tripId: widget.trip.id,
@@ -126,7 +108,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
         paymentMethod: _selectedMethod.name,
         phoneNumber: _phoneController.text.trim(),
         email: _emailController.text.trim(),
-        passengerName: _nameController.text.trim(),
+        fullName: _nameController.text.trim(), // Correction ici
         mmProvider: _mmProvider.name,
       );
 
@@ -459,10 +441,6 @@ class _TripSummaryCard extends StatelessWidget {
       ),
     );
 
-    if (true /* heroTag != null */) {
-      // Pas de Hero pour éviter les conflits avec la page précédente
-    }
-
     return content;
   }
 
@@ -544,7 +522,8 @@ class _PriceBreakdown extends ConsumerWidget {
     }
 
     return Container(
-      padding: EdgeInsets.all(ThixPolicy.s18),
+      // CORRECTION: s18 n'existe pas, remplacé par s16
+      padding: EdgeInsets.all(ThixPolicy.s16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(ThixPolicy.rLg),
@@ -569,7 +548,7 @@ class _PriceBreakdown extends ConsumerWidget {
           SizedBox(height: ThixPolicy.s14),
 
           _SummaryRow(
-            label: l10n.t('market_total'), // Subtotal mapped to total key
+            label: l10n.t('market_total'),
             value: format(basePrice),
           ),
           if (vipSupplement > 0)
@@ -1112,7 +1091,7 @@ class _MobileMoneyProviders extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          context.l10n.t('market_seller'), // Used for "Provider"
+          context.l10n.t('market_seller'),
           style: ThixPolicy.labelStyle.copyWith(
             color: ThixPolicy.textMain,
             fontWeight: ThixPolicy.semiBold,
