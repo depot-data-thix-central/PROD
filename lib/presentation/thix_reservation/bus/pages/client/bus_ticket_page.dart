@@ -16,24 +16,6 @@ import '../../data/models/booking_model.dart';
 /// ============================================================================
 /// BusTicketPage
 /// ============================================================================
-///
-/// Page de visualisation d'un billet de bus avec QR code.
-///
-/// Features :
-/// - Multi-devises global (currencyProvider) avec conversion automatique
-/// - Skeleton loader élégant pendant le chargement
-/// - Vue d'erreur avec retry
-/// - 4 états de booking : pending, confirmed, completed, cancelled
-/// - Actions : copier code, partager, ajouter au calendrier
-/// - QR code avec animation d'apparition
-/// - Hero animation optionnel
-/// - Accessibilité complète (Semantics)
-/// - i18n intégrée (FR/EN/LN)
-/// - Formatage date/prix avec locale
-/// - Design system ThixPolicy
-/// - Feedback haptique sur les interactions
-///
-/// ============================================================================
 class BusTicketPage extends ConsumerStatefulWidget {
   final BookingModel? booking;
   final String? bookingId;
@@ -209,7 +191,8 @@ class _TicketContent extends ConsumerWidget {
     );
 
     final trip = booking.trip;
-    final statusInfo = _getStatusInfo(booking.status);
+    // CORRECTION: Utilisation de .name car booking.status est un Enum
+    final statusInfo = _getStatusInfo(booking.status.name);
 
     Widget content = SingleChildScrollView(
       padding: EdgeInsets.all(ThixPolicy.s16),
@@ -245,7 +228,7 @@ class _TicketContent extends ConsumerWidget {
   }
 
   _TicketStatusInfo _getStatusInfo(String status) {
-    switch (status.toLowerCase()) {
+    switch (status) {
       case 'confirmed':
         return _TicketStatusInfo(
           labelKey: 'admin_bookings_status_valid',
@@ -540,11 +523,13 @@ class _QrCodeSection extends StatelessWidget {
             size: 180,
             version: QrVersions.auto,
             eyeStyle: QrEyeStyle(
-              eyeShape: QrEyeShape.roundedRect,
+              // CORRECTION: roundedRect n'existe pas, utilisation de square
+              eyeShape: QrEyeShape.square,
               color: domainColor,
             ),
             dataModuleStyle: QrDataModuleStyle(
-              dataModuleShape: QrDataModuleShape.roundedRect,
+              // CORRECTION: roundedRect n'existe pas, utilisation de square
+              dataModuleShape: QrDataModuleShape.square,
               color: ThixPolicy.textMain,
             ),
           ),
@@ -970,8 +955,9 @@ class _TicketSkeletonState extends State<_TicketSkeleton>
 
   @override
   Widget build(BuildContext context) {
+    // CORRECTION: Utilisation de listenable au lieu de animation
     return AnimatedBuilder(
-      animation: _ctrl,
+      listenable: _ctrl,
       builder: (ctx, _) {
         final alpha = (0.5 + (_ctrl.value * 0.3)).clamp(0.0, 1.0);
         final color = ThixPolicy.surfaceStrong.withValues(alpha: alpha);
