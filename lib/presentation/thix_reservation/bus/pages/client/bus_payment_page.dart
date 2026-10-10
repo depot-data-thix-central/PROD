@@ -98,7 +98,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
     try {
       final notifier = ref.read(bookingProvider.notifier);
 
-      // CORRECTION: passengerName n'existe probablement pas, utilisation de fullName
+      // CORRECTION: mmProvider supprimé car il n'existe pas dans createBookingAndPay
       final booking = await notifier.createBookingAndPay(
         agencyId: widget.trip.agencyId,
         tripId: widget.trip.id,
@@ -108,8 +108,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
         paymentMethod: _selectedMethod.name,
         phoneNumber: _phoneController.text.trim(),
         email: _emailController.text.trim(),
-        fullName: _nameController.text.trim(), // Correction ici
-        mmProvider: _mmProvider.name,
+        fullName: _nameController.text.trim(),
       );
 
       if (!mounted) return;
