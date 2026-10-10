@@ -92,10 +92,6 @@ class _PopularRouteCardState extends ConsumerState<PopularRouteCard>
   void _onTapCancel() => _scaleCtrl.reverse();
 
   /// Calcule le prix à afficher en tenant compte de la devise globale.
-  ///
-  /// - Si source == cible : pas de conversion
-  /// - Sinon : utilise les taux du currencyProvider
-  /// - Fallback : devise source si taux indisponible
   ({num amount, String currency}) _computeDisplayPrice() {
     final globalCurrency = ref.watch(currencyProvider).currency;
     final source = widget.sourceCurrency.toUpperCase();
@@ -124,12 +120,9 @@ class _PopularRouteCardState extends ConsumerState<PopularRouteCard>
     );
 
     final title = "${widget.from} → ${widget.to}";
-    final semanticLabel = l10n.popularRouteSemanticLabel(
-      widget.from,
-      widget.to,
-      widget.dateLabel,
-      formattedPrice,
-    );
+    
+    // Construction manuelle du label sémantique car la clé spécifique n'existe pas
+    final semanticLabel = '$title, ${widget.dateLabel}, ${l10n.t('event_from_price')} $formattedPrice';
 
     return Semantics(
       button: true,
@@ -213,7 +206,8 @@ class _PopularRouteCardState extends ConsumerState<PopularRouteCard>
                 _DateChip(dateLabel: widget.dateLabel, accent: accent),
                 SizedBox(height: ThixPolicy.s8),
                 Text(
-                  context.l10n.popularRouteFromPrice(formattedPrice),
+                  // Utilisation de la clé existante 'event_from_price' + prix
+                  '${context.l10n.t('event_from_price')} $formattedPrice',
                   style: ThixPolicy.labelStyle.copyWith(
                     fontSize: 12,
                     fontWeight: ThixPolicy.bold,
@@ -344,7 +338,8 @@ class _PopularBadge extends StatelessWidget {
           Icon(Icons.local_fire_department_rounded, size: 10, color: Colors.white),
           SizedBox(width: ThixPolicy.s2),
           Text(
-            context.l10n.popularRouteBadge,
+            // Utilisation de la clé 'network_filter_popular' qui correspond à "Populaire" / "Popular"
+            context.l10n.t('network_filter_popular'),
             style: ThixPolicy.microStyle.copyWith(
               color: Colors.white,
               fontWeight: ThixPolicy.bold,
