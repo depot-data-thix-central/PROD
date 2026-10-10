@@ -9,26 +9,6 @@ import 'package:thix_id/core/extensions/context_ext.dart';
 /// ============================================================================
 /// AgencySeatsPage
 /// ============================================================================
-///
-/// Page de gestion des sièges côté agence (admin).
-///
-/// Features :
-/// - Plan de bus réaliste (layout 2+2 avec couloir)
-/// - 4 statuts de siège : available, reserved, sold, blocked
-/// - Actions : toggle blocked ↔ available (avec confirmation)
-/// - Actions bulk : bloquer/débloquer plusieurs sièges
-/// - Header avec stats temps réel (total, libres, réservés, vendus, bloqués)
-/// - Légende des statuts claire
-/// - Skeleton loader pendant le chargement
-/// - Vue d'erreur avec retry
-/// - Pull-to-refresh
-/// - Haptic feedback sur toutes les interactions
-/// - i18n complète (FR/EN/LN)
-/// - Accessibilité complète (Semantics)
-/// - Design system ThixPolicy
-/// - Sélection multiple avec mode "bulk"
-///
-/// ============================================================================
 class AgencySeatsPage extends ConsumerStatefulWidget {
   final String tripId;
   final String? tripLabel;
@@ -120,7 +100,6 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
     final isBlocked = seat.status == _SeatStatus.blocked;
     final nextStatus = isBlocked ? _SeatStatus.available : _SeatStatus.blocked;
 
-    // Confirmation si on bloque
     if (!isBlocked) {
       final confirmed = await showDialog<bool>(
         context: context,
@@ -221,7 +200,6 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
 
   Future<void> _bulkUnblock() async {
     if (_bulkSelection.isEmpty) return;
-
     await _bulkUpdate(_SeatStatus.available);
   }
 
@@ -604,7 +582,6 @@ class _StatsHeader extends StatelessWidget {
             ],
           ),
           SizedBox(height: ThixPolicy.s12),
-          // Progress bar occupation
           ClipRRect(
             borderRadius: BorderRadius.circular(ThixPolicy.rXs),
             child: SizedBox(
@@ -806,7 +783,6 @@ class _BusLayout extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
 
-    // Regrouper les sièges par rangées de 4 (2 + couloir + 2)
     final rows = <List<_SeatData>>[];
     for (var i = 0; i < seats.length; i += 4) {
       final end = (i + 4).clamp(0, seats.length);
@@ -828,7 +804,6 @@ class _BusLayout extends StatelessWidget {
             Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                // Windshield
                 Container(
                   height: 12,
                   width: 120,
@@ -841,8 +816,6 @@ class _BusLayout extends StatelessWidget {
                   ),
                 ),
                 SizedBox(height: ThixPolicy.s12),
-
-                // Driver + Door
                 Row(
                   children: [
                     Container(
@@ -883,8 +856,6 @@ class _BusLayout extends StatelessWidget {
                   ],
                 ),
                 SizedBox(height: ThixPolicy.s14),
-
-                // Seats
                 Container(
                   padding: EdgeInsets.all(ThixPolicy.s10),
                   decoration: BoxDecoration(
@@ -949,8 +920,6 @@ class _BusLayout extends StatelessWidget {
                 ),
               ],
             ),
-
-            // Overlay "Updating"
             if (isUpdating)
               Positioned.fill(
                 child: Container(
@@ -1409,8 +1378,9 @@ class _SeatsSkeletonState extends State<_SeatsSkeleton>
 
   @override
   Widget build(BuildContext context) {
+    // CORRECTION: listenable au lieu de animation
     return AnimatedBuilder(
-      animation: _ctrl,
+      listenable: _ctrl,
       builder: (ctx, _) {
         final alpha = (0.5 + (_ctrl.value * 0.3)).clamp(0.0, 1.0);
         final color = ThixPolicy.surfaceStrong.withValues(alpha: alpha);
