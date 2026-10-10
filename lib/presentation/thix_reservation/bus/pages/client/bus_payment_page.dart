@@ -43,7 +43,6 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
   bool _isPaying = false;
   String? _fieldError;
 
-  // Frais de service constants (en CDF) — à externaliser plus tard
   static const int _serviceFeeCDF = 300;
 
   @override
@@ -57,10 +56,32 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
   int get _basePrice => widget.trip.priceFcfa * widget.seats.length;
   int get _totalCDF => _basePrice + widget.vipSupplement + _serviceFeeCDF;
 
+  /// Convertit l'enum local _PaymentMethod vers l'enum PaymentMethod du provider
+  PaymentMethod _mapToProviderPaymentMethod(_PaymentMethod local) {
+    switch (local) {
+      case _PaymentMethod.mobileMoney:
+        switch (_mmProvider) {
+          case _MobileMoneyProvider.orange:
+            return PaymentMethod.mobileMoneyOrange;
+          case _MobileMoneyProvider.mtn:
+            return PaymentMethod.mobileMoneyMtn;
+          case _MobileMoneyProvider.airtel:
+            return PaymentMethod.mobileMoneyAirtel;
+          case _MobileMoneyProvider.wave:
+            return PaymentMethod.mobileMoneyWave;
+          case _MobileMoneyProvider.mpesa:
+            return PaymentMethod.mobileMoneyMpesa;
+        }
+      case _PaymentMethod.card:
+        return PaymentMethod.card;
+      case _PaymentMethod.wallet:
+        return PaymentMethod.thixWallet;
+    }
+  }
+
   Future<void> _handlePayment() async {
     final l10n = context.l10n;
 
-    // Validation du formulaire
     final validationError = _validateForm();
     if (validationError != null) {
       setState(() => _fieldError = validationError);
@@ -98,14 +119,13 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
     try {
       final notifier = ref.read(bookingProvider.notifier);
 
-      // CORRECTION: mmProvider supprimé car il n'existe pas dans createBookingAndPay
       final booking = await notifier.createBookingAndPay(
         agencyId: widget.trip.agencyId,
         tripId: widget.trip.id,
         seats: widget.seats,
         basePrice: widget.trip.priceFcfa,
         vipSupplement: widget.vipSupplement,
-        paymentMethod: _selectedMethod.name,
+        paymentMethod: _mapToProviderPaymentMethod(_selectedMethod),
         phoneNumber: _phoneController.text.trim(),
         email: _emailController.text.trim(),
         fullName: _nameController.text.trim(),
@@ -113,7 +133,6 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
 
       if (!mounted) return;
 
-      // Succès : feedback haptique + navigation
       await HapticFeedback.heavyImpact();
       context.go(
         '/thix-reservation/bus/ticket/${booking.id}',
@@ -219,11 +238,8 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // Hero : mini récap du trajet
             _TripSummaryCard(trip: widget.trip, domainColor: domainColor),
             SizedBox(height: ThixPolicy.s16),
-
-            // Breakdown prix
             _PriceBreakdown(
               basePrice: _basePrice,
               vipSupplement: widget.vipSupplement,
@@ -234,8 +250,6 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
               domainColor: domainColor,
             ),
             SizedBox(height: ThixPolicy.s16),
-
-            // Moyens de paiement
             _PaymentMethodsSection(
               selected: _selectedMethod,
               onChanged: (m) {
@@ -248,8 +262,6 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
               domainColor: domainColor,
             ),
             SizedBox(height: ThixPolicy.s16),
-
-            // Formulaire dynamique
             _PaymentForm(
               method: _selectedMethod,
               mmProvider: _mmProvider,
@@ -264,8 +276,6 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
               domainColor: domainColor,
             ),
             SizedBox(height: ThixPolicy.s16),
-
-            // Terms & Conditions
             _TermsCheckbox(
               accepted: _termsAccepted,
               onChanged: (v) {
@@ -316,7 +326,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
 }
 
 /// ============================================================================
-/// _PaymentMethod — Enum des moyens de paiement
+/// _PaymentMethod — Enum local des moyens de paiement
 /// ============================================================================
 enum _PaymentMethod {
   mobileMoney('mobile_money', 'payment_mobile_money', Icons.phone_android_rounded),
@@ -345,7 +355,7 @@ enum _MobileMoneyProvider {
 }
 
 /// ============================================================================
-/// _TripSummaryCard — Mini récap du trajet avec Hero
+/// _TripSummaryCard
 /// ============================================================================
 class _TripSummaryCard extends StatelessWidget {
   final BusTripModel trip;
@@ -355,16 +365,13 @@ class _TripSummaryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Widget content = Container(
+    return Container(
       padding: EdgeInsets.all(ThixPolicy.s16),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            domainColor,
-            domainColor.withValues(alpha: 0.85),
-          ],
+          colors: [domainColor, domainColor.withValues(alpha: 0.85)],
         ),
         borderRadius: BorderRadius.circular(ThixPolicy.rLg),
         boxShadow: [
@@ -386,11 +393,7 @@ class _TripSummaryCard extends StatelessWidget {
                   color: Colors.white.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                 ),
-                child: const Icon(
-                  Icons.directions_bus_rounded,
-                  size: 16,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.directions_bus_rounded, size: 16, color: Colors.white),
               ),
               SizedBox(width: ThixPolicy.s8),
               Expanded(
@@ -421,11 +424,7 @@ class _TripSummaryCard extends StatelessWidget {
               ),
               Padding(
                 padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s12),
-                child: Icon(
-                  Icons.arrow_forward_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                child: Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
               ),
               Expanded(
                 child: _CityTime(
@@ -439,8 +438,6 @@ class _TripSummaryCard extends StatelessWidget {
         ],
       ),
     );
-
-    return content;
   }
 
   String _formatTime(DateTime d) {
@@ -453,17 +450,12 @@ class _CityTime extends StatelessWidget {
   final String time;
   final bool alignEnd;
 
-  const _CityTime({
-    required this.city,
-    required this.time,
-    required this.alignEnd,
-  });
+  const _CityTime({required this.city, required this.time, required this.alignEnd});
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment:
-          alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment: alignEnd ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         Text(
           time,
@@ -489,7 +481,7 @@ class _CityTime extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _PriceBreakdown — Détail des prix
+/// _PriceBreakdown
 /// ============================================================================
 class _PriceBreakdown extends ConsumerWidget {
   final int basePrice;
@@ -521,7 +513,6 @@ class _PriceBreakdown extends ConsumerWidget {
     }
 
     return Container(
-      // CORRECTION: s18 n'existe pas, remplacé par s16
       padding: EdgeInsets.all(ThixPolicy.s16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -545,11 +536,7 @@ class _PriceBreakdown extends ConsumerWidget {
           SizedBox(height: ThixPolicy.s14),
           Divider(height: 1, color: ThixPolicy.border),
           SizedBox(height: ThixPolicy.s14),
-
-          _SummaryRow(
-            label: l10n.t('market_total'),
-            value: format(basePrice),
-          ),
+          _SummaryRow(label: l10n.t('market_total'), value: format(basePrice)),
           if (vipSupplement > 0)
             Padding(
               padding: EdgeInsets.only(top: ThixPolicy.s8),
@@ -562,16 +549,10 @@ class _PriceBreakdown extends ConsumerWidget {
               ),
             ),
           SizedBox(height: ThixPolicy.s8),
-          _SummaryRow(
-            label: l10n.t('money_fee'),
-            value: format(serviceFee),
-            infoIcon: true,
-          ),
-
+          _SummaryRow(label: l10n.t('money_fee'), value: format(serviceFee), infoIcon: true),
           SizedBox(height: ThixPolicy.s14),
           Divider(height: 1, color: ThixPolicy.border),
           SizedBox(height: ThixPolicy.s14),
-
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
@@ -641,11 +622,7 @@ class _SummaryRow extends StatelessWidget {
                 SizedBox(width: ThixPolicy.s4),
                 Tooltip(
                   message: context.l10n.t('reservation_security_info'),
-                  child: Icon(
-                    Icons.info_outline_rounded,
-                    size: 12,
-                    color: ThixPolicy.textMuted,
-                  ),
+                  child: Icon(Icons.info_outline_rounded, size: 12, color: ThixPolicy.textMuted),
                 ),
               ],
             ],
@@ -654,9 +631,7 @@ class _SummaryRow extends StatelessWidget {
         Text(
           value,
           style: ThixPolicy.bodySmallStyle.copyWith(
-            color: isVip
-                ? ThixPolicy.warning
-                : (isMuted ? ThixPolicy.textMain : ThixPolicy.textMain),
+            color: isVip ? ThixPolicy.warning : ThixPolicy.textMain,
             fontWeight: ThixPolicy.bold,
           ),
         ),
@@ -666,7 +641,7 @@ class _SummaryRow extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _PaymentMethodsSection — Sélection du moyen de paiement
+/// _PaymentMethodsSection
 /// ============================================================================
 class _PaymentMethodsSection extends StatelessWidget {
   final _PaymentMethod selected;
@@ -702,11 +677,7 @@ class _PaymentMethodsSection extends StatelessWidget {
                   color: domainColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                 ),
-                child: Icon(
-                  Icons.payment_rounded,
-                  size: 14,
-                  color: domainColor,
-                ),
+                child: Icon(Icons.payment_rounded, size: 14, color: domainColor),
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
@@ -768,9 +739,7 @@ class _PaymentMethodTile extends StatelessWidget {
             margin: EdgeInsets.only(bottom: ThixPolicy.s8),
             padding: EdgeInsets.all(ThixPolicy.s14),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? domainColor.withValues(alpha: 0.06)
-                  : Colors.white,
+              color: isSelected ? domainColor.withValues(alpha: 0.06) : Colors.white,
               borderRadius: BorderRadius.circular(ThixPolicy.rMd),
               border: Border.all(
                 color: isSelected ? domainColor : ThixPolicy.border,
@@ -783,51 +752,26 @@ class _PaymentMethodTile extends StatelessWidget {
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: isSelected
-                        ? domainColor.withValues(alpha: 0.15)
-                        : ThixPolicy.surfaceSoft,
+                    color: isSelected ? domainColor.withValues(alpha: 0.15) : ThixPolicy.surfaceSoft,
                     borderRadius: BorderRadius.circular(ThixPolicy.rSm),
                   ),
-                  child: Icon(
-                    method.icon,
-                    size: 20,
-                    color: isSelected ? domainColor : ThixPolicy.textSecondary,
-                  ),
+                  child: Icon(method.icon, size: 20, color: isSelected ? domainColor : ThixPolicy.textSecondary),
                 ),
                 SizedBox(width: ThixPolicy.s12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        label,
-                        style: ThixPolicy.bodyStyle.copyWith(
-                          fontWeight: ThixPolicy.bold,
-                          color: ThixPolicy.textMain,
-                        ),
-                      ),
+                      Text(label, style: ThixPolicy.bodyStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
                       SizedBox(height: ThixPolicy.s2),
-                      Text(
-                        description,
-                        style: ThixPolicy.microStyle.copyWith(
-                          color: ThixPolicy.textSecondary,
-                        ),
-                      ),
+                      Text(description, style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary)),
                     ],
                   ),
                 ),
                 if (isSelected)
-                  Icon(
-                    Icons.check_circle_rounded,
-                    color: domainColor,
-                    size: 22,
-                  )
+                  Icon(Icons.check_circle_rounded, color: domainColor, size: 22)
                 else
-                  Icon(
-                    Icons.radio_button_off_rounded,
-                    color: ThixPolicy.textMuted,
-                    size: 22,
-                  ),
+                  Icon(Icons.radio_button_off_rounded, color: ThixPolicy.textMuted, size: 22),
               ],
             ),
           ),
@@ -853,7 +797,7 @@ class _PaymentMethodTile extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _PaymentForm — Formulaire dynamique selon la méthode
+/// _PaymentForm
 /// ============================================================================
 class _PaymentForm extends StatelessWidget {
   final _PaymentMethod method;
@@ -899,26 +843,16 @@ class _PaymentForm extends StatelessWidget {
                   color: domainColor.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                 ),
-                child: Icon(
-                  Icons.person_outline_rounded,
-                  size: 14,
-                  color: domainColor,
-                ),
+                child: Icon(Icons.person_outline_rounded, size: 14, color: domainColor),
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
                 l10n.t('reservation_your_info'),
-                style: ThixPolicy.titleStyle.copyWith(
-                  fontWeight: ThixPolicy.bold,
-                  fontSize: 15,
-                  color: ThixPolicy.textMain,
-                ),
+                style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15, color: ThixPolicy.textMain),
               ),
             ],
           ),
           SizedBox(height: ThixPolicy.s16),
-
-          // Nom du passager (commun)
           _InputField(
             controller: nameController,
             label: l10n.t('reservation_full_name'),
@@ -927,14 +861,9 @@ class _PaymentForm extends StatelessWidget {
             domainColor: domainColor,
             textCapitalization: TextCapitalization.words,
           ),
-
-          // Mobile Money : providers + téléphone
           if (method == _PaymentMethod.mobileMoney) ...[
             SizedBox(height: ThixPolicy.s14),
-            _MobileMoneyProviders(
-              selected: mmProvider,
-              onChanged: onMmProviderChanged,
-            ),
+            _MobileMoneyProviders(selected: mmProvider, onChanged: onMmProviderChanged),
             SizedBox(height: ThixPolicy.s14),
             _InputField(
               controller: phoneController,
@@ -946,8 +875,6 @@ class _PaymentForm extends StatelessWidget {
               errorText: fieldError,
             ),
           ],
-
-          // Carte : email
           if (method == _PaymentMethod.card) ...[
             SizedBox(height: ThixPolicy.s14),
             _InputField(
@@ -960,8 +887,6 @@ class _PaymentForm extends StatelessWidget {
               errorText: fieldError,
             ),
           ],
-
-          // Wallet : pas de champ additionnel
           if (method == _PaymentMethod.wallet) ...[
             SizedBox(height: ThixPolicy.s14),
             Container(
@@ -969,25 +894,16 @@ class _PaymentForm extends StatelessWidget {
               decoration: BoxDecoration(
                 color: ThixPolicy.success.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-                border: Border.all(
-                  color: ThixPolicy.success.withValues(alpha: 0.2),
-                ),
+                border: Border.all(color: ThixPolicy.success.withValues(alpha: 0.2)),
               ),
               child: Row(
                 children: [
-                  Icon(
-                    Icons.check_circle_outline_rounded,
-                    size: 18,
-                    color: ThixPolicy.success,
-                  ),
+                  Icon(Icons.check_circle_outline_rounded, size: 18, color: ThixPolicy.success),
                   SizedBox(width: ThixPolicy.s8),
                   Expanded(
                     child: Text(
                       l10n.t('payment_success'),
-                      style: ThixPolicy.bodySmallStyle.copyWith(
-                        color: ThixPolicy.success,
-                        fontWeight: ThixPolicy.semiBold,
-                      ),
+                      style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.success, fontWeight: ThixPolicy.semiBold),
                     ),
                   ),
                 ],
@@ -1026,48 +942,24 @@ class _InputField extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: ThixPolicy.labelStyle.copyWith(
-            color: ThixPolicy.textMain,
-            fontWeight: ThixPolicy.semiBold,
-            fontSize: 12,
-          ),
-        ),
+        Text(label, style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold, fontSize: 12)),
         SizedBox(height: ThixPolicy.s6),
         TextField(
           controller: controller,
           keyboardType: keyboardType,
           textCapitalization: textCapitalization,
-          style: ThixPolicy.bodyStyle.copyWith(
-            color: ThixPolicy.textMain,
-            fontWeight: ThixPolicy.medium,
-          ),
+          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.medium),
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: ThixPolicy.bodyStyle.copyWith(
-              color: ThixPolicy.textMuted,
-            ),
+            hintStyle: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textMuted),
             prefixIcon: Icon(icon, color: domainColor, size: 18),
             filled: true,
             fillColor: ThixPolicy.surfaceSoft,
             errorText: errorText,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              borderSide: BorderSide(color: ThixPolicy.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              borderSide: BorderSide(color: domainColor, width: 1.5),
-            ),
-            contentPadding: EdgeInsets.symmetric(
-              horizontal: ThixPolicy.s16,
-              vertical: ThixPolicy.s14,
-            ),
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: ThixPolicy.border)),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide(color: domainColor, width: 1.5)),
+            contentPadding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16, vertical: ThixPolicy.s14),
           ),
         ),
       ],
@@ -1079,10 +971,7 @@ class _MobileMoneyProviders extends StatelessWidget {
   final _MobileMoneyProvider selected;
   final ValueChanged<_MobileMoneyProvider> onChanged;
 
-  const _MobileMoneyProviders({
-    required this.selected,
-    required this.onChanged,
-  });
+  const _MobileMoneyProviders({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -1091,11 +980,7 @@ class _MobileMoneyProviders extends StatelessWidget {
       children: [
         Text(
           context.l10n.t('market_seller'),
-          style: ThixPolicy.labelStyle.copyWith(
-            color: ThixPolicy.textMain,
-            fontWeight: ThixPolicy.semiBold,
-            fontSize: 12,
-          ),
+          style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold, fontSize: 12),
         ),
         SizedBox(height: ThixPolicy.s8),
         SizedBox(
@@ -1107,12 +992,7 @@ class _MobileMoneyProviders extends StatelessWidget {
             separatorBuilder: (_, __) => SizedBox(width: ThixPolicy.s8),
             itemBuilder: (_, i) {
               final p = _MobileMoneyProvider.values[i];
-              final isSelected = p == selected;
-              return _ProviderChip(
-                provider: p,
-                isSelected: isSelected,
-                onTap: () => onChanged(p),
-              );
+              return _ProviderChip(provider: p, isSelected: p == selected, onTap: () => onChanged(p));
             },
           ),
         ),
@@ -1126,11 +1006,7 @@ class _ProviderChip extends StatelessWidget {
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _ProviderChip({
-    required this.provider,
-    required this.isSelected,
-    required this.onTap,
-  });
+  const _ProviderChip({required this.provider, required this.isSelected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -1146,19 +1022,11 @@ class _ProviderChip extends StatelessWidget {
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
             curve: Curves.easeOutCubic,
-            padding: EdgeInsets.symmetric(
-              horizontal: ThixPolicy.s14,
-              vertical: ThixPolicy.s10,
-            ),
+            padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s14, vertical: ThixPolicy.s10),
             decoration: BoxDecoration(
-              color: isSelected
-                  ? provider.color.withValues(alpha: 0.12)
-                  : ThixPolicy.surfaceSoft,
+              color: isSelected ? provider.color.withValues(alpha: 0.12) : ThixPolicy.surfaceSoft,
               borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              border: Border.all(
-                color: isSelected ? provider.color : ThixPolicy.border,
-                width: isSelected ? 1.5 : 1,
-              ),
+              border: Border.all(color: isSelected ? provider.color : ThixPolicy.border, width: isSelected ? 1.5 : 1),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -1166,18 +1034,9 @@ class _ProviderChip extends StatelessWidget {
                 Container(
                   width: 28,
                   height: 28,
-                  decoration: BoxDecoration(
-                    color: provider.color,
-                    borderRadius: BorderRadius.circular(ThixPolicy.rXs),
-                  ),
+                  decoration: BoxDecoration(color: provider.color, borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
                   child: Center(
-                    child: Text(
-                      provider.label[0],
-                      style: ThixPolicy.labelStyle.copyWith(
-                        color: Colors.white,
-                        fontWeight: ThixPolicy.bold,
-                      ),
-                    ),
+                    child: Text(provider.label[0], style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
                   ),
                 ),
                 SizedBox(width: ThixPolicy.s8),
@@ -1198,18 +1057,14 @@ class _ProviderChip extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _TermsCheckbox — Checkbox conditions d'utilisation
+/// _TermsCheckbox
 /// ============================================================================
 class _TermsCheckbox extends StatelessWidget {
   final bool accepted;
   final ValueChanged<bool> onChanged;
   final Color domainColor;
 
-  const _TermsCheckbox({
-    required this.accepted,
-    required this.onChanged,
-    required this.domainColor,
-  });
+  const _TermsCheckbox({required this.accepted, required this.onChanged, required this.domainColor});
 
   @override
   Widget build(BuildContext context) {
@@ -1223,10 +1078,7 @@ class _TermsCheckbox extends StatelessWidget {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(
-            color: accepted ? domainColor : ThixPolicy.border,
-            width: accepted ? 1.5 : 1,
-          ),
+          border: Border.all(color: accepted ? domainColor : ThixPolicy.border, width: accepted ? 1.5 : 1),
         ),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -1238,35 +1090,19 @@ class _TermsCheckbox extends StatelessWidget {
               decoration: BoxDecoration(
                 color: accepted ? domainColor : Colors.white,
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(
-                  color: accepted ? domainColor : ThixPolicy.borderStrong,
-                  width: 1.5,
-                ),
+                border: Border.all(color: accepted ? domainColor : ThixPolicy.borderStrong, width: 1.5),
               ),
-              child: accepted
-                  ? const Icon(
-                      Icons.check_rounded,
-                      size: 16,
-                      color: Colors.white,
-                    )
-                  : null,
+              child: accepted ? const Icon(Icons.check_rounded, size: 16, color: Colors.white) : null,
             ),
             SizedBox(width: ThixPolicy.s10),
             Expanded(
               child: Text.rich(
                 TextSpan(
-                  style: ThixPolicy.bodySmallStyle.copyWith(
-                    color: ThixPolicy.textSecondary,
-                    height: 1.4,
-                  ),
+                  style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4),
                   children: [
                     TextSpan(
                       text: l10n.t('auth_accept_terms'),
-                      style: TextStyle(
-                        color: domainColor,
-                        fontWeight: ThixPolicy.bold,
-                        decoration: TextDecoration.underline,
-                      ),
+                      style: TextStyle(color: domainColor, fontWeight: ThixPolicy.bold, decoration: TextDecoration.underline),
                     ),
                   ],
                 ),
@@ -1280,7 +1116,7 @@ class _TermsCheckbox extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _PaymentBottomBar — Barre de paiement en bas
+/// _PaymentBottomBar
 /// ============================================================================
 class _PaymentBottomBar extends StatelessWidget {
   final String total;
@@ -1304,22 +1140,11 @@ class _PaymentBottomBar extends StatelessWidget {
     final l10n = context.l10n;
 
     return Container(
-      padding: EdgeInsets.fromLTRB(
-        ThixPolicy.s16,
-        ThixPolicy.s12,
-        ThixPolicy.s16,
-        ThixPolicy.s16,
-      ),
+      padding: EdgeInsets.fromLTRB(ThixPolicy.s16, ThixPolicy.s12, ThixPolicy.s16, ThixPolicy.s16),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: ThixPolicy.border)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, -4),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 12, offset: const Offset(0, -4))],
       ),
       child: SafeArea(
         top: false,
@@ -1331,46 +1156,23 @@ class _PaymentBottomBar extends StatelessWidget {
               height: 52,
               child: ElevatedButton.icon(
                 onPressed: isEnabled ? onPay : null,
-                icon: isPaying
-                    ? const SizedBox.shrink()
-                    : Icon(Icons.lock_rounded, size: 18, color: Colors.white),
+                icon: isPaying ? const SizedBox.shrink() : Icon(Icons.lock_rounded, size: 18, color: Colors.white),
                 label: isPaying
                     ? Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              color: Colors.white,
-                              strokeWidth: 2,
-                            ),
-                          ),
+                          SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2)),
                           SizedBox(width: ThixPolicy.s10),
-                          Text(
-                            l10n.t('payment_processing'),
-                            style: ThixPolicy.titleStyle.copyWith(
-                              color: Colors.white,
-                              fontWeight: ThixPolicy.bold,
-                            ),
-                          ),
+                          Text(l10n.t('payment_processing'), style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
                         ],
                       )
-                    : Text(
-                        '${l10n.t('payment_confirm')} $total',
-                        style: ThixPolicy.titleStyle.copyWith(
-                          color: Colors.white,
-                          fontWeight: ThixPolicy.bold,
-                        ),
-                      ),
+                    : Text('${l10n.t('payment_confirm')} $total', style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: domainColor,
                   disabledBackgroundColor: ThixPolicy.textMuted,
                   disabledForegroundColor: Colors.white70,
                   elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                  ),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
                 ),
               ),
             ),
@@ -1378,19 +1180,12 @@ class _PaymentBottomBar extends StatelessWidget {
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(
-                  Icons.verified_user_rounded,
-                  size: 12,
-                  color: ThixPolicy.textMuted,
-                ),
+                Icon(Icons.verified_user_rounded, size: 12, color: ThixPolicy.textMuted),
                 SizedBox(width: ThixPolicy.s4),
                 Flexible(
                   child: Text(
                     l10n.t('reservation_security_info'),
-                    style: ThixPolicy.microStyle.copyWith(
-                      color: ThixPolicy.textMuted,
-                      fontWeight: ThixPolicy.medium,
-                    ),
+                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted, fontWeight: ThixPolicy.medium),
                     textAlign: TextAlign.center,
                   ),
                 ),
