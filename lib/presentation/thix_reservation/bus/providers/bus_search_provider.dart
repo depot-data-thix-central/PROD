@@ -292,9 +292,9 @@ class BusSearchState {
         .toSet();
   }
 
-  // Types de bus disponibles
+  // Types de bus disponibles (Correction: Utilisation de .name pour convertir l'Enum en String)
   Set<String> get availableBusTypes {
-    return allResults.map((t) => t.busType).toSet();
+    return allResults.map((t) => t.busType.name).toSet();
   }
 
   // Équipements disponibles
@@ -347,6 +347,7 @@ class BusSearchNotifier extends Notifier<BusSearchState> {
 
   @override
   BusSearchState build() {
+    // Correction: departureDate est required, on ne peut pas mettre null
     final initial = BusSearchState(
       departureDate: DateTime.now().add(const Duration(days: 1)),
     );
@@ -383,7 +384,7 @@ class BusSearchNotifier extends Notifier<BusSearchState> {
     }
   }
 
-  // ─── Setters ──────────────────────────────────────────────
+  // ── Setters ──────────────────────────────────────────────
   void setDeparture(String city) {
     if (city == state.arrivalCity) {
       // Swap automatique si même ville
@@ -543,7 +544,7 @@ class BusSearchNotifier extends Notifier<BusSearchState> {
     }
   }
 
-  // ─── Application filtres + tri ────────────────────────────
+  // ─── Application filtres + tri ───────────────────────────
   void _applyFiltersAndSort() {
     var list = state.allResults.where((t) {
       // Prix
@@ -556,9 +557,9 @@ class BusSearchNotifier extends Notifier<BusSearchState> {
         return false;
       }
 
-      // Types de bus
+      // Types de bus (Correction: Utilisation de .name.toLowerCase() pour comparer avec Set<String>)
       if (state.selectedBusTypes.isNotEmpty &&
-          !state.selectedBusTypes.contains(t.busType.toLowerCase())) {
+          !state.selectedBusTypes.contains(t.busType.name.toLowerCase())) {
         return false;
       }
 
@@ -665,9 +666,8 @@ class BusSearchNotifier extends Notifier<BusSearchState> {
   }
 
   void clearSearch() {
-    state = const BusSearchState(
-      departureDate: null,
-    ).copyWith(
+    // Correction: Initialisation correcte avec une date valide
+    state = BusSearchState(
       departureDate: DateTime.now().add(const Duration(days: 1)),
       cities: state.cities,
       recentSearches: state.recentSearches,
