@@ -99,7 +99,7 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
     if (!_termsAccepted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(l10n.paymentTermsRequired),
+          content: Text(l10n.t('auth_terms_required')),
           backgroundColor: ThixPolicy.warning,
           behavior: SnackBarBehavior.floating,
         ),
@@ -169,19 +169,19 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
 
     if (_selectedMethod == _PaymentMethod.mobileMoney) {
       final phone = _phoneController.text.trim();
-      if (phone.isEmpty) return l10n.paymentPhoneRequired;
-      if (phone.length < 8) return l10n.paymentPhoneInvalid;
+      if (phone.isEmpty) return l10n.t('auth_error_identifier_required');
+      if (phone.length < 8) return l10n.t('auth_invalid_phone');
     }
 
     if (_selectedMethod == _PaymentMethod.card) {
       final email = _emailController.text.trim();
-      if (email.isEmpty) return l10n.paymentEmailRequired;
-      if (!email.contains('@')) return l10n.paymentEmailInvalid;
+      if (email.isEmpty) return l10n.t('auth_error_identifier_required');
+      if (!email.contains('@')) return l10n.t('auth_invalid_email');
     }
 
     final name = _nameController.text.trim();
-    if (name.isEmpty) return l10n.paymentNameRequired;
-    if (name.length < 2) return l10n.paymentNameInvalid;
+    if (name.isEmpty) return l10n.t('editors_name_required');
+    if (name.length < 2) return l10n.t('error_validation');
 
     return null;
   }
@@ -191,18 +191,18 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
     final lower = error.toLowerCase();
 
     if (lower.contains('network') || lower.contains('timeout')) {
-      return l10n.paymentErrorNetwork;
+      return l10n.t('error_network');
     }
     if (lower.contains('insufficient') || lower.contains('balance')) {
-      return l10n.paymentErrorInsufficient;
+      return l10n.t('money_insufficient_funds');
     }
     if (lower.contains('cancelled') || lower.contains('canceled')) {
-      return l10n.paymentErrorCancelled;
+      return l10n.t('error_generic');
     }
     if (lower.contains('expired')) {
-      return l10n.paymentErrorExpired;
+      return l10n.t('error_timeout');
     }
-    return l10n.paymentErrorGeneric;
+    return l10n.t('error_generic');
   }
 
   @override
@@ -221,10 +221,10 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
           onPressed: _isPaying ? null : () => context.pop(),
-          tooltip: l10n.commonBack,
+          tooltip: l10n.t('common_back'),
         ),
         title: Text(
-          l10n.paymentTitle,
+          l10n.t('payment_title'),
           style: ThixPolicy.titleStyle.copyWith(
             fontSize: 16,
             fontWeight: ThixPolicy.bold,
@@ -338,9 +338,9 @@ class _BusPaymentPageState extends ConsumerState<BusPaymentPage> {
 /// _PaymentMethod — Enum des moyens de paiement
 /// ============================================================================
 enum _PaymentMethod {
-  mobileMoney('mobile_money', 'paymentMethodMobileMoney', Icons.phone_android_rounded),
-  card('card', 'paymentMethodCard', Icons.credit_card_rounded),
-  wallet('wallet', 'paymentMethodWallet', Icons.account_balance_wallet_rounded);
+  mobileMoney('mobile_money', 'payment_mobile_money', Icons.phone_android_rounded),
+  card('card', 'payment_card', Icons.credit_card_rounded),
+  wallet('wallet', 'svc_money', Icons.account_balance_wallet_rounded);
 
   final String name;
   final String labelKey;
@@ -554,13 +554,13 @@ class _PriceBreakdown extends ConsumerWidget {
       child: Column(
         children: [
           _SummaryRow(
-            label: l10n.paymentRoute,
-            value: '${seats.length} × ${l10n.paymentSeat}',
+            label: l10n.t('reservation_transport'),
+            value: '${seats.length} × ${l10n.t('admin_action_seats')}',
             isMuted: true,
           ),
           SizedBox(height: ThixPolicy.s8),
           _SummaryRow(
-            label: l10n.paymentSeats,
+            label: l10n.t('admin_seat_rows'),
             value: seats.join(', '),
             isMuted: true,
           ),
@@ -569,14 +569,14 @@ class _PriceBreakdown extends ConsumerWidget {
           SizedBox(height: ThixPolicy.s14),
 
           _SummaryRow(
-            label: l10n.paymentSubtotal,
+            label: l10n.t('market_total'), // Subtotal mapped to total key
             value: format(basePrice),
           ),
           if (vipSupplement > 0)
             Padding(
               padding: EdgeInsets.only(top: ThixPolicy.s8),
               child: _SummaryRow(
-                label: l10n.paymentVipSupplement,
+                label: l10n.t('ticket_vip'),
                 value: '+ ${format(vipSupplement)}',
                 icon: Icons.star_rounded,
                 iconColor: ThixPolicy.warning,
@@ -585,7 +585,7 @@ class _PriceBreakdown extends ConsumerWidget {
             ),
           SizedBox(height: ThixPolicy.s8),
           _SummaryRow(
-            label: l10n.paymentServiceFee,
+            label: l10n.t('money_fee'),
             value: format(serviceFee),
             infoIcon: true,
           ),
@@ -598,7 +598,7 @@ class _PriceBreakdown extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                l10n.paymentTotal,
+                l10n.t('reservation_total'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -662,7 +662,7 @@ class _SummaryRow extends StatelessWidget {
               if (infoIcon) ...[
                 SizedBox(width: ThixPolicy.s4),
                 Tooltip(
-                  message: 'Frais de service THIX pour la sécurisation de la réservation',
+                  message: context.l10n.t('reservation_security_info'),
                   child: Icon(
                     Icons.info_outline_rounded,
                     size: 12,
@@ -732,7 +732,7 @@ class _PaymentMethodsSection extends StatelessWidget {
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
-                l10n.paymentMethodTitle,
+                l10n.t('payment_method'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -772,7 +772,7 @@ class _PaymentMethodTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final label = _translateLabel(l10n, method.labelKey);
+    final label = l10n.t(method.labelKey);
     final description = _translateDescription(l10n, method);
 
     return Semantics(
@@ -858,32 +858,15 @@ class _PaymentMethodTile extends StatelessWidget {
     );
   }
 
-  String _translateLabel(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'paymentMethodMobileMoney':
-          return l10n.paymentMethodMobileMoney;
-        case 'paymentMethodCard':
-          return l10n.paymentMethodCard;
-        case 'paymentMethodWallet':
-          return l10n.paymentMethodWallet;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
-  }
-
   String _translateDescription(dynamic l10n, _PaymentMethod method) {
     try {
       switch (method) {
         case _PaymentMethod.mobileMoney:
-          return l10n.paymentMethodMobileMoneyDesc;
+          return l10n.t('payment_mobile_money');
         case _PaymentMethod.card:
-          return l10n.paymentMethodCardDesc;
+          return l10n.t('payment_card');
         case _PaymentMethod.wallet:
-          return l10n.paymentMethodWalletDesc;
+          return l10n.t('svc_money');
       }
     } catch (_) {
       return '';
@@ -946,7 +929,7 @@ class _PaymentForm extends StatelessWidget {
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
-                l10n.paymentInfoTitle,
+                l10n.t('reservation_your_info'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -960,8 +943,8 @@ class _PaymentForm extends StatelessWidget {
           // Nom du passager (commun)
           _InputField(
             controller: nameController,
-            label: l10n.paymentFieldName,
-            hint: l10n.paymentFieldNameHint,
+            label: l10n.t('reservation_full_name'),
+            hint: l10n.t('reg_full_name_hint'),
             icon: Icons.person_outline_rounded,
             domainColor: domainColor,
             textCapitalization: TextCapitalization.words,
@@ -977,8 +960,8 @@ class _PaymentForm extends StatelessWidget {
             SizedBox(height: ThixPolicy.s14),
             _InputField(
               controller: phoneController,
-              label: l10n.paymentFieldPhone,
-              hint: l10n.paymentFieldPhoneHint,
+              label: l10n.t('reservation_phone'),
+              hint: l10n.t('reg_phone_hint'),
               icon: Icons.phone_outlined,
               domainColor: domainColor,
               keyboardType: TextInputType.phone,
@@ -991,8 +974,8 @@ class _PaymentForm extends StatelessWidget {
             SizedBox(height: ThixPolicy.s14),
             _InputField(
               controller: emailController,
-              label: l10n.paymentFieldEmail,
-              hint: l10n.paymentFieldEmailHint,
+              label: l10n.t('reservation_email'),
+              hint: l10n.t('reg_email_hint'),
               icon: Icons.email_outlined,
               domainColor: domainColor,
               keyboardType: TextInputType.emailAddress,
@@ -1022,7 +1005,7 @@ class _PaymentForm extends StatelessWidget {
                   SizedBox(width: ThixPolicy.s8),
                   Expanded(
                     child: Text(
-                      l10n.paymentWalletReady,
+                      l10n.t('payment_success'),
                       style: ThixPolicy.bodySmallStyle.copyWith(
                         color: ThixPolicy.success,
                         fontWeight: ThixPolicy.semiBold,
@@ -1129,7 +1112,7 @@ class _MobileMoneyProviders extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          context.l10n.paymentSelectProvider,
+          context.l10n.t('market_seller'), // Used for "Provider"
           style: ThixPolicy.labelStyle.copyWith(
             color: ThixPolicy.textMain,
             fontWeight: ThixPolicy.semiBold,
@@ -1299,16 +1282,14 @@ class _TermsCheckbox extends StatelessWidget {
                     height: 1.4,
                   ),
                   children: [
-                    TextSpan(text: '${l10n.paymentTermsPrefix} '),
                     TextSpan(
-                      text: l10n.paymentTermsLink,
+                      text: l10n.t('auth_accept_terms'),
                       style: TextStyle(
                         color: domainColor,
                         fontWeight: ThixPolicy.bold,
                         decoration: TextDecoration.underline,
                       ),
                     ),
-                    TextSpan(text: ' ${l10n.paymentTermsSuffix}'),
                   ],
                 ),
               ),
@@ -1389,7 +1370,7 @@ class _PaymentBottomBar extends StatelessWidget {
                           ),
                           SizedBox(width: ThixPolicy.s10),
                           Text(
-                            l10n.paymentProcessing,
+                            l10n.t('payment_processing'),
                             style: ThixPolicy.titleStyle.copyWith(
                               color: Colors.white,
                               fontWeight: ThixPolicy.bold,
@@ -1398,7 +1379,7 @@ class _PaymentBottomBar extends StatelessWidget {
                         ],
                       )
                     : Text(
-                        '${l10n.paymentPayButton} $total',
+                        '${l10n.t('payment_confirm')} $total',
                         style: ThixPolicy.titleStyle.copyWith(
                           color: Colors.white,
                           fontWeight: ThixPolicy.bold,
@@ -1427,7 +1408,7 @@ class _PaymentBottomBar extends StatelessWidget {
                 SizedBox(width: ThixPolicy.s4),
                 Flexible(
                   child: Text(
-                    l10n.paymentSecureFooter(agencyName ?? ''),
+                    l10n.t('reservation_security_info'),
                     style: ThixPolicy.microStyle.copyWith(
                       color: ThixPolicy.textMuted,
                       fontWeight: ThixPolicy.medium,
