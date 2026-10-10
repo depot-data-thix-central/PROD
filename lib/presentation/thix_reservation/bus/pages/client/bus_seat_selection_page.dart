@@ -88,7 +88,7 @@ class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.seatSelectionError),
+          content: Text(context.l10n.t('error_generic')),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
           shape: RoundedRectangleBorder(
@@ -143,15 +143,15 @@ class _BusSeatSelectionPageState extends ConsumerState<BusSeatSelectionPage> {
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
         onPressed: () => context.pop(),
-        tooltip: l10n.commonBack,
+        tooltip: l10n.t('common_back'),
       ),
       title: Semantics(
-        label: '${l10n.seatSelectionTitle}, $routeLabel',
+        label: '${l10n.t('admin_seat_page_title')}, $routeLabel',
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              l10n.seatSelectionTitle,
+              l10n.t('admin_seat_page_title'),
               style: ThixPolicy.titleStyle.copyWith(
                 fontSize: 16,
                 fontWeight: ThixPolicy.bold,
@@ -247,7 +247,7 @@ class _LockTimer extends StatelessWidget {
         '${minutes.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}';
 
     return Semantics(
-      label: l10n.seatSelectionLockWarning(label),
+      label: l10n.t('error_timeout'),
       child: Container(
         width: 64,
         height: 36,
@@ -369,22 +369,22 @@ class _LegendBar extends StatelessWidget {
           _LegendItem(
             color: Colors.white,
             borderColor: ThixPolicy.border,
-            label: l10n.seatLegendAvailable,
+            label: l10n.t('event_seats_available'),
           ),
           _LegendItem(
             color: ThixPolicy.textMuted,
             borderColor: ThixPolicy.textSecondary,
-            label: l10n.seatLegendBooked,
+            label: l10n.t('admin_seat_legend_reserved'),
           ),
           _LegendItem(
             color: domainColor,
             borderColor: domainColor,
-            label: l10n.seatLegendSelected,
+            label: l10n.t('status_active'),
           ),
           _LegendItem(
             color: ThixPolicy.gold.withValues(alpha: 0.2),
             borderColor: ThixPolicy.gold,
-            label: l10n.seatLegendVip,
+            label: l10n.t('ticket_vip'),
           ),
         ],
       ),
@@ -503,7 +503,7 @@ class _BusFrame extends StatelessWidget {
                       ),
                       SizedBox(width: ThixPolicy.s4),
                       Text(
-                        l10n.seatSelectionDriver,
+                        l10n.t('dashboard_user_default'),
                         style: ThixPolicy.microStyle.copyWith(
                           color: ThixPolicy.textSecondary,
                           fontSize: 10,
@@ -543,7 +543,7 @@ class _BusFrame extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s8),
             Text(
-              l10n.seatSelectionAisle,
+              l10n.t('admin_seat_center_aisle'),
               style: ThixPolicy.microStyle.copyWith(
                 color: ThixPolicy.textMuted,
                 fontSize: 10,
@@ -606,9 +606,7 @@ class _PriceBreakdown extends ConsumerWidget {
       currency: curCode,
     );
 
-    final seatsLabel = selectedSeats.length == 1
-        ? l10n.ticketSeat(selectedSeats.join(', '))
-        : l10n.ticketSeats(selectedSeats.join(', '));
+    final seatsLabel = '${l10n.t('admin_action_seats')}: ${selectedSeats.join(', ')}';
 
     return Container(
       padding: EdgeInsets.all(ThixPolicy.s16),
@@ -654,7 +652,7 @@ class _PriceBreakdown extends ConsumerWidget {
 
           // Base price
           _PriceRow(
-            label: l10n.seatSelectionBasePrice(selectedCount, baseFormatted),
+            label: l10n.t('reservation_total'),
             value: baseFormatted,
             isMuted: true,
           ),
@@ -664,7 +662,7 @@ class _PriceBreakdown extends ConsumerWidget {
             Padding(
               padding: EdgeInsets.only(top: ThixPolicy.s8),
               child: _PriceRow(
-                label: l10n.seatSelectionVipSupplement,
+                label: l10n.t('ticket_vip'),
                 value: '+ $vipFormatted',
                 icon: Icons.star_rounded,
                 iconColor: ThixPolicy.warning,
@@ -683,7 +681,7 @@ class _PriceBreakdown extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                l10n.seatSelectionTotal,
+                l10n.t('market_total'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   color: ThixPolicy.textMain,
@@ -791,7 +789,7 @@ class _LockWarning extends StatelessWidget {
           SizedBox(width: ThixPolicy.s8),
           Expanded(
             child: Text(
-              l10n.seatSelectionLockWarning(label),
+              l10n.t('error_timeout'),
               style: ThixPolicy.bodySmallStyle.copyWith(
                 color: ThixPolicy.warning,
                 fontWeight: ThixPolicy.semiBold,
@@ -830,7 +828,7 @@ class _BottomBar extends ConsumerWidget {
     final isEnabled =
         state.selectedSeats.isNotEmpty && trip != null && !isConfirming;
 
-    String totalLabel = l10n.seatSelectionChooseSeat;
+    String totalLabel = l10n.t('event_choose_seats_btn');
     if (trip != null && state.selectedSeats.isNotEmpty) {
       final baseInDisplay = currencyState.convert(
         trip.priceFcfa,
@@ -846,7 +844,7 @@ class _BottomBar extends ConsumerWidget {
         currency: currencyState.currency.code,
         compact: true,
       );
-      totalLabel = '${l10n.seatSelectionContinue} • $formatted';
+      totalLabel = '${l10n.t('common_next')} • $formatted';
     }
 
     return Container(
@@ -891,7 +889,7 @@ class _BottomBar extends ConsumerWidget {
                       ),
                       SizedBox(width: ThixPolicy.s10),
                       Text(
-                        l10n.seatSelectionConfirming,
+                        l10n.t('payment_processing'),
                         style: ThixPolicy.titleStyle.copyWith(
                           color: Colors.white,
                           fontWeight: ThixPolicy.bold,
