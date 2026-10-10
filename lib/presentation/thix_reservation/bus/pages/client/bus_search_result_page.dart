@@ -13,24 +13,6 @@ import '../../widgets/client/bus_filter_bottom_sheet.dart';
 /// ============================================================================
 /// BusSearchResultPage
 /// ============================================================================
-///
-/// Page de résultats de recherche de trajets de bus.
-///
-/// Features :
-/// - Riverpod (ConsumerStatefulWidget)
-/// - Skeleton loaders animés pendant le chargement
-/// - Tri multi-critère (départ, prix, durée) avec chips animés
-/// - Filtres avancés via bottom sheet (avec badge si actifs)
-/// - Pull-to-refresh natif
-/// - États vides et erreurs élégants avec actions contextuelles
-/// - Hero transitions vers la page détail
-/// - Haptic feedback sur les interactions
-/// - Accessibilité complète (Semantics)
-/// - i18n intégrée (FR/EN/LN) avec pluralisation
-/// - Design system ThixPolicy
-/// - Animations staggered sur les cards
-///
-/// ============================================================================
 class BusSearchResultPage extends ConsumerStatefulWidget {
   const BusSearchResultPage({super.key});
 
@@ -191,7 +173,8 @@ class _BusSearchResultPageState extends ConsumerState<BusSearchResultPage> {
 
     if (state.error != null) {
       return _ErrorResultsView(
-        error: state.error!,
+        // Correction: Conversion de l'objet Error en String
+        error: state.error!.toString(),
         onRetry: () => ref.read(busSearchProvider.notifier).search(),
       );
     }
@@ -279,7 +262,8 @@ class _SortChipsBar extends ConsumerWidget {
                     label: l10n.t('reservation_check_out'),
                     value: 'departure',
                     icon: Icons.access_time_rounded,
-                    currentSort: state.sortBy,
+                    // Correction: Conversion Enum -> String via .name
+                    currentSort: state.sortBy.name,
                     domainColor: domainColor,
                     onSelected: (v) =>
                         ref.read(busSearchProvider.notifier).setSort(v),
@@ -289,7 +273,7 @@ class _SortChipsBar extends ConsumerWidget {
                     label: l10n.t('money_amount'),
                     value: 'price',
                     icon: Icons.payments_outlined,
-                    currentSort: state.sortBy,
+                    currentSort: state.sortBy.name,
                     domainColor: domainColor,
                     onSelected: (v) =>
                         ref.read(busSearchProvider.notifier).setSort(v),
@@ -299,7 +283,7 @@ class _SortChipsBar extends ConsumerWidget {
                     label: l10n.t('training_duration'),
                     value: 'duration',
                     icon: Icons.timer_outlined,
-                    currentSort: state.sortBy,
+                    currentSort: state.sortBy.name,
                     domainColor: domainColor,
                     onSelected: (v) =>
                         ref.read(busSearchProvider.notifier).setSort(v),
@@ -759,18 +743,19 @@ class _ErrorResultsView extends StatelessWidget {
 }
 
 /// ============================================================================
-/// AnimatedBuilder — Polyfill
+/// AnimatedBuilder — Polyfill corrigé pour accepter 'animation'
 /// ============================================================================
 class AnimatedBuilder extends AnimatedWidget {
   final Widget Function(BuildContext, Widget?) builder;
   final Widget? child;
 
+  // Correction: Accepte Animation<double> au lieu de Listenable pour correspondre à l'appel
   const AnimatedBuilder({
     super.key,
-    required super.listenable,
+    required Animation<double> animation,
     required this.builder,
     this.child,
-  });
+  }) : super(listenable: animation);
 
   @override
   Widget build(BuildContext context) => builder(context, child);
