@@ -13,24 +13,6 @@ import '../../data/models/bus_trip_model.dart';
 /// ============================================================================
 /// AgencyTripCard
 /// ============================================================================
-///
-/// Carte de trajet de bus affichée dans les résultats de recherche.
-///
-/// Features :
-/// - Multi-devises global (conversion automatique via currencyProvider)
-/// - CachedNetworkImage avec placeholder et error widget élégants
-/// - Hero animation optionnel vers la page détail
-/// - Badge "Presque complet" si < 5 places restantes
-/// - Badge "Complet" avec overlay désactivé
-/// - Badge "Vérifié" pour les agences certifiées
-/// - Animation scale au tap avec feedback haptique
-/// - Accessibilité complète (Semantics)
-/// - i18n intégrée (FR/EN/LN)
-/// - Design system ThixPolicy
-/// - Responsive avec contraintes adaptatives
-/// - Gestion d'erreurs robuste
-///
-/// ============================================================================
 class AgencyTripCard extends ConsumerStatefulWidget {
   final BusTripModel trip;
   final VoidCallback onTap;
@@ -145,6 +127,7 @@ class _AgencyTripCardState extends ConsumerState<AgencyTripCard>
                     agencyName: agencyName,
                     initial: initial,
                     logo: logo,
+                    // CORRECTION: Passage direct de l'Enum BusType au lieu de String
                     busType: widget.trip.busType,
                     duration: widget.trip.durationLabel,
                     isVerified: widget.trip.agency?.isVerified ?? false,
@@ -256,7 +239,8 @@ class _CardHeader extends StatelessWidget {
   final String agencyName;
   final String initial;
   final String? logo;
-  final String busType;
+  // CORRECTION: Changement du type String -> BusType
+  final BusType busType;
   final String duration;
   final bool isVerified;
   final String price;
@@ -334,7 +318,8 @@ class _CardHeader extends StatelessWidget {
                       borderRadius: BorderRadius.circular(ThixPolicy.rXs),
                     ),
                     child: Text(
-                      busType.toUpperCase(),
+                      // CORRECTION: Conversion Enum -> String ici
+                      busType.name.toUpperCase(),
                       style: ThixPolicy.microStyle.copyWith(
                         fontWeight: ThixPolicy.bold,
                         color: ThixPolicy.textMain,
