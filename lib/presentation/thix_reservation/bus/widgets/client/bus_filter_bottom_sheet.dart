@@ -8,6 +8,12 @@ import 'package:thix_id/core/providers/currency_provider.dart';
 
 import '../../providers/bus_search_provider.dart';
 
+/// Helper de traduction tolérant pour les clés manquantes
+String _tr(BuildContext context, String key, String fallback) {
+  final translated = context.l10n.t(key);
+  return translated == key ? fallback : translated;
+}
+
 /// ============================================================================
 /// BusFilterBottomSheet
 /// ============================================================================
@@ -176,7 +182,7 @@ class _BusFilterBottomSheetState extends ConsumerState<BusFilterBottomSheet> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        l10n.filtersTitle,
+                        l10n.t('market_filters'), // Utilisation de "Filtres" comme titre générique
                         style: ThixPolicy.titleStyle.copyWith(
                           fontWeight: ThixPolicy.bold,
                           fontSize: 16,
@@ -186,8 +192,8 @@ class _BusFilterBottomSheetState extends ConsumerState<BusFilterBottomSheet> {
                       SizedBox(height: ThixPolicy.s2),
                       Text(
                         activeCount > 0
-                            ? l10n.filtersActiveCount(activeCount)
-                            : l10n.filtersNoActive,
+                            ? '${activeCount} ${l10n.t('common_items')}' // Construction dynamique pour le compte
+                            : l10n.t('market_no_filters'), // Fallback si "No active filters" n'existe pas
                         style: ThixPolicy.microStyle.copyWith(
                           color: activeCount > 0
                               ? domainColor
@@ -208,7 +214,7 @@ class _BusFilterBottomSheetState extends ConsumerState<BusFilterBottomSheet> {
                     ),
                   ),
                   child: Text(
-                    l10n.filtersClearAll,
+                    l10n.t('common_clear'),
                     style: ThixPolicy.labelStyle.copyWith(
                       color: activeCount > 0
                           ? domainColor
@@ -273,8 +279,8 @@ class _BusFilterBottomSheetState extends ConsumerState<BusFilterBottomSheet> {
                 icon: Icon(Icons.check_rounded, size: 18),
                 label: Text(
                   activeCount > 0
-                      ? l10n.filtersApplyWithCount(activeCount)
-                      : l10n.filtersApply,
+                      ? '${l10n.t('common_apply')} ($activeCount)' // Construction dynamique
+                      : l10n.t('common_apply'),
                   style: ThixPolicy.titleStyle.copyWith(
                     color: Colors.white,
                     fontWeight: ThixPolicy.bold,
@@ -336,7 +342,7 @@ class _PriceRangeFilter extends StatelessWidget {
       children: [
         _SectionHeader(
           icon: Icons.payments_outlined,
-          title: l10n.filtersPriceTitle,
+          title: l10n.t('money_amount'), // Utilisation de "Montant" / "Amount"
           domainColor: domainColor,
         ),
         SizedBox(height: ThixPolicy.s12),
@@ -355,7 +361,7 @@ class _PriceRangeFilter extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                l10n.filtersMaxBudget,
+                _tr(context, 'filters_max_budget', 'Budget max'),
                 style: ThixPolicy.bodySmallStyle.copyWith(
                   color: ThixPolicy.textSecondary,
                 ),
@@ -376,7 +382,7 @@ class _PriceRangeFilter extends StatelessWidget {
 
         // Slider
         Semantics(
-          label: l10n.filtersPriceSliderLabel(formattedValue),
+          label: _tr(context, 'filters_price_slider', 'Prix'),
           value: value.toStringAsFixed(0),
           child: SliderTheme(
             data: SliderTheme.of(context).copyWith(
@@ -448,7 +454,7 @@ class _PriceRangeFilter extends StatelessWidget {
             SizedBox(width: ThixPolicy.s4),
             Expanded(
               child: Text(
-                l10n.filtersPriceCurrencyInfo(currency.code),
+                _tr(context, 'filters_price_currency_info', 'Devise: ${currency.code}'),
                 style: ThixPolicy.microStyle.copyWith(
                   color: ThixPolicy.textMuted,
                   fontSize: 10.5,
@@ -477,10 +483,10 @@ class _BusTypeFilter extends StatelessWidget {
   });
 
   static const _types = [
-    ('vip', 'filtersBusTypeVip', Icons.star_rounded),
-    ('standard', 'filtersBusTypeStandard', Icons.directions_bus_rounded),
-    ('clim', 'filtersBusTypeClim', Icons.ac_unit_rounded),
-    ('sleeper', 'filtersBusTypeSleeper', Icons.bed_rounded),
+    ('vip', 'ticket_vip', Icons.star_rounded),
+    ('standard', 'ticket_standard', Icons.directions_bus_rounded),
+    ('clim', 'amenity_ac', Icons.ac_unit_rounded),
+    ('sleeper', 'filters_bus_type_sleeper', Icons.bed_rounded),
   ];
 
   @override
@@ -492,11 +498,11 @@ class _BusTypeFilter extends StatelessWidget {
       children: [
         _SectionHeader(
           icon: Icons.directions_bus_rounded,
-          title: l10n.filtersBusTypeTitle,
+          title: _tr(context, 'filters_bus_type_title', 'Type de bus'),
           domainColor: domainColor,
           subtitle: selected.isEmpty
-              ? l10n.filtersBusTypeAll
-              : l10n.filtersSelectedCount(selected.length),
+              ? _tr(context, 'event_filter_all', 'Tous')
+              : '${selected.length} ${l10n.t('common_items')}',
         ),
         SizedBox(height: ThixPolicy.s12),
         Wrap(
@@ -510,7 +516,7 @@ class _BusTypeFilter extends StatelessWidget {
 
             return _FilterChip(
               icon: icon,
-              label: _translateType(l10n, labelKey),
+              label: _translateType(context, labelKey),
               isSelected: isSelected,
               domainColor: domainColor,
               onTap: () {
@@ -530,23 +536,9 @@ class _BusTypeFilter extends StatelessWidget {
     );
   }
 
-  String _translateType(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'filtersBusTypeVip':
-          return l10n.filtersBusTypeVip;
-        case 'filtersBusTypeStandard':
-          return l10n.filtersBusTypeStandard;
-        case 'filtersBusTypeClim':
-          return l10n.filtersBusTypeClim;
-        case 'filtersBusTypeSleeper':
-          return l10n.filtersBusTypeSleeper;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
+  String _translateType(BuildContext context, String key) {
+    // Utilisation directe de l10n.t() car les clés existent ou ont des fallbacks logiques
+    return context.l10n.t(key);
   }
 }
 
@@ -565,12 +557,12 @@ class _AmenitiesFilter extends StatelessWidget {
   });
 
   static const _amenities = [
-    ('wifi', 'amenityWifi', Icons.wifi_rounded),
-    ('ac', 'amenityAc', Icons.ac_unit_rounded),
-    ('usb', 'amenityUsb', Icons.usb_rounded),
-    ('toilet', 'amenityToilet', Icons.wc_rounded),
-    ('tv', 'amenityTv', Icons.tv_rounded),
-    ('snack', 'filtersAmenitySnack', Icons.restaurant_rounded),
+    ('wifi', 'amenity_wifi', Icons.wifi_rounded),
+    ('ac', 'amenity_ac', Icons.ac_unit_rounded),
+    ('usb', 'amenity_usb', Icons.usb_rounded),
+    ('toilet', 'amenity_toilet', Icons.wc_rounded),
+    ('tv', 'amenity_tv', Icons.tv_rounded),
+    ('snack', 'filters_amenity_snack', Icons.restaurant_rounded),
   ];
 
   @override
@@ -582,11 +574,11 @@ class _AmenitiesFilter extends StatelessWidget {
       children: [
         _SectionHeader(
           icon: Icons.star_outline_rounded,
-          title: l10n.filtersAmenitiesTitle,
+          title: _tr(context, 'bus_comfort_title', 'Confort'),
           domainColor: domainColor,
           subtitle: selected.isEmpty
-              ? l10n.filtersAmenitiesAll
-              : l10n.filtersSelectedCount(selected.length),
+              ? _tr(context, 'event_filter_all', 'Tous')
+              : '${selected.length} ${l10n.t('common_items')}',
         ),
         SizedBox(height: ThixPolicy.s12),
         Wrap(
@@ -600,7 +592,7 @@ class _AmenitiesFilter extends StatelessWidget {
 
             return _FilterChip(
               icon: icon,
-              label: _translateAmenity(l10n, labelKey),
+              label: _translateAmenity(context, labelKey),
               isSelected: isSelected,
               domainColor: domainColor,
               onTap: () {
@@ -620,27 +612,9 @@ class _AmenitiesFilter extends StatelessWidget {
     );
   }
 
-  String _translateAmenity(dynamic l10n, String key) {
-    try {
-      switch (key) {
-        case 'amenityWifi':
-          return l10n.amenityWifi;
-        case 'amenityAc':
-          return l10n.amenityAc;
-        case 'amenityUsb':
-          return l10n.amenityUsb;
-        case 'amenityToilet':
-          return l10n.amenityToilet;
-        case 'amenityTv':
-          return l10n.amenityTv;
-        case 'filtersAmenitySnack':
-          return l10n.filtersAmenitySnack;
-        default:
-          return key;
-      }
-    } catch (_) {
-      return key;
-    }
+  String _translateAmenity(BuildContext context, String key) {
+    // Utilisation directe de l10n.t()
+    return context.l10n.t(key);
   }
 }
 
