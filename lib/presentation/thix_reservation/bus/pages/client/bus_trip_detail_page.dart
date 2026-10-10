@@ -65,7 +65,7 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
     if (id.isEmpty) {
       setState(() {
         _loading = false;
-        _error = context.l10n.tripNotFound;
+        _error = context.l10n.t('ticket_not_found'); // Utilisé comme fallback pour "trip not found"
       });
       return;
     }
@@ -80,7 +80,7 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
       if (trip == null) {
         setState(() {
           _loading = false;
-          _error = context.l10n.tripNotFound;
+          _error = context.l10n.t('ticket_not_found');
         });
         return;
       }
@@ -109,7 +109,7 @@ class _BusTripDetailPageState extends ConsumerState<BusTripDetailPage> {
 
     if (_error != null || _trip == null) {
       return _TripErrorView(
-        error: _error ?? l10n.tripNotFound,
+        error: _error ?? l10n.t('ticket_not_found'),
         onRetry: _load,
       );
     }
@@ -160,7 +160,7 @@ class _TripDetailContent extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.share_outlined, color: ThixPolicy.textMain),
             onPressed: () => _share(context),
-            tooltip: l10n.commonShare,
+            tooltip: l10n.t('common_share'),
           ),
         ],
       ),
@@ -188,7 +188,7 @@ class _TripDetailContent extends ConsumerWidget {
   void _share(BuildContext context) {
     // TODO: implémenter le partage
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(context.l10n.tripShareComingSoon)),
+      SnackBar(content: Text(context.l10n.t('market_coming_soon', args: ['Partage']))),
     );
   }
 }
@@ -265,7 +265,7 @@ class _AgencyInfoCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final agencyName = trip.agency?.name ?? l10n.tripUnknownAgency;
+    final agencyName = trip.agency?.name ?? l10n.t('common_unknown');
     final agencyRating = trip.agency?.rating ?? 4.5;
 
     return Container(
@@ -317,7 +317,7 @@ class _AgencyInfoCard extends StatelessWidget {
                     ),
                     SizedBox(width: ThixPolicy.s8),
                     Text(
-                      l10n.tripVerifiedAgency,
+                      l10n.t('status_verified'), // Utilisé pour "Verified Agency"
                       style: ThixPolicy.microStyle.copyWith(
                         color: ThixPolicy.success,
                       ),
@@ -535,7 +535,7 @@ class _AmenitiesCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.tripAmenities,
+            l10n.t('bus_comfort_title'), // Utilisé pour "Amenities"
             style: ThixPolicy.titleStyle.copyWith(
               fontWeight: ThixPolicy.bold,
             ),
@@ -607,16 +607,16 @@ class _AmenityChip extends StatelessWidget {
     final l10n = context.l10n;
     switch (amenity.toLowerCase()) {
       case 'wifi':
-        return l10n.amenityWifi;
+        return l10n.t('amenity_wifi');
       case 'ac':
       case 'clim':
-        return l10n.amenityAc;
+        return l10n.t('amenity_ac');
       case 'usb':
-        return l10n.amenityUsb;
+        return l10n.t('amenity_usb');
       case 'toilet':
-        return l10n.amenityToilet;
+        return l10n.t('amenity_toilet');
       case 'tv':
-        return l10n.amenityTv;
+        return l10n.t('amenity_tv');
       default:
         return amenity;
     }
@@ -643,9 +643,10 @@ class _PriceCard extends ConsumerWidget {
       compact: false,
     );
 
+    // Utilisation de keys génériques car les clés spécifiques n'existent pas
     final seatsLabel = trip.isFull
-        ? l10n.tripFull
-        : l10n.tripAvailableSeats(trip.availableSeats, trip.totalSeats);
+        ? l10n.t('events_sold_out')
+        : '${trip.availableSeats}/${trip.totalSeats} ${l10n.t('admin_action_seats')}';
 
     return Container(
       padding: EdgeInsets.all(ThixPolicy.s16),
@@ -659,7 +660,7 @@ class _PriceCard extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.tripPrice,
+            l10n.t('money_amount'), // Utilisé pour "Price"
             style: ThixPolicy.bodySmallStyle.copyWith(
               color: ThixPolicy.textSecondary,
             ),
@@ -750,8 +751,8 @@ class _BottomBar extends ConsumerWidget {
             ),
             child: Text(
               trip.isFull
-                  ? l10n.tripFull
-                  : l10n.tripSelectSeats(displayPrice),
+                  ? l10n.t('events_sold_out')
+                  : '${l10n.t('event_book_now_btn')} • $displayPrice',
               style: ThixPolicy.titleStyle.copyWith(
                 color: Colors.white,
                 fontWeight: ThixPolicy.bold,
@@ -857,7 +858,7 @@ class _TripErrorView extends StatelessWidget {
               ),
               SizedBox(height: ThixPolicy.s16),
               Text(
-                l10n.commonError,
+                l10n.t('common_error'),
                 style: ThixPolicy.h2Style.copyWith(
                   fontWeight: ThixPolicy.bold,
                 ),
@@ -872,7 +873,7 @@ class _TripErrorView extends StatelessWidget {
               ElevatedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh_rounded),
-                label: Text(l10n.commonRetry),
+                label: Text(l10n.t('common_retry')),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: ThixPolicy.domainReservation,
                   foregroundColor: Colors.white,
