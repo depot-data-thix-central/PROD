@@ -147,7 +147,8 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
               SizedBox(width: ThixPolicy.s6),
               Text('•', style: TextStyle(color: ThixPolicy.textMuted)),
               SizedBox(width: ThixPolicy.s6),
-              _StatusBadge(status: agency.status ?? 'active'),
+              // CORRECTION: Conversion Enum -> String via .name
+              _StatusBadge(status: agency.status?.name ?? 'active'),
             ],
           ),
         ],
@@ -184,7 +185,422 @@ class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
         ThixPolicy.s16,
         ThixPolicy.s12,
         ThixPolicy.s16,
-        ThixPolicy.s120,
+        // CORRECTION: s120 n'existe pas, remplacé par s32
+        ThixPolicy.s32,
+      ),
+      children: [
+        _DashboardControls(
+          selectedRange: _selectedRange,
+          onRangeChanged: (r) {
+            HapticFeedback.selectionClick();
+            setState(() => _selectedRange = r);
+          },
+          domainColor: domainColor,
+        ),
+        SizedBox(height: ThixPolicy.s16),
+        _KpiGrid(state: state, domainColor: domainColor),
+        SizedBox(height: ThixPolicy.s20),
+        _RevenueChartSection(state: state, domainColor: domainColor),
+        SizedBox(height: ThixPolicy.s20),
+        _BookingsDistributionSection(state: state, domainColor: domainColor),
+        SizedBox(height: ThixPolicy.s24),
+        _QuickActionsSection(state: state, domainColor: domainColor),
+        SizedBox(height: ThixPolicy.s24),
+        _UpcomingTripsSection(
+          state: state,
+          filter: _tripFilter,
+          onFilterChanged: (f) {
+            HapticFeedback.selectionClick();
+            setState(() => _tripFilter = f);
+          },
+          domainColor: domainColor,
+        ),
+        SizedBox(height: ThixPolicy.s24),
+        _RecentBookingsSection(state: state, domainColor: domainColor),
+      ],
+    );
+  }
+}
+
+enum _DateRange { today, week, month, all }
+enum _TripFilter { all, scheduled, departed, cancelled }
+
+class _StatusBadge extends StatelessWidget {
+  final String status;
+  const _StatusBadge({required this.status});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final color = _getStatusColor(status);
+    final label = _translateStatus(l10n, status);
+
+    return Container(
+      padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s6, vertical: ThixPolicy.s2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(ThixPolicy.rXs),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 5, height: 5, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
+          SizedBox(width: ThixPolicy.s4),
+          Text(label, style: ThixPolicy.microStyle.copyWith(color: color, fontWeight: ThixPolicy.bold, fontSize: 9.5)),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'active':
+      case 'approved':
+        return ThixPolicy.success;
+      case 'pending':
+      case 'review':
+        return ThixPolicy.warning;
+      case 'rejected':
+      case 'suspended':
+        return ThixPolicy.danger;
+      default:
+        return ThixPolicy.textMuted;
+    }
+  }
+
+  String _translateStatus(dynamic l10n, String status) {
+    try {
+      switch (status.toLowerCase()) {
+        case 'active':
+        case 'approved':
+          return l10n.t('agencyStatusActive');
+        case 'pending':
+        case 'review':
+          return l10n.t('agencyStatusPending');
+        case 'rejected':
+          return l10n.t('agencyStatusRejected');
+        case 'suspended':
+          return l10n.t('agencyStatusSuspended');
+        default:
+          return status;
+      }
+    } catch (_) {
+      return status;
+    }
+  }
+}
+
+class _DashboardControls extends ConsumerWidget {
+  final _DateRange selectedRange;
+  final ValueChanged<_DateRange> onRangeChanged;
+  final Color domainColor;
+
+  const _DashboardControls({
+    required this.selectedRange,
+    required this.onRangeChanged,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final currency = ref.watch(currencyProvider).currency;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.payments_rounded, size: 14, color: ThixPolicy.textSecondary),
+            SizedBox(width: ThixPolicy.s6),
+            Text(l10n.t('agencyDashboardCurrencyLabel'), style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: ThixPolicy.semiBold)),
+            SizedBox(width: ThixPolicy.s6),
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s8, vertical: ThixPolicy.s2),
+              decoration: BoxDecoration(color: domainColor.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
+              child: Text('${currency.symbol} ${currency.code}', style: ThixPolicy.labelStyle.copyWith(color: domainColor, fontWeight: ThixPolicy.bold, fontSize: 11)),
+            ),
+          ],
+        ),
+        SizedBox(height: ThixPolicy.s12),
+        Container(
+          padding: EdgeInsets.all(ThixPolicy.s4),
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(ThixPolicy.rMd), border: Border.all(color: ThixPolicy.border)),
+          child: Row(
+            children: _DateRange.values.map((range) {
+              final isSelected = range == selectedRange;
+              return Expanded(
+                child: _DateRangeChip(
+                  label: _rangeLabel(l10n, range),
+                  isSelected: isSelected,
+                  domainColor: domainColor,
+                  onTap: () => onRangeChanged(range),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _rangeLabel(dynamic l10n, _DateRange range) {
+    try {
+      switch (range) {
+        case _DateRange.today:
+          return l10n.t('agencyDashboardRangeToday');
+        case _DateRange.week:
+          return l10n.t('agencyDashboardRangeWeek');
+        case _DateRange.month:
+          return l10n.t('agencyDashboardRangeMonth');
+        case _DateRange.all:
+          return l10n.t('agencyDashboardRangeAll');
+      }
+    } catch (_) {
+      return range.name;
+    }
+  }
+}
+
+class _DateRangeChip extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final Color domainColor;
+  final VoidCallback onTap;
+
+  const _DateRangeChip({required this.label, required this.isSelected, required this.domainColor, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
+          padding: EdgeInsets.symmetric(vertical: ThixPolicy.s10),
+          decoration: BoxDecoration(color: isSelected ? domainColor : Colors.transparent, borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
+          child: Center(
+            child: Text(label, style: ThixPolicy.labelStyle.copyWith(color: isSelected ? Colors.white : ThixPolicy.textMain, fontWeight: isSelected ? ThixPolicy.bold : ThixPolicy.medium, fontSize: 12)),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _KpiGrid extends ConsumerWidget {
+  final AgencyDashboardState state;
+  final Color domainColor;
+
+  const _KpiGrid({required this.state, required this.domainColor});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
+    final currencyState = ref.watch(currencyProvider);
+
+    final revenueDisplay = currencyState.convert(state.todayRevenue, fromCurrency: 'CDF');
+    final formattedRevenue = CurrencyFormatter.format(revenueDisplay, currency: currencyState.currency.code, compact: true);
+
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(child: _KpiCard(label: l10n.t('agencyDashboardKpiBookings'), value: '${state.todayBookingsCount}', change: 12.5, icon: Icons.reVoici le fichier `agency_dashboard_page.dart` corrigé. Les erreurs principales concernaient les comparaisons d'Enums avec des Strings, les constantes manquantes dans `ThixPolicy`, et la signature de votre `AnimatedBuilder` personnalisé.
+
+```dart
+import 'dart:math' as math;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/core/extensions/context_ext.dart';
+import 'package:thix_id/core/utils/currency_formatter.dart';
+import 'package:thix_id/core/providers/currency_provider.dart';
+
+import '../../data/models/bus_trip_model.dart';
+import '../../data/models/booking_model.dart';
+import '../../providers/agency_dashboard_provider.dart';
+
+/// ============================================================================
+/// AgencyDashboardPage
+/// ============================================================================
+class AgencyDashboardPage extends ConsumerStatefulWidget {
+  const AgencyDashboardPage({super.key});
+
+  @override
+  ConsumerState<AgencyDashboardPage> createState() =>
+      _AgencyDashboardPageState();
+}
+
+class _AgencyDashboardPageState extends ConsumerState<AgencyDashboardPage> {
+  _DateRange _selectedRange = _DateRange.today;
+  _TripFilter _tripFilter = _TripFilter.all;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(agencyDashboardProvider.notifier).init();
+    });
+  }
+
+  Future<void> _refresh() async {
+    await ref.read(agencyDashboardProvider.notifier).init();
+  }
+
+  void _showExportOptions() {
+    final l10n = context.l10n;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ExportSheet(
+        onExport: (format) {
+          Navigator.pop(context);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(l10n.t('agencyDashboardExportComingSoon')),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final state = ref.watch(agencyDashboardProvider);
+    final domainColor = ThixPolicy.domainReservation;
+
+    if (state.isLoading && state.myAgency == null) {
+      return Scaffold(
+        backgroundColor: ThixPolicy.surface,
+        appBar: AppBar(
+          backgroundColor: Colors.white,
+          elevation: 0,
+          title: Text(
+            l10n.t('agencyDashboardTitle'),
+            style: ThixPolicy.titleStyle.copyWith(
+              fontWeight: ThixPolicy.bold,
+            ),
+          ),
+        ),
+        body: const _DashboardSkeleton(),
+      );
+    }
+
+    if (!state.hasAgency) {
+      return _NoAgencyView(domainColor: domainColor);
+    }
+
+    return Scaffold(
+      backgroundColor: ThixPolicy.surface,
+      appBar: _buildAppBar(state, domainColor),
+      floatingActionButton: _TripFab(domainColor: domainColor),
+      body: RefreshIndicator(
+        color: domainColor,
+        backgroundColor: Colors.white,
+        onRefresh: _refresh,
+        child: _buildBody(state, domainColor),
+      ),
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(
+    AgencyDashboardState state,
+    Color domainColor,
+  ) {
+    final l10n = context.l10n;
+    final agency = state.myAgency!;
+
+    return AppBar(
+      backgroundColor: Colors.white,
+      elevation: 0,
+      scrolledUnderElevation: 0.5,
+      toolbarHeight: 72,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
+        onPressed: () => context.pop(),
+        tooltip: l10n.t('common_back'),
+      ),
+      title: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            agency.name,
+            style: ThixPolicy.titleStyle.copyWith(
+              fontWeight: ThixPolicy.bold,
+              fontSize: 16,
+              color: ThixPolicy.textMain,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          SizedBox(height: ThixPolicy.s2),
+          Row(
+            children: [
+              Text(
+                agency.countryCode.toUpperCase(),
+                style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                  fontFamily: 'monospace',
+                  fontWeight: ThixPolicy.bold,
+                ),
+              ),
+              SizedBox(width: ThixPolicy.s6),
+              Text('•', style: TextStyle(color: ThixPolicy.textMuted)),
+              SizedBox(width: ThixPolicy.s6),
+              // CORRECTION: Conversion Enum -> String via .name
+              _StatusBadge(status: agency.status?.name ?? 'active'),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        IconButton(
+          icon: Icon(Icons.download_rounded, color: ThixPolicy.textMain),
+          tooltip: l10n.t('agencyDashboardExport'),
+          onPressed: _showExportOptions,
+        ),
+        IconButton(
+          icon: Container(
+            padding: EdgeInsets.all(ThixPolicy.s6),
+            decoration: BoxDecoration(
+              color: domainColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            ),
+            child: Icon(Icons.qr_code_scanner_rounded, color: domainColor, size: 18),
+          ),
+          tooltip: l10n.t('agencyDashboardScanTicket'),
+          onPressed: () => context.push('/agency/scan'),
+        ),
+        SizedBox(width: ThixPolicy.s4),
+      ],
+    );
+  }
+
+  Widget _buildBody(AgencyDashboardState state, Color domainColor) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      ),
+      padding: EdgeInsets.fromLTRB(
+        ThixPolicy.s16,
+        ThixPolicy.s12,
+        ThixPolicy.s16,
+        // CORRECTION: s120 n'existe pas, remplacé par s32
+        ThixPolicy.s32,
       ),
       children: [
         _DashboardControls(
@@ -648,9 +1064,11 @@ class _BookingsDistributionSection extends StatelessWidget {
 
     int confirmed = 0, pending = 0, cancelled = 0, completed = 0;
     for (final b in state.agencyBookings) {
-      switch (b.status.toLowerCase()) {
+      // CORRECTION: Utilisation de .name pour convertir l'Enum en String avant comparaison
+      switch (b.status.name.toLowerCase()) {
         case 'confirmed': confirmed++; break;
-        case 'pending': pending++; break;
+        case 'pending': 
+        case 'pending_payment': pending++; break;
         case 'cancelled': cancelled++; break;
         case 'completed': completed++; break;
       }
@@ -833,11 +1251,12 @@ class _UpcomingTripsSection extends StatelessWidget {
     final l10n = context.l10n;
 
     final filtered = state.myTrips.where((t) {
+      // CORRECTION: Comparaison Enum avec String via .name
       switch (filter) {
         case _TripFilter.all: return true;
-        case _TripFilter.scheduled: return t.status == 'scheduled';
-        case _TripFilter.departed: return t.status == 'departed';
-        case _TripFilter.cancelled: return t.status == 'cancelled';
+        case _TripFilter.scheduled: return t.status.name == 'scheduled';
+        case _TripFilter.departed: return t.status.name == 'departed';
+        case _TripFilter.cancelled: return t.status.name == 'cancelled';
       }
     }).toList();
 
@@ -947,7 +1366,8 @@ class _TripCard extends ConsumerWidget {
     final displayPrice = currencyState.convert(trip.priceFcfa, fromCurrency: 'CDF');
     final formattedPrice = CurrencyFormatter.format(displayPrice, currency: currencyState.currency.code, compact: true);
 
-    final statusColor = _getTripStatusColor(trip.status);
+    // CORRECTION: Passage de .name pour la fonction qui attend une String
+    final statusColor = _getTripStatusColor(trip.status.name);
     final locale = Localizations.localeOf(context).toString();
     final dateStr = DateFormat('d MMM • HH:mm', locale).format(trip.departureTime);
 
@@ -995,7 +1415,8 @@ class _TripCard extends ConsumerWidget {
                         Container(
                           padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s6, vertical: ThixPolicy.s2),
                           decoration: BoxDecoration(color: statusColor.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(ThixPolicy.rXs)),
-                          child: Text(trip.status.toUpperCase(), style: ThixPolicy.microStyle.copyWith(color: statusColor, fontWeight: ThixPolicy.bold, fontSize: 9)),
+                          // CORRECTION: Utilisation de .name.toUpperCase() sur l'Enum TripStatus
+                          child: Text(trip.status.name.toUpperCase(), style: ThixPolicy.microStyle.copyWith(color: statusColor, fontWeight: ThixPolicy.bold, fontSize: 9)),
                         ),
                       ],
                     ),
@@ -1095,7 +1516,8 @@ class _BookingTile extends ConsumerWidget {
     final displayPrice = currencyState.convert(booking.totalPriceFcfa, fromCurrency: 'CDF');
     final formattedPrice = CurrencyFormatter.format(displayPrice, currency: currencyState.currency.code, compact: true);
 
-    final statusInfo = _getBookingStatusInfo(booking.status);
+    // CORRECTION: Passage de .name pour la fonction qui attend une String
+    final statusInfo = _getBookingStatusInfo(booking.status.name);
 
     return Container(
       padding: EdgeInsets.all(ThixPolicy.s12),
@@ -1134,7 +1556,8 @@ class _BookingTile extends ConsumerWidget {
   _BookingStatusInfo _getBookingStatusInfo(String status) {
     switch (status.toLowerCase()) {
       case 'confirmed': return _BookingStatusInfo(icon: Icons.check_circle_rounded, color: ThixPolicy.success, label: 'CONFIRMÉ');
-      case 'pending': return _BookingStatusInfo(icon: Icons.schedule_rounded, color: ThixPolicy.warning, label: 'EN ATTENTE');
+      case 'pending': 
+      case 'pending_payment': return _BookingStatusInfo(icon: Icons.schedule_rounded, color: ThixPolicy.warning, label: 'EN ATTENTE');
       case 'completed': return _BookingStatusInfo(icon: Icons.history_rounded, color: ThixPolicy.textSecondary, label: 'UTILISÉ');
       case 'cancelled': return _BookingStatusInfo(icon: Icons.cancel_rounded, color: ThixPolicy.danger, label: 'ANNULÉ');
       default: return _BookingStatusInfo(icon: Icons.help_outline_rounded, color: ThixPolicy.textMuted, label: status.toUpperCase());
@@ -1265,8 +1688,9 @@ class _DashboardSkeletonState extends State<_DashboardSkeleton> with SingleTicke
 
   @override
   Widget build(BuildContext context) {
+    // CORRECTION: Utilisation de listenable au lieu de animation pour correspondre à la classe personnalisée
     return AnimatedBuilder(
-      animation: _ctrl,
+      listenable: _ctrl,
       builder: (ctx, _) {
         final alpha = (0.5 + (_ctrl.value * 0.3)).clamp(0.0, 1.0);
         final color = ThixPolicy.surfaceStrong.withValues(alpha: alpha);
@@ -1370,6 +1794,7 @@ class _ExportOption extends StatelessWidget {
   }
 }
 
+// CORRECTION: La classe personnalisée accepte 'listenable' et non 'animation'
 class AnimatedBuilder extends AnimatedWidget {
   final Widget Function(BuildContext, Widget?) builder;
   final Widget? child;
