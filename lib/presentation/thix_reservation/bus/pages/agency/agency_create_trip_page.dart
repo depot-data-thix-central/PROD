@@ -1164,11 +1164,16 @@ class _PriceInput extends ConsumerWidget {
 
     if (price != null && price > 0) {
       // Convertir en CDF pour la preview
-      final priceInCdf = ref.read(currencyProvider).convert(
-        price,
-        fromCurrency: currency.code,
-        toCurrency: 'CDF',
-      ).round();
+      int priceInCdf;
+if (currencyState.currency.code == 'CDF') {
+  priceInCdf = priceInDisplayCurrency;
+} else {
+  // Utiliser le taux inverse depuis les exchangeRates du provider
+  final rate = currencyState.exchangeRates['${currencyState.currency.code}_CDF'];
+  priceInCdf = rate != null 
+      ? (priceInDisplayCurrency * rate).round() 
+      : priceInDisplayCurrency; // Fallback si taux indisponible
+}
 
       if (currency.code != 'CDF') {
         conversionPreview = l10n.agencyTripPriceConversion(
