@@ -1365,7 +1365,7 @@ class _BusTypeSelector extends StatelessWidget {
         Wrap(
           spacing: ThixPolicy.s10,
           runSpacing: ThixPolicy.s10,
-          children: _busTypes.map((type) {
+          children: _kBusTypes.map((type) {
             final (value, labelKey, icon, defaultLabel) = type;
             final isSelected = value == selected;
 
@@ -1467,7 +1467,7 @@ class _AmenitiesSelector extends StatelessWidget {
         Wrap(
           spacing: ThixPolicy.s8,
           runSpacing: ThixPolicy.s8,
-          children: _amenities.map((amenity) {
+          children: _kAmenities.map((amenity) {
             final (value, labelKey, icon) = amenity;
             final isSelected = selected.contains(value);
 
