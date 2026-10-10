@@ -128,21 +128,21 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(ThixPolicy.rLg),
           ),
-          title: Text(l10n.agencySeatsConfirmBlockTitle),
+          title: Text(l10n.t('agencySeatsConfirmBlockTitle')),
           content: Text(
-            l10n.agencySeatsConfirmBlockMessage(seat.seatNumber),
+            l10n.t('agencySeatsConfirmBlockMessage', args: [seat.seatNumber]),
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.commonCancel),
+              child: Text(l10n.t('common_cancel')),
             ),
             FilledButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: FilledButton.styleFrom(
                 backgroundColor: ThixPolicy.warning,
               ),
-              child: Text(l10n.agencySeatsConfirmBlock),
+              child: Text(l10n.t('agencySeatsConfirmBlock')),
             ),
           ],
         ),
@@ -172,7 +172,7 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
             children: [
               const Icon(Icons.error_outline, color: Colors.white, size: 18),
               SizedBox(width: ThixPolicy.s8),
-              Expanded(child: Text(context.l10n.agencySeatsUpdateError)),
+              Expanded(child: Text(context.l10n.t('agencySeatsUpdateError'))),
             ],
           ),
           backgroundColor: ThixPolicy.danger,
@@ -197,19 +197,19 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(ThixPolicy.rLg),
         ),
-        title: Text(l10n.agencySeatsBulkBlockTitle),
+        title: Text(l10n.t('agencySeatsBulkBlockTitle')),
         content: Text(
-          l10n.agencySeatsBulkBlockMessage(_bulkSelection.length),
+          l10n.t('agencySeatsBulkBlockMessage', args: [_bulkSelection.length.toString()]),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.commonCancel),
+            child: Text(l10n.t('common_cancel')),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: FilledButton.styleFrom(backgroundColor: ThixPolicy.warning),
-            child: Text(l10n.agencySeatsConfirmBlock),
+            child: Text(l10n.t('agencySeatsConfirmBlock')),
           ),
         ],
       ),
@@ -245,7 +245,7 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(context.l10n.agencySeatsUpdateError),
+          content: Text(context.l10n.t('agencySeatsUpdateError')),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
         ),
@@ -349,13 +349,13 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded, color: ThixPolicy.textMain),
         onPressed: () => context.pop(),
-        tooltip: l10n.commonBack,
+        tooltip: l10n.t('common_back'),
       ),
       title: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            l10n.agencySeatsTitle,
+            l10n.t('agencySeatsTitle'),
             style: ThixPolicy.titleStyle.copyWith(
               fontWeight: ThixPolicy.bold,
               fontSize: 15,
@@ -380,13 +380,13 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
               Icons.checklist_rounded,
               color: domainColor,
             ),
-            tooltip: l10n.agencySeatsBulkMode,
+            tooltip: l10n.t('agencySeatsBulkMode'),
             onPressed: _enterBulkMode,
           ),
         if (!_bulkMode)
           IconButton(
             icon: const Icon(Icons.refresh_rounded, color: ThixPolicy.textMain),
-            tooltip: l10n.commonRetry,
+            tooltip: l10n.t('common_retry'),
             onPressed: _isUpdating ? null : _load,
           ),
         SizedBox(width: ThixPolicy.s4),
@@ -430,7 +430,7 @@ class _AgencySeatsPageState extends ConsumerState<AgencySeatsPage> {
           seat.status == _SeatStatus.sold) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(context.l10n.agencySeatsCannotSelectBooked),
+            content: Text(context.l10n.t('agencySeatsCannotSelectBooked')),
             behavior: SnackBarBehavior.floating,
             duration: const Duration(seconds: 2),
           ),
@@ -536,7 +536,7 @@ class _StatsHeader extends StatelessWidget {
               ),
               SizedBox(width: ThixPolicy.s8),
               Text(
-                l10n.agencySeatsStatsTitle,
+                l10n.t('agencySeatsStatsTitle'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: ThixPolicy.bold,
                   fontSize: 15,
@@ -568,7 +568,7 @@ class _StatsHeader extends StatelessWidget {
             children: [
               Expanded(
                 child: _StatTile(
-                  label: l10n.agencySeatsStatAvailable,
+                  label: l10n.t('agencySeatsStatAvailable'),
                   value: stats.available,
                   color: ThixPolicy.success,
                   icon: Icons.check_circle_outline_rounded,
@@ -577,7 +577,7 @@ class _StatsHeader extends StatelessWidget {
               SizedBox(width: ThixPolicy.s8),
               Expanded(
                 child: _StatTile(
-                  label: l10n.agencySeatsStatReserved,
+                  label: l10n.t('agencySeatsStatReserved'),
                   value: stats.reserved,
                   color: ThixPolicy.warning,
                   icon: Icons.schedule_rounded,
@@ -586,7 +586,7 @@ class _StatsHeader extends StatelessWidget {
               SizedBox(width: ThixPolicy.s8),
               Expanded(
                 child: _StatTile(
-                  label: l10n.agencySeatsStatSold,
+                  label: l10n.t('agencySeatsStatSold'),
                   value: stats.sold,
                   color: domainColor,
                   icon: Icons.check_circle_rounded,
@@ -595,7 +595,7 @@ class _StatsHeader extends StatelessWidget {
               SizedBox(width: ThixPolicy.s8),
               Expanded(
                 child: _StatTile(
-                  label: l10n.agencySeatsStatBlocked,
+                  label: l10n.t('agencySeatsStatBlocked'),
                   value: stats.blocked,
                   color: ThixPolicy.textMuted,
                   icon: Icons.block_rounded,
@@ -729,19 +729,19 @@ class _LegendBar extends StatelessWidget {
         children: [
           _LegendItem(
             color: ThixPolicy.success,
-            label: l10n.seatLegendAvailable,
+            label: l10n.t('seatLegendAvailable'),
           ),
           _LegendItem(
             color: ThixPolicy.warning,
-            label: l10n.agencySeatsLegendReserved,
+            label: l10n.t('agencySeatsLegendReserved'),
           ),
           _LegendItem(
             color: domainColor,
-            label: l10n.agencySeatsLegendSold,
+            label: l10n.t('agencySeatsLegendSold'),
           ),
           _LegendItem(
             color: ThixPolicy.textMuted,
-            label: l10n.agencySeatsLegendBlocked,
+            label: l10n.t('agencySeatsLegendBlocked'),
           ),
         ],
       ),
@@ -865,7 +865,7 @@ class _BusLayout extends StatelessWidget {
                           ),
                           SizedBox(width: ThixPolicy.s4),
                           Text(
-                            l10n.seatSelectionDriver,
+                            l10n.t('seatSelectionDriver'),
                             style: ThixPolicy.microStyle.copyWith(
                               fontSize: 10,
                               fontWeight: ThixPolicy.semiBold,
@@ -940,7 +940,7 @@ class _BusLayout extends StatelessWidget {
                 ),
                 SizedBox(height: ThixPolicy.s8),
                 Text(
-                  l10n.seatSelectionAisle,
+                  l10n.t('seatSelectionAisle'),
                   style: ThixPolicy.microStyle.copyWith(
                     color: ThixPolicy.textMuted,
                     fontWeight: ThixPolicy.medium,
@@ -972,7 +972,7 @@ class _BusLayout extends StatelessWidget {
                         ),
                         SizedBox(height: ThixPolicy.s12),
                         Text(
-                          l10n.agencySeatsUpdating,
+                          l10n.t('agencySeatsUpdating'),
                           style: ThixPolicy.labelStyle.copyWith(
                             color: ThixPolicy.textMain,
                             fontWeight: ThixPolicy.bold,
@@ -1022,7 +1022,7 @@ class _SeatCell extends StatelessWidget {
         button: isInteractive,
         selected: isSelected,
         enabled: isInteractive,
-        label: '${l10n.agencySeatsSeatLabel(seat.seatNumber)} $statusLabel$vipLabel',
+        label: '${l10n.t('agencySeatsSeatLabel', args: [seat.seatNumber])} $statusLabel$vipLabel',
         child: Tooltip(
           message: '${seat.seatNumber} - $statusLabel$vipLabel',
           waitDuration: const Duration(milliseconds: 500),
@@ -1154,13 +1154,13 @@ class _SeatCell extends StatelessWidget {
     try {
       switch (status) {
         case _SeatStatus.available:
-          return l10n.seatLegendAvailable;
+          return l10n.t('seatLegendAvailable');
         case _SeatStatus.reserved:
-          return l10n.agencySeatsLegendReserved;
+          return l10n.t('agencySeatsLegendReserved');
         case _SeatStatus.sold:
-          return l10n.agencySeatsLegendSold;
+          return l10n.t('agencySeatsLegendSold');
         case _SeatStatus.blocked:
-          return l10n.agencySeatsLegendBlocked;
+          return l10n.t('agencySeatsLegendBlocked');
       }
     } catch (_) {
       return status.dbValue;
@@ -1222,7 +1222,7 @@ class _CapacityInfo extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  l10n.agencySeatsCapacityTitle,
+                  l10n.t('agencySeatsCapacityTitle'),
                   style: ThixPolicy.bodySmallStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
                     color: ThixPolicy.textMain,
@@ -1230,10 +1230,7 @@ class _CapacityInfo extends StatelessWidget {
                 ),
                 SizedBox(height: ThixPolicy.s2),
                 Text(
-                  l10n.agencySeatsCapacityMessage(
-                    stats.sold + stats.reserved,
-                    stats.total,
-                  ),
+                  l10n.t('agencySeatsCapacityMessage', args: [(stats.sold + stats.reserved).toString(), stats.total.toString()]),
                   style: ThixPolicy.microStyle.copyWith(
                     color: ThixPolicy.textSecondary,
                   ),
@@ -1315,7 +1312,7 @@ class _BulkActionBar extends StatelessWidget {
                       ),
                       SizedBox(width: ThixPolicy.s4),
                       Text(
-                        '$selectedCount ${l10n.agencySeatsBulkSelected}',
+                        '$selectedCount ${l10n.t('agencySeatsBulkSelected')}',
                         style: ThixPolicy.labelStyle.copyWith(
                           color: domainColor,
                           fontWeight: ThixPolicy.bold,
@@ -1327,7 +1324,7 @@ class _BulkActionBar extends StatelessWidget {
                 const Spacer(),
                 TextButton(
                   onPressed: isUpdating ? null : onCancel,
-                  child: Text(l10n.commonCancel),
+                  child: Text(l10n.t('common_cancel')),
                 ),
               ],
             ),
@@ -1339,7 +1336,7 @@ class _BulkActionBar extends StatelessWidget {
                     onPressed:
                         selectedCount == 0 || isUpdating ? null : onUnblock,
                     icon: const Icon(Icons.lock_open_rounded, size: 16),
-                    label: Text(l10n.agencySeatsBulkUnblock),
+                    label: Text(l10n.t('agencySeatsBulkUnblock')),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: ThixPolicy.success,
                       side: BorderSide(color: ThixPolicy.success),
@@ -1358,7 +1355,7 @@ class _BulkActionBar extends StatelessWidget {
                     onPressed:
                         selectedCount == 0 || isUpdating ? null : onBlock,
                     icon: const Icon(Icons.lock_rounded, size: 16),
-                    label: Text(l10n.agencySeatsBulkBlock),
+                    label: Text(l10n.t('agencySeatsBulkBlock')),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: ThixPolicy.warning,
                       foregroundColor: Colors.white,
@@ -1525,7 +1522,7 @@ class _ErrorView extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s20),
             Text(
-              l10n.commonError,
+              l10n.t('common_error'),
               style: ThixPolicy.h3Style.copyWith(
                 fontWeight: ThixPolicy.bold,
               ),
@@ -1543,7 +1540,7 @@ class _ErrorView extends StatelessWidget {
             ElevatedButton.icon(
               onPressed: onRetry,
               icon: const Icon(Icons.refresh_rounded),
-              label: Text(l10n.commonRetry),
+              label: Text(l10n.t('common_retry')),
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.domainReservation,
                 foregroundColor: Colors.white,
@@ -1585,7 +1582,7 @@ class _EmptyView extends StatelessWidget {
             ),
             SizedBox(height: ThixPolicy.s20),
             Text(
-              l10n.agencySeatsEmptyTitle,
+              l10n.t('agencySeatsEmptyTitle'),
               style: ThixPolicy.h3Style.copyWith(
                 fontWeight: ThixPolicy.bold,
               ),
@@ -1595,7 +1592,7 @@ class _EmptyView extends StatelessWidget {
             ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 300),
               child: Text(
-                l10n.agencySeatsEmptyMessage,
+                l10n.t('agencySeatsEmptyMessage'),
                 style: ThixPolicy.bodySmallStyle.copyWith(
                   color: ThixPolicy.textSecondary,
                 ),
