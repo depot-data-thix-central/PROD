@@ -129,7 +129,6 @@ class AgencyDashboardState {
           case _TripFilter.all:
             return true;
           case _TripFilter.scheduled:
-            // Correction: Utilisation de .name pour comparer l'Enum TripStatus avec une String
             return t.status.name == 'scheduled';
           case _TripFilter.departed:
             return t.status.name == 'departed';
@@ -193,7 +192,6 @@ class AgencyDashboardState {
   Map<String, int> get bookingsByStatus {
     final map = <String, int>{};
     for (final b in agencyBookings) {
-      // Correction: Utilisation de .name pour convertir BookingStatus en String pour la clé de la Map
       final statusKey = b.status.name;
       map[statusKey] = (map[statusKey] ?? 0) + 1;
     }
@@ -483,12 +481,18 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
     try {
       await _service.updateTripStatus(tripId, newStatus).timeout(_timeout);
 
+      // Conversion de la chaîne vers l'Enum TripStatus
+      final parsedStatus = TripStatus.values.firstWhere(
+        (e) => e.name == newStatus,
+        orElse: () => TripStatus.scheduled, // Valeur par défaut si inconnu
+      );
+
       // Mettre à jour localement
       final updatedTrips = state.myTrips.map((t) {
         if (t.id == tripId) {
           return BusTripModel(
             id: t.id,
-            agencyId: t.agencyId, // Conservé
+            agencyId: t.agencyId,
             agency: t.agency,
             departureCity: t.departureCity,
             arrivalCity: t.arrivalCity,
@@ -501,12 +505,7 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
             availableSeats: t.availableSeats,
             busType: t.busType,
             amenities: t.amenities,
-            // Le modèle attend probablement un Enum TripStatus, mais si la méthode prend String, 
-            // il faut convertir ou vérifier le constructeur. Ici on suppose que le constructeur accepte String ou qu'il faut caster.
-            // Si BusTripModel.status est un Enum TripStatus, il faut faire: status: TripStatus.values.firstWhere((e) => e.name == newStatus)
-            // Pour l'instant, on garde la logique précédente mais attention au type réel du champ status dans BusTripModel.
-            // Si c'est un String dans le modèle :
-            status: newStatus, 
+            status: parsedStatus, // Utilisation de l'Enum ici
           );
         }
         return t;
@@ -612,17 +611,12 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
             userId: b.userId,
             seats: b.seats,
             totalPriceFcfa: b.totalPriceFcfa,
-            // Correction: Conversion si nécessaire, ou utilisation directe si le modèle attend String
-            // Si BookingModel.status est un Enum BookingStatus:
-            // status: BookingStatus.cancelled, 
-            // Sinon si c'est String:
-            status: 'cancelled',
+            status: BookingStatus.cancelled, // Utilisation de l'Enum BookingStatus
             qrCode: b.qrCode,
             createdAt: b.createdAt,
             passengerName: b.passengerName,
             trip: b.trip,
-            // Ajout du paramètre manquant agencyId si requis par le constructeur
-            agencyId: b.agencyId, 
+            agencyId: b.agencyId, // Ajout du paramètre manquant
           );
         }
         return b;
