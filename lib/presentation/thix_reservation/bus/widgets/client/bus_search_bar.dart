@@ -63,9 +63,9 @@ class BusSearchBar extends ConsumerWidget {
             children: [
               Expanded(
                 child: _CityField(
-                  label: l10n.busSearchDeparture,
+                  label: l10n.t('reservation_check_out'),
                   value: state.departureCity,
-                  placeholder: l10n.busSearchChoose,
+                  placeholder: l10n.t('market_discover'),
                   icon: Icons.my_location_rounded,
                   accent: accent,
                   onTap: () => _showCityPicker(context, ref, isDeparture: true),
@@ -84,9 +84,9 @@ class BusSearchBar extends ConsumerWidget {
               SizedBox(width: ThixPolicy.s8),
               Expanded(
                 child: _CityField(
-                  label: l10n.busSearchArrival,
+                  label: l10n.t('reservation_check_in'),
                   value: state.arrivalCity,
-                  placeholder: l10n.busSearchChoose,
+                  placeholder: l10n.t('market_discover'),
                   icon: Icons.location_on_rounded,
                   accent: accent,
                   onTap: () => _showCityPicker(context, ref, isDeparture: false),
@@ -101,7 +101,7 @@ class BusSearchBar extends ConsumerWidget {
             children: [
               Expanded(
                 child: _InfoField(
-                  label: l10n.busSearchDate,
+                  label: l10n.t('events_date'),
                   value: _formatDate(context, state.departureDate),
                   icon: Icons.calendar_today_rounded,
                   accent: accent,
@@ -111,8 +111,9 @@ class BusSearchBar extends ConsumerWidget {
               SizedBox(width: ThixPolicy.s12),
               Expanded(
                 child: _InfoField(
-                  label: l10n.busSearchPassengers,
-                  value: l10n.busSearchPassengersValue(state.passengers),
+                  label: l10n.t('reservation_guests'),
+                  // Construction dynamique car la clé spécifique n'existe pas
+                  value: '${state.passengers} ${l10n.t('reservation_guests')}',
                   icon: Icons.person_outline_rounded,
                   accent: accent,
                   onTap: () => _showPassengerPicker(context),
@@ -125,7 +126,7 @@ class BusSearchBar extends ConsumerWidget {
           // Bouton Rechercher
           Semantics(
             button: true,
-            label: l10n.busSearchButton,
+            label: l10n.t('common_search'),
             child: SizedBox(
               width: double.infinity,
               height: 52,
@@ -133,7 +134,7 @@ class BusSearchBar extends ConsumerWidget {
                 onPressed: _isSearchEnabled(state) ? onSearch : null,
                 icon: Icon(Icons.search_rounded, color: Colors.white, size: 20),
                 label: Text(
-                  l10n.busSearchButton,
+                  l10n.t('common_search'),
                   style: ThixPolicy.titleStyle.copyWith(
                     color: Colors.white,
                     fontWeight: ThixPolicy.bold,
@@ -416,7 +417,7 @@ class _SwapButtonState extends State<_SwapButton>
 
     return Semantics(
       button: true,
-      label: l10n.busSearchSwap,
+      label: l10n.t('common_refresh'), // Utilisation de "Actualiser" comme sémantique pour Swap
       child: Material(
         color: Colors.transparent,
         child: InkWell(
