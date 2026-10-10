@@ -34,39 +34,6 @@ import '../../providers/agency_dashboard_provider.dart';
 /// - Design system ThixPolicy
 ///
 /// ============================================================================
-class AgencyCreateTripPage extends ConsumerStatefulWidget {
-  const AgencyCreateTripPage({super.key});
-
-  @override
-  ConsumerState<AgencyCreateTripPage> createState() =>
-      _AgencyCreateTripPageState();
-}
-
-class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
-  final _formKey = GlobalKey<FormState>();
-
-  // Controllers
-  final _depStationCtrl = TextEditingController();
-  final _arrStationCtrl = TextEditingController();
-  final _priceCtrl = TextEditingController();
-  final _seatsCtrl = TextEditingController(text: '50');
-  final _currencyCtrl = TextEditingController();
-
-  // État du formulaire
-  String? _fromCity;
-  String? _toCity;
-  String _busType = 'standard';
-  final Set<String> _selectedAmenities = {};
-  DateTime _depDate = DateTime.now().add(const Duration(days: 1, hours: 8));
-  DateTime _arrDate = DateTime.now().add(const Duration(days: 1, hours: 14));
-
-  // Erreurs de validation
-  String? _fromError;
-  String? _toError;
-  String? _priceError;
-  String? _seatsError;
-  String? _dateError;
-
   // Liste des villes (à remplacer par API plus tard)
   static const _cities = [
     // RDC
@@ -104,6 +71,40 @@ class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
     ('vip', 'agencyTripBusVip', Icons.star_rounded, 'VIP'),
     ('sleeper', 'agencyTripBusSleeper', Icons.bed_rounded, 'Couchette'),
   ];
+
+class AgencyCreateTripPage extends ConsumerStatefulWidget {
+  const AgencyCreateTripPage({super.key});
+
+  @override
+  ConsumerState<AgencyCreateTripPage> createState() =>
+      _AgencyCreateTripPageState();
+}
+
+class _AgencyCreateTripPageState extends ConsumerState<AgencyCreateTripPage> {
+  final _formKey = GlobalKey<FormState>();
+
+  // Controllers
+  final _depStationCtrl = TextEditingController();
+  final _arrStationCtrl = TextEditingController();
+  final _priceCtrl = TextEditingController();
+  final _seatsCtrl = TextEditingController(text: '50');
+  final _currencyCtrl = TextEditingController();
+
+  // État du formulaire
+  String? _fromCity;
+  String? _toCity;
+  String _busType = 'standard';
+  final Set<String> _selectedAmenities = {};
+  DateTime _depDate = DateTime.now().add(const Duration(days: 1, hours: 8));
+  DateTime _arrDate = DateTime.now().add(const Duration(days: 1, hours: 14));
+
+  // Erreurs de validation
+  String? _fromError;
+  String? _toError;
+  String? _priceError;
+  String? _seatsError;
+  String? _dateError;
+
 
   @override
   void initState() {
