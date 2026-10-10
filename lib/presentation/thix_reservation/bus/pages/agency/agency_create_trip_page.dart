@@ -7,7 +7,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/core/extensions/context_ext.dart';
 import 'package:thix_id/core/utils/currency_formatter.dart';
 import 'package:thix_id/core/providers/currency_provider.dart';
-
+import 'package:thix_id/core/extensions/context_ext.dart';
 import '../../providers/agency_dashboard_provider.dart';
 
 /// ============================================================================
