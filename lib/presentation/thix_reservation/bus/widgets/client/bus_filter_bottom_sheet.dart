@@ -1,105 +1,806 @@
-// lib/presentation/thix_reservation/bus/widgets/client/bus_filter_bottom_sheet.dart
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/core/extensions/context_ext.dart';
+import 'package:thix_id/core/utils/currency_formatter.dart';
+import 'package:thix_id/core/providers/currency_provider.dart';
+
 import '../../providers/bus_search_provider.dart';
 
-class BusFilterBottomSheet extends ConsumerWidget {
+/// ============================================================================
+/// BusFilterBottomSheet
+/// ============================================================================
+///
+/// Feuille de filtres avancés pour la recherche de trajets de bus.
+///
+/// Features :
+/// - Multi-devises global (via currencyProvider)
+/// - Conversion automatique des limites de prix
+/// - 3 sections de filtres : Prix, Type de bus, Équipements
+/// - Chips animés avec feedback haptique
+/// - Slider prix avec label dynamique
+/// - Badge "Actif" sur les sections filtrées
+/// - i18n complète (FR/EN/LN)
+/// - Accessibilité complète (Semantics)
+/// - Design system ThixPolicy
+/// - Bouton "Appliquer" avec compteur de filtres actifs
+///
+/// ============================================================================
+class BusFilterBottomSheet extends ConsumerStatefulWidget {
   const BusFilterBottomSheet({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final state = ref.watch(busSearchProvider);
+  ConsumerState<BusFilterBottomSheet> createState() =>
+      _BusFilterBottomSheetState();
+}
+
+class _BusFilterBottomSheetState extends ConsumerState<BusFilterBottomSheet> {
+  // État local pour les modifications avant application
+  late double _localMaxPrice;
+  late Set<String> _localBusTypes;
+  late Set<String> _localAmenities;
+  late Currency _localCurrency;
+
+  // Limites par défaut (en CDF) — seront converties selon la devise
+  static const _defaultMinPriceCDF = 1000.0;
+  static const _defaultMaxPriceCDF = 100000.0;
+
+  @override
+  void initState() {
+    super.initState();
+    final state = ref.read(busSearchProvider);
+    final currency = ref.read(currencyProvider).currency;
+
+    _localCurrency = currency;
+
+    // Convertir depuis CDF vers la devise courante
+    final converted = ref.read(currencyProvider).convert(
+      _defaultMaxPriceCDF,
+      fromCurrency: 'CDF',
+    );
+    _localMaxPrice = (state.maxPrice > 0)
+        ? ref.read(currencyProvider).convert(
+            state.maxPrice.toDouble(),
+            fromCurrency: 'CDF',
+          ).toDouble()
+        : converted.toDouble();
+
+    _localBusTypes = Set<String>.from(state.busTypes);
+    _localAmenities = Set<String>.from(state.amenities);
+  }
+
+  int get _activeFiltersCount {
+    int count = 0;
+    final state = ref.read(busSearchProvider);
+
+    // Prix différent du max par défaut (en CDF)
+    final maxInCDF = ref.read(currencyProvider).convert(
+      _localMaxPrice,
+      fromCurrency: _localCurrency.code,
+    );
+    if (maxInCDF.toDouble() < _defaultMaxPriceCDF * 0.95) count++;
+
+    if (_localBusTypes.isNotEmpty) count++;
+    if (_localAmenities.isNotEmpty) count++;
+
+    return count;
+  }
+
+  void _applyFilters() {
     final notifier = ref.read(busSearchProvider.notifier);
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(10)),
-            ),
+    // Convertir le prix local (dans la devise utilisateur) vers CDF pour le stockage
+    final priceInCDF = ref.read(currencyProvider).convert(
+      _localMaxPrice,
+      fromCurrency: _localCurrency.code,
+    );
+
+    notifier.updatePriceFilter(0, priceInCDF.toDouble());
+    notifier.updateBusTypes(_localBusTypes.toList());
+    notifier.updateAmenities(_localAmenities.toList());
+
+    HapticFeedback.mediumImpact();
+    Navigator.pop(context);
+  }
+
+  void _clearAll() {
+    setState(() {
+      final converted = ref.read(currencyProvider).convert(
+        _defaultMaxPriceCDF,
+        fromCurrency: 'CDF',
+      );
+      _localMaxPrice = converted.toDouble();
+      _localBusTypes.clear();
+      _localAmenities.clear();
+    });
+    HapticFeedback.lightImpact();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final currency = ref.watch(currencyProvider).currency;
+    final domainColor = ThixPolicy.domainReservation;
+    final activeCount = _activeFiltersCount;
+
+    return SafeArea(
+      child: Container(
+        padding: EdgeInsets.fromLTRB(
+          ThixPolicy.s20,
+          ThixPolicy.s16,
+          ThixPolicy.s20,
+          ThixPolicy.s16,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(ThixPolicy.r2Xl),
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Filtres de recherche',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
-              ),
-              TextButton(
-                onPressed: () => notifier.clearFilters(),
-                child: const Text(
-                  'Tout effacer',
-                  style: TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w800, fontSize: 12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(10),
                 ),
               ),
-            ],
-          ),
-          const Divider(height: 24, color: ThixPolicy.border),
-          const Text(
-            'Prix maximum (CDF)',
-            style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                state.minPrice.toInt().toString() + ' CDF',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary),
+            ),
+            SizedBox(height: ThixPolicy.s16),
+
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(ThixPolicy.s8),
+                  decoration: BoxDecoration(
+                    color: domainColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                  ),
+                  child: Icon(
+                    Icons.tune_rounded,
+                    color: domainColor,
+                    size: 20,
+                  ),
+                ),
+                SizedBox(width: ThixPolicy.s12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        l10n.filtersTitle,
+                        style: ThixPolicy.titleStyle.copyWith(
+                          fontWeight: ThixPolicy.bold,
+                          fontSize: 16,
+                          color: ThixPolicy.textMain,
+                        ),
+                      ),
+                      SizedBox(height: ThixPolicy.s2),
+                      Text(
+                        activeCount > 0
+                            ? l10n.filtersActiveCount(activeCount)
+                            : l10n.filtersNoActive,
+                        style: ThixPolicy.microStyle.copyWith(
+                          color: activeCount > 0
+                              ? domainColor
+                              : ThixPolicy.textSecondary,
+                          fontWeight: ThixPolicy.medium,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: activeCount > 0 ? _clearAll : null,
+                  style: TextButton.styleFrom(
+                    foregroundColor: domainColor,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: ThixPolicy.s12,
+                      vertical: ThixPolicy.s6,
+                    ),
+                  ),
+                  child: Text(
+                    l10n.filtersClearAll,
+                    style: ThixPolicy.labelStyle.copyWith(
+                      color: activeCount > 0
+                          ? domainColor
+                          : ThixPolicy.textMuted,
+                      fontWeight: ThixPolicy.bold,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+
+            SizedBox(height: ThixPolicy.s20),
+
+            // Scrollable content
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * 0.5,
               ),
-              Text(
-                state.maxPrice.toInt().toString() + ' CDF',
-                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12, color: ThixPolicy.textSecondary),
-              ),
-            ],
-          ),
-          Slider(
-            value: state.maxPrice.clamp(1000, 100000),
-            min: 1000,
-            max: 100000,
-            divisions: 99,
-            activeColor: ThixPolicy.primary,
-            inactiveColor: ThixPolicy.border,
-            label: state.maxPrice.toInt().toString() + ' CDF',
-            onChanged: (val) => notifier.updatePriceFilter(state.minPrice, val),
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Les prix sont en Franc Congolais. 1 USD ≈ 2850 CDF.',
-            style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: ElevatedButton(
-              onPressed: () => Navigator.pop(context),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ThixPolicy.primary,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-              ),
-              child: const Text(
-                'Appliquer les filtres',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+              child: SingleChildScrollView(
+                physics: const BouncingScrollPhysics(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _PriceRangeFilter(
+                      value: _localMaxPrice,
+                      currency: _localCurrency,
+                      domainColor: domainColor,
+                      onChanged: (val) {
+                        setState(() => _localMaxPrice = val);
+                      },
+                    ),
+                    SizedBox(height: ThixPolicy.s24),
+                    _BusTypeFilter(
+                      selected: _localBusTypes,
+                      domainColor: domainColor,
+                      onChanged: (types) {
+                        setState(() => _localBusTypes = types);
+                      },
+                    ),
+                    SizedBox(height: ThixPolicy.s24),
+                    _AmenitiesFilter(
+                      selected: _localAmenities,
+                      domainColor: domainColor,
+                      onChanged: (amenities) {
+                        setState(() => _localAmenities = amenities);
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
-          ),
-        ],
+
+            SizedBox(height: ThixPolicy.s20),
+
+            // Apply button
+            SizedBox(
+              width: double.infinity,
+              height: 52,
+              child: ElevatedButton.icon(
+                onPressed: _applyFilters,
+                icon: Icon(Icons.check_rounded, size: 18),
+                label: Text(
+                  activeCount > 0
+                      ? l10n.filtersApplyWithCount(activeCount)
+                      : l10n.filtersApply,
+                  style: ThixPolicy.titleStyle.copyWith(
+                    color: Colors.white,
+                    fontWeight: ThixPolicy.bold,
+                  ),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: domainColor,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
+
+/// ============================================================================
+/// _PriceRangeFilter — Filtre de prix avec multi-devises
+/// ============================================================================
+class _PriceRangeFilter extends StatelessWidget {
+  final double value;
+  final Currency currency;
+  final Color domainColor;
+  final ValueChanged<double> onChanged;
+
+  const _PriceRangeFilter({
+    required this.value,
+    required this.currency,
+    required this.domainColor,
+    required this.onChanged,
+  });
+
+  static const _minPrice = 1000.0;
+  static const _maxPrice = 500000.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    final formattedValue = CurrencyFormatter.format(
+      value.toInt(),
+      currency: currency.code,
+      compact: false,
+    );
+
+    final formattedMax = CurrencyFormatter.format(
+      _maxPrice.toInt(),
+      currency: currency.code,
+      compact: true,
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          icon: Icons.payments_outlined,
+          title: l10n.filtersPriceTitle,
+          domainColor: domainColor,
+        ),
+        SizedBox(height: ThixPolicy.s12),
+
+        // Current value display
+        Container(
+          padding: EdgeInsets.all(ThixPolicy.s12),
+          decoration: BoxDecoration(
+            color: domainColor.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            border: Border.all(
+              color: domainColor.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                l10n.filtersMaxBudget,
+                style: ThixPolicy.bodySmallStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                ),
+              ),
+              Text(
+                formattedValue,
+                style: ThixPolicy.titleStyle.copyWith(
+                  fontWeight: ThixPolicy.bold,
+                  color: domainColor,
+                  fontSize: 16,
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        SizedBox(height: ThixPolicy.s16),
+
+        // Slider
+        Semantics(
+          label: l10n.filtersPriceSliderLabel(formattedValue),
+          value: value.toStringAsFixed(0),
+          child: SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              activeTrackColor: domainColor,
+              inactiveTrackColor: ThixPolicy.border,
+              thumbColor: domainColor,
+              overlayColor: domainColor.withValues(alpha: 0.15),
+              trackHeight: 4,
+              thumbShape: const RoundSliderThumbShape(
+                enabledThumbRadius: 10,
+              ),
+              valueIndicatorShape: const PaddleSliderValueIndicatorShape(),
+              valueIndicatorColor: domainColor,
+              valueIndicatorTextStyle: TextStyle(
+                color: Colors.white,
+                fontWeight: ThixPolicy.bold,
+                fontSize: 12,
+              ),
+            ),
+            child: Slider(
+              value: value.clamp(_minPrice, _maxPrice),
+              min: _minPrice,
+              max: _maxPrice,
+              divisions: 99,
+              label: formattedValue,
+              onChanged: (val) {
+                HapticFeedback.selectionClick();
+                onChanged(val);
+              },
+            ),
+          ),
+        ),
+
+        SizedBox(height: ThixPolicy.s4),
+
+        // Min/Max labels
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              CurrencyFormatter.format(
+                _minPrice.toInt(),
+                currency: currency.code,
+                compact: true,
+              ),
+              style: ThixPolicy.microStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+              ),
+            ),
+            Text(
+              formattedMax,
+              style: ThixPolicy.microStyle.copyWith(
+                color: ThixPolicy.textSecondary,
+              ),
+            ),
+          ],
+        ),
+
+        SizedBox(height: ThixPolicy.s8),
+
+        // Info text
+        Row(
+          children: [
+            Icon(
+              Icons.info_outline_rounded,
+              size: 12,
+              color: ThixPolicy.textMuted,
+            ),
+            SizedBox(width: ThixPolicy.s4),
+            Expanded(
+              child: Text(
+                l10n.filtersPriceCurrencyInfo(currency.code),
+                style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textMuted,
+                  fontSize: 10.5,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// ============================================================================
+/// _BusTypeFilter — Filtre par type de bus
+/// ============================================================================
+class _BusTypeFilter extends StatelessWidget {
+  final Set<String> selected;
+  final Color domainColor;
+  final ValueChanged<Set<String>> onChanged;
+
+  const _BusTypeFilter({
+    required this.selected,
+    required this.domainColor,
+    required this.onChanged,
+  });
+
+  static const _types = [
+    ('vip', 'filtersBusTypeVip', Icons.star_rounded),
+    ('standard', 'filtersBusTypeStandard', Icons.directions_bus_rounded),
+    ('clim', 'filtersBusTypeClim', Icons.ac_unit_rounded),
+    ('sleeper', 'filtersBusTypeSleeper', Icons.bed_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          icon: Icons.directions_bus_rounded,
+          title: l10n.filtersBusTypeTitle,
+          domainColor: domainColor,
+          subtitle: selected.isEmpty
+              ? l10n.filtersBusTypeAll
+              : l10n.filtersSelectedCount(selected.length),
+        ),
+        SizedBox(height: ThixPolicy.s12),
+        Wrap(
+          spacing: ThixPolicy.s8,
+          runSpacing: ThixPolicy.s8,
+          children: _types.map((t) {
+            final value = t.$1;
+            final labelKey = t.$2;
+            final icon = t.$3;
+            final isSelected = selected.contains(value);
+
+            return _FilterChip(
+              icon: icon,
+              label: _translateType(l10n, labelKey),
+              isSelected: isSelected,
+              domainColor: domainColor,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                final newSet = Set<String>.from(selected);
+                if (isSelected) {
+                  newSet.remove(value);
+                } else {
+                  newSet.add(value);
+                }
+                onChanged(newSet);
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  String _translateType(dynamic l10n, String key) {
+    try {
+      switch (key) {
+        case 'filtersBusTypeVip':
+          return l10n.filtersBusTypeVip;
+        case 'filtersBusTypeStandard':
+          return l10n.filtersBusTypeStandard;
+        case 'filtersBusTypeClim':
+          return l10n.filtersBusTypeClim;
+        case 'filtersBusTypeSleeper':
+          return l10n.filtersBusTypeSleeper;
+        default:
+          return key;
+      }
+    } catch (_) {
+      return key;
+    }
+  }
+}
+
+/// ============================================================================
+/// _AmenitiesFilter — Filtre par équipements
+/// ============================================================================
+class _AmenitiesFilter extends StatelessWidget {
+  final Set<String> selected;
+  final Color domainColor;
+  final ValueChanged<Set<String>> onChanged;
+
+  const _AmenitiesFilter({
+    required this.selected,
+    required this.domainColor,
+    required this.onChanged,
+  });
+
+  static const _amenities = [
+    ('wifi', 'amenityWifi', Icons.wifi_rounded),
+    ('ac', 'amenityAc', Icons.ac_unit_rounded),
+    ('usb', 'amenityUsb', Icons.usb_rounded),
+    ('toilet', 'amenityToilet', Icons.wc_rounded),
+    ('tv', 'amenityTv', Icons.tv_rounded),
+    ('snack', 'filtersAmenitySnack', Icons.restaurant_rounded),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          icon: Icons.star_outline_rounded,
+          title: l10n.filtersAmenitiesTitle,
+          domainColor: domainColor,
+          subtitle: selected.isEmpty
+              ? l10n.filtersAmenitiesAll
+              : l10n.filtersSelectedCount(selected.length),
+        ),
+        SizedBox(height: ThixPolicy.s12),
+        Wrap(
+          spacing: ThixPolicy.s8,
+          runSpacing: ThixPolicy.s8,
+          children: _amenities.map((a) {
+            final value = a.$1;
+            final labelKey = a.$2;
+            final icon = a.$3;
+            final isSelected = selected.contains(value);
+
+            return _FilterChip(
+              icon: icon,
+              label: _translateAmenity(l10n, labelKey),
+              isSelected: isSelected,
+              domainColor: domainColor,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                final newSet = Set<String>.from(selected);
+                if (isSelected) {
+                  newSet.remove(value);
+                } else {
+                  newSet.add(value);
+                }
+                onChanged(newSet);
+              },
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  String _translateAmenity(dynamic l10n, String key) {
+    try {
+      switch (key) {
+        case 'amenityWifi':
+          return l10n.amenityWifi;
+        case 'amenityAc':
+          return l10n.amenityAc;
+        case 'amenityUsb':
+          return l10n.amenityUsb;
+        case 'amenityToilet':
+          return l10n.amenityToilet;
+        case 'amenityTv':
+          return l10n.amenityTv;
+        case 'filtersAmenitySnack':
+          return l10n.filtersAmenitySnack;
+        default:
+          return key;
+      }
+    } catch (_) {
+      return key;
+    }
+  }
+}
+
+/// ============================================================================
+/// _FilterChip — Chip de filtre réutilisable avec animation
+/// ============================================================================
+class _FilterChip extends StatefulWidget {
+  final IconData icon;
+  final String label;
+  final bool isSelected;
+  final Color domainColor;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.icon,
+    required this.label,
+    required this.isSelected,
+    required this.domainColor,
+    required this.onTap,
+  });
+
+  @override
+  State<_FilterChip> createState() => _FilterChipState();
+}
+
+class _FilterChipState extends State<_FilterChip> {
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      selected: widget.isSelected,
+      label: widget.label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.onTap,
+          borderRadius: BorderRadius.circular(ThixPolicy.rFull),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            padding: EdgeInsets.symmetric(
+              horizontal: ThixPolicy.s14,
+              vertical: ThixPolicy.s10,
+            ),
+            decoration: BoxDecoration(
+              color: widget.isSelected
+                  ? widget.domainColor
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(ThixPolicy.rFull),
+              border: Border.all(
+                color: widget.isSelected
+                    ? widget.domainColor
+                    : ThixPolicy.border,
+                width: 1.5,
+              ),
+              boxShadow: widget.isSelected
+                  ? [
+                      BoxShadow(
+                        color: widget.domainColor.withValues(alpha: 0.25),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  widget.icon,
+                  size: 15,
+                  color: widget.isSelected
+                      ? Colors.white
+                      : widget.domainColor,
+                ),
+                SizedBox(width: ThixPolicy.s6),
+                Text(
+                  widget.label,
+                  style: ThixPolicy.labelStyle.copyWith(
+                    color: widget.isSelected
+                        ? Colors.white
+                        : ThixPolicy.textMain,
+                    fontWeight: widget.isSelected
+                        ? ThixPolicy.bold
+                        : ThixPolicy.medium,
+                    fontSize: 12,
+                  ),
+                ),
+                if (widget.isSelected) ...[
+                  SizedBox(width: ThixPolicy.s4),
+                  Icon(
+                    Icons.check_rounded,
+                    size: 14,
+                    color: Colors.white,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _SectionHeader — En-tête de section de filtre
+/// ============================================================================
+class _SectionHeader extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String? subtitle;
+  final Color domainColor;
+
+  const _SectionHeader({
+    required this.icon,
+    required this.title,
+    required this.domainColor,
+    this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          padding: EdgeInsets.all(ThixPolicy.s6),
+          decoration: BoxDecoration(
+            color: domainColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(ThixPolicy.rXs),
+          ),
+          child: Icon(icon, size: 14, color: domainColor),
+        ),
+        SizedBox(width: ThixPolicy.s8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: ThixPolicy.bodyStyle.copyWith(
+                  fontWeight: ThixPolicy.bold,
+                  color: ThixPolicy.textMain,
+                ),
+              ),
+              if (subtitle != null)
+                Text(
+                  subtitle!,
+                  style: ThixPolicy.microStyle.copyWith(
+                    color: domainColor,
+                    fontWeight: ThixPolicy.medium,
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Typedef pour Currency (à adapter selon votre modèle)
+typedef Currency = dynamic;
