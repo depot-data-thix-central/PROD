@@ -3,8 +3,7 @@ import 'package:thix_id/services/notification_service.dart';
 
 /// Point d'entrée unique pour créer des notifications depuis n'importe
 /// quel module THIX ID. Chaque méthode encapsule le bon `type` (aligné
-/// sur NotificationModule.typeKeys) et un format de titre/corps cohérent,
-/// pour éviter que chaque écran ne recompose ça à la main.
+/// sur NotificationModule.typeKeys) et un format de titre/corps cohérent.
 ///
 /// Sous le capot, chaque appel passe par NotificationService.add(), qui
 /// insère en base (déclenchant le push FCM via le Database Webhook) ET
@@ -15,10 +14,13 @@ class ModuleNotifications {
 
   final NotificationService _service = NotificationService();
 
-  // ─── THIX CHAT ──────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX CHAT
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> chatMessage({
     required String toUid,
+    required String senderId,
     required String senderName,
     required String preview,
     required String conversationId,
@@ -26,13 +28,38 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'chat',
+      category: 'messages',
       title: senderName,
       body: preview,
-      data: {'route': '/chat/c/$conversationId'},
+      senderId: senderId,
+      route: '/chat/c/$conversationId',
+      data: {'conversation_id': conversationId},
     );
   }
 
-  // ─── THIX PRO (réseau) ──────────────────────────────────────────────
+  Future<void> callMissed({
+    required String toUid,
+    required String callerId,
+    required String callerName,
+    required bool isVideo,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'call_missed',
+      category: 'messages',
+      title: 'Appel manqué',
+      body: isVideo
+          ? '$callerName a tenté de vous appeler en vidéo'
+          : '$callerName a tenté de vous appeler',
+      senderId: callerId,
+      route: '/chat',
+      priority: 2,
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX PRO (Réseau)
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> like({
     required String toUid,
@@ -43,11 +70,12 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'like',
+      category: 'network',
       title: 'THIX PRO',
       body: '$senderName a aimé votre publication.',
       senderId: senderId,
       postId: postId,
-      data: {'route': '/network/post/$postId'},
+      route: '/network/post/$postId',
     );
   }
 
@@ -61,11 +89,85 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'comment',
+      category: 'network',
       title: senderName,
       body: commentPreview,
       senderId: senderId,
       postId: postId,
-      data: {'route': '/network/post/$postId'},
+      route: '/network/post/$postId',
+    );
+  }
+
+  Future<void> commentReply({
+    required String toUid,
+    required String senderId,
+    required String senderName,
+    required String postId,
+    required String commentPreview,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'comment_reply',
+      category: 'network',
+      title: senderName,
+      body: 'a répondu à votre commentaire : $commentPreview',
+      senderId: senderId,
+      postId: postId,
+      route: '/network/post/$postId',
+    );
+  }
+
+  Future<void> commentLike({
+    required String toUid,
+    required String senderId,
+    required String senderName,
+    required String postId,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'comment_like',
+      category: 'network',
+      title: 'THIX PRO',
+      body: '$senderName a aimé votre commentaire.',
+      senderId: senderId,
+      postId: postId,
+      route: '/network/post/$postId',
+    );
+  }
+
+  Future<void> repost({
+    required String toUid,
+    required String senderId,
+    required String senderName,
+    required String postId,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'repost',
+      category: 'network',
+      title: 'THIX PRO',
+      body: '$senderName a republié votre publication.',
+      senderId: senderId,
+      postId: postId,
+      route: '/network/post/$postId',
+    );
+  }
+
+  Future<void> mention({
+    required String toUid,
+    required String senderId,
+    required String senderName,
+    required String postId,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'mention',
+      category: 'network',
+      title: 'THIX PRO',
+      body: '$senderName vous a mentionné dans une publication.',
+      senderId: senderId,
+      postId: postId,
+      route: '/network/post/$postId',
     );
   }
 
@@ -77,10 +179,11 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'follow',
+      category: 'network',
       title: 'THIX PRO',
       body: '$senderName a commencé à vous suivre.',
       senderId: senderId,
-      data: {'route': '/network/profile/$senderId'},
+      route: '/network/profile/$senderId',
     );
   }
 
@@ -92,14 +195,33 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'connection',
+      category: 'network',
       title: 'THIX PRO',
       body: '$senderName souhaite se connecter avec vous.',
       senderId: senderId,
-      data: {'route': '/network/connections'},
+      route: '/network/connections',
     );
   }
 
-  // ─── THIX MONEY ─────────────────────────────────────────────────────
+  Future<void> connectionAccepted({
+    required String toUid,
+    required String senderId,
+    required String senderName,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'friend_accepted',
+      category: 'network',
+      title: 'THIX PRO',
+      body: '$senderName a accepté votre demande de connexion.',
+      senderId: senderId,
+      route: '/network/profile/$senderId',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX MONEY
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> moneyReceived({
     required String toUid,
@@ -110,9 +232,11 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'money',
+      category: 'money',
       title: 'THIX MONEY',
       body: 'Vous avez reçu $amountLabel de $fromLabel.',
-      data: {'route': '/money/transaction/$transactionId'},
+      route: '/money/transaction/$transactionId',
+      priority: 2,
     );
   }
 
@@ -124,13 +248,31 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'payment',
+      category: 'money',
       title: 'THIX MONEY',
       body: 'Paiement de $amountLabel confirmé.',
-      data: {'route': '/money/transaction/$transactionId'},
+      route: '/money/transaction/$transactionId',
     );
   }
 
-  // ─── THIX MEDIA (live) ──────────────────────────────────────────────
+  Future<void> moneyRefund({
+    required String toUid,
+    required String amountLabel,
+    required String transactionId,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'refund_processed',
+      category: 'money',
+      title: 'THIX MONEY',
+      body: 'Remboursement de $amountLabel effectué.',
+      route: '/money/transaction/$transactionId',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX MEDIA (Live)
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> liveStarted({
     required String toUid,
@@ -140,9 +282,11 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'live',
+      category: 'live',
       title: 'THIX MEDIA',
       body: '$hostName est en direct maintenant.',
-      data: {'route': '/media/live/$liveId'},
+      route: '/media/live/$liveId',
+      priority: 1,
     );
   }
 
@@ -154,13 +298,32 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'cohost_request',
+      category: 'live',
       title: 'THIX MEDIA',
       body: '$requesterName souhaite rejoindre votre direct.',
-      data: {'route': '/media/live/$liveId'},
+      route: '/media/live/$liveId',
+      priority: 2,
     );
   }
 
-  // ─── THIX SANTÉ ─────────────────────────────────────────────────────
+  Future<void> liveInvite({
+    required String toUid,
+    required String hostName,
+    required String liveId,
+  }) {
+    return _service.add(
+      toUid: toUid,
+      type: 'live_invite',
+      category: 'live',
+      title: 'THIX MEDIA',
+      body: '$hostName vous invite à rejoindre son direct.',
+      route: '/media/live/$liveId',
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX SANTÉ
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> healthReminder({
     required String toUid,
@@ -169,9 +332,10 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'health',
+      category: 'health',
       title: 'THIX SANTÉ',
       body: reminderLabel,
-      data: {'route': '/health/dashboard'},
+      route: '/health/dashboard',
     );
   }
 
@@ -183,13 +347,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'thix_sante',
+      category: 'health',
       title: 'THIX SANTÉ',
       body: 'Rendez-vous confirmé : $appointmentLabel',
-      data: {'route': '/health/appointment/$appointmentId'},
+      route: '/health/appointment/$appointmentId',
     );
   }
 
-  // ─── THIX MARKET ────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX MARKET
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> marketOrderUpdate({
     required String toUid,
@@ -199,9 +366,10 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'order',
+      category: 'market',
       title: 'THIX MARKET',
       body: 'Votre commande est : $statusLabel',
-      data: {'route': '/market/order/$orderId'},
+      route: '/market/order/$orderId',
     );
   }
 
@@ -214,13 +382,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'shop',
+      category: 'market',
       title: shopName,
       body: preview,
-      data: {'route': '/market/shop/$shopId'},
+      route: '/market/shop/$shopId',
     );
   }
 
-  // ─── Opportunités & Emplois ─────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // Opportunités & Emplois
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> opportunityMatch({
     required String toUid,
@@ -230,9 +401,10 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'opportunity',
+      category: 'opportunity',
       title: 'Opportunités',
       body: 'Nouvelle opportunité : $opportunityTitle',
-      data: {'route': '/opportunities/$opportunityId'},
+      route: '/opportunities/$opportunityId',
     );
   }
 
@@ -245,13 +417,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'job',
+      category: 'job',
       title: 'Emplois',
       body: '$jobTitle : $statusLabel',
-      data: {'route': '/jobs/$jobId'},
+      route: '/jobs/$jobId',
     );
   }
 
-  // ─── Événements ─────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // Événements
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> eventReminder({
     required String toUid,
@@ -261,9 +436,11 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'event',
+      category: 'event',
       title: 'Événements',
       body: '$eventName commence bientôt.',
-      data: {'route': '/events/$eventId'},
+      route: '/events/$eventId',
+      priority: 1,
     );
   }
 
@@ -276,13 +453,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'event',
+      category: 'event',
       title: 'Événements',
       body: '$senderName vous invite à $eventName.',
-      data: {'route': '/events/$eventId'},
+      route: '/events/$eventId',
     );
   }
 
-  // ─── Formations ─────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // Formations
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> formationNewLesson({
     required String toUid,
@@ -292,9 +472,10 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'formation',
+      category: 'formation',
       title: 'Formations',
       body: 'Nouvelle leçon disponible : $courseTitle',
-      data: {'route': '/education/course/$courseId'},
+      route: '/education/course/$courseId',
     );
   }
 
@@ -306,13 +487,17 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'certificate',
+      category: 'formation',
       title: 'Formations',
       body: 'Félicitations ! Votre certificat pour "$courseTitle" est prêt.',
-      data: {'route': '/education/course/$courseId/certificate'},
+      route: '/education/course/$courseId/certificate',
+      priority: 1,
     );
   }
 
-  // ─── Réservation ────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // Réservation
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> reservationConfirmed({
     required String toUid,
@@ -322,13 +507,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'reservation',
+      category: 'reservation',
       title: 'Réservation',
       body: 'Réservation confirmée : $label',
-      data: {'route': '/reservation/$reservationId'},
+      route: '/reservation/$reservationId',
     );
   }
 
-  // ─── Mon Pays ───────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // Mon Pays
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> countryAlert({
     required String toUid,
@@ -337,13 +525,17 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'country',
+      category: 'country',
       title: 'Mon Pays',
       body: message,
-      data: {'route': '/country'},
+      route: '/country',
+      priority: 2,
     );
   }
 
-  // ─── THIX SOS ───────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX SOS
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> sosAlert({
     required String toUid,
@@ -352,13 +544,17 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'sos',
+      category: 'sos',
       title: 'THIX SOS',
       body: message,
-      data: {'route': '/sos'},
+      route: '/sos',
+      priority: 3,
     );
   }
 
-  // ─── THIX DOC ───────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX DOC
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> documentVerified({
     required String toUid,
@@ -367,13 +563,16 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'document',
+      category: 'doc',
       title: 'THIX DOC',
       body: '$documentLabel a été vérifié.',
-      data: {'route': '/doc'},
+      route: '/doc',
     );
   }
 
-  // ─── THIX IA ────────────────────────────────────────────────────────
+  // ═══════════════════════════════════════════════════════════════════
+  // THIX IA
+  // ═══════════════════════════════════════════════════════════════════
 
   Future<void> iaResponseReady({
     required String toUid,
@@ -382,9 +581,10 @@ class ModuleNotifications {
     return _service.add(
       toUid: toUid,
       type: 'ia',
+      category: 'ia',
       title: 'THIX IA',
       body: preview,
-      data: {'route': '/ia'},
+      route: '/ia',
     );
   }
 }
