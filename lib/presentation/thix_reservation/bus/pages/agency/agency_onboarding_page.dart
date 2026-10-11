@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -65,6 +66,8 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
     }
 
     try {
+      debugPrint('📥 [DEBUG] Chargement des agences pour l\'utilisateur: ${user.id}');
+      
       final res = await Supabase.instance.client
           .from('bus_agencies')
           .select()
@@ -73,6 +76,8 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
           .timeout(const Duration(seconds: 10));
 
       if (!mounted) return;
+
+      debugPrint('📦 [DEBUG] Réponse brute de Supabase: $res');
 
       final list = (res as List).map((e) {
         final m = Map<String, dynamic>.from(e as Map);
@@ -89,9 +94,14 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
         _agencies = list;
         _isLoadingAgencies = false;
       });
-
+      
+      debugPrint('✅ [DEBUG] ${list.length} agence(s) chargée(s) avec succès');
       await ref.read(agencyDashboardProvider.notifier).init();
-    } catch (e) {
+      
+    } catch (e, stackTrace) {
+      debugPrint('💥 [DEBUG] EXCEPTION lors du chargement des agences: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
       if (!mounted) return;
       setState(() {
         _isLoadingAgencies = false;
@@ -172,6 +182,12 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
     setState(() => _isCreating = true);
 
     try {
+      debugPrint('🚀 [DEBUG] Tentative de création d\'agence...');
+      debugPrint('   - User ID: ${user.id}');
+      debugPrint('   - Nom: ${_nameCtrl.text.trim()}');
+      debugPrint('   - Pays: $_countryCode');
+      debugPrint('   - Description: ${_descCtrl.text.trim()}');
+      
       final ok = await ref.read(agencyDashboardProvider.notifier).createMyAgency(
             name: _nameCtrl.text.trim(),
             countryCode: _countryCode,
@@ -181,6 +197,7 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
       if (!mounted) return;
 
       if (ok) {
+        debugPrint('✅ [DEBUG] Agence créée avec succès ! Redirection...');
         await HapticFeedback.heavyImpact();
         _nameCtrl.clear();
         _descCtrl.clear();
@@ -189,8 +206,13 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
         if (!mounted) return;
         context.go('/agency/dashboard');
       } else {
-        // CORRECTION: err est un AgencyError?, utiliser .message pour obtenir la String
         final err = ref.read(agencyDashboardProvider).error;
+        
+        debugPrint('❌ [DEBUG] Échec de la création (ok = false)');
+        debugPrint('   - Error Type: ${err?.type}');
+        debugPrint('   - Error Message: ${err?.message}');
+        debugPrint('   - Original Error: ${err?.originalError}');
+        
         final errorMessage = err?.message ?? context.l10n.t('agencyOnboardingCreateFailed');
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -210,8 +232,31 @@ class _AgencyOnboardingPageState extends ConsumerState<AgencyOnboardingPage> {
         );
         await _loadAgencies();
       }
+    } catch (e, stackTrace) {
+      debugPrint('💥 [DEBUG] EXCEPTION lors de la création d\'agence: $e');
+      debugPrint('Stack trace: $stackTrace');
+      
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white, size: 18),
+              SizedBox(width: ThixPolicy.s8),
+              Expanded(child: Text('Erreur inattendue: $e')),
+            ],
+          ),
+          backgroundColor: ThixPolicy.danger,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+          ),
+        ),
+      );
     } finally {
-      if (mounted) setState(() => _isCreating = false);
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
     }
   }
 
@@ -667,7 +712,6 @@ class _AgenciesSkeletonState extends State<_AgenciesSkeleton> with SingleTickerP
 
   @override
   Widget build(BuildContext context) {
-    // CORRECTION: animation → listenable pour correspondre au polyfill AnimatedBuilder
     return AnimatedBuilder(
       listenable: _ctrl,
       builder: (ctx, _) {
