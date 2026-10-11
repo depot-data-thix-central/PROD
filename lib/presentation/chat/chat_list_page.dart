@@ -1,17 +1,17 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — v2 (enterprise)
+// ChatListPage — v3 (enterprise)
 // ✅ Non lus : tuile surlignée, nom/aperçu en gras, heure bleue, pastille (grise si muet)
 // ✅ Escalades : DEUX profils (client + agent), DEUX barres côte à côte, pulse si non acceptée
-// ✅ Appels : aperçu entrant / sortant / manqué (rouge) dans la liste ; badges onglets
-//    Appels + Réseau + cloche, conservés jusqu'à l'ouverture
+// ✅ Appels : aperçu entrant / sortant / manqué (rouge) dans la liste
+// ✅ Badges numérotés : appels manqués + demandes de connexion (comme les messages)
+//    - appels manqués : max(compteur provider, calcul local depuis la liste)
+//    - effacés à l'ouverture de l'onglet concerné
 // ✅ Brouillons visibles dans la liste (« Brouillon : … » en rouge)
 // ✅ Conversation verrouillée : aperçu masqué, retrait du verrou protégé par mot de passe
-// ✅ Vault : mot de passe salé + hashé (SHA-256 itéré), anti-force-brute (5 essais → 30 s),
-//    migration automatique de l'ancien stockage base64
-// ✅ i18n : toutes les clés conservées, repli EN/FR selon la langue (map _kFb)
+// ✅ Vault : mot de passe salé + hashé (SHA-256 itéré), anti-force-brute (5 essais → 30 s)
+// ✅ i18n : 100 % via lib/l10n/app_localizations.dart (plus aucun texte en dur)
 // ✅ Swipe : archiver avec ANNULER, désactivé en mode sélection
-// ✅ Recherche avec debounce, bloc-notes sans fuite mémoire, erreurs gérées partout
 //
 // ⚠️ Dépendance : `crypto` (pubspec.yaml → crypto: ^3.0.3)
 
@@ -64,150 +64,17 @@ const int _kLockCooldownSeconds = 30;
 const int _kPwdIterations = 5000;
 const String _kLockPwdKey = 'thix_chat_lock_pwd_v1';
 const String _kNotesKey = 'thix_chat_notes_v1';
+const String _kCallsSeenKey = 'thix_chat_calls_seen_at_v1';
 // ⚠️ Doit rester identique à _kDraftPrefix de chat_screen.dart
 const String _kDraftPrefix = 'thix_chat_draft_v1_';
 
 // ============================================================================
-// i18n : clé l10n d'abord, sinon repli [EN, FR] selon la langue de l'app
+// i18n : 100 % lib/l10n/app_localizations.dart
+// (clé absente → repli sur le français puis sur la clé, géré par AppLocalizations.t)
 // ============================================================================
-const Map<String, List<String>> _kFb = {
-  'chatlist_lock_define_title': ['Set a password', 'Définir un mot de passe'],
-  'chatlist_lock_define_sub': ['This password opens your locked chats.', 'Ce mot de passe ouvrira vos conversations verrouillées.'],
-  'chatlist_lock_pwd': ['Password', 'Mot de passe'],
-  'chatlist_lock_pwd_confirm': ['Confirm', 'Confirmer'],
-  'chatlist_lock_weak': ['Password too weak (8+ chars, upper, lower, digit)', 'Mot de passe trop faible (8+ car., maj., min., chiffre)'],
-  'chatlist_lock_mismatch': ['Passwords do not match', 'Les mots de passe ne correspondent pas'],
-  'chatlist_lock_save': ['Save', 'Enregistrer'],
-  'chatlist_locked_title': ['Locked chat', 'Conversation verrouillée'],
-  'chatlist_biometric_reason': ['Open {0}', 'Ouvrir {0}'],
-  'chatlist_use_biometric': ['Biometrics', 'Biométrie'],
-  'chatlist_lock_bad_pwd': ['Wrong password', 'Mot de passe incorrect'],
-  'chatlist_lock_cooldown': ['Too many attempts. Try again in {0}s', 'Trop de tentatives. Réessayez dans {0}s'],
-  'chatlist_unlock_open': ['Open', 'Ouvrir'],
-  'chatlist_locked_denied': ['Access denied', 'Accès refusé'],
-  'chatlist_locked_preview': ['Locked chat', 'Conversation verrouillée'],
-  'chatlist_notebook': ['My notebook', 'Mon bloc-notes'],
-  'chatlist_notebook_hint': ['Write your private notes…', 'Écrivez vos notes privées…'],
-  'chatlist_notebook_saved': ['Notes saved', 'Notes enregistrées'],
-  'chatlist_notebook_save': ['Save', 'Enregistrer'],
-  'chatlist_nothing_unread': ['No unread messages', 'Aucun message non lu'],
-  'chatlist_all_read': ['All marked as read', 'Tout est marqué comme lu'],
-  'chatlist_notifications': ['Notifications', 'Notifications'],
-  'chatlist_pending_escalations': ['Pending escalations', 'Escalades en attente'],
-  'chatlist_requires_action': ['Action required', 'Action requise'],
-  'chatlist_mark_all_read': ['Mark all as read', 'Tout marquer comme lu'],
-  'chatlist_unread_label': ['unread', 'non lus'],
-  'chatlist_no_recent': ['No recent notifications', 'Aucune notification récente'],
-  'chatlist_missed_calls': ['{0} missed call(s)', '{0} appel(s) manqué(s)'],
-  'chatlist_new_connections': ['{0} new connection(s)', '{0} nouvelle(s) connexion(s)'],
-  'chatlist_tap_to_view': ['Tap to view', 'Appuyez pour voir'],
-  'chatlist_new_discussion': ['New discussion', 'Nouvelle discussion'],
-  'chatlist_start_private': ['Start a private chat', 'Démarrer une conversation privée'],
-  'chatlist_create_group': ['Create a group', 'Créer un groupe'],
-  'chatlist_collaborate_team': ['Collaborate with your team', 'Collaborez avec votre équipe'],
-  'chatlist_draft_prefix': ['Draft:', 'Brouillon :'],
-  'chatlist_new_conversation': ['New conversation', 'Nouvelle conversation'],
-  'chatlist_protected_message': ['Protected message', 'Message protégé'],
-  'chatlist_photo': ['Photo', 'Photo'],
-  'chatlist_video': ['Video', 'Vidéo'],
-  'chatlist_audio_message': ['Voice message', 'Message vocal'],
-  'chatlist_sticker': ['Sticker', 'Sticker'],
-  'chatlist_msg_deleted': ['This message was deleted', 'Ce message a été supprimé'],
-  'chatlist_msg_expired': ['Message disappeared', 'Message disparu'],
-  'chatlist_call_missed': ['Missed call', 'Appel manqué'],
-  'chatlist_call_missed_video': ['Missed video call', 'Appel vidéo manqué'],
-  'chatlist_call_outgoing': ['Outgoing call', 'Appel sortant'],
-  'chatlist_call_incoming': ['Incoming call', 'Appel entrant'],
-  'chatlist_unpin': ['Unpin', 'Désépingler'],
-  'chatlist_pin': ['Pin', 'Épingler'],
-  'chatlist_unpin_subtitle': ['Remove from the top', 'Retirer du haut de la liste'],
-  'chatlist_pin_subtitle': ['Keep at the top (max {0})', 'Garder en haut (max {0})'],
-  'chatlist_unarchive': ['Unarchive', 'Désarchiver'],
-  'chatlist_archive': ['Archive', 'Archiver'],
-  'chatlist_unarchive_subtitle': ['Move back to your chats', 'Remettre dans vos conversations'],
-  'chatlist_archive_subtitle': ['Hide from the main list', 'Masquer de la liste principale'],
-  'chatlist_unmute': ['Unmute', 'Réactiver le son'],
-  'chatlist_mute': ['Mute', 'Sourdine'],
-  'chatlist_mute_remaining': ['Muted · {0} left', 'Muet · reste {0}'],
-  'chatlist_mute_choose': ['Choose a duration', 'Choisir une durée'],
-  'chatlist_unlock': ['Remove lock', 'Retirer le verrou'],
-  'chatlist_lock': ['Lock', 'Verrouiller'],
-  'chatlist_unlock_subtitle': ['Password required to remove it', 'Mot de passe requis pour le retirer'],
-  'chatlist_lock_subtitle_pwd': ['Protect with a password when opening', 'Protéger par mot de passe à l’ouverture'],
-  'chatlist_lock_confirm_title': ['Lock this chat?', 'Verrouiller cette conversation ?'],
-  'chatlist_lock_confirm_message_pwd': ['A password (or biometrics) will be required to open this chat.', 'Un mot de passe (ou la biométrie) sera exigé pour ouvrir cette conversation.'],
-  'chatlist_mark_unread': ['Mark as unread', 'Marquer comme non lu'],
-  'chatlist_mark_unread_subtitle': ['Show it as unread again', 'La remettre en non lu'],
-  'chatlist_delete': ['Delete', 'Supprimer'],
-  'chatlist_delete_subtitle': ['Remove this chat from your list', 'Retirer cette conversation de votre liste'],
-  'chatlist_mute_title': ['Mute notifications', 'Mettre en sourdine'],
-  'chatlist_mute_8h': ['8 hours', '8 heures'],
-  'chatlist_mute_1w': ['1 week', '1 semaine'],
-  'chatlist_mute_forever': ['Always', 'Toujours'],
-  'chatlist_muted_success': ['Chat muted', 'Conversation mise en sourdine'],
-  'chatlist_delete_title': ['Delete chat?', 'Supprimer la conversation ?'],
-  'chatlist_delete_message': ['This action cannot be undone.', 'Cette action est irréversible.'],
-  'common_delete': ['Delete', 'Supprimer'],
-  'common_cancel': ['Cancel', 'Annuler'],
-  'common_clear': ['Clear', 'Effacer'],
-  'chatlist_deleted': ['Chat deleted', 'Conversation supprimée'],
-  'chatlist_selected_count': ['{0} selected', '{0} sélectionnée(s)'],
-  'chatlist_bulk_archived': ['Chats archived', 'Conversations archivées'],
-  'chatlist_mark_read': ['Mark as read', 'Marquer comme lu'],
-  'chatlist_bulk_marked_read': ['Marked as read', 'Marquées comme lues'],
-  'chatlist_bulk_delete_confirm': ['Delete {0} chat(s)?', 'Supprimer {0} conversation(s) ?'],
-  'chatlist_bulk_deleted': ['Chats deleted', 'Conversations supprimées'],
-  'chatlist_escalations': ['Escalations', 'Escalades'],
-  'chatlist_online': ['online', 'en ligne'],
-  'chatlist_search_label': ['Search chats', 'Rechercher des conversations'],
-  'chatlist_search_hint': ['Search conversation', 'Rechercher une conversation'],
-  'chatlist_no_results': ['No results', 'Aucun résultat'],
-  'chatlist_filter_all': ['All', 'Tous'],
-  'chatlist_filter_unread': ['Unread', 'Non lus'],
-  'chatlist_filter_teams': ['Teams', 'Équipes'],
-  'chatlist_filter_personal': ['Personal', 'Personnel'],
-  'chatlist_filter_pinned': ['Pinned', 'Épinglés'],
-  'chatlist_filter_archived': ['Archived', 'Archivés'],
-  'chatlist_no_archived': ['No archived chats', 'Aucune conversation archivée'],
-  'chatlist_no_conversation': ['No conversations yet', 'Aucune conversation'],
-  'chatlist_group_thix': ['THIX group', 'Groupe THIX'],
-  'chatlist_contact_thix': ['THIX contact', 'Contact THIX'],
-  'chatlist_unarchived': ['Chat unarchived', 'Conversation désarchivée'],
-  'chatlist_archived': ['Chat archived', 'Conversation archivée'],
-  'chatlist_marked_read': ['Marked as read', 'Marqué comme lu'],
-  'chatlist_marked_unread': ['Marked as unread', 'Marqué comme non lu'],
-  'chatlist_undo': ['Undo', 'Annuler'],
-  'chatlist_network': ['Network', 'Réseau'],
-  'chatlist_discussions': ['Chats', 'Discussions'],
-  'chatlist_create_new': ['Create', 'Créer'],
-  'chatlist_calls': ['Calls', 'Appels'],
-  'chatlist_settings': ['Settings', 'Paramètres'],
-  'chatlist_yesterday': ['Yesterday', 'Hier'],
-  'chatlist_unknown': ['Unknown', 'Inconnu'],
-  'chatlist_escalated': ['Escalated', 'Escaladé'],
-  'chatlist_agent': ['Agent', 'Agent'],
-  'chatlist_agent_label': ['Agent', 'Agent'],
-  'chatlist_client_label': ['Client', 'Client'],
-  'chatlist_err_timeout': ['Request timed out.', 'Délai dépassé.'],
-  'chatlist_err_network': ['Network error.', 'Erreur réseau.'],
-  'chatlist_err_denied': ['Access denied.', 'Accès non autorisé.'],
-  'chatlist_err_generic': ['Something went wrong.', 'Une erreur est survenue.'],
-};
-
 String _s(BuildContext ctx, String key, {List<String>? args}) {
   final l10n = AppLocalizations.of(ctx);
-  var out = args == null ? l10n.t(key) : l10n.t(key, args: args);
-  if (out.isNotEmpty && out != key) return out;
-  final fb = _kFb[key];
-  if (fb == null) return key;
-  final fr = Localizations.localeOf(ctx).languageCode == 'fr';
-  out = fr ? fb[1] : fb[0];
-  if (args != null) {
-    for (var i = 0; i < args.length; i++) {
-      out = out.replaceAll('{$i}', args[i]);
-    }
-  }
-  return out;
+  return args == null ? l10n.t(key) : l10n.t(key, args: args);
 }
 
 // ============================================================================
@@ -758,6 +625,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   DateTime? _lastLoadMore;
   Timer? _searchDebounce;
 
+  /// Dernière ouverture de l'onglet Appels (sert au calcul local des appels manqués).
+  DateTime _callsSeenAt = DateTime.fromMillisecondsSinceEpoch(0);
+
   static const List<String> _filterKeys = ['all', 'unread', 'teams', 'personal', 'pinned', 'archived'];
 
   @override
@@ -766,6 +636,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
     unawaited(_loadDrafts());
+    unawaited(_loadCallsSeen());
   }
 
   @override
@@ -800,6 +671,53 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         .catchError((e) => debugPrint('[ChatList] ⚠️ List refresh error: $e')));
     unawaited(ref.read(statusProvider.notifier).refresh().catchError((_) {}));
     unawaited(_loadDrafts());
+  }
+
+  // ==========================================================================
+  // 📞 APPELS MANQUÉS : calcul local (badge numéroté)
+  // ==========================================================================
+  Future<void> _loadCallsSeen() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final ms = prefs.getInt(_kCallsSeenKey);
+      if (ms != null && mounted) {
+        setState(() => _callsSeenAt = DateTime.fromMillisecondsSinceEpoch(ms));
+      }
+    } catch (e) {
+      debugPrint('[ChatList] ⚠️ loadCallsSeen: $e');
+    }
+  }
+
+  /// Appelé à l'ouverture de l'onglet Appels : le badge repart à zéro.
+  Future<void> _markCallsSeen() async {
+    final now = DateTime.now();
+    if (mounted) setState(() => _callsSeenAt = now);
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt(_kCallsSeenKey, now.millisecondsSinceEpoch);
+    } catch (e) {
+      debugPrint('[ChatList] ⚠️ markCallsSeen: $e');
+    }
+  }
+
+  bool _isMissedIncomingCall(ChatMessage m, String me) {
+    final type = '${m.mediaType ?? ''}';
+    if (type != 'call_audio' && type != 'call_video') return false;
+    if (m.senderId == me) return false;
+    final low = m.content.toLowerCase();
+    return low.contains('manqué') || low.contains('missed') || low.contains('sans réponse');
+  }
+
+  int _derivedMissedCalls(List<ChatConversation> all, String me) {
+    if (me.isEmpty) return 0;
+    var n = 0;
+    for (final c in all) {
+      final m = c.lastMessage;
+      if (m == null) continue;
+      if (!_isMissedIncomingCall(m, me)) continue;
+      if (m.createdAt.isAfter(_callsSeenAt)) n++;
+    }
+    return n;
   }
 
   /// Charge les brouillons enregistrés par ChatScreen (par conversation).
@@ -937,6 +855,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
         break;
       case 2:
         countersNotifier.clearMissedCalls();
+        unawaited(_markCallsSeen());
         Navigator.push(context, MaterialPageRoute(builder: (_) => const CallHistoryPage())).then((_) {
           if (mounted) _refreshAllCounters();
         });
@@ -995,10 +914,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     );
   }
 
-  void _openNotifications(int pending, NotificationCounters counters) {
+  void _openNotifications(int pending, int missedCalls, int newConnections) {
     HapticFeedback.selectionClick();
     final totalUnread = ref.read(chatListProvider).totalUnread;
-    final empty = pending == 0 && totalUnread == 0 && counters.missedCalls == 0 && counters.newConnections == 0;
+    final empty = pending == 0 && totalUnread == 0 && missedCalls == 0 && newConnections == 0;
 
     showModalBottomSheet(
       context: context,
@@ -1041,20 +960,20 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                       Navigator.pop(ctx);
                       context.pushNamed('chatEscalationReceived');
                     }),
-                  if (counters.missedCalls > 0)
+                  if (missedCalls > 0)
                     _notifTile(ctx,
                         icon: Icons.call_missed_rounded,
                         color: ThixPolicy.danger,
-                        title: _s(ctx, 'chatlist_missed_calls', args: ['${counters.missedCalls}']),
+                        title: _s(ctx, 'chatlist_missed_calls', args: ['$missedCalls']),
                         subtitle: _s(ctx, 'chatlist_tap_to_view'), onTap: () {
                       Navigator.pop(ctx);
                       _navigateTo(2);
                     }),
-                  if (counters.newConnections > 0)
+                  if (newConnections > 0)
                     _notifTile(ctx,
                         icon: Icons.people_alt_rounded,
                         color: ThixPolicy.primary,
-                        title: _s(ctx, 'chatlist_new_connections', args: ['${counters.newConnections}']),
+                        title: _s(ctx, 'chatlist_new_connections', args: ['$newConnections']),
                         subtitle: _s(ctx, 'chatlist_tap_to_view'), onTap: () {
                       Navigator.pop(ctx);
                       _navigateTo(0);
@@ -1668,6 +1587,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
     final onlineUserIds = ref.watch(presenceProvider);
 
+    // 🔢 Badges numérotés : appels manqués (provider OU calcul local) + connexions
+    final missedCalls = math.max(counters.missedCalls, _derivedMissedCalls(state.all, currentUserId));
+    final newConnections = counters.newConnections;
+
     final seenUserIds = <String>{};
     final onlineContacts = <ChatConversation>[];
     for (final c in state.filtered) {
@@ -1680,8 +1603,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
     final bellBadge = state.pendingEscalations > 0 ||
         state.totalUnread > 0 ||
-        counters.missedCalls > 0 ||
-        counters.newConnections > 0;
+        missedCalls > 0 ||
+        newConnections > 0;
 
     return PopScope(
       canPop: false,
@@ -1697,7 +1620,8 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
-        bottomNavigationBar: state.isSelectionMode ? null : _buildFixedBottomNav(state.totalUnread, counters),
+        bottomNavigationBar:
+            state.isSelectionMode ? null : _buildFixedBottomNav(state.totalUnread, missedCalls, newConnections),
         body: Stack(
           children: [
             Positioned(
@@ -1768,7 +1692,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                                         icon: Icons.notifications_none_rounded,
                                         semanticsLabel: _s(context, 'chatlist_notifications'),
                                         badge: bellBadge,
-                                        onTap: () => _openNotifications(state.pendingEscalations, counters),
+                                        onTap: () => _openNotifications(state.pendingEscalations, missedCalls, newConnections),
                                       ),
                                     ]),
                                   ],
@@ -2224,7 +2148,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   // ==========================================================================
   // 🧭 NAVBAR FIXE + ONDULATION + CRAYON
   // ==========================================================================
-  Widget _buildFixedBottomNav(int unread, NotificationCounters counters) {
+  Widget _buildFixedBottomNav(int unread, int missedCalls, int newConnections) {
     return CustomPaint(
       painter: _WaveNavPainter(color: ThixPolicy.card),
       child: SafeArea(
@@ -2234,7 +2158,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: [
-              _navItem(Icons.people_alt_outlined, Icons.people_alt, _s(context, 'chatlist_network'), 0, counters.newConnections),
+              _navItem(Icons.people_alt_outlined, Icons.people_alt, _s(context, 'chatlist_network'), 0, newConnections),
               _navItem(Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded, _s(context, 'chatlist_discussions'), 1, unread),
               Semantics(
                 button: true,
@@ -2259,7 +2183,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
                   ),
                 ),
               ),
-              _navItem(Icons.call_outlined, Icons.call, _s(context, 'chatlist_calls'), 2, counters.missedCalls),
+              _navItem(Icons.call_outlined, Icons.call, _s(context, 'chatlist_calls'), 2, missedCalls),
               _navItem(Icons.settings_outlined, Icons.settings, _s(context, 'chatlist_settings'), 3, 0),
             ],
           ),
@@ -2290,14 +2214,14 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
               ),
               if (badge > 0)
                 Positioned(
-                  right: -2,
-                  top: -2,
+                  right: -6,
+                  top: -4,
                   child: Container(
-                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
                     padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                     decoration: BoxDecoration(
                       color: ThixPolicy.danger,
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(9),
                       border: Border.all(color: Colors.white, width: 1.5),
                     ),
                     child: Text(
