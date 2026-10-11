@@ -385,7 +385,12 @@ class NotificationService {
             'priority': priority,
             'is_read': false,
             'push_sent': false,
-            'data': data ?? const <String, dynamic>{},
+            'data': {
+              ...?data,
+              if (sanitizedRoute != null) 'route': sanitizedRoute,
+              if (postId != null) 'post_id': postId,
+              if (senderId != null) 'sender_id': senderId,
+            },
             'created_at': DateTime.now().toUtc().toIso8601String(),
           })
           .timeout(_kQueryTimeout);
