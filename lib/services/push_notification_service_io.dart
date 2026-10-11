@@ -245,20 +245,20 @@ class _VoipCallManager {
         'is_video': isVideo,
       },
       android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: true,
-        ringtonePath: 'system_ringtone_default',
-        backgroundColor: '#0A2F5C',
-        actionColor: '#4CAF50',
-      ),
-      ios: IOSParams(
-        iconName: 'AppIcon',
-        handleType: 'generic',
-        supportsVideo: isVideo,
-        ringtonePath: 'system_ringtone_default',
-      ),
-    );
-
+  isCustomNotification: true,
+  isShowLogo: true,
+  ringtonePath: 'ringtone', // ← fichier dans res/raw/ringtone.mp3
+  backgroundColor: '#0A2F5C',
+  actionColor: '#4CAF50',
+  isShowCallID: false,
+  isShowFullLockedScreen: true, // Important pour afficher l’appel écran verrouillé
+),
+ios: IOSParams(
+  iconName: 'AppIcon',
+  handleType: 'generic',
+  supportsVideo: isVideo,
+  ringtonePath: 'ringtone', // ← même nom
+),
     try {
       await FlutterCallkitIncoming.showCallkitIncoming(params)
           .timeout(_kCallkitTimeout);
