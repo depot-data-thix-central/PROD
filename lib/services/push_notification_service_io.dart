@@ -1,10 +1,9 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8.2 (Production)
-// FIX : CallKit gère seul sonnerie + vibration (plus de doublon)
-// FIX : ringtonePath = sonnerie système (pas de fichier res/raw requis)
-// FIX : permission plein écran Android 14+
-// FIX : types like / follow / comment / comment_reply / comment_like / repost / connection autorisés
+// Push Notification Service IO v8.3 (Production)
+// FIX : CallKit gère seul sonnerie + vibration
+// FIX : ringtonePath = 'ringtone' (fichier res/raw/ringtone.mp3)
+// FIX : types like / follow / comment / comment_reply / comment_like / repost / connection
 // FIX : routes /network/* acceptées
 // ============================================================================
 
@@ -182,7 +181,7 @@ class _Validators {
 }
 
 // ============================================================================
-// VOIP CALL MANAGER (CallKit gère sonnerie + vibration nativement)
+// VOIP CALL MANAGER
 // ============================================================================
 
 class _VoipCallManager {
@@ -193,8 +192,7 @@ class _VoipCallManager {
   StreamSubscription<CallEvent?>? _eventSub;
   bool _isInitialized = false;
 
-  void Function(String inviteId, String channelName, bool isVideo)?
-      onAcceptCall;
+  void Function(String inviteId, String channelName, bool isVideo)? onAcceptCall;
   void Function(String inviteId)? onDeclineCall;
 
   Future<void> initialize() async {
@@ -257,6 +255,8 @@ class _VoipCallManager {
         supportsVideo: isVideo,
         ringtonePath: 'ringtone',
       ),
+    );
+
     try {
       await FlutterCallkitIncoming.showCallkitIncoming(params)
           .timeout(_kCallkitTimeout);
@@ -364,7 +364,7 @@ class _BadgeManager {
 }
 
 // ============================================================================
-// BACKGROUND HANDLER (à enregistrer dans main.dart)
+// BACKGROUND HANDLER
 // ============================================================================
 
 @pragma('vm:entry-point')
@@ -558,8 +558,7 @@ int _generateNotifId(RemoteMessage message) {
 class PushNotificationService {
   PushNotificationService._();
 
-  static final PushNotificationService instance =
-      PushNotificationService._();
+  static final PushNotificationService instance = PushNotificationService._();
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
 
@@ -574,17 +573,10 @@ class PushNotificationService {
 
   BuildContext? _context;
 
-  /// Callback global pour l'ouverture d'une notification.
   static void Function(Map<String, dynamic> data)? onPushTap;
 
-  /// Callbacks d'instance (câblés dans main.dart).
-  void Function(String inviteId, String channelName, bool isVideo)?
-      onVoipAccept;
+  void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
   void Function(String inviteId)? onVoipDecline;
-
-  // ==========================================================================
-  // INITIALIZE
-  // ==========================================================================
 
   Future<void> initialize() async {
     if (_initialized) {
@@ -613,7 +605,6 @@ class PushNotificationService {
         await LocalNotificationService.instance.requestPermission();
       } catch (_) {}
 
-      // Android 14+ : autorisation d'afficher l'appel plein écran
       try {
         await FlutterCallkitIncoming.requestFullIntentPermission();
       } catch (e) {
@@ -640,8 +631,8 @@ class PushNotificationService {
           FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
 
       await _openedAppSub?.cancel();
-      _openedAppSub = FirebaseMessaging.onMessageOpenedApp
-          .listen(_handleNotificationTap);
+      _openedAppSub =
+          FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
       final initial = await _messaging.getInitialMessage();
       if (initial != null) {
@@ -658,13 +649,8 @@ class PushNotificationService {
     }
   }
 
-  // ==========================================================================
-  // VOIP CALLBACK HANDLERS
-  // ==========================================================================
-
   void _handleVoipAccept(String id, String ch, bool v) {
     if (_context != null && !_context!.mounted) return;
-
     try {
       onVoipAccept?.call(id, ch, v);
     } catch (_) {}
@@ -676,10 +662,6 @@ class PushNotificationService {
     } catch (_) {}
   }
 
-  // ==========================================================================
-  // VOIP PUBLIC METHODS
-  // ==========================================================================
-
   Future<void> endVoipCall(String inviteId) async {
     await _VoipCallManager.instance.endCall(inviteId);
   }
@@ -688,47 +670,29 @@ class PushNotificationService {
     await _VoipCallManager.instance.endAllCalls();
   }
 
-  // ==========================================================================
-  // AUTH
-  // ==========================================================================
-
   Future<void> onSignedIn({required String userId}) async {
     if (!_Validators.isValidUid(userId)) return;
-
     _cleanupListeners();
     _initialized = false;
-
     await initialize();
   }
 
   Future<void> onSignedOut() async {
     _cleanupListeners();
-
     await unregisterToken();
     await _BadgeManager.instance.sync(0);
     await _VoipCallManager.instance.endAllCalls();
-
     _initialized = false;
   }
-
-  // ==========================================================================
-  // LISTENERS
-  // ==========================================================================
 
   void _cleanupListeners() {
     unawaited(_tokenRefreshSub?.cancel());
     _tokenRefreshSub = null;
-
     unawaited(_foregroundSub?.cancel());
     _foregroundSub = null;
-
     unawaited(_openedAppSub?.cancel());
     _openedAppSub = null;
   }
-
-  // ==========================================================================
-  // FOREGROUND MESSAGE
-  // ==========================================================================
 
   void _handleForegroundMessage(RemoteMessage message) {
     final data = message.data;
@@ -770,10 +734,6 @@ class PushNotificationService {
     unawaited(work());
   }
 
-  // ==========================================================================
-  // NOTIFICATION TAP
-  // ==========================================================================
-
   void _handleNotificationTap(RemoteMessage message) {
     if (_context != null && !_context!.mounted) return;
 
@@ -789,10 +749,6 @@ class PushNotificationService {
 
     unawaited(_BadgeManager.instance.refreshFromDb());
   }
-
-  // ==========================================================================
-  // FCM TOKEN
-  // ==========================================================================
 
   Future<void> _registerToken() async {
     var attempts = 0;
@@ -827,7 +783,6 @@ class PushNotificationService {
   Future<void> unregisterToken() async {
     try {
       final token = await _messaging.getToken();
-
       if (token == null || !_Validators.isValidToken(token)) return;
 
       await SupabaseConfig.client
@@ -838,10 +793,6 @@ class PushNotificationService {
     } catch (_) {}
   }
 
-  // ==========================================================================
-  // CONTEXT
-  // ==========================================================================
-
   void registerContext(BuildContext context) {
     _context = context;
   }
@@ -849,10 +800,6 @@ class PushNotificationService {
   void unregisterContext() {
     _context = null;
   }
-
-  // ==========================================================================
-  // BADGE
-  // ==========================================================================
 
   Future<void> updateBadge(int count) async {
     await _BadgeManager.instance.sync(count);
@@ -862,18 +809,12 @@ class PushNotificationService {
     await _BadgeManager.instance.refreshFromDb();
   }
 
-  // ==========================================================================
-  // DISPOSE
-  // ==========================================================================
-
   void dispose() {
     _cleanupListeners();
     _VoipCallManager.instance.dispose();
-
     onPushTap = null;
     onVoipAccept = null;
     onVoipDecline = null;
-
     _context = null;
     _initialized = false;
     _initializing = false;
