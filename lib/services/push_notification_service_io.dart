@@ -1,10 +1,11 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8.1 (Production)
+// Push Notification Service IO v8.2 (Production)
 // FIX : CallKit gère seul sonnerie + vibration (plus de doublon)
 // FIX : ringtonePath = sonnerie système (pas de fichier res/raw requis)
 // FIX : permission plein écran Android 14+
-// FIX : types like / follow / comment / connection autorisés
+// FIX : types like / follow / comment / comment_reply / comment_like / repost / connection autorisés
+// FIX : routes /network/* acceptées
 // ============================================================================
 
 import 'dart:async';
@@ -63,6 +64,9 @@ class PushTypes {
   static const String like = 'like';
   static const String follow = 'follow';
   static const String comment = 'comment';
+  static const String commentReply = 'comment_reply';
+  static const String commentLike = 'comment_like';
+  static const String repost = 'repost';
   static const String connection = 'connection';
 
   static const Set<String> allowed = <String>{
@@ -74,6 +78,9 @@ class PushTypes {
     like,
     follow,
     comment,
+    commentReply,
+    commentLike,
+    repost,
     connection,
   };
 
@@ -129,6 +136,18 @@ class _Validators {
       '/sos',
       '/event',
       '/call',
+      '/network',
+      '/money',
+      '/media',
+      '/health',
+      '/market',
+      '/jobs',
+      '/opportunities',
+      '/education',
+      '/reservation',
+      '/country',
+      '/doc',
+      '/ia',
     ];
 
     for (final prefix in prefixes) {
@@ -469,6 +488,12 @@ String _defaultTitle(String type) {
       return 'Nouvel abonné';
     case PushTypes.comment:
       return 'Nouveau commentaire';
+    case PushTypes.commentReply:
+      return 'Réponse à votre commentaire';
+    case PushTypes.commentLike:
+      return 'Like sur votre commentaire';
+    case PushTypes.repost:
+      return 'Republication';
     case PushTypes.connection:
       return 'Nouvelle connexion';
     default:
