@@ -16,6 +16,7 @@ import '../models/network_message.dart';
 import '../models/network_notification.dart';
 import '../models/network_story.dart';
 import '../models/comment.dart';
+import 'package:thix_id/services/module_notifications.dart';
 
 // ============================================================================
 // LOGGING
@@ -147,7 +148,7 @@ class NetworkService extends ChangeNotifier {
   static const Duration _requestTimeout = Duration(seconds: 15);
 
   // ════════════════════════════════════════════════════════════════════
-  // FEED (avec retry, fallback, validation)
+  // FEED
   // ════════════════════════════════════════════════════════════════════
 
   String _normalizeFeedType(String feedType) {
@@ -160,16 +161,13 @@ class NetworkService extends ChangeNotifier {
 
   int _validateSeed(int seed) {
     if (seed < 0) return 0;
-    if (seed > 2147483647) return 2147483647; // Max int32
+    if (seed > 2147483647) return 2147483647;
     return seed;
   }
 
-  // ⚠️ Filtre tolérant : exclut les posts marqués is_hidden = true,
-  // sans jamais planter si le champ est absent de la ligne (vue non
-  // encore alignée sur le schéma de la table posts).
   bool _isVisible(Map<String, dynamic> j) {
     final v = j['is_hidden'];
-    return v != true; // null, false, absent → visible ; true → masqué
+    return v != true;
   }
 
   Future<List<NetworkPost>> getFeedPosts({
@@ -218,10 +216,6 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-  // Le RPC get_smart_feed / get_smart_feed_v2 gère lui-même le scoring
-  // pondéré (réseau/populaire/découverte/épinglés). Le filtrage is_hidden
-  // pour ce flux doit être fait côté SQL (voir fix_smart_feed_v2.sql),
-  // avant le calcul du smart_score — jamais ici, pour ne pas fausser le mix.
   Future<List<NetworkPost>> _fetchSmartFeed({
     required String uid,
     required int limit,
@@ -584,7 +578,7 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // LIKE / SHARE / REPOST (Production Enterprise)
+  // LIKE / SHARE / REPOST
   // ─────────────────────────────────────────────────────────────
 
   final Set<String> _pendingLikes = {};
@@ -618,7 +612,7 @@ class NetworkService extends ChangeNotifier {
       if (liked) {
         final owner = await _getPostOwnerId(postId);
         if (owner.isNotEmpty && owner != currentUserId) {
-          unawaited(_createNotification(userId: owner, type: 'like', postId: postId));
+          unawaited(_notifyLike(toUid: owner, postId: postId));
         }
       }
 
@@ -667,7 +661,9 @@ class NetworkService extends ChangeNotifier {
     try {
       await _supabase.from('post_likes').upsert({'post_id': id, 'user_id': currentUserId}, onConflict: 'post_id,user_id', ignoreDuplicates: true).timeout(_requestTimeout);
       final owner = await _getPostOwnerId(id);
-      if (owner.isNotEmpty && owner != currentUserId) unawaited(_createNotification(userId: owner, type: 'like', postId: id));
+      if (owner.isNotEmpty && owner != currentUserId) {
+        unawaited(_notifyLike(toUid: owner, postId: id));
+      }
       notifyListeners();
     } catch (e) {
       rethrow;
@@ -747,6 +743,11 @@ class NetworkService extends ChangeNotifier {
       else throw Exception('Réponse RPC invalide');
 
       notifyListeners();
+
+      // Notification au propriétaire du post original
+      final originalOwner = await _getPostOwnerId(originalPostId);
+      unawaited(_notifyRepost(toUid: originalOwner, postId: originalPostId));
+
       final feedPostId = row['feed_post_id']?.toString();
       if (feedPostId == null || feedPostId.isEmpty) return null;
       return await getPostById(feedPostId);
@@ -759,6 +760,11 @@ class NetworkService extends ChangeNotifier {
           'created_at': DateTime.now().toUtc().toIso8601String(),
         }).timeout(_requestTimeout);
         notifyListeners();
+
+        // Notification aussi dans le fallback
+        final originalOwner = await _getPostOwnerId(originalPostId);
+        unawaited(_notifyRepost(toUid: originalOwner, postId: originalPostId));
+
         return null;
       } catch (e2) {
         rethrow;
@@ -829,12 +835,49 @@ class NetworkService extends ChangeNotifier {
       'audio_url': _NetworkValidators.sanitizeUrl(audioUrl),
       'image_url': _NetworkValidators.sanitizeUrl(imageUrl),
     }).select('*, profiles!user_id(display_name, avatar_url)').single().timeout(_requestTimeout);
+
+    // ─── Notification ───────────────────────────────────────
+    final ownerId = await _getPostOwnerId(postId);
+    if (parentId != null && parentId.isNotEmpty) {
+      // Réponse → notifier l’auteur du commentaire parent
+      try {
+        final parent = await _supabase
+            .from('comments')
+            .select('user_id')
+            .eq('id', parentId)
+            .maybeSingle()
+            .timeout(_requestTimeout);
+        final parentAuthor = parent?['user_id']?.toString() ?? '';
+        if (parentAuthor.isNotEmpty) {
+          unawaited(_notifyComment(
+            toUid: parentAuthor,
+            postId: postId,
+            preview: sanitizedContent,
+            isReply: true,
+          ));
+        }
+      } catch (_) {}
+    } else {
+      // Nouveau commentaire → notifier le propriétaire du post
+      unawaited(_notifyComment(
+        toUid: ownerId,
+        postId: postId,
+        preview: sanitizedContent,
+        isReply: false,
+      ));
+    }
+
     notifyListeners();
     return Comment.fromJson(res);
   }
 
   Future<bool> addCommentToPost(String postId, String comment) async {
-    try { await addComment(postId, comment); return true; } catch (e) { return false; }
+    try {
+      await addComment(postId, comment);
+      return true;
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> getComments(String postId) async {
@@ -843,7 +886,9 @@ class NetworkService extends ChangeNotifier {
       return (res as List).map((e) => {
         'id': e['id'], 'user_id': e['user_id'], 'user_name': e['profiles']?['display_name'], 'user_avatar': e['profiles']?['avatar_url'], 'content': e['content'], 'created_at': e['created_at'],
       }).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<bool> updateComment(String commentId, String newContent) async {
@@ -855,7 +900,9 @@ class NetworkService extends ChangeNotifier {
       await _supabase.from('comments').update({'content': sanitizedContent, 'is_edited': true}).eq('id', commentId).timeout(_requestTimeout);
       notifyListeners();
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<bool> deleteComment(String commentId) async {
@@ -865,7 +912,9 @@ class NetworkService extends ChangeNotifier {
       await _supabase.from('comments').delete().eq('id', commentId).timeout(_requestTimeout);
       notifyListeners();
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<void> reportComment(String commentId, String reason, String? details) async {
@@ -882,10 +931,32 @@ class NetworkService extends ChangeNotifier {
   Future<bool> likeComment(String commentId) async {
     if (_uid == null) return false;
     try {
-      await _supabase.from('comment_likes').upsert({'comment_id': commentId, 'user_id': _uid}, onConflict: 'comment_id,user_id', ignoreDuplicates: true).timeout(_requestTimeout);
+      await _supabase.from('comment_likes').upsert(
+        {'comment_id': commentId, 'user_id': _uid},
+        onConflict: 'comment_id,user_id',
+        ignoreDuplicates: true,
+      ).timeout(_requestTimeout);
+
+      // Notification
+      try {
+        final comment = await _supabase
+            .from('comments')
+            .select('user_id, post_id')
+            .eq('id', commentId)
+            .maybeSingle()
+            .timeout(_requestTimeout);
+        final authorId = comment?['user_id']?.toString() ?? '';
+        final postId = comment?['post_id']?.toString() ?? '';
+        if (authorId.isNotEmpty && postId.isNotEmpty) {
+          unawaited(_notifyCommentLike(toUid: authorId, postId: postId));
+        }
+      } catch (_) {}
+
       notifyListeners();
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<bool> unlikeComment(String commentId) async {
@@ -894,7 +965,9 @@ class NetworkService extends ChangeNotifier {
       await _supabase.from('comment_likes').delete().eq('comment_id', commentId).eq('user_id', _uid!).timeout(_requestTimeout);
       notifyListeners();
       return true;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -953,7 +1026,9 @@ class NetworkService extends ChangeNotifier {
       }
       await _supabase.from('posts').update({'poll_data': {'options': options}}).eq('id', postId).timeout(_requestTimeout);
       notifyListeners();
-    } catch (e) { debugPrint('[PostService] Error votePoll: $e'); }
+    } catch (e) {
+      debugPrint('[PostService] Error votePoll: $e');
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -964,7 +1039,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final res = await _supabase.from('active_stories').select('*').order('created_at', ascending: false).limit(30).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkStory.fromJson(e)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> createStory(String? mediaUrl, {String? text, String mediaType = 'image', int duration = 24, String? bgColor}) async {
@@ -988,18 +1065,21 @@ class NetworkService extends ChangeNotifier {
     await _supabase.from('story_views').upsert(
       {
         'story_id': storyId,
-        'viewer_id': uid,   // ✅ était 'user_id'
+        'viewer_id': uid,
         'viewed_at': DateTime.now().toUtc().toIso8601String(),
       },
-      onConflict: 'story_id,viewer_id',   // ✅ était 'story_id,user_id'
+      onConflict: 'story_id,viewer_id',
       ignoreDuplicates: true,
     ).timeout(_requestTimeout);
   }
+
   Future<List<Highlight>> getUserHighlights(String userId) async {
     try {
       final res = await _supabase.from('story_highlights').select().eq('user_id', userId).order('created_at', ascending: false).timeout(_requestTimeout);
       return (res as List).map((e) => Highlight(id: e['id'], name: e['name'], coverImage: e['cover_image'], storyIds: List<String>.from(e['story_ids'] ?? []), createdAt: DateTime.parse(e['created_at']))).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> createHighlight(String name, List<String> storyIds, String? coverImage) async {
@@ -1026,7 +1106,9 @@ class NetworkService extends ChangeNotifier {
           final user2 = '${e['user2_id']}';
           return user1 == uid ? user2 : user1;
         }).toSet();
-      } catch (e2) { return {}; }
+      } catch (e2) {
+        return {};
+      }
     }
   }
 
@@ -1045,7 +1127,9 @@ class NetworkService extends ChangeNotifier {
         if (ids.isEmpty) return [];
         final profiles = await _supabase.from('profiles').select('id, display_name, avatar_url, profession').inFilter('id', ids.toList()).timeout(_requestTimeout);
         return (profiles as List).map((p) => NetworkConnection(id: p['id']?.toString() ?? '', name: p['display_name']?.toString() ?? 'Utilisateur', avatar: p['avatar_url']?.toString(), title: p['profession']?.toString() ?? 'Membre THIX', mutualConnections: 0, status: 'accepted')).toList();
-      } catch (e2) { return []; }
+      } catch (e2) {
+        return [];
+      }
     }
   }
 
@@ -1053,14 +1137,16 @@ class NetworkService extends ChangeNotifier {
     try {
       final res = await _supabase.rpc('get_suggested_connections', params: {'p_user_id': currentUserId, 'p_limit': limit}).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkConnection(id: e['id'], name: e['display_name'] ?? 'Utilisateur', avatar: e['avatar_url'], title: e['profession'] ?? 'Membre', mutualConnections: (e['mutual_count'] as num?)?.toInt() ?? 0)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> followUser(String targetId) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
     if (targetId.isEmpty || targetId == currentUserId) throw Exception('Cible invalide');
     await _supabase.from('follows').upsert({'follower_id': currentUserId, 'following_id': targetId, 'created_at': DateTime.now().toUtc().toIso8601String()}, onConflict: 'follower_id,following_id').timeout(_requestTimeout);
-    try { unawaited(_createNotification(userId: targetId, type: 'follow')); } catch (_) {}
+    unawaited(_notifyFollow(toUid: targetId));
     notifyListeners();
   }
 
@@ -1100,28 +1186,36 @@ class NetworkService extends ChangeNotifier {
     try {
       final res = await _supabase.from('communities').select('*').eq('is_active', true).order('members_count', ascending: false).range(safeOffset, safeOffset + safeLimit - 1).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkCommunity.fromJson(e as Map<String, dynamic>)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<NetworkCommunity>> getSuggestedCommunities({int limit = 10}) async {
     try {
       final res = await _supabase.from('communities').select().order('members_count', ascending: false).limit(limit).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkCommunity.fromJson(e)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<NetworkCommunity>> getMyCommunities() async {
     try {
       final res = await _supabase.from('community_members').select('communities(*)').eq('user_id', currentUserId).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkCommunity.fromJson({...e['communities'], 'is_member': true})).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<NetworkCommunity?> getCommunityById(String id) async {
     try {
       final res = await _supabase.from('communities').select().eq('id', id).maybeSingle().timeout(_requestTimeout);
       return res == null ? null : NetworkCommunity.fromJson(res);
-    } catch (e) { return null; }
+    } catch (e) {
+      return null;
+    }
   }
 
   Future<void> joinCommunity(String id) async {
@@ -1142,7 +1236,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final r = await _supabase.from('profiles').select('id, display_name, avatar_url, profession').ilike('display_name', '%$sanitizedQuery%').limit(20).timeout(_requestTimeout);
       return List<Map<String, dynamic>>.from(r as List);
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<Map<String, dynamic>>> searchPosts(String q) async {
@@ -1151,7 +1247,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final r = await _supabase.from('posts_view').select('id, content, created_at, author_name, author_avatar').ilike('content', '%$sanitizedQuery%').limit(20).timeout(_requestTimeout);
       return List<Map<String, dynamic>>.from(r as List);
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<NetworkCommunity>> searchCommunities(String q) async {
@@ -1160,7 +1258,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final r = await _supabase.from('communities').select().ilike('name', '%$sanitizedQuery%').limit(20).timeout(_requestTimeout);
       return (r as List).map((e) => NetworkCommunity.fromJson(e)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -1180,7 +1280,9 @@ class NetworkService extends ChangeNotifier {
         }
       }
       return map.values.toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<List<Map<String, dynamic>>> getMessages(String otherId) async {
@@ -1188,7 +1290,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final res = await _supabase.from('messages').select().or('and(sender_id.eq.$uid,receiver_id.eq.$otherId),and(sender_id.eq.$otherId,receiver_id.eq.$uid)').order('created_at', ascending: true).limit(100).timeout(_requestTimeout);
       return (res as List).map((e) => {'id': e['id'], 'content': e['content'], 'is_sent_by_me': e['sender_id'] == uid, 'created_at': DateTime.parse(e['created_at'])}).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<Map<String, dynamic>> sendMessage(String receiverId, String content) async {
@@ -1204,28 +1308,34 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // NOTIFICATIONS
+  // NOTIFICATIONS (lecture)
   // ─────────────────────────────────────────────────────────────
 
   Future<List<NetworkNotification>> getNotifications() async {
     try {
       final res = await _supabase.from('notifications').select('*, profiles!sender_id(display_name, avatar_url)').eq('user_id', currentUserId).order('created_at', ascending: false).limit(50).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkNotification.fromJson(e)).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<int> getUnreadNotificationsCount() async {
     try {
       final res = await _supabase.from('notifications').select('id').eq('user_id', currentUserId).eq('is_read', false).timeout(_requestTimeout);
       return (res as List).length;
-    } catch (e) { return 0; }
+    } catch (e) {
+      return 0;
+    }
   }
 
   Future<int> getUnreadMessagesCount() async {
     try {
       final res = await _supabase.from('messages').select('id').eq('receiver_id', currentUserId).eq('is_read', false).timeout(_requestTimeout);
       return (res as List).length;
-    } catch (e) { return 0; }
+    } catch (e) {
+      return 0;
+    }
   }
 
   Future<void> markAllNotificationsAsRead() async {
@@ -1259,14 +1369,18 @@ class NetworkService extends ChangeNotifier {
       final profile = {...res, 'posts_count': results[0], 'followers_count': results[1], 'following_count': results[2]};
       _profileCache.set(userId, profile);
       return profile;
-    } catch (e) { return null; }
+    } catch (e) {
+      return null;
+    }
   }
 
   Future<List<NetworkPost>> getUserPosts(String userId, {int offset = 0, int limit = 15}) async {
     try {
       final res = await _supabase.from('posts_view').select().eq('user_id', userId).order('created_at', ascending: false).range(offset, offset + limit - 1).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map))).toList();
-    } catch (e) { return []; }
+    } catch (e) {
+      return [];
+    }
   }
 
   Future<void> markEventInterest(String id) async {
@@ -1277,7 +1391,9 @@ class NetworkService extends ChangeNotifier {
     try {
       final r = await _supabase.from('event_interests').select('id').eq('event_id', id).eq('user_id', currentUserId).maybeSingle().timeout(_requestTimeout);
       return r != null;
-    } catch (e) { return false; }
+    } catch (e) {
+      return false;
+    }
   }
 
   Future<Map<String, int>> getRecommendationsCount() async {
@@ -1299,7 +1415,9 @@ class NetworkService extends ChangeNotifier {
       Uint8List finalBytes = bytes;
 
       if (!kIsWeb) {
-        try { finalBytes = await _compressImageAsync(bytes, fileExtension); } catch (_) {}
+        try {
+          finalBytes = await _compressImageAsync(bytes, fileExtension);
+        } catch (_) {}
       }
 
       final isVideo = ['mp4', 'mov', 'avi', 'mkv'].contains(fileExtension.toLowerCase());
@@ -1307,7 +1425,9 @@ class NetworkService extends ChangeNotifier {
 
       await _supabase.storage.from(bucket).uploadBinary(path, finalBytes, fileOptions: FileOptions(contentType: mimeType, upsert: true)).timeout(const Duration(seconds: 30));
       return _supabase.storage.from(bucket).getPublicUrl(path);
-    } catch (e) { throw Exception(e.toString()); }
+    } catch (e) {
+      throw Exception(e.toString());
+    }
   }
 
   Future<Uint8List> _compressImageAsync(Uint8List bytes, String ext) async {
@@ -1330,18 +1450,17 @@ class NetworkService extends ChangeNotifier {
     try {
       final name = '${DateTime.now().millisecondsSinceEpoch}.m4a';
       final path = '$currentUserId/$name';
-      
-      // ✅ MIME standard pour .m4a (AAC audio)
+
       await _supabase.storage.from(bucket).uploadBinary(
         path,
         bytes,
         fileOptions: const FileOptions(
-          contentType: 'audio/mp4',  // ✅ Corrigé : était audio/x-m4a
+          contentType: 'audio/mp4',
           upsert: true,
           cacheControl: '31536000',
         ),
       ).timeout(const Duration(seconds: 30));
-      
+
       return _supabase.storage.from(bucket).getPublicUrl(path);
     } catch (e) {
       throw Exception('Upload audio failed: ${e.toString()}');
@@ -1349,21 +1468,97 @@ class NetworkService extends ChangeNotifier {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // HELPERS
+  // HELPERS + NOTIFICATIONS
   // ─────────────────────────────────────────────────────────────
 
   Future<String> _getPostOwnerId(String postId) async {
     try {
       final r = await _supabase.from('posts').select('user_id').eq('id', postId).maybeSingle().timeout(_requestTimeout);
       return r?['user_id'] ?? '';
-    } catch (e) { return ''; }
+    } catch (e) {
+      return '';
+    }
   }
 
-  Future<void> _createNotification({required String userId, required String type, String? postId}) async {
-    if (userId.isEmpty || userId == currentUserId) return;
+  Future<String> _getCurrentUserName() async {
+    final uid = currentUserId;
+    if (uid.isEmpty) return 'Quelqu’un';
     try {
-      await _supabase.from('notifications').insert({'user_id': userId, 'type': type, 'sender_id': currentUserId, 'post_id': postId, 'is_read': false}).timeout(_requestTimeout);
-    } catch (_) {}
+      final profile = await getUserProfile(uid);
+      return profile?['display_name']?.toString() ?? 'Quelqu’un';
+    } catch (_) {
+      return 'Quelqu’un';
+    }
+  }
+
+  Future<void> _notifyLike({required String toUid, required String postId}) async {
+    if (toUid.isEmpty || toUid == currentUserId) return;
+    final name = await _getCurrentUserName();
+    unawaited(ModuleNotifications.instance.like(
+      toUid: toUid,
+      senderId: currentUserId,
+      senderName: name,
+      postId: postId,
+    ));
+  }
+
+  Future<void> _notifyComment({
+    required String toUid,
+    required String postId,
+    required String preview,
+    bool isReply = false,
+  }) async {
+    if (toUid.isEmpty || toUid == currentUserId) return;
+    final name = await _getCurrentUserName();
+    if (isReply) {
+      unawaited(ModuleNotifications.instance.commentReply(
+        toUid: toUid,
+        senderId: currentUserId,
+        senderName: name,
+        postId: postId,
+        commentPreview: preview,
+      ));
+    } else {
+      unawaited(ModuleNotifications.instance.comment(
+        toUid: toUid,
+        senderId: currentUserId,
+        senderName: name,
+        postId: postId,
+        commentPreview: preview,
+      ));
+    }
+  }
+
+  Future<void> _notifyFollow({required String toUid}) async {
+    if (toUid.isEmpty || toUid == currentUserId) return;
+    final name = await _getCurrentUserName();
+    unawaited(ModuleNotifications.instance.follow(
+      toUid: toUid,
+      senderId: currentUserId,
+      senderName: name,
+    ));
+  }
+
+  Future<void> _notifyRepost({required String toUid, required String postId}) async {
+    if (toUid.isEmpty || toUid == currentUserId) return;
+    final name = await _getCurrentUserName();
+    unawaited(ModuleNotifications.instance.repost(
+      toUid: toUid,
+      senderId: currentUserId,
+      senderName: name,
+      postId: postId,
+    ));
+  }
+
+  Future<void> _notifyCommentLike({required String toUid, required String postId}) async {
+    if (toUid.isEmpty || toUid == currentUserId) return;
+    final name = await _getCurrentUserName();
+    unawaited(ModuleNotifications.instance.commentLike(
+      toUid: toUid,
+      senderId: currentUserId,
+      senderName: name,
+      postId: postId,
+    ));
   }
 }
 
