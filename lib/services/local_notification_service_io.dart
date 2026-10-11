@@ -3,6 +3,7 @@
 /// ✅ ROBUSTE : Error handling, mounted checks, timeouts
 /// ✅ OBSERVABLE : Logs structurés avec emojis et contexte
 /// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v2)
+/// ✅ FIX: Son personnalisé (notification.mp3 dans res/raw/)
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -145,7 +146,7 @@ class LocalNotificationService {
     }
   }
 
-  /// Crée les channels Android avec Importance.max
+  /// Crée les channels Android avec Importance.max + son personnalisé
   Future<void> _createAndroidChannels(
       AndroidFlutterLocalNotificationsPlugin android) async {
     try {
@@ -158,6 +159,7 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
 
@@ -170,10 +172,11 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
 
-      // Channel appels
+      // Channel appels (son système laissé à CallKit)
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -185,7 +188,7 @@ class LocalNotificationService {
         ),
       );
 
-      debugPrint('[LocalNotif] ✓ Android channels created (v2)');
+      debugPrint('[LocalNotif] ✓ Android channels created (v2) with custom sound');
     } catch (e) {
       debugPrint('[LocalNotif] ⚠️ Failed to create Android channels: $e');
     }
@@ -311,7 +314,6 @@ class LocalNotificationService {
       importance: Importance.max,
       priority: Priority.max,
       // ✅ FIX: Utiliser 'notification_icon' au lieu de '@mipmap/ic_launcher'
-      // Le fichier notification_icon.png doit exister dans res/drawable/
       icon: 'notification_icon',
       category: isCall
           ? AndroidNotificationCategory.call
@@ -322,6 +324,10 @@ class LocalNotificationService {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
+      // ✅ Son personnalisé (sauf pour les appels → CallKit gère)
+      sound: isCall
+          ? null
+          : const RawResourceAndroidNotificationSound('notification'),
     );
 
     const iosDetails = DarwinNotificationDetails(
