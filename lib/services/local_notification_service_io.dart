@@ -4,6 +4,7 @@
 /// ✅ OBSERVABLE : Logs structurés avec emojis et contexte
 /// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v2)
 /// ✅ FIX: Son personnalisé (notification.mp3 dans res/raw/)
+/// ✅ FIX: showBadge: true pour compteur sur l’icône
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -28,12 +29,10 @@ const int _kMaxNotificationId = 2147483647; // int32 max
 class _Validators {
   _Validators._();
 
-  /// Valide un ID de notification
   static bool isValidNotificationId(int id) {
     return id >= _kMinNotificationId && id <= _kMaxNotificationId;
   }
 
-  /// Sanitize un string pour éviter XSS dans les notifications
   static String sanitizeString(String? input, {required int maxLength}) {
     if (input == null) return '';
     final s = input
@@ -43,13 +42,11 @@ class _Validators {
     return s.length > maxLength ? '${s.substring(0, maxLength)}…' : s;
   }
 
-  /// Valide et sanitize un title
   static String? validateAndSanitizeTitle(String? title) {
     if (title == null || title.trim().isEmpty) return null;
     return sanitizeString(title, maxLength: _kMaxTitleLength);
   }
 
-  /// Valide et sanitize un body
   static String? validateAndSanitizeBody(String? body) {
     if (body == null || body.trim().isEmpty) return null;
     return sanitizeString(body, maxLength: _kMaxBodyLength);
@@ -69,19 +66,13 @@ class LocalNotificationService {
   bool _initialized = false;
   bool _initializing = false;
 
-  // ✅ FIX: IDs suffixés _v2 pour forcer la recréation des canaux Android
-  // (les anciens canaux créés avec @mipmap/ic_launcher sont cassés)
   static const String channelDefault = 'thix_id_default_v2';
   static const String channelChat = 'thix_chat_v2';
   static const String channelCalls = 'thix_calls_v2';
 
-  /// Callback appelé quand l'utilisateur tape sur une notification.
   void Function(String? payload)? onNotificationTap;
-
-  /// Référence au BuildContext pour mounted check (optionnel)
   BuildContext? _context;
 
-  /// Initialise le service de notifications locales.
   Future<void> initialize() async {
     if (_initialized) {
       debugPrint('[LocalNotif] ℹ️ Already initialized');
@@ -100,9 +91,6 @@ class LocalNotificationService {
     debugPrint('[LocalNotif] 🚀 Initializing...');
 
     try {
-      // ✅ FIX: Utiliser 'notification_icon' (res/drawable) au lieu de '@mipmap/ic_launcher'
-      // Le plugin flutter_local_notifications ne supporte PAS le format @mipmap/
-      // Il faut un fichier notification_icon.png dans android/app/src/main/res/drawable/
       const androidSettings =
           AndroidInitializationSettings('notification_icon');
       const iosSettings = DarwinInitializationSettings(
@@ -123,7 +111,6 @@ class LocalNotificationService {
           )
           .timeout(_kNotificationTimeout);
 
-      // Android-specific channel creation
       final android = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
 
@@ -146,7 +133,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Crée les channels Android avec Importance.max + son personnalisé
   Future<void> _createAndroidChannels(
       AndroidFlutterLocalNotificationsPlugin android) async {
     try {
@@ -159,6 +145,7 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          showBadge: true, // ✅ Badge sur l’icône
           sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
@@ -172,11 +159,12 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          showBadge: true, // ✅ Badge sur l’icône
           sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
 
-      // Channel appels (son système laissé à CallKit)
+      // Channel appels
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -185,16 +173,16 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
+          showBadge: true, // ✅ Badge sur l’icône
         ),
       );
 
-      debugPrint('[LocalNotif] ✓ Android channels created (v2) with custom sound');
+      debugPrint('[LocalNotif] ✓ Android channels created (v2) with sound + badge');
     } catch (e) {
       debugPrint('[LocalNotif] ⚠️ Failed to create Android channels: $e');
     }
   }
 
-  /// Gère le tap sur notification avec mounted check
   void _handleNotificationTap(String? payload) {
     if (_context != null && !_context!.mounted) {
       debugPrint('[LocalNotif] ⚠️ Notification tap ignored: context not mounted');
@@ -213,11 +201,9 @@ class LocalNotificationService {
     }
   }
 
-  /// Alias pour `initialize()` (compatibilité)
   @Deprecated('Use initialize() instead')
   Future<void> init() => initialize();
 
-  /// Demande les permissions de notifications.
   Future<bool> requestPermission() async {
     debugPrint('[LocalNotif] 🔐 Requesting permissions...');
 
@@ -253,7 +239,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Affiche une notification locale.
   Future<bool> show({
     required int id,
     required String title,
@@ -261,27 +246,23 @@ class LocalNotificationService {
     String? payload,
     String? channelId,
   }) async {
-    // Validation ID
     if (!_Validators.isValidNotificationId(id)) {
       debugPrint('[LocalNotif] ⚠️ show: invalid ID $id');
       return false;
     }
 
-    // Validation et sanitization title
     final sanitizedTitle = _Validators.validateAndSanitizeTitle(title);
     if (sanitizedTitle == null) {
       debugPrint('[LocalNotif] ⚠️ show: empty or invalid title');
       return false;
     }
 
-    // Validation et sanitization body
     final sanitizedBody = _Validators.validateAndSanitizeBody(body);
     if (sanitizedBody == null) {
       debugPrint('[LocalNotif] ⚠️ show: empty or invalid body');
       return false;
     }
 
-    // Auto-initialisation
     if (!_initialized) {
       debugPrint('[LocalNotif] ⏳ Auto-initializing...');
       await initialize();
@@ -313,7 +294,6 @@ class LocalNotificationService {
               : 'Notifications THIX',
       importance: Importance.max,
       priority: Priority.max,
-      // ✅ FIX: Utiliser 'notification_icon' au lieu de '@mipmap/ic_launcher'
       icon: 'notification_icon',
       category: isCall
           ? AndroidNotificationCategory.call
@@ -324,7 +304,7 @@ class LocalNotificationService {
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
-      // ✅ Son personnalisé (sauf pour les appels → CallKit gère)
+      channelShowBadge: true, // ✅ Affiche le badge
       sound: isCall
           ? null
           : const RawResourceAndroidNotificationSound('notification'),
@@ -361,7 +341,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Raccourci pour afficher une notification d'appel entrant.
   Future<bool> showIncomingCall({
     required int id,
     required String title,
@@ -377,7 +356,6 @@ class LocalNotificationService {
     );
   }
 
-  /// Raccourci pour afficher une notification de message chat.
   Future<bool> showChatMessage({
     required int id,
     required String title,
@@ -393,13 +371,11 @@ class LocalNotificationService {
     );
   }
 
-  /// Annule une notification par son ID.
   Future<bool> cancel(int id) {
     if (!_Validators.isValidNotificationId(id)) {
       debugPrint('[LocalNotif] ⚠️ cancel: invalid ID $id');
       return Future.value(false);
     }
-
     return _cancelInternal(id);
   }
 
@@ -417,7 +393,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Annule toutes les notifications.
   Future<bool> cancelAll() async {
     try {
       await _plugin.cancelAll().timeout(_kNotificationTimeout);
@@ -432,17 +407,14 @@ class LocalNotificationService {
     }
   }
 
-  /// Enregistre un BuildContext pour mounted check dans les callbacks.
   void registerContext(BuildContext context) {
     _context = context;
   }
 
-  /// Désenregistre le BuildContext.
   void unregisterContext() {
     _context = null;
   }
 
-  /// Reset le service pour les tests unitaires.
   @visibleForTesting
   Future<void> resetForTesting() async {
     debugPrint('[LocalNotif] 🔄 Resetting for testing...');
