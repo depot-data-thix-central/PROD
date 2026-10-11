@@ -7,8 +7,116 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/core/extensions/context_ext.dart';
+import 'package:thix_id/nav.dart';
 
 import 'providers/reservation_home_provider.dart';
+
+/// ============================================================================
+/// CATÉGORIES (toutes visibles dès l'ouverture, aucune dépendance à un mapping
+/// texte → icône : l'icône est directement un IconData)
+/// ============================================================================
+class _Category {
+  final String id;
+  final String labelKey;
+  final String fallback;
+  final IconData icon;
+
+  /// null = pas encore disponible (affiche "Bientôt disponible")
+  final String? route;
+
+  const _Category({
+    required this.id,
+    required this.labelKey,
+    required this.fallback,
+    required this.icon,
+    this.route,
+  });
+}
+
+final List<_Category> _kCategories = [
+  const _Category(
+    id: 'bus',
+    labelKey: 'reservationCatBus',
+    fallback: 'Bus',
+    icon: Icons.directions_bus_filled_rounded,
+    route: '/thix-reservation/bus',
+  ),
+  const _Category(
+    id: 'flight',
+    labelKey: 'reservationCatFlight',
+    fallback: 'Vol',
+    icon: Icons.flight_takeoff_rounded,
+    route: '/thix-reservation/flights',
+  ),
+  const _Category(
+    id: 'hotel',
+    labelKey: 'reservationCatHotel',
+    fallback: 'Hôtel',
+    icon: Icons.king_bed_rounded,
+    route: '/thix-reservation/hotels',
+  ),
+  const _Category(
+    id: 'taxi',
+    labelKey: 'reservationCatTaxi',
+    fallback: 'Taxi',
+    icon: Icons.local_taxi_rounded,
+    route: '/thix-reservation/taxi',
+  ),
+  _Category(
+    id: 'delivery',
+    labelKey: 'reservationCatDelivery',
+    fallback: 'Livraison',
+    icon: Icons.delivery_dining_rounded,
+    route: AppRoutes.deliveryHome,
+  ),
+  const _Category(
+    id: 'restaurant',
+    labelKey: 'reservationMoreRestaurant',
+    fallback: 'Restaurant',
+    icon: Icons.restaurant_rounded,
+    route: null,
+  ),
+  _Category(
+    id: 'ads',
+    labelKey: 'reservationMoreAds',
+    fallback: 'Annonces',
+    icon: Icons.storefront_rounded,
+    route: AppRoutes.thixMarket,
+  ),
+  const _Category(
+    id: 'events',
+    labelKey: 'reservationMoreEvents',
+    fallback: 'Événement',
+    icon: Icons.event_rounded,
+    route: '/thix-event',
+  ),
+];
+
+/// Libellé traduit, avec repli si la clé l10n n'existe pas
+String _label(BuildContext context, _Category c) {
+  final v = context.l10n.t(c.labelKey);
+  if (v.isEmpty || v == c.labelKey) return c.fallback;
+  return v;
+}
+
+/// Ouvre la route d'une catégorie (ou informe qu'elle arrive bientôt)
+void _openCategory(BuildContext context, _Category c) {
+  HapticFeedback.selectionClick();
+  final route = c.route;
+  if (route == null || route.isEmpty) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${_label(context, c)} · Bientôt disponible'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    return;
+  }
+  context.push(route);
+}
 
 /// ============================================================================
 /// ThixReservationHomePage
@@ -94,7 +202,6 @@ class _ThixReservationHomePageState
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
     final state = ref.watch(reservationHomeProvider);
     final domainColor = ThixPolicy.domainReservation;
 
@@ -193,8 +300,8 @@ class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
           child: Container(
-            color: Colors.white.withValues(alpha: 0.65),
             decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.65),
               border: Border(
                 bottom: BorderSide(
                   color: Colors.white.withValues(alpha: 0.8),
@@ -569,14 +676,25 @@ class _HeroIndicators extends StatelessWidget {
 }
 
 /// ============================================================================
-/// _CategoriesGrid
+/// _CategoriesGrid — TOUTES les catégories visibles dès l'ouverture
+/// (2 lignes de 4, largeur égale, aucun bouton "Plus", rien de caché)
 /// ============================================================================
 class _CategoriesGrid extends StatelessWidget {
   final Color domainColor;
   const _CategoriesGrid({required this.domainColor});
 
+  static const int _perRow = 4;
+
   @override
   Widget build(BuildContext context) {
+    final rows = <List<_Category>>[];
+    for (var i = 0; i < _kCategories.length; i += _perRow) {
+      rows.add(_kCategories.sublist(
+        i,
+        math.min(i + _perRow, _kCategories.length),
+      ));
+    }
+
     return Container(
       padding: EdgeInsets.symmetric(
         vertical: ThixPolicy.s12,
@@ -597,26 +715,24 @@ class _CategoriesGrid extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
+      child: Column(
         children: [
-          ...kReservationCategories.map(
-            (cat) => _CategoryItem(
-              category: cat,
-              domainColor: domainColor,
+          for (var r = 0; r < rows.length; r++) ...[
+            if (r > 0) SizedBox(height: ThixPolicy.s12),
+            Row(
+              children: [
+                for (var c = 0; c < _perRow; c++)
+                  Expanded(
+                    child: c < rows[r].length
+                        ? _CategoryItem(
+                            category: rows[r][c],
+                            domainColor: domainColor,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+              ],
             ),
-          ),
-          _CategoryItem(
-            category: const ReservationCategory(
-              id: 'more',
-              labelKey: 'reservationCatMore',
-              route: '',
-              icon: 'apps',
-              isPrimary: false,
-            ),
-            isMore: true,
-            domainColor: domainColor,
-          ),
+          ],
         ],
       ),
     );
@@ -624,62 +740,30 @@ class _CategoriesGrid extends StatelessWidget {
 }
 
 class _CategoryItem extends StatelessWidget {
-  final ReservationCategory category;
-  final bool isMore;
+  final _Category category;
   final Color domainColor;
 
   const _CategoryItem({
     required this.category,
     required this.domainColor,
-    this.isMore = false,
   });
-
-  IconData get _icon {
-    switch (category.icon) {
-      case 'directions_bus_filled':
-        return Icons.directions_bus_filled_rounded;
-      case 'flight_takeoff':
-        return Icons.flight_takeoff_rounded;
-      case 'king_bed':
-        return Icons.king_bed_rounded;
-      case 'local_taxi':
-        return Icons.local_taxi_rounded;
-      case 'delivery_dining':
-        return Icons.delivery_dining_rounded;
-      case 'apps':
-        return Icons.apps_rounded;
-      default:
-        return Icons.circle;
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final label = l10n.t(category.labelKey);
+    final label = _label(context, category);
 
     return Semantics(
       button: true,
       label: label,
       child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          if (isMore) {
-            showModalBottomSheet(
-              context: context,
-              backgroundColor: Colors.transparent,
-              isScrollControlled: true,
-              builder: (_) => const _MoreSheet(),
-            );
-          } else {
-            context.push(category.route);
-          }
-        },
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openCategory(context, category),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 40,
-              height: 40,
+              width: 44,
+              height: 44,
               decoration: BoxDecoration(
                 color: Colors.white.withValues(alpha: 0.7),
                 borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -692,17 +776,16 @@ class _CategoryItem extends StatelessWidget {
                   ),
                 ],
               ),
-              child: Icon(
-                _icon,
-                color: isMore ? ThixPolicy.textSecondary : domainColor,
-                size: 19,
-              ),
+              child: Icon(category.icon, color: domainColor, size: 21),
             ),
             SizedBox(height: ThixPolicy.s6),
             Text(
               label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
               style: ThixPolicy.labelStyle.copyWith(
-                fontSize: 9.5,
+                fontSize: 10,
                 fontWeight: ThixPolicy.bold,
                 color: ThixPolicy.textMain,
                 letterSpacing: -0.2,
@@ -1531,149 +1614,7 @@ class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground>
 }
 
 /// ============================================================================
-/// _MoreSheet
-/// ============================================================================
-class _MoreSheet extends StatelessWidget {
-  const _MoreSheet();
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = context.l10n;
-
-    return ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          padding: EdgeInsets.fromLTRB(
-            ThixPolicy.s24,
-            ThixPolicy.s12,
-            ThixPolicy.s24,
-            ThixPolicy.s32,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.85),
-            border: Border(
-              top: BorderSide(
-                color: Colors.white.withValues(alpha: 0.9),
-                width: 1.5,
-              ),
-            ),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: ThixPolicy.border,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-              ),
-              SizedBox(height: ThixPolicy.s32),
-              Wrap(
-                spacing: 32,
-                runSpacing: 32,
-                alignment: WrapAlignment.center,
-                children: [
-                  _MoreSheetItem(
-                    icon: Icons.restaurant_rounded,
-                    label: l10n.t('reservationMoreRestaurant'),
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _MoreSheetItem(
-                    icon: Icons.storefront_rounded,
-                    label: l10n.t('reservationMoreAds'),
-                    onTap: () => Navigator.pop(context),
-                  ),
-                  _MoreSheetItem(
-                    icon: Icons.event_rounded,
-                    label: l10n.t('reservationMoreEvents'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.push('/thix-event');
-                    },
-                  ),
-                  _MoreSheetItem(
-                    icon: Icons.delivery_dining_rounded,
-                    label: l10n.t('reservationMoreDelivery'),
-                    onTap: () {
-                      Navigator.pop(context);
-                      context.push('/delivery');
-                    },
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _MoreSheetItem extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-
-  const _MoreSheetItem({
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final domainColor = ThixPolicy.domainReservation;
-
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.selectionClick();
-          onTap();
-        },
-        child: Column(
-          children: [
-            Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                border: Border.all(color: Colors.white),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.03),
-                    blurRadius: 5,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: Icon(icon, color: domainColor, size: 19),
-            ),
-            SizedBox(height: ThixPolicy.s6),
-            Text(
-              label,
-              style: ThixPolicy.labelStyle.copyWith(
-                fontSize: 9.5,
-                fontWeight: ThixPolicy.bold,
-                color: ThixPolicy.textMain,
-                letterSpacing: -0.2,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// ============================================================================
-/// _QuickActionSheet
+/// _QuickActionSheet (bouton central) — mêmes catégories, défilement si besoin
 /// ============================================================================
 class _QuickActionSheet extends StatelessWidget {
   const _QuickActionSheet();
@@ -1688,6 +1629,9 @@ class _QuickActionSheet extends StatelessWidget {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
           padding: EdgeInsets.fromLTRB(
             ThixPolicy.s24,
             ThixPolicy.s12,
@@ -1729,15 +1673,23 @@ class _QuickActionSheet extends StatelessWidget {
                   color: ThixPolicy.textSecondary,
                 ),
               ),
-              SizedBox(height: ThixPolicy.s24),
-              ...kReservationCategories.map(
-                (cat) => _QuickActionTile(
-                  category: cat,
-                  domainColor: domainColor,
-                  onTap: () {
-                    Navigator.pop(context);
-                    context.push(cat.route);
-                  },
+              SizedBox(height: ThixPolicy.s20),
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      for (final cat in _kCategories)
+                        _QuickActionTile(
+                          category: cat,
+                          domainColor: domainColor,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openCategory(context, cat);
+                          },
+                        ),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -1749,7 +1701,7 @@ class _QuickActionSheet extends StatelessWidget {
 }
 
 class _QuickActionTile extends StatelessWidget {
-  final ReservationCategory category;
+  final _Category category;
   final Color domainColor;
   final VoidCallback onTap;
 
@@ -1759,27 +1711,9 @@ class _QuickActionTile extends StatelessWidget {
     required this.onTap,
   });
 
-  IconData get _icon {
-    switch (category.icon) {
-      case 'directions_bus_filled':
-        return Icons.directions_bus_filled_rounded;
-      case 'flight_takeoff':
-        return Icons.flight_takeoff_rounded;
-      case 'king_bed':
-        return Icons.king_bed_rounded;
-      case 'local_taxi':
-        return Icons.local_taxi_rounded;
-      case 'delivery_dining':
-        return Icons.delivery_dining_rounded;
-      default:
-        return Icons.circle;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
-    final l10n = context.l10n;
-    final label = l10n.t(category.labelKey);
+    final label = _label(context, category);
 
     return Padding(
       padding: EdgeInsets.only(bottom: ThixPolicy.s8),
@@ -1808,7 +1742,7 @@ class _QuickActionTile extends StatelessWidget {
                     color: domainColor.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(ThixPolicy.rSm),
                   ),
-                  child: Icon(_icon, color: domainColor, size: 18),
+                  child: Icon(category.icon, color: domainColor, size: 18),
                 ),
                 SizedBox(width: ThixPolicy.s12),
                 Expanded(
@@ -1862,9 +1796,9 @@ class _HeroSlide {
 const _kHeroSlides = [
   _HeroSlide(
     badgeKey: 'PROMO FLASH',
-    titleKey: "Jusqu'à -40%",
+    titleKey: "Jusqu'à -20%",
     subtitleKey: 'bus & vols nationaux',
-    validityKey: 'Valable jusqu\'au 30 Juin 2026',
+    validityKey: 'Valable jusqu\'au 30 Juin 2027',
     ctaKey: 'Réserver',
     route: '/thix-reservation/bus',
     gradient: [Color(0xFF0A2F6B), Color(0xFF0B4FE3)],
