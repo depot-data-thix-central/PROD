@@ -164,9 +164,7 @@ class AgencyDashboardState {
 // ENUMS
 // ============================================================================
 enum _TripFilter { all, scheduled, departed, cancelled, completed }
-
 enum _TripSort { dateAsc, dateDesc, priceAsc, priceDesc, seatsAsc, seatsDesc }
-
 enum AgencyErrorType { network, unauthorized, notFound, validation, server, unknown }
 
 // ============================================================================
@@ -183,7 +181,7 @@ class AgencyError {
     required this.message,
     this.originalError,
     DateTime? timestamp,
-  }) : timestamp = timestamp ?? DateTime.now();
+  }) : timestamp = timestamp ?? const _Now(); // ✅ CORRECTION ICI
 
   factory AgencyError.fromException(Object e) {
     final message = e.toString();
@@ -215,6 +213,13 @@ class AgencyError {
       case AgencyErrorType.unknown: return 'Une erreur inattendue s\'est produite.';
     }
   }
+}
+
+// Helper pour DateTime.now() en const
+class _Now implements DateTime {
+  const _Now();
+  @override
+  noSuchMethod(Invocation invocation) => DateTime.now();
 }
 
 // ============================================================================
@@ -307,7 +312,6 @@ class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
 
       debugPrint('🟢 [DEBUG] Agence créée: $response');
 
-      // ✅ Utilisation de AgencyModel.fromJson (importé depuis data/models)
       final newAgency = AgencyModel.fromJson(Map<String, dynamic>.from(response));
       state = state.copyWith(myAgency: newAgency, isCreating: false);
       await init(force: true);
