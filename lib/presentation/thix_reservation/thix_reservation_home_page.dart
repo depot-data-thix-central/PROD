@@ -1,815 +1,1844 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ Ajouté pour l'insertion directe
+import 'package:go_router/go_router.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/core/extensions/context_ext.dart';
+import 'package:thix_id/nav.dart';
 
-import '../data/models/bus_trip_model.dart';
-import '../data/models/booking_model.dart';
-import '../data/services/bus_agency_service.dart';
-
-/// ============================================================================
-/// AgencyDashboardState
-/// ============================================================================
-class AgencyDashboardState {
-  final AgencyModel? myAgency;
-  final List<BusTripModel> myTrips;
-  final List<BookingModel> agencyBookings;
-
-  final Map<String, dynamic>? statsToday;
-  final Map<String, dynamic>? statsWeek;
-  final Map<String, dynamic>? statsMonth;
-  final Map<String, dynamic>? statsAll;
-
-  final bool isLoading;
-  final bool isRefreshing;
-  final bool isCreating;
-  final bool isUpdating;
-
-  final _TripFilter? activeFilter;
-  final _TripSort activeSort;
-
-  final AgencyError? error;
-  final DateTime? lastUpdated;
-
-  const AgencyDashboardState({
-    this.myAgency,
-    this.myTrips = const [],
-    this.agencyBookings = const [],
-    this.statsToday,
-    this.statsWeek,
-    this.statsMonth,
-    this.statsAll,
-    this.isLoading = true,
-    this.isRefreshing = false,
-    this.isCreating = false,
-    this.isUpdating = false,
-    this.activeFilter,
-    this.activeSort = _TripSort.dateDesc,
-    this.error,
-    this.lastUpdated,
-  });
-
-  AgencyDashboardState copyWith({
-    AgencyModel? myAgency,
-    List<BusTripModel>? myTrips,
-    List<BookingModel>? agencyBookings,
-    Map<String, dynamic>? statsToday,
-    Map<String, dynamic>? statsWeek,
-    Map<String, dynamic>? statsMonth,
-    Map<String, dynamic>? statsAll,
-    bool? isLoading,
-    bool? isRefreshing,
-    bool? isCreating,
-    bool? isUpdating,
-    _TripFilter? activeFilter,
-    _TripSort? activeSort,
-    AgencyError? error,
-    DateTime? lastUpdated,
-    bool clearError = false,
-    bool clearFilter = false,
-  }) {
-    return AgencyDashboardState(
-      myAgency: myAgency ?? this.myAgency,
-      myTrips: myTrips ?? this.myTrips,
-      agencyBookings: agencyBookings ?? this.agencyBookings,
-      statsToday: statsToday ?? this.statsToday,
-      statsWeek: statsWeek ?? this.statsWeek,
-      statsMonth: statsMonth ?? this.statsMonth,
-      statsAll: statsAll ?? this.statsAll,
-      isLoading: isLoading ?? this.isLoading,
-      isRefreshing: isRefreshing ?? this.isRefreshing,
-      isCreating: isCreating ?? this.isCreating,
-      isUpdating: isUpdating ?? this.isUpdating,
-      activeFilter: clearFilter ? null : (activeFilter ?? this.activeFilter),
-      activeSort: activeSort ?? this.activeSort,
-      error: clearError ? null : (error ?? this.error),
-      lastUpdated: lastUpdated ?? this.lastUpdated,
-    );
-  }
-
-  bool get hasAgency => myAgency != null;
-  bool get isAgencyActive => myAgency?.isActive == true;
-  bool get isPending => myAgency?.isPending == true;
-  bool get hasError => error != null;
-  bool get isStale {
-    if (lastUpdated == null) return true;
-    return DateTime.now().difference(lastUpdated!) > const Duration(minutes: 5);
-  }
-
-  int get todayBookingsCount => statsToday?['bookings_count'] ?? 0;
-  int get todayRevenue => statsToday?['revenue'] ?? 0;
-  double get todayOccupancyRate => (statsToday?['occupancy_rate'] ?? 0).toDouble();
-
-  int get weekBookingsCount => statsWeek?['bookings_count'] ?? 0;
-  int get weekRevenue => statsWeek?['revenue'] ?? 0;
-
-  int get monthBookingsCount => statsMonth?['bookings_count'] ?? 0;
-  int get monthRevenue => statsMonth?['revenue'] ?? 0;
-
-  int get totalBookingsCount => statsAll?['bookings_count'] ?? 0;
-  int get totalRevenue => statsAll?['revenue'] ?? 0;
-
-  List<BusTripModel> get filteredTrips {
-    var trips = List<BusTripModel>.from(myTrips);
-
-    if (activeFilter != null) {
-      trips = trips.where((t) {
-        switch (activeFilter!) {
-          case _TripFilter.all: return true;
-          case _TripFilter.scheduled: return t.status.name == 'scheduled';
-          case _TripFilter.departed: return t.status.name == 'departed';
-          case _TripFilter.cancelled: return t.status.name == 'cancelled';
-          case _TripFilter.completed: return t.status.name == 'completed';
-        }
-      }).toList();
-    }
-
-    trips.sort((a, b) {
-      switch (activeSort) {
-        case _TripSort.dateAsc: return a.departureTime.compareTo(b.departureTime);
-        case _TripSort.dateDesc: return b.departureTime.compareTo(a.departureTime);
-        case _TripSort.priceAsc: return a.priceFcfa.compareTo(b.priceFcfa);
-        case _TripSort.priceDesc: return b.priceFcfa.compareTo(a.priceFcfa);
-        case _TripSort.seatsAsc: return a.availableSeats.compareTo(b.availableSeats);
-        case _TripSort.seatsDesc: return b.availableSeats.compareTo(a.availableSeats);
-      }
-    });
-
-    return trips;
-  }
-
-  List<BookingModel> get sortedBookings {
-    final sorted = List<BookingModel>.from(agencyBookings);
-    sorted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-    return sorted;
-  }
-
-  List<BusTripModel> get upcomingTrips {
-    final now = DateTime.now();
-    return myTrips
-        .where((t) => t.status.name == 'scheduled' && t.departureTime.isAfter(now))
-        .toList()
-      ..sort((a, b) => a.departureTime.compareTo(b.departureTime));
-  }
-
-  int get pendingDepartures => upcomingTrips.length;
-
-  List<BusTripModel> get pastTrips {
-    final now = DateTime.now();
-    return myTrips
-        .where((t) => t.departureTime.isBefore(now))
-        .toList()
-      ..sort((a, b) => b.departureTime.compareTo(a.departureTime));
-  }
-
-  Map<String, int> get bookingsByStatus {
-    final map = <String, int>{};
-    for (final b in agencyBookings) {
-      final statusKey = b.status.name;
-      map[statusKey] = (map[statusKey] ?? 0) + 1;
-    }
-    return map;
-  }
-}
-
-enum _TripFilter { all, scheduled, departed, cancelled, completed }
-enum _TripSort { dateAsc, dateDesc, priceAsc, priceDesc, seatsAsc, seatsDesc }
-
-enum AgencyErrorType { network, unauthorized, notFound, validation, server, unknown }
-
-class AgencyError {
-  final AgencyErrorType type;
-  final String message;
-  final String? originalError;
-  final DateTime timestamp;
-
-  const AgencyError({
-    required this.type,
-    required this.message,
-    this.originalError,
-    DateTime? timestamp,
-  }) : timestamp = timestamp ?? const _Now();
-
-  factory AgencyError.fromException(Object e) {
-    final message = e.toString();
-    final lower = message.toLowerCase();
-
-    AgencyErrorType type;
-    if (lower.contains('network') || lower.contains('timeout') || lower.contains('socket')) {
-      type = AgencyErrorType.network;
-    } else if (lower.contains('unauthorized') || lower.contains('401')) {
-      type = AgencyErrorType.unauthorized;
-    } else if (lower.contains('not found') || lower.contains('404')) {
-      type = AgencyErrorType.notFound;
-    } else if (lower.contains('validation') || lower.contains('400')) {
-      type = AgencyErrorType.validation;
-    } else if (lower.contains('500') || lower.contains('server')) {
-      type = AgencyErrorType.server;
-    } else {
-      type = AgencyErrorType.unknown;
-    }
-
-    return AgencyError(
-      type: type,
-      message: _humanReadableMessage(type),
-      originalError: message,
-    );
-  }
-
-  static String _humanReadableMessage(AgencyErrorType type) {
-    switch (type) {
-      case AgencyErrorType.network: return 'Problème de connexion. Vérifiez votre réseau.';
-      case AgencyErrorType.unauthorized: return 'Session expirée. Veuillez vous reconnecter.';
-      case AgencyErrorType.notFound: return 'Ressource introuvable.';
-      case AgencyErrorType.validation: return 'Données invalides. Vérifiez le formulaire.';
-      case AgencyErrorType.server: return 'Erreur serveur. Réessayez dans quelques instants.';
-      case AgencyErrorType.unknown: return 'Une erreur inattendue s\'est produite.';
-    }
-  }
-}
-
-class _Now implements DateTime {
-  const _Now();
-  @override
-  noSuchMethod(Invocation invocation) => DateTime.now();
-}
+import 'providers/reservation_home_provider.dart';
 
 /// ============================================================================
-/// AgencyDashboardNotifier
+/// CATÉGORIES (toutes visibles dès l'ouverture, aucune dépendance à un mapping
+/// texte → icône : l'icône est directement un IconData)
 /// ============================================================================
-class AgencyDashboardNotifier extends Notifier<AgencyDashboardState> {
-  final BusAgencyService _service = BusAgencyService();
-  static const Duration _timeout = Duration(seconds: 10);
-
-  @override
-  AgencyDashboardState build() => const AgencyDashboardState();
-
-  Future<void> init({bool force = false}) async {
-    if (!force && !state.isStale && state.hasAgency) {
-      _log('Données encore fraîches, skip init');
-      return;
-    }
-
-    state = state.copyWith(isLoading: true, clearError: true);
-
-    try {
-      final agency = await _service.getMyAgency().timeout(_timeout);
-
-      if (agency != null) {
-        final results = await Future.wait([
-          _service.getMyTrips(agency.id).timeout(_timeout),
-          _service.getAgencyBookings(agency.id).timeout(_timeout),
-          _service.getDashboardStats(agency.id, period: 'today').timeout(_timeout),
-          _service.getDashboardStats(agency.id, period: 'week').timeout(_timeout),
-          _service.getDashboardStats(agency.id, period: 'month').timeout(_timeout),
-          _service.getDashboardStats(agency.id, period: 'all').timeout(_timeout),
-        ]);
-
-        state = state.copyWith(
-          myAgency: agency,
-          myTrips: results[0] as List<BusTripModel>,
-          agencyBookings: results[1] as List<BookingModel>,
-          statsToday: results[2] as Map<String, dynamic>,
-          statsWeek: results[3] as Map<String, dynamic>,
-          statsMonth: results[4] as Map<String, dynamic>,
-          statsAll: results[5] as Map<String, dynamic>,
-          isLoading: false,
-          lastUpdated: DateTime.now(),
-        );
-        _log('Init réussi : ${state.myTrips.length} trajets, ${state.agencyBookings.length} bookings');
-      } else {
-        state = const AgencyDashboardState(isLoading: false);
-        _log('Aucune agence trouvée');
-      }
-    } catch (e) {
-      _logError('Erreur init', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isLoading: false);
-    }
-  }
-
-  Future<void> refresh() async {
-    if (!state.hasAgency) return;
-    state = state.copyWith(isRefreshing: true, clearError: true);
-
-    try {
-      final results = await Future.wait([
-        _service.getMyTrips(state.myAgency!.id).timeout(_timeout),
-        _service.getAgencyBookings(state.myAgency!.id).timeout(_timeout),
-      ]);
-
-      state = state.copyWith(
-        myTrips: results[0] as List<BusTripModel>,
-        agencyBookings: results[1] as List<BookingModel>,
-        isRefreshing: false,
-        lastUpdated: DateTime.now(),
-      );
-      _log('Refresh réussi');
-    } catch (e) {
-      _logError('Erreur refresh', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isRefreshing: false);
-    }
-  }
-
-  /// ✅ CORRECTION MAJEURE : Insertion directe avec owner_id et debug logs
-  Future<bool> createMyAgency({
-    required String name,
-    required String countryCode,
-    String? description,
-  }) async {
-    state = state.copyWith(isCreating: true, clearError: true);
-
-    try {
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId == null) {
-        throw Exception('Utilisateur non authentifié');
-      }
-
-      debugPrint('🔵 [DEBUG] Tentative de création d\'agence...');
-      debugPrint('   - User ID: $userId');
-      debugPrint('   - Name: $name');
-      debugPrint('   - Country: $countryCode');
-
-      // Insertion directe pour garantir que owner_id et status sont bien envoyés
-      final response = await Supabase.instance.client
-          .from('bus_agencies')
-          .insert({
-            'owner_id': userId,
-            'name': name,
-            'country_code': countryCode,
-            'description': description ?? '',
-            'status': 'active', // Mode test : auto-approbation
-            'is_verified': true,
-          })
-          .select()
-          .single()
-          .timeout(_timeout);
-
-      debugPrint('🟢 [DEBUG] Agence créée avec succès: $response');
-
-      final newAgency = AgencyModel.fromJson(Map<String, dynamic>.from(response));
-      
-      state = state.copyWith(myAgency: newAgency, isCreating: false);
-      await init(force: true);
-      _log('Agence créée : ${newAgency.name}');
-      return state.hasAgency;
-      
-    } catch (e, stack) {
-      debugPrint('🔴 [DEBUG] ERREUR création agence: $e');
-      debugPrint('Stack trace: $stack');
-      
-      _logError('Erreur création agence', e);
-      state = state.copyWith(
-        error: AgencyError.fromException(e),
-        isCreating: false,
-      );
-      return false;
-    }
-  }
-
-  Future<bool> createTrip({
-    required String from,
-    required String to,
-    required String departureStation,
-    required String arrivalStation,
-    required DateTime departureTime,
-    required DateTime arrivalTime,
-    required int price,
-    required int totalSeats,
-    required String busType,
-    List<String> amenities = const [],
-  }) async {
-    if (state.myAgency == null || !state.isAgencyActive) {
-      state = state.copyWith(
-        error: const AgencyError(type: AgencyErrorType.validation, message: 'Agence non active'),
-      );
-      return false;
-    }
-
-    state = state.copyWith(isCreating: true, clearError: true);
-
-    try {
-      final newTrip = await _service.createTrip(
-        agencyId: state.myAgency!.id,
-        from: from,
-        to: to,
-        departureStation: departureStation,
-        arrivalStation: arrivalStation,
-        departureTime: departureTime,
-        arrivalTime: arrivalTime,
-        price: price,
-        totalSeats: totalSeats,
-        busType: busType,
-        amenities: amenities,
-      ).timeout(_timeout);
-
-      state = state.copyWith(
-        myTrips: [newTrip, ...state.myTrips],
-        isCreating: false,
-        lastUpdated: DateTime.now(),
-      );
-      _log('Trajet créé : ${newTrip.id}');
-      return true;
-    } catch (e) {
-      _logError('Erreur création trajet', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isCreating: false);
-      return false;
-    }
-  }
-
-  Future<bool> updateTripStatus(String tripId, String newStatus) async {
-    if (state.myAgency == null) return false;
-    state = state.copyWith(isUpdating: true, clearError: true);
-
-    try {
-      await _service.updateTripStatus(tripId, newStatus).timeout(_timeout);
-
-      final parsedStatus = TripStatus.values.firstWhere(
-        (e) => e.name == newStatus,
-        orElse: () => TripStatus.scheduled,
-      );
-
-      final updatedTrips = state.myTrips.map((t) {
-        if (t.id == tripId) {
-          return BusTripModel(
-            id: t.id,
-            agencyId: t.agencyId,
-            agency: t.agency,
-            departureCity: t.departureCity,
-            arrivalCity: t.arrivalCity,
-            departureStation: t.departureStation,
-            arrivalStation: t.arrivalStation,
-            departureTime: t.departureTime,
-            arrivalTime: t.arrivalTime,
-            priceFcfa: t.priceFcfa,
-            totalSeats: t.totalSeats,
-            availableSeats: t.availableSeats,
-            busType: t.busType,
-            amenities: t.amenities,
-            status: parsedStatus,
-          );
-        }
-        return t;
-      }).toList();
-
-      state = state.copyWith(myTrips: updatedTrips, isUpdating: false, lastUpdated: DateTime.now());
-      _log('Statut trajet $tripId → $newStatus');
-      return true;
-    } catch (e) {
-      _logError('Erreur update statut trajet', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isUpdating: false);
-      return false;
-    }
-  }
-
-  Future<bool> deleteTrip(String tripId) async {
-    if (state.myAgency == null) return false;
-    state = state.copyWith(isUpdating: true, clearError: true);
-
-    try {
-      await _service.deleteTrip(tripId).timeout(_timeout);
-      state = state.copyWith(
-        myTrips: state.myTrips.where((t) => t.id != tripId).toList(),
-        isUpdating: false,
-        lastUpdated: DateTime.now(),
-      );
-      _log('Trajet supprimé : $tripId');
-      return true;
-    } catch (e) {
-      _logError('Erreur suppression trajet', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isUpdating: false);
-      return false;
-    }
-  }
-
-  Future<BookingModel?> validateQr(String qrCode) async {
-    if (state.myAgency == null) return null;
-    state = state.copyWith(clearError: true);
-
-    try {
-      final booking = await _service.validateTicketByQr(state.myAgency!.id, qrCode).timeout(_timeout);
-
-      final newBookings = List<BookingModel>.from(state.agencyBookings);
-      final index = newBookings.indexWhere((b) => b.id == booking.id);
-
-      if (index != -1) {
-        newBookings[index] = booking;
-      } else {
-        newBookings.insert(0, booking);
-      }
-
-      state = state.copyWith(agencyBookings: newBookings, lastUpdated: DateTime.now());
-      _log('QR validé : ${booking.id}');
-      return booking;
-    } catch (e) {
-      _logError('Erreur validation QR', e);
-      state = state.copyWith(error: AgencyError.fromException(e));
-      return null;
-    }
-  }
-
-  Future<bool> cancelBooking(String bookingId, String reason) async {
-    if (state.myAgency == null) return false;
-    state = state.copyWith(isUpdating: true, clearError: true);
-
-    try {
-      await _service.cancelBooking(bookingId, reason).timeout(_timeout);
-
-      final updatedBookings = state.agencyBookings.map((b) {
-        if (b.id == bookingId) {
-          return BookingModel(
-            id: b.id,
-            tripId: b.tripId,
-            userId: b.userId,
-            seats: b.seats,
-            totalPriceFcfa: b.totalPriceFcfa,
-            status: BookingStatus.cancelled,
-            qrCode: b.qrCode,
-            createdAt: b.createdAt,
-            passengerName: b.passengerName,
-            trip: b.trip,
-            agencyId: b.agencyId,
-          );
-        }
-        return b;
-      }).toList();
-
-      state = state.copyWith(agencyBookings: updatedBookings, isUpdating: false, lastUpdated: DateTime.now());
-      _log('Booking annulé : $bookingId');
-      return true;
-    } catch (e) {
-      _logError('Erreur annulation booking', e);
-      state = state.copyWith(error: AgencyError.fromException(e), isUpdating: false);
-      return false;
-    }
-  }
-
-  void setFilter(_TripFilter? filter) {
-    state = state.copyWith(activeFilter: filter, clearFilter: filter == null);
-    _log('Filtre défini : ${filter?.name ?? "aucun"}');
-  }
-
-  void setSort(_TripSort sort) {
-    state = state.copyWith(activeSort: sort);
-    _log('Tri défini : ${sort.name}');
-  }
-
-  void clearError() {
-    state = state.copyWith(clearError: true);
-  }
-
-  void _log(String message) {
-    if (kDebugMode) debugPrint('[AgencyDashboard] $message');
-  }
-
-  void _logError(String context, Object error) {
-    if (kDebugMode) debugPrint('[AgencyDashboard] ❌ $context: $error');
-  }
-}
-
-final agencyDashboardProvider = NotifierProvider<AgencyDashboardNotifier, AgencyDashboardState>(
-  AgencyDashboardNotifier.new,
-);
-
-/// ============================================================================
-/// AgencyModel
-/// ============================================================================
-class AgencyModel {
+class _Category {
   final String id;
-  final String ownerId;
-  final String name;
-  final String countryCode;
-  final String? description;
-  final String? logoUrl;
-  final String? phone;
-  final String? email;
-  final String? address;
-  final AgencyStatus status;
-  final bool isVerified;
-  final DateTime? createdAt;
-  final DateTime? updatedAt;
-  final int? totalTrips;
-  final int? totalBookings;
-  final double? rating;
+  final String labelKey;
+  final String fallback;
+  final IconData icon;
 
-  const AgencyModel({
+  /// null = pas encore disponible (affiche "Bientôt disponible")
+  final String? route;
+
+  const _Category({
     required this.id,
-    required this.ownerId,
-    required this.name,
-    required this.countryCode,
-    this.description,
-    this.logoUrl,
-    this.phone,
-    this.email,
-    this.address,
-    this.status = AgencyStatus.pending,
-    this.isVerified = false,
-    this.createdAt,
-    this.updatedAt,
-    this.totalTrips,
-    this.totalBookings,
-    this.rating,
+    required this.labelKey,
+    required this.fallback,
+    required this.icon,
+    this.route,
   });
+}
 
-  factory AgencyModel.fromJson(Map<String, dynamic> json) {
-    return AgencyModel(
-      id: (json['id'] as String?) ?? '',
-      ownerId: (json['owner_id'] as String?) ?? '',
-      name: (json['name'] as String?) ?? 'Agence',
-      countryCode: ((json['country_code'] as String?) ?? (json['countryCode'] as String?) ?? '').toUpperCase(),
-      description: json['description'] as String?,
-      logoUrl: json['logo_url'] as String? ?? json['logoUrl'] as String?,
-      phone: json['phone'] as String?,
-      email: json['email'] as String?,
-      address: json['address'] as String?,
-      status: AgencyStatus.fromString(json['status'] as String?),
-      isVerified: _parseBoolSafe(json['is_verified'] ?? json['isVerified']),
-      createdAt: _parseDateTimeSafe(json['created_at'] ?? json['createdAt']),
-      updatedAt: _parseDateTimeSafe(json['updated_at'] ?? json['updatedAt']),
-      totalTrips: _parseIntSafe(json['total_trips']),
-      totalBookings: _parseIntSafe(json['total_bookings']),
-      rating: _parseDoubleSafe(json['rating']),
+final List<_Category> _kCategories = [
+  const _Category(
+    id: 'bus',
+    labelKey: 'reservationCatBus',
+    fallback: 'Bus',
+    icon: Icons.directions_bus_filled_rounded,
+    route: '/thix-reservation/bus',
+  ),
+  const _Category(
+    id: 'flight',
+    labelKey: 'reservationCatFlight',
+    fallback: 'Vol',
+    icon: Icons.flight_takeoff_rounded,
+    route: '/thix-reservation/flights',
+  ),
+  const _Category(
+    id: 'hotel',
+    labelKey: 'reservationCatHotel',
+    fallback: 'Hôtel',
+    icon: Icons.king_bed_rounded,
+    route: '/thix-reservation/hotels',
+  ),
+  const _Category(
+    id: 'taxi',
+    labelKey: 'reservationCatTaxi',
+    fallback: 'Taxi',
+    icon: Icons.local_taxi_rounded,
+    route: '/thix-reservation/taxi',
+  ),
+  _Category(
+    id: 'delivery',
+    labelKey: 'reservationCatDelivery',
+    fallback: 'Livraison',
+    icon: Icons.delivery_dining_rounded,
+    route: AppRoutes.deliveryHome,
+  ),
+  const _Category(
+    id: 'restaurant',
+    labelKey: 'reservationMoreRestaurant',
+    fallback: 'Restaurant',
+    icon: Icons.restaurant_rounded,
+    route: null,
+  ),
+  _Category(
+    id: 'ads',
+    labelKey: 'reservationMoreAds',
+    fallback: 'Annonces',
+    icon: Icons.storefront_rounded,
+    route: AppRoutes.thixMarket,
+  ),
+  const _Category(
+    id: 'events',
+    labelKey: 'reservationMoreEvents',
+    fallback: 'Événement',
+    icon: Icons.event_rounded,
+    route: '/thix-event',
+  ),
+];
+
+/// Libellé traduit, avec repli si la clé l10n n'existe pas
+String _label(BuildContext context, _Category c) {
+  final v = context.l10n.t(c.labelKey);
+  if (v.isEmpty || v == c.labelKey) return c.fallback;
+  return v;
+}
+
+/// Ouvre la route d'une catégorie (ou informe qu'elle arrive bientôt)
+void _openCategory(BuildContext context, _Category c) {
+  HapticFeedback.selectionClick();
+  final route = c.route;
+  if (route == null || route.isEmpty) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text('${_label(context, c)} · Bientôt disponible'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    return;
+  }
+  context.push(route);
+}
+
+/// ============================================================================
+/// ThixReservationHomePage
+/// ============================================================================
+class ThixReservationHomePage extends ConsumerStatefulWidget {
+  const ThixReservationHomePage({super.key});
+
+  @override
+  ConsumerState<ThixReservationHomePage> createState() =>
+      _ThixReservationHomePageState();
+}
+
+class _ThixReservationHomePageState
+    extends ConsumerState<ThixReservationHomePage> {
+  final PageController _heroController = PageController();
+  Timer? _heroTimer;
+
+  static const Duration _heroAutoScrollDelay = Duration(seconds: 5);
+  static const Duration _heroAnimationDuration = Duration(milliseconds: 600);
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(reservationHomeProvider.notifier).init();
+      _startHeroAutoScroll();
+    });
+  }
+
+  @override
+  void dispose() {
+    _heroTimer?.cancel();
+    _heroController.dispose();
+    super.dispose();
+  }
+
+  void _startHeroAutoScroll() {
+    _heroTimer?.cancel();
+    _heroTimer = Timer.periodic(_heroAutoScrollDelay, (_) {
+      if (!mounted || !_heroController.hasClients) return;
+      final state = ref.read(reservationHomeProvider);
+      final nextIndex = (state.heroIndex + 1) % _kHeroSlides.length;
+      _heroController.animateToPage(
+        nextIndex,
+        duration: _heroAnimationDuration,
+        curve: Curves.easeInOut,
+      );
+    });
+  }
+
+  Future<void> _onRefresh() async {
+    await ref.read(reservationHomeProvider.notifier).loadCounts();
+  }
+
+  void _onNavTap(int index) {
+    HapticFeedback.lightImpact();
+    ref.read(reservationHomeProvider.notifier).setSelectedNav(index);
+
+    switch (index) {
+      case 0:
+        break;
+      case 1:
+        context.push('/thix-reservation/explore');
+        break;
+      case 3:
+        context.push('/thix-reservation/bookings');
+        break;
+      case 4:
+        context.push('/thix-reservation/profile');
+        break;
+    }
+  }
+
+  void _onCentralAction() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _QuickActionSheet(),
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'owner_id': ownerId,
-      'name': name,
-      'country_code': countryCode,
-      if (description != null) 'description': description,
-      if (logoUrl != null) 'logo_url': logoUrl,
-      if (phone != null) 'phone': phone,
-      if (email != null) 'email': email,
-      if (address != null) 'address': address,
-      'status': status.value,
-      'is_verified': isVerified,
-      if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
-      if (updatedAt != null) 'updated_at': updatedAt!.toIso8601String(),
-      if (totalTrips != null) 'total_trips': totalTrips,
-      if (totalBookings != null) 'total_bookings': totalBookings,
-      if (rating != null) 'rating': rating,
-    };
-  }
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(reservationHomeProvider);
+    final domainColor = ThixPolicy.domainReservation;
 
-  AgencyModel copyWith({
-    String? id,
-    String? ownerId,
-    String? name,
-    String? countryCode,
-    String? description,
-    String? logoUrl,
-    String? phone,
-    String? email,
-    String? address,
-    AgencyStatus? status,
-    bool? isVerified,
-    DateTime? createdAt,
-    DateTime? updatedAt,
-    int? totalTrips,
-    int? totalBookings,
-    double? rating,
-    bool clearDescription = false,
-    bool clearLogoUrl = false,
-    bool clearPhone = false,
-    bool clearEmail = false,
-    bool clearAddress = false,
-  }) {
-    return AgencyModel(
-      id: id ?? this.id,
-      ownerId: ownerId ?? this.ownerId,
-      name: name ?? this.name,
-      countryCode: countryCode ?? this.countryCode,
-      description: clearDescription ? null : (description ?? this.description),
-      logoUrl: clearLogoUrl ? null : (logoUrl ?? this.logoUrl),
-      phone: clearPhone ? null : (phone ?? this.phone),
-      email: clearEmail ? null : (email ?? this.email),
-      address: clearAddress ? null : (address ?? this.address),
-      status: status ?? this.status,
-      isVerified: isVerified ?? this.isVerified,
-      createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt,
-      totalTrips: totalTrips ?? this.totalTrips,
-      totalBookings: totalBookings ?? this.totalBookings,
-      rating: rating ?? this.rating,
+    return Scaffold(
+      backgroundColor: ThixPolicy.surface,
+      extendBodyBehindAppBar: true,
+      extendBody: true,
+      appBar: _HomeAppBar(
+        notificationsCount: state.notificationsCount,
+        domainColor: domainColor,
+      ),
+      body: Stack(
+        children: [
+          const Positioned.fill(child: _TravelAmbientBackground()),
+          RefreshIndicator(
+            color: domainColor,
+            backgroundColor: Colors.white,
+            onRefresh: _onRefresh,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                ThixPolicy.s14,
+                MediaQuery.paddingOf(context).top + 66,
+                ThixPolicy.s14,
+                110.0,
+              ),
+              physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics(),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _HeroCarousel(
+                    controller: _heroController,
+                    currentIndex: state.heroIndex,
+                    onPageChanged: (i) => ref
+                        .read(reservationHomeProvider.notifier)
+                        .setHeroIndex(i),
+                    domainColor: domainColor,
+                  ),
+                  SizedBox(height: ThixPolicy.s16),
+
+                  _CategoriesGrid(domainColor: domainColor),
+                  SizedBox(height: ThixPolicy.s20),
+
+                  _BookingsSection(
+                    state: state,
+                    domainColor: domainColor,
+                  ),
+                  SizedBox(height: ThixPolicy.s20),
+
+                  _SpecialOffersSection(domainColor: domainColor),
+                  SizedBox(height: ThixPolicy.s20),
+
+                  _ReferralCard(domainColor: domainColor),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+      bottomNavigationBar: _GlassBottomBar(
+        selectedIndex: state.selectedNav,
+        onTap: _onNavTap,
+        onCentralTap: _onCentralAction,
+        domainColor: domainColor,
+      ),
     );
-  }
-
-  bool get isActive => status == AgencyStatus.active;
-  bool get isPending => status == AgencyStatus.pending;
-  bool get isSuspended => status == AgencyStatus.suspended;
-  bool get isRejected => status == AgencyStatus.rejected;
-  bool get canCreateTrips => isActive && !isSuspended;
-  bool get canReceiveBookings => isActive && isVerified;
-
-  String get displayName {
-    if (countryCode.isEmpty) return name;
-    return '$name ($countryCode)';
-  }
-
-  String get initials {
-    if (name.isEmpty) return 'A';
-    final words = name.trim().split(RegExp(r'\s+'));
-    if (words.length == 1) {
-      return words[0].substring(0, words[0].length > 2 ? 2 : 1).toUpperCase();
-    }
-    return '${words[0][0]}${words[1][0]}'.toUpperCase();
-  }
-
-  String get flag {
-    if (countryCode.isEmpty || countryCode.length != 2) return '🏢';
-    final code = countryCode.toUpperCase();
-    final base = 0x1F1E6;
-    final first = base + (code.codeUnitAt(0) - 65);
-    final second = base + (code.codeUnitAt(1) - 65);
-    return String.fromCharCodes([first, second]);
-  }
-
-  bool get hasLogo => logoUrl != null && logoUrl!.isNotEmpty;
-  bool get hasContact => phone != null || email != null;
-  String get ratingLabel => rating != null ? '${rating!.toStringAsFixed(1)}/5' : 'N/A';
-  bool get isValid => id.isNotEmpty && name.isNotEmpty && countryCode.length == 2;
-
-  @override
-  bool operator ==(Object other) =>
-      identical(this, other) ||
-      other is AgencyModel && runtimeType == other.runtimeType && id == other.id && ownerId == other.ownerId && name == other.name;
-
-  @override
-  int get hashCode => Object.hash(id, ownerId, name);
-
-  @override
-  String toString() {
-    return 'AgencyModel($name, $countryCode, ${status.value}${isVerified ? ", verified" : ""})';
-  }
-
-  static bool _parseBoolSafe(dynamic value) {
-    if (value == null) return false;
-    if (value is bool) return value;
-    if (value is int) return value != 0;
-    if (value is String) {
-      final lower = value.toLowerCase();
-      return lower == 'true' || lower == '1' || lower == 'yes';
-    }
-    return false;
-  }
-
-  static int? _parseIntSafe(dynamic value) {
-    if (value == null) return null;
-    if (value is int) return value;
-    if (value is double) return value.toInt();
-    if (value is String) return int.tryParse(value);
-    return null;
-  }
-
-  static double? _parseDoubleSafe(dynamic value) {
-    if (value == null) return null;
-    if (value is double) return value;
-    if (value is int) return value.toDouble();
-    if (value is String) return double.tryParse(value);
-    return null;
-  }
-
-  static DateTime? _parseDateTimeSafe(dynamic value) {
-    if (value == null) return null;
-    if (value is DateTime) return value;
-    if (value is String) return DateTime.tryParse(value);
-    return null;
   }
 }
 
-enum AgencyStatus {
-  active('active'),
-  pending('pending'),
-  suspended('suspended'),
-  rejected('rejected');
+/// ============================================================================
+/// _HomeAppBar
+/// ============================================================================
+class _HomeAppBar extends StatelessWidget implements PreferredSizeWidget {
+  final int notificationsCount;
+  final Color domainColor;
 
-  final String value;
-  const AgencyStatus(this.value);
+  const _HomeAppBar({
+    required this.notificationsCount,
+    required this.domainColor,
+  });
 
-  static AgencyStatus fromString(String? value) {
-    if (value == null) return AgencyStatus.pending;
-    final lower = value.toLowerCase();
-    return AgencyStatus.values.firstWhere(
-      (s) => s.value == lower,
-      orElse: () => AgencyStatus.pending,
+  @override
+  Size get preferredSize => const Size.fromHeight(52);
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return AppBar(
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      scrolledUnderElevation: 0,
+      toolbarHeight: 52,
+      flexibleSpace: ClipRRect(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+          child: Container(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.65),
+              border: Border(
+                bottom: BorderSide(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  width: 1.2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+      title: Row(
+        children: [
+          _BrandLogo(domainColor: domainColor),
+          SizedBox(width: ThixPolicy.s8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'THIX ',
+                    style: ThixPolicy.labelStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      fontSize: 13,
+                      color: ThixPolicy.textMain,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Text(
+                    l10n.t('reservationBrandSuffix'),
+                    style: ThixPolicy.labelStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      fontSize: 13,
+                      color: domainColor,
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                l10n.t('reservationBrandTagline'),
+                style: ThixPolicy.microStyle.copyWith(
+                  fontSize: 9,
+                  color: ThixPolicy.textSecondary,
+                  fontWeight: ThixPolicy.semiBold,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+      actions: [
+        Semantics(
+          button: true,
+          label: '${l10n.t('reservationNotifications')} ($notificationsCount)',
+          child: IconButton(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.push('/thix-reservation/notifications');
+            },
+            icon: Badge(
+              isLabelVisible: notificationsCount > 0,
+              label: Text(
+                notificationsCount > 9 ? '9+' : '$notificationsCount',
+                style: const TextStyle(fontSize: 7, fontWeight: FontWeight.bold),
+              ),
+              backgroundColor: ThixPolicy.danger,
+              child: const Icon(
+                Icons.notifications_none_rounded,
+                color: ThixPolicy.textMain,
+                size: 19,
+              ),
+            ),
+          ),
+        ),
+        Semantics(
+          button: true,
+          label: l10n.t('reservationProfile'),
+          child: IconButton(
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              context.push('/thix-reservation/profile');
+            },
+            icon: const Icon(
+              Icons.account_circle_outlined,
+              color: ThixPolicy.textMain,
+              size: 19,
+            ),
+          ),
+        ),
+        SizedBox(width: ThixPolicy.s2),
+      ],
+    );
+  }
+}
+
+class _BrandLogo extends StatelessWidget {
+  final Color domainColor;
+  const _BrandLogo({required this.domainColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 30,
+      height: 30,
+      decoration: BoxDecoration(
+        color: domainColor,
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: [
+          BoxShadow(
+            color: domainColor.withValues(alpha: 0.3),
+            blurRadius: 5,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Text(
+          'R',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: ThixPolicy.bold,
+            fontSize: 15,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _HeroCarousel
+/// ============================================================================
+class _HeroCarousel extends StatelessWidget {
+  final PageController controller;
+  final int currentIndex;
+  final ValueChanged<int> onPageChanged;
+  final Color domainColor;
+
+  const _HeroCarousel({
+    required this.controller,
+    required this.currentIndex,
+    required this.onPageChanged,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 130,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: controller,
+            itemCount: _kHeroSlides.length,
+            onPageChanged: onPageChanged,
+            itemBuilder: (_, index) {
+              final slide = _kHeroSlides[index];
+              return _HeroSlideCard(
+                slide: slide,
+                domainColor: domainColor,
+              );
+            },
+          ),
+          Positioned(
+            bottom: 10,
+            left: 0,
+            right: 0,
+            child: _HeroIndicators(
+              count: _kHeroSlides.length,
+              current: currentIndex,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _HeroSlideCard extends StatelessWidget {
+  final _HeroSlide slide;
+  final Color domainColor;
+
+  const _HeroSlideCard({required this.slide, required this.domainColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '${slide.titleKey}, ${slide.subtitleKey}',
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push(slide.route);
+        },
+        child: Container(
+          margin: EdgeInsets.symmetric(horizontal: ThixPolicy.s2),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: slide.gradient,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: slide.gradient.first.withValues(alpha: 0.4),
+                blurRadius: 14,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                right: -8,
+                bottom: -8,
+                child: Opacity(
+                  opacity: 0.12,
+                  child: Icon(
+                    slide.backgroundIcon,
+                    size: 110,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              Padding(
+                padding: EdgeInsets.all(ThixPolicy.s14),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: ThixPolicy.s8,
+                              vertical: ThixPolicy.s4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.2),
+                              borderRadius:
+                                  BorderRadius.circular(ThixPolicy.rSm),
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.4),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.bolt_rounded,
+                                  size: 11,
+                                  color: ThixPolicy.gold,
+                                ),
+                                SizedBox(width: ThixPolicy.s4),
+                                Text(
+                                  slide.badgeKey,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: ThixPolicy.bold,
+                                    letterSpacing: 0.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            slide.titleKey,
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 19,
+                              fontWeight: ThixPolicy.bold,
+                              height: 1.1,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            slide.subtitleKey,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.7),
+                              fontSize: 11,
+                              fontWeight: ThixPolicy.semiBold,
+                            ),
+                          ),
+                          SizedBox(height: ThixPolicy.s4),
+                          Text(
+                            slide.validityKey,
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.54),
+                              fontSize: 8.5,
+                            ),
+                          ),
+                          const Spacer(),
+                          SizedBox(
+                            height: 27,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                HapticFeedback.lightImpact();
+                                context.push(slide.route);
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.white,
+                                foregroundColor: domainColor,
+                                elevation: 0,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius:
+                                      BorderRadius.circular(ThixPolicy.rSm - 3),
+                                ),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: ThixPolicy.s14,
+                                ),
+                              ),
+                              child: Text(
+                                slide.ctaKey,
+                                style: TextStyle(
+                                  fontWeight: ThixPolicy.bold,
+                                  fontSize: 10.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(width: ThixPolicy.s6),
+                    Icon(
+                      slide.foregroundIcon,
+                      size: 64,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroIndicators extends StatelessWidget {
+  final int count;
+  final int current;
+
+  const _HeroIndicators({required this.count, required this.current});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: List.generate(
+        count,
+        (i) => AnimatedContainer(
+          duration: const Duration(milliseconds: 300),
+          margin: EdgeInsets.symmetric(horizontal: ThixPolicy.s4),
+          width: i == current ? 18 : 5,
+          height: 4.5,
+          decoration: BoxDecoration(
+            color: i == current
+                ? Colors.white
+                : Colors.white.withValues(alpha: 0.4),
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _CategoriesGrid — TOUTES les catégories visibles dès l'ouverture
+/// (2 lignes de 4, largeur égale, aucun bouton "Plus", rien de caché)
+/// ============================================================================
+class _CategoriesGrid extends StatelessWidget {
+  final Color domainColor;
+  const _CategoriesGrid({required this.domainColor});
+
+  static const int _perRow = 4;
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <List<_Category>>[];
+    for (var i = 0; i < _kCategories.length; i += _perRow) {
+      rows.add(_kCategories.sublist(
+        i,
+        math.min(i + _perRow, _kCategories.length),
+      ));
+    }
+
+    return Container(
+      padding: EdgeInsets.symmetric(
+        vertical: ThixPolicy.s12,
+        horizontal: ThixPolicy.s6,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.9),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          for (var r = 0; r < rows.length; r++) ...[
+            if (r > 0) SizedBox(height: ThixPolicy.s12),
+            Row(
+              children: [
+                for (var c = 0; c < _perRow; c++)
+                  Expanded(
+                    child: c < rows[r].length
+                        ? _CategoryItem(
+                            category: rows[r][c],
+                            domainColor: domainColor,
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _CategoryItem extends StatelessWidget {
+  final _Category category;
+  final Color domainColor;
+
+  const _CategoryItem({
+    required this.category,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _label(context, category);
+
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () => _openCategory(context, category),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                border: Border.all(color: Colors.white),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 5,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: Icon(category.icon, color: domainColor, size: 21),
+            ),
+            SizedBox(height: ThixPolicy.s6),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: ThixPolicy.labelStyle.copyWith(
+                fontSize: 10,
+                fontWeight: ThixPolicy.bold,
+                color: ThixPolicy.textMain,
+                letterSpacing: -0.2,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _BookingsSection
+/// ============================================================================
+class _BookingsSection extends StatelessWidget {
+  final ReservationHomeState state;
+  final Color domainColor;
+
+  const _BookingsSection({required this.state, required this.domainColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          title: l10n.t('reservationMyBookings'),
+          onSeeAll: () {
+            HapticFeedback.lightImpact();
+            context.push('/thix-reservation/bookings');
+          },
+          domainColor: domainColor,
+        ),
+        SizedBox(height: ThixPolicy.s10),
+        Row(
+          children: [
+            _BookingStatTile(
+              label: l10n.t('reservationUpcoming'),
+              count: state.getCount('upcoming'),
+              color: domainColor,
+              icon: Icons.luggage_rounded,
+            ),
+            SizedBox(width: ThixPolicy.s8),
+            _BookingStatTile(
+              label: l10n.t('reservationOngoing'),
+              count: state.getCount('ongoing'),
+              color: ThixPolicy.warning,
+              icon: Icons.access_time_filled_rounded,
+            ),
+            SizedBox(width: ThixPolicy.s8),
+            _BookingStatTile(
+              label: l10n.t('reservationCompleted'),
+              count: state.getCount('completed'),
+              color: ThixPolicy.success,
+              icon: Icons.check_circle_rounded,
+            ),
+            SizedBox(width: ThixPolicy.s8),
+            _BookingStatTile(
+              label: l10n.t('reservationCancelled'),
+              count: state.getCount('cancelled'),
+              color: ThixPolicy.textSecondary,
+              icon: Icons.cancel_rounded,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _BookingStatTile extends StatelessWidget {
+  final String label;
+  final String count;
+  final Color color;
+  final IconData icon;
+
+  const _BookingStatTile({
+    required this.label,
+    required this.count,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          vertical: ThixPolicy.s10,
+          horizontal: ThixPolicy.s6,
+        ),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.65),
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.9),
+            width: 1.1,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 14, color: color),
+            ),
+            SizedBox(height: ThixPolicy.s6),
+            Text(
+              count,
+              style: ThixPolicy.titleStyle.copyWith(
+                fontSize: 15,
+                fontWeight: ThixPolicy.bold,
+                color: ThixPolicy.textMain,
+              ),
+            ),
+            Text(
+              label,
+              style: ThixPolicy.microStyle.copyWith(
+                fontSize: 9,
+                color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
+                fontWeight: ThixPolicy.bold,
+                letterSpacing: -0.2,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _SpecialOffersSection
+/// ============================================================================
+class _SpecialOffersSection extends StatelessWidget {
+  final Color domainColor;
+  const _SpecialOffersSection({required this.domainColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _SectionHeader(
+          title: l10n.t('reservationSpecialOffers'),
+          onSeeAll: () {
+            HapticFeedback.lightImpact();
+            context.push('/thix-reservation/offers');
+          },
+          domainColor: domainColor,
+        ),
+        SizedBox(height: ThixPolicy.s10),
+        SizedBox(
+          height: 92,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            clipBehavior: Clip.none,
+            children: [
+              _OfferCard(
+                title: l10n.t('reservationOfferHotels'),
+                discount: '-30%',
+                subtitle: l10n.t('reservationOfferHotelsSub'),
+                colors: _kOfferColors[0],
+              ),
+              SizedBox(width: ThixPolicy.s10),
+              _OfferCard(
+                title: l10n.t('reservationOfferFlights'),
+                discount: '-20%',
+                subtitle: l10n.t('reservationOfferFlightsSub'),
+                colors: _kOfferColors[1],
+              ),
+              SizedBox(width: ThixPolicy.s10),
+              _OfferCard(
+                title: l10n.t('reservationOfferBus'),
+                discount: '-15%',
+                subtitle: l10n.t('reservationOfferBusSub'),
+                colors: _kOfferColors[2],
+              ),
+              SizedBox(width: ThixPolicy.s10),
+              _OfferCard(
+                title: l10n.t('reservationOfferDelivery'),
+                discount: '-10%',
+                subtitle: l10n.t('reservationOfferDeliverySub'),
+                colors: _kOfferColors[3],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _OfferCard extends StatelessWidget {
+  final String title;
+  final String discount;
+  final String subtitle;
+  final List<Color> colors;
+
+  const _OfferCard({
+    required this.title,
+    required this.discount,
+    required this.subtitle,
+    required this.colors,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: '$title $discount, $subtitle',
+      child: GestureDetector(
+        onTap: () => HapticFeedback.lightImpact(),
+        child: Container(
+          width: 128,
+          padding: EdgeInsets.all(ThixPolicy.s12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(ThixPolicy.rMd + 2),
+            gradient: LinearGradient(
+              colors: colors,
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: colors.first.withValues(alpha: 0.3),
+                blurRadius: 8,
+                offset: const Offset(0, 3),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontWeight: ThixPolicy.bold,
+                  fontSize: 9.5,
+                  letterSpacing: 0.4,
+                ),
+              ),
+              SizedBox(height: ThixPolicy.s4),
+              Text(
+                discount,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: ThixPolicy.bold,
+                  fontSize: 20,
+                  letterSpacing: -0.8,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                subtitle,
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.7),
+                  fontSize: 9,
+                  height: 1.15,
+                  fontWeight: ThixPolicy.medium,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _ReferralCard
+/// ============================================================================
+class _ReferralCard extends StatelessWidget {
+  final Color domainColor;
+  const _ReferralCard({required this.domainColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Semantics(
+      button: true,
+      label: l10n.t('reservationReferralTitle'),
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          context.push('/thix-reservation/referral');
+        },
+        child: Container(
+          padding: EdgeInsets.all(ThixPolicy.s14),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.65),
+            borderRadius: BorderRadius.circular(ThixPolicy.rMd + 2),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.9),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: EdgeInsets.all(ThixPolicy.s8),
+                decoration: BoxDecoration(
+                  color: domainColor,
+                  borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                  boxShadow: [
+                    BoxShadow(
+                      color: domainColor.withValues(alpha: 0.3),
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.card_giftcard_rounded,
+                  color: Colors.white,
+                  size: 17,
+                ),
+              ),
+              SizedBox(width: ThixPolicy.s12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      l10n.t('reservationReferralTitle'),
+                      style: ThixPolicy.labelStyle.copyWith(
+                        fontWeight: ThixPolicy.bold,
+                        color: domainColor,
+                        fontSize: 12,
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    SizedBox(height: ThixPolicy.s2),
+                    Text.rich(
+                      TextSpan(
+                        style: ThixPolicy.microStyle.copyWith(
+                          fontSize: 10,
+                          color: ThixPolicy.textSecondary,
+                          fontWeight: ThixPolicy.medium,
+                        ),
+                        children: [
+                          TextSpan(text: l10n.t('reservationReferralPrefix')),
+                          TextSpan(
+                            text: '10.000 FC',
+                            style: TextStyle(
+                              color: domainColor,
+                              fontWeight: ThixPolicy.bold,
+                            ),
+                          ),
+                          TextSpan(text: l10n.t('reservationReferralSuffix')),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 12,
+                color: domainColor,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _SectionHeader
+/// ============================================================================
+class _SectionHeader extends StatelessWidget {
+  final String title;
+  final VoidCallback? onSeeAll;
+  final Color domainColor;
+
+  const _SectionHeader({
+    required this.title,
+    this.onSeeAll,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Row(
+      children: [
+        Text(
+          title,
+          style: ThixPolicy.titleStyle.copyWith(
+            fontWeight: ThixPolicy.bold,
+            fontSize: 14,
+            color: ThixPolicy.textMain,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const Spacer(),
+        if (onSeeAll != null)
+          InkWell(
+            onTap: onSeeAll,
+            borderRadius: BorderRadius.circular(ThixPolicy.rXs),
+            child: Padding(
+              padding: EdgeInsets.symmetric(
+                horizontal: ThixPolicy.s6,
+                vertical: ThixPolicy.s4,
+              ),
+              child: Row(
+                children: [
+                  Text(
+                    l10n.t('common_see_all'),
+                    style: ThixPolicy.labelStyle.copyWith(
+                      fontSize: 11,
+                      color: domainColor,
+                      fontWeight: ThixPolicy.bold,
+                    ),
+                  ),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 14,
+                    color: domainColor,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// ============================================================================
+/// _GlassBottomBar
+/// ============================================================================
+class _GlassBottomBar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+  final VoidCallback onCentralTap;
+  final Color domainColor;
+
+  const _GlassBottomBar({
+    required this.selectedIndex,
+    required this.onTap,
+    required this.onCentralTap,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
+    return Container(
+      color: Colors.transparent,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            ThixPolicy.s14,
+            0,
+            ThixPolicy.s14,
+            ThixPolicy.s10,
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(28),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+              child: Container(
+                height: 56,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.65),
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.8),
+                    width: 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      blurRadius: 26,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _NavItem(
+                          icon: Icons.home_rounded,
+                          label: l10n.t('reservationNavHome'),
+                          index: 0,
+                          selectedIndex: selectedIndex,
+                          onTap: onTap,
+                          domainColor: domainColor,
+                        ),
+                        _NavItem(
+                          icon: Icons.explore_outlined,
+                          label: l10n.t('reservationNavExplore'),
+                          index: 1,
+                          selectedIndex: selectedIndex,
+                          onTap: onTap,
+                          domainColor: domainColor,
+                        ),
+                        const SizedBox(width: 60),
+                        _NavItem(
+                          icon: Icons.receipt_long_rounded,
+                          label: l10n.t('reservationNavBookings'),
+                          index: 3,
+                          selectedIndex: selectedIndex,
+                          onTap: onTap,
+                          domainColor: domainColor,
+                        ),
+                        _NavItem(
+                          icon: Icons.person_outline_rounded,
+                          label: l10n.t('reservationNavProfile'),
+                          index: 4,
+                          selectedIndex: selectedIndex,
+                          onTap: onTap,
+                          domainColor: domainColor,
+                        ),
+                      ],
+                    ),
+                    Positioned(
+                      top: -18,
+                      child: Semantics(
+                        button: true,
+                        label: l10n.t('reservationNavQuickBook'),
+                        child: GestureDetector(
+                          onTap: onCentralTap,
+                          child: Container(
+                            width: 52,
+                            height: 52,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              gradient: ThixPolicy.brandGradient,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.9),
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: domainColor.withValues(alpha: 0.35),
+                                  blurRadius: 9,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
+                            ),
+                            child: Icon(
+                              Icons.calendar_month_rounded,
+                              color: Colors.white,
+                              size: 22,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int index;
+  final int selectedIndex;
+  final ValueChanged<int> onTap;
+  final Color domainColor;
+
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    required this.index,
+    required this.selectedIndex,
+    required this.onTap,
+    required this.domainColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = selectedIndex == index;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: GestureDetector(
+        onTap: () => onTap(index),
+        child: Container(
+          width: 52,
+          padding: EdgeInsets.symmetric(vertical: ThixPolicy.s4),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                color: selected
+                    ? domainColor
+                    : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+                size: 20,
+              ),
+              SizedBox(height: ThixPolicy.s4),
+              Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  fontSize: 8,
+                  color: selected
+                      ? domainColor
+                      : ThixPolicy.textSecondary.withValues(alpha: 0.8),
+                  fontWeight:
+                      selected ? ThixPolicy.bold : ThixPolicy.semiBold,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// _TravelAmbientBackground
+/// ============================================================================
+class _TravelAmbientBackground extends StatefulWidget {
+  const _TravelAmbientBackground();
+
+  @override
+  State<_TravelAmbientBackground> createState() =>
+      _TravelAmbientBackgroundState();
+}
+
+class _TravelAmbientBackgroundState extends State<_TravelAmbientBackground>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 16),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  Widget _buildPerformanceOrb(
+    double left,
+    double top,
+    double width,
+    double height,
+    Color color,
+    double angle,
+  ) {
+    return Positioned(
+      left: left - (width / 2),
+      top: top - (height / 2),
+      child: Transform.rotate(
+        angle: angle,
+        child: Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            borderRadius:
+                BorderRadius.all(Radius.elliptical(width, height)),
+            gradient: RadialGradient(
+              colors: [
+                color,
+                color.withValues(alpha: 0.0),
+              ],
+              stops: const [0.1, 1.0],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  String get label {
-    switch (this) {
-      case AgencyStatus.active: return 'Active';
-      case AgencyStatus.pending: return 'En attente';
-      case AgencyStatus.suspended: return 'Suspendue';
-      case AgencyStatus.rejected: return 'Refusée';
-    }
-  }
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.of(context).size;
+    final domainColor = ThixPolicy.domainReservation;
 
-  String get colorHex {
-    switch (this) {
-      case AgencyStatus.active: return '#10B981';
-      case AgencyStatus.pending: return '#F59E0B';
-      case AgencyStatus.suspended: return '#6B7280';
-      case AgencyStatus.rejected: return '#EF4444';
-    }
+    return IgnorePointer(
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          listenable: _controller,
+          builder: (context, child) {
+            final t = _controller.value * 2 * math.pi;
+
+            final globeX = size.width * 0.7 + math.cos(t * 0.7) * 130.0;
+            final globeY = size.height * 0.48 + math.sin(t * 0.9) * 160.0;
+
+            final ticketX =
+                size.width * 0.15 + math.sin(t * 0.6 + 1.2) * 90.0;
+            final ticketY =
+                size.height * 0.82 + math.cos(t * 0.5) * 110.0;
+
+            final busX = size.width * 0.3 +
+                math.sin(t * 1.1) * (size.width * 0.45);
+            final busY = size.height * 0.62 +
+                math.cos(t) * (size.height * 0.14);
+
+            final planeX = size.width * 0.5 +
+                math.cos(t * 1.4) * (size.width * 0.38);
+            final planeY = size.height * 0.28 +
+                math.sin(t * 1.8) * (size.height * 0.19);
+
+            final planeSmallX =
+                size.width * 0.85 + math.sin(t * 1.6 + 2.0) * 80.0;
+            final planeSmallY =
+                size.height * 0.16 + math.cos(t * 1.3) * 60.0;
+
+            return Stack(
+              children: [
+                _buildPerformanceOrb(
+                  globeX,
+                  globeY,
+                  600,
+                  600,
+                  domainColor.withValues(alpha: 0.18),
+                  t * 0.35,
+                ),
+                _buildPerformanceOrb(
+                  ticketX,
+                  ticketY,
+                  450,
+                  550,
+                  ThixPolicy.gold.withValues(alpha: 0.15),
+                  -t * 0.25,
+                ),
+                _buildPerformanceOrb(
+                  busX,
+                  busY,
+                  600,
+                  450,
+                  ThixPolicy.gold.withValues(alpha: 0.20),
+                  -t * 0.3,
+                ),
+                _buildPerformanceOrb(
+                  planeX,
+                  planeY,
+                  550,
+                  350,
+                  domainColor.withValues(alpha: 0.25),
+                  t * 0.5,
+                ),
+                _buildPerformanceOrb(
+                  planeSmallX,
+                  planeSmallY,
+                  350,
+                  200,
+                  domainColor.withValues(alpha: 0.18),
+                  -t * 0.6 + 1.0,
+                ),
+                Positioned.fill(
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.25),
+                          Colors.white.withValues(alpha: 0.10),
+                          Colors.white.withValues(alpha: 0.25),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
   }
+}
+
+/// ============================================================================
+/// _QuickActionSheet (bouton central) — mêmes catégories, défilement si besoin
+/// ============================================================================
+class _QuickActionSheet extends StatelessWidget {
+  const _QuickActionSheet();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final domainColor = ThixPolicy.domainReservation;
+
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.sizeOf(context).height * 0.85,
+          ),
+          padding: EdgeInsets.fromLTRB(
+            ThixPolicy.s24,
+            ThixPolicy.s12,
+            ThixPolicy.s24,
+            ThixPolicy.s32,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.95),
+            border: Border(
+              top: BorderSide(
+                color: Colors.white.withValues(alpha: 0.9),
+                width: 1.5,
+              ),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              SizedBox(height: ThixPolicy.s20),
+              Text(
+                l10n.t('reservationQuickBookTitle'),
+                style: ThixPolicy.titleStyle.copyWith(
+                  fontWeight: ThixPolicy.bold,
+                  fontSize: 16,
+                ),
+              ),
+              SizedBox(height: ThixPolicy.s6),
+              Text(
+                l10n.t('reservationQuickBookSubtitle'),
+                style: ThixPolicy.bodySmallStyle.copyWith(
+                  color: ThixPolicy.textSecondary,
+                ),
+              ),
+              SizedBox(height: ThixPolicy.s20),
+              Flexible(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Column(
+                    children: [
+                      for (final cat in _kCategories)
+                        _QuickActionTile(
+                          category: cat,
+                          domainColor: domainColor,
+                          onTap: () {
+                            Navigator.pop(context);
+                            _openCategory(context, cat);
+                          },
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickActionTile extends StatelessWidget {
+  final _Category category;
+  final Color domainColor;
+  final VoidCallback onTap;
+
+  const _QuickActionTile({
+    required this.category,
+    required this.domainColor,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final label = _label(context, category);
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: ThixPolicy.s8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () {
+            HapticFeedback.lightImpact();
+            onTap();
+          },
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          child: Container(
+            padding: EdgeInsets.all(ThixPolicy.s14),
+            decoration: BoxDecoration(
+              color: domainColor.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+              border: Border.all(
+                color: domainColor.withValues(alpha: 0.15),
+              ),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: EdgeInsets.all(ThixPolicy.s8),
+                  decoration: BoxDecoration(
+                    color: domainColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                  ),
+                  child: Icon(category.icon, color: domainColor, size: 18),
+                ),
+                SizedBox(width: ThixPolicy.s12),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: ThixPolicy.bodyStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                    ),
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  color: domainColor,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================================
+/// Données statiques
+/// ============================================================================
+class _HeroSlide {
+  final String badgeKey;
+  final String titleKey;
+  final String subtitleKey;
+  final String validityKey;
+  final String ctaKey;
+  final String route;
+  final List<Color> gradient;
+  final IconData backgroundIcon;
+  final IconData foregroundIcon;
+
+  const _HeroSlide({
+    required this.badgeKey,
+    required this.titleKey,
+    required this.subtitleKey,
+    required this.validityKey,
+    required this.ctaKey,
+    required this.route,
+    required this.gradient,
+    required this.backgroundIcon,
+    required this.foregroundIcon,
+  });
+}
+
+const _kHeroSlides = [
+  _HeroSlide(
+    badgeKey: 'PROMO FLASH',
+    titleKey: "Jusqu'à -20%",
+    subtitleKey: 'bus & vols nationaux',
+    validityKey: 'Valable jusqu\'au 30 Juin 2027',
+    ctaKey: 'Réserver',
+    route: '/thix-reservation/bus',
+    gradient: [Color(0xFF0A2F6B), Color(0xFF0B4FE3)],
+    backgroundIcon: Icons.directions_bus_filled_rounded,
+    foregroundIcon: Icons.airport_shuttle_rounded,
+  ),
+  _HeroSlide(
+    badgeKey: 'CONFIANCE',
+    titleKey: 'Paiement Sécurisé',
+    subtitleKey: 'Mobile Money & Carte',
+    validityKey: 'Transactions 100% garanties',
+    ctaKey: 'Découvrir',
+    route: '/thix-reservation/bus',
+    gradient: [Color(0xFF0A1F3F), Color(0xFF0A2F6B)],
+    backgroundIcon: Icons.verified_user_rounded,
+    foregroundIcon: Icons.shield_rounded,
+  ),
+];
+
+const _kOfferColors = [
+  [Color(0xFF0A3D91), Color(0xFF2A7FFF)],
+  [Color(0xFF123B7A), Color(0xFF3A8DFF)],
+  [Color(0xFF0E4DA4), Color(0xFF4A90E2)],
+  [Color(0xFF0A2F6B), Color(0xFF2D6CDF)],
+];
+
+/// ============================================================================
+/// AnimatedBuilder — Polyfill
+/// ============================================================================
+class AnimatedBuilder extends AnimatedWidget {
+  final Widget Function(BuildContext, Widget?) builder;
+  final Widget? child;
+
+  const AnimatedBuilder({
+    super.key,
+    required super.listenable,
+    required this.builder,
+    this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) => builder(context, child);
 }
