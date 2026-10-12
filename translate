@@ -1,4 +1,9 @@
-  // COMMON & UI
+// ════════════════════════════════════════════════════════════════════════════
+// 🇫🇷 FRANÇAIS
+// ════════════════════════════════════════════════════════════════════════════
+const Map<String, String> _fr = {
+
+// COMMON & UI
   // 🌐 COMMON, SERVICES, MEDIA & AUTH — Horizontal (10 éléments par ligne)
 'common_close': 'Fermer', 'common_cancel': 'Annuler', 'common_confirm': 'Confirmer', 'common_delete': 'Supprimer', 'common_add': 'Ajouter', 'common_edit': 'Modifier', 'common_save': 'Enregistrer', 'common_manage': 'Gérer', 'common_retry': 'Réessayer', 'common_refresh': 'Actualiser',
 'common_search': 'Rechercher', 'common_open': 'Ouvrir', 'common_share': 'Partager', 'common_copy': 'Copier', 'common_copied': 'Copié !', 'common_download': 'Télécharger', 'common_upload': 'Téléverser', 'common_send': 'Envoyer', 'common_receive': 'Recevoir', 'common_accept': 'Accepter',
