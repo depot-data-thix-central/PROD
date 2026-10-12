@@ -24,7 +24,9 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
   RealtimeChannel? _ch;
   StreamSubscription<AuthState>? _authSub;
   final Set<String> _handled = {};
-  void Function(String?, {String? actionId})? _prevTap;
+  
+  // Utilisation de Function? pour éviter tout conflit de signature entre le getter et le setter
+  Function? _prevTap;
   String? _subscribedFor;
 
   @override
@@ -43,7 +45,23 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
     WidgetsBinding.instance.removeObserver(this);
     _authSub?.cancel();
     _ch?.unsubscribe();
-    LocalNotificationService.instance.onNotificationTap = _prevTap;
+    
+    // Restauration sécurisée du callback précédent
+    final svc = LocalNotificationService.instance;
+    final prev = _prevTap;
+    if (prev != null) {
+      svc.onNotificationTap = (payload, {actionId}) {
+        try {
+          (prev as dynamic)(payload, actionId: actionId);
+        } catch (_) {
+          try {
+            (prev as dynamic)(payload);
+          } catch (_) {}
+        }
+      };
+    } else {
+      svc.onNotificationTap = null;
+    }
     super.dispose();
   }
 
@@ -57,6 +75,7 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
   void _wrapNotificationTap() {
     final svc = LocalNotificationService.instance;
     _prevTap = svc.onNotificationTap;
+    
     svc.onNotificationTap = (payload, {actionId}) {
       if (payload != null && payload.startsWith('sos_crisis:')) {
         final parts = payload.split(':');
@@ -65,7 +84,17 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
           return;
         }
       }
-      _prevTap?.call(payload, actionId: actionId);
+      
+      final prev = _prevTap;
+      if (prev != null) {
+        try {
+          (prev as dynamic)(payload, actionId: actionId);
+        } catch (_) {
+          try {
+            (prev as dynamic)(payload);
+          } catch (_) {}
+        }
+      }
     };
   }
 
