@@ -30,7 +30,7 @@ import 'package:path/path.dart' as p;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:cached_network_image/cached_network_image.dart';
-
+import 'package:thix_id/presentation/network/widgets/create_post_l10n.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
