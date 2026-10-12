@@ -1,11 +1,16 @@
+// lib/services/local_notification_service_io.dart
+//
 /// Local Notification Service IO (Production Enterprise)
 /// ✅ SÉCURISÉ : Validation stricte, sanitization des inputs
 /// ✅ ROBUSTE : Error handling, mounted checks, timeouts
 /// ✅ OBSERVABLE : Logs structurés avec emojis et contexte
-/// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v2)
-/// ✅ FIX: Son personnalisé (notification.mp3 dans res/raw/)
-/// ✅ FIX: showBadge: true pour compteur sur l’icône
+/// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v3)
+/// ✅ FIX: Son personnalisé (notification.mp3 + ringtone.mp3 dans res/raw/)
+/// ✅ FIX: showBadge: true pour compteur sur l'icône
 /// ✅ NEW: Actions Ouvrir / Répondre sur les notifications
+/// ✅ v3  : Bump canaux _v2 → _v3 (les v2 sont muets à jamais : immuables)
+/// ✅ v3  : Suppression automatique des canaux legacy au démarrage
+/// ✅ v3  : Canal appels avec son 'ringtone' (res/raw/ringtone.mp3)
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -71,9 +76,22 @@ class LocalNotificationService {
   bool _initialized = false;
   bool _initializing = false;
 
-  static const String channelDefault = 'thix_id_default_v2';
-  static const String channelChat = 'thix_chat_v2';
-  static const String channelCalls = 'thix_calls_v2';
+  // ✅ v3 : canaux bumpés de _v2 → _v3 (les v2 sont muets à jamais :
+  // Android verrouille un canal une fois créé ; les v2 avaient été créés
+  // AVANT que les fichiers son res/raw/ existent)
+  static const String channelDefault = 'thix_id_default_v3';
+  static const String channelChat = 'thix_chat_v3';
+  static const String channelCalls = 'thix_calls_v3';
+
+  // ✅ v3 : canaux legacy à supprimer au démarrage (muets à jamais)
+  static const List<String> _legacyChannels = [
+    'thix_id_default_v2',
+    'thix_chat_v2',
+    'thix_calls_v2',
+    'thix_id_default',
+    'thix_chat',
+    'thix_calls',
+  ];
 
   /// Callback quand l'utilisateur tape la notification ou une action
   void Function(String? payload, {String? actionId})? onNotificationTap;
@@ -122,11 +140,13 @@ class LocalNotificationService {
           AndroidFlutterLocalNotificationsPlugin>();
 
       if (android != null) {
+        // ✅ v3 : purge des canaux legacy (muets à jamais) AVANT de recréer
+        await _purgeLegacyChannels(android);
         await _createAndroidChannels(android);
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3)');
     } on TimeoutException {
       debugPrint('[LocalNotif] ❌ Initialization timeout');
     } catch (e, stackTrace) {
@@ -137,6 +157,20 @@ class LocalNotificationService {
       }
     } finally {
       _initializing = false;
+    }
+  }
+
+  // ✅ v3 : Suppression des anciens canaux immuables (créés sans fichier son)
+  Future<void> _purgeLegacyChannels(
+      AndroidFlutterLocalNotificationsPlugin android) async {
+    debugPrint('[LocalNotif] 🧹 Purging legacy channels...');
+    for (final id in _legacyChannels) {
+      try {
+        await android.deleteNotificationChannel(id);
+        debugPrint('[LocalNotif] 🗑️ Legacy channel supprimé: $id');
+      } catch (e) {
+        // Normal : le canal n'existe pas encore → on ignore silencieusement
+      }
     }
   }
 
@@ -169,6 +203,7 @@ class LocalNotificationService {
         ),
       );
 
+      // ✅ v3 : AJOUT du son 'ringtone' au canal appels (était absent en v2)
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -178,10 +213,11 @@ class LocalNotificationService {
           playSound: true,
           enableVibration: true,
           showBadge: true,
+          sound: RawResourceAndroidNotificationSound('ringtone'), // ✅ AJOUTÉ
         ),
       );
 
-      debugPrint('[LocalNotif] ✓ Android channels created (v2) with sound + badge');
+      debugPrint('[LocalNotif] ✓ Android channels created (v3) with sound + badge');
     } catch (e) {
       debugPrint('[LocalNotif] ⚠️ Failed to create Android channels: $e');
     }
@@ -343,8 +379,9 @@ class LocalNotificationService {
       channelShowBadge: true,
       autoCancel: true,
       actions: actions.isEmpty ? null : actions,
+      // ✅ v3 : son conditionnel — 'ringtone' pour appels, 'notification' sinon
       sound: isCall
-          ? null
+          ? const RawResourceAndroidNotificationSound('ringtone')
           : const RawResourceAndroidNotificationSound('notification'),
       styleInformation: BigTextStyleInformation(
         sanitizedBody,
