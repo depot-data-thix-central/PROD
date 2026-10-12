@@ -1,6 +1,17 @@
 // lib/presentation/network/widgets/post_share_sheet.dart
-// Sheet de partage style X : recherche + contacts THIX + apps externes
+//
+// Sheet de partage style X : recherche + contacts THIX + apps externes — v2
+//
+// ✅ Lien = https://thix.id/network/post/ID (ouvre l'application)
+// ✅ Envoi dans l'app : message + notification, avec ouverture directe du post
+// ✅ Recherche par nom ET identifiant, état de chargement / erreur avec « Réessayer »
+// ✅ Rangée d'apps externes défilante : Partager, Copier, WhatsApp, Telegram, SMS, E-mail
+//    (si une app n'est pas installée → repli sur le partage système)
+// ✅ Textes avec repli français (clés l10n optionnelles)
+// ✅ Plus de dépendance à deep_link_service.dart
+
 import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,8 +22,18 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/network_connection.dart';
-import 'package:thix_id/services/deep_link_service.dart';
+
+/// Lien public d'un post (ouvre l'application grâce aux App Links)
+const String _kPostLinkBase = 'https://thix.id/network/post/';
+
+String _linkFor(String postId) => '$_kPostLinkBase$postId';
+
+String _t(AppLocalizations l10n, String key, String fallback) {
+  final v = l10n.t(key);
+  return (v.isEmpty || v == key) ? fallback : v;
+}
 
 class PostShareSheet extends ConsumerStatefulWidget {
   final String postId;
@@ -52,9 +73,11 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
   final _searchCtrl = TextEditingController();
   List<NetworkConnection> _contacts = [];
   bool _loading = true;
+  bool _loadFailed = false;
   final Set<String> _sentTo = {};
+  final Set<String> _sending = {};
 
-  String get _shareUrl => PostShareLinks.post(widget.postId);
+  String get _shareUrl => _linkFor(widget.postId);
   String get _shareText => '${widget.postExcerpt}\n\n$_shareUrl';
 
   @override
@@ -70,89 +93,145 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
   }
 
   Future<void> _loadContacts() async {
+    setState(() {
+      _loading = true;
+      _loadFailed = false;
+    });
     try {
-      final list = await ref.read(networkServiceProvider).getMyConnections();
-      if (mounted) setState(() { _contacts = list; _loading = false; });
+      final list = await ref
+          .read(networkServiceProvider)
+          .getMyConnections()
+          .timeout(const Duration(seconds: 12));
+      if (mounted) {
+        setState(() {
+          _contacts = list;
+          _loading = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() => _loading = false);
+      debugPrint('[PostShareSheet] contacts: $e');
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _loadFailed = true;
+        });
+      }
     }
   }
+
+  String _handle(NetworkConnection c) => '@${c.name.replaceAll(' ', '').toLowerCase()}';
 
   List<NetworkConnection> get _filtered {
     final q = _searchCtrl.text.trim().toLowerCase();
     if (q.isEmpty) return _contacts;
-    return _contacts.where((c) => c.name.toLowerCase().contains(q)).toList();
+    final qq = q.startsWith('@') ? q.substring(1) : q;
+    return _contacts
+        .where((c) => c.name.toLowerCase().contains(qq) || _handle(c).contains(qq))
+        .toList();
+  }
+
+  void _toast(String message, {Color? bg}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ));
   }
 
   // ── Envoi IN-APP (message + notification) ──
   Future<void> _sendInApp(NetworkConnection c) async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null || _sentTo.contains(c.id)) return;
+    final l10n = AppLocalizations.of(context);
+    final supa = Supabase.instance.client;
+    final uid = supa.auth.currentUser?.id;
+    if (uid == null || _sentTo.contains(c.id) || _sending.contains(c.id)) return;
 
-    setState(() => _sentTo.add(c.id));
+    setState(() => _sending.add(c.id));
     HapticFeedback.mediumImpact();
 
     try {
-      final supa = Supabase.instance.client;
       await supa.from('messages').insert({
         'sender_id': uid,
         'receiver_id': c.id,
         'content': '📌 $_shareText',
         'is_read': false,
       });
-      await supa.from('notifications').insert({
-        'user_id': c.id,
-        'sender_id': uid,
-        'type': 'post_share',
-        'category': 'network',
-        'title': 'Post partagé avec vous',
-        'body': widget.postExcerpt,
-        'post_id': widget.postId,
-        'route': '/network/comments/${widget.postId}',
-        'is_read': false,
-      });
-      // compteur de partages
+
+      // La notification ne doit pas faire échouer l'envoi du message
+      try {
+        await supa.from('notifications').insert({
+          'user_id': c.id,
+          'sender_id': uid,
+          'type': 'post_share',
+          'category': 'network',
+          'title': _t(l10n, 'post_share_notif_title', 'Post partagé avec vous'),
+          'body': widget.postExcerpt,
+          'post_id': widget.postId,
+          'route': '/network/post/${widget.postId}',
+          'is_read': false,
+        });
+      } catch (e) {
+        debugPrint('[PostShareSheet] notification: $e');
+      }
+
       unawaited(ref.read(networkServiceProvider).sharePost(widget.postId));
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Envoyé à ${c.name}'),
-          backgroundColor: ThixPolicy.success,
-          behavior: SnackBarBehavior.floating,
-        ));
+        setState(() {
+          _sending.remove(c.id);
+          _sentTo.add(c.id);
+        });
+        _toast('${_t(l10n, 'post_share_sent_to', 'Envoyé à')} ${c.name}', bg: ThixPolicy.success);
       }
     } catch (e) {
+      debugPrint('[PostShareSheet] send: $e');
       if (mounted) {
-        setState(() => _sentTo.remove(c.id));
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Envoi impossible : ${e.toString().split('\n').first}'),
-          backgroundColor: ThixPolicy.danger,
-        ));
+        setState(() => _sending.remove(c.id));
+        _toast(_t(l10n, 'post_share_send_error', 'Envoi impossible. Réessayez.'), bg: ThixPolicy.danger);
       }
     }
   }
 
   // ── Actions externes ──
-  Future<void> _launch(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _shareSystem() async {
+    try {
+      await Share.share(_shareText, subject: 'THIX Hub');
       unawaited(ref.read(networkServiceProvider).sharePost(widget.postId));
+    } catch (e) {
+      debugPrint('[PostShareSheet] share: $e');
     }
   }
 
-  Future<void> _copyLink() async {
-    await Clipboard.setData(ClipboardData(text: _shareUrl));
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('Lien copié'),
-        behavior: SnackBarBehavior.floating,
-      ));
+  /// Ouvre une app externe ; si elle n'est pas disponible → partage système
+  Future<void> _launchOrFallback(String url) async {
+    final uri = Uri.parse(url);
+    try {
+      if (await canLaunchUrl(uri)) {
+        final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
+        if (ok) {
+          unawaited(ref.read(networkServiceProvider).sharePost(widget.postId));
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('[PostShareSheet] launch: $e');
     }
+    await _shareSystem();
+  }
+
+  Future<void> _copyLink() async {
+    final l10n = AppLocalizations.of(context);
+    HapticFeedback.selectionClick();
+    await Clipboard.setData(ClipboardData(text: _shareUrl));
+    _toast(_t(l10n, 'post_link_copied', 'Lien copié'));
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final filtered = _filtered;
 
     return Container(
@@ -166,7 +245,11 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
           // Poignée
           Padding(
             padding: const EdgeInsets.only(top: 12),
-            child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+            ),
           ),
           // Recherche
           Padding(
@@ -174,9 +257,16 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
             child: TextField(
               controller: _searchCtrl,
               onChanged: (_) => setState(() {}),
+              textInputAction: TextInputAction.search,
               decoration: InputDecoration(
-                hintText: 'Rechercher',
+                hintText: _t(l10n, 'post_share_search', 'Rechercher'),
                 prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18, color: ThixPolicy.textMuted),
+                        onPressed: () => setState(_searchCtrl.clear),
+                      )
+                    : null,
                 filled: true,
                 fillColor: ThixPolicy.surfaceSoft,
                 border: OutlineInputBorder(borderRadius: BorderRadius.circular(28), borderSide: BorderSide.none),
@@ -186,57 +276,27 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
           ),
           const Divider(height: 1),
           // Liste contacts
-          Expanded(
-            child: _loading
-                ? const Center(child: CircularProgressIndicator(color: ThixPolicy.primary))
-                : filtered.isEmpty
-                    ? Center(
-                        child: Text(
-                          _contacts.isEmpty ? 'Aucun contact' : 'Aucun résultat',
-                          style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
-                        ),
-                      )
-                    : ListView.separated(
-                        itemCount: filtered.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
-                        itemBuilder: (context, i) {
-                          final c = filtered[i];
-                          final sent = _sentTo.contains(c.id);
-                          return ListTile(
-                            onTap: () => _sendInApp(c),
-                            leading: CircleAvatar(
-                              radius: 26,
-                              backgroundColor: ThixPolicy.surfaceSoft,
-                              backgroundImage: (c.avatar ?? '').isNotEmpty ? CachedNetworkImageProvider(c.avatar!) : null,
-                              child: (c.avatar ?? '').isEmpty ? const Icon(Icons.person, color: ThixPolicy.textMuted) : null,
-                            ),
-                            title: Text(c.name, style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 15)),
-                            subtitle: Text('@${c.name.replaceAll(' ', '').toLowerCase()}', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
-                            trailing: sent
-                                ? const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 22)
-                                : Icon(Icons.radio_button_unchecked_rounded, color: ThixPolicy.border, size: 22),
-                          );
-                        },
-                      ),
-          ),
+          Expanded(child: _buildContactList(filtered, l10n)),
           const Divider(height: 1),
-          // Rangée apps externes (style X)
+          // Rangée apps externes (style X), défilante
           SafeArea(
             top: false,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceAround,
+            child: SizedBox(
+              height: 92,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                physics: const BouncingScrollPhysics(),
                 children: [
                   _ExternalAction(
-                    label: 'Share via...',
+                    label: _t(l10n, 'post_share_via', 'Partager'),
                     icon: Icons.share_rounded,
                     bg: Colors.black,
                     fg: Colors.white,
-                    onTap: () => Share.share(_shareText, subject: 'THIX Hub'),
+                    onTap: _shareSystem,
                   ),
                   _ExternalAction(
-                    label: 'Copy link',
+                    label: _t(l10n, 'post_copy_link', 'Copier le lien'),
                     icon: Icons.link_rounded,
                     bg: Colors.black,
                     fg: Colors.white,
@@ -247,24 +307,30 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
                     icon: Icons.chat_rounded,
                     bg: const Color(0xFF25D366),
                     fg: Colors.white,
-                    onTap: () => _launch('https://wa.me/?text=${Uri.encodeComponent(_shareText)}'),
+                    onTap: () => _launchOrFallback('https://wa.me/?text=${Uri.encodeComponent(_shareText)}'),
                   ),
                   _ExternalAction(
-                    label: 'Discord',
-                    icon: Icons.groups_rounded,
-                    bg: const Color(0xFF5865F2),
+                    label: 'Telegram',
+                    icon: Icons.send_rounded,
+                    bg: const Color(0xFF229ED9),
                     fg: Colors.white,
-                    onTap: () async {
-                      await _copyLink();
-                      await _launch('https://discord.com/app');
-                    },
+                    onTap: () => _launchOrFallback(
+                        'https://t.me/share/url?url=${Uri.encodeComponent(_shareUrl)}&text=${Uri.encodeComponent(widget.postExcerpt)}'),
                   ),
                   _ExternalAction(
-                    label: 'Messaging',
+                    label: 'SMS',
                     icon: Icons.sms_rounded,
                     bg: const Color(0xFFFFC107),
                     fg: Colors.black,
-                    onTap: () => _launch('sms:?body=${Uri.encodeComponent(_shareText)}'),
+                    onTap: () => _launchOrFallback('sms:?body=${Uri.encodeComponent(_shareText)}'),
+                  ),
+                  _ExternalAction(
+                    label: _t(l10n, 'post_share_email', 'E-mail'),
+                    icon: Icons.email_rounded,
+                    bg: const Color(0xFF5865F2),
+                    fg: Colors.white,
+                    onTap: () => _launchOrFallback(
+                        'mailto:?subject=${Uri.encodeComponent('THIX Hub')}&body=${Uri.encodeComponent(_shareText)}'),
                   ),
                 ],
               ),
@@ -272,6 +338,85 @@ class _PostShareSheetState extends ConsumerState<PostShareSheet> {
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildContactList(List<NetworkConnection> filtered, AppLocalizations l10n) {
+    if (_loading) {
+      return const Center(child: CircularProgressIndicator(color: ThixPolicy.primary));
+    }
+
+    if (_loadFailed) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              _t(l10n, 'post_share_load_error', 'Impossible de charger vos contacts'),
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
+            ),
+            const SizedBox(height: 8),
+            TextButton.icon(
+              onPressed: _loadContacts,
+              icon: const Icon(Icons.refresh_rounded, size: 18),
+              label: Text(_t(l10n, 'common_retry', 'Réessayer')),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (filtered.isEmpty) {
+      return Center(
+        child: Text(
+          _contacts.isEmpty
+              ? _t(l10n, 'post_share_no_contacts', 'Aucun contact')
+              : _t(l10n, 'post_share_no_results', 'Aucun résultat'),
+          style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
+        ),
+      );
+    }
+
+    return ListView.separated(
+      itemCount: filtered.length,
+      separatorBuilder: (_, __) => const Divider(height: 1, indent: 76),
+      itemBuilder: (context, i) {
+        final c = filtered[i];
+        final sent = _sentTo.contains(c.id);
+        final busy = _sending.contains(c.id);
+        final hasAvatar = (c.avatar ?? '').isNotEmpty;
+
+        return ListTile(
+          onTap: () => _sendInApp(c),
+          leading: CircleAvatar(
+            radius: 26,
+            backgroundColor: ThixPolicy.surfaceSoft,
+            backgroundImage: hasAvatar ? CachedNetworkImageProvider(c.avatar!) : null,
+            child: hasAvatar ? null : const Icon(Icons.person, color: ThixPolicy.textMuted),
+          ),
+          title: Text(
+            c.name,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 15),
+          ),
+          subtitle: Text(
+            _handle(c),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
+          ),
+          trailing: busy
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
+                )
+              : (sent
+                  ? const Icon(Icons.check_circle_rounded, color: ThixPolicy.success, size: 22)
+                  : Icon(Icons.radio_button_unchecked_rounded, color: ThixPolicy.border, size: 22)),
+        );
+      },
     );
   }
 }
@@ -293,26 +438,44 @@ class _ExternalAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
-            child: Icon(icon, color: fg, size: 24),
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 16),
+          child: SizedBox(
+            width: 64,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(14)),
+                  child: Icon(icon, color: fg, size: 24),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.microStyle.copyWith(
+                    fontSize: 10,
+                    color: ThixPolicy.textMain,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
-          const SizedBox(height: 6),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: ThixPolicy.microStyle.copyWith(fontSize: 10, color: ThixPolicy.textMain, fontWeight: FontWeight.w600),
-          ),
-        ],
+        ),
       ),
     );
   }
