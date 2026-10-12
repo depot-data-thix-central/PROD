@@ -42,7 +42,9 @@ import 'package:thix_id/core/security/security_reporter.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-
+// Action IDs (définis ici pour être visibles aussi sur Web)
+const String kActionOpen = 'OPEN';
+const String kActionReply = 'REPLY';
 const Duration _kInitTimeout = Duration(seconds: 10);
 
 void _log(String message) => debugPrint('[MAIN] $message');
@@ -230,38 +232,18 @@ Future<void> main() async {
       } catch (e) {
         _log('⚠️ Auth: $e');
       }
-
-      // ── VoIP + Push (après Supabase/Auth) ──────────────────────────
+// ── VoIP + Push (après Supabase/Auth) ──────────────────────────
       if (!kIsWeb) {
         try {
           await PushNotificationService.instance
               .initialize()
               .timeout(_kInitTimeout);
 
-          // ✅ Câbler le tap depuis FCM (app en background / tuée)
-          PushNotificationService.onPushTap = (data) {
-            final route = data['route']?.toString();
-            final type = (data['type'] ?? '').toString().toLowerCase();
-
-            String? payload;
-            if (route != null && route.isNotEmpty) {
-              payload = route;
-            } else if (type == 'chat_message') {
-              final convId = data['conversation_id']?.toString() ??
-                  data['conversationId']?.toString();
-              if (convId != null) payload = 'chat:$convId';
-            } else if (type == 'incoming_call') {
-              final inviteId =
-                  data['invite_id']?.toString() ?? data['inviteId']?.toString();
-              final channel = data['channel_name']?.toString() ??
-                  data['channelName']?.toString();
-              if (inviteId != null && channel != null) {
-                payload = 'call:$inviteId:$channel';
-              }
-            }
-
-            _handleLocalNotificationTap(payload, actionId: kActionOpen);
-          };
+          // Note: onPushTap est géré côté mobile via le service IO.
+          // Sur Web le stub n'expose pas ce setter → on ne l'assigne pas ici
+          // pour éviter l'erreur de compilation web.
+          // Les taps de notifications locales passent déjà par
+          // LocalNotificationService.instance.onNotificationTap.
 
           _log('✓ Push/VoIP OK');
         } catch (e) {
@@ -323,7 +305,7 @@ Future<void> main() async {
     },
   );
 }
-
+      
 // ============================================================================
 // APP
 // ============================================================================
