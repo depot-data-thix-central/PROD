@@ -24,7 +24,9 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
   RealtimeChannel? _ch;
   StreamSubscription<AuthState>? _authSub;
   final Set<String> _handled = {};
-  void Function(String?)? _prevTap;
+  
+  // Correction du type pour inclure l'actionId optionnel
+  void Function(String?, {String? actionId})? _prevTap;
   String? _subscribedFor;
 
   @override
@@ -57,7 +59,9 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
   void _wrapNotificationTap() {
     final svc = LocalNotificationService.instance;
     _prevTap = svc.onNotificationTap;
-    svc.onNotificationTap = (payload) {
+    
+    // Ajout de {actionId} dans la signature de la fonction anonyme
+    svc.onNotificationTap = (payload, {actionId}) {
       if (payload != null && payload.startsWith('sos_crisis:')) {
         final parts = payload.split(':');
         if (parts.length >= 3) {
@@ -65,7 +69,7 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
           return;
         }
       }
-      _prevTap?.call(payload);
+      _prevTap?.call(payload, actionId: actionId);
     };
   }
 
