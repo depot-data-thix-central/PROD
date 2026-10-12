@@ -1,24 +1,16 @@
 // lib/presentation/network/widgets/post_card.dart
 //
-// PostCard — Production Enterprise (THIX PRO / THIX ID) — v3
+// PostCard — Production Enterprise (THIX PRO / THIX ID) — v4
 //
-// ✅ NOUVEAUTÉS v3 :
-// - Espaces / retours à la ligne / paragraphes du texte conservés
-//   (l'ancien sanitize() supprimait les "\n"). "Voir plus" limité aussi par nombre de lignes.
-// - Texte sélectionnable + copiable (SelectableText), liens / @mentions / #tags cliquables
-//   (accents supportés, "www." supporté, ponctuation finale exclue du lien, e-mails ignorés)
-// - Menu ⋯ professionnel : copier le texte, copier le lien, partager, enregistrer,
-//   télécharger la photo / la vidéo, épingler, modifier, supprimer, masquer, signaler, statistiques
-// - Téléchargement de photos : bouton sur chaque image, dans la galerie et dans le menu
-// - Vidéos : miniature serveur, sinon première image de la vidéo (plus d'écran noir),
-//   badge VIDÉO + durée
-// - Galerie plein écran : zoom (pinch), compteur, copier le lien, télécharger
-// - Date exacte au survol / appui long sur l'heure
-// - Corrections : parsing du contenu déplacé dans didChangeDependencies (plus d'accès
-//   à Localizations dans initState), texte d'un lien invalide plus perdu
+// ✅ v4 :
+// - Téléchargement DANS L'APP : photo / vidéo enregistrée dans la galerie (album THIX),
+//   progression + messages (MediaSaver). Plus d'ouverture du navigateur (sauf Web).
+// - Lien du post = https://thix.id/network/post/ID (ouvre l'application)
+// - Partage via PostShareSheet (contacts THIX + apps externes)
 //
-// ✅ CONSERVÉ : cache optimiste, vérité serveur du like, pin profil, link preview,
-//   partage PostShareSheet, reposts, sondage, challenge, audio, signalement.
+// ✅ v3 conservé : espaces / retours à la ligne, texte sélectionnable et copiable,
+//   #tags / @mentions / liens, menu ⋯ professionnel, miniature vidéo (plus d'écran noir),
+//   galerie zoom, statistiques, pin profil, sondage, challenge, audio, signalement.
 
 import 'dart:async';
 import 'dart:collection';
@@ -48,6 +40,7 @@ import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/presentation/network/widgets/post_share_sheet.dart';
+import 'package:thix_id/services/media_saver.dart';
 
 // ============================================================================
 // PALETTE MONOCHROME
@@ -98,7 +91,8 @@ class _PostCardConfig {
   /// Nombre max de vidéos qui lisent leur 1re image en local (économie mémoire)
   static const int maxVideoFrameFallbacks = 3;
 
-  static const String permalinkBase = 'https://thix.app/post/';
+  /// Lien public d'un post : ouvre l'application (App Links Android)
+  static const String permalinkBase = 'https://thix.id/network/post/';
 
   static const Set<String> knownRedirectDomains = {
     'facebook.com',
@@ -165,8 +159,8 @@ class _PostCardValidators {
 
     if (multiline) {
       s = s
-          .replaceAll(RegExp(r'[ \t]+\n'), '\n') // espaces en fin de ligne
-          .replaceAll(RegExp(r'\n{3,}'), '\n\n'); // max 1 ligne vide d'affilée
+          .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+          .replaceAll(RegExp(r'\n{3,}'), '\n\n');
     } else {
       s = s.replaceAll(RegExp(r'\s+'), ' ');
     }
@@ -221,7 +215,6 @@ class _PostCardValidators {
 // ============================================================================
 
 /// Groupes : 1-2 couleur · 3 gras · 4 italique · 5 @mention · 6 #tag · 7 lien
-/// Unicode activé : #éducation, @josé… fonctionnent. Les e-mails ne sont pas pris pour des mentions.
 final RegExp _kRichContentRegex = RegExp(
   r'\{c:(#[0-9A-Fa-f]{6,8})\}([\s\S]*?)\{c\}|'
   r'\*\*([\s\S]+?)\*\*|'
@@ -301,29 +294,61 @@ void _toast(BuildContext context, String message, {Color? bg, int seconds = 2}) 
     ));
 }
 
-/// Téléchargement d'un média (photo / vidéo) via le système : fonctionne sur
-/// Android, iOS et Web sans package supplémentaire.
+/// Téléchargement DANS L'APP : le média est enregistré dans la galerie (album THIX).
+/// Sur Web (pas de galerie) on garde l'ouverture du fichier.
 Future<void> _downloadMedia(BuildContext context, String url) async {
   if (!_PostCardValidators.isValidUrl(url)) return;
   HapticFeedback.selectionClick();
   final l10n = AppLocalizations.of(context);
-  try {
-    final ok = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
-    if (!context.mounted) return;
-    _toast(
-      context,
-      ok
-          ? _trL(l10n, 'post_download_started', 'Téléchargement lancé')
-          : _trL(l10n, 'post_download_failed', 'Impossible de télécharger'),
-      bg: ok ? ThixPolicy.success : ThixPolicy.danger,
-    );
-  } catch (e) {
-    _PostCardLogger.error('download failed');
-    if (context.mounted) {
-      _toast(context, _trL(l10n, 'post_download_failed', 'Impossible de télécharger'),
-          bg: ThixPolicy.danger);
-    }
+  final messenger = ScaffoldMessenger.of(context);
+  final isVideo = _isVideoUrl(url);
+
+  if (kIsWeb) {
+    await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+    return;
   }
+
+  final progress = ValueNotifier<double>(0);
+  messenger
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(
+      duration: const Duration(minutes: 2),
+      behavior: SnackBarBehavior.floating,
+      content: ValueListenableBuilder<double>(
+        valueListenable: progress,
+        builder: (_, v, __) => Row(children: [
+          SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2, value: v > 0 ? v : null, color: Colors.white),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '${_trL(l10n, 'post_downloading', 'Téléchargement…')}${v > 0 ? ' ${(v * 100).round()}%' : ''}',
+            ),
+          ),
+        ]),
+      ),
+    ));
+
+  final result = await MediaSaver.save(url, isVideo: isVideo, onProgress: (v) => progress.value = v);
+  messenger.hideCurrentSnackBar();
+  progress.dispose();
+
+  final ok = result == MediaSaveResult.saved;
+  final msg = switch (result) {
+    MediaSaveResult.saved => _trL(l10n, 'post_download_saved', 'Enregistré dans votre galerie'),
+    MediaSaveResult.denied =>
+      _trL(l10n, 'post_download_denied', 'Autorisez l’accès aux photos dans les réglages'),
+    _ => _trL(l10n, 'post_download_failed', 'Impossible de télécharger'),
+  };
+  messenger.showSnackBar(SnackBar(
+    content: Text(msg),
+    backgroundColor: ok ? ThixPolicy.success : ThixPolicy.danger,
+    behavior: SnackBarBehavior.floating,
+    duration: const Duration(seconds: 2),
+  ));
 }
 
 Future<void> _copyToClipboard(BuildContext context, String text, String message) async {
@@ -1526,7 +1551,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           label: _plainText(post.content),
           child: SelectableText.rich(
             TextSpan(children: _isExpanded ? (_cachedFullSpans ?? []) : (_cachedTruncatedSpans ?? [])),
-            // garde l'ouverture du post au simple appui, la sélection se fait à l'appui long
+            // simple appui = ouvre le post, appui long = sélection du texte
             onTap: widget.onTap ?? () => _openPostDetails(post.id),
           ),
         ),
@@ -3108,7 +3133,6 @@ class _PremiumLinkPreview extends StatefulWidget {
 class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
   Map<String, dynamic>? _previewData;
   bool _isLoading = true;
-  bool _networkFailed = false;
 
   String get _domain => Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
 
@@ -3127,7 +3151,7 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
 
   Future<void> _loadPreview() async {
     if (!_PostCardValidators.isSafeExternalFetchUrl(widget.url)) {
-      if (mounted) setState(() { _isLoading = false; _networkFailed = true; });
+      if (mounted) setState(() => _isLoading = false);
       return;
     }
     final cached = _PostCardCache.instance.getLinkPreview(widget.url);
@@ -3148,7 +3172,7 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       }
     } catch (e) {
       _PostCardLogger.error('LinkPreview fetch failed');
-      if (mounted) setState(() { _networkFailed = true; _isLoading = false; });
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -3303,7 +3327,7 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
 
 // ============================================================================
 // MINIATURE VIDÉO : image serveur → sinon 1re image de la vidéo → sinon dégradé
-// (plus jamais d'écran noir) + badge VIDÉO + durée
+// (plus jamais d'écran noir) + badge VIDÉO / durée + bouton télécharger
 // ============================================================================
 class _VideoThumbTile extends StatefulWidget {
   final String videoUrl;
