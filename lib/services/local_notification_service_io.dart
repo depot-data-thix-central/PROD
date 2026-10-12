@@ -5,6 +5,7 @@
 /// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v2)
 /// ✅ FIX: Son personnalisé (notification.mp3 dans res/raw/)
 /// ✅ FIX: showBadge: true pour compteur sur l’icône
+/// ✅ NEW: Actions Ouvrir / Répondre sur les notifications
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -20,7 +21,11 @@ const Duration _kNotificationTimeout = Duration(seconds: 10);
 const int _kMaxTitleLength = 100;
 const int _kMaxBodyLength = 500;
 const int _kMinNotificationId = 0;
-const int _kMaxNotificationId = 2147483647; // int32 max
+const int _kMaxNotificationId = 2147483647;
+
+// Action IDs
+const String kActionOpen = 'OPEN';
+const String kActionReply = 'REPLY';
 
 // ============================================================================
 // VALIDATORS & SANITIZERS
@@ -70,7 +75,9 @@ class LocalNotificationService {
   static const String channelChat = 'thix_chat_v2';
   static const String channelCalls = 'thix_calls_v2';
 
-  void Function(String? payload)? onNotificationTap;
+  /// Callback quand l'utilisateur tape la notification ou une action
+  void Function(String? payload, {String? actionId})? onNotificationTap;
+
   BuildContext? _context;
 
   Future<void> initialize() async {
@@ -106,7 +113,7 @@ class LocalNotificationService {
               iOS: iosSettings,
             ),
             onDidReceiveNotificationResponse: (response) {
-              _handleNotificationTap(response.payload);
+              _handleNotificationResponse(response);
             },
           )
           .timeout(_kNotificationTimeout);
@@ -136,7 +143,6 @@ class LocalNotificationService {
   Future<void> _createAndroidChannels(
       AndroidFlutterLocalNotificationsPlugin android) async {
     try {
-      // Channel par défaut
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelDefault,
@@ -145,12 +151,11 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
-          showBadge: true, // ✅ Badge sur l’icône
+          showBadge: true,
           sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
 
-      // Channel chat
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelChat,
@@ -159,12 +164,11 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
-          showBadge: true, // ✅ Badge sur l’icône
+          showBadge: true,
           sound: RawResourceAndroidNotificationSound('notification'),
         ),
       );
 
-      // Channel appels
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -173,7 +177,7 @@ class LocalNotificationService {
           importance: Importance.max,
           playSound: true,
           enableVibration: true,
-          showBadge: true, // ✅ Badge sur l’icône
+          showBadge: true,
         ),
       );
 
@@ -183,17 +187,21 @@ class LocalNotificationService {
     }
   }
 
-  void _handleNotificationTap(String? payload) {
+  void _handleNotificationResponse(NotificationResponse response) {
     if (_context != null && !_context!.mounted) {
-      debugPrint('[LocalNotif] ⚠️ Notification tap ignored: context not mounted');
+      debugPrint('[LocalNotif] ⚠️ Notification response ignored: context not mounted');
       return;
     }
 
+    final payload = response.payload;
+    final actionId = response.actionId;
+
     try {
-      onNotificationTap?.call(payload);
-      debugPrint('[LocalNotif] ✓ Notification tap handled: payload=$payload');
+      onNotificationTap?.call(payload, actionId: actionId);
+      debugPrint(
+          '[LocalNotif] ✓ Notification response: action=$actionId payload=$payload');
     } catch (e, stackTrace) {
-      debugPrint('[LocalNotif] ❌ Notification tap callback error: $e');
+      debugPrint('[LocalNotif] ❌ Notification response callback error: $e');
       if (kDebugMode) {
         debugPrint(
             '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
@@ -227,7 +235,6 @@ class LocalNotificationService {
         return result;
       }
 
-      debugPrint('[LocalNotif] ℹ️ Platform not supported, returning true');
       return true;
     } catch (e, stackTrace) {
       debugPrint('[LocalNotif] ❌ requestPermission failed: $e');
@@ -239,12 +246,16 @@ class LocalNotificationService {
     }
   }
 
+  /// Affiche une notification locale avec actions selon le type.
+  ///
+  /// [showReplyAction] : true pour les messages chat → bouton Répondre
   Future<bool> show({
     required int id,
     required String title,
     required String body,
     String? payload,
     String? channelId,
+    bool showReplyAction = false,
   }) async {
     if (!_Validators.isValidNotificationId(id)) {
       debugPrint('[LocalNotif] ⚠️ show: invalid ID $id');
@@ -274,11 +285,36 @@ class LocalNotificationService {
 
     final channel = channelId ?? channelDefault;
     final isCall = channel == channelCalls;
-    final isChat = channel == channelChat;
+    final isChat = channel == channelChat || showReplyAction;
 
     debugPrint(
         '[LocalNotif] 📢 Showing notification: id=$id, channel=$channel, '
         'title="${sanitizedTitle.substring(0, sanitizedTitle.length.clamp(0, 30))}..."');
+
+    // Actions selon le type
+    final List<AndroidNotificationAction> actions = [];
+
+    if (!isCall) {
+      // Bouton Ouvrir pour toutes les notifs (sauf appels)
+      actions.add(
+        const AndroidNotificationAction(
+          kActionOpen,
+          'Ouvrir',
+          showsUserInterface: true,
+        ),
+      );
+
+      // Bouton Répondre uniquement pour le chat
+      if (isChat) {
+        actions.add(
+          const AndroidNotificationAction(
+            kActionReply,
+            'Répondre',
+            showsUserInterface: true,
+          ),
+        );
+      }
+    }
 
     final androidDetails = AndroidNotificationDetails(
       channel,
@@ -299,15 +335,22 @@ class LocalNotificationService {
           ? AndroidNotificationCategory.call
           : isChat
               ? AndroidNotificationCategory.message
-              : AndroidNotificationCategory.status,
+              : AndroidNotificationCategory.social,
       fullScreenIntent: isCall,
       visibility: NotificationVisibility.public,
       playSound: true,
       enableVibration: true,
-      channelShowBadge: true, // ✅ Affiche le badge
+      channelShowBadge: true,
+      autoCancel: true,
+      actions: actions.isEmpty ? null : actions,
       sound: isCall
           ? null
           : const RawResourceAndroidNotificationSound('notification'),
+      styleInformation: BigTextStyleInformation(
+        sanitizedBody,
+        contentTitle: sanitizedTitle,
+        summaryText: isChat ? 'THIX Chat' : 'THIX Hub',
+      ),
     );
 
     const iosDetails = DarwinNotificationDetails(
@@ -368,6 +411,7 @@ class LocalNotificationService {
       body: body,
       payload: payload,
       channelId: channelChat,
+      showReplyAction: true,
     );
   }
 
