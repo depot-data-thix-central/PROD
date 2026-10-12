@@ -88,15 +88,23 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
-        <!-- Firebase Messaging : channel par défaut (notifications générales) -->
+        <!-- ✅ v3 : Firebase Messaging : canal par défaut (notifications générales)
+             ⚠️ Changé de thix_id_default_v2 → thix_id_default_v3
+                Les canaux v2 sont muets à jamais (créés sans fichier son).
+                Android verrouille les canaux une fois créés : on doit en créer de nouveaux. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
-            android:value="thix_id_default_v2" />
+            android:value="thix_id_default_v3" />
 
         <!-- Icône monochrome blanche pour la barre de notification -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/notification_icon" />
+
+        <!-- ✅ v3 AJOUTÉ : couleur d'accentuation par défaut (Thix primary) -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_color"
+            android:resource="@color/thix_primary" />
 
         <!-- Activité principale -->
         <activity
