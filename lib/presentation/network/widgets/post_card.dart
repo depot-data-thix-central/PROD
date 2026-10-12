@@ -1,22 +1,20 @@
 // lib/presentation/network/widgets/post_card.dart
 //
-// PostCard — Production Enterprise (THIX PRO / THIX ID) — v4
+// PostCard — Production Enterprise (THIX PRO / THIX ID) — v5 FINAL
 //
-// ✅ v4 :
-// - Téléchargement DANS L'APP : photo / vidéo enregistrée dans la galerie (album THIX),
-//   progression + messages (MediaSaver). Plus d'ouverture du navigateur (sauf Web).
-// - Lien du post = https://thix.id/network/post/ID (ouvre l'application)
-// - Partage via PostShareSheet (contacts THIX + apps externes)
+// ✅ v5 :
+// - 🏷️ 10 badges premium en tête (URGENT/ALERTE = pulse "battant")
+// - ¶ Paragraphes espacés (blocs séparés par \n\n)
+// - ✅ CORRECTIONS SYNTAXE : littéraux '\n' restaurés, postType == PostType.poll/challenge
+// - ✅ impressions via post.views
 //
-// ✅ v3 conservé : espaces / retours à la ligne, texte sélectionnable et copiable,
-//   #tags / @mentions / liens, menu ⋯ professionnel, miniature vidéo (plus d'écran noir),
-//   galerie zoom, statistiques, pin profil, sondage, challenge, audio, signalement.
-
+// ✅ v4 conservé : téléchargement DANS L'APP (MediaSaver), lien thix.id, PostShareSheet.
+// ✅ v3 conservé : espaces/retours ligne, texte sélectionnable, #tags/@mentions/liens,
+//   menu ⋯, miniature vidéo, galerie zoom, stats, pin, sondage, challenge, audio, signalement.
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
 import 'dart:ui';
-
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -30,7 +28,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/data/network_service_provider.dart';
 import 'package:thix_id/features/network/presentation/providers/feed_provider.dart';
@@ -41,7 +38,6 @@ import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
 import 'package:thix_id/presentation/network/widgets/post_share_sheet.dart';
 import 'package:thix_id/services/media_saver.dart';
-
 // ============================================================================
 // PALETTE MONOCHROME
 // ============================================================================
@@ -51,13 +47,11 @@ class _Mono {
   static const Color accentDeep = Color(0xFF18181B);
   static const Color accentSoft = Color(0xFF71717A);
 }
-
 // ============================================================================
 // CONSTANTES
 // ============================================================================
 class _PostCardConfig {
   _PostCardConfig._();
-
   static const Duration networkTimeout = Duration(seconds: 10);
   static const Duration linkPreviewTimeout = Duration(seconds: 8);
   static const Duration videoThumbTimeout = Duration(seconds: 5);
@@ -68,32 +62,22 @@ class _PostCardConfig {
   static const Duration reportThrottle = Duration(milliseconds: 1500);
   static const Duration repostThrottle = Duration(milliseconds: 1500);
   static const Duration likeVerifyTimeout = Duration(seconds: 6);
-
   static const int maxContentChars = 250;
   static const int maxContentLines = 7;
   static const int maxParseDepth = 6;
   static const int maxSanitizedLength = 5000;
   static const int maxReportDetailsLength = 500;
   static const int maxRepostQuoteLength = 500;
-
   static const int cacheMaxSize = 50;
   static const Duration cacheTtl = Duration(minutes: 5);
-
   static const double postBlurSigma = kIsWeb ? 8 : 16;
   static const double dialogBlurSigma = 10;
-
   static const int maxLikersFetched = 5;
   static const int avatarFallbackSize = 256;
-
   static const double cardBottomBorderWidth = 1.2;
   static const double cardFirstTopBorderWidth = 2.0;
-
-  /// Nombre max de vidéos qui lisent leur 1re image en local (économie mémoire)
   static const int maxVideoFrameFallbacks = 3;
-
-  /// Lien public d'un post : ouvre l'application (App Links Android)
   static const String permalinkBase = 'https://thix.id/network/post/';
-
   static const Set<String> knownRedirectDomains = {
     'facebook.com',
     'fb.me',
@@ -103,45 +87,33 @@ class _PostCardConfig {
     'g.co',
   };
 }
-
 // ============================================================================
 // LOGGING
 // ============================================================================
 class _PostCardLogger {
   static const _tag = 'PostCard';
-
-  static void info(String message, [Map<String, Object?>? data]) =>
-      _log('INFO', message, data);
-  static void warn(String message, [Map<String, Object?>? data]) =>
-      _log('WARN', message, data);
-  static void error(String message, [Map<String, Object?>? data]) =>
-      _log('ERROR', message, data);
-
+  static void info(String message, [Map<String, Object?>? data]) => _log('INFO', message, data);
+  static void warn(String message, [Map<String, Object?>? data]) => _log('WARN', message, data);
+  static void error(String message, [Map<String, Object?>? data]) => _log('ERROR', message, data);
   static void _log(String level, String message, Map<String, Object?>? data) {
     if (!kDebugMode && level == 'INFO') return;
-    final suffix =
-        data != null ? ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
+    final suffix = data != null ? ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
     debugPrint('[$_tag][$level] $message$suffix');
   }
 }
-
 // ============================================================================
 // VALIDATEURS / SÉCURITÉ
 // ============================================================================
 class _PostCardValidators {
   _PostCardValidators._();
-
   static final RegExp _uuidRegex = RegExp(
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
-
   static final RegExp _privateHostRegex = RegExp(
     r'^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|::1$|fc00:|fd00:)',
     caseSensitive: false,
   );
-
   /// Nettoie le texte en CONSERVANT les retours à la ligne et les paragraphes.
-  /// (multiline: false → une seule ligne, pour les noms, titres, options de sondage…)
   static String sanitize(
     String? input, {
     int maxLength = _PostCardConfig.maxSanitizedLength,
@@ -156,7 +128,6 @@ class _PostCardValidators {
         .replaceAll(RegExp(r'(javascript|data|vbscript):', caseSensitive: false), '')
         // supprime les caractères de contrôle SAUF \n (0x0A) et \t (0x09)
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
-
     if (multiline) {
       s = s
           .replaceAll(RegExp(r'[ \t]+\n'), '\n')
@@ -167,53 +138,42 @@ class _PostCardValidators {
     s = s.trim();
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
-
   static String sanitizeLine(String? input, {int maxLength = 200}) =>
       sanitize(input, maxLength: maxLength, multiline: false);
-
   static bool isValidId(String? id) => id != null && _uuidRegex.hasMatch(id);
-
   static bool isValidUrl(String url) {
     if (url.length > 2048) return false;
     try {
       final uri = Uri.parse(url);
-      return (uri.scheme == 'http' || uri.scheme == 'https') &&
-          uri.host.isNotEmpty &&
-          !uri.host.contains('..');
+      return (uri.scheme == 'http' || uri.scheme == 'https') && uri.host.isNotEmpty && !uri.host.contains('..');
     } catch (_) {
       return false;
     }
   }
-
   static bool isSafeExternalFetchUrl(String url) {
     if (!isValidUrl(url)) return false;
     final host = Uri.tryParse(url)?.host ?? '';
     return !_privateHostRegex.hasMatch(host);
   }
-
   static bool isValidRichTextUrl(String url) {
     if (!isValidUrl(url)) return false;
     if (url.toLowerCase().contains('javascript:')) return false;
     return true;
   }
-
   static bool isValidPollData(Map<String, dynamic>? pollData) {
     if (pollData == null) return false;
     final options = pollData['options'];
     if (options is! List || options.isEmpty) return false;
     return options.every((opt) => opt is Map && opt.containsKey('text') && opt.containsKey('votes'));
   }
-
   static bool isKnownRedirectDomain(String url) {
     final host = Uri.tryParse(url)?.host.toLowerCase().replaceFirst('www.', '') ?? '';
     return _PostCardConfig.knownRedirectDomains.any((d) => host == d || host.endsWith('.$d'));
   }
 }
-
 // ============================================================================
 // HELPERS
 // ============================================================================
-
 /// Groupes : 1-2 couleur · 3 gras · 4 italique · 5 @mention · 6 #tag · 7 lien
 final RegExp _kRichContentRegex = RegExp(
   r'\{c:(#[0-9A-Fa-f]{6,8})\}([\s\S]*?)\{c\}|'
@@ -224,12 +184,9 @@ final RegExp _kRichContentRegex = RegExp(
   r'((?:https?:\/\/|www\.)[^\s]+)',
   unicode: true,
 );
-
 final RegExp _kUrlFinder = RegExp(r'((?:https?:\/\/|www\.)[^\s]+)');
 final RegExp _kUrlTrailingPunct = RegExp(r'[.,;:!?)\]]+$');
-
 String _normalizeUrl(String url) => url.toLowerCase().startsWith('www.') ? 'https://$url' : url;
-
 /// Texte brut (sans balises de mise en forme) pour la copie
 String _plainText(String content) {
   var s = content
@@ -239,14 +196,12 @@ String _plainText(String content) {
   s = s.replaceAllMapped(RegExp(r'\*([\s\S]+?)\*'), (m) => m.group(1) ?? '');
   return s.trim();
 }
-
 String _formatCountHelper(int count) {
   if (count <= 0) return '';
   if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
   if (count >= 1000) return '${(count / 1000).toStringAsFixed(1)}k';
   return '$count';
 }
-
 bool _isVideoUrl(String url) {
   try {
     final path = Uri.parse(url).path.toLowerCase();
@@ -258,30 +213,24 @@ bool _isVideoUrl(String url) {
     return false;
   }
 }
-
 String? _safeImageUrl(String? url) {
   if (url == null || url.isEmpty) return null;
   return _PostCardValidators.isValidUrl(url) ? url : null;
 }
-
 bool _isGhostRepostContent(NetworkPost post) {
   return post.isRepostCard && post.content.trim().toLowerCase() == 'true';
 }
-
 String _postLink(String postId) => '${_PostCardConfig.permalinkBase}$postId';
-
 String _fullDate(DateTime dt) {
   final d = dt.toLocal();
   String two(int v) => v.toString().padLeft(2, '0');
   return '${two(d.day)}/${two(d.month)}/${d.year} · ${two(d.hour)}:${two(d.minute)}';
 }
-
 /// Traduction avec repli (aucune clé brute affichée si elle n'existe pas encore)
 String _trL(AppLocalizations l10n, String key, String fallback) {
   final v = l10n.t(key);
   return (v.isEmpty || v == key) ? fallback : v;
 }
-
 void _toast(BuildContext context, String message, {Color? bg, int seconds = 2}) {
   if (!context.mounted) return;
   ScaffoldMessenger.of(context)
@@ -293,21 +242,17 @@ void _toast(BuildContext context, String message, {Color? bg, int seconds = 2}) 
       duration: Duration(seconds: seconds),
     ));
 }
-
 /// Téléchargement DANS L'APP : le média est enregistré dans la galerie (album THIX).
-/// Sur Web (pas de galerie) on garde l'ouverture du fichier.
 Future<void> _downloadMedia(BuildContext context, String url) async {
   if (!_PostCardValidators.isValidUrl(url)) return;
   HapticFeedback.selectionClick();
   final l10n = AppLocalizations.of(context);
   final messenger = ScaffoldMessenger.of(context);
   final isVideo = _isVideoUrl(url);
-
   if (kIsWeb) {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     return;
   }
-
   final progress = ValueNotifier<double>(0);
   messenger
     ..hideCurrentSnackBar()
@@ -331,16 +276,13 @@ Future<void> _downloadMedia(BuildContext context, String url) async {
         ]),
       ),
     ));
-
   final result = await MediaSaver.save(url, isVideo: isVideo, onProgress: (v) => progress.value = v);
   messenger.hideCurrentSnackBar();
   progress.dispose();
-
   final ok = result == MediaSaveResult.saved;
   final msg = switch (result) {
     MediaSaveResult.saved => _trL(l10n, 'post_download_saved', 'Enregistré dans votre galerie'),
-    MediaSaveResult.denied =>
-      _trL(l10n, 'post_download_denied', 'Autorisez l’accès aux photos dans les réglages'),
+    MediaSaveResult.denied => _trL(l10n, 'post_download_denied', 'Autorisez l’accès aux photos dans les réglages'),
     _ => _trL(l10n, 'post_download_failed', 'Impossible de télécharger'),
   };
   messenger.showSnackBar(SnackBar(
@@ -350,13 +292,11 @@ Future<void> _downloadMedia(BuildContext context, String url) async {
     duration: const Duration(seconds: 2),
   ));
 }
-
 Future<void> _copyToClipboard(BuildContext context, String text, String message) async {
   HapticFeedback.selectionClick();
   await Clipboard.setData(ClipboardData(text: text));
   if (context.mounted) _toast(context, message, seconds: 1);
 }
-
 // ============================================================================
 // CACHE LRU & OPTIMISTE
 // ============================================================================
@@ -365,30 +305,23 @@ class _CacheEntry<T> {
   final DateTime timestamp;
   _CacheEntry(this.value) : timestamp = DateTime.now();
 }
-
 class _PostCardCache {
   _PostCardCache._();
   static final _PostCardCache instance = _PostCardCache._();
-
   final LinkedHashMap<String, _CacheEntry<List<String>>> _likers = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<Map<String, dynamic>>> _linkPreviews = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<String>> _videoThumbs = LinkedHashMap();
-
   final Map<String, bool> optimisticLikes = {};
   final Map<String, int> optimisticLikeCounts = {};
   final Map<String, bool> optimisticSaves = {};
   final Map<String, bool> optimisticReposts = {};
   final Map<String, int> optimisticRepostCounts = {};
-
   List<String>? getLikers(String postId) => _get(_likers, postId);
   void setLikers(String postId, List<String> avatars) => _set(_likers, postId, avatars);
-
   Map<String, dynamic>? getLinkPreview(String url) => _get(_linkPreviews, url);
   void setLinkPreview(String url, Map<String, dynamic> data) => _set(_linkPreviews, url, data);
-
   String? getVideoThumb(String url) => _get(_videoThumbs, url);
   void setVideoThumb(String url, String thumb) => _set(_videoThumbs, url, thumb);
-
   T? _get<T>(LinkedHashMap<String, _CacheEntry<T>> map, String key) {
     final entry = map[key];
     if (entry == null) return null;
@@ -400,13 +333,11 @@ class _PostCardCache {
     map[key] = entry;
     return entry.value;
   }
-
   void _set<T>(LinkedHashMap<String, _CacheEntry<T>> map, String key, T value) {
     if (map.length >= _PostCardConfig.cacheMaxSize) map.remove(map.keys.first);
     map[key] = _CacheEntry(value);
   }
 }
-
 // ============================================================================
 // POST ORIGINAL D'UN REPOST
 // ============================================================================
@@ -423,14 +354,12 @@ final _originalPostProvider =
     return null;
   }
 });
-
 // ============================================================================
 // STATE NOTIFIER
 // ============================================================================
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
   (ref) => throw UnimplementedError('postItemProvider doit être surchargé par PostCard'),
 );
-
 class PostItemNotifier extends StateNotifier<NetworkPost> {
   PostItemNotifier(NetworkPost post, this.ref) : super(post) {
     bool changed = false;
@@ -439,9 +368,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     bool newIsSaved = state.isSaved;
     bool newIsReposted = state.isReposted;
     int newRepostsCount = state.repostsCount;
-
     final hasOptimisticLike = _PostCardCache.instance.optimisticLikes.containsKey(post.id);
-
     if (hasOptimisticLike) {
       newIsLiked = _PostCardCache.instance.optimisticLikes[post.id]!;
       newLikesCount = _PostCardCache.instance.optimisticLikeCounts[post.id] ?? state.likesCount;
@@ -456,7 +383,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       newRepostsCount = _PostCardCache.instance.optimisticRepostCounts[post.id] ?? state.repostsCount;
       changed = true;
     }
-
     if (changed) {
       state = state.copyWith(
         isLiked: newIsLiked,
@@ -466,25 +392,19 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
         repostsCount: newRepostsCount,
       );
     }
-
     if (!hasOptimisticLike && _isAuthenticated) {
       _verifyLikeStatusFromServer(post.id);
     }
   }
-
   final Ref ref;
-
   bool _likeBusy = false;
   bool _isDisposed = false;
-
   @override
   void dispose() {
     _isDisposed = true;
     super.dispose();
   }
-
   bool get _isAuthenticated => Supabase.instance.client.auth.currentUser != null;
-
   Future<void> _verifyLikeStatusFromServer(String postId) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
@@ -496,7 +416,6 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
           .eq('user_id', uid)
           .maybeSingle()
           .timeout(_PostCardConfig.likeVerifyTimeout);
-
       final reallyLiked = res != null;
       if (_isDisposed) return;
       if (reallyLiked != state.isLiked) {
@@ -508,20 +427,16 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       _PostCardLogger.warn('verifyLikeStatus failed', {'postId': postId, 'error': '$e'});
     }
   }
-
   Future<void> toggleLike() async {
     if (_likeBusy || !_isAuthenticated || _isDisposed) return;
     _likeBusy = true;
-
     final wasLiked = state.isLiked;
     final oldCount = state.likesCount;
     final newLiked = !wasLiked;
     final newCount = wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1;
-
     state = state.copyWith(isLiked: newLiked, likesCount: newCount);
     _PostCardCache.instance.optimisticLikes[state.id] = newLiked;
     _PostCardCache.instance.optimisticLikeCounts[state.id] = newCount;
-
     try {
       final service = ref.read(networkServiceProvider);
       try {
@@ -551,15 +466,12 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     }
   }
-
   Future<void> toggleSave() async {
     if (!_isAuthenticated || _isDisposed) return;
     final was = state.isSaved;
     final newSaved = !was;
-
     state = state.copyWith(isSaved: newSaved);
     _PostCardCache.instance.optimisticSaves[state.id] = newSaved;
-
     try {
       final service = ref.read(networkServiceProvider);
       if (was) {
@@ -575,13 +487,11 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       }
     }
   }
-
   void updateContent(String content) {
     if (!_isDisposed) {
       state = state.copyWith(content: _PostCardValidators.sanitize(content));
     }
   }
-
   void incrementRepost() {
     if (!_isDisposed) {
       final newCount = state.repostsCount + 1;
@@ -591,24 +501,20 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     }
   }
 }
-
 // ============================================================================
 // POST ORIGINAL (embed d'un repost)
 // ============================================================================
 class _OriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const _OriginalPostEmbed({required this.postId});
-
   BoxDecoration get _boxDecoration => BoxDecoration(
         color: _Mono.accent.withValues(alpha: 0.05),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _Mono.accent.withValues(alpha: 0.15)),
       );
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(_originalPostProvider(postId));
-
     return async.when(
       loading: () => Container(
         height: 90,
@@ -625,7 +531,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
       data: (original) => original == null ? _unavailable(context) : _card(context, original),
     );
   }
-
   Widget _unavailable(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Container(
@@ -645,7 +550,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
       ),
     );
   }
-
   Widget _card(BuildContext context, NetworkPost original) {
     final l10n = AppLocalizations.of(context);
     final name = _PostCardValidators.sanitizeLine(original.authorName, maxLength: 100);
@@ -655,7 +559,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
       ...original.imageUrls.where(_PostCardValidators.isValidUrl),
       ...original.videoUrls.where(_PostCardValidators.isValidUrl),
     ];
-
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -734,12 +637,10 @@ class _OriginalPostEmbed extends ConsumerWidget {
       ),
     );
   }
-
   Widget _media(BuildContext context, List<String> urls) {
     final first = urls.first;
     final imageOnly = urls.where((u) => !_isVideoUrl(u)).toList();
     final extra = urls.length - 1;
-
     Widget tile;
     if (_isVideoUrl(first)) {
       tile = _VideoThumbTile(
@@ -781,7 +682,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
         ),
       );
     }
-
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: SizedBox(
@@ -817,7 +717,6 @@ class _OriginalPostEmbed extends ConsumerWidget {
     );
   }
 }
-
 // ============================================================================
 // PETIT BOUTON ROND SUR LES MÉDIAS
 // ============================================================================
@@ -826,7 +725,6 @@ class _MediaChipButton extends StatelessWidget {
   final VoidCallback onTap;
   final String semanticsLabel;
   const _MediaChipButton({required this.icon, required this.onTap, required this.semanticsLabel});
-
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -849,7 +747,6 @@ class _MediaChipButton extends StatelessWidget {
     );
   }
 }
-
 // ============================================================================
 // GALERIE PLEIN ÉCRAN (zoom, compteur, copier le lien, télécharger)
 // ============================================================================
@@ -857,34 +754,28 @@ class _FullScreenGallery extends StatefulWidget {
   final List<String> imageUrls;
   final int initialIndex;
   const _FullScreenGallery({required this.imageUrls, required this.initialIndex});
-
   @override
   State<_FullScreenGallery> createState() => _FullScreenGalleryState();
 }
-
 class _FullScreenGalleryState extends State<_FullScreenGallery> {
   late final PageController _controller;
   late int _index;
-
   @override
   void initState() {
     super.initState();
     _index = widget.imageUrls.isEmpty ? 0 : widget.initialIndex.clamp(0, widget.imageUrls.length - 1);
     _controller = PageController(initialPage: _index);
   }
-
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final total = widget.imageUrls.length;
     final current = total == 0 ? null : widget.imageUrls[_index];
-
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -930,44 +821,37 @@ class _FullScreenGalleryState extends State<_FullScreenGallery> {
     );
   }
 }
-
 // ============================================================================
 // LECTEUR VIDÉO PLEIN ÉCRAN
 // ============================================================================
 class _FullScreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
   const _FullScreenVideoPlayer({required this.videoUrl});
-
   @override
   State<_FullScreenVideoPlayer> createState() => _FullScreenVideoPlayerState();
 }
-
 class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
   VideoPlayerController? _controller;
   bool _initialized = false;
   bool _hasError = false;
   bool _showControls = true;
   Timer? _hideTimer;
-
   @override
   void initState() {
     super.initState();
     _init();
   }
-
   Future<void> _init() async {
     final uri = Uri.tryParse(widget.videoUrl);
     if (uri == null || !_PostCardValidators.isValidUrl(widget.videoUrl)) {
       setState(() => _hasError = true);
       return;
     }
-
     final controller = VideoPlayerController.networkUrl(
       uri,
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
     );
     _controller = controller;
-
     try {
       await controller.initialize();
       if (!mounted) return;
@@ -981,14 +865,12 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       if (mounted) setState(() => _hasError = true);
     }
   }
-
   @override
   void dispose() {
     _hideTimer?.cancel();
     _controller?.dispose();
     super.dispose();
   }
-
   void _scheduleHide() {
     _hideTimer?.cancel();
     _hideTimer = Timer(const Duration(seconds: 3), () {
@@ -997,20 +879,16 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       }
     });
   }
-
   void _toggleControls() {
     setState(() => _showControls = !_showControls);
     if (_showControls) _scheduleHide();
   }
-
   Future<void> _togglePlay() async {
     final c = _controller;
     if (c == null || !_initialized) return;
     HapticFeedback.selectionClick();
-
     final v = c.value;
     final ended = v.duration > Duration.zero && v.position >= v.duration;
-
     if (v.isPlaying) {
       await c.pause();
       _hideTimer?.cancel();
@@ -1020,13 +898,11 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       _scheduleHide();
     }
   }
-
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1048,7 +924,6 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
       body: _buildBody(l10n),
     );
   }
-
   Widget _buildBody(AppLocalizations l10n) {
     if (_hasError) {
       return Center(
@@ -1069,12 +944,10 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
         ),
       );
     }
-
     final controller = _controller;
     if (!_initialized || controller == null) {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
-
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleControls,
@@ -1092,12 +965,10 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
             builder: (context, value, _) {
               final ended = value.duration > Duration.zero && value.position >= value.duration;
               final showCenter = _showControls || !value.isPlaying;
-
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (value.isBuffering)
-                    const Center(child: CircularProgressIndicator(color: Colors.white)),
+                  if (value.isBuffering) const Center(child: CircularProgressIndicator(color: Colors.white)),
                   if (showCenter && !value.isBuffering)
                     Center(
                       child: GestureDetector(
@@ -1109,9 +980,7 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                             shape: BoxShape.circle,
                           ),
                           child: Icon(
-                            ended
-                                ? Icons.replay_rounded
-                                : (value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
+                            ended ? Icons.replay_rounded : (value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded),
                             color: Colors.white,
                             size: 44,
                           ),
@@ -1140,11 +1009,9 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
                             ),
                             Row(
                               children: [
-                                Text(_fmt(value.position),
-                                    style: const TextStyle(color: Colors.white, fontSize: 12)),
+                                Text(_fmt(value.position), style: const TextStyle(color: Colors.white, fontSize: 12)),
                                 const Spacer(),
-                                Text(_fmt(value.duration),
-                                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+                                Text(_fmt(value.duration), style: const TextStyle(color: Colors.white70, fontSize: 12)),
                               ],
                             ),
                           ],
@@ -1160,7 +1027,95 @@ class _FullScreenVideoPlayerState extends State<_FullScreenVideoPlayer> {
     );
   }
 }
-
+// ============================================================================
+// 🏷️ BADGES PREMIUM (10) — chip encadré + pulse URGENT/ALERTE
+// ============================================================================
+class _BadgeStyle {
+  final Color color;
+  final IconData icon;
+  final bool pulse;
+  const _BadgeStyle(this.color, this.icon, {this.pulse = false});
+}
+class _StaticBadgeChip extends StatelessWidget {
+  final _BadgeStyle style;
+  final String label;
+  const _StaticBadgeChip({required this.style, required this.label});
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: style.color,
+        borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.92), width: 1.6),
+        boxShadow: [BoxShadow(color: style.color.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 3))],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(style.icon, size: 15, color: Colors.white),
+          const SizedBox(width: 7),
+          Text(label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.9, height: 1)),
+        ],
+      ),
+    );
+  }
+}
+class _PulsingBadge extends StatefulWidget {
+  final _BadgeStyle style;
+  final String label;
+  const _PulsingBadge({required this.style, required this.label});
+  @override
+  State<_PulsingBadge> createState() => _PulsingBadgeState();
+}
+class _PulsingBadgeState extends State<_PulsingBadge> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+  late final Animation<double> _scale;
+  late final Animation<double> _glow;
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 950));
+    _scale = Tween<double>(begin: 1.0, end: 1.08).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
+    _glow = Tween<double>(begin: 0.25, end: 0.65).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
+    _ctrl.repeat(reverse: true);
+  }
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, _) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          decoration: BoxDecoration(
+            color: widget.style.color,
+            borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.92), width: 1.8),
+            boxShadow: [
+              BoxShadow(color: widget.style.color.withValues(alpha: _glow.value), blurRadius: 16, spreadRadius: 1, offset: const Offset(0, 2)),
+            ],
+          ),
+          child: Transform.scale(
+            scale: _scale.value,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(widget.style.icon, size: 15, color: Colors.white),
+                const SizedBox(width: 7),
+                Text(widget.label, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.9, height: 1)),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
 // ============================================================================
 // COMPOSANT PRINCIPAL
 // ============================================================================
@@ -1178,9 +1133,7 @@ class PostCard extends ConsumerStatefulWidget {
   final VoidCallback? onSave;
   final bool isFollowingAuthor;
   final VoidCallback? onFollow;
-
   final bool isFirst;
-
   const PostCard({
     super.key,
     required this.post,
@@ -1198,47 +1151,54 @@ class PostCard extends ConsumerStatefulWidget {
     this.onFollow,
     this.isFirst = false,
   });
-
   @override
   ConsumerState<PostCard> createState() => _PostCardState();
 }
-
 class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClientMixin {
   @override
   bool get wantKeepAlive => true;
-
   bool _isReposting = false;
   bool _isExpanded = false;
   bool _pollVoteBusy = false;
   final _quoteController = TextEditingController();
-
   bool _isFollowingLocal = false;
   bool _followBusy = false;
   DateTime? _lastFollowTap;
   DateTime? _lastVoteTap;
   DateTime? _lastReportSubmit;
   DateTime? _lastRepostSubmit;
-
   bool _impressionRegistered = false;
   Timer? _impressionDebounce;
   DateTime? _lastContentUpdate;
-
   List<InlineSpan>? _cachedFullSpans;
   List<InlineSpan>? _cachedTruncatedSpans;
+  List<List<InlineSpan>>? _cachedParagraphSpans;
+  bool _isMultiParagraph = false;
   bool _isTruncatable = false;
   final List<GestureRecognizer> _recognizers = [];
-
   bool _parsedOnce = false;
   Locale? _parsedLocale;
 
-  bool get _isAuthenticated => Supabase.instance.client.auth.currentUser != null;
+  // ── 🏷️ PALETTE DES 10 BADGES PREMIUM ──
+  static const Map<String, _BadgeStyle> _badgeStyles = {
+    'urgent': _BadgeStyle(Color(0xFFE53935), Icons.priority_high_rounded, pulse: true),
+    'alert': _BadgeStyle(Color(0xFFD84315), Icons.warning_amber_rounded, pulse: true),
+    'flash': _BadgeStyle(Color(0xFFF57C00), Icons.bolt_rounded),
+    'important': _BadgeStyle(Color(0xFFF9A825), Icons.error_outline_rounded),
+    'info': _BadgeStyle(Color(0xFF1E88E5), Icons.info_outline_rounded),
+    'new': _BadgeStyle(Color(0xFF43A047), Icons.fiber_new_rounded),
+    'official': _BadgeStyle(ThixPolicy.gold, Icons.verified_rounded),
+    'event': _BadgeStyle(Color(0xFF8E24AA), Icons.celebration_rounded),
+    'promo': _BadgeStyle(Color(0xFF00897B), Icons.local_offer_rounded),
+    'reminder': _BadgeStyle(Color(0xFF3949AB), Icons.alarm_rounded),
+  };
 
+  bool get _isAuthenticated => Supabase.instance.client.auth.currentUser != null;
   @override
   void initState() {
     super.initState();
     _isFollowingLocal = widget.isFollowingAuthor;
   }
-
   /// Le parsing utilise AppLocalizations → il doit se faire ici, pas dans initState
   @override
   void didChangeDependencies() {
@@ -1250,7 +1210,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       _cacheParsedContent();
     }
   }
-
   @override
   void didUpdateWidget(covariant PostCard oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -1259,14 +1218,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     }
     if (oldWidget.post.content != widget.post.content) {
       final now = DateTime.now();
-      if (_lastContentUpdate == null ||
-          now.difference(_lastContentUpdate!) > _PostCardConfig.contentDebounce) {
+      if (_lastContentUpdate == null || now.difference(_lastContentUpdate!) > _PostCardConfig.contentDebounce) {
         _lastContentUpdate = now;
         _cacheParsedContent();
       }
     }
   }
-
   @override
   void dispose() {
     _disposeRecognizers();
@@ -1274,7 +1231,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     _impressionDebounce?.cancel();
     super.dispose();
   }
-
   void _disposeRecognizers() {
     for (final r in _recognizers) {
       try {
@@ -1285,7 +1241,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     }
     _recognizers.clear();
   }
-
   bool _throttle(DateTime? Function() get, void Function(DateTime) set, Duration window) {
     final now = DateTime.now();
     final last = get();
@@ -1293,16 +1248,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     set(now);
     return true;
   }
-
-  bool _throttleFollow() =>
-      _throttle(() => _lastFollowTap, (t) => _lastFollowTap = t, _PostCardConfig.followThrottle);
-  bool _throttleVote() =>
-      _throttle(() => _lastVoteTap, (t) => _lastVoteTap = t, _PostCardConfig.voteThrottle);
-  bool _throttleReport() =>
-      _throttle(() => _lastReportSubmit, (t) => _lastReportSubmit = t, _PostCardConfig.reportThrottle);
-  bool _throttleRepost() =>
-      _throttle(() => _lastRepostSubmit, (t) => _lastRepostSubmit = t, _PostCardConfig.repostThrottle);
-
+  bool _throttleFollow() => _throttle(() => _lastFollowTap, (t) => _lastFollowTap = t, _PostCardConfig.followThrottle);
+  bool _throttleVote() => _throttle(() => _lastVoteTap, (t) => _lastVoteTap = t, _PostCardConfig.voteThrottle);
+  bool _throttleReport() => _throttle(() => _lastReportSubmit, (t) => _lastReportSubmit = t, _PostCardConfig.reportThrottle);
+  bool _throttleRepost() => _throttle(() => _lastRepostSubmit, (t) => _lastRepostSubmit = t, _PostCardConfig.repostThrottle);
   /// Tronque par nombre de lignes ET par nombre de caractères (retours à la ligne respectés)
   String _truncate(String content) {
     var t = content;
@@ -1317,7 +1266,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     }
     return t.trimRight();
   }
-
+  /// ¶ Découpage en paragraphes (séparés par une ligne vide)
+  List<String> _splitParagraphs(String content) => content
+      .split(RegExp(r'\n{2,}'))
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
   void _cacheParsedContent() {
     final content = _PostCardValidators.sanitize(widget.post.content);
     final l10n = AppLocalizations.of(context);
@@ -1326,34 +1280,31 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       fontSize: 14.5,
       height: 1.5,
     );
-
     _disposeRecognizers();
     _cachedFullSpans = _parseContent(content, baseStyle, 0, l10n);
-
+    final paras = _splitParagraphs(content);
+    _isMultiParagraph = paras.length > 1;
+    _cachedParagraphSpans = _isMultiParagraph
+        ? paras.map((p) => _parseContent(p, baseStyle, 0, l10n)).toList()
+        : null;
     final truncated = _truncate(content);
     _isTruncatable = truncated.length < content.length;
-
     if (_isTruncatable) {
       _cachedTruncatedSpans = _parseContent('$truncated…', baseStyle, 0, l10n);
     } else {
       _cachedTruncatedSpans = _cachedFullSpans;
     }
   }
-
-  List<InlineSpan> _parseContent(
-      String content, TextStyle baseStyle, int depth, AppLocalizations l10n) {
+  List<InlineSpan> _parseContent(String content, TextStyle baseStyle, int depth, AppLocalizations l10n) {
     if (depth > _PostCardConfig.maxParseDepth || content.isEmpty) {
       return [TextSpan(text: content, style: baseStyle)];
     }
-
     final spans = <InlineSpan>[];
     var lastIndex = 0;
-
     for (final match in _kRichContentRegex.allMatches(content)) {
       if (match.start > lastIndex) {
         spans.add(TextSpan(text: content.substring(lastIndex, match.start), style: baseStyle));
       }
-
       if (match.group(1) != null) {
         final hex = match.group(1)!.replaceFirst('#', '');
         final inner = match.group(2) ?? '';
@@ -1366,11 +1317,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         }
         spans.addAll(_parseContent(inner, baseStyle.copyWith(color: color), depth + 1, l10n));
       } else if (match.group(3) != null) {
-        spans.addAll(_parseContent(
-            match.group(3)!, baseStyle.copyWith(fontWeight: FontWeight.bold), depth + 1, l10n));
+        spans.addAll(_parseContent(match.group(3)!, baseStyle.copyWith(fontWeight: FontWeight.bold), depth + 1, l10n));
       } else if (match.group(4) != null) {
-        spans.addAll(_parseContent(
-            match.group(4)!, baseStyle.copyWith(fontStyle: FontStyle.italic), depth + 1, l10n));
+        spans.addAll(_parseContent(match.group(4)!, baseStyle.copyWith(fontStyle: FontStyle.italic), depth + 1, l10n));
       } else if (match.group(5) != null) {
         final username = match.group(5)!;
         final recognizer = TapGestureRecognizer()
@@ -1410,7 +1359,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           raw = raw.substring(0, punct.start);
         }
         final url = _normalizeUrl(raw);
-
         if (_PostCardValidators.isValidRichTextUrl(url)) {
           final recognizer = TapGestureRecognizer()
             ..onTap = () async {
@@ -1429,20 +1377,17 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             semanticsLabel: l10n.t('post_link'),
           ));
         } else {
-          // lien invalide : on garde le texte tel quel (il n'est plus perdu)
           spans.add(TextSpan(text: raw, style: baseStyle));
         }
         if (trailing.isNotEmpty) spans.add(TextSpan(text: trailing, style: baseStyle));
       }
       lastIndex = match.end;
     }
-
     if (lastIndex < content.length) {
       spans.add(TextSpan(text: content.substring(lastIndex), style: baseStyle));
     }
     return spans;
   }
-
   Color? _parseColor(String? hexColor) {
     if (hexColor == null || hexColor.isEmpty) return null;
     final hex = hexColor.replaceAll('#', '');
@@ -1453,7 +1398,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       return null;
     }
   }
-
   String? _extractFirstUrl(String content) {
     final match = _kUrlFinder.firstMatch(content);
     var url = match?.group(0);
@@ -1462,16 +1406,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     url = _normalizeUrl(url);
     return _PostCardValidators.isValidUrl(url) ? url : null;
   }
-
   // ── Partage ──
   String _shareExcerpt(NetworkPost post) {
     final c = _PostCardValidators.sanitizeLine(_plainText(post.content), maxLength: 140);
     return c.isEmpty ? 'Découvrez ce post sur THIX Hub' : c;
   }
-
-  String? _shareImage(NetworkPost post) =>
-      post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null;
-
+  String? _shareImage(NetworkPost post) => post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null;
   void _sharePost(NetworkPost post) {
     PostShareSheet.show(
       context,
@@ -1480,7 +1420,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       imageUrl: _shareImage(post),
     );
   }
-
   // ── Pin profil ──
   Future<void> _togglePin(NetworkPost post, WidgetRef ref, AppLocalizations l10n) async {
     if (!_isAuthenticated) return;
@@ -1496,9 +1435,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       if (!mounted) return;
       _toast(
         context,
-        wasPinned
-            ? _trL(l10n, 'post_unpinned', 'Post désépinglé')
-            : _trL(l10n, 'post_pinned_ok', 'Post épinglé sur votre profil'),
+        wasPinned ? _trL(l10n, 'post_unpinned', 'Post désépinglé') : _trL(l10n, 'post_pinned_ok', 'Post épinglé sur votre profil'),
         bg: ThixPolicy.success,
       );
       widget.onRefresh?.call();
@@ -1509,11 +1446,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       }
     }
   }
-
-  // ── Contenu texte (sélectionnable, espaces conservés) ──
+  // ── ¶ Contenu texte (sélectionnable, paragraphes espacés) ──
   Widget _buildPostContent(NetworkPost post, AppLocalizations l10n) {
     if (post.content.isEmpty) return const SizedBox.shrink();
-
     final bgColor = _parseColor(post.bgColor);
     if (bgColor != null) {
       return Container(
@@ -1541,9 +1476,34 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       );
     }
-
     final firstUrl = _extractFirstUrl(post.content);
-
+    final linkPreview = firstUrl != null
+        ? Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: _PremiumLinkPreview(
+              url: firstUrl,
+              fallbackImage: post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null,
+            ),
+          )
+        : const SizedBox.shrink();
+    // ¶ Multi-paragraphes : blocs séparés par un espacement vertical
+    if (_isMultiParagraph && _cachedParagraphSpans != null) {
+      final spansList = _cachedParagraphSpans!;
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (int i = 0; i < spansList.length; i++) ...[
+            SelectableText.rich(
+              TextSpan(children: spansList[i]),
+              onTap: widget.onTap ?? () => _openPostDetails(post.id),
+            ),
+            if (i < spansList.length - 1) const SizedBox(height: 12),
+          ],
+          linkPreview,
+        ],
+      );
+    }
+    // Paragraphe unique : comportement d'origine (troncature + "voir plus")
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1551,7 +1511,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           label: _plainText(post.content),
           child: SelectableText.rich(
             TextSpan(children: _isExpanded ? (_cachedFullSpans ?? []) : (_cachedTruncatedSpans ?? [])),
-            // simple appui = ouvre le post, appui long = sélection du texte
             onTap: widget.onTap ?? () => _openPostDetails(post.id),
           ),
         ),
@@ -1568,38 +1527,26 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
                   _isExpanded ? l10n.t('post_see_less') : l10n.t('post_see_more'),
-                  style: ThixPolicy.labelStyle
-                      .copyWith(color: _Mono.accent, fontSize: 13, fontWeight: FontWeight.bold),
+                  style: ThixPolicy.labelStyle.copyWith(color: _Mono.accent, fontSize: 13, fontWeight: FontWeight.bold),
                 ),
               ),
             ),
           ),
-        if (firstUrl != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 12),
-            child: _PremiumLinkPreview(
-              url: firstUrl,
-              fallbackImage: post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null,
-            ),
-          ),
+        linkPreview,
       ],
     );
   }
-
   String _getTimeAgo(DateTime dt) => timeago.format(dt.toLocal(), locale: 'fr');
-
   void _openPostDetails(String postId) {
     if (!mounted || !_PostCardValidators.isValidId(postId)) return;
     HapticFeedback.mediumImpact();
     context.push('/network/comments/$postId');
   }
-
   void _openProfile(String userId) {
     if (!mounted || !_PostCardValidators.isValidId(userId)) return;
     HapticFeedback.selectionClick();
     context.push('/network/profile/$userId');
   }
-
   void _openGallery(int initialIndex, List<String> imageOnlyUrls) {
     if (!mounted || imageOnlyUrls.isEmpty) return;
     HapticFeedback.mediumImpact();
@@ -1610,22 +1557,29 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     ));
   }
-
   void _openVideoFullScreen(String url) {
     if (!mounted || !_PostCardValidators.isValidUrl(url)) return;
     HapticFeedback.mediumImpact();
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => _FullScreenVideoPlayer(videoUrl: url)));
   }
-
+  // ── 🏷️ BADGE PREMIUM EN TÊTE ──
+  Widget _buildPostBadge(NetworkPost post, AppLocalizations l10n) {
+    if (!post.hasBadge) return const SizedBox.shrink();
+    final style = _badgeStyles[post.postBadge];
+    if (style == null) return const SizedBox.shrink();
+    final label = _trL(l10n, 'cp_badge_${post.postBadge}', post.postBadge!.toUpperCase());
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      child: style.pulse ? _PulsingBadge(style: style, label: label) : _StaticBadgeChip(style: style, label: label),
+    );
+  }
   // ── Grille média (bouton télécharger sur chaque photo) ──
   Widget _buildMediaGrid(List<String> rawUrls, AppLocalizations l10n) {
     final urls = rawUrls.where(_PostCardValidators.isValidUrl).toList();
     if (urls.isEmpty) return const SizedBox.shrink();
-
     const spacing = 4.0;
     final radius = BorderRadius.circular(16);
     final imageOnlyUrls = urls.where((u) => !_isVideoUrl(u)).toList();
-
     Widget mediaTile(String url, {double? width, double? height, Alignment alignment = Alignment.center}) {
       if (_isVideoUrl(url)) {
         return _VideoThumbTile(videoUrl: url, width: width, height: height, onTap: () => _openVideoFullScreen(url));
@@ -1665,7 +1619,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ],
       );
     }
-
     if (urls.length == 1) {
       return ClipRRect(
         borderRadius: radius,
@@ -1675,14 +1628,11 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       );
     }
-
     Widget cell(int i, double h) =>
         Expanded(child: ClipRRect(borderRadius: radius, child: mediaTile(urls[i], height: h, width: double.infinity)));
-
     if (urls.length == 2) {
       return SizedBox(height: 220, child: Row(children: [cell(0, 220), const SizedBox(width: spacing), cell(1, 220)]));
     }
-
     return SizedBox(
       height: 260,
       child: Row(
@@ -1722,16 +1672,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
   }
-
   Widget _buildPollWidget(NetworkPost post, AppLocalizations l10n) {
     if (!_PostCardValidators.isValidPollData(post.pollData)) return const SizedBox.shrink();
     final options = (post.pollData!['options'] as List);
-
     var totalVotes = 0;
     for (final opt in options) {
       totalVotes += ((opt['votes'] as List?)?.length ?? 0);
     }
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1763,7 +1710,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             final text = _PostCardValidators.sanitizeLine('${opt['text'] ?? ''}');
             final voters = (opt['votes'] as List?) ?? [];
             final pct = totalVotes > 0 ? voters.length / totalVotes : 0.0;
-
             return Padding(
               padding: const EdgeInsets.only(bottom: 8),
               child: Material(
@@ -1786,10 +1732,9 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                             widthFactor: pct.clamp(0.0, 1.0),
                             child: Container(
                               decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                    colors: [_Mono.accent.withValues(alpha: 0.2), _Mono.accent.withValues(alpha: 0.1)]),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                                  gradient: LinearGradient(
+                                      colors: [_Mono.accent.withValues(alpha: 0.2), _Mono.accent.withValues(alpha: 0.1)]),
+                                  borderRadius: BorderRadius.circular(12)),
                             ),
                           ),
                         ),
@@ -1797,12 +1742,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                           children: [
                             Expanded(
                               child: Text(text,
-                                  style: ThixPolicy.bodyStyle
-                                      .copyWith(fontSize: 13.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMain)),
+                                  style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMain)),
                             ),
                             Text('${(pct * 100).toStringAsFixed(0)}%',
-                                style: ThixPolicy.labelStyle
-                                    .copyWith(fontSize: 12, fontWeight: FontWeight.bold, color: _Mono.accent)),
+                                style: ThixPolicy.labelStyle.copyWith(fontSize: 12, fontWeight: FontWeight.bold, color: _Mono.accent)),
                           ],
                         ),
                       ],
@@ -1816,13 +1759,11 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
   }
-
   Future<void> _votePoll(NetworkPost post, int index, AppLocalizations l10n) async {
     if (_pollVoteBusy || !_throttleVote() || !_isAuthenticated) return;
     if (!_PostCardValidators.isValidPollData(post.pollData)) return;
     final options = post.pollData!['options'] as List;
     if (index < 0 || index >= options.length) return;
-
     setState(() => _pollVoteBusy = true);
     HapticFeedback.selectionClick();
     try {
@@ -1837,12 +1778,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       if (mounted) setState(() => _pollVoteBusy = false);
     }
   }
-
   Widget _buildChallengeWidget(NetworkPost post, AppLocalizations l10n) {
     final data = post.challengeData ?? <String, dynamic>{};
     final description = _PostCardValidators.sanitize('${data['description'] ?? ''}');
     final participantsCount = (data['participants_count'] is num) ? data['participants_count'] as num : 0;
-
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
@@ -1862,10 +1801,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(colors: [_Mono.accent, _Mono.accentDeep]),
-                  shape: BoxShape.circle,
-                ),
+                decoration: const BoxDecoration(gradient: LinearGradient(colors: [_Mono.accent, _Mono.accentDeep]), shape: BoxShape.circle),
                 child: const Icon(Icons.emoji_events_rounded, color: Colors.white, size: 18),
               ),
               const SizedBox(width: 10),
@@ -1905,22 +1841,18 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
   }
-
   static const List<String> _reportReasonCodes = [
     'spam', 'nudity', 'violence', 'harassment',
     'misinformation', 'impersonation', 'inappropriate', 'other',
   ];
-
   Future<void> _showReportDialog(NetworkPost post, AppLocalizations l10n) async {
     if (!_isAuthenticated) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('report_error_auth')), backgroundColor: ThixPolicy.danger));
       return;
     }
-
     String? selectedReasonCode;
     final detailsController = TextEditingController();
     bool isSubmitting = false;
-
     final confirmed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -2019,7 +1951,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       ),
     );
-
     if (confirmed != true || selectedReasonCode == null) {
       detailsController.dispose();
       return;
@@ -2028,17 +1959,16 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       detailsController.dispose();
       return;
     }
-
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) {
       detailsController.dispose();
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('report_error_auth')), backgroundColor: ThixPolicy.danger));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('report_error_auth')), backgroundColor: ThixPolicy.danger));
+      }
       return;
     }
-
     final details = _PostCardValidators.sanitize(detailsController.text.trim(), maxLength: _PostCardConfig.maxReportDetailsLength);
     detailsController.dispose();
-
     try {
       await Supabase.instance.client.from('post_reports').insert(<String, dynamic>{
         'post_id': post.id,
@@ -2048,7 +1978,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         'status': 'pending',
         'created_at': DateTime.now().toUtc().toIso8601String(),
       });
-
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -2079,10 +2008,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       }
     }
   }
-
   Future<void> _editPost(NetworkPost post, WidgetRef ref, AppLocalizations l10n) async {
     if (!_isAuthenticated || widget.currentProfileId != post.userId) return;
-
     final controller = TextEditingController(text: post.content);
     final newContent = await showDialog<String>(
       context: context,
@@ -2129,7 +2056,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
     controller.dispose();
-
     if (newContent == null || newContent.isEmpty || !mounted) return;
     try {
       if (widget.onEdit != null) {
@@ -2143,13 +2069,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       }
     } catch (e) {
       _PostCardLogger.error('editPost failed', {'postId': post.id});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('edit_error')), backgroundColor: ThixPolicy.danger));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('edit_error')), backgroundColor: ThixPolicy.danger));
+      }
     }
   }
-
   Future<void> _deletePost(NetworkPost post, WidgetRef ref, AppLocalizations l10n) async {
     if (!_isAuthenticated || widget.currentProfileId != post.userId) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => BackdropFilter(
@@ -2177,7 +2103,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       ),
     );
-
     if (confirmed != true || !mounted) return;
     try {
       if (widget.onDelete != null) {
@@ -2187,13 +2112,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       }
     } catch (e) {
       _PostCardLogger.error('deletePost failed', {'postId': post.id});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('delete_error')), backgroundColor: ThixPolicy.danger));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('delete_error')), backgroundColor: ThixPolicy.danger));
+      }
     }
   }
-
   Future<void> _repost(NetworkPost post, WidgetRef ref, AppLocalizations l10n) async {
     if (_isReposting || !_isAuthenticated) return;
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogCtx) => BackdropFilter(
@@ -2227,32 +2152,32 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         ),
       ),
     );
-
     if (confirmed != true) {
       _quoteController.clear();
       return;
     }
     if (!_throttleRepost()) return;
-
     setState(() => _isReposting = true);
     final quote = _PostCardValidators.sanitize(_quoteController.text.trim(), maxLength: _PostCardConfig.maxRepostQuoteLength);
-
     try {
-      final created =
-          await ref.read(networkServiceProvider).repostPost(post.id, quote: quote.isEmpty ? null : quote).timeout(_PostCardConfig.networkTimeout);
+      final created = await ref
+          .read(networkServiceProvider)
+          .repostPost(post.id, quote: quote.isEmpty ? null : quote)
+          .timeout(_PostCardConfig.networkTimeout);
       if (!mounted) return;
       ref.read(postItemProvider.notifier).incrementRepost();
       if (created != null) ref.read(feedProvider.notifier).addPostOnTop(created);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('repost_success')), backgroundColor: ThixPolicy.success));
     } catch (e) {
       _PostCardLogger.error('repost failed', {'postId': post.id});
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('repost_error')), backgroundColor: ThixPolicy.danger));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('repost_error')), backgroundColor: ThixPolicy.danger));
+      }
     } finally {
       if (mounted) setState(() => _isReposting = false);
       _quoteController.clear();
     }
   }
-
   Future<void> _hidePost(NetworkPost post, AppLocalizations l10n) async {
     if (!_isAuthenticated) return;
     HapticFeedback.selectionClick();
@@ -2266,12 +2191,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       _PostCardLogger.error('hidePost failed', {'postId': post.id});
     }
   }
-
   void _registerImpression(String postId) {
     if (_impressionRegistered || !_isAuthenticated) return;
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
-
     _impressionDebounce?.cancel();
     _impressionDebounce = Timer(_PostCardConfig.impressionDebounce, () {
       if (_impressionRegistered || !mounted) return;
@@ -2284,15 +2207,10 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       });
     });
   }
-
   // ==========================================================================
   // MENU ⋯ PROFESSIONNEL
   // ==========================================================================
-  int _impressionsOf(NetworkPost post) {
-    final raw = post.toJson()['impressions_count'];
-    return (raw is num) ? raw.toInt() : 0;
-  }
-
+  int _impressionsOf(NetworkPost post) => post.views ?? 0;
   void _showStats(NetworkPost post, AppLocalizations l10n) {
     final rows = <MapEntry<String, int>>[
       MapEntry(_trL(l10n, 'post_stats_impressions', 'Impressions'), _impressionsOf(post)),
@@ -2300,7 +2218,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       MapEntry(_trL(l10n, 'post_stats_comments', 'Commentaires'), post.commentsCount),
       MapEntry(_trL(l10n, 'post_stats_reposts', 'Republications'), post.repostsCount),
     ];
-
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2327,8 +2244,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               Text(_trL(l10n, 'post_stats_title', 'Statistiques du post'),
                   style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 4),
-              Text(_fullDate(post.createdAt),
-                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
+              Text(_fullDate(post.createdAt), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
               const SizedBox(height: 14),
               for (final r in rows)
                 Padding(
@@ -2336,8 +2252,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                   child: Row(
                     children: [
                       Expanded(child: Text(r.key, style: ThixPolicy.bodyStyle)),
-                      Text('${r.value}',
-                          style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.bold, fontSize: 15)),
+                      Text('${r.value}', style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.bold, fontSize: 15)),
                     ],
                   ),
                 ),
@@ -2347,16 +2262,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ),
     );
   }
-
-  Future<void> _showPostMenu(NetworkPost post, bool isOwner, bool isCurrentUserFree,
-      WidgetRef ref, AppLocalizations l10n) async {
+  Future<void> _showPostMenu(NetworkPost post, bool isOwner, bool isCurrentUserFree, WidgetRef ref, AppLocalizations l10n) async {
     HapticFeedback.selectionClick();
-
     final text = _plainText(post.content);
     final images = post.imageUrls.where(_PostCardValidators.isValidUrl).toList();
     final videos = post.videoUrls.where(_PostCardValidators.isValidUrl).toList();
     final canCopyId = _PostCardValidators.isValidId(post.id);
-
     await showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
@@ -2367,15 +2278,13 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
             dense: true,
             leading: Icon(icon, color: color ?? ThixPolicy.textMain, size: 22),
             title: Text(label,
-                style: ThixPolicy.bodyStyle.copyWith(
-                    color: color ?? ThixPolicy.textMain, fontWeight: FontWeight.w600, fontSize: 14)),
+                style: ThixPolicy.bodyStyle.copyWith(color: color ?? ThixPolicy.textMain, fontWeight: FontWeight.w600, fontSize: 14)),
             onTap: () {
               Navigator.pop(sheetCtx);
               onTap();
             },
           );
         }
-
         return Container(
           constraints: BoxConstraints(maxHeight: MediaQuery.of(sheetCtx).size.height * 0.82),
           decoration: const BoxDecoration(
@@ -2404,9 +2313,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                   tile(Icons.send_outlined, l10n.t('post_share'), () => _sharePost(post)),
                   tile(
                     post.isSaved ? Icons.bookmark_remove_outlined : Icons.bookmark_add_outlined,
-                    post.isSaved
-                        ? _trL(l10n, 'post_unsave_menu', 'Retirer des enregistrements')
-                        : _trL(l10n, 'post_save_menu', 'Enregistrer'),
+                    post.isSaved ? _trL(l10n, 'post_unsave_menu', 'Retirer des enregistrements') : _trL(l10n, 'post_save_menu', 'Enregistrer'),
                     () {
                       if (!_isAuthenticated) return;
                       final was = post.isSaved;
@@ -2414,9 +2321,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                       widget.onSave?.call();
                       _toast(
                         context,
-                        was
-                            ? _trL(l10n, 'post_save_removed', 'Retiré des enregistrements')
-                            : _trL(l10n, 'post_save_done', 'Enregistré'),
+                        was ? _trL(l10n, 'post_save_removed', 'Retiré des enregistrements') : _trL(l10n, 'post_save_done', 'Enregistré'),
                         seconds: 1,
                       );
                     },
@@ -2426,8 +2331,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                         () => _downloadMedia(context, images.first)),
                   if (images.length > 1)
                     tile(Icons.collections_rounded,
-                        '${_trL(l10n, 'post_view_photos', 'Voir et télécharger les photos')} (${images.length})',
-                        () => _openGallery(0, images)),
+                        '${_trL(l10n, 'post_view_photos', 'Voir et télécharger les photos')} (${images.length})', () => _openGallery(0, images)),
                   if (videos.isNotEmpty)
                     tile(Icons.download_rounded, _trL(l10n, 'post_download_video', 'Télécharger la vidéo'),
                         () => _downloadMedia(context, videos.first)),
@@ -2435,22 +2339,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                   if (isOwner) ...[
                     tile(
                       post.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
-                      post.isPinned
-                          ? _trL(l10n, 'post_unpin_menu', 'Désépingler du profil')
-                          : _trL(l10n, 'post_pin_menu', 'Épingler sur le profil'),
+                      post.isPinned ? _trL(l10n, 'post_unpin_menu', 'Désépingler du profil') : _trL(l10n, 'post_pin_menu', 'Épingler sur le profil'),
                       () => _togglePin(post, ref, l10n),
                     ),
-                    tile(Icons.insights_rounded, _trL(l10n, 'post_stats_menu', 'Voir les statistiques'),
-                        () => _showStats(post, l10n)),
-                    if (!isCurrentUserFree)
-                      tile(Icons.edit_outlined, l10n.t('post_edit'), () => _editPost(post, ref, l10n)),
-                    tile(Icons.delete_outline_rounded, l10n.t('post_delete'),
-                        () => _deletePost(post, ref, l10n),
-                        color: ThixPolicy.danger),
+                    tile(Icons.insights_rounded, _trL(l10n, 'post_stats_menu', 'Voir les statistiques'), () => _showStats(post, l10n)),
+                    if (!isCurrentUserFree) tile(Icons.edit_outlined, l10n.t('post_edit'), () => _editPost(post, ref, l10n)),
+                    tile(Icons.delete_outline_rounded, l10n.t('post_delete'), () => _deletePost(post, ref, l10n), color: ThixPolicy.danger),
                   ] else ...[
                     tile(Icons.visibility_off_outlined, l10n.t('post_hide'), () => _hidePost(post, l10n)),
-                    tile(Icons.flag_outlined, l10n.t('post_report'), () => _showReportDialog(post, l10n),
-                        color: ThixPolicy.danger),
+                    tile(Icons.flag_outlined, l10n.t('post_report'), () => _showReportDialog(post, l10n), color: ThixPolicy.danger),
                   ],
                 ],
               ),
@@ -2460,7 +2357,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       },
     );
   }
-
   Widget _buildPinnedBadge(AppLocalizations l10n) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -2477,18 +2373,12 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           const SizedBox(width: 5),
           Text(
             l10n.t('post_pinned_label'),
-            style: ThixPolicy.captionStyle.copyWith(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              color: ThixPolicy.gold,
-              letterSpacing: 0.3,
-            ),
+            style: ThixPolicy.captionStyle.copyWith(fontSize: 10.5, fontWeight: FontWeight.w800, color: ThixPolicy.gold, letterSpacing: 0.3),
           ),
         ],
       ),
     );
   }
-
   Widget _buildHeader(
     NetworkPost post,
     bool isOwner,
@@ -2502,7 +2392,6 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     AppLocalizations l10n,
   ) {
     final authorName = _PostCardValidators.sanitizeLine(post.authorName, maxLength: 100);
-
     return Row(
       children: [
         Semantics(
@@ -2519,9 +2408,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.5),
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2)),
-                    ],
+                    boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.04), blurRadius: 6, offset: const Offset(0, 2))],
                     color: ThixPolicy.surfaceSoft,
                   ),
                   child: ClipOval(
@@ -2583,8 +2470,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                     Flexible(
                       child: Text(
                         authorName,
-                        style: ThixPolicy.titleStyle
-                            .copyWith(fontWeight: FontWeight.bold, fontSize: 14.5, color: ThixPolicy.textMain, letterSpacing: -0.2),
+                        style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.bold, fontSize: 14.5, color: ThixPolicy.textMain, letterSpacing: -0.2),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -2614,10 +2500,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
       ],
     );
   }
-
   Widget _buildActionRow(NetworkPost post, bool isLiked, bool isOwner, bool isCurrentUserFree, WidgetRef ref, AppLocalizations l10n) {
     final impressions = _impressionsOf(post);
-
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
       physics: const BouncingScrollPhysics(),
@@ -2686,9 +2570,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               widget.onSave?.call();
               _toast(
                 context,
-                was
-                    ? _trL(l10n, 'post_save_removed', 'Retiré des enregistrements')
-                    : _trL(l10n, 'post_save_done', 'Enregistré'),
+                was ? _trL(l10n, 'post_save_removed', 'Retiré des enregistrements') : _trL(l10n, 'post_save_done', 'Enregistré'),
                 seconds: 1,
               );
             },
@@ -2696,60 +2578,34 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           ),
           if (isOwner && !isCurrentUserFree) ...[
             const SizedBox(width: 20),
-            _ActionBtn(
-                icon: Icons.edit_outlined,
-                label: '',
-                color: ThixPolicy.textMain,
-                onTap: () => _editPost(post, ref, l10n),
-                semanticsLabel: l10n.t('post_edit')),
+            _ActionBtn(icon: Icons.edit_outlined, label: '', color: ThixPolicy.textMain, onTap: () => _editPost(post, ref, l10n), semanticsLabel: l10n.t('post_edit')),
           ],
           if (isOwner) ...[
             const SizedBox(width: 20),
-            _ActionBtn(
-                icon: Icons.delete_outline_rounded,
-                label: '',
-                color: ThixPolicy.danger,
-                onTap: () => _deletePost(post, ref, l10n),
-                semanticsLabel: l10n.t('post_delete')),
+            _ActionBtn(icon: Icons.delete_outline_rounded, label: '', color: ThixPolicy.danger, onTap: () => _deletePost(post, ref, l10n), semanticsLabel: l10n.t('post_delete')),
             const SizedBox(width: 20),
             _ActionBtn(
               icon: post.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined,
               label: '',
               color: post.isPinned ? ThixPolicy.gold : ThixPolicy.textSecondary.withValues(alpha: 0.8),
               onTap: () => _togglePin(post, ref, l10n),
-              semanticsLabel: post.isPinned
-                  ? _trL(l10n, 'post_unpin_menu', 'Désépingler du profil')
-                  : _trL(l10n, 'post_pin_menu', 'Épingler sur le profil'),
+              semanticsLabel: post.isPinned ? _trL(l10n, 'post_unpin_menu', 'Désépingler du profil') : _trL(l10n, 'post_pin_menu', 'Épingler sur le profil'),
             ),
           ],
           if (!isOwner) ...[
             const SizedBox(width: 20),
-            _ActionBtn(
-              icon: Icons.visibility_off_outlined,
-              label: '',
-              color: ThixPolicy.textSecondary.withValues(alpha: 0.8),
-              onTap: () => _hidePost(post, l10n),
-              semanticsLabel: l10n.t('post_hide'),
-            ),
+            _ActionBtn(icon: Icons.visibility_off_outlined, label: '', color: ThixPolicy.textSecondary.withValues(alpha: 0.8), onTap: () => _hidePost(post, l10n), semanticsLabel: l10n.t('post_hide')),
             const SizedBox(width: 20),
-            _ActionBtn(
-              icon: Icons.flag_outlined,
-              label: '',
-              color: ThixPolicy.danger.withValues(alpha: 0.8),
-              onTap: () => _showReportDialog(post, l10n),
-              semanticsLabel: l10n.t('post_report'),
-            ),
+            _ActionBtn(icon: Icons.flag_outlined, label: '', color: ThixPolicy.danger.withValues(alpha: 0.8), onTap: () => _showReportDialog(post, l10n), semanticsLabel: l10n.t('post_report')),
           ],
         ],
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final l10n = AppLocalizations.of(context);
-
     return ProviderScope(
       overrides: [postItemProvider.overrideWith((ref) => PostItemNotifier(widget.post, ref))],
       child: Consumer(
@@ -2759,33 +2615,26 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
           final likesCount = ref.watch(postItemProvider.select((p) => p.likesCount));
           final isOwner = widget.currentProfileId == post.userId;
           final authorProfile = ref.watch(userProfileProvider(post.userId)).valueOrNull;
-
           CertificationTier? tier;
           CertificationStatus? status;
           var isCertified = false;
           var isLegacyVerified = false;
-
           if (authorProfile != null) {
             tier = CertificationTierX.parse(authorProfile['certification_tier']);
             status = CertificationStatusX.parse(authorProfile['certification_status']);
             isCertified = status == CertificationStatus.approved || status == CertificationStatus.generated;
             isLegacyVerified = authorProfile['is_verified'] == true;
           }
-
           final currentUserProfile = ref.watch(userProfileProvider(widget.currentProfileId)).valueOrNull;
           var isCurrentUserFree = true;
           if (currentUserProfile != null) {
             final currentTierStr = (currentUserProfile['certification_tier']?.toString().toLowerCase()) ?? 'gratuit';
             isCurrentUserFree = currentTierStr == 'gratuit' || currentTierStr == 'none';
           }
-
           final isFollowingDB = ref.watch(followStatusProvider(post.userId)).valueOrNull;
           final isFollowing = isFollowingDB ?? _isFollowingLocal;
-
           final showContent = post.content.isNotEmpty && !_isGhostRepostContent(post);
-
           WidgetsBinding.instance.addPostFrameCallback((_) => _registerImpression(post.id));
-
           return RepaintBoundary(
             child: Container(
               margin: EdgeInsets.zero,
@@ -2813,8 +2662,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
                               if (post.isPinned) _buildPinnedBadge(l10n),
-                              _buildHeader(post, isOwner, isFollowing, isCertified, tier, status,
-                                  isLegacyVerified, isCurrentUserFree, ref, l10n),
+                              _buildPostBadge(post, l10n),
+                              _buildHeader(post, isOwner, isFollowing, isCertified, tier, status, isLegacyVerified, isCurrentUserFree, ref, l10n),
                               if (post.isRepostCard)
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8, bottom: 4),
@@ -2822,8 +2671,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                                     const Icon(Icons.repeat_rounded, size: 14, color: ThixPolicy.textMuted),
                                     const SizedBox(width: 6),
                                     Text(l10n.t('reposted_label'),
-                                        style: ThixPolicy.captionStyle
-                                            .copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMuted)),
+                                        style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: ThixPolicy.textMuted)),
                                   ]),
                                 ),
                               const SizedBox(height: 12),
@@ -2838,16 +2686,15 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
                               ],
                               if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
                                 const SizedBox(height: 12),
-                                RepaintBoundary(
-                                    child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
+                                RepaintBoundary(child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
                               ],
-                              if (post.postType == 'poll' && _PostCardValidators.isValidPollData(post.pollData)) ...[
+                              if (post.postType == PostType.poll && _PostCardValidators.isValidPollData(post.pollData)) ...[
                                 const SizedBox(height: 12),
                                 Align(
                                   alignment: Alignment.centerLeft,
                                   child: SizedBox(width: double.infinity, child: _buildPollWidget(post, l10n)),
                                 ),
-                              ] else if (post.postType == 'challenge') ...[
+                              ] else if (post.postType == PostType.challenge) ...[
                                 const SizedBox(height: 12),
                                 Align(
                                   alignment: Alignment.centerLeft,
@@ -2874,25 +2721,16 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     );
   }
 }
-
 // ============================================================================
 // WIDGETS AUXILIAIRES
 // ============================================================================
 class _ActionBtn extends StatelessWidget {
-  const _ActionBtn({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.semanticsLabel,
-  });
-
+  const _ActionBtn({required this.icon, required this.label, required this.color, required this.onTap, this.semanticsLabel});
   final IconData icon;
   final String label;
   final Color color;
   final VoidCallback? onTap;
   final String? semanticsLabel;
-
   @override
   Widget build(BuildContext context) {
     return Semantics(
@@ -2918,16 +2756,13 @@ class _ActionBtn extends StatelessWidget {
     );
   }
 }
-
 class _PremiumAudioPlayer extends StatefulWidget {
   final String audioUrl;
   final int? duration;
   const _PremiumAudioPlayer({required this.audioUrl, this.duration});
-
   @override
   State<_PremiumAudioPlayer> createState() => _PremiumAudioPlayerState();
 }
-
 class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
   final AudioPlayer _audioPlayer = AudioPlayer();
   bool _isPlaying = false;
@@ -2935,32 +2770,26 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
   Duration _position = Duration.zero;
   double _playbackSpeed = 1.0;
   bool _isValidSource = false;
-
   StreamSubscription<PlayerState>? _stateSubscription;
   StreamSubscription<Duration>? _durationSubscription;
   StreamSubscription<Duration>? _positionSubscription;
-
   @override
   void initState() {
     super.initState();
     _isValidSource = _PostCardValidators.isValidUrl(widget.audioUrl);
     if (_isValidSource) {
       _audioPlayer.setSourceUrl(widget.audioUrl);
-
       _stateSubscription = _audioPlayer.onPlayerStateChanged.listen((state) {
         if (mounted) setState(() => _isPlaying = state == PlayerState.playing);
       });
-
       _durationSubscription = _audioPlayer.onDurationChanged.listen((d) {
         if (mounted) setState(() => _duration = d);
       });
-
       _positionSubscription = _audioPlayer.onPositionChanged.listen((p) {
         if (mounted) setState(() => _position = p);
       });
     }
   }
-
   @override
   void dispose() {
     _stateSubscription?.cancel();
@@ -2969,7 +2798,6 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
     _audioPlayer.dispose();
     super.dispose();
   }
-
   void _cycleSpeed() {
     setState(() {
       _playbackSpeed = _playbackSpeed == 1.0 ? 1.5 : (_playbackSpeed == 1.5 ? 2.0 : 1.0);
@@ -2977,25 +2805,22 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
     });
     HapticFeedback.selectionClick();
   }
-
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return '$m:$s';
   }
-
   @override
   Widget build(BuildContext context) {
     if (!_isValidSource) return const SizedBox.shrink();
     final l10n = AppLocalizations.of(context);
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     final remaining = _duration - _position;
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_Mono.accent.withValues(alpha: 0.15), _Mono.accent.withValues(alpha: 0.05)]),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight,
+            colors: [_Mono.accent.withValues(alpha: 0.15), _Mono.accent.withValues(alpha: 0.05)]),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _Mono.accent.withValues(alpha: 0.3), width: 1.5),
       ),
@@ -3083,41 +2908,33 @@ class _PremiumAudioPlayerState extends State<_PremiumAudioPlayer> {
     );
   }
 }
-
 class _WaveformPainter extends CustomPainter {
   final double progress;
   final Color color;
   _WaveformPainter({required this.progress, required this.color});
-
   static const int _barCount = 40;
-
   @override
   void paint(Canvas canvas, Size size) {
     final barWidth = size.width / (_barCount * 1.5);
     final spacing = barWidth * 0.5;
-
     for (var i = 0; i < _barCount; i++) {
       final x = i * (barWidth + spacing);
       final heightPct = (sin(i * 0.5) * 0.3 + 0.5 + (i % 3) * 0.1).clamp(0.2, 0.9);
       final barHeight = size.height * heightPct;
       final y = (size.height - barHeight) / 2;
       final isActive = (i / _barCount) <= progress;
-
       final paint = Paint()
         ..color = isActive ? color : color.withValues(alpha: 0.3)
         ..style = PaintingStyle.fill;
-
       canvas.drawRRect(
         RRect.fromRectAndRadius(Rect.fromLTWH(x, y, barWidth, barHeight), Radius.circular(barWidth / 2)),
         paint,
       );
     }
   }
-
   @override
   bool shouldRepaint(covariant _WaveformPainter oldDelegate) => oldDelegate.progress != progress;
 }
-
 // ============================================================================
 // LINK PREVIEW RICHE
 // ============================================================================
@@ -3125,30 +2942,23 @@ class _PremiumLinkPreview extends StatefulWidget {
   final String url;
   final String? fallbackImage;
   const _PremiumLinkPreview({required this.url, this.fallbackImage});
-
   @override
   State<_PremiumLinkPreview> createState() => _PremiumLinkPreviewState();
 }
-
 class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
   Map<String, dynamic>? _previewData;
   bool _isLoading = true;
-
   String get _domain => Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
-
   String get _faviconUrl {
     final host = Uri.tryParse(widget.url)?.host ?? '';
     return 'https://www.google.com/s2/favicons?domain=$host&sz=${_PostCardConfig.avatarFallbackSize}';
   }
-
   bool get _isRedirectDomain => _PostCardValidators.isKnownRedirectDomain(widget.url);
-
   @override
   void initState() {
     super.initState();
     _loadPreview();
   }
-
   Future<void> _loadPreview() async {
     if (!_PostCardValidators.isSafeExternalFetchUrl(widget.url)) {
       if (mounted) setState(() => _isLoading = false);
@@ -3175,26 +2985,21 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
   Future<void> _open() async {
     final uri = Uri.parse(widget.url);
     if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return _buildSkeleton();
     if (_domain.isEmpty) return const SizedBox.shrink();
-
     final l10n = AppLocalizations.of(context);
     final title = _PostCardValidators.sanitizeLine(_previewData?['title']?.toString() ?? '', maxLength: 300);
     final description = _PostCardValidators.sanitizeLine(_previewData?['description']?.toString() ?? '', maxLength: 500);
     final ogImage = _safeImageUrl(_previewData?['image']?.toString()) ?? _safeImageUrl(widget.fallbackImage);
     final hasOgImage = ogImage != null;
     final hasRealData = title.isNotEmpty || hasOgImage;
-
     if (!hasRealData && _isRedirectDomain) return _buildRedirectFallback(l10n);
-
     return GestureDetector(
       onTap: _open,
       onLongPress: () => _copyToClipboard(context, widget.url, _trL(l10n, 'post_link_copied', 'Lien copié')),
@@ -3257,7 +3062,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       ),
     );
   }
-
   Widget _buildRedirectFallback(AppLocalizations l10n) {
     return GestureDetector(
       onTap: _open,
@@ -3271,7 +3075,8 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
         child: Row(
           children: [
             Container(
-              width: 36, height: 36,
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(color: _Mono.accent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(10)),
               child: const Icon(Icons.open_in_new_rounded, size: 17, color: _Mono.accent),
             ),
@@ -3294,7 +3099,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       ),
     );
   }
-
   Widget _buildFaviconBanner() {
     return Container(
       height: 100,
@@ -3315,7 +3119,6 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
       ),
     );
   }
-
   Widget _buildSkeleton() {
     return Container(
       height: 200,
@@ -3324,10 +3127,8 @@ class _PremiumLinkPreviewState extends State<_PremiumLinkPreview> {
     );
   }
 }
-
 // ============================================================================
 // MINIATURE VIDÉO : image serveur → sinon 1re image de la vidéo → sinon dégradé
-// (plus jamais d'écran noir) + badge VIDÉO / durée + bouton télécharger
 // ============================================================================
 class _VideoThumbTile extends StatefulWidget {
   final String videoUrl;
@@ -3335,35 +3136,28 @@ class _VideoThumbTile extends StatefulWidget {
   final double? height;
   final VoidCallback onTap;
   const _VideoThumbTile({required this.videoUrl, this.width, this.height, required this.onTap});
-
   @override
   State<_VideoThumbTile> createState() => _VideoThumbTileState();
 }
-
 class _VideoThumbTileState extends State<_VideoThumbTile> {
-  /// nombre de lectures de 1re image en cours (limite mémoire)
   static int _activeFrameReaders = 0;
-
   String? _thumbnailUrl;
   VideoPlayerController? _frameController;
   bool _frameReady = false;
   bool _countedActive = false;
   Duration? _duration;
-
   @override
   void initState() {
     super.initState();
     _thumbnailUrl = _PostCardCache.instance.getVideoThumb(widget.videoUrl);
     if (_thumbnailUrl == null) _loadThumbnail();
   }
-
   Future<void> _loadThumbnail() async {
     if (!_PostCardValidators.isSafeExternalFetchUrl(widget.videoUrl)) return;
     try {
       final response = await Supabase.instance.client.functions
           .invoke('video-thumbnail', body: <String, dynamic>{'video_url': widget.videoUrl})
           .timeout(_PostCardConfig.videoThumbTimeout);
-
       final data = response.data;
       final url = data is Map ? _safeImageUrl(data['thumbnail_url']?.toString()) : null;
       if (url != null) {
@@ -3376,23 +3170,18 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
     }
     await _loadFirstFrame();
   }
-
-  /// Plan B : on lit la 1re image de la vidéo directement dans l'app
   Future<void> _loadFirstFrame() async {
     if (!mounted || _frameController != null) return;
     if (_activeFrameReaders >= _PostCardConfig.maxVideoFrameFallbacks) return;
     final uri = Uri.tryParse(widget.videoUrl);
     if (uri == null || !_PostCardValidators.isValidUrl(widget.videoUrl)) return;
-
     _activeFrameReaders++;
     _countedActive = true;
-
     final controller = VideoPlayerController.networkUrl(
       uri,
       videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true),
     );
     _frameController = controller;
-
     try {
       await controller.initialize().timeout(const Duration(seconds: 12));
       await controller.setVolume(0);
@@ -3410,27 +3199,20 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
       if (_frameController == controller) _frameController = null;
     }
   }
-
   @override
   void dispose() {
     _frameController?.dispose();
     if (_countedActive && _activeFrameReaders > 0) _activeFrameReaders--;
     super.dispose();
   }
-
   String _fmt(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
     return d.inHours > 0 ? '${d.inHours}:$m:$s' : '$m:$s';
   }
-
   Widget _background() {
     if (_thumbnailUrl != null) {
-      return CachedNetworkImage(
-        imageUrl: _thumbnailUrl!,
-        fit: BoxFit.cover,
-        errorWidget: (_, __, ___) => _placeholder(),
-      );
+      return CachedNetworkImage(imageUrl: _thumbnailUrl!, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder());
     }
     final c = _frameController;
     if (_frameReady && c != null && c.value.isInitialized) {
@@ -3446,19 +3228,13 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
     }
     return _placeholder();
   }
-
   Widget _placeholder() {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_Mono.accentDeep, _Mono.accent],
-        ),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_Mono.accentDeep, _Mono.accent]),
       ),
     );
   }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -3489,19 +3265,14 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
               bottom: 8,
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: Colors.black.withValues(alpha: 0.6),
-                  borderRadius: BorderRadius.circular(8),
-                ),
+                decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.6), borderRadius: BorderRadius.circular(8)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     const Icon(Icons.videocam_rounded, size: 12, color: Colors.white),
                     const SizedBox(width: 4),
                     Text(
-                      (_duration != null && _duration! > Duration.zero)
-                          ? _fmt(_duration!)
-                          : _trL(l10n, 'post_video_badge', 'VIDÉO'),
+                      (_duration != null && _duration! > Duration.zero) ? _fmt(_duration!) : _trL(l10n, 'post_video_badge', 'VIDÉO'),
                       style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w700),
                     ),
                   ],
@@ -3523,46 +3294,38 @@ class _VideoThumbTileState extends State<_VideoThumbTile> {
     );
   }
 }
-
 class _LikersStack extends StatefulWidget {
   final int count;
   final String postId;
   final bool isLikedByMe;
   final AppLocalizations l10n;
   const _LikersStack({required this.count, required this.postId, required this.isLikedByMe, required this.l10n});
-
   @override
   State<_LikersStack> createState() => _LikersStackState();
 }
-
 class _LikersStackState extends State<_LikersStack> {
   List<String> _likerAvatars = [];
   bool _isLoading = true;
-
   @override
   void initState() {
     super.initState();
     _fetchLikersAvatars();
   }
-
   @override
   void didUpdateWidget(covariant _LikersStack oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.count != oldWidget.count) _fetchLikersAvatars();
   }
-
   Future<void> _fetchLikersAvatars() async {
     if (widget.count == 0) {
       if (mounted) setState(() { _isLoading = false; _likerAvatars = []; });
       return;
     }
-
     final cached = _PostCardCache.instance.getLikers(widget.postId);
     if (cached != null) {
       if (mounted) setState(() { _likerAvatars = cached; _isLoading = false; });
       return;
     }
-
     try {
       final response = await Supabase.instance.client
           .from('post_likes')
@@ -3571,7 +3334,6 @@ class _LikersStackState extends State<_LikersStack> {
           .order('created_at', ascending: false)
           .limit(_PostCardConfig.maxLikersFetched)
           .timeout(_PostCardConfig.networkTimeout);
-
       final avatars = <String>[];
       if (response is List) {
         for (final row in response) {
@@ -3580,7 +3342,6 @@ class _LikersStackState extends State<_LikersStack> {
           avatars.add(url ?? '');
         }
       }
-
       _PostCardCache.instance.setLikers(widget.postId, avatars);
       if (mounted) setState(() { _likerAvatars = avatars; _isLoading = false; });
     } catch (e) {
@@ -3588,19 +3349,16 @@ class _LikersStackState extends State<_LikersStack> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final displayCount = min(_PostCardConfig.maxLikersFetched, widget.count);
     final extra = widget.count - displayCount;
     final colors = [_Mono.accent, ThixPolicy.danger, _Mono.accentDeep, ThixPolicy.info, ThixPolicy.domainMedia];
-
     final text = widget.isLikedByMe
         ? (widget.count == 1
             ? widget.l10n.t('post_liked_by_you')
             : widget.l10n.t('post_liked_by_you_and_others', args: ['${widget.count - 1}']))
         : widget.l10n.t('post_liked_by_others', args: ['${widget.count}']);
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(
@@ -3625,29 +3383,16 @@ class _LikersStackState extends State<_LikersStack> {
               );
             }),
           ),
-
           if (extra > 0)
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Text(
-                '+$extra',
-                style: ThixPolicy.captionStyle.copyWith(
-                  fontSize: 12,
-                  color: ThixPolicy.textSecondary,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+              child: Text('+$extra', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.bold)),
             ),
-
           const SizedBox(width: 8),
-
           Expanded(
             child: Text(
               text,
-              style: ThixPolicy.captionStyle.copyWith(
-                fontSize: 12.5,
-                color: ThixPolicy.textSecondary,
-              ),
+              style: ThixPolicy.captionStyle.copyWith(fontSize: 12.5, color: ThixPolicy.textSecondary),
               overflow: TextOverflow.ellipsis,
             ),
           ),
