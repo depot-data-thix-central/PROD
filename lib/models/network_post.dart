@@ -63,7 +63,14 @@ class _PostValidators {
   static const int maxMediaCount = 10;
   static const int maxAudioDurationSeconds = 300; // 5 minutes
 
-  /// Sanitize texte (anti-XSS)
+  /// Liste blanche des badges autorisés (sécurité : pas d'injection possible)
+  static const Set<String> allowedBadges = {
+    'urgent', 'flash', 'important', 'info', 'new',
+    'alert', 'official', 'event', 'promo', 'reminder',
+  };
+
+  /// ✅ CORRECTIF PARAGRAPHES : conserve \n, normalise \n\n (espaces entre paragraphes).
+  /// La version originale supprimait \n à cause de [\x00-\x1F\x7F].
   static String sanitizeText(String? input, {int maxLength = maxContentLength}) {
     if (input == null || input.trim().isEmpty) return '';
     
@@ -74,7 +81,9 @@ class _PostValidators {
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .replaceAll(RegExp(r'[\x00-\x09\x0B-\x1F\x7F]'), '') // ⬅ préserve \n (0x0A)
+        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
     
     return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
@@ -86,12 +95,10 @@ class _PostValidators {
     
     final trimmed = url.trim();
     
-    // Seules les URLs HTTP/HTTPS sont autorisées
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return null;
     }
     
-    // Supprime les caractères dangereux
     return trimmed
         .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .replaceAll(' ', '%20');
@@ -108,6 +115,13 @@ class _PostValidators {
         .cast<String>()
         .take(maxMediaCount)
         .toList();
+  }
+
+  /// 🏷️ Valide le badge : null si absent ou invalide (protection anti-injection).
+  static String? sanitizeBadge(String? badge) {
+    if (badge == null) return null;
+    final b = badge.trim().toLowerCase();
+    return allowedBadges.contains(b) ? b : null;
   }
 }
 
@@ -126,6 +140,9 @@ class NetworkPost {
   // ─── Contenu ───
   final String content;
   final String? bgColor;
+
+  // ─── 🏷️ BADGE SPÉCIAL (urgent, flash, important, etc.) ───
+  final String? postBadge;
 
   // ─── Médias (unifiés) ───
   final List<String> mediaUrls;
@@ -170,6 +187,7 @@ class NetworkPost {
   List<String>? _cachedAudioUrls;
   String? _cachedFormattedDate;
   DateTime? _cachedFormattedDateCreatedAt;
+  List<String>? _cachedParagraphs; // ➕ cache rendu paragraphes
 
   // ─── Constructeur ───
   NetworkPost({
@@ -180,6 +198,7 @@ class NetworkPost {
     this.authorTitle,
     required this.content,
     this.bgColor,
+    this.postBadge, // 🏷️
     required this.mediaUrls,
     this.postType = PostType.standard,
     this.pollData,
@@ -206,7 +225,9 @@ class NetworkPost {
   }) : assert(id.isNotEmpty, 'NetworkPost.id cannot be empty'),
        assert(likesCount >= 0, 'NetworkPost.likesCount cannot be negative'),
        assert(commentsCount >= 0, 'NetworkPost.commentsCount cannot be negative'),
-       assert(repostsCount >= 0, 'NetworkPost.repostsCount cannot be negative');
+       assert(repostsCount >= 0, 'NetworkPost.repostsCount cannot be negative'),
+       assert(postBadge == null || _PostValidators.allowedBadges.contains(postBadge),
+              'NetworkPost.postBadge must be in allowed list');
 
   // ─── Logique de détection des médias (optimisée) ───
 
@@ -266,6 +287,27 @@ class NetworkPost {
   bool get hasVideos => videoUrls.isNotEmpty;
   bool get hasAudio => audioUrls.isNotEmpty || postType == PostType.audio;
   bool get hasMedia => mediaUrls.isNotEmpty;
+  bool get hasBadge => postBadge != null && postBadge!.isNotEmpty;
+
+  // ─── 🔧 Helpers badges pour le rendu (feed) ───
+
+  /// Badges "battants" qui doivent pulser (URGENT, ALERTE)
+  bool get isPulsingBadge => postBadge == 'urgent' || postBadge == 'alert';
+
+  /// Badges à fort impact visuel (encadré coloré)
+  bool get isHighImpactBadge =>
+      postBadge == 'urgent' || postBadge == 'alert' ||
+      postBadge == 'important' || postBadge == 'flash';
+
+  /// ¶ Contenu découpé en paragraphes (pour l'affichage aéré dans le feed)
+  List<String> get paragraphs {
+    _cachedParagraphs ??= content
+        .split('\n')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    return _cachedParagraphs!;
+  }
 
   bool get isRepostCard =>
       postType == PostType.repost || (repostOfId != null && repostOfId!.isNotEmpty);
@@ -330,6 +372,7 @@ class NetworkPost {
         ),
         content: _PostValidators.sanitizeText(json['content'] as String?),
         bgColor: json['bg_color'] as String?,
+        postBadge: _PostValidators.sanitizeBadge(json['post_badge'] as String?), // 🏷️
         mediaUrls: mediaUrls,
         postType: PostType.fromString(json['post_type'] as String?),
         pollData: json['poll_data'] as Map<String, dynamic>?,
@@ -373,6 +416,7 @@ class NetworkPost {
       'author_title': authorTitle,
       'content': content,
       'bg_color': bgColor,
+      'post_badge': postBadge, // 🏷️
       'media_urls': mediaUrls,
       'post_type': postType.toJson(),
       'poll_data': pollData,
@@ -408,6 +452,7 @@ class NetworkPost {
     String? authorTitle,
     String? content,
     String? bgColor,
+    String? postBadge, // 🏷️
     List<String>? mediaUrls,
     PostType? postType,
     Map<String, dynamic>? pollData,
@@ -440,6 +485,7 @@ class NetworkPost {
       authorTitle: authorTitle ?? this.authorTitle,
       content: content ?? this.content,
       bgColor: bgColor ?? this.bgColor,
+      postBadge: postBadge ?? this.postBadge, // 🏷️
       mediaUrls: mediaUrls ?? this.mediaUrls,
       postType: postType ?? this.postType,
       pollData: pollData ?? this.pollData,
@@ -465,10 +511,14 @@ class NetworkPost {
       repostOfId: repostOfId ?? this.repostOfId,
     );
 
-    // Invalidé le cache si createdAt a changé (pour formattedDate)
     if (createdAt != null && createdAt != this.createdAt) {
       newPost._cachedFormattedDate = null;
       newPost._cachedFormattedDateCreatedAt = null;
+    }
+
+    // ➕ Invalidate le cache paragraphes si le contenu change
+    if (content != null && content != this.content) {
+      newPost._cachedParagraphs = null;
     }
 
     return newPost;
@@ -495,7 +545,6 @@ class NetworkPost {
 
   // ─── Formatage de la date (avec cache) ───
   String get formattedDate {
-    // Retourner le cache si createdAt n'a pas changé
     if (_cachedFormattedDate != null && 
         _cachedFormattedDateCreatedAt == createdAt) {
       return _cachedFormattedDate!;
@@ -522,7 +571,6 @@ class NetworkPost {
       result = 'À l\'instant';
     }
 
-    // Mettre à jour le cache
     _cachedFormattedDate = result;
     _cachedFormattedDateCreatedAt = createdAt;
     
@@ -540,5 +588,5 @@ class NetworkPost {
   @override
   String toString() => 
       'NetworkPost(id: $id, author: $authorName, type: ${postType.name}, '
-      'media: ${mediaUrls.length}, likes: $likesCount)';
+      'badge: $postBadge, media: ${mediaUrls.length}, likes: $likesCount)';
 }
