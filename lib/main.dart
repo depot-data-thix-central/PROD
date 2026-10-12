@@ -1,11 +1,12 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.2)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.3)
 //
 // FIX : handler local FCM supprimé → on utilise le vrai handler
 //       (CallKit) exporté par push_notification_service.dart
 // FIX : plus de endAllVoipCalls() quand l'app passe en pause
 // FIX : PushNotificationService.initialize() après Supabase + Auth
+// NEW : Câblage onNotificationTap (Ouvrir / Répondre) + onPushTap
 //
 // EXISTANT PRÉSERVÉ : Web safe, Riverpod + Provider, timeouts,
 // runZonedGuarded sans second runApp, mode jour forcé.
@@ -29,8 +30,6 @@ import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
-// Stub conditionnel : _stub.dart sur Web (no-op), _io.dart sur mobile (VoIP+FCM)
-// Exporte aussi firebaseMessagingBackgroundHandler (vrai handler sur mobile)
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
@@ -50,6 +49,67 @@ void _log(String message) => debugPrint('[MAIN] $message');
 
 late final LocaleController _localeController;
 bool _appLaunched = false;
+
+// ============================================================================
+// NOTIFICATION TAP HANDLER (global)
+// ============================================================================
+
+void _handleLocalNotificationTap(String? payload, {String? actionId}) {
+  if (payload == null || payload.isEmpty) return;
+
+  final ctx = rootNavigatorKey.currentContext;
+  if (ctx == null || !ctx.mounted) return;
+
+  _log('NotifTap action=$actionId payload=$payload');
+
+  // ── Chat message ──────────────────────────────────────
+  // payload format: "chat:CONVERSATION_ID"
+  if (payload.startsWith('chat:')) {
+    final convId = payload.substring(5);
+    if (convId.isEmpty) return;
+
+    if (actionId == kActionReply ||
+        actionId == null ||
+        actionId == kActionOpen) {
+      ctx.push('/chat/$convId');
+    }
+    return;
+  }
+
+  // ── Appel ─────────────────────────────────────────────
+  // payload format: "call:INVITE_ID:CHANNEL_NAME"
+  if (payload.startsWith('call:')) {
+    final parts = payload.split(':');
+    if (parts.length >= 3) {
+      final inviteId = parts[1];
+      final channelName = parts[2];
+      ctx.push(
+        '/call/$inviteId',
+        extra: {
+          'channelName': channelName,
+          'isVideo': false,
+          'isIncoming': true,
+        },
+      );
+    }
+    return;
+  }
+
+  // ── Network (like, comment, follow, etc.) ─────────────
+  if (payload.startsWith('/network')) {
+    ctx.push(payload);
+    return;
+  }
+
+  // ── Routes génériques ─────────────────────────────────
+  if (payload.startsWith('/')) {
+    ctx.push(payload);
+    return;
+  }
+
+  // Fallback
+  ctx.push('/notifications');
+}
 
 // ============================================================================
 // MAIN
@@ -112,7 +172,6 @@ Future<void> main() async {
       if (!kIsWeb) {
         try {
           await Firebase.initializeApp().timeout(_kInitTimeout);
-          // ✅ Vrai handler (CallKit + notifications locales)
           FirebaseMessaging.onBackgroundMessage(
               firebaseMessagingBackgroundHandler);
           _log('✓ Firebase OK');
@@ -143,6 +202,13 @@ Future<void> main() async {
         await LocalNotificationService.instance
             .initialize()
             .timeout(_kInitTimeout);
+
+        // ✅ Câbler le tap / actions (Ouvrir, Répondre)
+        LocalNotificationService.instance.onNotificationTap =
+            (payload, {actionId}) {
+          _handleLocalNotificationTap(payload, actionId: actionId);
+        };
+
         _log('✓ LocalNotif OK');
       } catch (e) {
         _log('⚠️ LocalNotif: $e');
@@ -165,12 +231,38 @@ Future<void> main() async {
         _log('⚠️ Auth: $e');
       }
 
-      // ── VoIP + Push (après Supabase/Auth : le token a besoin de l'uid) ─
+      // ── VoIP + Push (après Supabase/Auth) ──────────────────────────
       if (!kIsWeb) {
         try {
           await PushNotificationService.instance
               .initialize()
               .timeout(_kInitTimeout);
+
+          // ✅ Câbler le tap depuis FCM (app en background / tuée)
+          PushNotificationService.onPushTap = (data) {
+            final route = data['route']?.toString();
+            final type = (data['type'] ?? '').toString().toLowerCase();
+
+            String? payload;
+            if (route != null && route.isNotEmpty) {
+              payload = route;
+            } else if (type == 'chat_message') {
+              final convId = data['conversation_id']?.toString() ??
+                  data['conversationId']?.toString();
+              if (convId != null) payload = 'chat:$convId';
+            } else if (type == 'incoming_call') {
+              final inviteId =
+                  data['invite_id']?.toString() ?? data['inviteId']?.toString();
+              final channel = data['channel_name']?.toString() ??
+                  data['channelName']?.toString();
+              if (inviteId != null && channel != null) {
+                payload = 'call:$inviteId:$channel';
+              }
+            }
+
+            _handleLocalNotificationTap(payload, actionId: kActionOpen);
+          };
+
           _log('✓ Push/VoIP OK');
         } catch (e) {
           _log('⚠️ Push/VoIP init: $e');
@@ -272,14 +364,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     if (state == AppLifecycleState.resumed) {
       _log('App resumed → session handled by AuthController (offline-safe)');
-      // Rafraîchir badge au retour premier plan (mobile uniquement)
       if (!kIsWeb && _pushRegistered) {
         unawaited(AppBadgeSyncService.refreshNow());
       }
     }
-
-    // ✅ FIX : plus de endAllVoipCalls() sur "paused".
-    // Cela coupait l'appel entrant dès que l'écran se verrouillait.
   }
 
   Future<void> _init() async {
@@ -322,7 +410,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     if (mounted) setState(() => _ready = true);
   }
 
-  /// Enregistre / retire token FCM + badge Realtime selon auth.
   Future<void> _syncPush() async {
     if (kIsWeb) return;
 
@@ -354,7 +441,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
   String _maskUid(String uid) => uid.length <= 8
       ? '***'
-      : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
+      : '\( {uid.substring(0, 4)}... \){uid.substring(uid.length - 3)}';
 
   @override
   void dispose() {
