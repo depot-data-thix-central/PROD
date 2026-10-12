@@ -63,52 +63,42 @@ class _PostValidators {
   static const int maxMediaCount = 10;
   static const int maxAudioDurationSeconds = 300; // 5 minutes
 
-  /// Sanitize texte (anti-XSS).
-  /// ✅ Conserve les retours à la ligne (paragraphes) : [allowNewlines] = true par défaut.
-  /// Passer allowNewlines: false pour les champs sur une seule ligne (nom, titre...).
-  static String sanitizeText(
-    String? input, {
-    int maxLength = maxContentLength,
-    bool allowNewlines = true,
-  }) {
+  /// Liste blanche des badges autorisés (sécurité : pas d'injection possible)
+  static const Set<String> allowedBadges = {
+    'urgent', 'flash', 'important', 'info', 'new',
+    'alert', 'official', 'event', 'promo', 'reminder',
+  };
+
+  /// ✅ CORRECTIF PARAGRAPHES : conserve \n, normalise \n\n (espaces entre paragraphes).
+  /// La version originale supprimait \n à cause de [\x00-\x1F\x7F].
+  static String sanitizeText(String? input, {int maxLength = maxContentLength}) {
     if (input == null || input.trim().isEmpty) return '';
-
-    final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    final doc = html_parser.parse(normalized);
-    var sanitized = doc.body?.text ?? normalized;
-
+    
+    final doc = html_parser.parse(input);
+    var sanitized = doc.body?.text ?? input;
+    
     sanitized = sanitized
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        // Caractères de contrôle supprimés SAUF \t (0x09) et \n (0x0A)
-        .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
-
-    if (allowNewlines) {
-      sanitized = sanitized
-          .replaceAll(RegExp(r'[ \t]+\n'), '\n') // espaces en fin de ligne
-          .replaceAll(RegExp(r'\n{3,}'), '\n\n'); // max 1 ligne vide
-    } else {
-      sanitized = sanitized.replaceAll(RegExp(r'\s*\n\s*'), ' ');
-    }
-
-    sanitized = sanitized.trim();
-
+        .replaceAll(RegExp(r'[\x00-\x09\x0B-\x1F\x7F]'), '') // ⬅ préserve \n (0x0A)
+        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+        .trim();
+    
     return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
   }
 
   /// Valide une URL (HTTP/HTTPS uniquement)
   static String? sanitizeUrl(String? url) {
     if (url == null || url.trim().isEmpty) return null;
-
+    
     final trimmed = url.trim();
-
-    // Seules les URLs HTTP/HTTPS sont autorisées
+    
     if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
       return null;
     }
-
-    // Supprime les caractères dangereux
+    
     return trimmed
         .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
         .replaceAll(' ', '%20');
@@ -117,7 +107,7 @@ class _PostValidators {
   /// Valide une liste d'URLs
   static List<String> sanitizeUrls(List<dynamic>? urls) {
     if (urls == null || urls.isEmpty) return [];
-
+    
     return urls
         .where((u) => u is String && u.trim().isNotEmpty)
         .map((u) => sanitizeUrl(u as String))
@@ -125,6 +115,13 @@ class _PostValidators {
         .cast<String>()
         .take(maxMediaCount)
         .toList();
+  }
+
+  /// 🏷️ Valide le badge : null si absent ou invalide (protection anti-injection).
+  static String? sanitizeBadge(String? badge) {
+    if (badge == null) return null;
+    final b = badge.trim().toLowerCase();
+    return allowedBadges.contains(b) ? b : null;
   }
 }
 
@@ -143,6 +140,9 @@ class NetworkPost {
   // ─── Contenu ───
   final String content;
   final String? bgColor;
+
+  // ─── 🏷️ BADGE SPÉCIAL (urgent, flash, important, etc.) ───
+  final String? postBadge;
 
   // ─── Médias (unifiés) ───
   final List<String> mediaUrls;
@@ -174,7 +174,6 @@ class NetworkPost {
   final int commentsCount;
   final int repostsCount;
   final int? views;
-  final int? impressionsCount; // ✅ lu par PostCard via toJson()['impressions_count']
 
   // ─── États interactifs ───
   final bool isLiked;
@@ -188,6 +187,7 @@ class NetworkPost {
   List<String>? _cachedAudioUrls;
   String? _cachedFormattedDate;
   DateTime? _cachedFormattedDateCreatedAt;
+  List<String>? _cachedParagraphs; // ➕ cache rendu paragraphes
 
   // ─── Constructeur ───
   NetworkPost({
@@ -198,6 +198,7 @@ class NetworkPost {
     this.authorTitle,
     required this.content,
     this.bgColor,
+    this.postBadge, // 🏷️
     required this.mediaUrls,
     this.postType = PostType.standard,
     this.pollData,
@@ -220,12 +221,13 @@ class NetworkPost {
     this.isPublic = true,
     this.communityId,
     this.views,
-    this.impressionsCount,
     this.repostOfId,
   }) : assert(id.isNotEmpty, 'NetworkPost.id cannot be empty'),
        assert(likesCount >= 0, 'NetworkPost.likesCount cannot be negative'),
        assert(commentsCount >= 0, 'NetworkPost.commentsCount cannot be negative'),
-       assert(repostsCount >= 0, 'NetworkPost.repostsCount cannot be negative');
+       assert(repostsCount >= 0, 'NetworkPost.repostsCount cannot be negative'),
+       assert(postBadge == null || _PostValidators.allowedBadges.contains(postBadge),
+              'NetworkPost.postBadge must be in allowed list');
 
   // ─── Logique de détection des médias (optimisée) ───
 
@@ -239,7 +241,7 @@ class NetworkPost {
       return true;
     }
     final cleanUrl = url.toLowerCase();
-    return cleanUrl.contains('/images/') ||
+    return cleanUrl.contains('/images/') || 
            cleanUrl.contains('/image/') ||
            cleanUrl.contains('post_images');
   }
@@ -249,7 +251,7 @@ class NetworkPost {
       return true;
     }
     final cleanUrl = url.toLowerCase();
-    return cleanUrl.contains('/videos/') ||
+    return cleanUrl.contains('/videos/') || 
            cleanUrl.contains('/video/') ||
            cleanUrl.contains('/videos');
   }
@@ -259,7 +261,7 @@ class NetworkPost {
       return true;
     }
     final cleanUrl = url.toLowerCase();
-    return cleanUrl.contains('/audios/') ||
+    return cleanUrl.contains('/audios/') || 
            cleanUrl.contains('/audio/') ||
            cleanUrl.contains('audio_uploads');
   }
@@ -285,6 +287,27 @@ class NetworkPost {
   bool get hasVideos => videoUrls.isNotEmpty;
   bool get hasAudio => audioUrls.isNotEmpty || postType == PostType.audio;
   bool get hasMedia => mediaUrls.isNotEmpty;
+  bool get hasBadge => postBadge != null && postBadge!.isNotEmpty;
+
+  // ─── 🔧 Helpers badges pour le rendu (feed) ───
+
+  /// Badges "battants" qui doivent pulser (URGENT, ALERTE)
+  bool get isPulsingBadge => postBadge == 'urgent' || postBadge == 'alert';
+
+  /// Badges à fort impact visuel (encadré coloré)
+  bool get isHighImpactBadge =>
+      postBadge == 'urgent' || postBadge == 'alert' ||
+      postBadge == 'important' || postBadge == 'flash';
+
+  /// ¶ Contenu découpé en paragraphes (pour l'affichage aéré dans le feed)
+  List<String> get paragraphs {
+    _cachedParagraphs ??= content
+        .split('\n')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    return _cachedParagraphs!;
+  }
 
   bool get isRepostCard =>
       postType == PostType.repost || (repostOfId != null && repostOfId!.isNotEmpty);
@@ -337,7 +360,6 @@ class NetworkPost {
               (json['profiles']?['display_name'] as String?) ??
               'Utilisateur',
           maxLength: 200,
-          allowNewlines: false,
         ),
         authorAvatar: _PostValidators.sanitizeUrl(
           json['author_avatar'] as String? ??
@@ -347,11 +369,10 @@ class NetworkPost {
           json['author_title'] as String? ??
               (json['profiles']?['profession'] as String?),
           maxLength: 100,
-          allowNewlines: false,
         ),
-        // ✅ paragraphes conservés (sauts de ligne)
         content: _PostValidators.sanitizeText(json['content'] as String?),
         bgColor: json['bg_color'] as String?,
+        postBadge: _PostValidators.sanitizeBadge(json['post_badge'] as String?), // 🏷️
         mediaUrls: mediaUrls,
         postType: PostType.fromString(json['post_type'] as String?),
         pollData: json['poll_data'] as Map<String, dynamic>?,
@@ -377,7 +398,6 @@ class NetworkPost {
         isPublic: json['is_public'] != false,
         communityId: json['community_id'] as String?,
         views: (json['views'] as num?)?.toInt(),
-        impressionsCount: (json['impressions_count'] as num?)?.toInt(),
         repostOfId: json['repost_of_id']?.toString(),
       );
     } catch (e, stack) {
@@ -396,6 +416,7 @@ class NetworkPost {
       'author_title': authorTitle,
       'content': content,
       'bg_color': bgColor,
+      'post_badge': postBadge, // 🏷️
       'media_urls': mediaUrls,
       'post_type': postType.toJson(),
       'poll_data': pollData,
@@ -418,7 +439,6 @@ class NetworkPost {
       'is_public': isPublic,
       'community_id': communityId,
       'views': views,
-      'impressions_count': impressionsCount,
       'repost_of_id': repostOfId,
     };
   }
@@ -432,6 +452,7 @@ class NetworkPost {
     String? authorTitle,
     String? content,
     String? bgColor,
+    String? postBadge, // 🏷️
     List<String>? mediaUrls,
     PostType? postType,
     Map<String, dynamic>? pollData,
@@ -454,7 +475,6 @@ class NetworkPost {
     bool? isPublic,
     String? communityId,
     int? views,
-    int? impressionsCount,
     String? repostOfId,
   }) {
     final newPost = NetworkPost(
@@ -465,6 +485,7 @@ class NetworkPost {
       authorTitle: authorTitle ?? this.authorTitle,
       content: content ?? this.content,
       bgColor: bgColor ?? this.bgColor,
+      postBadge: postBadge ?? this.postBadge, // 🏷️
       mediaUrls: mediaUrls ?? this.mediaUrls,
       postType: postType ?? this.postType,
       pollData: pollData ?? this.pollData,
@@ -487,14 +508,17 @@ class NetworkPost {
       isPublic: isPublic ?? this.isPublic,
       communityId: communityId ?? this.communityId,
       views: views ?? this.views,
-      impressionsCount: impressionsCount ?? this.impressionsCount,
       repostOfId: repostOfId ?? this.repostOfId,
     );
 
-    // Invalidé le cache si createdAt a changé (pour formattedDate)
     if (createdAt != null && createdAt != this.createdAt) {
       newPost._cachedFormattedDate = null;
       newPost._cachedFormattedDateCreatedAt = null;
+    }
+
+    // ➕ Invalidate le cache paragraphes si le contenu change
+    if (content != null && content != this.content) {
+      newPost._cachedParagraphs = null;
     }
 
     return newPost;
@@ -521,15 +545,14 @@ class NetworkPost {
 
   // ─── Formatage de la date (avec cache) ───
   String get formattedDate {
-    // Retourner le cache si createdAt n'a pas changé
-    if (_cachedFormattedDate != null &&
+    if (_cachedFormattedDate != null && 
         _cachedFormattedDateCreatedAt == createdAt) {
       return _cachedFormattedDate!;
     }
 
     final now = DateTime.now();
     final difference = now.difference(createdAt);
-
+    
     String result;
     if (difference.inDays > 7) {
       try {
@@ -548,10 +571,9 @@ class NetworkPost {
       result = 'À l\'instant';
     }
 
-    // Mettre à jour le cache
     _cachedFormattedDate = result;
     _cachedFormattedDateCreatedAt = createdAt;
-
+    
     return result;
   }
 
@@ -564,7 +586,7 @@ class NetworkPost {
   int get hashCode => id.hashCode;
 
   @override
-  String toString() =>
+  String toString() => 
       'NetworkPost(id: $id, author: $authorName, type: ${postType.name}, '
-      'media: ${mediaUrls.length}, likes: $likesCount)';
+      'badge: $postBadge, media: ${mediaUrls.length}, likes: $likesCount)';
 }
