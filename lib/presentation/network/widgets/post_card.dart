@@ -1562,17 +1562,23 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     HapticFeedback.mediumImpact();
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => _FullScreenVideoPlayer(videoUrl: url)));
   }
-  // ── 🏷️ BADGE PREMIUM EN TÊTE ──
-  Widget _buildPostBadge(NetworkPost post, AppLocalizations l10n) {
-    if (!post.hasBadge) return const SizedBox.shrink();
-    final style = _badgeStyles[post.postBadge];
-    if (style == null) return const SizedBox.shrink();
-    final label = _trL(l10n, 'cp_badge_${post.postBadge}', post.postBadge!.toUpperCase());
-    return Container(
+// ── 🏷️ BADGE PREMIUM EN TÊTE (largeur auto) ──
+Widget _buildPostBadge(NetworkPost post, AppLocalizations l10n) {
+  if (!post.hasBadge) return const SizedBox.shrink();
+  final style = _badgeStyles[post.postBadge];
+  if (style == null) return const SizedBox.shrink();
+  final label = _trL(l10n, 'cp_badge_${post.postBadge}', post.postBadge!.toUpperCase());
+  
+  return Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
       margin: const EdgeInsets.only(bottom: 10),
-      child: style.pulse ? _PulsingBadge(style: style, label: label) : _StaticBadgeChip(style: style, label: label),
-    );
-  }
+      child: style.pulse 
+          ? _PulsingBadge(style: style, label: label) 
+          : _StaticBadgeChip(style: style, label: label),
+    ),
+  );
+}
   // ── Grille média (bouton télécharger sur chaque photo) ──
   Widget _buildMediaGrid(List<String> rawUrls, AppLocalizations l10n) {
     final urls = rawUrls.where(_PostCardValidators.isValidUrl).toList();
