@@ -39,6 +39,7 @@ class _NetworkServiceLogger {
 class _NetworkValidators {
   _NetworkValidators._();
 
+  /// ✅ CORRECTIF PARAGRAPHES : conserve \n (0x0A), normalise \n\n
   static String sanitizeText(String? input, {int maxLength = 5000}) {
     if (input == null || input.trim().isEmpty) return '';
 
@@ -49,7 +50,10 @@ class _NetworkValidators {
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        // ⬅️ CORRECTIF : préserve \n (0x0A) et \t (0x09)
+        .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
+        .replaceAll(RegExp(r'[ \t]+\n'), '\n')
+        .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
 
     return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
@@ -289,11 +293,12 @@ class NetworkService extends ChangeNotifier {
     return posts;
   }
 
+  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchRecentFeed({required int limit, required int offset}) async {
     try {
       final res = await _supabase
           .from('posts_view')
-          .select()
+          .select('*')
           .eq('is_public', true)
           .isFilter('community_id', null)
           .order('created_at', ascending: false)
@@ -313,6 +318,7 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
+  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchNetworkFeed({required String uid, required int limit, required int offset}) async {
     final connIds = await getMyConnectionIds();
     connIds.add(uid);
@@ -320,7 +326,7 @@ class NetworkService extends ChangeNotifier {
 
     final res = await _supabase
         .from('posts_view')
-        .select()
+        .select('*')
         .inFilter('user_id', connIds.toList())
         .isFilter('community_id', null)
         .order('created_at', ascending: false)
@@ -336,10 +342,11 @@ class NetworkService extends ChangeNotifier {
     return _parsePostsSafely(rows);
   }
 
+  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchPopularFeed({required int limit, required int offset}) async {
     final res = await _supabase
         .from('posts_view')
-        .select()
+        .select('*')
         .eq('is_public', true)
         .isFilter('community_id', null)
         .order('likes_count', ascending: false)
@@ -421,7 +428,7 @@ class NetworkService extends ChangeNotifier {
     try {
       final response = await _supabase
           .from('posts_view')
-          .select()
+          .select('*')
           .eq('id', postId)
           .maybeSingle()
           .timeout(_requestTimeout);
@@ -434,35 +441,15 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-  Future<String> createPost(String content, List<String> images, {String postType = 'standard'}) async {
-    if (currentUserId.isEmpty) throw Exception('Non authentifié');
-
-    final sanitizedContent = _NetworkValidators.sanitizeText(content);
-    if (sanitizedContent.isEmpty) throw Exception('Contenu invalide');
-
-    final sanitizedImages = images
-        .map((url) => _NetworkValidators.sanitizeUrl(url))
-        .where((url) => url.isNotEmpty)
-        .toList();
-
-    final res = await _supabase.from('posts').insert({
-      'user_id': currentUserId,
-      'content': sanitizedContent,
-      'image_urls': sanitizedImages,
-      'media_urls': sanitizedImages,
-      'media_url': sanitizedImages.isNotEmpty ? sanitizedImages.first : null,
-      'post_type': postType,
-      'is_public': true,
-    }).select('id').single().timeout(_requestTimeout);
-
-    notifyListeners();
-    return res['id'] as String;
-  }
-
-  Future<String> createCommunityPost({
-    required String communityId,
-    required String content,
-    List<String> images = const [],
+  /// ✅ CORRECTIF : supporte post_badge, hashtags, mentioned_user_ids
+  Future<String> createPost(
+    String content,
+    List<String> images, {
+    String postType = 'standard',
+    String? postBadge,
+    List<String>? hashtags,
+    List<String>? mentionedUserIds,
+    String? bgColor,
   }) async {
     if (currentUserId.isEmpty) throw Exception('Non authentifié');
 
@@ -474,7 +461,47 @@ class NetworkService extends ChangeNotifier {
         .where((url) => url.isNotEmpty)
         .toList();
 
-    final res = await _supabase.from('posts').insert({
+    final payload = <String, dynamic>{
+      'user_id': currentUserId,
+      'content': sanitizedContent,
+      'image_urls': sanitizedImages,
+      'media_urls': sanitizedImages,
+      'media_url': sanitizedImages.isNotEmpty ? sanitizedImages.first : null,
+      'post_type': postType,
+      'is_public': true,
+      if (postBadge != null) 'post_badge': postBadge,
+      if (hashtags != null && hashtags.isNotEmpty) 'hashtags': hashtags,
+      if (mentionedUserIds != null && mentionedUserIds.isNotEmpty) 'mentioned_user_ids': mentionedUserIds,
+      if (bgColor != null) 'bg_color': bgColor,
+    };
+
+    final res = await _supabase.from('posts').insert(payload).select('id').single().timeout(_requestTimeout);
+
+    notifyListeners();
+    return res['id'] as String;
+  }
+
+  /// ✅ CORRECTIF : supporte post_badge, hashtags, mentioned_user_ids
+  Future<String> createCommunityPost({
+    required String communityId,
+    required String content,
+    List<String> images = const [],
+    String? postBadge,
+    List<String>? hashtags,
+    List<String>? mentionedUserIds,
+    String? bgColor,
+  }) async {
+    if (currentUserId.isEmpty) throw Exception('Non authentifié');
+
+    final sanitizedContent = _NetworkValidators.sanitizeText(content);
+    if (sanitizedContent.isEmpty) throw Exception('Contenu invalide');
+
+    final sanitizedImages = images
+        .map((url) => _NetworkValidators.sanitizeUrl(url))
+        .where((url) => url.isNotEmpty)
+        .toList();
+
+    final payload = <String, dynamic>{
       'user_id': currentUserId,
       'community_id': communityId,
       'content': sanitizedContent,
@@ -482,7 +509,13 @@ class NetworkService extends ChangeNotifier {
       'media_urls': sanitizedImages,
       'media_url': sanitizedImages.isNotEmpty ? sanitizedImages.first : null,
       'is_public': true,
-    }).select('id').single().timeout(_requestTimeout);
+      if (postBadge != null) 'post_badge': postBadge,
+      if (hashtags != null && hashtags.isNotEmpty) 'hashtags': hashtags,
+      if (mentionedUserIds != null && mentionedUserIds.isNotEmpty) 'mentioned_user_ids': mentionedUserIds,
+      if (bgColor != null) 'bg_color': bgColor,
+    };
+
+    final res = await _supabase.from('posts').insert(payload).select('id').single().timeout(_requestTimeout);
 
     notifyListeners();
     return res['id'] as String;
@@ -559,7 +592,7 @@ class NetworkService extends ChangeNotifier {
 
   Future<NetworkPost?> getPinnedPost(String userId) async {
     try {
-      final res = await _supabase.from('posts_view').select().eq('user_id', userId).eq('is_pinned', true).maybeSingle().timeout(_requestTimeout);
+      final res = await _supabase.from('posts_view').select('*').eq('user_id', userId).eq('is_pinned', true).maybeSingle().timeout(_requestTimeout);
       return res == null ? null : NetworkPost.fromJson(Map<String, dynamic>.from(res));
     } catch (e) {
       debugPrint('[PostService] Error getPinnedPost: $e');
@@ -569,7 +602,7 @@ class NetworkService extends ChangeNotifier {
 
   Future<List<NetworkPost>> getPinnedPosts(String userId) async {
     try {
-      final res = await _supabase.from('posts_view').select().eq('user_id', userId).eq('is_pinned', true).order('created_at', ascending: false).timeout(_requestTimeout);
+      final res = await _supabase.from('posts_view').select('*').eq('user_id', userId).eq('is_pinned', true).order('created_at', ascending: false).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (e) {
       debugPrint('[PostService] Error getPinnedPosts: $e');
@@ -839,7 +872,6 @@ class NetworkService extends ChangeNotifier {
     // ─── Notification ───────────────────────────────────────
     final ownerId = await _getPostOwnerId(postId);
     if (parentId != null && parentId.isNotEmpty) {
-      // Réponse → notifier l’auteur du commentaire parent
       try {
         final parent = await _supabase
             .from('comments')
@@ -858,7 +890,6 @@ class NetworkService extends ChangeNotifier {
         }
       } catch (_) {}
     } else {
-      // Nouveau commentaire → notifier le propriétaire du post
       unawaited(_notifyComment(
         toUid: ownerId,
         postId: postId,
@@ -937,7 +968,6 @@ class NetworkService extends ChangeNotifier {
         ignoreDuplicates: true,
       ).timeout(_requestTimeout);
 
-      // Notification
       try {
         final comment = await _supabase
             .from('comments')
@@ -1376,7 +1406,7 @@ class NetworkService extends ChangeNotifier {
 
   Future<List<NetworkPost>> getUserPosts(String userId, {int offset = 0, int limit = 15}) async {
     try {
-      final res = await _supabase.from('posts_view').select().eq('user_id', userId).order('created_at', ascending: false).range(offset, offset + limit - 1).timeout(_requestTimeout);
+      final res = await _supabase.from('posts_view').select('*').eq('user_id', userId).order('created_at', ascending: false).range(offset, offset + limit - 1).timeout(_requestTimeout);
       return (res as List).map((e) => NetworkPost.fromJson(Map<String, dynamic>.from(e as Map))).toList();
     } catch (e) {
       return [];
