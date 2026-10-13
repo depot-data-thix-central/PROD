@@ -1,8 +1,8 @@
 // lib/presentation/network/widgets/post_card.dart
 //
-// PostCard — Production Enterprise (THIX PRO / THIX ID) — v5 FINAL
+// PostCard — Production Enterprise (THIX PRO / THIX ID) — v5 FINAL STABLE
 //
-// ✅ v5 : Badges premium (10), paragraphes espacés, traductions intégrées
+// ✅ v5 : Badges premium (10), paragraphes espacés, enums PostType, sanitize \n corrigé
 // ✅ v4 : Téléchargement in-app, lien thix.id, PostShareSheet
 // ✅ v3 : Texte sélectionnable, #tags/@mentions, menu ⋯, vidéo sans écran noir,
 //         galerie zoom, stats, pin, sondage, challenge, audio, signalement
@@ -112,7 +112,7 @@ class _PostCardValidators {
     caseSensitive: false,
   );
 
-  /// ✅ CORRECTIF : conserve \n (0x0A) et \t (0x09)
+  /// ✅ CORRECTIF PARAGRAPHES : conserve \n (0x0A) et \t (0x09)
   static String sanitize(String? input, {int maxLength = _PostCardConfig.maxSanitizedLength, bool multiline = true}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -121,6 +121,7 @@ class _PostCardValidators {
         .replaceAll('\r', '\n')
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'(javascript|data|vbscript):', caseSensitive: false), '')
+        // ⬅️ Préserve \n (0x0A) et \t (0x09), supprime le reste
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '');
     if (multiline) {
       s = s.replaceAll(RegExp(r'[ \t]+\n'), '\n').replaceAll(RegExp(r'\n{3,}'), '\n\n');
@@ -346,7 +347,8 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     bool newIsSaved = state.isSaved;
     bool newIsReposted = state.isReposted;
     int newRepostsCount = state.repostsCount;
-    if (_PostCardCache.instance.optimisticLikes.containsKey(post.id)) {
+    final hasOptimisticLike = _PostCardCache.instance.optimisticLikes.containsKey(post.id);
+    if (hasOptimisticLike) {
       newIsLiked = _PostCardCache.instance.optimisticLikes[post.id]!;
       newLikesCount = _PostCardCache.instance.optimisticLikeCounts[post.id] ?? state.likesCount;
       changed = true;
@@ -358,7 +360,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       changed = true;
     }
     if (changed) state = state.copyWith(isLiked: newIsLiked, likesCount: newLikesCount, isSaved: newIsSaved, isReposted: newIsReposted, repostsCount: newRepostsCount);
-    if (!_PostCardCache.instance.optimisticLikes.containsKey(post.id) && _isAuthenticated) _verifyLikeStatusFromServer(post.id);
+    if (!hasOptimisticLike && _isAuthenticated) _verifyLikeStatusFromServer(post.id);
   }
 
   final Ref ref;
@@ -687,6 +689,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
     final firstUrl = _extractFirstUrl(post.content);
     final linkPreview = firstUrl != null ? Padding(padding: const EdgeInsets.only(top: 12), child: _PremiumLinkPreview(url: firstUrl, fallbackImage: post.imageUrls.isNotEmpty ? _safeImageUrl(post.imageUrls.first) : null)) : const SizedBox.shrink();
 
+    // ¶ Multi-paragraphes : blocs séparés par 12px
     if (_isMultiParagraph && _cachedParagraphSpans != null) {
       final spansList = _cachedParagraphSpans!;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -697,6 +700,8 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
         linkPreview,
       ]);
     }
+
+    // Paragraphe unique : troncature + "voir plus"
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Semantics(label: _plainText(post.content), child: SelectableText.rich(TextSpan(children: _isExpanded ? (_cachedFullSpans ?? []) : (_cachedTruncatedSpans ?? [])), onTap: widget.onTap ?? () => _openPostDetails(post.id))),
       if (_isTruncatable) Semantics(button: true, label: _isExpanded ? l10n.t('post_see_less') : l10n.t('post_see_more'),
@@ -1008,6 +1013,7 @@ class _PostCardState extends ConsumerState<PostCard> with AutomaticKeepAliveClie
               if (post.isRepostCard && _PostCardValidators.isValidId(post.repostOfId)) ...[const SizedBox(height: 12), _OriginalPostEmbed(postId: post.repostOfId!)],
               if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[const SizedBox(height: 12), RepaintBoundary(child: _buildMediaGrid([...post.imageUrls, ...post.videoUrls], l10n))],
               if (post.hasAudio && post.audioUrls.isNotEmpty) ...[const SizedBox(height: 12), RepaintBoundary(child: _PremiumAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds))],
+              // ✅ CORRECTION ENUM : PostType.poll / PostType.challenge
               if (post.postType == PostType.poll && _PostCardValidators.isValidPollData(post.pollData)) ...[const SizedBox(height: 12), Align(alignment: Alignment.centerLeft, child: SizedBox(width: double.infinity, child: _buildPollWidget(post, l10n)))]
               else if (post.postType == PostType.challenge) ...[const SizedBox(height: 12), Align(alignment: Alignment.centerLeft, child: SizedBox(width: double.infinity, child: _buildChallengeWidget(post, l10n)))],
               const SizedBox(height: 16),
