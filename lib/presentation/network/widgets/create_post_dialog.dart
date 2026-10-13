@@ -1,12 +1,12 @@
 // lib/presentation/network/widgets/create_post_dialog.dart
 // ============================================================================
-// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v5 STABLE
-// • 🏷️ 10 badges premium (URGENT battant, FLASH, IMPORTANT...) encadrés en tête
-// • 🌍 100% localisé (AppLocalizations : clés cp_*)
-// • ¶ Paragraphes conservés (\n\n) — sanitize corrigé
+// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v5.1 STABLE
+// • 🏷️ 10 badges premium (URGENT, FLASH, IMPORTANT...) — colonne posts.post_badge
+// • 🌍 100% localisé (AppLocalizations : clés cp_*) — 7 langues
+// • ¶ Paragraphes conservés (\n\n) — sanitize corrigé, champ multiligne
 // • Suggestions @/# • Sondages • Challenges • Tiers/quotas • Rollback
-// • ➕ BONUS : brouillon anti-perte, compteur anneau, emojis rapides,
-//   taille médias (Mo), compte à rebours challenge + autofocus
+// • ➕ Brouillon anti-perte, compteur anneau, emojis rapides,
+//   taille médias, compte à rebours challenge + autofocus
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -41,16 +41,18 @@ import 'package:thix_id/l10n/app_localizations.dart';
 class _PostValidators {
   _PostValidators._();
 
-  /// ✅ CORRECTIF PARAGRAPHES : conserve \n, normalise \n\n
+  /// Conserve les retours à la ligne (paragraphes) : \n gardé, \n\n\n → \n\n
   static String sanitizeText(String? input, {int maxLength = 5000}) {
     if (input == null || input.trim().isEmpty) return '';
-    final document = html_parser.parse(input);
-    var sanitized = document.body?.text ?? input;
+    final normalized = input.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+    final document = html_parser.parse(normalized);
+    var sanitized = document.body?.text ?? normalized;
     sanitized = sanitized
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        .replaceAll(RegExp(r'[\x00-\x09\x0B-\x1F\x7F]'), '')
+        // supprime les caractères de contrôle SAUF \t (0x09) et \n (0x0A)
+        .replaceAll(RegExp(r'[\x00-\x08\x0B-\x1F\x7F]'), '')
         .replaceAll(RegExp(r'[ \t]+\n'), '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
         .trim();
@@ -65,6 +67,7 @@ class _PostValidators {
     return allowed.contains(ext);
   }
 
+  /// Retourne une CLÉ de traduction (ou null si le fichier est valide)
   static String? validateMime(Uint8List bytes) {
     if (bytes.length < 12) return 'cp_err_small';
     if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF) return null;
@@ -83,6 +86,13 @@ class _PostValidators {
     }
     return tags.toList();
   }
+}
+
+class _PublishException implements Exception {
+  final String message;
+  const _PublishException(this.message);
+  @override
+  String toString() => message;
 }
 
 // ============================================================================
@@ -233,7 +243,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   Timer? _suggestDebounce;
   final Set<String> _mentionedIds = {};
 
-  String _authorName = 'Moi';
+  String? _authorName;
   String? _authorAvatar;
   bool _isPublic = true;
 
@@ -255,10 +265,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
   _PostBadge? _selectedBadge;
 
+  // Brouillon gardé en mémoire pendant la session de l'app
   static String? _draftText;
   static String? _draftBadgeKey;
 
-  static const List<String> _quickEmojis = ['😀','😂','🙏','👍','❤️','🔥','😊','😢','😡','👏','💪','🤝','✅','⚠️','📌','🎉'];
+  static const List<String> _quickEmojis = ['😀', '😂', '🙏', '👍', '❤️', '🔥', '😊', '😢', '😡', '👏', '💪', '🤝', '✅', '⚠️', '📌', '🎉'];
 
   bool _isLoadingLimits = true;
   String _userTier = 'gratuit';
@@ -289,7 +300,6 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   static const int _maxAudioSizeMB = 20;
   static const Set<String> _allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
   static const Set<String> _allowedVideoExts = {'mp4', 'mov', 'avi', 'mkv', 'webm'};
-  static const Set<String> _allowedAudioExts = {'m4a', 'mp3', 'wav', 'aac'};
   static const int _maxPollOptionLength = 100;
   static const Duration _uploadTimeout = Duration(seconds: 30);
   static const Duration _suggestTimeout = Duration(seconds: 8);
@@ -306,14 +316,15 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     _pulseAnim = Tween<double>(begin: 1.0, end: 0.90)
         .chain(CurveTween(curve: Curves.easeInOut))
         .animate(_pulseController);
-    _pulseController.repeat(reverse: true);
 
+    // Restauration du brouillon
     if (_draftText != null && _draftText!.trim().isNotEmpty) {
       _contentController.text = _draftText!;
       _previousTextLength = _contentController.text.length;
       for (final b in kPostBadges) {
         if (b.key == _draftBadgeKey) _selectedBadge = b;
       }
+      _syncPulse();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_draft_restored'))));
@@ -325,10 +336,23 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     });
   }
 
+  /// L'animation ne tourne que si le badge choisi pulse (économie batterie)
+  void _syncPulse() {
+    if (_selectedBadge?.pulse == true) {
+      if (!_pulseController.isAnimating) _pulseController.repeat(reverse: true);
+    } else {
+      _pulseController.stop();
+      _pulseController.value = 0;
+    }
+  }
+
   Future<void> _loadUserLimits() async {
     try {
       final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null) return;
+      if (uid == null) {
+        if (mounted) setState(() => _isLoadingLimits = false);
+        return;
+      }
 
       final profile = await Supabase.instance.client
           .from('profiles')
@@ -340,7 +364,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       final name = profile?['display_name']?.toString() ?? profile?['full_name']?.toString();
       final avatar = profile?['avatar_url']?.toString();
 
-      final startOfDay = DateTime(DateTime.now().year, DateTime.now().month, DateTime.now().day).toIso8601String();
+      final now = DateTime.now();
+      final startOfDay = DateTime(now.year, now.month, now.day).toIso8601String();
       final audioCountRes = await Supabase.instance.client
           .from('posts')
           .select('id')
@@ -383,7 +408,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   }
 
   bool get _hasBgColor => _selectedBgColor != Colors.transparent;
-  bool get _canHaveBgColor => _postTypeMode == 0 &&
+  bool get _canHaveBgColor =>
+      _postTypeMode == 0 &&
       _images.isEmpty &&
       _videos.isEmpty &&
       _audioBytes == null &&
@@ -394,6 +420,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     return '#${v.toRadixString(16).substring(2).toUpperCase()}';
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // BROUILLON + FERMETURE
+  // ════════════════════════════════════════════════════════════════════════
   void _clearDraft() {
     _draftText = null;
     _draftBadgeKey = null;
@@ -402,32 +431,35 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   Future<bool> _attemptClose() async {
     if (_isUploading || _isRecording) return false;
     final hasContent = _contentController.text.trim().isNotEmpty ||
-        _images.isNotEmpty || _videos.isNotEmpty || _audioBytes != null;
+        _images.isNotEmpty ||
+        _videos.isNotEmpty ||
+        _audioBytes != null;
     if (!hasContent) {
       _clearDraft();
       return true;
     }
     _draftText = _contentController.text;
     _draftBadgeKey = _selectedBadge?.key;
+    final loc = _loc;
     final keep = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: ThixPolicy.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-        title: Text(_loc.t('cp_draft_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
-        content: Text(_loc.t('cp_draft_body'), style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
+        title: Text(loc.t('cp_draft_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+        content: Text(loc.t('cp_draft_body'), style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
         actions: [
           TextButton(
             onPressed: () {
               _clearDraft();
               Navigator.pop(ctx, true);
             },
-            child: Text(_loc.t('cp_draft_discard'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger)),
+            child: Text(loc.t('cp_draft_discard'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(_loc.t('cp_draft_keep'), style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
+            child: Text(loc.t('cp_draft_keep'), style: ThixPolicy.labelStyle.copyWith(color: Colors.white, fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
@@ -435,6 +467,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     return keep == true;
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // DÉTECTION @ / # + SUGGESTIONS
+  // ════════════════════════════════════════════════════════════════════════
   void _onContentChanged() {
     final text = _contentController.text;
     final currentLength = text.length;
@@ -442,7 +477,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
     if (_isFree && currentLength > 280) {
       _contentController.text = text.substring(0, 280);
-      _contentController.selection = TextSelection.collapsed(offset: 280);
+      _contentController.selection = const TextSelection.collapsed(offset: 280);
       HapticFeedback.lightImpact();
       return;
     }
@@ -538,9 +573,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         if (tag == null) continue;
         if (q.isEmpty || tag.startsWith(q.toLowerCase())) {
           final rawCount = m['count'] ?? m['posts_count'] ?? m['usage_count'];
-          final int count = (rawCount is num)
-              ? rawCount.toInt()
-              : (int.tryParse(rawCount?.toString() ?? '') ?? 1);
+          final int count = (rawCount is num) ? rawCount.toInt() : (int.tryParse(rawCount?.toString() ?? '') ?? 1);
           results[tag] = (results[tag] ?? 0) + count;
         }
       }
@@ -588,14 +621,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     final id = user['id']?.toString();
     if (id != null) _mentionedIds.add(id);
 
-    final replacement = '@$name ';
-    _replaceToken(replacement);
+    _replaceToken('@$name ');
     HapticFeedback.selectionClick();
   }
 
   void _applyHashtag(_HashtagSuggestion tag) {
-    final replacement = '#${tag.tag} ';
-    _replaceToken(replacement);
+    _replaceToken('#${tag.tag} ');
     HapticFeedback.selectionClick();
   }
 
@@ -630,7 +661,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     _contentFocusNode.requestFocus();
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // TIER GATES & DIALOGS
+  // ════════════════════════════════════════════════════════════════════════
   void _showUpgradeDialog(String featureName, String requiredTier) {
+    final loc = _loc;
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
@@ -641,22 +676,22 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           children: [
             const Icon(Icons.workspace_premium_rounded, color: ThixPolicy.gold, size: 28),
             const SizedBox(width: 8),
-            Text(_loc.t('cp_upg_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+            Flexible(child: Text(loc.t('cp_upg_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold))),
           ],
         ),
         content: Text(
-          _loc.t('cp_upg_body', args: [featureName, requiredTier]),
+          loc.t('cp_upg_body', args: [featureName, requiredTier]),
           style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(_loc.t('cp_upg_later'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(loc.t('cp_upg_later'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
-            child: Text(_loc.t('cp_upg_see'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
+            child: Text(loc.t('cp_upg_see'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
@@ -664,26 +699,27 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   }
 
   void _showAudioLimitDialog() {
+    final loc = _loc;
     HapticFeedback.heavyImpact();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: ThixPolicy.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-        title: Text(_loc.t('cp_quota_title'), style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
+        title: Text(loc.t('cp_quota_title'), style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold)),
         content: Text(
-          _loc.t('cp_quota_body', args: ['$_freeAudioDailyLimit']),
+          loc.t('cp_quota_body', args: ['$_freeAudioDailyLimit']),
           style: ThixPolicy.bodyStyle.copyWith(height: 1.4),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(_loc.t('cp_quota_ok'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(loc.t('cp_quota_ok'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.gold, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm))),
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.push(context, MaterialPageRoute(builder: (_) => const CertificationTiersPage()));
             },
-            child: Text(_loc.t('cp_quota_upg'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
+            child: Text(loc.t('cp_quota_upg'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textMain, fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
@@ -692,7 +728,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
   Future<bool> _checkPermissionWithDisclosure(Permission permission, String explanation) async {
     if (kIsWeb) return true;
-    var status = await permission.status;
+    final loc = _loc;
+    final status = await permission.status;
     if (status.isGranted) return true;
 
     if (status.isPermanentlyDenied) {
@@ -701,11 +738,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: ThixPolicy.card,
-          title: Text(_loc.t('cp_perm_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
-          content: Text(_loc.t('cp_perm_denied'), style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
+          title: Text(loc.t('cp_perm_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+          content: Text(loc.t('cp_perm_denied'), style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
           actions: [
-            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(_loc.t('common_cancel'))),
-            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text(_loc.t('cp_perm_open'))),
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(loc.t('common_cancel'))),
+            ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: Text(loc.t('cp_perm_open'))),
           ],
         ),
       );
@@ -715,10 +752,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
     if (!mounted) return false;
 
-    bool? userAgreed = await showDialog<bool>(
+    final bool? userAgreed = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
-      builder: (context) => AlertDialog(
+      builder: (ctx) => AlertDialog(
         backgroundColor: ThixPolicy.card,
         surfaceTintColor: ThixPolicy.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
@@ -726,12 +763,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           children: [
             const Icon(Icons.privacy_tip_outlined, color: ThixPolicy.textMain, size: 28),
             const SizedBox(width: 10),
-            Text(_loc.t('cp_perm_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+            Flexible(child: Text(loc.t('cp_perm_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold))),
           ],
         ),
         content: Text(explanation, style: ThixPolicy.bodyStyle.copyWith(height: 1.4)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(_loc.t('common_cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(loc.t('common_cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
               backgroundColor: ThixPolicy.card,
@@ -740,18 +777,21 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
               side: const BorderSide(color: ThixPolicy.textMain, width: 1),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm)),
             ),
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(_loc.t('cp_quota_ok'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(loc.t('cp_quota_ok'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
           ),
         ],
       ),
     );
 
     if (userAgreed != true) return false;
-    var newStatus = await permission.request();
+    final newStatus = await permission.request();
     return newStatus.isGranted;
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // FORMATAGE
+  // ════════════════════════════════════════════════════════════════════════
   void _wrapSelection(String prefix, String suffix) {
     if (!_canFormatText) {
       _showUpgradeDialog(_loc.t('cp_feat_format'), _loc.t('cp_tier_standard'));
@@ -784,24 +824,25 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     if (_hasBgColor) setState(() => _selectedBgColor = Colors.transparent);
   }
 
+  // ════════════════════════════════════════════════════════════════════════
+  // AUDIO
+  // ════════════════════════════════════════════════════════════════════════
   Future<void> _startRecording() async {
     if (_isUploading || _isRecording) return;
+    final loc = _loc;
     if (_hasAudioDailyQuota && _audioPostsToday >= _freeAudioDailyLimit) {
       _showAudioLimitDialog();
       return;
     }
 
-    final hasPerm = await _checkPermissionWithDisclosure(
-      Permission.microphone,
-      _loc.t('cp_perm_mic'),
-    );
+    final hasPerm = await _checkPermissionWithDisclosure(Permission.microphone, loc.t('cp_perm_mic'));
     if (!hasPerm) {
-      if (mounted) setState(() => _errorMessage = _loc.t('cp_err_mic'));
+      if (mounted) setState(() => _errorMessage = loc.t('cp_err_mic'));
       return;
     }
 
     try {
-      String recordPath = kIsWeb
+      final String recordPath = kIsWeb
           ? 'post_audio_${DateTime.now().millisecondsSinceEpoch}.m4a'
           : p.join((await getTemporaryDirectory()).path, 'post_audio_${DateTime.now().millisecondsSinceEpoch}.m4a');
       await _audioRecorder.start(const RecordConfig(encoder: AudioEncoder.aacLc, bitRate: 128000), path: recordPath);
@@ -823,16 +864,17 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         setState(() => _recordDuration++);
         if (_recordDuration >= _maxAudioDuration) {
           _stopRecording();
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_rec_max', args: ['$_maxAudioDuration']))));
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.t('cp_rec_max', args: ['$_maxAudioDuration']))));
         }
       });
     } catch (e) {
       debugPrint('[Record] Start error: $e');
-      if (mounted) setState(() => _errorMessage = _loc.t('cp_err_record_start'));
+      if (mounted) setState(() => _errorMessage = loc.t('cp_err_record_start'));
     }
   }
 
   Future<void> _stopRecording() async {
+    final loc = _loc;
     _recordTimer?.cancel();
     try {
       final path = await _audioRecorder.stop();
@@ -840,7 +882,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       if (path != null) {
         final bytes = await XFile(path).readAsBytes();
         if (!_PostValidators.validateFileSize(bytes.length, maxSizeMB: _maxAudioSizeMB)) {
-          if (mounted) setState(() => _errorMessage = _loc.t('cp_err_audio_size', args: ['$_maxAudioSizeMB']));
+          if (mounted) setState(() => _errorMessage = loc.t('cp_err_audio_size', args: ['$_maxAudioSizeMB']));
           return;
         }
         if (mounted) {
@@ -852,14 +894,23 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       }
     } catch (e) {
       debugPrint('[Record] Stop error: $e');
-      if (mounted) setState(() => _errorMessage = _loc.t('cp_err_record'));
+      if (mounted) setState(() => _errorMessage = loc.t('cp_err_record'));
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // MÉDIAS
+  // ════════════════════════════════════════════════════════════════════════
+  void _errSnack(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg), backgroundColor: ThixPolicy.danger));
   }
 
   Future<void> _pickImages() async {
     if (_isUploading) return;
+    final loc = _loc;
     if (_images.length >= _maxPhotos) {
-      _showUpgradeDialog(_loc.t('cp_feat_photos'), _isFree ? _loc.t('cp_tier_standard') : _loc.t('cp_tier_premium'));
+      _showUpgradeDialog(loc.t('cp_feat_photos'), _isFree ? loc.t('cp_tier_standard') : loc.t('cp_tier_premium'));
       return;
     }
     final result = await FilePicker.platform.pickFiles(type: FileType.image, allowMultiple: true, withData: true);
@@ -870,16 +921,16 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           if (_images.length >= _maxPhotos) break;
           if (f.bytes == null) continue;
           if (!_PostValidators.validateFileSize(f.bytes!.length, maxSizeMB: _maxImageSizeMB)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_err_size', args: [f.name, '$_maxImageSizeMB'])), backgroundColor: ThixPolicy.danger));
+            _errSnack(loc.t('cp_err_size', args: [f.name, '$_maxImageSizeMB']));
             continue;
           }
           if (!_PostValidators.validateFileExtension(f.name, _allowedImageExts)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_err_img_fmt', args: [f.name])), backgroundColor: ThixPolicy.danger));
+            _errSnack(loc.t('cp_err_img_fmt', args: [f.name]));
             continue;
           }
           final mimeKey = _PostValidators.validateMime(f.bytes!);
           if (mimeKey != null) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('${f.name}: ${_loc.t(mimeKey)}'), backgroundColor: ThixPolicy.danger));
+            _errSnack('${f.name}: ${loc.t(mimeKey)}');
             continue;
           }
           _images.add(_MediaItem(f.bytes!, f.name));
@@ -890,8 +941,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
   Future<void> _pickVideos() async {
     if (_isUploading) return;
+    final loc = _loc;
     if (!_canPostVideo) {
-      _showUpgradeDialog(_loc.t('cp_feat_video'), _loc.t('cp_tier_standard'));
+      _showUpgradeDialog(loc.t('cp_feat_video'), loc.t('cp_tier_standard'));
       return;
     }
     final result = await FilePicker.platform.pickFiles(type: FileType.video, allowMultiple: true, withData: true);
@@ -901,11 +953,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         for (final f in result.files) {
           if (f.bytes == null) continue;
           if (!_PostValidators.validateFileSize(f.bytes!.length, maxSizeMB: _maxVideoSizeMB)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_err_size', args: [f.name, '$_maxVideoSizeMB'])), backgroundColor: ThixPolicy.danger));
+            _errSnack(loc.t('cp_err_size', args: [f.name, '$_maxVideoSizeMB']));
             continue;
           }
           if (!_PostValidators.validateFileExtension(f.name, _allowedVideoExts)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_err_vid_fmt', args: [f.name])), backgroundColor: ThixPolicy.danger));
+            _errSnack(loc.t('cp_err_vid_fmt', args: [f.name]));
             continue;
           }
           _videos.add(_MediaItem(f.bytes!, f.name, isVideo: true));
@@ -916,14 +968,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
   Future<void> _pickCamera() async {
     if (_isUploading) return;
+    final loc = _loc;
     if (_images.length >= _maxPhotos) {
-      _showUpgradeDialog(_loc.t('cp_feat_photos'), _isFree ? _loc.t('cp_tier_standard') : _loc.t('cp_tier_premium'));
+      _showUpgradeDialog(loc.t('cp_feat_photos'), _isFree ? loc.t('cp_tier_standard') : loc.t('cp_tier_premium'));
       return;
     }
-    final hasPerm = await _checkPermissionWithDisclosure(
-      Permission.camera,
-      _loc.t('cp_perm_cam'),
-    );
+    final hasPerm = await _checkPermissionWithDisclosure(Permission.camera, loc.t('cp_perm_cam'));
     if (!hasPerm) return;
     try {
       final ImagePicker picker = ImagePicker();
@@ -931,7 +981,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       if (photo != null) {
         final bytes = await photo.readAsBytes();
         if (!_PostValidators.validateFileSize(bytes.length, maxSizeMB: _maxImageSizeMB)) {
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_err_photo_size', args: ['$_maxImageSizeMB'])), backgroundColor: ThixPolicy.danger));
+          _errSnack(loc.t('cp_err_photo_size', args: ['$_maxImageSizeMB']));
           return;
         }
         if (mounted) {
@@ -942,7 +992,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         }
       }
     } catch (e) {
-      debugPrint("[Camera] Error: $e");
+      debugPrint('[Camera] Error: $e');
     }
   }
 
@@ -956,37 +1006,45 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     });
   }
 
+  void _removePollOption(int index) {
+    final c = _pollOptionControllers[index];
+    setState(() => _pollOptionControllers.removeAt(index));
+    // dispose après le rebuild : évite "TextEditingController used after being disposed"
+    WidgetsBinding.instance.addPostFrameCallback((_) => c.dispose());
+  }
+
   // ════════════════════════════════════════════════════════════════════════
-  // PUBLICATION — ✅ postBadge ajouté au NetworkPost optimiste
+  // PUBLICATION
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _publishPost() async {
     if (_isUploading || _isRecording) return;
+    final loc = _loc;
 
     final textContent = _contentController.text.trim();
     setState(() => _errorMessage = null);
 
     if (_postTypeMode == 0 && textContent.isEmpty && _images.isEmpty && _videos.isEmpty && _audioBytes == null) {
-      setState(() => _errorMessage = _loc.t('cp_err_empty'));
+      setState(() => _errorMessage = loc.t('cp_err_empty'));
       return;
     }
     if (_postTypeMode == 1 && textContent.isEmpty) {
-      setState(() => _errorMessage = _loc.t('cp_err_poll_q'));
+      setState(() => _errorMessage = loc.t('cp_err_poll_q'));
       return;
     }
     if (_postTypeMode == 2 && (textContent.isEmpty || _challengeEndDate == null || _challengeDescController.text.trim().isEmpty)) {
-      setState(() => _errorMessage = _loc.t('cp_err_ch'));
+      setState(() => _errorMessage = loc.t('cp_err_ch'));
       return;
     }
 
     if (_postTypeMode == 1) {
       final options = _pollOptionControllers.map((c) => c.text.trim()).where((t) => t.isNotEmpty).toList();
       if (options.length < 2) {
-        setState(() => _errorMessage = _loc.t('cp_err_poll_min'));
+        setState(() => _errorMessage = loc.t('cp_err_poll_min'));
         return;
       }
       for (final opt in options) {
         if (opt.length > _maxPollOptionLength) {
-          setState(() => _errorMessage = _loc.t('cp_err_poll_len', args: ['$_maxPollOptionLength']));
+          setState(() => _errorMessage = loc.t('cp_err_poll_len', args: ['$_maxPollOptionLength']));
           return;
         }
       }
@@ -996,6 +1054,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
     final uploadedUrls = <String>[];
     final ns = ref.read(networkServiceProvider);
+    // Le badge n'existe pas pour les challenges (sélecteur masqué dans ce mode)
+    final badge = _postTypeMode == 2 ? null : _selectedBadge;
 
     try {
       if (_audioBytes != null) {
@@ -1004,7 +1064,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           if (url != null && url.isNotEmpty) uploadedUrls.add(url);
         } catch (e) {
           debugPrint('[Upload] Audio error: $e');
-          throw Exception('Échec upload audio: $e');
+          throw _PublishException(loc.t('cp_err_up_audio'));
         }
       }
 
@@ -1015,7 +1075,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           if (url != null && url.isNotEmpty) uploadedUrls.add(url);
         } catch (e) {
           debugPrint('[Upload] Image error: $e');
-          throw Exception('Échec upload image: $e');
+          throw _PublishException(loc.t('cp_err_up_image'));
         }
       }
 
@@ -1025,14 +1085,14 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           if (url != null && url.isNotEmpty) uploadedUrls.add(url);
         } catch (e) {
           debugPrint('[Upload] Video error: $e');
-          throw Exception('Échec upload vidéo: $e');
+          throw _PublishException(loc.t('cp_err_up_video'));
         }
       }
 
       final user = Supabase.instance.client.auth.currentUser;
-      if (user == null) throw Exception(_loc.t('cp_err_auth'));
+      if (user == null) throw _PublishException(loc.t('cp_err_auth'));
 
-      String authorName = _authorName;
+      String authorName = _authorName ?? '';
       String? authorAvatar = _authorAvatar;
       String? authorTitle;
       try {
@@ -1061,7 +1121,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         'media_url': uploadedUrls.isNotEmpty ? uploadedUrls.first : null,
         'community_id': widget.communityId,
         'post_type': 'standard',
-        if (_selectedBadge != null) 'post_badge': _selectedBadge!.key,
+        if (badge != null) 'post_badge': badge.key,
         if (hashtags.isNotEmpty) 'hashtags': hashtags,
         if (_mentionedIds.isNotEmpty) 'mentioned_user_ids': _mentionedIds.toList(),
         if (_audioBytes != null) 'audio_duration_seconds': _recordDuration,
@@ -1071,7 +1131,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       if (_canHaveBgColor && _hasBgColor) payload['bg_color'] = _colorToHex(_selectedBgColor);
 
       if (_postTypeMode == 1) {
-        final options = _pollOptionControllers.map((c) => _PostValidators.sanitizeText(c.text.trim(), maxLength: _maxPollOptionLength)).where((t) => t.isNotEmpty).toList();
+        final options = _pollOptionControllers
+            .map((c) => _PostValidators.sanitizeText(c.text.trim(), maxLength: _maxPollOptionLength))
+            .where((t) => t.isNotEmpty)
+            .toList();
         payload['post_type'] = 'poll';
         payload['poll_data'] = {
           'options': options.map((o) => {'text': o, 'votes': []}).toList(),
@@ -1094,7 +1157,6 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       final inserted = await Supabase.instance.client.from('posts').insert(payload).select().single();
       final postId = inserted['id']?.toString() ?? '';
 
-      // ✅ CORRECTION : postBadge ajouté au NetworkPost optimiste
       final newPost = NetworkPost(
         id: postId,
         userId: user.id,
@@ -1103,7 +1165,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         authorTitle: authorTitle,
         content: sanitizedContent,
         bgColor: payload['bg_color'] as String?,
-        postBadge: _selectedBadge?.key,
+        postBadge: badge?.key,
         mediaUrls: uploadedUrls,
         postType: PostType.values.asNameMap()[payload['post_type'] as String?] ?? PostType.standard,
         pollData: payload['poll_data'] as Map<String, dynamic>?,
@@ -1128,11 +1190,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       _clearDraft();
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_loc.t('cp_ok_publish')), backgroundColor: ThixPolicy.success));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(loc.t('cp_ok_publish')), backgroundColor: ThixPolicy.success));
       Navigator.pop(context, newPost);
     } catch (e) {
       debugPrint('[Publish] Error: $e');
 
+      // Rollback des fichiers déjà envoyés
       if (uploadedUrls.isNotEmpty) {
         for (final url in uploadedUrls) {
           try {
@@ -1149,7 +1212,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
       if (mounted) {
         setState(() {
-          _errorMessage = _loc.t('cp_err_publish', args: [e.toString().split('\n').first]);
+          _errorMessage = e is _PublishException
+              ? e.message
+              : loc.t('cp_err_publish', args: [e.toString().split('\n').first]);
           _isUploading = false;
         });
       }
@@ -1160,14 +1225,15 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   // UI HELPERS
   // ════════════════════════════════════════════════════════════════════════
   Widget _segmentedType() {
+    final loc = _loc;
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
       child: Row(
         children: [
-          _segItem(_loc.t('cp_tab_post'), 0, Icons.article_rounded),
-          _segItem(_loc.t('cp_tab_poll'), 1, Icons.poll_rounded),
-          _segItem(_loc.t('cp_tab_challenge'), 2, Icons.emoji_events_rounded),
+          _segItem(loc.t('cp_tab_post'), 0, Icons.article_rounded),
+          _segItem(loc.t('cp_tab_poll'), 1, Icons.poll_rounded),
+          _segItem(loc.t('cp_tab_challenge'), 2, Icons.emoji_events_rounded),
         ],
       ),
     );
@@ -1202,7 +1268,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
             children: [
               Icon(icon, size: 15, color: sel ? ThixPolicy.primary : ThixPolicy.textMuted),
               const SizedBox(width: 6),
-              Text(label, style: ThixPolicy.labelStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.medium, color: sel ? ThixPolicy.primary : ThixPolicy.textMuted)),
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.labelStyle.copyWith(fontWeight: sel ? ThixPolicy.bold : ThixPolicy.medium, color: sel ? ThixPolicy.primary : ThixPolicy.textMuted),
+                ),
+              ),
             ],
           ),
         ),
@@ -1244,6 +1316,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   }
 
   Widget _badgeSelector() {
+    final loc = _loc;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1251,7 +1324,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           children: [
             const Icon(Icons.local_offer_outlined, size: 14, color: ThixPolicy.textMuted),
             const SizedBox(width: 6),
-            Text(_loc.t('cp_badges'), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontWeight: ThixPolicy.semiBold)),
+            Text(loc.t('cp_badges'), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontWeight: ThixPolicy.semiBold)),
           ],
         ),
         const SizedBox(height: 6),
@@ -1269,6 +1342,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                         _selectedBadge = (_selectedBadge?.key == b.key) ? null : b;
                         _draftBadgeKey = _selectedBadge?.key;
                       });
+                      _syncPulse();
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
@@ -1286,7 +1360,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                           Icon(b.icon, size: 13, color: b.color),
                           const SizedBox(width: 5),
                           Text(
-                            _loc.t(b.labelKey),
+                            loc.t(b.labelKey),
                             style: ThixPolicy.labelStyle.copyWith(color: b.color, fontWeight: FontWeight.w900, letterSpacing: 0.5, fontSize: 11),
                           ),
                         ],
@@ -1332,6 +1406,21 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       width: 20,
       height: 20,
       child: CircularProgressIndicator(value: frac, strokeWidth: 2.4, backgroundColor: ThixPolicy.border, color: color),
+    );
+  }
+
+  Widget _mediaSizeTag(int bytes) {
+    return Positioned(
+      left: 4,
+      bottom: 4,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+        child: Text(
+          '${(bytes / 1048576).toStringAsFixed(1)} ${_loc.t('cp_unit_mb')}',
+          style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w700),
+        ),
+      ),
     );
   }
 
@@ -1391,11 +1480,17 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   // ════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final loc = _loc;
     final textLen = _contentController.text.length;
     final hasBg = _canHaveBgColor && _hasBgColor;
+    final limit = _isFree ? 280 : _maxTextLength;
 
-    return WillPopScope(
-      onWillPop: _attemptClose,
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _attemptClose() && mounted) Navigator.pop(context);
+      },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
         appBar: AppBar(
@@ -1411,7 +1506,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                   },
           ),
           title: Text(
-            _postTypeMode == 1 ? _loc.t('cp_title_poll') : _postTypeMode == 2 ? _loc.t('cp_title_challenge') : _loc.t('cp_title_post'),
+            _postTypeMode == 1 ? loc.t('cp_title_poll') : _postTypeMode == 2 ? loc.t('cp_title_challenge') : loc.t('cp_title_post'),
             style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 17, color: ThixPolicy.textMain),
           ),
           actions: [
@@ -1427,7 +1522,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                 ),
                 child: _isUploading
                     ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text(_loc.t('cp_publish'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                    : Text(loc.t('cp_publish'), style: const TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ],
@@ -1440,10 +1535,12 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                   children: [
                     Expanded(
                       child: SingleChildScrollView(
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.all(16),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // ── HEADER AUTEUR + VISIBILITÉ ──
                             Row(
                               children: [
                                 CircleAvatar(
@@ -1457,7 +1554,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(_authorName, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                                      Text(_authorName ?? '', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                                       const SizedBox(height: 2),
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1468,11 +1565,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                   ),
                                 ),
                                 PopupMenuButton<bool>(
-                                  tooltip: _loc.t('cp_visibility'),
+                                  tooltip: loc.t('cp_visibility'),
                                   onSelected: (v) => setState(() => _isPublic = v),
                                   itemBuilder: (_) => [
-                                    PopupMenuItem(value: true, child: Row(children: [const Icon(Icons.public_rounded, size: 18), const SizedBox(width: 8), Text(_loc.t('cp_public'))])),
-                                    PopupMenuItem(value: false, child: Row(children: [const Icon(Icons.group_rounded, size: 18), const SizedBox(width: 8), Text(_loc.t('cp_contacts'))])),
+                                    PopupMenuItem(value: true, child: Row(children: [const Icon(Icons.public_rounded, size: 18), const SizedBox(width: 8), Text(loc.t('cp_public'))])),
+                                    PopupMenuItem(value: false, child: Row(children: [const Icon(Icons.group_rounded, size: 18), const SizedBox(width: 8), Text(loc.t('cp_contacts'))])),
                                   ],
                                   child: Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
@@ -1482,7 +1579,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                       children: [
                                         Icon(_isPublic ? Icons.public_rounded : Icons.group_rounded, size: 15, color: ThixPolicy.textSecondary),
                                         const SizedBox(width: 6),
-                                        Text(_isPublic ? _loc.t('cp_public') : _loc.t('cp_contacts_short'), style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                                        Text(_isPublic ? loc.t('cp_public') : loc.t('cp_contacts_short'), style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold)),
                                         const Icon(Icons.arrow_drop_down_rounded, size: 18, color: ThixPolicy.textMuted),
                                       ],
                                     ),
@@ -1495,6 +1592,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                             _segmentedType(),
                             const SizedBox(height: 14),
 
+                            // ── BADGES SPÉCIAUX ──
                             if (_postTypeMode != 2) ...[
                               _badgeSelector(),
                               const SizedBox(height: 12),
@@ -1514,30 +1612,35 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                               ),
 
+                            // ── BARRE DE FORMATAGE ──
                             if (_postTypeMode != 2 && !_hasBgColor) ...[
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                                 decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
-                                child: Row(
-                                  children: [
-                                    _formatBtn(child: Text('B', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)), onTap: _applyBold, tooltip: _loc.t('cp_bold')),
-                                    const SizedBox(width: 8),
-                                    _formatBtn(child: Text('I', style: ThixPolicy.labelStyle.copyWith(fontStyle: FontStyle.italic, fontWeight: ThixPolicy.bold)), onTap: _applyItalic, tooltip: _loc.t('cp_italic')),
-                                    Container(width: 1, height: 18, color: ThixPolicy.border, margin: const EdgeInsets.symmetric(horizontal: 10)),
-                                    for (final color in _textColors)
-                                      Padding(
-                                        padding: const EdgeInsets.only(right: 7),
-                                        child: GestureDetector(
-                                          onTap: () => _applyColor(color),
-                                          child: Container(width: 18, height: 18, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.card, width: 2))),
+                                child: SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: Row(
+                                    children: [
+                                      _formatBtn(child: Text('B', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)), onTap: _applyBold, tooltip: loc.t('cp_bold')),
+                                      const SizedBox(width: 8),
+                                      _formatBtn(child: Text('I', style: ThixPolicy.labelStyle.copyWith(fontStyle: FontStyle.italic, fontWeight: ThixPolicy.bold)), onTap: _applyItalic, tooltip: loc.t('cp_italic')),
+                                      Container(width: 1, height: 18, color: ThixPolicy.border, margin: const EdgeInsets.symmetric(horizontal: 10)),
+                                      for (final color in _textColors)
+                                        Padding(
+                                          padding: const EdgeInsets.only(right: 7),
+                                          child: GestureDetector(
+                                            onTap: () => _applyColor(color),
+                                            child: Container(width: 18, height: 18, decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.card, width: 2))),
+                                          ),
                                         ),
-                                      ),
-                                  ],
+                                    ],
+                                  ),
                                 ),
                               ),
                               const SizedBox(height: 12),
                             ],
 
+                            // ── CHAMP PRINCIPAL (multiligne : paragraphes) ──
                             Container(
                               width: double.infinity,
                               decoration: BoxDecoration(
@@ -1551,13 +1654,16 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 mainAxisSize: MainAxisSize.min,
                                 crossAxisAlignment: hasBg ? CrossAxisAlignment.center : CrossAxisAlignment.start,
                                 children: [
-                                  if (_selectedBadge != null) ...[
+                                  if (_selectedBadge != null && _postTypeMode != 2) ...[
                                     _badgePreviewChip(_selectedBadge!),
                                     const SizedBox(height: 12),
                                   ],
                                   TextField(
                                     controller: _contentController,
                                     focusNode: _contentFocusNode,
+                                    keyboardType: TextInputType.multiline,
+                                    textInputAction: TextInputAction.newline,
+                                    textCapitalization: TextCapitalization.sentences,
                                     maxLength: _isFree ? 280 : null,
                                     minLines: _postTypeMode == 2 ? 2 : (hasBg ? null : 6),
                                     maxLines: hasBg ? null : 14,
@@ -1569,11 +1675,11 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                       height: 1.45,
                                     ),
                                     decoration: InputDecoration(
-                                      hintText: _postTypeMode == 1 ? _loc.t('cp_hint_poll') : _postTypeMode == 2 ? _loc.t('cp_hint_challenge') : _loc.t('cp_hint_post'),
+                                      hintText: _postTypeMode == 1 ? loc.t('cp_hint_poll') : _postTypeMode == 2 ? loc.t('cp_hint_challenge') : loc.t('cp_hint_post'),
                                       hintStyle: ThixPolicy.bodyStyle.copyWith(color: hasBg ? Colors.white70 : ThixPolicy.textSecondary),
                                       border: InputBorder.none,
                                       isCollapsed: true,
-                                      counterText: "",
+                                      counterText: '',
                                       fillColor: Colors.transparent,
                                       filled: true,
                                       enabledBorder: InputBorder.none,
@@ -1584,8 +1690,10 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                               ),
                             ),
 
+                            // ── SUGGESTIONS @ / # ──
                             _suggestionPanel(),
 
+                            // ── EMOJIS RAPIDES ──
                             if (_postTypeMode != 2)
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
@@ -1601,6 +1709,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                               ),
 
+                            // ── COMPTEUR ──
                             if (_isFree && _postTypeMode == 0)
                               Align(
                                 alignment: Alignment.centerRight,
@@ -1613,6 +1722,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                               ),
 
+                            // ── ENREGISTREMENT AUDIO ──
                             if (_isRecording)
                               Container(
                                 margin: const EdgeInsets.only(top: 12),
@@ -1623,7 +1733,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                     const Icon(Icons.mic, color: ThixPolicy.danger, size: 20),
                                     const SizedBox(width: 12),
                                     Text(
-                                      _loc.t('cp_recording', args: ['${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')}']),
+                                      loc.t('cp_recording', args: ['${_recordDuration ~/ 60}:${(_recordDuration % 60).toString().padLeft(2, '0')}']),
                                       style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.danger, fontWeight: ThixPolicy.bold),
                                     ),
                                     const Spacer(),
@@ -1650,6 +1760,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                               ),
 
+                            // ── FONDS COLORÉS ──
                             if (_canHaveBgColor)
                               SingleChildScrollView(
                                 scrollDirection: Axis.horizontal,
@@ -1660,7 +1771,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                     return GestureDetector(
                                       onTap: () {
                                         if (!_canFormatText && c != Colors.transparent) {
-                                          _showUpgradeDialog(_loc.t('cp_feat_bg'), _loc.t('cp_tier_standard'));
+                                          _showUpgradeDialog(loc.t('cp_feat_bg'), loc.t('cp_tier_standard'));
                                           return;
                                         }
                                         setState(() => _selectedBgColor = c);
@@ -1677,12 +1788,14 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                               ),
 
+                            // ── SONDAGE ──
                             if (_postTypeMode == 1) ...[
                               const SizedBox(height: 16),
-                              Text(_loc.t('cp_poll_options'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                              Text(loc.t('cp_poll_options'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                               const SizedBox(height: 8),
                               ..._pollOptionControllers.asMap().entries.map((e) {
                                 return Padding(
+                                  key: ObjectKey(e.value),
                                   padding: const EdgeInsets.only(bottom: 8),
                                   child: Row(
                                     children: [
@@ -1692,7 +1805,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                           maxLength: _maxPollOptionLength,
                                           style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
                                           decoration: InputDecoration(
-                                            hintText: _loc.t('cp_poll_option', args: ['${e.key + 1}']),
+                                            hintText: loc.t('cp_poll_option', args: ['${e.key + 1}']),
                                             filled: true,
                                             fillColor: ThixPolicy.card,
                                             border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rSm), borderSide: BorderSide.none),
@@ -1704,12 +1817,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                       if (e.key > 1)
                                         IconButton(
                                           icon: const Icon(Icons.remove_circle_outline, color: ThixPolicy.danger, size: 20),
-                                          onPressed: () {
-                                            setState(() {
-                                              _pollOptionControllers[e.key].dispose();
-                                              _pollOptionControllers.removeAt(e.key);
-                                            });
-                                          },
+                                          onPressed: () => _removePollOption(e.key),
                                         ),
                                     ],
                                   ),
@@ -1719,7 +1827,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 TextButton.icon(
                                   onPressed: () => setState(() => _pollOptionControllers.add(TextEditingController())),
                                   icon: const Icon(Icons.add_circle_outline, size: 17),
-                                  label: Text(_loc.t('cp_poll_add'), style: ThixPolicy.labelStyle),
+                                  label: Text(loc.t('cp_poll_add'), style: ThixPolicy.labelStyle),
                                 ),
                               const SizedBox(height: 10),
                               Container(
@@ -1727,18 +1835,18 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rSm), border: Border.all(color: ThixPolicy.border)),
                                 child: SwitchListTile(
                                   contentPadding: EdgeInsets.zero,
-                                  title: Text(_loc.t('cp_poll_multiple'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
+                                  title: Text(loc.t('cp_poll_multiple'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
                                   value: _pollMultiple,
                                   activeColor: ThixPolicy.primary,
                                   onChanged: (v) => setState(() => _pollMultiple = v),
                                 ),
                               ),
                               const SizedBox(height: 10),
-                              Text(_loc.t('cp_poll_duration'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                              Text(loc.t('cp_poll_duration'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                               const SizedBox(height: 6),
                               Row(
                                 children: [
-                                  for (final d in const [1, 3, 7]) ...[
+                                  for (final d in const [1, 3, 7])
                                     Expanded(
                                       child: Padding(
                                         padding: const EdgeInsets.only(right: 8),
@@ -1753,7 +1861,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                               border: Border.all(color: _pollDurationDays == d ? ThixPolicy.primary : ThixPolicy.border),
                                             ),
                                             child: Text(
-                                              d == 7 ? _loc.t('cp_poll_week') : _loc.t(d == 1 ? 'cp_poll_day' : 'cp_poll_days', args: ['$d']),
+                                              d == 7 ? loc.t('cp_poll_week') : loc.t(d == 1 ? 'cp_poll_day' : 'cp_poll_days', args: ['$d']),
                                               textAlign: TextAlign.center,
                                               style: ThixPolicy.labelStyle.copyWith(color: _pollDurationDays == d ? Colors.white : ThixPolicy.textMain, fontWeight: ThixPolicy.semiBold),
                                             ),
@@ -1761,23 +1869,24 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                         ),
                                       ),
                                     ),
-                                  ],
                                 ],
                               ),
                             ],
 
+                            // ── CHALLENGE ──
                             if (_postTypeMode == 2) ...[
                               const SizedBox(height: 16),
-                              Text(_loc.t('cp_ch_desc'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
+                              Text(loc.t('cp_ch_desc'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
                               const SizedBox(height: 8),
                               TextField(
                                 controller: _challengeDescController,
+                                keyboardType: TextInputType.multiline,
                                 minLines: 3,
                                 maxLines: 5,
                                 maxLength: 2000,
                                 style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
                                 decoration: InputDecoration(
-                                  hintText: _loc.t('cp_ch_desc_hint'),
+                                  hintText: loc.t('cp_ch_desc_hint'),
                                   filled: true,
                                   fillColor: ThixPolicy.card,
                                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: BorderSide.none),
@@ -1791,7 +1900,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 maxLength: 500,
                                 style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
                                 decoration: InputDecoration(
-                                  hintText: _loc.t('cp_ch_reward'),
+                                  hintText: loc.t('cp_ch_reward'),
                                   filled: true,
                                   fillColor: ThixPolicy.card,
                                   prefixIcon: const Icon(Icons.card_giftcard_rounded, size: 18, color: ThixPolicy.gold),
@@ -1808,7 +1917,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 maxLength: 6,
                                 style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5),
                                 decoration: InputDecoration(
-                                  hintText: _loc.t('cp_ch_max'),
+                                  hintText: loc.t('cp_ch_max'),
                                   filled: true,
                                   fillColor: ThixPolicy.card,
                                   prefixIcon: const Icon(Icons.groups_rounded, size: 18, color: ThixPolicy.primary),
@@ -1827,23 +1936,23 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                     firstDate: DateTime.now(),
                                     lastDate: DateTime.now().add(const Duration(days: 365)),
                                   );
-                                  if (picked != null) {
-                                    final time = await showTimePicker(
-                                      context: context,
-                                      initialTime: TimeOfDay.fromDateTime(_challengeEndDate ?? DateTime.now().add(const Duration(days: 7, hours: 12))),
-                                    );
-                                    setState(() {
-                                      _challengeEndDate = DateTime(picked.year, picked.month, picked.day, time?.hour ?? 23, time?.minute ?? 59);
-                                    });
-                                  }
+                                  if (picked == null || !mounted) return;
+                                  final time = await showTimePicker(
+                                    context: context,
+                                    initialTime: TimeOfDay.fromDateTime(_challengeEndDate ?? DateTime.now().add(const Duration(days: 7, hours: 12))),
+                                  );
+                                  if (!mounted) return;
+                                  setState(() {
+                                    _challengeEndDate = DateTime(picked.year, picked.month, picked.day, time?.hour ?? 23, time?.minute ?? 59);
+                                  });
                                 },
                                 icon: const Icon(Icons.calendar_today_rounded, size: 15, color: ThixPolicy.primary),
                                 label: Text(
                                   _challengeEndDate == null
-                                      ? _loc.t('cp_ch_pick')
-                                      : _loc.t('cp_ch_end', args: [
+                                      ? loc.t('cp_ch_pick')
+                                      : loc.t('cp_ch_end', args: [
                                           '${_challengeEndDate!.day}/${_challengeEndDate!.month}/${_challengeEndDate!.year}',
-                                          '${_challengeEndDate!.hour.toString().padLeft(2, '0')}:${_challengeEndDate!.minute.toString().padLeft(2, '0')}'
+                                          '${_challengeEndDate!.hour.toString().padLeft(2, '0')}:${_challengeEndDate!.minute.toString().padLeft(2, '0')}',
                                         ]),
                                   style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold),
                                 ),
@@ -1852,12 +1961,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 Padding(
                                   padding: const EdgeInsets.only(top: 8),
                                   child: Text(
-                                    _loc.t('cp_ch_countdown', args: ['${_challengeEndDate!.difference(DateTime.now()).inDays}']),
+                                    loc.t('cp_ch_countdown', args: ['${math.max(0, _challengeEndDate!.difference(DateTime.now()).inDays)}']),
                                     style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.gold, fontWeight: ThixPolicy.bold),
                                   ),
                                 ),
                             ],
 
+                            // ── MÉDIAS AJOUTÉS ──
                             if (_images.isNotEmpty)
                               Padding(
                                 padding: const EdgeInsets.only(top: 14),
@@ -1869,15 +1979,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                       Stack(
                                         children: [
                                           ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rSm), child: Image.memory(_images[i].bytes, width: 92, height: 92, fit: BoxFit.cover)),
-                                          Positioned(
-                                            left: 4,
-                                            bottom: 4,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                                              child: Text('${(_images[i].bytes.length / 1048576).toStringAsFixed(1)} Mo', style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w700)),
-                                            ),
-                                          ),
+                                          _mediaSizeTag(_images[i].bytes.length),
                                           Positioned(
                                             top: 4,
                                             right: 4,
@@ -1896,20 +1998,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 padding: const EdgeInsets.only(top: 14),
                                 child: Wrap(
                                   spacing: 8,
+                                  runSpacing: 8,
                                   children: [
                                     for (int i = 0; i < _videos.length; i++)
                                       Stack(
                                         children: [
                                           Container(width: 92, height: 92, decoration: BoxDecoration(color: Colors.black87, borderRadius: BorderRadius.circular(ThixPolicy.rSm)), child: const Center(child: Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30))),
-                                          Positioned(
-                                            left: 4,
-                                            bottom: 4,
-                                            child: Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-                                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                                              child: Text('${(_videos[i].bytes.length / 1048576).toStringAsFixed(1)} Mo', style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w700)),
-                                            ),
-                                          ),
+                                          _mediaSizeTag(_videos[i].bytes.length),
                                           Positioned(
                                             top: 4,
                                             right: 4,
@@ -1929,6 +2024,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                       ),
                     ),
 
+                    // ── BARRE BASSE : MÉDIAS + PUBLIER ──
                     Container(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                       decoration: BoxDecoration(color: ThixPolicy.card, border: Border(top: BorderSide(color: ThixPolicy.border.withOpacity(0.6)))),
@@ -1939,14 +2035,14 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                           children: [
                             Row(
                               children: [
-                                _mediaBtn(Icons.photo_rounded, _pickImages, ThixPolicy.success, _loc.t('cp_photos')),
-                                _mediaBtn(Icons.videocam_rounded, _pickVideos, ThixPolicy.danger, _loc.t('cp_videos')),
-                                _mediaBtn(Icons.photo_camera_rounded, _pickCamera, ThixPolicy.primary, _loc.t('cp_camera')),
-                                _mediaBtn(_isRecording ? Icons.stop_circle_rounded : Icons.mic_rounded, _isRecording ? _stopRecording : _startRecording, ThixPolicy.gold, _loc.t('cp_audio')),
+                                _mediaBtn(Icons.photo_rounded, _pickImages, ThixPolicy.success, loc.t('cp_photos')),
+                                _mediaBtn(Icons.videocam_rounded, _pickVideos, ThixPolicy.danger, loc.t('cp_videos')),
+                                _mediaBtn(Icons.photo_camera_rounded, _pickCamera, ThixPolicy.primary, loc.t('cp_camera')),
+                                _mediaBtn(_isRecording ? Icons.stop_circle_rounded : Icons.mic_rounded, _isRecording ? _stopRecording : _startRecording, ThixPolicy.gold, loc.t('cp_audio')),
                                 const Spacer(),
-                                _counterRing(textLen, _maxTextLength),
+                                _counterRing(textLen, limit),
                                 const SizedBox(width: 6),
-                                Text('$textLen/${_isFree ? 280 : _maxTextLength}', style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, color: textLen >= (_isFree ? 280 : _maxTextLength) ? ThixPolicy.danger : ThixPolicy.textMuted)),
+                                Text('$textLen/$limit', style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, color: textLen >= limit ? ThixPolicy.danger : ThixPolicy.textMuted)),
                               ],
                             ),
                             const SizedBox(height: 12),
@@ -1964,7 +2060,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 ),
                                 child: _isUploading
                                     ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                    : Text(_loc.t('cp_publish'), style: ThixPolicy.buttonText),
+                                    : Text(loc.t('cp_publish'), style: ThixPolicy.buttonText),
                               ),
                             ),
                           ],
@@ -2031,11 +2127,12 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
   String _formatDuration(Duration d) {
     final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
     final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
-    return "$m:$s";
+    return '$m:$s';
   }
 
   @override
   Widget build(BuildContext context) {
+    final maxMs = _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0;
     return Row(
       children: [
         GestureDetector(
@@ -2054,8 +2151,8 @@ class _InlineAudioPlayerState extends State<_InlineAudioPlayer> {
             data: const SliderThemeData(trackHeight: 2, thumbShape: RoundSliderThumbShape(enabledThumbRadius: 6), activeTrackColor: ThixPolicy.primary, inactiveTrackColor: ThixPolicy.border, thumbColor: ThixPolicy.primary),
             child: Slider(
               min: 0,
-              max: _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0,
-              value: _position.inMilliseconds.toDouble().clamp(0.0, _duration.inMilliseconds.toDouble() > 0 ? _duration.inMilliseconds.toDouble() : 1.0),
+              max: maxMs,
+              value: _position.inMilliseconds.toDouble().clamp(0.0, maxMs),
               onChanged: (val) => _player.seek(Duration(milliseconds: val.toInt())),
             ),
           ),
