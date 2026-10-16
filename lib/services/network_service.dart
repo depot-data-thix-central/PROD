@@ -39,7 +39,7 @@ class _NetworkServiceLogger {
 class _NetworkValidators {
   _NetworkValidators._();
 
-  /// ✅ CORRECTIF PARAGRAPHES : conserve \n (0x0A), normalise \n\n
+  /// Conserve \n (0x0A), normalise \n\n
   static String sanitizeText(String? input, {int maxLength = 5000}) {
     if (input == null || input.trim().isEmpty) return '';
 
@@ -50,7 +50,6 @@ class _NetworkValidators {
         .replaceAll(RegExp(r'<[^>]*>'), '')
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-        // ⬅️ CORRECTIF : préserve \n (0x0A) et \t (0x09)
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
         .replaceAll(RegExp(r'[ \t]+\n'), '\n')
         .replaceAll(RegExp(r'\n{3,}'), '\n\n')
@@ -151,6 +150,10 @@ class NetworkService extends ChangeNotifier {
   static const Set<String> _allowedAudioExts = {'.m4a', '.mp3', '.wav', 'm4a', 'mp3', 'wav'};
   static const Duration _requestTimeout = Duration(seconds: 15);
 
+  // Smart feed v2 : fenêtre de temps (heures) et nom du RPC
+  static const String _smartFeedRpc = 'get_smart_feed_v2';
+  static const int _smartFeedWindowHours = 720; // 30 jours
+
   // ════════════════════════════════════════════════════════════════════
   // FEED
   // ════════════════════════════════════════════════════════════════════
@@ -220,6 +223,8 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
+  /// SMART FEED : appelle get_smart_feed_v2 (classement + mix réseau/populaire/découverte),
+  /// puis recharge les posts COMPLETS depuis posts_view dans le même ordre.
   Future<List<NetworkPost>> _fetchSmartFeed({
     required String uid,
     required int limit,
@@ -238,19 +243,58 @@ class NetworkService extends ChangeNotifier {
         }
 
         final res = await _supabase
-            .rpc('get_smart_feed', params: {
+            .rpc(_smartFeedRpc, params: {
               'p_user_id': uid,
               'p_limit': limit,
               'p_offset': offset,
               'p_seed': seed,
+              'p_include_network': true,
+              'p_include_popular': true,
+              'p_include_discovery': true,
+              'p_time_window_hours': _smartFeedWindowHours,
             })
             .timeout(_requestTimeout);
 
         if (res == null) throw Exception('RPC returned null');
         if (res is! List) throw Exception('RPC returned invalid type: ${res.runtimeType}');
 
-        final posts = _parsePostsSafely(res);
-        _NetworkServiceLogger.info('Smart feed loaded', {'count': posts.length, 'attempt': attempt, 'seed': seed});
+        // Fin de pagination : le RPC n'a plus rien à donner (pas de fallback ici)
+        if (res.isEmpty) {
+          _NetworkServiceLogger.info('Smart feed empty page', {'offset': offset, 'seed': seed});
+          return [];
+        }
+
+        final rows = res
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList();
+
+        final ids = rows
+            .map((r) => r['id']?.toString() ?? '')
+            .where((id) => id.isNotEmpty)
+            .toList();
+
+        List<NetworkPost> posts;
+        try {
+          posts = await _hydratePostsInOrder(ids);
+          // Si la réhydratation ne renvoie rien alors que le RPC a des lignes,
+          // on parse les lignes brutes du RPC en dernier recours.
+          if (posts.isEmpty) {
+            _NetworkServiceLogger.warn('Hydration empty, parsing raw RPC rows', {'ids': ids.length});
+            posts = _parsePostsSafely(rows);
+          }
+        } catch (e) {
+          _NetworkServiceLogger.warn('Hydration failed, parsing raw RPC rows', {'error': '$e'});
+          posts = _parsePostsSafely(rows);
+        }
+
+        _NetworkServiceLogger.info('Smart feed loaded', {
+          'count': posts.length,
+          'rpcRows': rows.length,
+          'attempt': attempt,
+          'seed': seed,
+          'pools': _countPools(rows),
+        });
 
         return posts;
       } catch (e) {
@@ -262,6 +306,44 @@ class NetworkService extends ChangeNotifier {
 
     _NetworkServiceLogger.warn('Smart feed failed, falling back to recent', {'error': '$lastError'});
     return await _fetchRecentFeed(limit: limit, offset: offset);
+  }
+
+  /// Recharge les posts complets (post_badge, hashtags, poll_data, is_liked, etc.)
+  /// depuis posts_view et conserve l'ordre calculé par le RPC.
+  Future<List<NetworkPost>> _hydratePostsInOrder(List<String> ids) async {
+    if (ids.isEmpty) return [];
+
+    final res = await _supabase
+        .from('posts_view')
+        .select('*')
+        .inFilter('id', ids)
+        .timeout(_requestTimeout);
+
+    final byId = <String, Map<String, dynamic>>{};
+    for (final e in (res as List).whereType<Map>()) {
+      final m = Map<String, dynamic>.from(e);
+      if (!_isVisible(m)) continue;
+      final id = m['id']?.toString() ?? '';
+      if (id.isNotEmpty) byId[id] = m;
+    }
+
+    final ordered = <Map<String, dynamic>>[];
+    for (final id in ids) {
+      final m = byId[id];
+      if (m != null) ordered.add(m);
+    }
+
+    return _parsePostsSafely(ordered);
+  }
+
+  /// Répartition par pool (network / popular / discovery / pinned) pour les logs
+  Map<String, int> _countPools(List<Map<String, dynamic>> rows) {
+    final counts = <String, int>{};
+    for (final r in rows) {
+      final p = r['source_pool']?.toString() ?? 'unknown';
+      counts[p] = (counts[p] ?? 0) + 1;
+    }
+    return counts;
   }
 
   List<NetworkPost> _parsePostsSafely(List<dynamic> data) {
@@ -293,7 +375,6 @@ class NetworkService extends ChangeNotifier {
     return posts;
   }
 
-  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchRecentFeed({required int limit, required int offset}) async {
     try {
       final res = await _supabase
@@ -318,7 +399,6 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchNetworkFeed({required String uid, required int limit, required int offset}) async {
     final connIds = await getMyConnectionIds();
     connIds.add(uid);
@@ -342,7 +422,6 @@ class NetworkService extends ChangeNotifier {
     return _parsePostsSafely(rows);
   }
 
-  /// ✅ CORRECTIF : select('*') inclut post_badge, hashtags, mentioned_user_ids, impressions_count
   Future<List<NetworkPost>> _fetchPopularFeed({required int limit, required int offset}) async {
     final res = await _supabase
         .from('posts_view')
@@ -441,7 +520,6 @@ class NetworkService extends ChangeNotifier {
     }
   }
 
-  /// ✅ CORRECTIF : supporte post_badge, hashtags, mentioned_user_ids
   Future<String> createPost(
     String content,
     List<String> images, {
@@ -481,7 +559,6 @@ class NetworkService extends ChangeNotifier {
     return res['id'] as String;
   }
 
-  /// ✅ CORRECTIF : supporte post_badge, hashtags, mentioned_user_ids
   Future<String> createCommunityPost({
     required String communityId,
     required String content,
