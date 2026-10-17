@@ -97,7 +97,7 @@ dependencies:
   mobile_scanner: ^6.0.2
   qr_flutter: ^4.1.0
   barcode_widget: ^2.0.4
-  flutter_foreground_task: ^8.0.0
+  flutter_foreground_task: ^11.0.3
   # ═══════════════════════════════════════════════════════════════════════
   # NOTIFICATIONS & SHARING
   # ═══════════════════════════════════════════════════════════════════════
