@@ -1,74 +1,13 @@
-// lib/services/chat/call_foreground_service.dart
-//
-// Service de premier plan Android : garde le micro (et la caméra) actifs
-// quand l'app passe en arrière-plan pendant un appel.
-// Ciblé sur flutter_foreground_task ^8.x.
-import 'package:flutter/foundation.dart';
-import 'package:flutter_foreground_task/flutter_foreground_task.dart';
+// ignore: uri_does_not_exist
+import 'call_foreground_service_stub.dart'
+    if (dart.library.io) 'call_foreground_service_impl.dart';
 
 class CallForegroundService {
   CallForegroundService._();
 
-  static bool _initialized = false;
+  static Future<void> start({required bool video}) =>
+      CallForegroundServiceImpl.start(video: video);
 
-  static bool get _supported =>
-      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
-
-  static void _init() {
-    if (_initialized) return;
-    FlutterForegroundTask.init(
-      androidNotificationOptions: AndroidNotificationOptions(
-        channelId: 'thix_call_foreground',
-        channelName: 'Appel en cours',
-        channelDescription: 'Maintient l’appel actif en arrière-plan',
-        channelImportance: NotificationChannelImportance.LOW,
-        priority: NotificationPriority.LOW,
-      ),
-      iosNotificationOptions: const IOSNotificationOptions(
-        showNotification: false,
-        playSound: false,
-      ),
-      foregroundTaskOptions: ForegroundTaskOptions(
-        eventAction: ForegroundTaskEventAction.nothing(),
-        autoRunOnBoot: false,
-        allowWakeLock: true,
-        allowWifiLock: true,
-      ),
-    );
-    _initialized = true;
-  }
-
-  static Future<void> start({required bool video}) async {
-    if (!_supported) return;
-    try {
-      _init();
-      if (await FlutterForegroundTask.isRunningService) return;
-
-      final result = await FlutterForegroundTask.startService(
-        serviceId: 4101,
-        notificationTitle: 'Appel THIX en cours',
-        notificationText: 'Appuyez pour revenir à l’appel',
-        serviceTypes: [
-          ForegroundServiceTypes.microphone,
-          if (video) ForegroundServiceTypes.camera,
-        ],
-      );
-
-      debugPrint('[CallForeground] start → $result');
-    } catch (e) {
-      debugPrint('[CallForeground] ⚠️ start failed: $e');
-    }
-  }
-
-  static Future<void> stop() async {
-    if (!_supported) return;
-    try {
-      if (await FlutterForegroundTask.isRunningService) {
-        await FlutterForegroundTask.stopService();
-        debugPrint('[CallForeground] stopped');
-      }
-    } catch (e) {
-      debugPrint('[CallForeground] ⚠️ stop failed: $e');
-    }
-  }
+  static Future<void> stop() => 
+      CallForegroundServiceImpl.stop();
 }
