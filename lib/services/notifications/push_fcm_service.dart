@@ -1,23 +1,25 @@
 // lib/services/notifications/push_fcm_service.dart
+//
+// v2 — COUCHE DE COMPATIBILITÉ.
+//
+// Le vrai push (token, notifications, appels, taps) est géré par
+// PushNotificationService (lib/services/push_notification_service*.dart).
+// Cette classe garde le même API (instance, init, foregroundStream, unregister)
+// pour que NotifBannerListener continue de fonctionner, mais elle ne fait plus :
+//  - d'écriture dans la table legacy `device_tokens`
+//  - de FlutterLocalNotificationsPlugin.initialize() (qui écrasait le tap handler)
+//  - de getInitialMessage() / onMessageOpenedApp (déjà traités ailleurs → doublons)
+//
+// Elle ne fait QUE transmettre les messages reçus en foreground vers
+// `foregroundStream` (bannière in-app).
 import 'dart:async';
+
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// FCM : enregistrement token, push foreground/background, deep-link, badge.
-/// ✅ SÉCURISÉ WEB : aucune instance Firebase/LocalNotif créée sur Web.
 class PushFcmService {
   PushFcmService._();
   static final PushFcmService instance = PushFcmService._();
-
-  // ✅ LAZY : créés uniquement au premier usage (jamais sur Web)
-  FirebaseMessaging? _fcmInstance;
-  FlutterLocalNotificationsPlugin? _localInstance;
-
-  FirebaseMessaging get _fcm => _fcmInstance ??= FirebaseMessaging.instance;
-  FlutterLocalNotificationsPlugin get _local =>
-      _localInstance ??= FlutterLocalNotificationsPlugin();
 
   /// Web non supporté → toutes les méthodes deviennent no-op
   bool get _supported => !kIsWeb;
@@ -25,104 +27,52 @@ class PushFcmService {
   final StreamController<Map<String, dynamic>> _foregroundCtrl =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  StreamSubscription<RemoteMessage>? _sub;
+
   /// Stream des notifications reçues EN FOREGROUND (pour la bannière in-app).
   Stream<Map<String, dynamic>> get foregroundStream => _foregroundCtrl.stream;
 
-  Future<void> init({required Future<void> Function(String? route) onOpenRoute}) async {
+  /// [onOpenRoute] est conservé pour compatibilité mais n'est plus utilisé :
+  /// l'ouverture depuis une notification est gérée par PushNotificationService
+  /// et LocalNotificationService.onNotificationTap (main.dart).
+  Future<void> init({
+    Future<void> Function(String? route)? onOpenRoute,
+  }) async {
     if (!_supported) {
       debugPrint('[PushFcm] ℹ️ Web: push disabled');
       return;
     }
+    if (_sub != null) return; // déjà branché : pas de doublon
+
     try {
-      await _fcm.requestPermission(alert: true, badge: true, sound: true);
+      _sub = FirebaseMessaging.onMessage.listen((m) {
+        final type = (m.data['type'] ?? '').toString().toLowerCase();
 
-      const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-      const darwinInit = DarwinInitializationSettings();
-      await _local.initialize(
-        const InitializationSettings(android: androidInit, iOS: darwinInit, macOS: darwinInit),
-        onDidReceiveNotificationResponse: (r) async {
-          final route = r.payload;
-          if (route != null && route.isNotEmpty) await onOpenRoute(route);
-        },
-      );
+        // Les appels ont leur propre interface : pas de bannière
+        if (type == 'incoming_call' || type == 'call_hangup') return;
 
-      const channel = AndroidNotificationChannel(
-        'thix_notifications',
-        'Notifications THIX',
-        description: 'Toutes les notifications THIX',
-        importance: Importance.high,
-      );
-      await _local
-          .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
-          ?.createNotificationChannel(channel);
-
-      // Token initial + refresh → device_tokens
-      final token = await _fcm.getToken();
-      if (token != null) await _registerToken(token);
-      _fcm.onTokenRefresh.listen(_registerToken);
-
-      // Foreground : pop locale + bannière in-app
-      FirebaseMessaging.onMessage.listen((m) {
         final data = Map<String, dynamic>.from(m.data);
-        data['title'] = m.notification?.title ?? 'THIX';
-        data['body'] = m.notification?.body ?? '';
+        data['title'] = m.notification?.title ??
+            m.data['title']?.toString() ??
+            'THIX';
+        data['body'] = m.notification?.body ??
+            m.data['body']?.toString() ??
+            m.data['message']?.toString() ??
+            '';
+
         _foregroundCtrl.add(data);
-        _local.show(
-          DateTime.now().millisecond,
-          data['title'] as String? ?? 'THIX',
-          data['body'] as String? ?? '',
-          const NotificationDetails(
-            android: AndroidNotificationDetails(
-              'thix_notifications',
-              'Notifications THIX',
-              channelDescription: 'Toutes les notifications THIX',
-              importance: Importance.high,
-              priority: Priority.high,
-            ),
-          ),
-          payload: data['route'] as String?,
-        );
       });
 
-      // Ouverture depuis push (background/terminated)
-      FirebaseMessaging.onMessageOpenedApp.listen((m) => onOpenRoute(m.data['route'] as String?));
-      final initial = await _fcm.getInitialMessage();
-      if (initial != null) await onOpenRoute(initial.data['route'] as String?);
-
-      debugPrint('[PushFcm] ✓ initialized');
+      debugPrint('[PushFcm] ✓ foreground stream branché (compat)');
     } catch (e) {
       debugPrint('[PushFcm] ❌ init: $e');
     }
   }
 
-  Future<void> _registerToken(String token) async {
-    if (!_supported) return;
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    try {
-      await Supabase.instance.client.from('device_tokens').upsert({
-        'user_id': uid,
-        'token': token,
-        'platform': defaultTargetPlatform == TargetPlatform.iOS ? 'ios' : 'android',
-        'last_seen': DateTime.now().toIso8601String(),
-      }, onConflict: 'user_id,token');
-    } catch (e) {
-      debugPrint('[PushFcm] ❌ token: $e');
-    }
-  }
-
-  /// À appeler au logout pour ne plus pousser vers cet appareil.
+  /// Compat : le token est désormais retiré par PushNotificationService
+  /// (déconnexion réelle gérée dans main.dart). On coupe seulement l'écoute.
   Future<void> unregister() async {
-    if (!_supported) return;
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    final token = await _fcm.getToken();
-    if (uid == null || token == null) return;
-    try {
-      await Supabase.instance.client
-          .from('device_tokens')
-          .delete()
-          .eq('user_id', uid)
-          .eq('token', token);
-    } catch (_) {}
+    await _sub?.cancel();
+    _sub = null;
   }
 }
