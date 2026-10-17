@@ -1,13 +1,15 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.3)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.5)
 //
-// FIX : handler local FCM supprimé → on utilise le vrai handler
-//       (CallKit) exporté par push_notification_service.dart
-// FIX : plus de endAllVoipCalls() quand l'app passe en pause
-// FIX : PushNotificationService.initialize() après Supabase + Auth
-// NEW : Câblage onNotificationTap (Ouvrir / Répondre) + onPushTap
-//
+// FIX v2.4 : le token push n'est supprimé QUE sur une vraie déconnexion
+//            (AuthChangeEvent.signedOut), plus jamais sur une coupure de
+//            session temporaire.
+// FIX v2.5 : appel accepté depuis l'écran verrouillé (app fermée) :
+//            - callbacks VoIP branchés AVANT runApp (plus de course au démarrage)
+//            - action gardée en attente tant que le routeur n'est pas prêt
+//            - même mécanisme pour le tap sur une notification
+// FIX      : _maskUid (log illisible)
 // EXISTANT PRÉSERVÉ : Web safe, Riverpod + Provider, timeouts,
 // runZonedGuarded sans second runApp, mode jour forcé.
 import 'dart:async';
@@ -20,6 +22,7 @@ import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -53,6 +56,58 @@ late final LocaleController _localeController;
 bool _appLaunched = false;
 
 // ============================================================================
+// NAVIGATION EN ATTENTE (cold start : le routeur n'existe pas encore)
+// ============================================================================
+bool _routerReady = false;
+
+({String inviteId, String channelName, bool isVideo})? _pendingCall;
+({String payload, String? actionId})? _pendingTap;
+
+/// Ouvre l'écran d'appel. Si le routeur n'est pas prêt, l'action est gardée
+/// et rejouée dès qu'il l'est (voir _flushPendingNav).
+void _openCall(String inviteId, String channelName, bool isVideo) {
+  if (inviteId.isEmpty) return;
+
+  final ctx = rootNavigatorKey.currentContext;
+  if (!_routerReady || ctx == null || !ctx.mounted) {
+    _pendingCall = (
+      inviteId: inviteId,
+      channelName: channelName,
+      isVideo: isVideo,
+    );
+    _log('📞 Appel accepté mis en attente (routeur pas prêt)');
+    return;
+  }
+
+  _pendingCall = null;
+  _log('📞 Navigation vers l\'écran d\'appel');
+  ctx.push(
+    '/call/$inviteId',
+    extra: {
+      'channelName': channelName,
+      'isVideo': isVideo,
+      'isIncoming': true,
+    },
+  );
+}
+
+/// Rejoue les navigations gardées en attente (appel accepté, tap notification).
+void _flushPendingNav() {
+  if (!_routerReady) return;
+
+  final call = _pendingCall;
+  if (call != null) {
+    _openCall(call.inviteId, call.channelName, call.isVideo);
+  }
+
+  final tap = _pendingTap;
+  if (tap != null) {
+    _pendingTap = null;
+    _handleLocalNotificationTap(tap.payload, actionId: tap.actionId);
+  }
+}
+
+// ============================================================================
 // NOTIFICATION TAP HANDLER (global)
 // ============================================================================
 
@@ -60,7 +115,11 @@ void _handleLocalNotificationTap(String? payload, {String? actionId}) {
   if (payload == null || payload.isEmpty) return;
 
   final ctx = rootNavigatorKey.currentContext;
-  if (ctx == null || !ctx.mounted) return;
+  if (!_routerReady || ctx == null || !ctx.mounted) {
+    _pendingTap = (payload: payload, actionId: actionId);
+    _log('NotifTap mis en attente (routeur pas prêt) payload=$payload');
+    return;
+  }
 
   _log('NotifTap action=$actionId payload=$payload');
 
@@ -205,7 +264,7 @@ Future<void> main() async {
             .initialize()
             .timeout(_kInitTimeout);
 
-        // ✅ Câbler le tap / actions (Ouvrir, Répondre)
+        // Câbler le tap / actions (Ouvrir, Répondre)
         LocalNotificationService.instance.onNotificationTap =
             (payload, {actionId}) {
           _handleLocalNotificationTap(payload, actionId: actionId);
@@ -232,18 +291,24 @@ Future<void> main() async {
       } catch (e) {
         _log('⚠️ Auth: $e');
       }
-// ── VoIP + Push (après Supabase/Auth) ──────────────────────────
+
+      // ── VoIP + Push (après Supabase/Auth) ──────────────────────────
       if (!kIsWeb) {
+        // ✅ Callbacks branchés AVANT initialize() : un appel accepté depuis
+        // l'écran verrouillé (app fermée) ne peut plus être perdu.
+        PushNotificationService.instance.onVoipAccept =
+            (inviteId, channelName, isVideo) {
+          _log('📞 VoIP accepted');
+          _openCall(inviteId, channelName, isVideo);
+        };
+        PushNotificationService.instance.onVoipDecline = (inviteId) {
+          _log('📞 VoIP declined: $inviteId');
+        };
+
         try {
           await PushNotificationService.instance
               .initialize()
               .timeout(_kInitTimeout);
-
-          // Note: onPushTap est géré côté mobile via le service IO.
-          // Sur Web le stub n'expose pas ce setter → on ne l'assigne pas ici
-          // pour éviter l'erreur de compilation web.
-          // Les taps de notifications locales passent déjà par
-          // LocalNotificationService.instance.onNotificationTap.
 
           _log('✓ Push/VoIP OK');
         } catch (e) {
@@ -305,7 +370,7 @@ Future<void> main() async {
     },
   );
 }
-      
+
 // ============================================================================
 // APP
 // ============================================================================
@@ -322,6 +387,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   GoRouter? _router;
   bool _ready = false;
   bool _pushRegistered = false;
+  StreamSubscription<AuthState>? _authSub;
 
   @override
   void initState() {
@@ -349,6 +415,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       if (!kIsWeb && _pushRegistered) {
         unawaited(AppBadgeSyncService.refreshNow());
       }
+      // Rejoue une action (appel accepté / tap notification) restée en attente
+      _flushPendingNav();
     }
   }
 
@@ -366,67 +434,78 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       _log('❌ Router: $e');
     }
 
-    // Câbler callbacks VoIP (MOBILE UNIQUEMENT)
+    // ── Déconnexion RÉELLE uniquement (jamais une simple perte de session) ──
     if (!kIsWeb) {
-      PushNotificationService.instance.onVoipAccept =
-          (inviteId, channelName, isVideo) {
-        _log('📞 VoIP accepted → navigating to call screen');
-        rootNavigatorKey.currentContext?.push(
-          '/call/$inviteId',
-          extra: {
-            'channelName': channelName,
-            'isVideo': isVideo,
-            'isIncoming': true
-          },
-        );
-      };
-      PushNotificationService.instance.onVoipDecline = (inviteId) {
-        _log('📞 VoIP declined: $inviteId');
-      };
+      try {
+        _authSub = SupabaseConfig.client.auth.onAuthStateChange.listen((s) {
+          if (s.event == AuthChangeEvent.signedOut) {
+            unawaited(_handleSignedOut());
+          }
+        });
+      } catch (e) {
+        _log('⚠️ Auth state listener: $e');
+      }
     }
 
-    // ── Sync push ↔ auth ────────────────────────────────────────────
+    // ── Sync push ↔ auth (enregistrement uniquement) ────────────────
     _auth.addListener(_syncPush);
     _syncPush();
 
     if (mounted) setState(() => _ready = true);
+
+    // Routeur monté après le prochain frame : on rejoue les actions en attente
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _routerReady = true;
+      Future.delayed(const Duration(milliseconds: 600), _flushPendingNav);
+      Future.delayed(const Duration(milliseconds: 2500), _flushPendingNav);
+    });
   }
 
+  /// Enregistre le push quand l'utilisateur est connecté.
+  /// NE désenregistre JAMAIS : voir _handleSignedOut().
   Future<void> _syncPush() async {
     if (kIsWeb) return;
+    if (!_auth.isAuthenticated || _pushRegistered) return;
 
-    final isAuthenticated = _auth.isAuthenticated;
-
+    _pushRegistered = true;
     try {
-      if (isAuthenticated && !_pushRegistered) {
-        _pushRegistered = true;
-        await PushNotificationService.instance.initialize();
-        _log('✓ Push registered');
+      await PushNotificationService.instance.initialize();
+      _log('✓ Push registered');
 
-        final uid = SupabaseConfig.currentUser?.id;
-        if (uid != null && uid.isNotEmpty) {
-          await AppBadgeSyncService.startListening(uid);
-          _log('✓ Badge Realtime started for ${_maskUid(uid)}');
-        }
-      } else if (!isAuthenticated && _pushRegistered) {
-        _pushRegistered = false;
-        await PushNotificationService.instance.unregisterToken();
-        await PushNotificationService.instance.endAllVoipCalls();
-        AppBadgeSyncService.stopListening();
-        await AppBadgeSyncService.sync(0);
-        _log('✓ Push/Badge unregistered');
+      final uid = SupabaseConfig.currentUser?.id;
+      if (uid != null && uid.isNotEmpty) {
+        await AppBadgeSyncService.startListening(uid);
+        _log('✓ Badge Realtime started for ${_maskUid(uid)}');
       }
     } catch (e) {
+      _pushRegistered = false;
       _log('⚠️ Push sync: $e');
+    }
+  }
+
+  /// Vraie déconnexion (bouton "Se déconnecter") : on nettoie tout.
+  Future<void> _handleSignedOut() async {
+    if (kIsWeb || !_pushRegistered) return;
+    _pushRegistered = false;
+
+    try {
+      await PushNotificationService.instance.unregisterToken();
+      await PushNotificationService.instance.endAllVoipCalls();
+      AppBadgeSyncService.stopListening();
+      await AppBadgeSyncService.sync(0);
+      _log('✓ Push/Badge unregistered (signedOut)');
+    } catch (e) {
+      _log('⚠️ Sign-out cleanup: $e');
     }
   }
 
   String _maskUid(String uid) => uid.length <= 8
       ? '***'
-      : '\( {uid.substring(0, 4)}... \){uid.substring(uid.length - 3)}';
+      : '${uid.substring(0, 4)}...${uid.substring(uid.length - 3)}';
 
   @override
   void dispose() {
+    _authSub?.cancel();
     _auth.removeListener(_syncPush);
     WidgetsBinding.instance.removeObserver(this);
     if (!kIsWeb) {
