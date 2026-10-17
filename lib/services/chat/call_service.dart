@@ -1,12 +1,15 @@
 // lib/services/chat/call_service.dart
 //
 // ============================================================================
-// CALL MEDIA SERVICE — v2.1
+// CALL MEDIA SERVICE — v2.2
 // ============================================================================
-// Corrections :
+// Corrections v2.1 :
 //  ✅ Création du moteur Agora SÉRIALISÉE (plus de 2 moteurs en parallèle)
 //  ✅ join() idempotent : un 2e appel pour le même canal ne coupe plus l'appel en cours
 //  ✅ disposeEngine() ne rend plus le singleton inutilisable
+// Nouveau v2.2 :
+//  ✅ Service de premier plan Android (micro actif en arrière-plan) :
+//     démarré après le join, arrêté dans leave() / disposeEngine()
 // ============================================================================
 
 import 'dart:async';
@@ -16,6 +19,7 @@ import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/services/chat/call_foreground_service.dart';
 import 'package:thix_id/services/chat/call_token_service.dart';
 
 // ============================================================================
@@ -386,6 +390,9 @@ class CallMediaService {
 
       _joinIssued = true;
       debugPrint('[CallMediaService] ✓ Join sent (uid=$uid, video=${type == CallType.video})');
+
+      // ✅ v2.2 : service de premier plan → l'appel survit à l'arrière-plan
+      await CallForegroundService.start(video: type == CallType.video);
     } on TimeoutException {
       debugPrint('[CallMediaService] ❌ Join timeout');
       onError('agora: join timeout');
@@ -467,6 +474,9 @@ class CallMediaService {
     _joinIssued = false;
     _channel = null;
     _joining = false;
+
+    // ✅ v2.2 : fin d'appel → on retire la notification « Appel en cours »
+    await CallForegroundService.stop();
   }
 
   /// Libère le moteur RTC (fermeture de l'app uniquement).
@@ -499,6 +509,8 @@ class CallMediaService {
     _onUserJoined = null;
     _onUserLeft = null;
     _onError = null;
+
+    await CallForegroundService.stop();
 
     _isDisposed = false; // ✅ le singleton redevient utilisable
     debugPrint('[CallMediaService] 👋 Engine disposed');
