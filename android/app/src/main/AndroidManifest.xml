@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Réseau -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -63,8 +64,10 @@
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
+
+    <!-- Appel en cours en arrière-plan (service de premier plan) -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
-<uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Système & Badges d'icônes (Samsung, LG, Huawei, Xiaomi, etc.) -->
@@ -91,10 +94,9 @@
         android:supportsRtl="true"
         android:hardwareAccelerated="true">
 
-        <!-- ✅ v3 : Firebase Messaging : canal par défaut (notifications générales)
-             ⚠️ Changé de thix_id_default_v2 → thix_id_default_v3
-                Les canaux v2 sont muets à jamais (créés sans fichier son).
-                Android verrouille les canaux une fois créés : on doit en créer de nouveaux. -->
+        <!-- Firebase Messaging : canal par défaut (notifications générales)
+             Android verrouille un canal une fois créé : les canaux v2 sont muets
+             à jamais, on utilise donc thix_id_default_v3. -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="thix_id_default_v3" />
@@ -104,7 +106,7 @@
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@drawable/notification_icon" />
 
-        <!-- ✅ v3 AJOUTÉ : couleur d'accentuation par défaut (Thix primary) -->
+        <!-- Couleur d'accentuation par défaut (Thix primary) -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_color"
             android:resource="@color/thix_primary" />
@@ -171,6 +173,15 @@
         <receiver
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver"
             android:exported="false"/>
+
+        <!-- Service de premier plan : garde le micro/la caméra actifs pendant un
+             appel quand l'app passe en arrière-plan (flutter_foreground_task).
+             Sans lui, Android coupe le micro puis tue l'app. -->
+        <service
+            android:name="com.pravera.flutter_foreground_task.service.ForegroundService"
+            android:foregroundServiceType="microphone|camera"
+            android:exported="false"
+            tools:replace="android:foregroundServiceType" />
 
         <!-- Service FCM : NE PAS redéclarer ici.
              firebase_messaging déclare déjà son propre service (via manifest merge). -->
