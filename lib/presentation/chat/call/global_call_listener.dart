@@ -1,12 +1,18 @@
 // lib/presentation/chat/call/global_call_listener.dart
 //
 // ============================================================================
-// GLOBAL CALL LISTENER — v2.2
+// GLOBAL CALL LISTENER — v2.3
 // ============================================================================
-// Nouveau : barre « Appel en cours » affichée en haut de TOUTE l'app quand
-//           l'appel est réduit (appui = retour à l'écran d'appel).
-// Conserve les corrections v2.1 (plus de double route, page d'appel entrant
-// fermée si l'appelant annule, un seul affichage par invitation).
+// v2.2 : barre « Appel en cours » en haut de toute l'app quand l'appel est réduit.
+// v2.1 : plus de double route, page d'appel entrant fermée si l'appelant annule,
+//        un seul affichage par invitation.
+//
+// v2.3 (coordination avec CallKit via CallHandledRegistry) :
+//  ✅ un appel déjà accepté / terminé depuis CallKit n'ouvre plus la page d'appel
+//     entrant ET n'est plus rejeté automatiquement (cas « occupé » abusif)
+//  ✅ refus depuis CallKit → l'appelant est prévenu (reject envoyé au serveur)
+//  ✅ acceptation depuis CallKit → la page d'appel entrant de l'app est fermée
+//  ✅ la page d'appel entrant est déclarée « affichée » (évite le double CallKit)
 // ============================================================================
 
 import 'dart:async';
@@ -23,6 +29,7 @@ import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/incoming_call_page.dart';
 import 'package:thix_id/presentation/chat/call/widgets/active_call_bar.dart';
+import 'package:thix_id/services/chat/call_handled_registry.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
 
 // ============================================================================
@@ -130,9 +137,12 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
   StreamSubscription<CallStatus>? _inviteStatusSub;
   ProviderSubscription<String?>? _authSubscription;
   StreamSubscription<AuthState>? _authStreamSubscription;
+  StreamSubscription<String>? _acceptedSub;
+  StreamSubscription<String>? _declinedSub;
 
   String? _currentUserId;
   String? _lastShownInviteId;
+  String? _incomingInviteId;
   MaterialPageRoute<void>? _incomingRoute;
   bool _isDisposed = false;
   bool _isNavigating = false;
@@ -143,6 +153,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     WidgetsBinding.instance.addObserver(this);
     _bindAuthChanges();
     _bindSupabaseAuth();
+    _bindCallKitEvents();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isDisposed) _syncListen(force: true);
@@ -157,8 +168,46 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     _inviteStatusSub?.cancel();
     _authSubscription?.close();
     _authStreamSubscription?.cancel();
+    _acceptedSub?.cancel();
+    _declinedSub?.cancel();
     _signal?.dispose();
     super.dispose();
+  }
+
+  // ── COORDINATION AVEC CALLKIT ────────────────────────────────────────
+  void _bindCallKitEvents() {
+    _acceptedSub = CallHandledRegistry.acceptedStream.listen(_onAcceptedViaCallKit);
+    _declinedSub = CallHandledRegistry.declinedStream.listen(_onDeclinedViaCallKit);
+  }
+
+  /// Appel accepté depuis CallKit : la page d'appel entrant de l'app est inutile.
+  void _onAcceptedViaCallKit(String inviteId) {
+    if (_isDisposed) return;
+    _lastShownInviteId = inviteId;
+    _closeIncomingRouteIfFor(inviteId);
+  }
+
+  /// Appel refusé depuis CallKit : on prévient l'appelant.
+  Future<void> _onDeclinedViaCallKit(String inviteId) async {
+    if (_isDisposed) return;
+    _lastShownInviteId = inviteId;
+    _closeIncomingRouteIfFor(inviteId);
+
+    try {
+      _signal ??= CallSignalingService();
+      await _signal!.reject(inviteId);
+      debugPrint('[GlobalCallListener] ✓ Refus CallKit transmis: ${_obfuscate(inviteId)}');
+    } catch (e) {
+      debugPrint('[GlobalCallListener] ❌ Refus CallKit non transmis: $e');
+    }
+  }
+
+  void _closeIncomingRouteIfFor(String inviteId) {
+    if (_incomingInviteId != inviteId) return;
+    final route = _incomingRoute;
+    if (route != null && route.isActive) {
+      route.navigator?.removeRoute(route);
+    }
   }
 
   // ── AUTH BINDING ─────────────────────────────────────────────────────
@@ -192,7 +241,8 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     if (state == AppLifecycleState.resumed) {
       _syncListen(force: true);
     }
-    // En arrière-plan : FCM + notification plein écran (voir _triggerIncomingCallNotification)
+    // En arrière-plan : le push FCM data-only déclenche CallKit
+    // (voir push_notification_service_io.dart).
   }
 
   // ── SYNC LISTEN ──────────────────────────────────────────────────────
@@ -242,6 +292,13 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     if (!_CallListenerValidators.isValidInvite(invite)) return;
     if (_lastShownInviteId == invite.id) return;
 
+    // ✅ v2.3 : déjà accepté ou terminé via CallKit → ni page, ni rejet « occupé »
+    if (CallHandledRegistry.isAccepted(invite.id) || CallHandledRegistry.isEnded(invite.id)) {
+      _lastShownInviteId = invite.id;
+      debugPrint('[GlobalCallListener] ℹ️ Invitation déjà traitée via CallKit: ${_obfuscate(invite.id)}');
+      return;
+    }
+
     final busy = ref.read(callProvider).isActive || (_incomingRoute?.isActive ?? false);
     if (busy) {
       _lastShownInviteId = invite.id;
@@ -285,16 +342,23 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
       }
 
       if (route == null) {
-        _triggerIncomingCallNotification(invite);
+        // Navigateur introuvable : en arrière-plan, CallKit (push FCM) prend le relais.
+        debugPrint('[GlobalCallListener] ⚠️ Page d\'appel entrant non affichée: ${_obfuscate(invite.callerId)}');
         _lastShownInviteId = null;
         return;
       }
 
       _incomingRoute = route;
+      _incomingInviteId = invite.id;
+      // ✅ v2.3 : évite que CallKit double la page d'appel de l'app
+      CallHandledRegistry.markShownInApp(invite.id);
       _watchInviteEnd(invite, route);
 
       route.popped.whenComplete(() {
-        if (identical(_incomingRoute, route)) _incomingRoute = null;
+        if (identical(_incomingRoute, route)) {
+          _incomingRoute = null;
+          _incomingInviteId = null;
+        }
         _inviteStatusSub?.cancel();
         _inviteStatusSub = null;
       });
@@ -323,15 +387,11 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     _inviteStatusSub = _signal?.watchInviteStatus(invite.id).listen((s) {
       if (_isDisposed) return;
       final over = s == CallStatus.canceled || s == CallStatus.missed || s == CallStatus.ended;
-      if (over && route.isActive) {
-        route.navigator?.removeRoute(route);
+      if (over) {
+        CallHandledRegistry.markEnded(invite.id);
+        if (route.isActive) route.navigator?.removeRoute(route);
       }
     });
-  }
-
-  void _triggerIncomingCallNotification(CallInvite invite) {
-    // TODO ENTERPRISE : flutter_local_notifications (priority max, fullScreenIntent, category call)
-    debugPrint('[GlobalCallListener] 🔔 [MOCK] Notification locale pour ${_obfuscate(invite.callerId)}');
   }
 
   String _obfuscate(String? s) {
