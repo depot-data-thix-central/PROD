@@ -1,10 +1,11 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8.3 (Production)
-// FIX : CallKit gère seul sonnerie + vibration
-// FIX : ringtonePath = 'ringtone' (fichier res/raw/ringtone.mp3)
-// FIX : types like / follow / comment / comment_reply / comment_like / repost / connection
-// FIX : routes /network/* acceptées
+// Push Notification Service IO v8.4 (Production)
+// FIX : token FCM : logs + plan B (delete+insert) si l'upsert échoue
+// FIX : un token appartient à un seul utilisateur (nettoyage des anciens comptes)
+// FIX : handler arrière-plan : badge isolé (Supabase non initialisé)
+// FIX : handler arrière-plan : pas de doublon si le système affiche déjà la notif
+// FIX : getInitialMessage différé (navigateur pas prêt avant runApp)
 // ============================================================================
 
 import 'dart:async';
@@ -34,6 +35,7 @@ const Duration _kSupabaseTimeout = Duration(seconds: 15);
 const Duration _kBackgroundInitTimeout = Duration(seconds: 10);
 const Duration _kForegroundInitTimeout = Duration(seconds: 5);
 const Duration _kCallkitTimeout = Duration(seconds: 8);
+const Duration _kInitialTapDelay = Duration(milliseconds: 1500);
 
 const int _kMaxRetries = 3;
 const Duration _kRetryDelay = Duration(seconds: 2);
@@ -224,7 +226,12 @@ class _VoipCallManager {
         _Validators.sanitizeString(channelName, maxLength: 64);
     final safeName = _Validators.sanitizeString(callerName, maxLength: 50);
 
-    if (safeInviteId.isEmpty || safeChannel.isEmpty) return;
+    if (safeInviteId.isEmpty || safeChannel.isEmpty) {
+      debugPrint(
+          '[VOIP] ⚠️ Appel ignoré : invite_id invalide ou channel_name vide '
+          '(inviteId="$inviteId", channel="$channelName")');
+      return;
+    }
 
     final params = CallKitParams(
       id: safeInviteId,
@@ -341,11 +348,12 @@ class _BadgeManager {
     }
   }
 
+  /// Retourne -1 si Supabase n'est pas disponible (ex. isolate d'arrière-plan)
   Future<int> fetchUnreadCount() async {
-    final uid = SupabaseConfig.currentUser?.id;
-    if (uid == null || !_Validators.isValidUid(uid)) return 0;
-
     try {
+      final uid = SupabaseConfig.currentUser?.id;
+      if (uid == null || !_Validators.isValidUid(uid)) return -1;
+
       return await SupabaseConfig.client
           .from('notifications')
           .count(CountOption.exact)
@@ -353,12 +361,13 @@ class _BadgeManager {
           .eq('is_read', false)
           .timeout(_kSupabaseTimeout);
     } catch (_) {
-      return 0;
+      return -1;
     }
   }
 
   Future<void> refreshFromDb() async {
     final count = await fetchUnreadCount();
+    if (count < 0) return; // ne jamais remettre le badge à 0 sur une erreur
     await sync(count);
   }
 }
@@ -384,6 +393,8 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
   final data = message.data;
   final type = (data['type'] ?? '').toString().toLowerCase();
+  debugPrint('[FCM-BG] message reçu type="$type" hasNotification='
+      '${message.notification != null}');
 
   if (type == PushTypes.incomingCall) {
     try {
@@ -419,22 +430,35 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         .initialize()
         .timeout(_kForegroundInitTimeout);
 
-    await _showFromRemoteMessage(message);
-    await _BadgeManager.instance.refreshFromDb();
+    // Si le message contient un bloc "notification", le système l'affiche déjà
+    await _showFromRemoteMessage(message, skipIfSystemNotification: true);
   } catch (e) {
     debugPrint('[FCM-BG] ❌ $e');
   }
+
+  // Le badge est optionnel : Supabase n'est pas initialisé dans cet isolate
+  try {
+    await _BadgeManager.instance.refreshFromDb();
+  } catch (_) {}
 }
 
 // ============================================================================
 // HELPERS
 // ============================================================================
 
-Future<void> _showFromRemoteMessage(RemoteMessage message) async {
+Future<void> _showFromRemoteMessage(
+  RemoteMessage message, {
+  bool skipIfSystemNotification = false,
+}) async {
   final data = message.data;
   final type = (data['type'] ?? '').toString().toLowerCase();
 
-  if (!PushTypes.isAllowed(type)) return;
+  if (!PushTypes.isAllowed(type)) {
+    debugPrint('[Push] ⚠️ type "$type" ignoré (absent de PushTypes.allowed)');
+    return;
+  }
+
+  if (skipIfSystemNotification && message.notification != null) return;
 
   try {
     final title = _Validators.sanitizeString(
@@ -459,7 +483,9 @@ Future<void> _showFromRemoteMessage(RemoteMessage message) async {
       payload: _buildPayload(data),
       channelId: _getChannelForType(type),
     );
-  } catch (_) {}
+  } catch (e) {
+    debugPrint('[Push] ❌ affichage notification: $e');
+  }
 }
 
 String _getChannelForType(String type) {
@@ -598,7 +624,6 @@ class PushNotificationService {
         alert: true,
         badge: true,
         sound: true,
-        criticalAlert: true,
       );
 
       try {
@@ -634,9 +659,11 @@ class PushNotificationService {
       _openedAppSub =
           FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
 
+      // App ouverte depuis une notification (app fermée) :
+      // le navigateur n'existe pas encore avant runApp → on diffère le tap.
       final initial = await _messaging.getInitialMessage();
       if (initial != null) {
-        _handleNotificationTap(initial);
+        Future.delayed(_kInitialTapDelay, () => _handleNotificationTap(initial));
       }
 
       await _BadgeManager.instance.refreshFromDb();
@@ -750,6 +777,9 @@ class PushNotificationService {
     unawaited(_BadgeManager.instance.refreshFromDb());
   }
 
+  // ──────────────────────────────────────────────────────────────
+  // TOKEN FCM → SUPABASE
+  // ──────────────────────────────────────────────────────────────
   Future<void> _registerToken() async {
     var attempts = 0;
 
@@ -758,25 +788,64 @@ class PushNotificationService {
         final token = await _messaging.getToken();
         final uid = SupabaseConfig.currentUser?.id;
 
-        if (token == null || !_Validators.isValidToken(token)) return;
-        if (uid == null || !_Validators.isValidUid(uid)) return;
+        if (token == null || !_Validators.isValidToken(token)) {
+          debugPrint('[PushNotif] ⚠️ Token FCM absent ou invalide '
+              '(Google Play Services / google-services.json ?)');
+          return;
+        }
+        if (uid == null || !_Validators.isValidUid(uid)) {
+          debugPrint('[PushNotif] ⚠️ Pas d\'utilisateur connecté : token non enregistré');
+          return;
+        }
 
-        await SupabaseConfig.client.from(_tokensTable).upsert(
-          {
-            'user_id': uid,
-            'fcm_token': token,
-            'platform': defaultTargetPlatform.name,
-            'updated_at': DateTime.now().toUtc().toIso8601String(),
-          },
-          onConflict: 'user_id,fcm_token',
-        ).timeout(_kSupabaseTimeout);
-
+        await _saveTokenRow(uid, token);
+        debugPrint('[PushNotif] ✓ Token enregistré en base');
         return;
       } catch (e) {
         attempts++;
+        debugPrint('[PushNotif] ❌ Enregistrement token ($attempts/$_kMaxRetries): $e');
         if (attempts >= _kMaxRetries) return;
         await Future.delayed(_kRetryDelay);
       }
+    }
+  }
+
+  Future<void> _saveTokenRow(String uid, String token) async {
+    final client = SupabaseConfig.client;
+
+    // Un appareil = un seul compte : on retire ce token des autres utilisateurs
+    // (sinon un ancien compte reçoit les notifications de ce téléphone).
+    try {
+      await client
+          .from(_tokensTable)
+          .delete()
+          .eq('fcm_token', token)
+          .neq('user_id', uid)
+          .timeout(_kSupabaseTimeout);
+    } catch (_) {}
+
+    final row = <String, dynamic>{
+      'user_id': uid,
+      'fcm_token': token,
+      'platform': defaultTargetPlatform.name,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
+    try {
+      await client
+          .from(_tokensTable)
+          .upsert(row, onConflict: 'user_id,fcm_token')
+          .timeout(_kSupabaseTimeout);
+    } catch (e) {
+      // Cas typique : contrainte UNIQUE (user_id, fcm_token) absente en base
+      debugPrint('[PushNotif] ⚠️ upsert échoué ($e) → plan B delete+insert');
+      await client
+          .from(_tokensTable)
+          .delete()
+          .eq('user_id', uid)
+          .eq('fcm_token', token)
+          .timeout(_kSupabaseTimeout);
+      await client.from(_tokensTable).insert(row).timeout(_kSupabaseTimeout);
     }
   }
 
@@ -790,7 +859,9 @@ class PushNotificationService {
           .delete()
           .eq('fcm_token', token)
           .timeout(_kSupabaseTimeout);
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[PushNotif] ⚠️ unregisterToken: $e');
+    }
   }
 
   void registerContext(BuildContext context) {
