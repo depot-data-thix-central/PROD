@@ -3,11 +3,17 @@
 // ============================================================================
 // ⚠️ SOURCE UNIQUE — NE PAS REDÉFINIR CES PROVIDERS AILLEURS
 // ============================================================================
+//
+// v2 : supabaseUserIdProvider est maintenant RÉACTIF.
+//      Avant, il lisait currentUser une seule fois (souvent null, avant la
+//      connexion) et restait figé jusqu'au redémarrage de l'app → « You are
+//      not signed in » au moment de décrocher un appel, ou ancien compte après
+//      un changement de compte.
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:http/http.dart' as http; // 👈 Import ajouté pour la compatibilité Web
+import 'package:http/http.dart' as http; // Import ajouté pour la compatibilité Web
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 
 import 'package:thix_id/services/chat/audio_service.dart';
@@ -112,7 +118,7 @@ final isNetworkOnlineProvider = FutureProvider<bool>((ref) async {
 Future<bool> _pingNetwork() async {
   try {
     final uri = Uri.parse('https://www.google.com/generate_204');
-    // 👈 Utilisation de http.get qui fonctionne sur Web, Android et iOS
+    // http.get fonctionne sur Web, Android et iOS
     final response = await http.get(uri).timeout(
       const Duration(seconds: 3),
     );
@@ -123,7 +129,29 @@ Future<bool> _pingNetwork() async {
 }
 
 /// Provider pour l'ID de l'utilisateur courant Supabase.
+///
+/// ✅ RÉACTIF : il se recalcule à chaque connexion, déconnexion ou changement
+/// de compte. Un simple rafraîchissement de jeton (même identifiant) ne
+/// provoque aucune reconstruction.
 final supabaseUserIdProvider = Provider<String?>((ref) {
   final client = ref.watch(supabaseClientProvider);
-  return client.auth.currentUser?.id;
+
+  String? current = client.auth.currentUser?.id;
+
+  final sub = client.auth.onAuthStateChange.listen(
+    (data) {
+      final next = data.session?.user.id;
+      if (next != current) {
+        debugPrint('[supabaseUserIdProvider] 🔄 utilisateur changé');
+        current = next;
+        ref.invalidateSelf();
+      }
+    },
+    onError: (Object e) {
+      debugPrint('[supabaseUserIdProvider] ⚠️ auth stream: $e');
+    },
+  );
+
+  ref.onDispose(sub.cancel);
+  return current;
 });
