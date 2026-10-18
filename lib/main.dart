@@ -1,15 +1,15 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.6)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.7)
 //
 // v2.4 : le token push n'est plus supprimé sur une simple perte de session.
 // v2.5 : appel accepté / tap notification mis en attente tant que le routeur
 //        n'est pas prêt (cold start) ; callbacks VoIP branchés avant runApp.
-// v2.6 : ✅ le token push n'est retiré QUE par la déconnexion volontaire
-//           (SupabaseAuthManager.signOut). Plus aucune suppression ici.
-//        ✅ appel décroché depuis CallKit → CallKitCallHandler (la route
-//           '/call/<id>' n'existait pas → « Route non trouvée »)
-//        ✅ tap sur notification d'appel → page d'appel entrant
+// v2.6 : token push retiré uniquement par la déconnexion volontaire ;
+//        appel décroché depuis CallKit → CallKitCallHandler.
+// v2.7 : ✅ routes de notification normalisées vers les routes qui EXISTENT
+//           (/chat/c/<id> → /chat/<id>, /money → /thix-money/history, etc.)
+//        ✅ repli '/notifications' (inexistant) → '/network/notifications'
 //
 // EXISTANT PRÉSERVÉ : Web safe, Riverpod + Provider, timeouts,
 // runZonedGuarded sans second runApp, mode jour forcé.
@@ -98,6 +98,47 @@ void _flushPendingNav() {
 }
 
 // ============================================================================
+// NORMALISATION DES ROUTES DE NOTIFICATION
+// ============================================================================
+//
+// Les notifications (serveur, triggers SQL, ModuleNotifications) portent des
+// routes qui n'existent pas toutes dans le routeur : taper dessus affichait
+// « Route non trouvée ». On les traduit ici vers les vraies routes.
+
+/// Préfixes de notification → route réelle du routeur.
+const Map<String, String> _routeAliases = {
+  '/money': '/thix-money/history',
+  '/health': '/thix-sante/dashboard',
+  '/country': '/mon-pays',
+  '/sos': '/thix-sos',
+  '/ia': '/thix-ia',
+  '/doc': '/vault',
+  '/media': '/thix-media',
+  '/reservation': '/reservation',
+  '/notifications': '/network/notifications',
+  '/notification': '/network/notifications',
+};
+
+String _normalizeRoute(String route) {
+  final r = route.trim();
+
+  // /chat/c/<id> → /chat/<id>
+  final chat = RegExp(r'^/chat/c/([^/?#]+)').firstMatch(r);
+  if (chat != null) return '/chat/${chat.group(1)}';
+
+  // /events/<id> → /thix-event/event/<id>
+  final event = RegExp(r'^/events/([^/?#]+)').firstMatch(r);
+  if (event != null) return '/thix-event/event/${event.group(1)}';
+
+  for (final entry in _routeAliases.entries) {
+    if (r == entry.key || r.startsWith('${entry.key}/')) {
+      return entry.value;
+    }
+  }
+  return r;
+}
+
+// ============================================================================
 // NOTIFICATION TAP HANDLER (global)
 // ============================================================================
 
@@ -137,20 +178,16 @@ void _handleLocalNotificationTap(String? payload, {String? actionId}) {
     return;
   }
 
-  // ── Network (like, comment, follow, etc.) ─────────────
-  if (payload.startsWith('/network')) {
-    ctx.push(payload);
-    return;
-  }
-
-  // ── Routes génériques ─────────────────────────────────
+  // ── Routes (network, chat, modules…) : normalisées ────
   if (payload.startsWith('/')) {
-    ctx.push(payload);
+    final route = _normalizeRoute(payload);
+    if (route != payload) _log('Route normalisée: $payload → $route');
+    ctx.push(route);
     return;
   }
 
-  // Fallback
-  ctx.push('/notifications');
+  // Fallback : le payload n'est pas une route (ex. identifiant de notification)
+  ctx.push('/network/notifications');
 }
 
 // ============================================================================
