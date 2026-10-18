@@ -1,4 +1,14 @@
 // lib/auth/supabase_auth_manager.dart
+//
+// v2 :
+//  ✅ la déconnexion NON volontaire (signedOut déclenché par Supabase quand le
+//     renouvellement du jeton échoue) ne supprime plus le token push →
+//     les notifications et appels entrants ne meurent plus
+//  ✅ le token push n'est retiré que par signOut() (déconnexion volontaire),
+//     et AVANT la fin de session (sinon la RLS peut refuser la suppression)
+//  ✅ un renouvellement de jeton (tokenRefreshed) ne relance plus l'hydratation
+//     ni l'initialisation du push
+//  ✅ chaque évènement d'authentification est journalisé : [Auth] 🔔 event=...
 
 import 'dart:async';
 
@@ -21,6 +31,7 @@ import 'package:thix_id/models/account_type.dart';
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kLongRequestTimeout = Duration(seconds: 30);
 const Duration _kRetryDelay = Duration(milliseconds: 400);
+const Duration _kPushUnregisterTimeout = Duration(seconds: 8);
 const int _kMaxRetries = 1;
 const int _kMinPasswordLength = 8;
 const int _kMaxEmailLength = 254;
@@ -40,6 +51,9 @@ const List<String> _kPendingThixIdPrefixes = [
   'THIX-CD-FALLBACK',
   'THIX-0',
 ];
+
+String _maskId(String s) =>
+    s.length <= 8 ? '***' : '${s.substring(0, 4)}...${s.substring(s.length - 3)}';
 
 // ============================================================================
 // AUTH ERROR CODES (découplage UI/Service)
@@ -178,8 +192,12 @@ class SupabaseAuthManager implements AuthManager {
   StreamSubscription<AuthState>? _sub;
   StreamSubscription<ThixProfile?>? _profileSub;
 
-  bool _initialized = false;          // ← NOUVEAU
-  bool _isBindingProfile = false;     // ← NOUVEAU (évite race)
+  bool _initialized = false;
+  bool _isBindingProfile = false; // évite race
+
+  /// Utilisateur pour lequel le push est enregistré (évite de tout
+  /// réinitialiser à chaque évènement d'authentification).
+  String? _pushUserId;
 
   SupabaseAuthManager({SupabaseClient? client, ProfileService? profiles})
       : _client = client ?? SupabaseConfig.client,
@@ -194,6 +212,13 @@ class SupabaseAuthManager implements AuthManager {
   // ==========================================================================
   // INITIALISATION ET GESTION DE SESSION
   // ==========================================================================
+
+  /// Enregistre le push une seule fois par utilisateur.
+  void _registerPushIfNeeded(String uid) {
+    if (_pushUserId == uid) return;
+    _pushUserId = uid;
+    unawaited(PushNotificationService.instance.onSignedIn(userId: uid));
+  }
 
   @override
   Future<void> init() async {
@@ -213,9 +238,26 @@ class SupabaseAuthManager implements AuthManager {
       _sub = _client.auth.onAuthStateChange.listen(
         (state) async {
           try {
+            final event = state.event;
             final user = state.session?.user;
+            debugPrint('[Auth] 🔔 event=${event.name} '
+                'user=${user == null ? 'none' : _maskId(user.id)}');
+
+            // Session absente : déconnexion volontaire OU perdue (renouvellement
+            // du jeton refusé). Dans les deux cas on vide l'état local, mais on
+            // NE retire PAS le token push (voir signOut()).
             if (user == null) {
+              if (event == AuthChangeEvent.signedOut && _pushUserId != null) {
+                debugPrint('[Auth] ⚠️ signedOut reçu : session perdue ou '
+                    'déconnexion (token push conservé)');
+              }
               await _cleanupSession();
+              return;
+            }
+
+            // Renouvellement de jeton du même utilisateur : rien à refaire
+            if (event == AuthChangeEvent.tokenRefreshed &&
+                _currentUser.value?.id == user.id) {
               return;
             }
 
@@ -223,21 +265,21 @@ class SupabaseAuthManager implements AuthManager {
               final hydrated = await _hydrateUser(user);
               _currentUser.value = hydrated;
               _bindProfileSync(user.id);
-              unawaited(PushNotificationService.instance.onSignedIn(userId: user.id));
-              debugPrint('[Auth] ✓ User hydrated: ${user.id}');
+              debugPrint('[Auth] ✓ User hydrated: ${_maskId(user.id)}');
             } catch (e) {
-              // ✅ Offline / network → on garde la session locale
+              // Offline / network → on garde la session locale
               debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
               _currentUser.value ??= _buildFallbackUser(user);
             }
+            _registerPushIfNeeded(user.id);
           } catch (e) {
             // Ne jamais laisser remonter une erreur de stream
             debugPrint('[Auth] ❌ Auth state error (swallowed): $e');
           }
         },
         onError: (e, st) {
-          // Très important : empêche "Stream has already been listened to"
-          // et les AuthRetryableFetchException de crasher l'UI
+          // Empêche "Stream has already been listened to" et les
+          // AuthRetryableFetchException de crasher l'UI
           debugPrint('[Auth] ⚠️ onAuthStateChange error (ignored): $e');
         },
         cancelOnError: false,
@@ -250,15 +292,19 @@ class SupabaseAuthManager implements AuthManager {
     final s = _client.auth.currentSession;
     final u = s?.user;
     if (u == null) {
+      debugPrint('[Auth] ℹ️ Aucune session au démarrage');
       await _cleanupSession();
       return;
     }
+
+    // Le push est déjà initialisé par main.dart au démarrage
+    _pushUserId = u.id;
 
     try {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
       _bindProfileSync(u.id);
-      debugPrint('[Auth] ✓ Initial user hydrated: ${u.id}');
+      debugPrint('[Auth] ✓ Initial user hydrated: ${_maskId(u.id)}');
     } catch (e) {
       debugPrint('[Auth] ⚠️ Initial hydration failed (likely offline): $e');
       _currentUser.value ??= _buildFallbackUser(u);
@@ -292,12 +338,16 @@ class SupabaseAuthManager implements AuthManager {
     );
   }
 
+  /// Vide l'état LOCAL uniquement.
+  ///
+  /// ⚠️ Ne touche PAS au token push : une déconnexion non volontaire (jeton
+  /// refusé par le serveur) ne doit pas couper notifications et appels
+  /// entrants. Le token n'est retiré que par signOut().
   Future<void> _cleanupSession() async {
-    debugPrint('[Auth] 👋 Cleaning up session');
+    debugPrint('[Auth] 👋 Cleaning up local session state');
     await _profileSub?.cancel();
     _profileSub = null;
     _currentUser.value = null;
-    unawaited(PushNotificationService.instance.onSignedOut());
   }
 
   // ==========================================================================
@@ -387,11 +437,11 @@ class SupabaseAuthManager implements AuthManager {
 
             if (unchanged) return;
             _currentUser.value = merged;
-            debugPrint('[Auth] ✓ Profile synced for $uid');
+            debugPrint('[Auth] ✓ Profile synced for ${_maskId(uid)}');
           },
           onError: (e, st) {
             // Ne jamais laisser l'erreur de stream tuer l'app
-            debugPrint('[Auth] ❌ Profile sync stream failed uid=$uid err=$e');
+            debugPrint('[Auth] ❌ Profile sync stream failed uid=${_maskId(uid)} err=$e');
           },
           cancelOnError: false,
         );
@@ -488,7 +538,7 @@ class SupabaseAuthManager implements AuthManager {
         (appUser.displayName == _kDefaultDisplayName && metaFullName != null && metaFullName.isNotEmpty);
 
     if (needsBackfill) {
-      debugPrint('[Auth] 🔄 Backfilling profile for $uid');
+      debugPrint('[Auth] 🔄 Backfilling profile for ${_maskId(uid)}');
       final backfillUser = appUser.copyWith(
         displayName: metaFullName ?? appUser.displayName,
         countryOrOrigin: appUser.countryOrOrigin ?? s('country_or_origin') ?? s('countryOrOrigin'),
@@ -517,9 +567,9 @@ class SupabaseAuthManager implements AuthManager {
         } else {
           appUser = backfillUser;
         }
-        debugPrint('[Auth] ✓ Profile backfilled for $uid');
+        debugPrint('[Auth] ✓ Profile backfilled for ${_maskId(uid)}');
       } catch (e) {
-        debugPrint('[Auth] ❌ Backfill profile failed uid=$uid err=$e');
+        debugPrint('[Auth] ❌ Backfill profile failed uid=${_maskId(uid)} err=$e');
         appUser = backfillUser;
       }
     }
@@ -609,7 +659,7 @@ class SupabaseAuthManager implements AuthManager {
     try {
       final row = await _authRetry(
         () => _client.from('profiles').select('*').eq('id', uid).maybeSingle(),
-        label: 'selectProfileRow[$uid]',
+        label: 'selectProfileRow[${_maskId(uid)}]',
       );
       if (row != null) return (row as Map).cast<String, dynamic>();
     } catch (e) {
@@ -620,79 +670,74 @@ class SupabaseAuthManager implements AuthManager {
           msg.contains('connection') ||
           msg.contains('timeout') ||
           msg.contains('authretryable')) {
-        debugPrint('[Auth] ⚠️ Profiles select offline/network → null (uid=$uid)');
+        debugPrint('[Auth] ⚠️ Profiles select offline/network → null (uid=${_maskId(uid)})');
         return null;
       }
-      debugPrint('[Auth] ❌ Profiles select by id failed uid=$uid err=$e');
+      debugPrint('[Auth] ❌ Profiles select by id failed uid=${_maskId(uid)} err=$e');
       rethrow;
     }
     return null;
   }
 
   Future<void> _ensureProfileRow({required AppUser user}) async {
-  final now = DateTime.now().toUtc().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
 
-  // ✅ FIX: sanitize chaque champ texte librement saisi par l'utilisateur
-  // avant écriture — auparavant ces valeurs (venant potentiellement d'un
-  // écran d'édition de profil) partaient directement en base sans passer
-  // par le même filtre XSS/caractères de contrôle que _hydrateUser()
-  // applique en lecture. Incohérent avec le reste du système déjà durci
-  // (inscription, chat, paiements).
-  String? san(String? v, {int max = 500}) =>
-      v == null ? null : _AuthValidators.sanitize(v, maxLength: max);
+    // Sanitize chaque champ texte librement saisi avant écriture (même filtre
+    // XSS / caractères de contrôle que _hydrateUser() applique en lecture).
+    String? san(String? v, {int max = 500}) =>
+        v == null ? null : _AuthValidators.sanitize(v, maxLength: max);
 
-  final payload = <String, dynamic>{
-    'id': user.id,
-    if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
-    if (user.thixChat.trim().isNotEmpty) 'thix_chat': san(user.thixChat, max: _kMaxChatLength),
-    'display_name': san(user.displayName, max: _kMaxDisplayNameLength) ?? _kDefaultDisplayName,
-    if (user.bio?.isNotEmpty == true) 'bio': san(user.bio, max: 500),
-    if (user.profession?.isNotEmpty == true) 'profession': san(user.profession, max: 100),
-    if (user.occupation?.isNotEmpty == true) 'occupation': san(user.occupation, max: 100),
-    if (user.photoUrl?.isNotEmpty == true) 'avatar_url': san(user.photoUrl, max: 500),
-    if (user.countryOrOrigin?.isNotEmpty == true) 'country_or_origin': san(user.countryOrOrigin, max: 100),
-    if (user.contactPhone?.isNotEmpty == true) 'contact_phone': san(user.contactPhone, max: 20),
-    if (user.maritalStatus?.isNotEmpty == true) 'marital_status': san(user.maritalStatus, max: 50),
-    if (user.gender?.isNotEmpty == true) 'gender': san(user.gender, max: 20),
-    if (user.dateOfBirth?.isNotEmpty == true) 'date_of_birth': san(user.dateOfBirth, max: 20),
-    if (user.placeOfBirth?.isNotEmpty == true) 'place_of_birth': san(user.placeOfBirth, max: 100),
-    if (user.nationality?.isNotEmpty == true) 'nationality': san(user.nationality, max: 100),
-    if (user.address?.isNotEmpty == true) 'address': san(user.address, max: 500),
-    if (user.fatherName?.isNotEmpty == true) 'father_name': san(user.fatherName, max: 100),
-    if (user.motherName?.isNotEmpty == true) 'mother_name': san(user.motherName, max: 100),
-    if (user.emergencyContactName?.isNotEmpty == true) 'emergency_contact_name': san(user.emergencyContactName, max: 100),
-    if (user.emergencyContactPhone?.isNotEmpty == true) 'emergency_contact_phone': san(user.emergencyContactPhone, max: 20),
-    if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': san(user.emergencyContactRelation, max: 50),
-    if (user.languages.isNotEmpty)
-      'languages': user.languages.map((l) => _AuthValidators.sanitize(l, maxLength: 50)).where((l) => l.isNotEmpty).toList(),
-    'registration_status': user.registrationStatus ?? 'draft_step2',
-    'updated_at': now,
-  };
+    final payload = <String, dynamic>{
+      'id': user.id,
+      if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
+      if (user.thixChat.trim().isNotEmpty) 'thix_chat': san(user.thixChat, max: _kMaxChatLength),
+      'display_name': san(user.displayName, max: _kMaxDisplayNameLength) ?? _kDefaultDisplayName,
+      if (user.bio?.isNotEmpty == true) 'bio': san(user.bio, max: 500),
+      if (user.profession?.isNotEmpty == true) 'profession': san(user.profession, max: 100),
+      if (user.occupation?.isNotEmpty == true) 'occupation': san(user.occupation, max: 100),
+      if (user.photoUrl?.isNotEmpty == true) 'avatar_url': san(user.photoUrl, max: 500),
+      if (user.countryOrOrigin?.isNotEmpty == true) 'country_or_origin': san(user.countryOrOrigin, max: 100),
+      if (user.contactPhone?.isNotEmpty == true) 'contact_phone': san(user.contactPhone, max: 20),
+      if (user.maritalStatus?.isNotEmpty == true) 'marital_status': san(user.maritalStatus, max: 50),
+      if (user.gender?.isNotEmpty == true) 'gender': san(user.gender, max: 20),
+      if (user.dateOfBirth?.isNotEmpty == true) 'date_of_birth': san(user.dateOfBirth, max: 20),
+      if (user.placeOfBirth?.isNotEmpty == true) 'place_of_birth': san(user.placeOfBirth, max: 100),
+      if (user.nationality?.isNotEmpty == true) 'nationality': san(user.nationality, max: 100),
+      if (user.address?.isNotEmpty == true) 'address': san(user.address, max: 500),
+      if (user.fatherName?.isNotEmpty == true) 'father_name': san(user.fatherName, max: 100),
+      if (user.motherName?.isNotEmpty == true) 'mother_name': san(user.motherName, max: 100),
+      if (user.emergencyContactName?.isNotEmpty == true) 'emergency_contact_name': san(user.emergencyContactName, max: 100),
+      if (user.emergencyContactPhone?.isNotEmpty == true) 'emergency_contact_phone': san(user.emergencyContactPhone, max: 20),
+      if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': san(user.emergencyContactRelation, max: 50),
+      if (user.languages.isNotEmpty)
+        'languages': user.languages.map((l) => _AuthValidators.sanitize(l, maxLength: 50)).where((l) => l.isNotEmpty).toList(),
+      'registration_status': user.registrationStatus ?? 'draft_step2',
+      'updated_at': now,
+    };
 
-  try {
-    await _authRetry(
-      () => SupabaseSafeWrite.upsert(
-        client: _client,
-        table: 'profiles',
-        payload: payload,
-        // ✅ FIX: sans ceci, une colonne critique manquante à cause d'une
-        // migration cassée était silencieusement retirée du payload et
-        // l'upsert continuait quand même.
-        criticalColumns: SupabaseSafeWrite.profilesCriticalColumns,
-        onUnknownColumn: () async {
-          try {
-            await _client.functions.invoke('pgrst_schema_reload', body: const {});
-          } catch (e) {
-            debugPrint('[Auth] ⚠️ Schema reload invoke failed err=$e');
-          }
-        },
-      ),
-      label: 'ensureProfileRow[${user.id}]',
-    );
-  } catch (e) {
-    debugPrint('[Auth] ❌ Profiles upsert failed uid=${user.id} err=$e');
+    try {
+      await _authRetry(
+        () => SupabaseSafeWrite.upsert(
+          client: _client,
+          table: 'profiles',
+          payload: payload,
+          // Sans ceci, une colonne critique manquante à cause d'une migration
+          // cassée serait silencieusement retirée du payload.
+          criticalColumns: SupabaseSafeWrite.profilesCriticalColumns,
+          onUnknownColumn: () async {
+            try {
+              await _client.functions.invoke('pgrst_schema_reload', body: const {});
+            } catch (e) {
+              debugPrint('[Auth] ⚠️ Schema reload invoke failed err=$e');
+            }
+          },
+        ),
+        label: 'ensureProfileRow[${_maskId(user.id)}]',
+      );
+    } catch (e) {
+      debugPrint('[Auth] ❌ Profiles upsert failed uid=${_maskId(user.id)} err=$e');
+    }
   }
-}
 
   // ==========================================================================
   // CONNEXION
@@ -742,7 +787,8 @@ class SupabaseAuthManager implements AuthManager {
       final hydrated = await _hydrateUser(user);
       _currentUser.value = hydrated;
       _bindProfileSync(user.id);
-      debugPrint('[Auth] ✓ Sign in successful: ${user.id}');
+      _registerPushIfNeeded(user.id);
+      debugPrint('[Auth] ✓ Sign in successful: ${_maskId(user.id)}');
       return hydrated;
     } on sup.AuthException catch (e) {
       throw _mapSupabaseAuthError(e, context: 'signIn');
@@ -843,6 +889,7 @@ class SupabaseAuthManager implements AuthManager {
         final appUser = await _hydrateUser(user);
         _currentUser.value = appUser;
         _bindProfileSync(user.id);
+        _registerPushIfNeeded(user.id);
         return appUser;
       }
       throw AuthException(AuthErrorCode.accountAlreadyExists);
@@ -904,8 +951,8 @@ class SupabaseAuthManager implements AuthManager {
       final appUser = await _hydrateUser(res.user!);
       _currentUser.value = appUser;
       _bindProfileSync(res.user!.id);
-      unawaited(PushNotificationService.instance.onSignedIn(userId: res.user!.id));
-      debugPrint('[Auth] ✓ OTP verified and user hydrated: ${res.user!.id}');
+      _registerPushIfNeeded(res.user!.id);
+      debugPrint('[Auth] ✓ OTP verified and user hydrated: ${_maskId(res.user!.id)}');
     } on AuthException {
       rethrow;
     } on sup.AuthException catch (e) {
@@ -1039,9 +1086,23 @@ class SupabaseAuthManager implements AuthManager {
     throw AuthException(AuthErrorCode.phoneAuthNotAvailable);
   }
 
+  /// Déconnexion VOLONTAIRE (bouton « Se déconnecter »).
+  ///
+  /// C'est le SEUL endroit où le token push est retiré, et il l'est AVANT la
+  /// fin de session (sinon la RLS peut refuser la suppression).
   @override
   Future<void> signOut() async {
-    debugPrint('[Auth] 👋 Signing out');
+    debugPrint('[Auth] 👋 Signing out (volontaire)');
+
+    try {
+      await PushNotificationService.instance
+          .onSignedOut()
+          .timeout(_kPushUnregisterTimeout);
+    } catch (e) {
+      debugPrint('[Auth] ⚠️ Push unregister avant déconnexion: $e');
+    }
+    _pushUserId = null;
+
     await _client.auth.signOut();
     await _cleanupSession();
   }
@@ -1106,9 +1167,9 @@ class SupabaseAuthManager implements AuthManager {
     try {
       await _ensureProfileRow(user: safeUser);
       await _profiles.ensureProfileExists(user: safeUser);
-      debugPrint('[Auth] ✓ Current user updated: ${user.id}');
+      debugPrint('[Auth] ✓ Current user updated: ${_maskId(user.id)}');
     } catch (e) {
-      debugPrint('[Auth] ❌ UpdateCurrentUser failed uid=${user.id} err=$e');
+      debugPrint('[Auth] ❌ UpdateCurrentUser failed uid=${_maskId(user.id)} err=$e');
       throw AuthException(AuthErrorCode.profileUpdateFailed);
     }
     _currentUser.value = safeUser;
@@ -1145,7 +1206,7 @@ class SupabaseAuthManager implements AuthManager {
   // ==========================================================================
   // DISPOSE
   // ==========================================================================
-  
+
   @override
   void dispose() {
     debugPrint('[Auth] 🧹 Disposing AuthManager');
