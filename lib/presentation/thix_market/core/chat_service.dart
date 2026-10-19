@@ -1,10 +1,11 @@
 // lib/presentation/thix_market/core/chat_service.dart
 // ============================================================================
-// CHAT SERVICE — Production
+// CHAT SERVICE — Production v2
 // ----------------------------------------------------------------------------
 //  • Création / récupération de conversation acheteur <-> vendeur
 //  • Envoi texte + carte produit (référence produit)
 //  • Temps réel (stream), lecture, indicateur de saisie
+//  • Résolution du correspondant (nom, logo, boutique) depuis la base
 //  • Tolérant au schéma : colonne message/content, participant_ids ou
 //    conversation_participants
 // ============================================================================
@@ -97,6 +98,14 @@ class ParsedMessage {
   final ProductRef? product;
   final String text;
   const ParsedMessage(this.product, this.text);
+}
+
+/// Correspondant de la conversation (boutique ou profil).
+class PeerInfo {
+  final String? name;
+  final String? avatarUrl;
+  final String? shopId;
+  const PeerInfo({this.name, this.avatarUrl, this.shopId});
 }
 
 class ChatService {
@@ -217,6 +226,100 @@ class ChatService {
       {'conversation_id': id, 'user_id': other},
     ]).timeout(_kTimeout);
     return id;
+  }
+
+  // ───────────────────────── CORRESPONDANT ─────────────────────────
+
+  /// Retrouve nom / logo / boutique du correspondant (fallback quand `extra` est absent).
+  Future<PeerInfo?> resolvePeer(String conversationId, {String? shopId}) async {
+    final me = currentUserId;
+    try {
+      // 1) Boutique connue
+      if (shopId != null && _uuidLike.hasMatch(shopId)) {
+        final s = await _db.from('shops').select().eq('id', shopId).maybeSingle().timeout(_kTimeout);
+        if (s != null) return _peerFromShop(s);
+      }
+
+      // 2) Autre participant de la conversation
+      final otherId = await _otherParticipant(conversationId, me);
+      if (otherId == null) return null;
+
+      // 3) Boutique dont il est propriétaire
+      for (final col in const ['owner_id', 'user_id', 'seller_id']) {
+        try {
+          final s = await _db
+              .from('shops')
+              .select()
+              .eq(col, otherId)
+              .limit(1)
+              .maybeSingle()
+              .timeout(_kTimeout);
+          if (s != null) return _peerFromShop(s);
+        } catch (_) {}
+      }
+
+      // 4) Profil utilisateur
+      for (final table in const ['profiles', 'users']) {
+        try {
+          final p = await _db.from(table).select().eq('id', otherId).maybeSingle().timeout(_kTimeout);
+          if (p != null) {
+            String? pick(List<String> keys) {
+              for (final k in keys) {
+                final v = p[k]?.toString();
+                if (v != null && v.trim().isNotEmpty) return v;
+              }
+              return null;
+            }
+
+            return PeerInfo(
+              name: pick(['name', 'full_name', 'display_name', 'username']),
+              avatarUrl: pick(['avatar', 'avatar_url', 'photo_url', 'logo_url']),
+            );
+          }
+        } catch (_) {}
+      }
+    } catch (e) {
+      debugPrint('[ChatService] resolvePeer error: $e');
+    }
+    return null;
+  }
+
+  PeerInfo _peerFromShop(Map<String, dynamic> s) {
+    return PeerInfo(
+      name: s['name']?.toString(),
+      avatarUrl: s['logo_url']?.toString(),
+      shopId: s['id']?.toString(),
+    );
+  }
+
+  Future<String?> _otherParticipant(String conversationId, String? me) async {
+    try {
+      final c = await _db
+          .from('conversations')
+          .select('participant_ids')
+          .eq('id', conversationId)
+          .maybeSingle()
+          .timeout(_kTimeout);
+      final ids = c?['participant_ids'];
+      if (ids is List) {
+        for (final i in ids) {
+          final s = i?.toString();
+          if (s != null && s != me) return s;
+        }
+      }
+    } catch (_) {}
+    try {
+      final rows = await _db
+          .from('conversation_participants')
+          .select('user_id')
+          .eq('conversation_id', conversationId)
+          .timeout(_kTimeout);
+      for (final r in List<Map<String, dynamic>>.from(rows)) {
+        final s = r['user_id']?.toString();
+        if (s != null && s != me) return s;
+      }
+    } catch (_) {}
+    return null;
   }
 
   // ───────────────────────── MESSAGES ─────────────────────────
