@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/cart/cart_page.dart
+// ============================================================================
+// CART PAGE — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Support multi-devises avec conversion intelligente
+//  • ✅ Indicateur visuel 💱 si conversion appliquée
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +16,9 @@ import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 import 'cart_provider.dart';
 import 'cart_summary_widget.dart';
 import 'cart_item_tile.dart';
@@ -58,8 +70,9 @@ class _CartPageValidators {
 // LOCALIZATION HELPER
 // ============================================================================
 extension _CartPageL10n on BuildContext {
-  String cartPgT(String fr, String en) {
+  String cartPgT(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(this).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -114,7 +127,7 @@ class _CartPageState extends ConsumerState<CartPage> {
             ),
             const SizedBox(width: 10),
             Text(
-              context.cartPgT('Vider le panier ?', 'Empty cart?'),
+              context.cartPgT('Vider le panier ?', 'Empty cart?', 'Ondoa bidhaa zote?'),
               style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
             ),
           ],
@@ -123,6 +136,7 @@ class _CartPageState extends ConsumerState<CartPage> {
           context.cartPgT(
             'Tous les articles seront supprimés. Cette action est irréversible.',
             'All items will be removed. This action is irreversible.',
+            'Bidhaa zote zitaondolewa. Kitendo hiki hakiwezi kutenduliwa.',
           ),
           style: ThixPolicy.bodyStyle,
         ),
@@ -130,7 +144,7 @@ class _CartPageState extends ConsumerState<CartPage> {
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
             child: Text(
-              context.cartPgT('Annuler', 'Cancel'),
+              context.cartPgT('Annuler', 'Cancel', 'Ghairi'),
               style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary),
             ),
           ),
@@ -140,7 +154,7 @@ class _CartPageState extends ConsumerState<CartPage> {
               backgroundColor: ThixPolicy.danger,
               foregroundColor: Colors.white,
             ),
-            child: Text(context.cartPgT('Vider', 'Empty')),
+            child: Text(context.cartPgT('Vider', 'Empty', 'Ondoa')),
           ),
         ],
       ),
@@ -155,7 +169,7 @@ class _CartPageState extends ConsumerState<CartPage> {
       await cart.clearCart();
       debugPrint('[CartPage] 🗑️ Cart cleared');
       if (mounted) {
-        _showSuccess(context.cartPgT('Panier vidé', 'Cart emptied'));
+        _showSuccess(context.cartPgT('Panier vidé', 'Cart emptied', 'Kikapu kimeondolewa'));
       }
     } catch (e) {
       debugPrint('[CartPage] ❌ Clear cart error: $e');
@@ -180,7 +194,11 @@ class _CartPageState extends ConsumerState<CartPage> {
 
     if (newQty > stock) {
       HapticFeedback.lightImpact();
-      _showError(context.cartPgT('Stock limité à $stock', 'Stock limited to $stock'));
+      _showError(context.cartPgT(
+        'Stock limité à $stock',
+        'Stock limited to $stock',
+        'Stoku imezuiliwa kwa $stock',
+      ));
       return;
     }
 
@@ -242,11 +260,24 @@ class _CartPageState extends ConsumerState<CartPage> {
   Widget build(BuildContext context) {
     final cartState = ref.watch(cartProvider);
     final cart = ref.read(cartProvider.notifier);
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
 
     final hasOutOfStock = cart.hasOutOfStockItems;
     final hasMixed = cart.hasMixedCurrency;
     final blocked = hasOutOfStock || hasMixed;
     final totalQty = cart.totalQuantity;
+
+    // ✅ Conversion des montants du panier dans la devise d'affichage
+    final cartCurrency = cart.currencySymbol; // Devise du panier (si non-mixte)
+    final cartCurrencyCode = cartState.items.isNotEmpty
+        ? (cartState.items.first['product']?['currency']?.toString().toUpperCase() ?? 'CDF')
+        : 'CDF';
+    
+    final isCartConverted = cartCurrencyCode != displayCurrencyCode && !hasMixed;
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -256,10 +287,10 @@ class _CartPageState extends ConsumerState<CartPage> {
         scrolledUnderElevation: 0,
         leading: Semantics(
           button: true,
-          label: context.cartPgT('Retour', 'Back'),
+          label: context.cartPgT('Retour', 'Back', 'Rudi'),
           child: IconButton(
             icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: ThixPolicy.textMain),
-            tooltip: context.cartPgT('Retour', 'Back'),
+            tooltip: context.cartPgT('Retour', 'Back', 'Rudi'),
             onPressed: () {
               HapticFeedback.selectionClick();
               context.pop();
@@ -267,7 +298,11 @@ class _CartPageState extends ConsumerState<CartPage> {
           ),
         ),
         title: Text(
-          context.cartPgT('Mon panier ($totalQty)', 'My cart ($totalQty)'),
+          context.cartPgT(
+            'Mon panier ($totalQty)',
+            'My cart ($totalQty)',
+            'Kikapu changu ($totalQty)',
+          ),
           style: ThixPolicy.h3Style.copyWith(
             fontWeight: ThixPolicy.bold,
             color: ThixPolicy.textMain,
@@ -278,7 +313,7 @@ class _CartPageState extends ConsumerState<CartPage> {
           if (cartState.items.isNotEmpty)
             Semantics(
               button: true,
-              label: context.cartPgT('Vider le panier', 'Empty cart'),
+              label: context.cartPgT('Vider le panier', 'Empty cart', 'Ondoa kikapu'),
               enabled: !_isClearing,
               child: TextButton.icon(
                 onPressed: _isClearing ? null : _confirmClearCart,
@@ -290,7 +325,7 @@ class _CartPageState extends ConsumerState<CartPage> {
                       )
                     : const Icon(Icons.delete_sweep_rounded, size: 16, color: ThixPolicy.danger),
                 label: Text(
-                  context.cartPgT('Vider', 'Empty'),
+                  context.cartPgT('Vider', 'Empty', 'Ondoa'),
                   style: ThixPolicy.labelStyle.copyWith(
                     color: _isClearing ? ThixPolicy.textDisabled : ThixPolicy.danger,
                     fontWeight: ThixPolicy.bold,
@@ -300,7 +335,17 @@ class _CartPageState extends ConsumerState<CartPage> {
             ),
         ],
       ),
-      body: _buildBody(cartState, cart, hasOutOfStock, hasMixed, blocked),
+      body: _buildBody(
+        cartState,
+        cart,
+        hasOutOfStock,
+        hasMixed,
+        blocked,
+        displayCurrencyCode,
+        currencyService,
+        lang,
+        isCartConverted,
+      ),
     );
   }
 
@@ -310,6 +355,10 @@ class _CartPageState extends ConsumerState<CartPage> {
     bool hasOutOfStock,
     bool hasMixed,
     bool blocked,
+    String displayCurrencyCode,
+    CurrencyService currencyService,
+    String lang,
+    bool isCartConverted,
   ) {
     if (cartState.isLoading) {
       return const _SkeletonCart();
@@ -317,12 +366,45 @@ class _CartPageState extends ConsumerState<CartPage> {
 
     if (cartState.items.isEmpty) {
       return _EmptyCart(
-        title: context.cartPgT('Votre panier est vide', 'Your cart is empty'),
-        subtitle: context.cartPgT('Ajoutez des produits pour continuer', 'Add products to continue'),
-        buttonLabel: context.cartPgT('Découvrir', 'Discover'),
+        title: context.cartPgT(
+          'Votre panier est vide',
+          'Your cart is empty',
+          'Kikapu chako ni tupu',
+        ),
+        subtitle: context.cartPgT(
+          'Ajoutez des produits pour continuer',
+          'Add products to continue',
+          'Ongeza bidhaa kuendelea',
+        ),
+        buttonLabel: context.cartPgT('Découvrir', 'Discover', 'Gundua'),
         onShopPressed: _navigateToShop,
       );
     }
+
+    // ✅ Conversion des montants du panier
+    final cartCurrencyCode = cartState.items.isNotEmpty
+        ? (cartState.items.first['product']?['currency']?.toString().toUpperCase() ?? 'CDF')
+        : 'CDF';
+
+    final convertedSubtotal = hasMixed
+        ? cart.subtotal // Non converti si mixte (affiché dans _MixedCurrencySummary)
+        : currencyService.convert(cart.subtotal, from: cartCurrencyCode, to: displayCurrencyCode);
+
+    final convertedOriginalSubtotal = hasMixed
+        ? cart.originalSubtotal
+        : currencyService.convert(cart.originalSubtotal, from: cartCurrencyCode, to: displayCurrencyCode);
+
+    final convertedDiscount = hasMixed
+        ? cart.totalDiscount
+        : currencyService.convert(cart.totalDiscount, from: cartCurrencyCode, to: displayCurrencyCode);
+
+    final convertedShipping = hasMixed
+        ? cart.shippingCost
+        : currencyService.convert(cart.shippingCost, from: cartCurrencyCode, to: displayCurrencyCode);
+
+    final convertedTotal = hasMixed
+        ? cart.total
+        : currencyService.convert(cart.total, from: cartCurrencyCode, to: displayCurrencyCode);
 
     return Column(
       children: [
@@ -332,10 +414,12 @@ class _CartPageState extends ConsumerState<CartPage> {
             icon: Icons.currency_exchange_rounded,
             color: ThixPolicy.warning,
             message: context.cartPgT(
-              'Votre panier contient des devises différentes (USD et FC). '
+              'Votre panier contient des devises différentes. '
               'Retirez les articles d\'une devise pour continuer.',
-              'Your cart contains different currencies (USD and FC). '
+              'Your cart contains different currencies. '
               'Remove items from one currency to continue.',
+              'Kikapu chako kina sarafu tofauti. '
+              'Ondoa bidhaa za sarafu moja kuendelea.',
             ),
           ),
 
@@ -347,6 +431,40 @@ class _CartPageState extends ConsumerState<CartPage> {
             message: context.cartPgT(
               'Certains articles sont en rupture de stock. Retirez-les pour continuer.',
               'Some items are out of stock. Remove them to continue.',
+              'Baadhi ya bidhaa zimeisha stoku. Ziondoe kuendelea.',
+            ),
+          ),
+
+        // ✅ Indicateur de conversion si devises différentes
+        if (isCartConverted && !hasMixed)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: ThixPolicy.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.currency_exchange_rounded, size: 16, color: ThixPolicy.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    context.cartPgT(
+                      'Prix convertis en ${AfricanCurrencies.byCode(displayCurrencyCode)?.displayName(lang) ?? displayCurrencyCode}',
+                      'Prices converted to ${AfricanCurrencies.byCode(displayCurrencyCode)?.displayName(lang) ?? displayCurrencyCode}',
+                      'Bei zimebadilishwa kuwa ${AfricanCurrencies.byCode(displayCurrencyCode)?.displayName(lang) ?? displayCurrencyCode}',
+                    ),
+                    style: ThixPolicy.captionStyle.copyWith(
+                      color: ThixPolicy.primary,
+                      fontWeight: ThixPolicy.semiBold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -387,16 +505,21 @@ class _CartPageState extends ConsumerState<CartPage> {
         if (hasMixed)
           _MixedCurrencySummary(
             subtotals: cart.subtotalsByCurrency,
-            titleLabel: context.cartPgT('Totaux par devise', 'Totals by currency'),
+            displayCurrencyCode: displayCurrencyCode,
+            currencyService: currencyService,
+            lang: lang,
+            titleLabel: context.cartPgT('Totaux par devise', 'Totals by currency', 'Jumla kwa sarafu'),
             warningLabel: context.cartPgT(
               'Retirez une devise pour valider la commande.',
               'Remove one currency to validate the order.',
+              'Ondoa sarafu moja kuthibitisha agizo.',
             ),
             buttonLabel: context.cartPgT(
               'Devises mixtes — impossible de continuer',
               'Mixed currencies — cannot continue',
+              'Sarafu mchanganyiko — haiwezi kuendelea',
             ),
-            locale: context.localeCode,
+            locale: lang,
           )
         else
           IgnorePointer(
@@ -404,13 +527,14 @@ class _CartPageState extends ConsumerState<CartPage> {
             child: Opacity(
               opacity: blocked ? 0.5 : 1.0,
               child: CartSummaryWidget(
-                subtotal: cart.subtotal,
-                originalSubtotal: cart.originalSubtotal,
-                discount: cart.totalDiscount,
-                shippingCost: cart.shippingCost,
-                total: cart.total,
+                subtotal: convertedSubtotal,
+                originalSubtotal: convertedOriginalSubtotal,
+                discount: convertedDiscount,
+                shippingCost: convertedShipping,
+                total: convertedTotal,
                 itemCount: cart.totalQuantity,
-                currency: cart.currencySymbol,
+                currency: AfricanCurrencies.byCode(displayCurrencyCode)?.symbol ?? displayCurrencyCode,
+                isConverted: isCartConverted,
               ),
             ),
           ),
@@ -484,8 +608,12 @@ class _AlertBanner extends StatelessWidget {
   }
 }
 
+// ✅ Mis à jour avec conversion des sous-totaux
 class _MixedCurrencySummary extends StatelessWidget {
   final Map<String, double> subtotals;
+  final String displayCurrencyCode;
+  final CurrencyService currencyService;
+  final String lang;
   final String titleLabel;
   final String warningLabel;
   final String buttonLabel;
@@ -493,6 +621,9 @@ class _MixedCurrencySummary extends StatelessWidget {
 
   const _MixedCurrencySummary({
     required this.subtotals,
+    required this.displayCurrencyCode,
+    required this.currencyService,
+    required this.lang,
     required this.titleLabel,
     required this.warningLabel,
     required this.buttonLabel,
@@ -501,6 +632,24 @@ class _MixedCurrencySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ Calculer le total converti dans la devise d'affichage
+    double convertedTotal = 0;
+    for (final entry in subtotals.entries) {
+      convertedTotal += currencyService.convert(
+        entry.value,
+        from: entry.key,
+        to: displayCurrencyCode,
+      );
+    }
+
+    final formattedConvertedTotal = currencyService.formatPrice(
+      convertedTotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+
+    final displayCurrency = AfricanCurrencies.byCode(displayCurrencyCode);
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
@@ -522,10 +671,16 @@ class _MixedCurrencySummary extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 10),
+            
+            // Sous-totaux par devise (originaux)
             ...subtotals.entries.map((e) {
-              final symbol = e.key == 'USD' ? '\$' : 'FC';
-              final isUSD = e.key == 'USD';
-              final formatted = _CartPageValidators.formatAmount(e.value, locale, isUSD: isUSD);
+              final currency = AfricanCurrencies.byCode(e.key);
+              final symbol = currency?.symbol ?? e.key;
+              final formatted = currencyService.formatPrice(
+                e.value,
+                currencyCode: e.key,
+                lang: lang,
+              );
 
               return Semantics(
                 label: 'Sous-total $symbol: $formatted',
@@ -539,7 +694,7 @@ class _MixedCurrencySummary extends StatelessWidget {
                         style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
                       ),
                       Text(
-                        '$formatted $symbol',
+                        formatted,
                         style: ThixPolicy.labelStyle.copyWith(
                           fontWeight: ThixPolicy.bold,
                           fontSize: 16,
@@ -551,6 +706,44 @@ class _MixedCurrencySummary extends StatelessWidget {
                 ),
               );
             }),
+
+            // ✅ Total converti estimé
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: ThixPolicy.primary.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.currency_exchange_rounded, size: 14, color: ThixPolicy.primary),
+                      const SizedBox(width: 6),
+                      Text(
+                        '≈ Total (${displayCurrency?.symbol ?? displayCurrencyCode})',
+                        style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.primary,
+                          fontWeight: ThixPolicy.semiBold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Text(
+                    formattedConvertedTotal,
+                    style: ThixPolicy.labelStyle.copyWith(
+                      fontWeight: ThixPolicy.bold,
+                      fontSize: 15,
+                      color: ThixPolicy.primary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
             const SizedBox(height: 8),
             Row(
               children: [
