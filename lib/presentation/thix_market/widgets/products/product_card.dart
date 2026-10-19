@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/widgets/products/product_card.dart
+// ============================================================================
+// PRODUCT CARD — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Formatage intelligent (milliers, décimales selon devise)
+//  • ✅ Indicateur visuel si devise différente du vendeur
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -6,7 +15,11 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../core/african_countries.dart';
+import '../../core/african_currencies.dart';
+import '../../core/currency_service.dart';
+import '../../providers/currency_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 // Compatibilité avec l'ancien design system (fallback)
@@ -151,20 +164,50 @@ class ProductCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final t = context.mkt;
+    final lang = Localizations.localeOf(context).languageCode;
 
-    // ─── Parsing sécurisé ───
+    // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    
+    // Devise du vendeur (stockée dans le produit)
+    final sellerCurrencyCode = (product['currency'] ?? 'CDF').toString().toUpperCase();
+    final isDifferentCurrency = sellerCurrencyCode != displayCurrencyCode;
+
+    // ─── Parsing sécurisé des prix (dans la devise du vendeur) ───
     final originalPrice = _ProductCardValidators.parsePrice(product['price']);
     final rawDiscount = product['discount_price'];
     final discountPrice = rawDiscount != null ? _ProductCardValidators.parsePrice(rawDiscount) : null;
     final hasDiscount = discountPrice != null && discountPrice > 0 && discountPrice < originalPrice;
-    final price = hasDiscount ? discountPrice! : originalPrice;
+    final basePrice = hasDiscount ? discountPrice! : originalPrice;
 
     final discountPercent = originalPrice > 0 && hasDiscount
-        ? ((originalPrice - price) / originalPrice * 100).round()
+        ? ((originalPrice - basePrice) / originalPrice * 100).round()
         : 0;
 
-    final currency = (product['currency'] ?? 'CDF').toString().toUpperCase();
-    final symbol = currency == 'USD' ? '\$' : 'FC';
+    // ✅ CONVERSION vers la devise d'affichage
+    final currencyService = CurrencyService.instance;
+    final convertedPrice = currencyService.convert(
+      basePrice,
+      from: sellerCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final convertedOriginalPrice = hasDiscount
+        ? currencyService.convert(originalPrice, from: sellerCurrencyCode, to: displayCurrencyCode)
+        : null;
+
+    // ✅ Formatage du prix dans la devise d'affichage
+    final formattedPrice = currencyService.formatPrice(
+      convertedPrice,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+    final formattedOriginalPrice = convertedOriginalPrice != null
+        ? currencyService.formatPrice(
+            convertedOriginalPrice,
+            currencyCode: displayCurrencyCode,
+            lang: lang,
+          )
+        : null;
 
     final stock = _ProductCardValidators.parseStock(product['stock']);
     final isOut = stock <= 0;
@@ -350,17 +393,18 @@ class ProductCard extends ConsumerWidget {
                 Row(
                   crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
-                    if (hasDiscount && !isOut)
+                    // ✅ Prix barré (converti dans la devise d'affichage)
+                    if (hasDiscount && !isOut && formattedOriginalPrice != null)
                       Padding(
                         padding: const EdgeInsets.only(right: 4),
                         child: Text(
-                          '${originalPrice.toInt()}',
+                          formattedOriginalPrice,
                           style: TextStyle(decoration: TextDecoration.lineThrough, fontSize: 9, color: ThixPolicy.textMuted),
                         ),
                       ),
                     Expanded(
                       child: Text(
-                        _buildPriceLabel(isOut: isOut, price: price, symbol: symbol, t: t),
+                        _buildPriceLabel(isOut: isOut, formattedPrice: formattedPrice, t: t),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: ThixPolicy.labelStyle.copyWith(
@@ -370,11 +414,26 @@ class ProductCard extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    // ✅ Indicateur visuel si devise différente
+                    if (isDifferentCurrency && !isOut)
+                      Container(
+                        margin: const EdgeInsets.only(left: 2),
+                        padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(3),
+                        ),
+                        child: Icon(
+                          Icons.currency_exchange_rounded,
+                          size: 8,
+                          color: ThixPolicy.primary,
+                        ),
+                      ),
                   ],
                 ),
                 if (!isOut) ...[
                   const SizedBox(height: 3),
-                  _buildStockLabel(stock: stock, isLowStock: isLowStock, t: t),
+                  _buildStockLabel(stock: stock, isLowStock: isLowStock, t: t, lang: lang),
                 ],
               ],
             ),
@@ -386,7 +445,7 @@ class ProductCard extends ConsumerWidget {
     return RepaintBoundary(
       child: Semantics(
         button: true,
-        label: '${title.isEmpty ? "Produit" : title}, ${isOut ? "indisponible" : "${price.toInt()} $symbol"}',
+        label: '${title.isEmpty ? "Produit" : title}, ${isOut ? "indisponible" : formattedPrice}',
         enabled: !isOut,
         child: GestureDetector(
           onTap: () => _handleTap(context: context, id: id, isOut: isOut, t: t),
@@ -471,22 +530,35 @@ class ProductCard extends ConsumerWidget {
 
   String _buildPriceLabel({
     required bool isOut,
-    required double price,
-    required String symbol,
+    required String formattedPrice,
     required MarketStrings t,
   }) {
     if (isOut) return t.unavailable;
-    if (price <= 0) return 'Sur demande';
-    return '${price.toInt()} $symbol';
+    if (formattedPrice.isEmpty) return 'Sur demande';
+    return formattedPrice;
   }
 
   Widget _buildStockLabel({
     required int stock,
     required bool isLowStock,
     required MarketStrings t,
+    required String lang,
   }) {
     final color = isLowStock ? ThixPolicy.warning : ThixPolicy.success;
-    final label = isLowStock ? 'Plus que $stock !' : '$stock ${t.inStock}';
+    
+    // Traduction du label "Plus que X !" / "Only X left!" / "Zimebaki X tu!"
+    String label;
+    if (isLowStock) {
+      if (lang == 'sw') {
+        label = 'Zimebaki $stock tu!';
+      } else if (lang == 'en') {
+        label = 'Only $stock left!';
+      } else {
+        label = 'Plus que $stock !';
+      }
+    } else {
+      label = '$stock ${t.inStock}';
+    }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
