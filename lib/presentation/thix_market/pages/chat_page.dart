@@ -1,12 +1,13 @@
 // lib/presentation/thix_market/pages/chat_page.dart
 // ============================================================================
-// CHAT PAGE — Production Enterprise v6 (Alibaba-style)
+// CHAT PAGE — Production Enterprise v7 (Alibaba-style)
 // ----------------------------------------------------------------------------
+//  • extra lu depuis le widget OU directement depuis GoRouterState
+//  • Nom / logo / boutique retrouvés en base si absents
 //  • Barre du haut : boutique, appel, options
-//  • Carte "Demander à propos de ce produit" + bouton Send (envoie la carte)
+//  • Carte "Demander à propos de ce produit" + bouton Send
 //  • Carte produit cliquable dans les bulles, prix converti en temps réel
-//  • Temps réel (stream), indicateur de saisie, accusés de lecture
-//  • Séparateurs de date, réponses rapides, en-tête de bienvenue
+//  • Temps réel, indicateur de saisie, accusés de lecture, séparateurs de date
 //  • 3 langues FR / EN / SW (sans dépendre de clés l10n)
 // ============================================================================
 
@@ -185,6 +186,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   Timer? _typingStopTimer;
   Timer? _otherTypingTimer;
 
+  bool _extrasLoaded = false;
   bool _isSending = false;
   bool _isSendingProduct = false;
   bool _iAmTyping = false;
@@ -204,7 +206,6 @@ class _ChatPageState extends ConsumerState<ChatPage> {
   void initState() {
     super.initState();
     _service = ChatService(ref.read(supabaseClientProvider));
-    _extractExtraData();
     debugPrint('[Chat] 💬 Opened conversation ${widget.conversationId}');
 
     if (_ChatValidators.isValidId(widget.conversationId)) {
@@ -223,9 +224,39 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _controller.addListener(_onTextChanged);
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_extrasLoaded) return;
+    _extrasLoaded = true;
+    _extractExtraData();
+    _resolvePeerIfNeeded();
+  }
+
+  /// Lit `extra` depuis le widget, sinon directement depuis GoRouterState
+  /// (le routeur ne le transmet pas toujours au constructeur).
   void _extractExtraData() {
-    final extra = widget.extra ?? {};
-    _userName = _ChatValidators.sanitize(extra['userName']?.toString() ?? extra['title']?.toString(), maxLength: 60);
+    Map<String, dynamic> extra = {};
+    var source = 'none';
+
+    if (widget.extra != null && widget.extra!.isNotEmpty) {
+      extra = widget.extra!;
+      source = 'widget';
+    } else {
+      try {
+        final e = GoRouterState.of(context).extra;
+        if (e is Map) {
+          extra = Map<String, dynamic>.from(e);
+          source = 'router';
+        }
+      } catch (_) {}
+    }
+    debugPrint('[Chat] extra source=$source keys=${extra.keys.toList()}');
+
+    _userName = _ChatValidators.sanitize(
+      extra['userName']?.toString() ?? extra['title']?.toString(),
+      maxLength: 60,
+    );
     _userAvatar = _ChatValidators.sanitizeUrl(extra['userAvatar']?.toString()) ?? '';
     final shopId = extra['shopId']?.toString() ?? '';
     _shopId = _ChatValidators.isValidId(shopId) ? shopId : '';
@@ -240,6 +271,31 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         debugPrint('[Chat] 📦 Product context: ${ctx['title']}');
       }
     }
+  }
+
+  /// Complète nom / logo / boutique depuis la base quand ils manquent.
+  Future<void> _resolvePeerIfNeeded() async {
+    if (_userName.isNotEmpty && _userAvatar.isNotEmpty && _shopId.isNotEmpty) return;
+    if (!_ChatValidators.isValidId(widget.conversationId)) return;
+
+    final peer = await _service.resolvePeer(
+      widget.conversationId,
+      shopId: _shopId.isEmpty ? null : _shopId,
+    );
+    if (!mounted || peer == null) return;
+
+    setState(() {
+      if (_userName.isEmpty && peer.name != null) {
+        _userName = _ChatValidators.sanitize(peer.name, maxLength: 60);
+      }
+      if (_userAvatar.isEmpty) {
+        _userAvatar = _ChatValidators.sanitizeUrl(peer.avatarUrl) ?? '';
+      }
+      if (_shopId.isEmpty && _ChatValidators.isValidId(peer.shopId)) {
+        _shopId = peer.shopId!;
+      }
+    });
+    debugPrint('[Chat] 👤 Peer resolved: $_userName shop=$_shopId');
   }
 
   @override
@@ -305,12 +361,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       _controller.clear();
       _stopTyping();
       debugPrint('[Chat] ✓ Message sent');
-    } on ChatException catch (e) {
-      debugPrint('[Chat] ❌ Send error: $e');
-      _showError(_tr(context, "Message non envoyé. Réessayez.", 'Message not sent. Try again.', 'Ujumbe haujatumwa. Jaribu tena.'));
     } catch (e) {
       debugPrint('[Chat] ❌ Send error: $e');
-      _showError(_tr(context, "Message non envoyé. Réessayez.", 'Message not sent. Try again.', 'Ujumbe haujatumwa. Jaribu tena.'));
+      _showError(_tr(context, 'Message non envoyé. Réessayez.', 'Message not sent. Try again.', 'Ujumbe haujatumwa. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _isSending = false);
     }
@@ -336,7 +389,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       debugPrint('[Chat] 📎 Product card sent');
     } catch (e) {
       debugPrint('[Chat] ❌ Product send error: $e');
-      _showError(_tr(context, "Produit non envoyé. Réessayez.", 'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
+      _showError(_tr(context, 'Produit non envoyé. Réessayez.', 'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _isSendingProduct = false);
     }
@@ -401,9 +454,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       (prev, next) => next.whenData(_maybeMarkRead),
     );
 
-    final name = _userName.isNotEmpty
-        ? _userName
-        : _tr(context, 'Vendeur', 'Seller', 'Muuzaji');
+    final name = _userName.isNotEmpty ? _userName : _tr(context, 'Vendeur', 'Seller', 'Muuzaji');
 
     // Bannière "Demander à propos de ce produit"
     Widget? inquiryBar;
