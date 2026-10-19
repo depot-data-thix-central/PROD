@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/pages/product_detail_page.dart
+// ============================================================================
+// PRODUCT DETAIL PAGE — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Formatage intelligent (milliers, décimales selon devise)
+//  • ✅ Indicateur visuel si devise différente du vendeur
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +17,11 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
+
 import '../core/african_countries.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/market_providers.dart';
 import '../cart/cart_provider.dart';
@@ -64,20 +77,6 @@ class _V {
   static double clampRating(dynamic rating) {
     final val = toNum(rating)?.toDouble() ?? 0.0;
     return val.clamp(0.0, 5.0);
-  }
-
-  static String parseCurrency(String? currency) {
-    final c = (currency ?? 'CDF').toString().toUpperCase().trim();
-    if (c == 'USD' || c == '\$') return '\$';
-    if (c == 'EUR' || c == '€') return '€';
-    if (c == 'XOF' || c == 'FCFA' || c == 'FC' || c == 'CDF') return 'FC';
-    return c;
-  }
-
-  static String formatPrice(num? price, String symbol) {
-    if (price == null || price < 0) return 'Prix indisponible';
-    if (price == 0) return 'Sur demande';
-    return '${price.toInt()} $symbol';
   }
 }
 
@@ -297,8 +296,9 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     super.dispose();
   }
 
-  String _t(BuildContext context, String fr, String en) {
+  String _t(BuildContext context, String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(context).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -311,7 +311,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final uid = db.auth.currentUser?.id;
 
     if (uid == null) {
-      _showError(_t(context, 'Veuillez vous connecter', 'Please log in'));
+      _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
       return;
     }
 
@@ -338,7 +338,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     if (_adding) return;
 
     if (maxStock <= 0) {
-      _showError(_t(context, 'Rupture de stock', 'Out of stock'));
+      _showError(_t(context, 'Rupture de stock', 'Out of stock', 'Stoku imeisha'));
       return;
     }
 
@@ -346,12 +346,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final uid = db.auth.currentUser?.id;
 
     if (uid == null) {
-      _showError(_t(context, 'Veuillez vous connecter', 'Please log in'));
+      _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
       return;
     }
 
     if (_qty > maxStock) {
-      _showError(_t(context, 'Stock limité à $maxStock', 'Stock limited to $maxStock'));
+      _showError(_t(context, 'Stock limité à $maxStock', 'Stock limited to $maxStock', 'Stoku imezuiliwa kwa $maxStock'));
       return;
     }
 
@@ -369,7 +369,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
         final newQty = cur + _qty;
         if (newQty > maxStock) {
           _showError(_t(context, 'Stock limité à $maxStock (déjà $cur dans le panier)',
-              'Stock limited to $maxStock ($cur already in cart)'));
+              'Stock limited to $maxStock ($cur already in cart)',
+              'Stoku imezuiliwa kwa $maxStock ($cur tayari kwenye kikapu)'));
           return;
         }
         await _withRetry(
@@ -390,8 +391,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       }
 
       _showSuccess(
-        _t(context, 'Ajouté au panier !', 'Added to cart!'),
-        actionLabel: _t(context, 'Voir le panier', 'View cart'),
+        _t(context, 'Ajouté au panier !', 'Added to cart!', 'Imeongezwa kwenye kikapu!'),
+        actionLabel: _t(context, 'Voir le panier', 'View cart', 'Ona kikapu'),
         onAction: () => context.push('/market/cart'),
       );
       ref.invalidate(cartProvider);
@@ -409,7 +410,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final shopId = product['shop_id'];
 
     if (shopId == null) {
-      _showError(_t(context, 'Boutique indisponible', 'Store unavailable'));
+      _showError(_t(context, 'Boutique indisponible', 'Store unavailable', 'Duka halipatikani'));
       return;
     }
 
@@ -474,6 +475,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   Widget build(BuildContext context) {
     final detailAsync = ref.watch(productDetailProvider(widget.productId));
     final favAsync = ref.watch(isFavoriteProvider(widget.productId));
+    // ✅ Écoute le provider de devise pour forcer le rebuild lors du changement
+    ref.watch(currencyProvider);
 
     return detailAsync.when(
       loading: () => _buildSkeleton(),
@@ -561,6 +564,17 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   }
 
   Widget _buildContent(Map<String, dynamic> product, bool isFav) {
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    
+    // Devise du vendeur (stockée dans le produit)
+    final sellerCurrencyCode = (product['currency'] ?? 'CDF').toString().toUpperCase();
+    final isDifferentCurrency = sellerCurrencyCode != displayCurrencyCode;
+    
+    final currencyService = CurrencyService.instance;
+
     // ─── Images ───
     final imagesRaw = product['images'] as List?;
     List<String> images = [];
@@ -572,13 +586,28 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       if (url != null) images = [url];
     }
 
-    // ─── Prix ───
-    final symbol = _V.parseCurrency(product['currency']?.toString());
+    // ─── Prix (dans la devise du vendeur) ───
     final price = _V.toNum(product['price'])?.toDouble();
     final dp = _V.toNum(product['discount_price'])?.toDouble();
     final hasDiscount = price != null && dp != null && dp > 0 && dp < price;
     final discountPct = hasDiscount ? ((price - dp) / price * 100).round() : 0;
     final unitPrice = hasDiscount ? dp : price;
+
+    // ✅ CONVERSION vers la devise d'affichage
+    final convertedUnitPrice = unitPrice != null
+        ? currencyService.convert(unitPrice, from: sellerCurrencyCode, to: displayCurrencyCode)
+        : null;
+    final convertedOriginalPrice = (hasDiscount && price != null)
+        ? currencyService.convert(price, from: sellerCurrencyCode, to: displayCurrencyCode)
+        : null;
+
+    // ✅ Formatage des prix
+    final formattedUnitPrice = convertedUnitPrice != null
+        ? currencyService.formatPrice(convertedUnitPrice, currencyCode: displayCurrencyCode, lang: lang)
+        : null;
+    final formattedOriginalPrice = convertedOriginalPrice != null
+        ? currencyService.formatPrice(convertedOriginalPrice, currencyCode: displayCurrencyCode, lang: lang)
+        : null;
 
     // ─── Stock ───
     final stock = _V.clampStock(product['stock']);
@@ -714,26 +743,42 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.end,
                         children: [
-                          Text(
-                            _V.formatPrice(unitPrice, symbol),
-                            style: TextStyle(
-                              fontSize: 26,
-                              fontWeight: FontWeight.w900,
-                              color: hasDiscount ? ThixPolicy.danger : ThixPolicy.textMain,
-                              letterSpacing: -0.5,
+                          if (formattedUnitPrice != null)
+                            Text(
+                              formattedUnitPrice,
+                              style: TextStyle(
+                                fontSize: 26,
+                                fontWeight: FontWeight.w900,
+                                color: hasDiscount ? ThixPolicy.danger : ThixPolicy.textMain,
+                                letterSpacing: -0.5,
+                              ),
                             ),
-                          ),
-                          if (hasDiscount)
+                          if (hasDiscount && formattedOriginalPrice != null)
                             Padding(
                               padding: const EdgeInsets.only(left: 8, bottom: 4),
                               child: Text(
-                                '${price.toInt()} $symbol',
+                                formattedOriginalPrice,
                                 style: const TextStyle(
                                   fontSize: 13,
                                   decoration: TextDecoration.lineThrough,
                                   color: ThixPolicy.textMuted,
                                   fontWeight: FontWeight.w600,
                                 ),
+                              ),
+                            ),
+                          // ✅ Indicateur visuel si devise différente
+                          if (isDifferentCurrency && formattedUnitPrice != null)
+                            Container(
+                              margin: const EdgeInsets.only(left: 6, bottom: 4),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: ThixPolicy.primary.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Icon(
+                                Icons.currency_exchange_rounded,
+                                size: 12,
+                                color: ThixPolicy.primary,
                               ),
                             ),
                         ],
@@ -790,7 +835,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                               ),
                               const SizedBox(width: 6),
                               Text(
-                                '$reviewsCount ${_t(context, 'avis', 'reviews')}',
+                                '$reviewsCount ${_t(context, 'avis', 'reviews', 'maoni')}',
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
                                   fontSize: 11,
@@ -844,7 +889,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       Row(
                         children: [
                           Text(
-                            _t(context, 'Quantité', 'Quantity'),
+                            _t(context, 'Quantité', 'Quantity', 'Idadi'),
                             style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
                           ),
                           const Spacer(),
@@ -883,13 +928,29 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                           ),
                         ],
                       ),
+                      // ✅ Total converti
                       if (unitPrice != null && unitPrice > 0 && _qty > 1) ...[
                         const SizedBox(height: 10),
                         Align(
                           alignment: Alignment.centerRight,
-                          child: Text(
-                            'Total : ${(unitPrice * _qty).toInt()} $symbol',
-                            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
+                          child: Builder(
+                            builder: (context) {
+                              final totalInSellerCurrency = unitPrice * _qty;
+                              final convertedTotal = currencyService.convert(
+                                totalInSellerCurrency,
+                                from: sellerCurrencyCode,
+                                to: displayCurrencyCode,
+                              );
+                              final formattedTotal = currencyService.formatPrice(
+                                convertedTotal,
+                                currencyCode: displayCurrencyCode,
+                                lang: lang,
+                              );
+                              return Text(
+                                '${_t(context, 'Total', 'Total', 'Jumla')} : $formattedTotal',
+                                style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain),
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -902,10 +963,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceAround,
                     children: [
-                      _trustItem(Icons.lock_outline_rounded, _t(context, 'Paiement\nsécurisé', 'Secure\npayment')),
-                      _trustItem(Icons.verified_user_outlined, _t(context, 'Vendeur\nvérifié', 'Verified\nseller')),
-                      _trustItem(Icons.local_shipping_outlined, _t(context, 'Livraison\nfiable', 'Reliable\ndelivery')),
-                      _trustItem(Icons.headset_mic_outlined, _t(context, 'Support\n24/7', 'Support\n24/7')),
+                      _trustItem(Icons.lock_outline_rounded, _t(context, 'Paiement\nsécurisé', 'Secure\npayment', 'Malipo\nsalama')),
+                      _trustItem(Icons.verified_user_outlined, _t(context, 'Vendeur\nvérifié', 'Verified\nseller', 'Muuzaji\naliyethibitishwa')),
+                      _trustItem(Icons.local_shipping_outlined, _t(context, 'Livraison\nfiable', 'Reliable\ndelivery', 'Uwasilishaji\nwa kuaminika')),
+                      _trustItem(Icons.headset_mic_outlined, _t(context, 'Support\n24/7', 'Support\n24/7', 'Msaada\n24/7')),
                     ],
                   ),
                 ),
@@ -919,7 +980,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _sectionTitle(_t(context, 'Détails du produit', 'Product details')),
+                        _sectionTitle(_t(context, 'Détails du produit', 'Product details', 'Maelezo ya bidhaa')),
                         const SizedBox(height: 10),
                         Text(
                           description,
@@ -934,8 +995,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                               padding: const EdgeInsets.only(top: 8),
                               child: Text(
                                 _descExpanded
-                                    ? _t(context, 'Voir moins', 'See less')
-                                    : _t(context, 'Voir plus', 'See more'),
+                                    ? _t(context, 'Voir moins', 'See less', 'Ona kidogo')
+                                    : _t(context, 'Voir plus', 'See more', 'Ona zaidi'),
                                 style: const TextStyle(
                                   color: ThixPolicy.primary,
                                   fontWeight: FontWeight.w800,
@@ -956,12 +1017,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          _sectionTitle(_t(context, 'Avis clients', 'Customer reviews')),
+                          _sectionTitle(_t(context, 'Avis clients', 'Customer reviews', 'Maoni ya wateja')),
                           if (reviews.isNotEmpty)
                             GestureDetector(
                               onTap: () => _showAllReviews(reviews),
                               child: Text(
-                                _t(context, 'Voir tout', 'See all'),
+                                _t(context, 'Voir tout', 'See all', 'Ona zote'),
                                 style: const TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w800, fontSize: 13),
                               ),
                             ),
@@ -970,7 +1031,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                       const SizedBox(height: 12),
                       if (reviews.isEmpty)
                         Text(
-                          _t(context, 'Aucun avis pour le moment.', 'No reviews yet.'),
+                          _t(context, 'Aucun avis pour le moment.', 'No reviews yet.', 'Hakuna maoni bado.'),
                           style: const TextStyle(color: ThixPolicy.textSecondary, fontSize: 13),
                         )
                       else
@@ -1033,8 +1094,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                             ),
                       label: Text(
                         available
-                            ? _t(context, 'Ajouter au panier', 'Add to cart')
-                            : _t(context, 'Rupture de stock', 'Out of stock'),
+                            ? _t(context, 'Ajouter au panier', 'Add to cart', 'Ongeza kwenye kikapu')
+                            : _t(context, 'Rupture de stock', 'Out of stock', 'Stoku imeisha'),
                         style: const TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 14),
                       ),
                       style: ElevatedButton.styleFrom(
@@ -1061,7 +1122,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   Widget _buildShopCard(Map<String, dynamic> shop, String? shopId) {
     final logo = _V.sanitizeUrl(shop['logo_url']?.toString());
     final name = _V.sanitize(
-      shop['name']?.toString() ?? _t(context, 'Boutique Partenaire', 'Partner Store'),
+      shop['name']?.toString() ?? _t(context, 'Boutique Partenaire', 'Partner Store', 'Duka la Mshirika'),
       maxLength: 60,
     );
     final city = _V.sanitize(shop['city']?.toString() ?? '', maxLength: 40);
@@ -1152,7 +1213,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             child: OutlinedButton.icon(
               onPressed: shopId != null ? () => _openShop(shopId) : null,
               icon: const Icon(Icons.storefront_rounded, size: 18),
-              label: Text(_t(context, 'Visiter la boutique', 'Visit store')),
+              label: Text(_t(context, 'Visiter la boutique', 'Visit store', 'Tembelea duka')),
               style: OutlinedButton.styleFrom(
                 foregroundColor: ThixPolicy.textMain,
                 side: const BorderSide(color: ThixPolicy.border),
@@ -1184,7 +1245,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                 children: [
                   const Icon(Icons.auto_awesome_rounded, size: 20, color: ThixPolicy.gold),
                   const SizedBox(width: 8),
-                  _sectionTitle(_t(context, 'Produits similaires', 'Similar products')),
+                  _sectionTitle(_t(context, 'Produits similaires', 'Similar products', 'Bidhaa zinazofanana')),
                 ],
               ),
             ),
@@ -1246,10 +1307,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             ? ThixPolicy.warning
             : ThixPolicy.success;
     final String label = !available
-        ? _t(context, 'Rupture de stock', 'Out of stock')
+        ? _t(context, 'Rupture de stock', 'Out of stock', 'Stoku imeisha')
         : lowStock
-            ? _t(context, 'Plus que $stock !', 'Only $stock left!')
-            : _t(context, '$stock disponibles', '$stock in stock');
+            ? _t(context, 'Plus que $stock !', 'Only $stock left!', 'Zimebaki $stock tu!')
+            : _t(context, '$stock disponibles', '$stock in stock', '$stock zinapatikana');
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1344,7 +1405,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _t(context, 'Taille / Modèle', 'Size / Model'),
+          _t(context, 'Taille / Modèle', 'Size / Model', 'Ukubwa / Muundo'),
           style: const TextStyle(fontWeight: FontWeight.w700, color: ThixPolicy.textMain, fontSize: 14),
         ),
         const SizedBox(height: 8),
@@ -1369,7 +1430,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          _t(context, 'Couleurs', 'Colors'),
+          _t(context, 'Couleurs', 'Colors', 'Rangi'),
           style: const TextStyle(fontWeight: FontWeight.w700, color: ThixPolicy.textMain, fontSize: 14),
         ),
         const SizedBox(height: 8),
@@ -1416,7 +1477,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   Widget _reviewCard(Map<String, dynamic> review) {
     final user = review['user'] as Map?;
     final name = _V.sanitize(
-      user?['name']?.toString() ?? _t(context, 'Client vérifié', 'Verified Customer'),
+      user?['name']?.toString() ?? _t(context, 'Client vérifié', 'Verified Customer', 'Mteja Aliyethibitishwa'),
       maxLength: 50,
     );
     final avatar = _V.sanitizeUrl(user?['avatar']?.toString());
@@ -1502,7 +1563,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                   child: Row(
                     children: [
                       Text(
-                        _t(context, 'Tous les avis', 'All reviews'),
+                        _t(context, 'Tous les avis', 'All reviews', 'Maoni yote'),
                         style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: ThixPolicy.textMain),
                       ),
                       const Spacer(),
