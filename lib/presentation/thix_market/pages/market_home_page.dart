@@ -1,10 +1,13 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v4
+// MARKET HOME PAGE — Production Enterprise v5
 // ----------------------------------------------------------------------------
-//  • Pastilles de notifications : cloche + Commandes / Favoris / Boutiques
-//  • Remise à zéro à l'ouverture de la section
-//  • Bouton panier central entier (n'est plus coupé)
+//  • ✅ Sélecteur de devise (54 devises africaines) dans la topbar
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Support FR / EN / SW automatique via Localizations
+//  • ✅ Pastilles de notifications : cloche + Commandes / Favoris / Boutiques
+//  • ✅ Remise à zéro à l'ouverture de la section
+//  • ✅ Bouton panier central entier (n'est plus coupé)
 // ============================================================================
 
 import 'dart:async';
@@ -22,10 +25,14 @@ import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
 import '../providers/market_providers.dart';
 import '../providers/market_badges_provider.dart';
+import '../providers/currency_provider.dart';
 import '../widgets/products/product_card.dart';
 import '../widgets/market/flash_sale_timer.dart';
+import '../widgets/market/currency_selector.dart';
 import 'all_shops_and_supermarkets_page.dart';
 
 // ============================================================================
@@ -122,6 +129,17 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     super.initState();
     _scroll.addListener(_onScroll);
     debugPrint('[Market] 🏠 Home opened');
+    // ✅ Charge les taux de change au démarrage (silencieux, non-bloquant)
+    _refreshCurrencyRates();
+  }
+
+  Future<void> _refreshCurrencyRates() async {
+    try {
+      await CurrencyService.instance.refreshRates();
+      debugPrint('[Market] 💱 Currency rates refreshed');
+    } catch (e) {
+      debugPrint('[Market] ⚠️ Currency refresh failed: $e');
+    }
   }
 
   @override
@@ -139,6 +157,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     invalidateAllMarketProviders(ref);
     ref.read(forYouProvider.notifier).refresh();
     ref.read(marketBadgesProvider.notifier).refresh();
+    _refreshCurrencyRates();
   }
 
   // ✅ FIX : garde hasClients
@@ -160,8 +179,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     super.dispose();
   }
 
-  String _t(String fr, String en) {
+  String _t(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(context).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -184,7 +204,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   Future<void> _go(MarketBadge kind, Future<dynamic> Function() nav) async {
     HapticFeedback.lightImpact();
     final badges = ref.read(marketBadgesProvider.notifier);
-    badges.markSeen(kind); // pastille à 0 immédiatement
+    badges.markSeen(kind);
     try {
       await nav();
     } catch (e) {
@@ -294,7 +314,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 
   String _allProductsTitle(AppLocalizations l10n) {
     final t = l10n.t('market_all_products');
-    if (t.trim().isEmpty || t == 'market_all_products') return 'Tous les produits';
+    if (t.trim().isEmpty || t == 'market_all_products') {
+      return _t('Tous les produits', 'All products', 'Bidhaa zote');
+    }
     return t;
   }
 
@@ -320,6 +342,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
     final fallbackProducts = ref.watch(allMarketProductsProvider);
     final badges = ref.watch(marketBadgesProvider);
+    // ✅ Écoute le provider de devise pour forcer le rebuild lors du changement
+    ref.watch(currencyProvider);
+    // ✅ Écoute les taux pour mise à jour automatique
+    ref.watch(exchangeRatesProvider);
 
     final hasMore = ref.read(forYouProvider.notifier).hasMore;
 
@@ -346,6 +372,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
               invalidateAllMarketProviders(ref);
               ref.read(marketBadgesProvider.notifier).refresh();
               await ref.read(forYouProvider.notifier).refresh();
+              await _refreshCurrencyRates();
             },
             child: CustomScrollView(
               controller: _scroll,
@@ -403,6 +430,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
+  // ═════════════════════════════════════════════════════════════════════════
+  // ✅ TOP BAR AVEC SÉLECTEUR DE DEVISE
+  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildTopBar(AppLocalizations l10n, MarketBadges badges) {
     return Container(
       color: Colors.transparent,
@@ -444,6 +474,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
           ),
           Row(
             children: [
+              // ✅ SÉLECTEUR DE DEVISE (ajouté ici)
+              const CurrencySelector(),
+              const SizedBox(width: ThixPolicy.s8),
               Semantics(
                 button: true,
                 label: badges.alerts > 0
@@ -1210,7 +1243,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  // ✅ Grid robuste (hauteur fixe + variante horizontal + fallback)
   Widget _buildGrid(
     AsyncValue<List<Map<String, dynamic>>> forYouAsync,
     List<Map<String, dynamic>> fallback,
@@ -1221,7 +1253,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
       skipLoadingOnReload: true,
       skipLoadingOnRefresh: true,
       loading: () {
-        // Si on a déjà des produits (featured/flash), on les montre pendant le chargement
         if (fallback.isNotEmpty) return _productGridSliver(fallback, false);
         return const SliverToBoxAdapter(child: _GridSkeleton());
       },
@@ -1263,7 +1294,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Tirez vers le bas pour actualiser',
+                    _t('Tirez vers le bas pour actualiser', 'Pull down to refresh', 'Vuta chini ili kuburudisha'),
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 13,
@@ -1333,13 +1364,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  // ==========================================================================
-  // BARRE DU BAS — le bouton panier est HORS du ClipRRect (plus coupé)
-  // ==========================================================================
   Widget _buildBottomNavBar(AppLocalizations l10n, MarketBadges badges) {
     const barH = 56.0;
     const fabSize = 58.0;
-    const lift = 20.0; // dépassement du bouton panier au-dessus de la barre
+    const lift = 20.0;
 
     return SafeArea(
       top: false,
@@ -1351,7 +1379,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             clipBehavior: Clip.none,
             alignment: Alignment.topCenter,
             children: [
-              // Barre en verre (le clip ne touche que la barre)
               Positioned(
                 left: 0,
                 right: 0,
@@ -1397,7 +1424,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                           ),
                           _navItem(
                             icon: Icons.storefront_rounded,
-                            label: _t('Boutiques', 'Shops'),
+                            label: _t('Boutiques', 'Shops', 'Maduka'),
                             badge: badges.shops,
                             onTap: () => _openShops(badges.hasShop),
                           ),
@@ -1408,7 +1435,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 ),
               ),
 
-              // Bouton panier central (au-dessus, jamais rogné)
               Positioned(
                 top: 0,
                 child: Semantics(
@@ -1496,7 +1522,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 // COMPOSANTS RÉUTILISABLES
 // ============================================================================
 
-/// Pastille rouge de notifications (masquée à 0, "99+" au-delà).
 class _CountBadge extends StatelessWidget {
   final int count;
   const _CountBadge({required this.count});
@@ -1774,7 +1799,6 @@ class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
   }
 }
 
-// ✅ Marquee sans OverflowBox/infinity (Stack + Positioned à largeur fixe)
 class _MarqueeText extends StatefulWidget {
   final String text;
   const _MarqueeText({required this.text});
