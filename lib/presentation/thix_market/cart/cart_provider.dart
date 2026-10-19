@@ -1,4 +1,14 @@
 // lib/presentation/thix_market/cart/cart_provider.dart
+// ============================================================================
+// CART PROVIDER — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Préserve la devise originale du vendeur (plus de normalisation USD/FC)
+//  • ✅ Support complet des 54 devises africaines
+//  • ✅ Panier multi-devises avec détection intelligente
+//  • ✅ Conversion déléguée aux widgets UI via CurrencyService
+//  • ✅ Cache offline avec gestion des devises
+// ============================================================================
+
 import 'dart:async';
 import 'dart:convert';
 
@@ -7,6 +17,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/african_currencies.dart';
 import '../providers/market_providers.dart';
 
 // ============================================================================
@@ -18,7 +29,7 @@ const Duration _kDebounceDelay = Duration(milliseconds: 300);
 const int _kMaxRetries = 1;
 const int _kMaxQuantity = 999;
 const int _kMinQuantity = 1;
-const int _kCacheVersion = 1;
+const int _kCacheVersion = 2; // ✅ Incremented for new currency handling
 
 // SharedPreferences keys
 const String _kPrefCartCache = 'cart_cache_v$_kCacheVersion';
@@ -67,6 +78,31 @@ class _CartValidators {
     if (qty > _kMaxQuantity) return _kMaxQuantity;
     if (stock > 0 && qty > stock) return stock;
     return qty;
+  }
+
+  /// ✅ Normalise le code devise en utilisant AfricanCurrencies
+  /// Retourne le code ISO-4217 (USD, CDF, XOF, etc.) ou CDF par défaut
+  static String normalizeCurrencyCode(dynamic raw) {
+    if (raw == null) return 'CDF';
+    final code = raw.toString().toUpperCase().trim();
+    
+    // Vérifier si c'est une devise africaine connue
+    if (AfricanCurrencies.byCode(code) != null) {
+      return code;
+    }
+    
+    // Alias courants
+    final aliases = <String, String>{
+      'FC': 'CDF',
+      'FCFA': 'XOF',
+      r'$': 'USD',
+      'DOLLAR': 'USD',
+      'US': 'USD',
+      'EURO': 'EUR',
+      '€': 'EUR',
+    };
+    
+    return aliases[code] ?? 'CDF';
   }
 }
 
@@ -145,6 +181,7 @@ class CartState {
     return jsonEncode({
       'items': items,
       'timestamp': DateTime.now().millisecondsSinceEpoch,
+      'version': _kCacheVersion,
     });
   }
 
@@ -180,6 +217,8 @@ class CartNotifier extends StateNotifier<CartState> {
   bool _isAddingToCart = false;
 
   // ========== HELPERS PRIX ==========
+  
+  /// ✅ Retourne le prix réel (après remise) dans la devise DU VENDEUR
   double _getRealPrice(Map<String, dynamic> product) {
     final raw = _CartValidators.safeDouble(product['price']);
     final sale = _CartValidators.safeDouble(
@@ -197,6 +236,7 @@ class CartNotifier extends StateNotifier<CartState> {
     return raw;
   }
 
+  /// ✅ Retourne l'ancien prix (avant remise) dans la devise DU VENDEUR
   double _getOldPrice(Map<String, dynamic> product) {
     final raw = _CartValidators.safeDouble(product['price']);
     final original = _CartValidators.safeDouble(product['original_price'], fallback: raw);
@@ -205,24 +245,14 @@ class CartNotifier extends StateNotifier<CartState> {
     return original;
   }
 
-  /// Normalise toutes les devises vers USD ou FC uniquement
-  String _normalizeCurrency(dynamic raw) {
-    if (raw == null) return 'FC';
-    final c = raw.toString().toUpperCase().trim();
-    if (c == 'USD' || c == '\$' || c == 'DOLLAR' || c == 'US' || c == 'US Dollar') {
-      return 'USD';
-    }
-    if (c.isEmpty) return 'FC';
-    // CDF, XOF, FCFA, FC, XAF, etc. → FC
-    return 'FC';
-  }
-
   Map<String, dynamic> _sanitizeProduct(Map<String, dynamic> product) {
     return {
       ...product,
       'title': _CartValidators.sanitize(product['title']?.toString(), maxLength: 120),
       'name': _CartValidators.sanitize(product['name']?.toString(), maxLength: 120),
       'description': _CartValidators.sanitize(product['description']?.toString(), maxLength: 1000),
+      // ✅ Normaliser le code devise (ISO-4217)
+      'currency': _CartValidators.normalizeCurrencyCode(product['currency']),
       'shop': product['shop'] is Map
           ? {
               ...(product['shop'] as Map).map(
@@ -234,13 +264,14 @@ class CartNotifier extends StateNotifier<CartState> {
   }
 
   // ========== GETTERS ==========
+  
   List<Map<String, dynamic>> get cartItems => state.items;
   bool get isLoading => state.isLoading;
   bool get isSyncing => state.isSyncing;
   String? get lastError => state.lastError;
   int get itemCount => state.items.length;
 
-  /// Sous-totaux regroupés par devise
+  /// ✅ Sous-totaux regroupés par devise (codes ISO-4217)
   Map<String, double> get subtotalsByCurrency {
     final totals = <String, double>{};
     for (final item in state.items) {
@@ -248,8 +279,8 @@ class CartNotifier extends StateNotifier<CartState> {
           ? Map<String, dynamic>.from(item['product'] as Map)
           : <String, dynamic>{};
       final qty = _CartValidators.safeInt(item['quantity'], fallback: 1);
-      final curr = currencyForItem(item);
-      totals[curr] = (totals[curr] ?? 0.0) + (_getRealPrice(product) * qty);
+      final currencyCode = currencyForItem(item);
+      totals[currencyCode] = (totals[currencyCode] ?? 0.0) + (_getRealPrice(product) * qty);
     }
     return totals;
   }
@@ -259,26 +290,46 @@ class CartNotifier extends StateNotifier<CartState> {
         (sum, item) => sum + _CartValidators.safeInt(item['quantity'], fallback: 1),
       );
 
+  /// ✅ Devise du premier article (code ISO-4217)
   String get currency {
-    if (state.items.isEmpty) return 'FC';
-    final p = state.items.first['product'] as Map?;
-    return _normalizeCurrency(p?['currency']);
+    if (state.items.isEmpty) return 'CDF';
+    return currencyForItem(state.items.first);
   }
 
-  String get currencySymbol => currency == 'USD' ? '\$' : 'FC';
+  /// ✅ Symbole de la devise du premier article
+  String get currencySymbol {
+    final code = currency;
+    return AfricanCurrencies.byCode(code)?.symbol ?? code;
+  }
 
+  /// ✅ Code devise d'un item spécifique (ISO-4217)
   String currencyForItem(Map<String, dynamic> item) {
     final p = item['product'] as Map?;
-    return _normalizeCurrency(p?['currency']);
+    return _CartValidators.normalizeCurrencyCode(p?['currency']);
   }
 
-  /// true si plusieurs devises présentes
+  /// ✅ Devise du produit (ISO-4217)
+  String currencyForProduct(Map<String, dynamic> product) {
+    return _CartValidators.normalizeCurrencyCode(product['currency']);
+  }
+
+  /// ✅ true si plusieurs devises différentes sont présentes
   bool get hasMixedCurrency {
     if (state.items.length < 2) return false;
     final first = currencyForItem(state.items.first);
     return state.items.any((item) => currencyForItem(item) != first);
   }
 
+  /// ✅ Liste des devises uniques dans le panier
+  List<String> get uniqueCurrencies {
+    final currencies = <String>{};
+    for (final item in state.items) {
+      currencies.add(currencyForItem(item));
+    }
+    return currencies.toList();
+  }
+
+  /// ✅ Sous-total dans la devise DU VENDEUR (non converti)
   double get subtotal => state.items.fold(0.0, (sum, item) {
         final product = item['product'] is Map
             ? Map<String, dynamic>.from(item['product'] as Map)
@@ -287,6 +338,7 @@ class CartNotifier extends StateNotifier<CartState> {
         return sum + (_getRealPrice(product) * qty);
       });
 
+  /// ✅ Sous-total original dans la devise DU VENDEUR
   double get originalSubtotal => state.items.fold(0.0, (sum, item) {
         final product = item['product'] is Map
             ? Map<String, dynamic>.from(item['product'] as Map)
@@ -430,7 +482,7 @@ class CartNotifier extends StateNotifier<CartState> {
     List<Map<String, dynamic>> cartRecords,
   ) async {
     if (cartRecords.isEmpty) {
-      state = state.copyWith(items: [], isSyncing: false, isLoading: false); // CORRECTION ICI
+      state = state.copyWith(items: [], isSyncing: false, isLoading: false);
       await _saveToCache();
       return;
     }
@@ -468,7 +520,6 @@ class CartNotifier extends StateNotifier<CartState> {
           debugPrint('[CartProvider] ✓ Fetched ${productsMap.length} products in batch');
         } catch (e) {
           debugPrint('[CartProvider] ❌ Batch fetch products error: $e');
-          // Fallback : garder items avec données existantes si possible
         }
       }
 
@@ -501,17 +552,18 @@ class CartNotifier extends StateNotifier<CartState> {
         }
       }
 
-      // NOTE : Purge automatique multi-devises DÉSACTIVÉE
-      // L'utilisateur doit gérer manuellement via l'UI pour éviter
-      // la perte involontaire d'items. L'UI affichera l'alerte.
-
-      state = state.copyWith(items: enriched, isSyncing: false, isLoading: false, lastError: null); // CORRECTION ICI
+      state = state.copyWith(items: enriched, isSyncing: false, isLoading: false, lastError: null);
       await _saveToCache();
+      
+      // Log multi-currency status
+      if (hasMixedCurrency) {
+        debugPrint('[CartProvider] ⚠️ Mixed currencies detected: ${uniqueCurrencies.join(', ')}');
+      }
     } catch (e) {
       debugPrint('[CartProvider] ❌ Sync error: $e');
       state = state.copyWith(
         isSyncing: false,
-        isLoading: false, // CORRECTION ICI
+        isLoading: false,
         lastError: _friendlyError(e),
       );
     }
@@ -555,7 +607,6 @@ class CartNotifier extends StateNotifier<CartState> {
     String? variant,
     String? color,
   }) async {
-    // Protection double-tap
     if (_isAddingToCart) {
       debugPrint('[CartProvider] ⚠️ Add to cart already in progress');
       return;
@@ -596,17 +647,20 @@ class CartNotifier extends StateNotifier<CartState> {
         throw Exception('Rupture de stock');
       }
 
-      final newCurrency = _normalizeCurrency(product['currency']);
+      // ✅ Normaliser la devise du nouveau produit
+      final newCurrencyCode = _CartValidators.normalizeCurrencyCode(product['currency']);
+      final newCurrencyName = AfricanCurrencies.byCode(newCurrencyCode)?.displayName('fr') ?? newCurrencyCode;
 
-      // Vérification devise
-      if (state.items.isNotEmpty) {
+      // ✅ Vérification multi-devises : alerter mais ne pas bloquer
+      if (state.items.isNotEmpty && !hasMixedCurrency) {
         final existingCurrency = currency;
-        if (existingCurrency != newCurrency) {
-          throw Exception(
-            'Impossible d\'ajouter un produit en $newCurrency. '
-            'Votre panier est déjà en $existingCurrency. '
-            'Videz le panier ou retirez les autres articles.',
+        if (existingCurrency != newCurrencyCode) {
+          final existingCurrencyName = AfricanCurrencies.byCode(existingCurrency)?.displayName('fr') ?? existingCurrency;
+          debugPrint(
+            '[CartProvider] ⚠️ Mixed currencies: existing=$existingCurrency, new=$newCurrencyCode'
           );
+          // Note: On ne bloque plus, l'UI affichera l'alerte
+          // Le checkout sera bloqué côté UI si devises mixtes
         }
       }
 
@@ -644,8 +698,7 @@ class CartNotifier extends StateNotifier<CartState> {
         );
       }
 
-      // NOTE : Pas de loadCart() ici car le realtime prendra le relais
-      debugPrint('[CartProvider] ✓ Item added to cart');
+      debugPrint('[CartProvider] ✓ Item added to cart (currency: $newCurrencyCode)');
     } catch (e) {
       debugPrint('[CartProvider] ❌ Add to cart error: $e');
       state = state.copyWith(lastError: _friendlyError(e));
@@ -708,7 +761,6 @@ class CartNotifier extends StateNotifier<CartState> {
     } catch (e) {
       debugPrint('[CartProvider] ❌ Persist quantity error: $e');
       state = state.copyWith(lastError: _friendlyError(e));
-      // Recharger pour resync avec DB
       await loadCart();
     }
   }
@@ -721,7 +773,6 @@ class CartNotifier extends StateNotifier<CartState> {
 
     debugPrint('[CartProvider] 🗑️ Remove item: ${cartItemId.substring(0, 8)}...');
 
-    // Remove optimiste
     final newItems = state.items.where((i) => i['id']?.toString() != cartItemId).toList();
     state = state.copyWith(items: newItems);
     await _saveToCache();
@@ -747,7 +798,6 @@ class CartNotifier extends StateNotifier<CartState> {
 
     debugPrint('[CartProvider] 🧹 Clearing cart');
 
-    // Clear optimiste
     state = const CartState();
     await _clearCache();
 
@@ -800,4 +850,19 @@ final cartCountProvider = Provider<int>((ref) {
 
 final cartHasErrorProvider = Provider<bool>((ref) {
   return ref.watch(cartProvider).lastError != null;
+});
+
+/// ✅ Nouveau provider : détecte si le panier contient des devises mixtes
+final cartHasMixedCurrencyProvider = Provider<bool>((ref) {
+  return ref.watch(cartProvider.notifier).hasMixedCurrency;
+});
+
+/// ✅ Nouveau provider : liste des devises uniques dans le panier
+final cartUniqueCurrenciesProvider = Provider<List<String>>((ref) {
+  return ref.watch(cartProvider.notifier).uniqueCurrencies;
+});
+
+/// ✅ Nouveau provider : sous-totaux par devise
+final cartSubtotalsByCurrencyProvider = Provider<Map<String, double>>((ref) {
+  return ref.watch(cartProvider.notifier).subtotalsByCurrency;
 });
