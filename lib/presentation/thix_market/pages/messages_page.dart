@@ -11,7 +11,7 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
-
+import 'package:provider/provider.dart'; 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import '../core/african_currencies.dart';
