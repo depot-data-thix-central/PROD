@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/checkout/order_confirmation_page.dart
+// ============================================================================
+// ORDER CONFIRMATION PAGE — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique du total dans la devise sélectionnée
+//  • ✅ Support 54 devises africaines via AfricanCurrencies
+//  • ✅ Indicateur visuel 💱 si prix convertis
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +16,9 @@ import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 import 'checkout_provider.dart';
 
 // ============================================================================
@@ -33,10 +45,35 @@ class _OrderConfValidators {
     return s.length > maxLength ? s.substring(0, maxLength) : s;
   }
 
-  static String safeSymbol(String? symbol) {
-    if (symbol == null || symbol.trim().isEmpty) return 'FC';
-    final cleaned = symbol.replaceAll(RegExp('[<>"\']'), '').trim();
-    return cleaned.isEmpty ? 'FC' : cleaned;
+  /// ✅ Normalise le code devise en ISO-4217 via AfricanCurrencies
+  static String normalizeCurrencyCode(String? raw, String? fallbackSymbol) {
+    if (raw != null && raw.trim().isNotEmpty) {
+      final code = raw.trim().toUpperCase();
+      if (AfricanCurrencies.byCode(code) != null) return code;
+      
+      // Alias courants
+      final aliases = <String, String>{
+        'FC': 'CDF',
+        'FCFA': 'XOF',
+        r'$': 'USD',
+        'DOLLAR': 'USD',
+        'US': 'USD',
+        'EURO': 'EUR',
+        '€': 'EUR',
+      };
+      if (aliases.containsKey(code)) return aliases[code]!;
+    }
+    
+    // Fallback : déduire depuis le symbole
+    if (fallbackSymbol != null) {
+      final sym = fallbackSymbol.trim();
+      if (sym == r'$') return 'USD';
+      if (sym == '€') return 'EUR';
+      if (sym == 'FC') return 'CDF';
+      if (sym == 'FCFA') return 'XOF';
+    }
+    
+    return 'CDF';
   }
 
   static int safeInt(dynamic v, {int fallback = 0}) {
@@ -45,21 +82,20 @@ class _OrderConfValidators {
     return parsed < 0 ? fallback : parsed;
   }
 
-  static String formatAmount(int amount, String locale) {
-    try {
-      return NumberFormat.decimalPattern(locale).format(amount);
-    } catch (_) {
-      return amount.toString();
-    }
+  static double safeDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toDouble() ?? fallback;
+    return parsed < 0 || parsed.isNaN || parsed.isInfinite ? fallback : parsed;
   }
 }
 
 // ============================================================================
-// LOCALIZATION HELPER (extension)
+// LOCALIZATION HELPER
 // ============================================================================
 extension _OrderConfL10n on BuildContext {
-  String confT(String fr, String en) {
+  String confT(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(this).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -124,7 +160,11 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
     if (_isNavigating) return;
     if (!_OrderConfValidators.isValidId(orderId)) {
       HapticFeedback.lightImpact();
-      _showError(context.confT('Identifiant invalide', 'Invalid order ID'));
+      _showError(context.confT(
+        'Identifiant invalide',
+        'Invalid order ID',
+        'Kitambulisho si sahihi',
+      ));
       return;
     }
 
@@ -151,7 +191,11 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
         content: Row(children: [
           const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
           const SizedBox(width: 8),
-          Text(context.confT('Numéro copié', 'Number copied')),
+          Text(context.confT(
+            'Numéro copié',
+            'Number copied',
+            'Nambari imekopiwaa',
+          )),
         ]),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
@@ -177,8 +221,39 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
 
   @override
   Widget build(BuildContext context) {
-    final symbol = _OrderConfValidators.safeSymbol(widget.currencySymbol);
-    final total = _OrderConfValidators.safeInt(widget.order['total']);
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Écouter le provider de devise pour rebuild si changement
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
+
+    // ✅ Devise de la commande (stockée dans order ou déduite du symbole)
+    final orderCurrencyCode = _OrderConfValidators.normalizeCurrencyCode(
+      widget.order['currency']?.toString(),
+      widget.currencySymbol,
+    );
+    
+    // ✅ Devise d'affichage
+    final displayCurrencyInfo = AfricanCurrencies.byCode(displayCurrencyCode);
+    final displaySymbol = displayCurrencyInfo?.symbol ?? displayCurrencyCode;
+    final orderCurrencyInfo = AfricanCurrencies.byCode(orderCurrencyCode);
+    
+    // ✅ Détection de conversion
+    final isConverted = orderCurrencyCode != displayCurrencyCode;
+
+    // ✅ Extraction et conversion du total
+    final totalInOrderCurrency = _OrderConfValidators.safeDouble(widget.order['total']);
+    final convertedTotal = currencyService.convert(
+      totalInOrderCurrency,
+      from: orderCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final formattedTotal = currencyService.formatPrice(
+      convertedTotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+
     final orderId = widget.order['id']?.toString() ?? 'N/A';
     final shortId = _shortId(orderId);
     final shippingMethod = _OrderConfValidators.sanitize(
@@ -186,7 +261,6 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
       maxLength: 60,
     );
     final paymentStatus = widget.order['payment_status']?.toString() ?? 'pending';
-    final formattedTotal = _OrderConfValidators.formatAmount(total, context.localeCode);
 
     // Mapping statut → label + couleur
     final statusConfig = _getStatusConfig(paymentStatus, context);
@@ -204,14 +278,18 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
                 children: [
                   Semantics(
                     button: true,
-                    label: context.confT('Fermer et retourner à l\'accueil', 'Close and return home'),
+                    label: context.confT(
+                      'Fermer et retourner à l\'accueil',
+                      'Close and return home',
+                      'Funga na urudi nyumbani',
+                    ),
                     child: IconButton(
                       onPressed: _isNavigating ? null : _goHome,
                       icon: Icon(
                         Icons.close_rounded,
                         color: _isNavigating ? ThixPolicy.textDisabled : ThixPolicy.textMain,
                       ),
-                      tooltip: context.confT('Fermer', 'Close'),
+                      tooltip: context.confT('Fermer', 'Close', 'Funga'),
                       style: IconButton.styleFrom(
                         backgroundColor: ThixPolicy.card,
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -232,7 +310,11 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
                     const SizedBox(height: 24),
 
                     Text(
-                      context.confT('Merci pour votre commande !', 'Thank you for your order!'),
+                      context.confT(
+                        'Merci pour votre commande !',
+                        'Thank you for your order!',
+                        'Asante kwa agizo lako!',
+                      ),
                       textAlign: TextAlign.center,
                       style: ThixPolicy.h2Style.copyWith(
                         fontSize: 22,
@@ -246,6 +328,7 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
                       context.confT(
                         'Votre commande a été enregistrée avec succès.',
                         'Your order has been successfully placed.',
+                        'Agizo lako limesajiliwa kwa mafanikio.',
                       ),
                       textAlign: TextAlign.center,
                       style: ThixPolicy.bodyStyle.copyWith(
@@ -261,34 +344,85 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
                       shortId: shortId,
                       fullId: orderId,
                       onCopy: _copyOrderId,
-                      copyLabel: context.confT('Copier le numéro', 'Copy number'),
-                      orderLabel: context.confT('N° de commande', 'Order number'),
+                      copyLabel: context.confT(
+                        'Copier le numéro',
+                        'Copy number',
+                        'Nakili nambari',
+                      ),
+                      orderLabel: context.confT(
+                        'N° de commande',
+                        'Order number',
+                        'Nambari ya agizo',
+                      ),
                     ),
 
                     const SizedBox(height: 16),
 
+                    // ✅ Indicateur de conversion (si applicable)
+                    if (isConverted)
+                      Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: ThixPolicy.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(Icons.currency_exchange_rounded, size: 16, color: ThixPolicy.primary),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                context.confT(
+                                  'Total converti de ${orderCurrencyInfo?.displayName(lang) ?? orderCurrencyCode} en ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                                  'Total converted from ${orderCurrencyInfo?.displayName(lang) ?? orderCurrencyCode} to ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                                  'Jumla imebadilishwa kutoka ${orderCurrencyInfo?.displayName(lang) ?? orderCurrencyCode} hadi ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                                ),
+                                style: ThixPolicy.captionStyle.copyWith(
+                                  color: ThixPolicy.primary,
+                                  fontWeight: ThixPolicy.semiBold,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
                     _SummaryCard(
                       formattedTotal: formattedTotal,
-                      symbol: symbol,
                       shippingMethod: shippingMethod,
                       statusLabel: statusConfig.label,
                       statusColor: statusConfig.color,
                       emailNote: context.confT(
                         'Un email de confirmation vous a été envoyé avec le suivi de votre commande.',
                         'A confirmation email has been sent with your order tracking.',
+                        'Barua pepe ya uthibitisho imetumwa kwa ufuatiliaji wa agizo lako.',
                       ),
-                      summaryTitle: context.confT('Récapitulatif', 'Summary'),
-                      totalLabel: context.confT('Total payé', 'Total paid'),
-                      shippingLabel: context.confT('Livraison', 'Shipping'),
-                      statusTitle: context.confT('Statut paiement', 'Payment status'),
+                      summaryTitle: context.confT('Récapitulatif', 'Summary', 'Muhtasari'),
+                      totalLabel: context.confT('Total payé', 'Total paid', 'Jumla iliyolipwa'),
+                      shippingLabel: context.confT('Livraison', 'Shipping', 'Usafirishaji'),
+                      statusTitle: context.confT('Statut paiement', 'Payment status', 'Hali ya malipo'),
+                      isConverted: isConverted,
+                      orderCurrencyCode: orderCurrencyCode,
                     ),
 
                     const SizedBox(height: 28),
 
                     _ActionButtons(
                       canTrack: _OrderConfValidators.isValidId(orderId),
-                      trackLabel: context.confT('Suivre ma commande', 'Track my order'),
-                      homeLabel: context.confT('Retour à l\'accueil', 'Back to home'),
+                      trackLabel: context.confT(
+                        'Suivre ma commande',
+                        'Track my order',
+                        'Fuatilia agizo langu',
+                      ),
+                      homeLabel: context.confT(
+                        'Retour à l\'accueil',
+                        'Back to home',
+                        'Rudi nyumbani',
+                      ),
                       onTrack: () => _trackOrder(orderId),
                       onHome: _goHome,
                       isNavigating: _isNavigating,
@@ -307,28 +441,28 @@ class _OrderConfirmationPageState extends ConsumerState<OrderConfirmationPage> {
     switch (status) {
       case 'paid':
         return _StatusConfig(
-          label: context.confT('Payé', 'Paid'),
+          label: context.confT('Payé', 'Paid', 'Imelipwa'),
           color: ThixPolicy.success,
         );
       case 'pending_delivery':
         return _StatusConfig(
-          label: context.confT('À la livraison', 'Cash on delivery'),
+          label: context.confT('À la livraison', 'Cash on delivery', 'Malipo wakati wa uwasilishaji'),
           color: ThixPolicy.primary,
         );
       case 'pending':
       case 'awaiting_payment':
         return _StatusConfig(
-          label: context.confT('En attente', 'Pending'),
+          label: context.confT('En attente', 'Pending', 'Inasubiri'),
           color: ThixPolicy.gold,
         );
       case 'failed':
         return _StatusConfig(
-          label: context.confT('Échoué', 'Failed'),
+          label: context.confT('Échoué', 'Failed', 'Imeshindwa'),
           color: ThixPolicy.danger,
         );
       default:
         return _StatusConfig(
-          label: context.confT('En attente', 'Pending'),
+          label: context.confT('En attente', 'Pending', 'Inasubiri'),
           color: ThixPolicy.textMuted,
         );
     }
@@ -354,7 +488,7 @@ class _SuccessAnimation extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Semantics(
-      label: context.confT('Commande confirmée', 'Order confirmed'),
+      label: context.confT('Commande confirmée', 'Order confirmed', 'Agizo limethibitishwa'),
       child: TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
         duration: const Duration(milliseconds: 700),
@@ -478,7 +612,6 @@ class _OrderIdCard extends StatelessWidget {
 
 class _SummaryCard extends StatelessWidget {
   final String formattedTotal;
-  final String symbol;
   final String shippingMethod;
   final String statusLabel;
   final Color statusColor;
@@ -487,10 +620,11 @@ class _SummaryCard extends StatelessWidget {
   final String totalLabel;
   final String shippingLabel;
   final String statusTitle;
+  final bool isConverted;
+  final String orderCurrencyCode;
 
   const _SummaryCard({
     required this.formattedTotal,
-    required this.symbol,
     required this.shippingMethod,
     required this.statusLabel,
     required this.statusColor,
@@ -499,6 +633,8 @@ class _SummaryCard extends StatelessWidget {
     required this.totalLabel,
     required this.shippingLabel,
     required this.statusTitle,
+    this.isConverted = false,
+    required this.orderCurrencyCode,
   });
 
   @override
@@ -525,12 +661,14 @@ class _SummaryCard extends StatelessWidget {
           ),
           const SizedBox(height: 18),
 
+          // ✅ Ligne Total avec indicateur de conversion
           _InfoRow(
             icon: Icons.payments_rounded,
             label: totalLabel,
-            value: '$formattedTotal $symbol',
+            value: formattedTotal,
             valueColor: ThixPolicy.primary,
             isBold: true,
+            showConversionIcon: isConverted,
           ),
           const SizedBox(height: 14),
           _InfoRow(
@@ -619,12 +757,14 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
+// ✅ Mis à jour avec indicateur de conversion
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
   final String value;
   final Color? valueColor;
   final bool isBold;
+  final bool showConversionIcon;
 
   const _InfoRow({
     required this.icon,
@@ -632,6 +772,7 @@ class _InfoRow extends StatelessWidget {
     required this.value,
     this.valueColor,
     this.isBold = false,
+    this.showConversionIcon = false,
   });
 
   @override
@@ -659,13 +800,34 @@ class _InfoRow extends StatelessWidget {
               ),
             ),
           ),
-          Text(
-            value,
-            style: ThixPolicy.labelStyle.copyWith(
-              fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold,
-              color: valueColor ?? ThixPolicy.textMain,
-              fontSize: isBold ? 17 : 14,
-            ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                value,
+                style: ThixPolicy.labelStyle.copyWith(
+                  fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold,
+                  color: valueColor ?? ThixPolicy.textMain,
+                  fontSize: isBold ? 17 : 14,
+                ),
+              ),
+              // ✅ Indicateur de conversion sur le total
+              if (showConversionIcon && isBold) ...[
+                const SizedBox(width: 4),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.primary.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Icon(
+                    Icons.currency_exchange_rounded,
+                    size: 12,
+                    color: ThixPolicy.primary,
+                  ),
+                ),
+              ],
+            ],
           ),
         ],
       ),
