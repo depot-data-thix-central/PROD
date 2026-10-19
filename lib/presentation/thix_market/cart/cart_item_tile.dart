@@ -1,11 +1,23 @@
 // lib/presentation/thix_market/cart/cart_item_tile.dart
+// ============================================================================
+// CART ITEM TILE — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Indicateur visuel 💱 si devise différente du vendeur
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 
 // ============================================================================
 // CONSTANTES
@@ -80,8 +92,9 @@ class _CartItemValidators {
 // LOCALIZATION HELPER
 // ============================================================================
 extension _CartItemL10n on BuildContext {
-  String cartT(String fr, String en) {
+  String cartT(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(this).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -91,7 +104,8 @@ extension _CartItemL10n on BuildContext {
 // ============================================================================
 // WIDGET PRINCIPAL
 // ============================================================================
-class CartItemTile extends StatefulWidget {
+// ✅ Changé de StatefulWidget à ConsumerStatefulWidget pour accès à ref
+class CartItemTile extends ConsumerStatefulWidget {
   final Map<String, dynamic> cartItem;
   final double realPrice;
   final double oldPrice;
@@ -112,14 +126,25 @@ class CartItemTile extends StatefulWidget {
   });
 
   @override
-  State<CartItemTile> createState() => _CartItemTileState();
+  ConsumerState<CartItemTile> createState() => _CartItemTileState();
 }
 
-class _CartItemTileState extends State<CartItemTile> {
+class _CartItemTileState extends ConsumerState<CartItemTile> {
   bool _isUpdatingQty = false;
 
   @override
   Widget build(BuildContext context) {
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    
+    // Devise du vendeur (stockée dans le produit)
+    final sellerCurrencyCode = (widget.currency).toString().toUpperCase().trim();
+    final isDifferentCurrency = sellerCurrencyCode != displayCurrencyCode;
+    
+    final currencyService = CurrencyService.instance;
+
     // Extraction sécurisée des données
     final product = (widget.cartItem['product'] as Map<String, dynamic>?) ?? {};
     final shop = (product['shop'] as Map<String, dynamic>?) ?? {};
@@ -134,7 +159,7 @@ class _CartItemTileState extends State<CartItemTile> {
     final isLowStock = stock > 0 && stock <= _kLowStockThreshold;
 
     final title = _CartItemValidators.sanitize(
-      product['title']?.toString() ?? product['name']?.toString() ?? context.cartT('Produit', 'Product'),
+      product['title']?.toString() ?? product['name']?.toString() ?? context.cartT('Produit', 'Product', 'Bidhaa'),
       maxLength: _kMaxTitleLength,
     );
     final shopName = _CartItemValidators.sanitize(
@@ -148,15 +173,51 @@ class _CartItemTileState extends State<CartItemTile> {
     final warranty = _CartItemValidators.safeWarranty(product['warranty'] ?? product['garantie']);
     final imageUrl = _CartItemValidators.sanitizeUrl(product['image_url']?.toString());
 
+    // ─── PRIX DANS LA DEVISE DU VENDEUR ───
     final realPrice = _CartItemValidators.safeDouble(widget.realPrice);
     final oldPrice = _CartItemValidators.safeDouble(widget.oldPrice);
-    final formattedReal = _CartItemValidators.formatAmount(realPrice, context.localeCode);
-    final formattedOld = _CartItemValidators.formatAmount(oldPrice, context.localeCode);
+
+    // ✅ CONVERSION vers la devise d'affichage
+    final convertedRealPrice = currencyService.convert(
+      realPrice,
+      from: sellerCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final convertedOldPrice = hasDiscount
+        ? currencyService.convert(oldPrice, from: sellerCurrencyCode, to: displayCurrencyCode)
+        : null;
+
+    // ✅ Formatage intelligent
+    final formattedReal = currencyService.formatPrice(
+      convertedRealPrice,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+    final formattedOld = convertedOldPrice != null
+        ? currencyService.formatPrice(
+            convertedOldPrice,
+            currencyCode: displayCurrencyCode,
+            lang: lang,
+          )
+        : null;
+
+    // ✅ Sous-total (prix × quantité)
+    final subtotalInSellerCurrency = realPrice * qty;
+    final convertedSubtotal = currencyService.convert(
+      subtotalInSellerCurrency,
+      from: sellerCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final formattedSubtotal = currencyService.formatPrice(
+      convertedSubtotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
 
     return Semantics(
-      label: '${context.cartT("Article", "Item")}: $title, '
-          '${context.cartT("Quantité", "Quantity")}: $qty, '
-          '${context.cartT("Prix", "Price")}: $formattedReal ${widget.currency}',
+      label: '${context.cartT("Article", "Item", "Bidhaa")}: $title, '
+          '${context.cartT("Quantité", "Quantity", "Idadi")}: $qty, '
+          '${context.cartT("Prix", "Price", "Bei")}: $formattedReal',
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
@@ -175,7 +236,7 @@ class _CartItemTileState extends State<CartItemTile> {
                 imageUrl: imageUrl,
                 discountPercent: hasDiscount ? widget.discountPercent : 0,
                 isOutOfStock: isOutOfStock,
-                outOfStockLabel: context.cartT('Rupture', 'Out of stock'),
+                outOfStockLabel: context.cartT('Rupture', 'Out of stock', 'Stoku imeisha'),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -201,18 +262,30 @@ class _CartItemTileState extends State<CartItemTile> {
                       isLowStock: isLowStock,
                       isOutOfStock: isOutOfStock,
                       warranty: warranty,
-                      inStockLabel: context.cartT('En stock', 'In stock'),
-                      stockLabel: context.cartT('Stock', 'Stock'),
-                      outOfStockLabel: context.cartT('Indisponible', 'Unavailable'),
-                      warrantyPrefix: context.cartT('Garantie', 'Warranty'),
+                      inStockLabel: context.cartT('En stock', 'In stock', 'Inapatikana'),
+                      stockLabel: context.cartT('Stock', 'Stock', 'Stoku'),
+                      outOfStockLabel: context.cartT('Indisponible', 'Unavailable', 'Haipatikani'),
+                      warrantyPrefix: context.cartT('Garantie', 'Warranty', 'Dhamana'),
                     ),
                     const SizedBox(height: 8),
                     _PriceRow(
                       realPrice: formattedReal,
                       oldPrice: formattedOld,
-                      currency: widget.currency,
+                      isDifferentCurrency: isDifferentCurrency,
                       hasDiscount: hasDiscount,
                     ),
+                    // ✅ Sous-total converti (affiché seulement si qté > 1)
+                    if (qty > 1 && !isOutOfStock) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        '${context.cartT("Total", "Total", "Jumla")}: $formattedSubtotal',
+                        style: ThixPolicy.captionStyle.copyWith(
+                          fontSize: 11,
+                          fontWeight: ThixPolicy.semiBold,
+                          color: ThixPolicy.textSecondary,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 10),
                     _ActionsRow(
                       qty: qty,
@@ -253,6 +326,7 @@ class _CartItemTileState extends State<CartItemTile> {
               child: Text(context.cartT(
                 'Stock maximum atteint ($maxQty)',
                 'Maximum stock reached ($maxQty)',
+                'Stoku ya juu imefikiwa ($maxQty)',
               )),
             ),
           ]),
@@ -274,7 +348,6 @@ class _CartItemTileState extends State<CartItemTile> {
       debugPrint('[CartItem] ❌ Quantity change error: $e');
     } finally {
       if (mounted) {
-        // Petit délai pour feedback visuel
         await Future.delayed(const Duration(milliseconds: 150));
         if (mounted) setState(() => _isUpdatingQty = false);
       }
@@ -485,7 +558,6 @@ class _BadgesRow extends StatelessWidget {
 
     return Row(
       children: [
-        // Stock badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
           decoration: BoxDecoration(
@@ -509,7 +581,6 @@ class _BadgesRow extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 6),
-        // Warranty badge
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
           decoration: BoxDecoration(
@@ -538,16 +609,17 @@ class _BadgesRow extends StatelessWidget {
   }
 }
 
+// ✅ Mis à jour avec indicateur de conversion
 class _PriceRow extends StatelessWidget {
   final String realPrice;
-  final String oldPrice;
-  final String currency;
+  final String? oldPrice;
+  final bool isDifferentCurrency;
   final bool hasDiscount;
 
   const _PriceRow({
     required this.realPrice,
     required this.oldPrice,
-    required this.currency,
+    required this.isDifferentCurrency,
     required this.hasDiscount,
   });
 
@@ -556,17 +628,32 @@ class _PriceRow extends StatelessWidget {
     return Row(
       children: [
         Text(
-          '$realPrice $currency',
+          realPrice,
           style: ThixPolicy.labelStyle.copyWith(
             fontWeight: ThixPolicy.bold,
             fontSize: 15.5,
             color: ThixPolicy.danger,
           ),
         ),
-        if (hasDiscount) ...[
+        // ✅ Indicateur visuel si devise différente
+        if (isDifferentCurrency)
+          Container(
+            margin: const EdgeInsets.only(left: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+            decoration: BoxDecoration(
+              color: ThixPolicy.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Icon(
+              Icons.currency_exchange_rounded,
+              size: 10,
+              color: ThixPolicy.primary,
+            ),
+          ),
+        if (hasDiscount && oldPrice != null) ...[
           const SizedBox(width: 6),
           Text(
-            '$oldPrice $currency',
+            oldPrice!,
             style: ThixPolicy.captionStyle.copyWith(
               fontSize: 11.5,
               color: ThixPolicy.textMuted,
@@ -606,9 +693,8 @@ class _ActionsRow extends StatelessWidget {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        // Quantity selector
         Semantics(
-          label: '${context.cartT("Quantité", "Quantity")}: $qty',
+          label: '${context.cartT("Quantité", "Quantity", "Idadi")}: $qty',
           child: Container(
             decoration: BoxDecoration(
               color: ThixPolicy.inkDeep,
@@ -618,7 +704,7 @@ class _ActionsRow extends StatelessWidget {
               children: [
                 Semantics(
                   button: true,
-                  label: context.cartT('Diminuer', 'Decrease'),
+                  label: context.cartT('Diminuer', 'Decrease', 'Punguza'),
                   enabled: canDecrement,
                   child: InkWell(
                     onTap: canDecrement ? onDecrement : null,
@@ -647,7 +733,7 @@ class _ActionsRow extends StatelessWidget {
                 ),
                 Semantics(
                   button: true,
-                  label: context.cartT('Augmenter', 'Increase'),
+                  label: context.cartT('Augmenter', 'Increase', 'Ongeza'),
                   enabled: canIncrement,
                   child: InkWell(
                     onTap: canIncrement ? onIncrement : null,
@@ -667,10 +753,9 @@ class _ActionsRow extends StatelessWidget {
           ),
         ),
 
-        // Remove button
         Semantics(
           button: true,
-          label: context.cartT('Supprimer', 'Remove'),
+          label: context.cartT('Supprimer', 'Remove', 'Ondoa'),
           child: InkWell(
             onTap: isOutOfStock || isUpdatingQty ? null : onRemove,
             borderRadius: BorderRadius.circular(20),
