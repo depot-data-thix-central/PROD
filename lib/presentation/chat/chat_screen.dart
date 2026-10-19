@@ -1,6 +1,6 @@
 // lib/presentation/chat/chat_screen.dart
 // ============================================================================
-// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v2.1
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v2.2
 // ----------------------------------------------------------------------------
 //  ✅ Swipe DROITE = répondre, sur TOUS les messages (moi + autres)
 //  ✅ Swipe GAUCHE = menu (répondre, rappel, transférer, copier, favori, épingler,
@@ -12,6 +12,8 @@
 //  ✅ Brouillons par conversation (sauvegarde auto, restauration, nettoyage à l'envoi)
 //  ✅ Internationalisation : toutes les chaînes passent par des clés l10n
 //  ✅ Sanitisation durcie : bidi/contrôles, URLs strictes, extensions dangereuses
+//  ✅ v2.2 : carte PRODUIT (référence THIX Market) rendue dans le chat au lieu
+//     du token brut [PRODUCT_REF:...], aperçus lisibles partout
 // ============================================================================
 import 'dart:async';
 import 'dart:convert';
@@ -58,6 +60,12 @@ import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
+
+// THIX Market : décodage de la référence produit + conversion de devise
+import 'package:thix_id/presentation/thix_market/core/african_currencies.dart';
+import 'package:thix_id/presentation/thix_market/core/chat_service.dart' as market_chat;
+import 'package:thix_id/presentation/thix_market/core/currency_service.dart';
+import 'package:thix_id/presentation/thix_market/providers/currency_provider.dart';
 
 // ============================================================================
 // CONSTANTES
@@ -226,6 +234,39 @@ Future<void> _fireAndForget(Future<dynamic> Function() fn) async {
     _log('[Chat] ⚠️ background op: $e');
   }
 }
+
+// ============================================================================
+// RÉFÉRENCE PRODUIT (THIX Market) — aperçus lisibles
+// ============================================================================
+
+/// Aperçu lisible d'un message : « 📦 titre » pour une référence produit,
+/// sinon l'aperçu natif du message. Ne montre jamais le token brut.
+String _previewOf(ChatMessage m) {
+  final parsed = market_chat.ChatService.parse(m.content);
+  final product = parsed.product;
+  if (product == null) return m.previewText;
+  final title = _ChatValidators.sanitize(product.title, maxLength: 60);
+  final rest = _ChatValidators.sanitize(parsed.text, maxLength: 80);
+  final head = title.isEmpty ? '📦 Produit' : '📦 $title';
+  return rest.isEmpty ? head : '$head — $rest';
+}
+
+/// Texte « humain » d'un message (sans token produit) : copie, menus, etc.
+String _plainTextOf(ChatMessage m) {
+  final parsed = market_chat.ChatService.parse(m.content);
+  if (parsed.product == null) return m.content;
+  return _ChatValidators.sanitize(parsed.text, maxLength: _kMaxMessageLength);
+}
+
+/// Texte indexé pour la recherche locale (titre produit + texte, jamais le token).
+String _searchableText(ChatMessage m) {
+  final parsed = market_chat.ChatService.parse(m.content);
+  final product = parsed.product;
+  if (product == null) return m.content;
+  return '${product.title} ${parsed.text}';
+}
+
+bool _isProductRefMessage(ChatMessage m) => market_chat.ChatService.parse(m.content).product != null;
 
 // ============================================================================
 // PROVIDER MESSAGES
@@ -1133,6 +1174,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (m.senderId != _chatService.currentUserId) return false;
     if (m.isDeleted || m.isDeletedForAll || m.isViewOnce || m.hasMedia) return false;
     if ('${m.mediaType}'.startsWith('call_')) return false;
+    if (_isProductRefMessage(m)) return false; // une carte produit ne se modifie pas
     return DateTime.now().difference(m.createdAt.toLocal()).inMinutes < _kEditWindowMinutes;
   }
 
@@ -1150,7 +1192,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _reminderTimers[m.id] = Timer(diff, () {
         if (!mounted) return;
         HapticFeedback.mediumImpact();
-        _showInfo('🔔 ${_tr(AppLocalizations.of(context), 'chat_reminder_due', 'Rappel')} : ${m.previewText}');
+        _showInfo('🔔 ${_tr(AppLocalizations.of(context), 'chat_reminder_due', 'Rappel')} : ${_previewOf(m)}');
       });
     }
   }
@@ -1563,7 +1605,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                         final m = msgs[i];
                         return ListTile(
                           leading: const Icon(Icons.star_rounded, color: ThixPolicy.gold, size: 18),
-                          title: Text(m.previewText, maxLines: 2, overflow: TextOverflow.ellipsis),
+                          title: Text(_previewOf(m), maxLines: 2, overflow: TextOverflow.ellipsis),
                           subtitle: Text(DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt.toLocal()),
                               style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
                           onTap: () {
@@ -1595,7 +1637,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
           _searchPos = -1;
         } else {
           _searchMatches = msgs
-              .where((m) => m.content.toLowerCase().contains(q) || (m.mediaName ?? '').toLowerCase().contains(q))
+              .where((m) => _searchableText(m).toLowerCase().contains(q) || (m.mediaName ?? '').toLowerCase().contains(q))
               .map((m) => m.id)
               .toList();
           _searchPos = _searchMatches.isEmpty ? -1 : 0;
@@ -1646,7 +1688,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   itemBuilder: (ctx, i) {
                     final m = results[i];
                     return ListTile(
-                      title: Text(m.previewText, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      title: Text(_previewOf(m), maxLines: 2, overflow: TextOverflow.ellipsis),
                       subtitle: Text(DateFormat('dd/MM/yyyy HH:mm').format(m.createdAt.toLocal()),
                           style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted)),
                       onTap: () async {
@@ -1785,7 +1827,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       if (m.isViewOnce || m.isExpired) continue;
       sb.writeln('${DateFormat('yyyy-MM-dd HH:mm').format(m.createdAt.toLocal())};'
           '${_csvCell(m.senderName)};'
-          '${_csvCell(m.content)}');
+          '${_csvCell(_isProductRefMessage(m) ? _previewOf(m) : m.content)}');
     }
     await Clipboard.setData(ClipboardData(text: sb.toString()));
     _showSuccess(_tr(l10n, 'chat_export_done', 'Conversation copiée (CSV)'));
@@ -2443,7 +2485,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       duration: const Duration(seconds: 2),
     ));
   }
-// ==========================================================================
+
+  // ==========================================================================
   // PRÉSENCE
   // ==========================================================================
   Future<void> _getParticipantInfo() async {
@@ -2491,7 +2534,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   String _replyPreview(List<ChatMessage> messages) {
     final found = messages.where((m) => m.id == _replyToId).toList();
     if (found.isEmpty) return '';
-    return _ChatValidators.sanitize(found.first.previewText, maxLength: 100);
+    return _ChatValidators.sanitize(_previewOf(found.first), maxLength: 100);
   }
 
   // ==========================================================================
@@ -2694,7 +2737,35 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   // BUBBLE + MENU SWIPE GAUCHE
   // ==========================================================================
+
+  /// Point d'entrée d'un message simple :
+  ///  • référence produit THIX Market → carte produit (+ texte éventuel dessous)
+  ///  • sinon → bulle standard
   Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> messages) {
+    final parsed = market_chat.ChatService.parse(msg.content);
+    final product = parsed.product;
+    if (product == null) return _buildPlainBubble(msg, isOwn, messages);
+
+    final rest = _ChatValidators.sanitize(parsed.text, maxLength: _kMaxMessageLength);
+    final card = _ProductRefBubble(
+      product: product,
+      isOwn: isOwn,
+      time: msg.createdAt.toLocal(),
+      isRead: msg.isRead,
+      onLongPress: () => _showExtraSheet(msg),
+    );
+    if (rest.isEmpty) return card;
+
+    return Column(
+      crossAxisAlignment: isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      children: [
+        card,
+        _buildPlainBubble(_overrideMsg(msg, {'content': rest}), isOwn, messages),
+      ],
+    );
+  }
+
+  Widget _buildPlainBubble(ChatMessage msg, bool isOwn, List<ChatMessage> messages) {
     final idx = messages.indexWhere((m) => m.id == msg.id);
     final prev = idx > 0 ? messages[idx - 1] : null;
     final next = idx < messages.length - 1 ? messages[idx + 1] : null;
@@ -2703,7 +2774,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     ChatMessage? replyTo;
     if (msg.replyToId != null) {
       final found = messages.where((m) => m.id == msg.replyToId).toList();
-      replyTo = found.isEmpty ? null : found.first;
+      if (found.isNotEmpty) {
+        final f = found.first;
+        // Citation d'un message produit : aperçu lisible au lieu du token brut.
+        replyTo = _isProductRefMessage(f) ? _overrideMsg(f, {'content': _previewOf(f)}) : f;
+      }
     }
     return ChatMessageBubble(
       message: msg,
@@ -2736,7 +2811,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     HapticFeedback.selectionClick();
     final starred = _starredIds.contains(msg.id) || msg.isStarred;
     final canEdit = _canEdit(msg);
-    final hasText = msg.content.trim().isNotEmpty;
+    final plainText = _plainTextOf(msg);
+    final hasText = plainText.trim().isNotEmpty;
 
     Widget tile(IconData icon, Color color, String label, VoidCallback action, BuildContext ctx) => ListTile(
           dense: true,
@@ -2768,7 +2844,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 tile(Icons.forward_rounded, ThixPolicy.textMain, _tr(l10n, 'chat_forward', 'Transférer'), () => _showForwardSheet(msg), ctx),
                 if (hasText)
                   tile(Icons.copy_rounded, ThixPolicy.textMuted, _tr(l10n, 'chat_copy', 'Copier'), () {
-                    Clipboard.setData(ClipboardData(text: _ChatValidators.sanitize(msg.content, maxLength: _kMaxMessageLength)));
+                    Clipboard.setData(ClipboardData(text: _ChatValidators.sanitize(plainText, maxLength: _kMaxMessageLength)));
                     _showSuccess(_tr(l10n, 'chat_copied', 'Copié'));
                   }, ctx),
                 tile(starred ? Icons.star_rounded : Icons.star_outline_rounded, ThixPolicy.gold,
@@ -2809,7 +2885,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 setState(() => _pinnedCursor = (_pinnedCursor + 1) % _pinnedMessages.length);
                 _scrollToMessage(msg.id);
               },
-              child: Text('${_ChatValidators.sanitize(msg.senderName, maxLength: 40)}: ${msg.previewText}',
+              child: Text('${_ChatValidators.sanitize(msg.senderName, maxLength: 40)}: ${_previewOf(msg)}',
                   maxLines: 1, overflow: TextOverflow.ellipsis,
                   style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.w600)),
             ),
@@ -3564,6 +3640,186 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 // ============================================================================
 // WIDGETS ANNEXES
 // ============================================================================
+
+/// Carte produit THIX Market dans la conversation :
+/// image, titre, prix converti dans la devise choisie, tap → fiche produit.
+class _ProductRefBubble extends ConsumerWidget {
+  final market_chat.ProductRef product;
+  final bool isOwn;
+  final DateTime time;
+  final bool isRead;
+  final VoidCallback onLongPress;
+
+  const _ProductRefBubble({
+    required this.product,
+    required this.isOwn,
+    required this.time,
+    required this.isRead,
+    required this.onLongPress,
+  });
+
+  static final RegExp _idRegex = RegExp(r'^[0-9a-fA-F-]{8,}$');
+
+  static String _normCurrency(String raw) {
+    final v = raw.toUpperCase().trim();
+    if (AfricanCurrencies.byCode(v) != null) return v;
+    const aliases = <String, String>{
+      'FC': 'CDF', 'FCFA': 'XOF', r'$': 'USD',
+      'DOLLAR': 'USD', 'US': 'USD', 'EURO': 'EUR', '€': 'EUR',
+    };
+    return aliases[v] ?? 'CDF';
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
+    final displayCode = ref.watch(currencyProvider);
+    final lang = Localizations.localeOf(context).languageCode;
+    final from = _normCurrency(product.currencyCode);
+    final isConverted = from != displayCode;
+
+    var priceText = '';
+    final price = product.price;
+    if (price != null) {
+      try {
+        final service = CurrencyService.instance;
+        final converted = service.convert(price, from: from, to: displayCode);
+        priceText = service.formatPrice(converted, currencyCode: displayCode, lang: lang);
+      } catch (_) {
+        priceText = '';
+      }
+    }
+
+    final title = _ChatValidators.sanitize(product.title, maxLength: 80);
+    final imageUrl = _ChatValidators.sanitizeUrl(product.imageUrl);
+    final canOpen = _idRegex.hasMatch(product.id);
+    final label = _tr(l10n, 'chat_product_ref', 'Référence produit');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Align(
+        alignment: isOwn ? Alignment.centerRight : Alignment.centerLeft,
+        child: Column(
+          crossAxisAlignment: isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.only(bottom: 3, left: 4, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.shopping_bag_outlined, size: 11, color: ThixPolicy.primary),
+                  const SizedBox(width: 4),
+                  Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: ThixPolicy.primary)),
+                ],
+              ),
+            ),
+            Semantics(
+              button: canOpen,
+              label: '$label ${title.isEmpty ? '' : title}',
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: canOpen
+                    ? () {
+                        HapticFeedback.selectionClick();
+                        context.push('/market/product/${product.id}');
+                      }
+                    : null,
+                onLongPress: () {
+                  HapticFeedback.selectionClick();
+                  onLongPress();
+                },
+                child: Container(
+                  width: MediaQuery.of(context).size.width * 0.74,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.card,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: ThixPolicy.border.withOpacity(0.7)),
+                    boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
+                  ),
+                  child: Row(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: imageUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: imageUrl,
+                                width: 58,
+                                height: 58,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => Container(
+                                  width: 58, height: 58, color: ThixPolicy.surfaceSoft,
+                                  child: const Icon(Icons.image_outlined, size: 20, color: ThixPolicy.textMuted),
+                                ),
+                                errorWidget: (_, __, ___) => Container(
+                                  width: 58, height: 58, color: ThixPolicy.surfaceSoft,
+                                  child: const Icon(Icons.broken_image_outlined, size: 20, color: ThixPolicy.textMuted),
+                                ),
+                              )
+                            : Container(
+                                width: 58, height: 58, color: ThixPolicy.surfaceSoft,
+                                child: const Icon(Icons.shopping_bag_outlined, size: 24, color: ThixPolicy.textMuted),
+                              ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              title.isEmpty ? _tr(l10n, 'chat_product_fallback', 'Produit') : title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold, fontSize: 13, color: ThixPolicy.textMain),
+                            ),
+                            if (priceText.isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Row(
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      priceText,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: ThixPolicy.captionStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.primary),
+                                    ),
+                                  ),
+                                  if (isConverted) ...[
+                                    const SizedBox(width: 4),
+                                    const Icon(Icons.currency_exchange_rounded, size: 10, color: ThixPolicy.primary),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      if (canOpen) const Icon(Icons.chevron_right_rounded, size: 18, color: ThixPolicy.textMuted),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 3, left: 4, right: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(DateFormat('HH:mm').format(time), style: ThixPolicy.microStyle.copyWith(fontSize: 10, color: ThixPolicy.textMuted)),
+                  if (isOwn) ...[
+                    const SizedBox(width: 3),
+                    Icon(isRead ? Icons.done_all_rounded : Icons.done_rounded, size: 12, color: isRead ? ThixPolicy.primary : ThixPolicy.textMuted),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _UnreadDivider extends StatelessWidget {
   final AppLocalizations l10n;
   const _UnreadDivider({required this.l10n});
