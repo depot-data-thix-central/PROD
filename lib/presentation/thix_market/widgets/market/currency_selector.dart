@@ -1,4 +1,8 @@
 // lib/presentation/thix_market/widgets/market/currency_selector.dart
+// ============================================================================
+// CURRENCY SELECTOR — Production Enterprise v5
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/african_currencies.dart';
@@ -61,7 +65,7 @@ class CurrencySelector extends ConsumerWidget {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      isScrollControlDisabled: true,
+      // ✅ SUPPRIMÉ : isScrollControlDisabled (n'existe pas dans Flutter)
       builder: (ctx) {
         return Container(
           height: MediaQuery.of(ctx).size.height * 0.7,
