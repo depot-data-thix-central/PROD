@@ -24,7 +24,7 @@ import 'package:uuid/uuid.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
-
+import '../../core/african_currencies.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../core/african_countries.dart';
 import '../../l10n/market_strings.dart';
