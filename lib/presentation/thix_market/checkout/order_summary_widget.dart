@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/checkout/order_summary_widget.dart
+// ============================================================================
+// ORDER SUMMARY WIDGET — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Support 54 devises africaines via AfricanCurrencies
+//  • ✅ Indicateur visuel 💱 si prix convertis
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +17,9 @@ import 'package:html/parser.dart' as html_parser;
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../cart/cart_provider.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 import 'checkout_provider.dart';
 
 // ============================================================================
@@ -47,22 +59,15 @@ class _OrderSummaryValidators {
     final parsed = (v as num?)?.toInt() ?? fallback;
     return parsed < 0 ? fallback : parsed;
   }
-
-  static String formatAmount(int amount, String locale) {
-    try {
-      return NumberFormat.decimalPattern(locale).format(amount);
-    } catch (_) {
-      return amount.toString();
-    }
-  }
 }
 
 // ============================================================================
 // LOCALIZATION HELPER
 // ============================================================================
 extension _OrderSummaryL10n on BuildContext {
-  String sumT(String fr, String en) {
+  String sumT(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(this).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -103,13 +108,21 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
     // Validation : adresse et shipping requis
     if (checkout.selectedAddress == null) {
       HapticFeedback.lightImpact();
-      _showError(context.sumT('Veuillez sélectionner une adresse', 'Please select an address'));
+      _showError(context.sumT(
+        'Veuillez sélectionner une adresse',
+        'Please select an address',
+        'Tafadhali chagua anwani',
+      ));
       return;
     }
 
     if (checkout.selectedShipping == null) {
       HapticFeedback.lightImpact();
-      _showError(context.sumT('Veuillez sélectionner un mode de livraison', 'Please select a shipping method'));
+      _showError(context.sumT(
+        'Veuillez sélectionner un mode de livraison',
+        'Please select a shipping method',
+        'Tafadhali chagua njia ya usafirishaji',
+      ));
       return;
     }
 
@@ -122,7 +135,11 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
     } catch (e) {
       debugPrint('[OrderSummary] ❌ Navigation error: $e');
       if (mounted) {
-        _showError(context.sumT('Erreur lors de la navigation', 'Navigation error'));
+        _showError(context.sumT(
+          'Erreur lors de la navigation',
+          'Navigation error',
+          'Hitilafu ya urambazaji',
+        ));
       }
     } finally {
       if (mounted) setState(() => _isNavigating = false);
@@ -146,42 +163,79 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Écouter le provider de devise pour rebuild si changement
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
+    
     final cartNotifier = ref.read(cartProvider.notifier);
     final cartState = ref.watch(cartProvider);
     final checkout = ref.watch(checkoutProvider);
 
-    final symbol = cartNotifier.currencySymbol;
-    final subtotal = _OrderSummaryValidators.safeDouble(cartNotifier.subtotal);
-    final formattedSubtotal = _OrderSummaryValidators.formatAmount(subtotal.toInt(), context.localeCode);
+    // ✅ Devise du panier (code ISO-4217)
+    final cartCurrencyCode = cartNotifier.currency;
+    final displayCurrencyInfo = AfricanCurrencies.byCode(displayCurrencyCode);
+    final displaySymbol = displayCurrencyInfo?.symbol ?? displayCurrencyCode;
+    
+    // ✅ Détection de conversion
+    final isConverted = cartCurrencyCode != displayCurrencyCode;
 
-    // Calcul shipping
-    final shippingPrice = checkout.selectedShipping != null
+    // ✅ Conversion des montants
+    final subtotalInCartCurrency = _OrderSummaryValidators.safeDouble(cartNotifier.subtotal);
+    final convertedSubtotal = currencyService.convert(
+      subtotalInCartCurrency,
+      from: cartCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final formattedSubtotal = currencyService.formatPrice(
+      convertedSubtotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+
+    // Calcul shipping (dans la devise du panier, puis converti)
+    final shippingPriceInCartCurrency = checkout.selectedShipping != null
         ? _OrderSummaryValidators.safeDouble(checkout.selectedShipping!['price'])
         : 0.0;
-    final formattedShipping = _OrderSummaryValidators.formatAmount(shippingPrice.toInt(), context.localeCode);
+    final convertedShipping = currencyService.convert(
+      shippingPriceInCartCurrency,
+      from: cartCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final formattedShippingAmount = currencyService.formatPrice(
+      convertedShipping,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+    
     final shippingLabel = checkout.selectedShipping != null
         ? _OrderSummaryValidators.sanitize(
-            checkout.selectedShipping!['price_label']?.toString() ?? '$formattedShipping $symbol',
+            checkout.selectedShipping!['price_label']?.toString() ?? formattedShippingAmount,
             maxLength: 40,
           )
-        : context.sumT('À déterminer', 'To be determined');
+        : context.sumT('À déterminer', 'To be determined', 'Ithibitishwe');
     final shippingName = checkout.selectedShipping != null
         ? _OrderSummaryValidators.sanitize(
-            checkout.selectedShipping!['name']?.toString() ?? context.sumT('Livraison', 'Shipping'),
+            checkout.selectedShipping!['name']?.toString() ?? context.sumT('Livraison', 'Shipping', 'Usafirishaji'),
             maxLength: 60,
           )
-        : context.sumT('Livraison', 'Shipping');
+        : context.sumT('Livraison', 'Shipping', 'Usafirishaji');
 
-    // Total = sous-total + shipping
-    final total = subtotal + shippingPrice;
-    final formattedTotal = _OrderSummaryValidators.formatAmount(total.toInt(), context.localeCode);
+    // Total = sous-total + shipping (déjà convertis)
+    final convertedTotal = convertedSubtotal + convertedShipping;
+    final formattedTotal = currencyService.formatPrice(
+      convertedTotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
 
-    // Items du panier
+    // Items du panier (avec conversion individuelle)
     final items = cartState.items.map((item) {
       final product = item['product'] as Map?;
-      double price = 0;
+      double priceInCartCurrency = 0;
       try {
-        price = _OrderSummaryValidators.safeDouble(cartNotifier.getItemRealPrice(item));
+        priceInCartCurrency = _OrderSummaryValidators.safeDouble(cartNotifier.getItemRealPrice(item));
       } catch (e) {
         debugPrint('[OrderSummary] ⚠️ Price calculation error: $e');
       }
@@ -190,7 +244,7 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
       final productName = _OrderSummaryValidators.sanitize(
         product != null && product['title'] != null
             ? product['title'].toString()
-            : context.sumT('Produit', 'Product'),
+            : context.sumT('Produit', 'Product', 'Bidhaa'),
         maxLength: 80,
       );
 
@@ -203,10 +257,17 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
         }
       }
 
+      // ✅ Conversion du prix de l'article
+      final convertedItemPrice = currencyService.convert(
+        priceInCartCurrency,
+        from: cartCurrencyCode,
+        to: displayCurrencyCode,
+      );
+
       return {
         'product_id': product != null ? product['id'] : item['product_id'],
         'quantity': quantity,
-        'price': price,
+        'price': convertedItemPrice, // ✅ Prix déjà converti
         'product_name': productName,
         'image_url': imageUrl,
       };
@@ -215,7 +276,11 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
     // État panier vide
     if (items.isEmpty) {
       return _EmptyCartState(
-        message: context.sumT('Votre panier est vide', 'Your cart is empty'),
+        message: context.sumT(
+          'Votre panier est vide',
+          'Your cart is empty',
+          'Kikapu chako ni tupu',
+        ),
       );
     }
 
@@ -228,13 +293,46 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // ✅ Indicateur de conversion (si applicable)
+                if (isConverted)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.primary.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.currency_exchange_rounded, size: 16, color: ThixPolicy.primary),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            context.sumT(
+                              'Prix convertis en ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                              'Prices converted to ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                              'Bei zimebadilishwa kuwa ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                            ),
+                            style: ThixPolicy.captionStyle.copyWith(
+                              color: ThixPolicy.primary,
+                              fontWeight: ThixPolicy.semiBold,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                 _AddressSection(address: checkout.selectedAddress),
                 const SizedBox(height: 16),
                 _ShippingSection(name: shippingName, priceLabel: shippingLabel),
                 const SizedBox(height: 16),
 
                 Text(
-                  context.sumT('Articles', 'Items'),
+                  context.sumT('Articles', 'Items', 'Bidhaa'),
                   style: ThixPolicy.titleStyle.copyWith(
                     fontWeight: ThixPolicy.bold,
                     fontSize: 16,
@@ -245,7 +343,9 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
 
                 ...items.map((item) => _ItemRow(
                       item: item,
-                      symbol: symbol,
+                      currencyCode: displayCurrencyCode,
+                      currencyService: currencyService,
+                      lang: lang,
                     )),
 
                 Padding(
@@ -254,11 +354,11 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
                 ),
 
                 _PriceRow(
-                  label: context.sumT('Sous-total', 'Subtotal'),
-                  value: '$formattedSubtotal $symbol',
+                  label: context.sumT('Sous-total', 'Subtotal', 'Jumla ndogo'),
+                  value: formattedSubtotal,
                 ),
                 _PriceRow(
-                  label: context.sumT('Livraison', 'Shipping'),
+                  label: context.sumT('Livraison', 'Shipping', 'Usafirishaji'),
                   value: shippingLabel,
                   isHighlight: true,
                 ),
@@ -269,9 +369,10 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
                 ),
 
                 _PriceRow(
-                  label: context.sumT('Total à payer', 'Total to pay'),
-                  value: '$formattedTotal $symbol',
+                  label: context.sumT('Total à payer', 'Total to pay', 'Jumla ya kulipa'),
+                  value: formattedTotal,
                   isTotal: true,
+                  showConversionIcon: isConverted,
                 ),
               ],
             ),
@@ -280,7 +381,11 @@ class _OrderSummaryWidgetState extends ConsumerState<OrderSummaryWidget> {
 
         _ContinueButton(
           isProcessing: checkout.isProcessing || _isNavigating,
-          label: context.sumT('Continuer vers le paiement', 'Continue to Payment'),
+          label: context.sumT(
+            'Continuer vers le paiement',
+            'Continue to Payment',
+            'Endelea kulipa',
+          ),
           onPressed: _continueToPayment,
         ),
       ],
@@ -301,10 +406,14 @@ class _AddressSection extends StatelessWidget {
   Widget build(BuildContext context) {
     if (address == null) {
       return _SectionCard(
-        title: context.sumT('Adresse de livraison', 'Delivery Address'),
+        title: context.sumT('Adresse de livraison', 'Delivery Address', 'Anwani ya uwasilishaji'),
         children: [
           Text(
-            context.sumT('Aucune adresse sélectionnée', 'No address selected'),
+            context.sumT(
+              'Aucune adresse sélectionnée',
+              'No address selected',
+              'Hakuna anwani iliyochaguliwa',
+            ),
             style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
           ),
         ],
@@ -319,7 +428,7 @@ class _AddressSection extends StatelessWidget {
     final phone = _OrderSummaryValidators.sanitize(address!['phone']?.toString() ?? '', maxLength: 20);
 
     return _SectionCard(
-      title: context.sumT('Adresse de livraison', 'Delivery Address'),
+      title: context.sumT('Adresse de livraison', 'Delivery Address', 'Anwani ya uwasilishaji'),
       children: [
         if (fullName.isNotEmpty)
           Text(
@@ -338,7 +447,7 @@ class _AddressSection extends StatelessWidget {
           ),
         if (landmark.isNotEmpty)
           Text(
-            '${context.sumT('Repère', 'Landmark')}: $landmark',
+            '${context.sumT('Repère', 'Landmark', 'Alama')}: $landmark',
             style: ThixPolicy.bodySmallStyle.copyWith(
               fontStyle: FontStyle.italic,
               color: ThixPolicy.textMuted,
@@ -346,7 +455,7 @@ class _AddressSection extends StatelessWidget {
           ),
         if (phone.isNotEmpty)
           Text(
-            '${context.sumT('Tél', 'Phone')}: $phone',
+            '${context.sumT('Tél', 'Phone', 'Simu')}: $phone',
             style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
           ),
       ],
@@ -363,14 +472,14 @@ class _ShippingSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _SectionCard(
-      title: context.sumT('Mode de livraison', 'Shipping Method'),
+      title: context.sumT('Mode de livraison', 'Shipping Method', 'Njia ya usafirishaji'),
       children: [
         Text(
           name,
           style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain),
         ),
         Text(
-          '${context.sumT('Frais', 'Fees')} : $priceLabel',
+          '${context.sumT('Frais', 'Fees', 'Gharama')} : $priceLabel',
           style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold),
         ),
       ],
@@ -413,22 +522,35 @@ class _SectionCard extends StatelessWidget {
   }
 }
 
+// ✅ Mis à jour pour utiliser CurrencyService
 class _ItemRow extends StatelessWidget {
   final Map<String, dynamic> item;
-  final String symbol;
+  final String currencyCode;
+  final CurrencyService currencyService;
+  final String lang;
 
-  const _ItemRow({required this.item, required this.symbol});
+  const _ItemRow({
+    required this.item,
+    required this.currencyCode,
+    required this.currencyService,
+    required this.lang,
+  });
 
   @override
   Widget build(BuildContext context) {
     final imageUrl = item['image_url'] as String?;
     final productName = item['product_name'] as String;
     final quantity = item['quantity'] as int;
-    final price = item['price'] as double;
-    final formattedPrice = _OrderSummaryValidators.formatAmount((price * quantity).toInt(), context.localeCode);
+    final price = item['price'] as double; // ✅ Déjà converti
+    
+    final formattedPrice = currencyService.formatPrice(
+      price * quantity,
+      currencyCode: currencyCode,
+      lang: lang,
+    );
 
     return Semantics(
-      label: '$productName, ${context.sumT('Quantité', 'Quantity')} $quantity, $formattedPrice $symbol',
+      label: '$productName, ${context.sumT('Quantité', 'Quantity', 'Idadi')} $quantity, $formattedPrice',
       child: ListTile(
         contentPadding: EdgeInsets.zero,
         leading: ClipRRect(
@@ -476,11 +598,11 @@ class _ItemRow extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         subtitle: Text(
-          '${context.sumT('Qté', 'Qty')}: $quantity',
+          '${context.sumT('Qté', 'Qty', 'Idadi')}: $quantity',
           style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12),
         ),
         trailing: Text(
-          '$formattedPrice $symbol',
+          formattedPrice,
           style: ThixPolicy.labelStyle.copyWith(
             fontWeight: ThixPolicy.bold,
             color: ThixPolicy.textMain,
@@ -492,17 +614,20 @@ class _ItemRow extends StatelessWidget {
   }
 }
 
+// ✅ Mis à jour avec indicateur de conversion
 class _PriceRow extends StatelessWidget {
   final String label;
   final String value;
   final bool isTotal;
   final bool isHighlight;
+  final bool showConversionIcon;
 
   const _PriceRow({
     required this.label,
     required this.value,
     this.isTotal = false,
     this.isHighlight = false,
+    this.showConversionIcon = false,
   });
 
   @override
@@ -525,13 +650,34 @@ class _PriceRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              value,
-              style: ThixPolicy.labelStyle.copyWith(
-                fontWeight: isTotal ? ThixPolicy.bold : (isHighlight ? ThixPolicy.semiBold : ThixPolicy.semiBold),
-                fontSize: isTotal ? 18 : 14,
-                color: isTotal ? ThixPolicy.textMain : (isHighlight ? ThixPolicy.primary : ThixPolicy.textMain),
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: ThixPolicy.labelStyle.copyWith(
+                    fontWeight: isTotal ? ThixPolicy.bold : (isHighlight ? ThixPolicy.semiBold : ThixPolicy.semiBold),
+                    fontSize: isTotal ? 18 : 14,
+                    color: isTotal ? ThixPolicy.textMain : (isHighlight ? ThixPolicy.primary : ThixPolicy.textMain),
+                  ),
+                ),
+                // ✅ Indicateur de conversion sur le total
+                if (showConversionIcon && isTotal) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(
+                      Icons.currency_exchange_rounded,
+                      size: 12,
+                      color: ThixPolicy.primary,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
