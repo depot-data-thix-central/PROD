@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/cart/cart_summary_widget.dart
+// ============================================================================
+// CART SUMMARY WIDGET — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Support de la conversion de devises automatique
+//  • ✅ Indicateur visuel 💱 si prix convertis
+//  • ✅ Support 54 devises africaines via AfricanCurrencies
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -7,6 +16,9 @@ import 'package:intl/intl.dart';
 import 'package:thix_id/features/auth/presentation/providers/auth_controller.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 
 // ============================================================================
 // VALIDATEURS
@@ -28,30 +40,9 @@ class _CartSummaryValidators {
   }
 
   static String safeCurrency(String? currency) {
-    if (currency == null || currency.trim().isEmpty) return 'FC';
-    // On enlève le 'r' juste avant les guillemets
+    if (currency == null || currency.trim().isEmpty) return 'CDF';
     final cleaned = currency.replaceAll(RegExp('[<>"\']'), '').trim();
-    return cleaned.isEmpty ? 'FC' : cleaned;
-  }
-
-
-  static String formatAmount(double amount, String locale, {bool isUSD = false}) {
-    try {
-      if (isUSD) {
-        return NumberFormat.decimalPatternDigits(
-          locale: locale,
-          decimalDigits: 2,
-        ).format(amount);
-      }
-      return NumberFormat.decimalPattern(locale).format(amount.toInt());
-    } catch (_) {
-      return isUSD ? amount.toStringAsFixed(2) : amount.toInt().toString();
-    }
-  }
-
-  static bool isUSD(String currency) {
-    final upper = currency.toUpperCase().trim();
-    return upper == 'USD' || upper == '\$' || upper == 'DOLLAR';
+    return cleaned.isEmpty ? 'CDF' : cleaned;
   }
 }
 
@@ -59,8 +50,9 @@ class _CartSummaryValidators {
 // LOCALIZATION HELPER
 // ============================================================================
 extension _CartSummaryL10n on BuildContext {
-  String sumW(String fr, String en) {
+  String sumW(String fr, String en, [String? sw]) {
     final lang = Localizations.localeOf(this).languageCode;
+    if (lang == 'sw' && sw != null) return sw;
     return lang == 'fr' ? fr : en;
   }
 
@@ -77,7 +69,8 @@ class CartSummaryWidget extends ConsumerStatefulWidget {
   final double shippingCost;
   final double total;
   final int itemCount;
-  final String currency;
+  final String currency; // ✅ Code ISO-4217 (CDF, USD, XOF, etc.)
+  final bool isConverted; // ✅ Indique si les prix ont été convertis
 
   const CartSummaryWidget({
     super.key,
@@ -88,6 +81,7 @@ class CartSummaryWidget extends ConsumerStatefulWidget {
     required this.total,
     required this.itemCount,
     required this.currency,
+    this.isConverted = false,
   });
 
   @override
@@ -99,6 +93,11 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Écouter le provider de devise pour rebuild si changement
+    ref.watch(currencyProvider);
+    
     // Validation des valeurs
     final subtotal = _CartSummaryValidators.safeDouble(widget.subtotal);
     final originalSubtotal = _CartSummaryValidators.safeDouble(widget.originalSubtotal);
@@ -106,36 +105,53 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
     final shippingCost = _CartSummaryValidators.safeDouble(widget.shippingCost);
     final total = _CartSummaryValidators.safeDouble(widget.total);
     final itemCount = _CartSummaryValidators.safeInt(widget.itemCount);
-    final currency = _CartSummaryValidators.safeCurrency(widget.currency);
+    
+    // ✅ Code devise normalisé (ISO-4217)
+    final currencyCode = _CartSummaryValidators.safeCurrency(widget.currency);
+    final currencyInfo = AfricanCurrencies.byCode(currencyCode);
+    final currencySymbol = currencyInfo?.symbol ?? currencyCode;
 
     final hasDiscount = discount > 0.5;
-    final isUSD = _CartSummaryValidators.isUSD(currency);
-    final locale = context.localeCode;
+    final currencyService = CurrencyService.instance;
 
-    // Formatage i18n
-    final formattedSubtotal = _CartSummaryValidators.formatAmount(
+    // ✅ Formatage intelligent avec CurrencyService
+    final formattedSubtotal = currencyService.formatPrice(
       hasDiscount ? originalSubtotal : subtotal,
-      locale,
-      isUSD: isUSD,
+      currencyCode: currencyCode,
+      lang: lang,
     );
-    final formattedDiscount = _CartSummaryValidators.formatAmount(discount, locale, isUSD: isUSD);
+    final formattedDiscount = currencyService.formatPrice(
+      discount,
+      currencyCode: currencyCode,
+      lang: lang,
+    );
     final formattedShipping = shippingCost == 0
-        ? '0 $currency'
-        : '${_CartSummaryValidators.formatAmount(shippingCost, locale, isUSD: isUSD)} $currency';
-    final formattedTotal = _CartSummaryValidators.formatAmount(total, locale, isUSD: isUSD);
+        ? currencyService.formatPrice(0, currencyCode: currencyCode, lang: lang)
+        : currencyService.formatPrice(shippingCost, currencyCode: currencyCode, lang: lang);
+    final formattedTotal = currencyService.formatPrice(
+      total,
+      currencyCode: currencyCode,
+      lang: lang,
+    );
 
     final authState = ref.watch(authControllerProvider);
     final isLoggedIn = authState.valueOrNull != null;
 
+    // Labels traduits (FR / EN / SW)
     final subtotalLabel = context.sumW(
       'Sous-total ($itemCount ${itemCount > 1 ? 'articles' : 'article'})',
       'Subtotal ($itemCount ${itemCount > 1 ? 'items' : 'item'})',
+      'Jumla ndogo ($itemCount ${itemCount > 1 ? 'bidhaa' : 'bidhaa'})',
     );
-    final discountLabel = context.sumW('Remise', 'Discount');
-    final shippingLabel = context.sumW('Livraison', 'Shipping');
-    const shippingBadgeLabel = 'À confirmer';
-    final totalLabel = context.sumW('Total', 'Total');
-    final buttonLabel = context.sumW('Continuer vers la validation', 'Continue to checkout');
+    final discountLabel = context.sumW('Remise', 'Discount', 'Punguzo');
+    final shippingLabel = context.sumW('Livraison', 'Shipping', 'Usafirishaji');
+    final shippingBadgeLabel = context.sumW('À confirmer', 'To confirm', 'Ithibitishwe');
+    final totalLabel = context.sumW('Total', 'Total', 'Jumla');
+    final buttonLabel = context.sumW(
+      'Continuer vers la validation',
+      'Continue to checkout',
+      'Endelea kulipa',
+    );
 
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
@@ -160,10 +176,43 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
             ),
             const SizedBox(height: 16),
 
+            // ✅ Indicateur de conversion (si applicable)
+            if (widget.isConverted)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.primary.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.currency_exchange_rounded, size: 16, color: ThixPolicy.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        context.sumW(
+                          'Prix convertis en ${currencyInfo?.displayName(lang) ?? currencyCode}',
+                          'Prices converted to ${currencyInfo?.displayName(lang) ?? currencyCode}',
+                          'Bei zimebadilishwa kuwa ${currencyInfo?.displayName(lang) ?? currencyCode}',
+                        ),
+                        style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.primary,
+                          fontWeight: ThixPolicy.semiBold,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Sous-total
             _SummaryRow(
               label: subtotalLabel,
-              value: '$formattedSubtotal $currency',
+              value: formattedSubtotal,
               valueColor: ThixPolicy.textMain,
               isTotal: false,
             ),
@@ -172,7 +221,7 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
               const SizedBox(height: 6),
               _SummaryRow(
                 label: discountLabel,
-                value: '-$formattedDiscount $currency',
+                value: '-$formattedDiscount',
                 valueColor: ThixPolicy.success,
                 icon: Icons.local_offer_outlined,
                 iconColor: ThixPolicy.success,
@@ -235,8 +284,9 @@ class _CartSummaryWidgetState extends ConsumerState<CartSummaryWidget> {
             // Total
             _SummaryRow(
               label: totalLabel,
-              value: '$formattedTotal $currency',
+              value: formattedTotal,
               isTotal: true,
+              showConversionIcon: widget.isConverted,
             ),
 
             const SizedBox(height: 16),
@@ -326,6 +376,7 @@ class _SummaryRow extends StatelessWidget {
   final Color? valueColor;
   final IconData? icon;
   final Color? iconColor;
+  final bool showConversionIcon; // ✅ Indicateur de conversion
 
   const _SummaryRow({
     required this.label,
@@ -334,6 +385,7 @@ class _SummaryRow extends StatelessWidget {
     this.valueColor,
     this.icon,
     this.iconColor,
+    this.showConversionIcon = false,
   });
 
   @override
@@ -371,13 +423,34 @@ class _SummaryRow extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            Text(
-              value,
-              style: ThixPolicy.labelStyle.copyWith(
-                fontSize: isTotal ? 19 : 14.5,
-                fontWeight: isTotal ? ThixPolicy.bold : ThixPolicy.semiBold,
-                color: finalValueColor,
-              ),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  value,
+                  style: ThixPolicy.labelStyle.copyWith(
+                    fontSize: isTotal ? 19 : 14.5,
+                    fontWeight: isTotal ? ThixPolicy.bold : ThixPolicy.semiBold,
+                    color: finalValueColor,
+                  ),
+                ),
+                // ✅ Indicateur de conversion sur le total
+                if (showConversionIcon && isTotal) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.primary.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(
+                      Icons.currency_exchange_rounded,
+                      size: 12,
+                      color: ThixPolicy.primary,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
