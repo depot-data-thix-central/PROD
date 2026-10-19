@@ -1,14 +1,6 @@
 // lib/presentation/thix_market/pages/messages_page.dart
 // ============================================================================
-// MESSAGES PAGE — Production Enterprise v5
-// ----------------------------------------------------------------------------
-//  • ✅ Liaison directe avec ProductDetailPage (envoi auto de ref produit)
-//  • ✅ Envoi contextuel : ID produit, titre, image, prix, devise
-//  • ✅ Support 54 devises africaines via AfricanCurrencies & CurrencyService
-//  • ✅ Indicateur 💱 si prix convertis (ex: CDF → USD)
-//  • ✅ 3 langues : FR / EN / SW
-//  • ✅ Sécurité : UUID validation, HTML sanitisation, timeout
-//  • ✅ Performance : memoized widgets, debounced refresh, lazy loading
+// MESSAGES PAGE — Production Enterprise v5 (FIXED)
 // ============================================================================
 
 import 'dart:async';
@@ -19,7 +11,6 @@ import 'package:go_router/go_router.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:uuid/uuid.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -27,15 +18,12 @@ import '../core/african_currencies.dart';
 import '../core/currency_service.dart';
 import '../providers/currency_provider.dart';
 import '../providers/message_provider.dart';
-import '../widgets/products/product_card.dart';
 
 // ============================================================================
 // CONSTANTES
 // ============================================================================
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kRetryDelay = Duration(milliseconds: 400);
-const int _kMaxConversations = 100;
-const int _kMaxDisputes = 50;
 
 // ============================================================================
 // VALIDATEURS
@@ -74,10 +62,8 @@ class _MessagesValidators {
       final date = DateTime.parse(dateStr);
       final now = DateTime.now();
       final lang = Localizations.localeOf(context).languageCode;
-      final formatter = lang == 'fr' ? DateFormat('HH:mm', 'fr') : DateFormat('HH:mm');
-      
       if (date.day == now.day && date.month == now.month && date.year == now.year) {
-        return formatter.format(date);
+        return DateFormat('HH:mm', lang).format(date);
       } else {
         return DateFormat('dd/MM', lang).format(date);
       }
@@ -96,26 +82,45 @@ class _MessagesValidators {
     }
   }
 
-  /// ✅ Normalise le code devise en ISO-4217 (CDF, XOF, USD, etc.)
   static String normalizeCurrencyCode(dynamic c) {
     if (c == null) return 'CDF';
     final v = c.toString().toUpperCase().trim();
-    
-    // Vérifier si devise africaine connue
     if (AfricanCurrencies.byCode(v) != null) return v;
-    
-    // Alias courants
     final aliases = <String, String>{
-      'FC': 'CDF',
-      'FCFA': 'XOF',
-      r'$': 'USD',
-      'DOLLAR': 'USD',
-      'US': 'USD',
-      'EURO': 'EUR',
-      '€': 'EUR',
+      'FC': 'CDF', 'FCFA': 'XOF', r'$': 'USD',
+      'DOLLAR': 'USD', 'US': 'USD', 'EURO': 'EUR', '€': 'EUR',
     };
-    
     return aliases[v] ?? 'CDF';
+  }
+
+  // ✅ FIX #3 : Méthode PUBLIQUE (pas privée) pour être accessible depuis _ConversationTile
+  static Map<String, dynamic>? extractProductFromMetadata(dynamic metadata) {
+    if (metadata == null) return null;
+
+    if (metadata is String) {
+      final params = Uri.splitQueryString(metadata);
+      if (params != null && params.containsKey('product_id')) {
+        return {
+          'id': params['product_id'],
+          'title': params['title']?.replaceAll('%20', ' '),
+          'price': double.tryParse(params['price'] ?? ''),
+          'currency': normalizeCurrencyCode(params['currency']),
+          'image_url': params['image_url'],
+        };
+      }
+    } else if (metadata is Map) {
+      final id = metadata['product_id']?.toString();
+      if (id != null && isValidId(id)) {
+        return {
+          'id': id,
+          'title': sanitize(metadata['title']?.toString()),
+          'price': double.tryParse(metadata['price']?.toString() ?? ''),
+          'currency': normalizeCurrencyCode(metadata['currency']),
+          'image_url': sanitizeUrl(metadata['image_url']?.toString()),
+        };
+      }
+    }
+    return null;
   }
 }
 
@@ -147,11 +152,6 @@ Future<T> _withRetry<T>(
 }
 
 // ============================================================================
-// PROVIDER — Messages avec contexte produit
-// ============================================================================
-final messageProvider = Provider<MessageProvider>((ref) => MessageProvider(ref));
-
-// ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
 class MessagesPage extends ConsumerStatefulWidget {
@@ -163,14 +163,11 @@ class MessagesPage extends ConsumerStatefulWidget {
 
 class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final _scrollControllers = <Tab, ScrollController>{};
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _scrollControllers[Tab.conversations] = ScrollController();
-    _scrollControllers[Tab.disputes] = ScrollController();
     debugPrint('[Messages] 💬 Page opened');
     _loadData();
   }
@@ -178,13 +175,13 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
   @override
   void dispose() {
     _tabController.dispose();
-    for (final ctrl in _scrollControllers.values) ctrl.dispose();
     debugPrint('[Messages] 👋 Page disposed');
     super.dispose();
   }
 
   Future<void> _loadData() async {
-    final provider = ref.read(messageProvider);
+    // ✅ FIX #1 : MessageProvider est un ChangeNotifier sans argument
+    final provider = context.read<MessageProvider>();
     HapticFeedback.selectionClick();
 
     try {
@@ -201,7 +198,8 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final provider = ref.watch(messageProvider);
+    // ✅ FIX #1 : Utiliser Provider (ChangeNotifier) au lieu de Riverpod ref.watch
+    final messageProvider = context.watch<MessageProvider>();
     final displayCurrencyCode = ref.watch(currencyProvider);
     final currencyService = CurrencyService.instance;
 
@@ -218,6 +216,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
         bottom: TabBar(
           controller: _tabController,
           tabs: [
+            // ✅ FIX #2 : Utiliser le widget Tab de Flutter (pas l'enum)
             Tab(
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -225,7 +224,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
                   const Icon(Icons.chat_rounded, size: 18),
                   const SizedBox(width: 8),
                   Text(l10n.t('messages_tab_conversations'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
-                  if (provider.unreadCount > 0)
+                  if (messageProvider.unreadCount > 0)
                     Container(
                       margin: const EdgeInsets.only(left: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -234,7 +233,7 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
                         borderRadius: BorderRadius.circular(10),
                       ),
                       child: Text(
-                        '${provider.unreadCount}',
+                        '${messageProvider.unreadCount}',
                         style: ThixPolicy.microStyle.copyWith(fontSize: 10, color: Colors.white, fontWeight: ThixPolicy.bold),
                       ),
                     ),
@@ -271,27 +270,21 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
       ),
       body: TabBarView(
         controller: _tabController,
-        physics: const NeverScrollableScrollPhysics(),
         children: [
-          _buildConversationsTab(provider, l10n, displayCurrencyCode, currencyService),
-          _buildDisputesTab(provider, l10n),
+          _buildConversationsTab(messageProvider, l10n, displayCurrencyCode, currencyService),
+          _buildDisputesTab(messageProvider, l10n),
         ],
       ),
     );
   }
 
-  // ============================================================
-  // TAB 1 : CONVERSATIONS — avec contexte produit
-  // ============================================================
   Widget _buildConversationsTab(
     MessageProvider provider,
     AppLocalizations l10n,
     String displayCurrencyCode,
     CurrencyService currencyService,
   ) {
-    if (provider.isLoading) {
-      return const _SkeletonList();
-    }
+    if (provider.isLoading) return const _SkeletonList();
 
     if (provider.conversations.isEmpty) {
       return _EmptyState(
@@ -307,7 +300,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
       color: ThixPolicy.primary,
       onRefresh: _loadData,
       child: ListView.builder(
-        controller: _scrollControllers[Tab.conversations],
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: provider.conversations.length,
         itemBuilder: (context, index) {
@@ -321,13 +313,8 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
     );
   }
 
-  // ============================================================
-  // TAB 2 : LITIGES
-  // ============================================================
   Widget _buildDisputesTab(MessageProvider provider, AppLocalizations l10n) {
-    if (provider.isLoadingDisputes) {
-      return const _SkeletonList();
-    }
+    if (provider.isLoadingDisputes) return const _SkeletonList();
 
     if (provider.disputes.isEmpty) {
       return _EmptyState(
@@ -341,7 +328,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
       color: ThixPolicy.primary,
       onRefresh: _loadData,
       child: ListView.builder(
-        controller: _scrollControllers[Tab.disputes],
         padding: const EdgeInsets.all(12),
         itemCount: provider.disputes.length,
         itemBuilder: (context, index) {
@@ -352,7 +338,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
     );
   }
 
-  // ─── OUVRIR CHAT AVEC CONTEXTE PRODUIT (ALIBABA STYLE) ───
   void _openChatWithProductContext(
     Map<String, dynamic> conversation,
     AppLocalizations l10n,
@@ -367,21 +352,19 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
 
     HapticFeedback.selectionClick();
 
-    // ✅ Extraire le contexte produit depuis les metadata (ex: "product_id=abc123")
-    final productRef = _extractProductFromMetadata(conversation['metadata']);
+    // ✅ FIX #3 : Appel correct de la méthode publique
+    final productRef = _MessagesValidators.extractProductFromMetadata(conversation['metadata']);
     final otherUser = conversation['other_user'] as Map? ?? {};
     final userMap = Map<String, dynamic>.from(otherUser);
 
-    // ✅ Préparer les données du produit (si disponible)
     final productData = productRef != null
-        ? _fetchProductData(productRef, displayCurrencyCode, currencyService)
+        ? _buildProductData(productRef, displayCurrencyCode, currencyService)
         : null;
 
     final title = _MessagesValidators.sanitize(userMap['name']?.toString() ?? l10n.t('messages_default_chat_title'), maxLength: 60);
     final userName = _MessagesValidators.sanitize(userMap['name']?.toString() ?? '', maxLength: 60);
     final userAvatar = _MessagesValidators.sanitizeUrl(userMap['avatar']?.toString());
 
-    // ✅ Push avec extra complet (comme Alibaba)
     context.push(
       '/market/chat/$convId',
       extra: {
@@ -394,44 +377,10 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
       },
     );
 
-    debugPrint('[Messages] 💬 Opened chat $convId with product context: ${productData != null ? productData['title'] : 'none'}');
+    debugPrint('[Messages] 💬 Opened chat $convId with product: ${productData != null ? productData['title'] : 'none'}');
   }
 
-  // ✅ Extraire le produit depuis les metadata (format clé=valeur ou JSON)
-  Map<String, dynamic>? _extractProductFromMetadata(dynamic metadata) {
-    if (metadata == null) return null;
-
-    if (metadata is String) {
-      // Format: "product_id=abc123&title=PC%20HP%20ENVY"
-      final params = Uri.splitQueryString(metadata);
-      if (params != null && params.containsKey('product_id')) {
-        return {
-          'id': params['product_id'],
-          'title': params['title']?.replaceAll('%20', ' '),
-          'price': double.tryParse(params['price'] ?? ''),
-          'currency': _MessagesValidators.normalizeCurrencyCode(params['currency']),
-          'image_url': params['image_url'],
-        };
-      }
-    } else if (metadata is Map) {
-      // Format JSON-like
-      final id = metadata['product_id']?.toString();
-      if (id != null && _MessagesValidators.isValidId(id)) {
-        return {
-          'id': id,
-          'title': _MessagesValidators.sanitize(metadata['title']?.toString()),
-          'price': double.tryParse(metadata['price']?.toString() ?? ''),
-          'currency': _MessagesValidators.normalizeCurrencyCode(metadata['currency']),
-          'image_url': _MessagesValidators.sanitizeUrl(metadata['image_url']?.toString()),
-        };
-      }
-    }
-
-    return null;
-  }
-
-  // ✅ Préparer les données du produit avec conversion de devises
-  Map<String, dynamic>? _fetchProductData(
+  Map<String, dynamic>? _buildProductData(
     Map<String, dynamic> productRef,
     String displayCurrencyCode,
     CurrencyService currencyService,
@@ -444,7 +393,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
 
     if (id == null || !_MessagesValidators.isValidId(id)) return null;
 
-    // ✅ Conversion du prix si nécessaire
     final convertedPrice = priceInProductCurrency != null
         ? currencyService.convert(priceInProductCurrency, from: productCurrencyCode, to: displayCurrencyCode)
         : null;
@@ -469,7 +417,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
       debugPrint('[Messages] ⚠️ Invalid dispute ID: $disputeId');
       return;
     }
-
     HapticFeedback.selectionClick();
     context.push('/market/dispute/$disputeId');
     debugPrint('[Messages] ⚖️ Opened dispute $disputeId');
@@ -480,10 +427,8 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => _VoiceCallSheet(),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) => const _VoiceCallSheet(),
     );
   }
 }
@@ -491,8 +436,6 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
 // ============================================================================
 // COMPOSANTS
 // ============================================================================
-
-enum Tab { conversations, disputes }
 
 class _ConversationTile extends StatelessWidget {
   final Map<String, dynamic> conversation;
@@ -513,9 +456,8 @@ class _ConversationTile extends StatelessWidget {
     final isTyping = conversation['is_typing'] == true;
     final unreadCount = (conversation['unread_count'] as num?)?.toInt() ?? 0;
 
-    // ✅ Extraire le contexte produit pour affichage rapide
-    final productRef = _MessagesValidators._extractProductFromMetadata(conversation['metadata']);
-    final hasProductContext = productRef != null;
+    // ✅ FIX #3 : Appel correct de la méthode publique
+    final hasProductContext = _MessagesValidators.extractProductFromMetadata(conversation['metadata']) != null;
 
     return Semantics(
       button: true,
@@ -527,7 +469,6 @@ class _ConversationTile extends StatelessWidget {
           color: isUnread ? ThixPolicy.primary.withOpacity(0.05) : ThixPolicy.card,
           child: Row(
             children: [
-              // Avatar
               Stack(
                 children: [
                   CircleAvatar(
@@ -540,23 +481,15 @@ class _ConversationTile extends StatelessWidget {
                   ),
                   if (isOnline)
                     Positioned(
-                      bottom: 0,
-                      right: 0,
+                      bottom: 0, right: 0,
                       child: Container(
-                        width: 12,
-                        height: 12,
-                        decoration: BoxDecoration(
-                          color: ThixPolicy.success,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: ThixPolicy.card, width: 2),
-                        ),
+                        width: 12, height: 12,
+                        decoration: BoxDecoration(color: ThixPolicy.success, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.card, width: 2)),
                       ),
                     ),
                 ],
               ),
               const SizedBox(width: 12),
-
-              // Contenu
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -564,90 +497,43 @@ class _ConversationTile extends StatelessWidget {
                     Row(
                       children: [
                         Expanded(
-                          child: Text(
-                            userName,
-                            style: ThixPolicy.labelStyle.copyWith(
-                              fontWeight: isUnread ? ThixPolicy.bold : ThixPolicy.regular,
-                              fontSize: 15,
-                              color: ThixPolicy.textMain,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
+                          child: Text(userName, style: ThixPolicy.labelStyle.copyWith(fontWeight: isUnread ? ThixPolicy.bold : ThixPolicy.regular, fontSize: 15, color: ThixPolicy.textMain), maxLines: 1, overflow: TextOverflow.ellipsis),
                         ),
                         if (formattedTime.isNotEmpty)
-                          Text(
-                            formattedTime,
-                            style: ThixPolicy.captionStyle.copyWith(
-                              fontSize: 11,
-                              color: ThixPolicy.textMuted,
-                              fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular,
-                            ),
-                          ),
+                          Text(formattedTime, style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted, fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular)),
                       ],
                     ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         if (isTyping)
-                          SizedBox(
-                            width: 60,
-                            child: Text(
-                              l10n.t('messages_typing'),
-                              style: ThixPolicy.captionStyle.copyWith(
-                                fontSize: 12,
-                                color: ThixPolicy.primary,
-                                fontStyle: FontStyle.italic,
-                              ),
-                            ),
-                          )
+                          SizedBox(width: 60, child: Text(l10n.t('messages_typing'), style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.primary, fontStyle: FontStyle.italic)))
                         else
                           Expanded(
                             child: Text(
                               lastMessage.isEmpty ? l10n.t('messages_no_message') : lastMessage,
-                              style: ThixPolicy.captionStyle.copyWith(
-                                fontSize: 13,
-                                color: isUnread ? ThixPolicy.textMain : ThixPolicy.textSecondary,
-                                fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: isUnread ? ThixPolicy.textMain : ThixPolicy.textSecondary, fontWeight: isUnread ? ThixPolicy.semiBold : ThixPolicy.regular),
+                              maxLines: 1, overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         if (unreadCount > 0)
                           Container(
                             margin: const EdgeInsets.only(left: 8),
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: ThixPolicy.primary,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '$unreadCount',
-                              style: ThixPolicy.microStyle.copyWith(
-                                fontSize: 11,
-                                color: Colors.white,
-                                fontWeight: ThixPolicy.bold,
-                              ),
-                            ),
+                            decoration: BoxDecoration(color: ThixPolicy.primary, borderRadius: BorderRadius.circular(10)),
+                            child: Text('$unreadCount', style: ThixPolicy.microStyle.copyWith(fontSize: 11, color: Colors.white, fontWeight: ThixPolicy.bold)),
                           ),
                       ],
                     ),
                   ],
                 ),
               ),
-
-              // ✅ Icône produit (Alibaba-style)
               if (hasProductContext)
                 Padding(
                   padding: const EdgeInsets.only(left: 8),
                   child: Container(
-                    width: 24,
-                    height: 24,
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.primary.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+                    width: 24, height: 24,
+                    decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
                     child: const Icon(Icons.shopping_cart_outlined, size: 16, color: ThixPolicy.primary),
                   ),
                 ),
@@ -666,17 +552,8 @@ class _DisputeCard extends StatelessWidget {
   const _DisputeCard({required this.dispute, required this.onTap});
 
   static const Map<String, Color> _statusColors = {
-    'open': ThixPolicy.gold,
-    'mediation': ThixPolicy.primary,
-    'resolved': ThixPolicy.success,
-    'closed': ThixPolicy.textMuted,
-  };
-
-  static const Map<String, String> _statusLabels = {
-    'open': 'En cours',
-    'mediation': 'Médiation',
-    'resolved': 'Résolu',
-    'closed': 'Fermé',
+    'open': ThixPolicy.gold, 'mediation': ThixPolicy.primary,
+    'resolved': ThixPolicy.success, 'closed': ThixPolicy.textMuted,
   };
 
   @override
@@ -687,7 +564,13 @@ class _DisputeCard extends StatelessWidget {
 
     final status = dispute['status']?.toString() ?? 'open';
     final statusColor = _statusColors[status] ?? ThixPolicy.textMuted;
-    final statusText = _statusLabels[status] ?? l10n.t('messages_status_unknown');
+    final statusLabels = <String, String>{
+      'open': l10n.t('messages_status_open'),
+      'mediation': l10n.t('messages_status_mediation'),
+      'resolved': l10n.t('messages_status_resolved'),
+      'closed': l10n.t('messages_status_closed'),
+    };
+    final statusText = statusLabels[status] ?? l10n.t('messages_status_unknown');
     final reason = _MessagesValidators.sanitize(dispute['reason']?.toString(), maxLength: 200);
     final orderId = dispute['order_id']?.toString() ?? '';
     final createdDate = _MessagesValidators.formatFullDate(dispute['created_at']?.toString(), context);
@@ -699,14 +582,11 @@ class _DisputeCard extends StatelessWidget {
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: ThixPolicy.card,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-          boxShadow: ThixPolicy.shadowSoft(opacity: 0.03),
+          color: ThixPolicy.card, borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(color: ThixPolicy.border.withOpacity(0.6)), boxShadow: ThixPolicy.shadowSoft(opacity: 0.03),
         ),
         child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          onTap: onTap, borderRadius: BorderRadius.circular(ThixPolicy.rMd),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -715,69 +595,33 @@ class _DisputeCard extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      l10n.t('messages_dispute_number', args: [id]),
-                      style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain),
-                    ),
+                    Text(l10n.t('messages_dispute_number', args: [id]), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      child: Text(
-                        statusText,
-                        style: ThixPolicy.captionStyle.copyWith(
-                          color: statusColor,
-                          fontSize: 12,
-                          fontWeight: ThixPolicy.semiBold,
-                        ),
-                      ),
+                      decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(4)),
+                      child: Text(statusText, style: ThixPolicy.captionStyle.copyWith(color: statusColor, fontSize: 12, fontWeight: ThixPolicy.semiBold)),
                     ),
                   ],
                 ),
-                if (reason.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(reason, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary)),
-                ],
+                if (reason.isNotEmpty) ...[const SizedBox(height: 8), Text(reason, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary))],
                 const SizedBox(height: 8),
-                Text(
-                  l10n.t('messages_order_number', args: [orderId]),
-                  style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted),
-                ),
+                Text(l10n.t('messages_order_number', args: [orderId]), style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted)),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.access_time_rounded, size: 14, color: ThixPolicy.textMuted),
-                    const SizedBox(width: 4),
-                    Text(
-                      l10n.t('messages_opened_on', args: [createdDate]),
-                      style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted),
-                    ),
-                  ],
-                ),
+                Row(children: [
+                  const Icon(Icons.access_time_rounded, size: 14, color: ThixPolicy.textMuted),
+                  const SizedBox(width: 4),
+                  Text(l10n.t('messages_opened_on', args: [createdDate]), style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textMuted)),
+                ]),
                 if (lastMessage.isNotEmpty) ...[
                   const SizedBox(height: 12),
                   Container(
                     padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.surfaceSoft,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.message_rounded, size: 14, color: ThixPolicy.textMuted),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            lastMessage,
-                            style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
+                    decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(8)),
+                    child: Row(children: [
+                      const Icon(Icons.message_rounded, size: 14, color: ThixPolicy.textMuted),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(lastMessage, style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                    ]),
                   ),
                 ],
               ],
@@ -797,109 +641,45 @@ class _VoiceCallSheet extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      ),
+      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: const BorderRadius.vertical(top: Radius.circular(20))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.phone_in_talk_rounded, color: ThixPolicy.primary, size: 20),
-              ),
+              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: ThixPolicy.primary.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.phone_in_talk_rounded, color: ThixPolicy.primary, size: 20)),
               const SizedBox(width: 10),
-              Text(
-                l10n.t('messages_voice_call_title'),
-                style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-              ),
+              Text(l10n.t('messages_voice_call_title'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            l10n.t('messages_voice_call_desc'),
-            style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
-          ),
+          Text(l10n.t('messages_voice_call_desc'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted)),
           const SizedBox(height: 24),
-          Row(
-            children: [
-              Expanded(
-                child: _ContactTile(
-                  role: l10n.t('messages_role_seller'),
-                  name: 'Jean Dupont',
-                  info: 'Électronique Pro',
-                  icon: Icons.store_rounded,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _ContactTile(
-                  role: l10n.t('messages_role_buyer'),
-                  name: 'Marie Claire',
-                  info: l10n.t('messages_order_ref', args: ['#12345']),
-                  icon: Icons.shopping_bag_rounded,
-                ),
-              ),
-            ],
-          ),
+          Row(children: [
+            Expanded(child: _ContactTile(role: l10n.t('messages_role_seller'), name: 'Jean Dupont', info: 'Électronique Pro', icon: Icons.store_rounded)),
+            const SizedBox(width: 16),
+            Expanded(child: _ContactTile(role: l10n.t('messages_role_buyer'), name: 'Marie Claire', info: l10n.t('messages_order_ref', args: ['#12345']), icon: Icons.shopping_bag_rounded)),
+          ]),
           const SizedBox(height: 24),
           Semantics(
-            button: true,
-            label: l10n.t('messages_start_call'),
+            button: true, label: l10n.t('messages_start_call'),
             child: ElevatedButton.icon(
               onPressed: () {
                 HapticFeedback.mediumImpact();
                 Navigator.pop(context);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Row(
-                      children: [
-                        const Icon(Icons.phone_in_talk_rounded, color: Colors.white, size: 20),
-                        const SizedBox(width: 8),
-                        Text(l10n.t('messages_feature_coming_soon')),
-                      ],
-                    ),
-                    backgroundColor: ThixPolicy.primary,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.phone_in_talk_rounded, color: Colors.white, size: 20), const SizedBox(width: 8), Text(l10n.t('messages_feature_coming_soon'))]), backgroundColor: ThixPolicy.primary, behavior: SnackBarBehavior.floating));
               },
-              icon: const Icon(Icons.call_rounded),
-              label: Text(l10n.t('messages_start_call'), style: const TextStyle(fontWeight: ThixPolicy.bold)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: ThixPolicy.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-              ),
+              icon: const Icon(Icons.call_rounded), label: Text(l10n.t('messages_start_call'), style: const TextStyle(fontWeight: ThixPolicy.bold)),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 12), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
             ),
           ),
           const SizedBox(height: 16),
           Semantics(
-            button: true,
-            label: l10n.t('common_cancel'),
-            child: TextButton(
-              onPressed: () {
-                HapticFeedback.selectionClick();
-                Navigator.pop(context);
-              },
-              child: Text(l10n.t('common_cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
-            ),
+            button: true, label: l10n.t('common_cancel'),
+            child: TextButton(onPressed: () { HapticFeedback.selectionClick(); Navigator.pop(context); }, child: Text(l10n.t('common_cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ),
         ],
       ),
@@ -913,41 +693,22 @@ class _ContactTile extends StatelessWidget {
   final String info;
   final IconData icon;
 
-  const _ContactTile({
-    required this.role,
-    required this.name,
-    required this.info,
-    required this.icon,
-  });
+  const _ContactTile({required this.role, required this.name, required this.info, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        border: Border.all(color: ThixPolicy.border),
-        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-      ),
-      child: Column(
-        children: [
-          Icon(icon, size: 32, color: ThixPolicy.primary),
-          const SizedBox(height: 8),
-          Text(
-            role,
-            style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            name,
-            style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            info,
-            style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(border: Border.all(color: ThixPolicy.border), borderRadius: BorderRadius.circular(ThixPolicy.rMd)),
+      child: Column(children: [
+        Icon(icon, size: 32, color: ThixPolicy.primary),
+        const SizedBox(height: 8),
+        Text(role, style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain)),
+        const SizedBox(height: 4),
+        Text(name, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+        const SizedBox(height: 2),
+        Text(info, style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted)),
+      ]),
     );
   }
 }
@@ -959,57 +720,24 @@ class _EmptyState extends StatelessWidget {
   final String? actionLabel;
   final VoidCallback? onAction;
 
-  const _EmptyState({
-    required this.title,
-    required this.subtitle,
-    required this.icon,
-    this.actionLabel,
-    this.onAction,
-  });
+  const _EmptyState({required this.title, required this.subtitle, required this.icon, this.actionLabel, this.onAction});
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: ThixPolicy.textMuted.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 64, color: ThixPolicy.textMuted),
-            ),
+            Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: ThixPolicy.textMuted.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 64, color: ThixPolicy.textMuted)),
             const SizedBox(height: 16),
-            Text(
-              title,
-              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-            ),
+            Text(title, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
             const SizedBox(height: 8),
-            Text(
-              subtitle,
-              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
-              textAlign: TextAlign.center,
-            ),
+            Text(subtitle, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted), textAlign: TextAlign.center),
             if (actionLabel != null && onAction != null) ...[
               const SizedBox(height: 24),
-              Semantics(
-                button: true,
-                label: actionLabel!,
-                child: ElevatedButton(
-                  onPressed: onAction,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: ThixPolicy.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-                  ),
-                  child: Text(actionLabel!, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)),
-                ),
-              ),
+              Semantics(button: true, label: actionLabel!, child: ElevatedButton(onPressed: onAction, style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))), child: Text(actionLabel!, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold)))),
             ],
           ],
         ),
@@ -1028,29 +756,15 @@ class _SkeletonList extends StatelessWidget {
       itemCount: 6,
       itemBuilder: (_, __) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-        child: Row(
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade200,
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(height: 14, width: 150, color: Colors.grey.shade200),
-                  const SizedBox(height: 8),
-                  Container(height: 12, width: 200, color: Colors.grey.shade200),
-                ],
-              ),
-            ),
-          ],
-        ),
+        child: Row(children: [
+          Container(width: 52, height: 52, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)),
+          const SizedBox(width: 12),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Container(height: 14, width: 150, color: Colors.grey.shade200),
+            const SizedBox(height: 8),
+            Container(height: 12, width: 200, color: Colors.grey.shade200),
+          ])),
+        ]),
       ),
     );
   }
