@@ -1,4 +1,13 @@
 // lib/presentation/thix_market/pages/order_detail_page.dart
+// ============================================================================
+// ORDER DETAIL PAGE — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des prix dans la devise sélectionnée
+//  • ✅ Support 54 devises africaines via AfricanCurrencies
+//  • ✅ Indicateur visuel 💱 si prix convertis
+//  • ✅ Support FR / EN / SW via Localizations
+// ============================================================================
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,6 +20,9 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+import '../core/african_currencies.dart';
+import '../core/currency_service.dart';
+import '../providers/currency_provider.dart';
 import '../providers/market_providers.dart';
 
 const Duration _kTimeout = Duration(seconds: 15);
@@ -31,14 +43,26 @@ class _Validators {
     return t;
   }
 
-  static String money(num amount, String cur) =>
-      cur == '\$' ? '\$${amount.toStringAsFixed(2)}' : '${amount.toInt()} $cur';
-
-  static String currency(dynamic c) {
-    final v = (c ?? 'CDF').toString().toUpperCase().trim();
-    if (v == 'XOF' || v == 'CDF' || v == 'FCFA' || v == 'FC') return 'FC';
-    if (v == 'USD' || v == '\$') return '\$';
-    return v;
+  /// ✅ Normalise le code devise en ISO-4217 via AfricanCurrencies
+  static String normalizeCurrencyCode(dynamic c) {
+    if (c == null) return 'CDF';
+    final v = c.toString().toUpperCase().trim();
+    
+    // Vérifier si c'est une devise africaine connue
+    if (AfricanCurrencies.byCode(v) != null) return v;
+    
+    // Alias courants
+    final aliases = <String, String>{
+      'FC': 'CDF',
+      'FCFA': 'XOF',
+      r'$': 'USD',
+      'DOLLAR': 'USD',
+      'US': 'USD',
+      'EURO': 'EUR',
+      '€': 'EUR',
+    };
+    
+    return aliases[v] ?? 'CDF';
   }
 
   static int safeInt(dynamic v, {int fallback = 1}) {
@@ -409,6 +433,9 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final async = ref.watch(orderDetailProvider(widget.orderId));
+    
+    // ✅ Écouter le provider de devise pour rebuild si changement
+    ref.watch(currencyProvider);
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -454,13 +481,63 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
   }
 
   Widget _content(Map<String, dynamic> order, AppLocalizations l10n) {
+    final lang = Localizations.localeOf(context).languageCode;
+    
+    // ✅ Devise sélectionnée par l'utilisateur
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
+    
+    // ✅ Devise de la commande
+    final orderCurrencyCode = _Validators.normalizeCurrencyCode(order['currency']);
+    final orderCurrencyInfo = AfricanCurrencies.byCode(orderCurrencyCode);
+    final displayCurrencyInfo = AfricanCurrencies.byCode(displayCurrencyCode);
+    
+    // ✅ Détection de conversion
+    final isConverted = orderCurrencyCode != displayCurrencyCode;
+
     final status = (order['status'] ?? 'pending').toString();
     final items = List<Map<String, dynamic>>.from(order['items'] ?? []);
     final shop = order['shop'] as Map?;
-    final cur = _Validators.currency(order['currency']);
-    final total = ((order['total'] ?? order['total_amount'] ?? 0) as num);
-    final deliveryFee = ((order['shipping_cost'] ?? order['delivery_fee'] ?? 0) as num);
-    final subtotal = total - deliveryFee;
+    
+    // ✅ Extraction des montants dans la devise de la commande
+    final totalInOrderCurrency = ((order['total'] ?? order['total_amount'] ?? 0) as num).toDouble();
+    final deliveryFeeInOrderCurrency = ((order['shipping_cost'] ?? order['delivery_fee'] ?? 0) as num).toDouble();
+    final subtotalInOrderCurrency = totalInOrderCurrency - deliveryFeeInOrderCurrency;
+    
+    // ✅ Conversion vers la devise d'affichage
+    final convertedTotal = currencyService.convert(
+      totalInOrderCurrency,
+      from: orderCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final convertedDeliveryFee = currencyService.convert(
+      deliveryFeeInOrderCurrency,
+      from: orderCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    final convertedSubtotal = currencyService.convert(
+      subtotalInOrderCurrency,
+      from: orderCurrencyCode,
+      to: displayCurrencyCode,
+    );
+    
+    // ✅ Formatage des montants convertis
+    final formattedTotal = currencyService.formatPrice(
+      convertedTotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+    final formattedDeliveryFee = currencyService.formatPrice(
+      convertedDeliveryFee,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+    final formattedSubtotal = currencyService.formatPrice(
+      convertedSubtotal,
+      currencyCode: displayCurrencyCode,
+      lang: lang,
+    );
+
     final step = _stepIndex(status);
     final canConfirm = status == 'shipped' || status == 'processing';
     final canRefund = ['pending', 'confirmed', 'processing', 'shipped'].contains(status);
@@ -471,7 +548,47 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
       children: [
         _sleekSection(child: _timeline(step, status, l10n)),
         _sleekSection(child: _shopCard(shop, l10n)),
-        _sleekSection(child: _itemsCard(items, subtotal, deliveryFee, total, cur, l10n)),
+        
+        // ✅ Indicateur de conversion (si applicable)
+        if (isConverted)
+          Container(
+            width: double.infinity,
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: ThixPolicy.primary.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: ThixPolicy.primary.withOpacity(0.2)),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.currency_exchange_rounded, size: 16, color: ThixPolicy.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Prix convertis de ${orderCurrencyInfo?.displayName(lang) ?? orderCurrencyCode} en ${displayCurrencyInfo?.displayName(lang) ?? displayCurrencyCode}',
+                    style: ThixPolicy.captionStyle.copyWith(
+                      color: ThixPolicy.primary,
+                      fontWeight: ThixPolicy.semiBold,
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        
+        _sleekSection(child: _itemsCard(
+          items,
+          formattedSubtotal,
+          formattedDeliveryFee,
+          formattedTotal,
+          displayCurrencyCode,
+          isConverted,
+          l10n,
+          currencyService,
+          lang,
+        )),
         _sleekSection(child: _addressCard(order, l10n)),
 
         if (canConfirm) ...[
@@ -650,8 +767,18 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
     );
   }
 
-  // ✅ Tile adaptée à la structure réelle de order_items
-  Widget _itemsCard(List<Map<String, dynamic>> items, num subtotal, num fee, num total, String cur, AppLocalizations l10n) {
+  // ✅ Mis à jour avec conversion des prix articles
+  Widget _itemsCard(
+    List<Map<String, dynamic>> items,
+    String formattedSubtotal,
+    String formattedDeliveryFee,
+    String formattedTotal,
+    String displayCurrencyCode,
+    bool isConverted,
+    AppLocalizations l10n,
+    CurrencyService currencyService,
+    String lang,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -683,8 +810,29 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
               maxLength: 80,
             );
             final qty = _Validators.safeInt(it['quantity'] ?? it['qty']);
-            final price = (it['price'] ?? it['unit_price'] ?? 0) as num;
-            final itemCur = _Validators.currency(it['currency'] ?? product['currency'] ?? cur);
+            
+            // ✅ Prix unitaire dans la devise de l'article
+            final itemCurrencyCode = _Validators.normalizeCurrencyCode(it['currency'] ?? product['currency']);
+            final priceInItemCurrency = (it['price'] ?? it['unit_price'] ?? 0) as num;
+            
+            // ✅ Conversion vers la devise d'affichage
+            final convertedUnitPrice = currencyService.convert(
+              priceInItemCurrency.toDouble(),
+              from: itemCurrencyCode,
+              to: displayCurrencyCode,
+            );
+            final convertedItemTotal = convertedUnitPrice * qty;
+            
+            final formattedUnitPrice = currencyService.formatPrice(
+              convertedUnitPrice,
+              currencyCode: displayCurrencyCode,
+              lang: lang,
+            );
+            final formattedItemTotal = currencyService.formatPrice(
+              convertedItemTotal,
+              currencyCode: displayCurrencyCode,
+              lang: lang,
+            );
 
             return Padding(
               padding: const EdgeInsets.only(bottom: 16),
@@ -714,33 +862,73 @@ class _OrderDetailPageState extends ConsumerState<OrderDetailPage> {
                       children: [
                         Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.bodyStyle.copyWith(fontWeight: FontWeight.w700, height: 1.2)),
                         const SizedBox(height: 4),
-                        Text('${l10n.t('order_detail_qty')}: $qty  •  ${_Validators.money(price, itemCur)}/u',
-                            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600)),
+                        Text(
+                          '${l10n.t('order_detail_qty')}: $qty  •  $formattedUnitPrice/u',
+                          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
+                        ),
                       ],
                     ),
                   ),
-                  Text(_Validators.money(price * qty, itemCur),
-                      style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w900, fontSize: 15)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        formattedItemTotal,
+                        style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.w900, fontSize: 15),
+                      ),
+                      // ✅ Indicateur de conversion si devises différentes
+                      if (isConverted) ...[
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.currency_exchange_rounded,
+                          size: 12,
+                          color: ThixPolicy.primary,
+                        ),
+                      ],
+                    ],
+                  ),
                 ],
               ),
             );
           }),
         Divider(color: ThixPolicy.border.withValues(alpha: 0.3), height: 32),
-        _totalRow(l10n.t('order_detail_subtotal'), _Validators.money(subtotal, cur), false),
+        _totalRow(l10n.t('order_detail_subtotal'), formattedSubtotal, false, isConverted),
         const SizedBox(height: 8),
-        _totalRow(l10n.t('order_detail_delivery'), _Validators.money(fee, cur), false),
+        _totalRow(l10n.t('order_detail_delivery'), formattedDeliveryFee, false, isConverted),
         const SizedBox(height: 16),
-        _totalRow(l10n.t('order_detail_total'), _Validators.money(total, cur), true),
+        _totalRow(l10n.t('order_detail_total'), formattedTotal, true, isConverted),
       ],
     );
   }
 
-  Widget _totalRow(String label, String value, bool highlight) {
+  // ✅ Mis à jour avec indicateur de conversion sur le total
+  Widget _totalRow(String label, String value, bool highlight, bool showConversionIcon) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         Text(label, style: ThixPolicy.labelStyle.copyWith(fontWeight: highlight ? FontWeight.w800 : FontWeight.w600, color: highlight ? ThixPolicy.textMain : ThixPolicy.textSecondary, fontSize: highlight ? 15 : 13)),
-        Text(value, style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w900, color: highlight ? ThixPolicy.primaryDeep : ThixPolicy.textMain, fontSize: highlight ? 18 : 14)),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(value, style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w900, color: highlight ? ThixPolicy.primaryDeep : ThixPolicy.textMain, fontSize: highlight ? 18 : 14)),
+            // ✅ Indicateur de conversion sur le total
+            if (showConversionIcon && highlight) ...[
+              const SizedBox(width: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Icon(
+                  Icons.currency_exchange_rounded,
+                  size: 12,
+                  color: ThixPolicy.primary,
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
