@@ -1536,11 +1536,15 @@ class _CurrencyDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Localizations.localeOf(context).languageCode;
+    final sortedCurrencies = AfricanCurrencies.sorted(lang);
+    
     return Semantics(
       label: context.mkt.currencyLabel,
       child: DropdownButtonFormField<String>(
         value: value,
         isExpanded: true,
+        menuMaxHeight: 420,
         decoration: InputDecoration(
           labelText: context.mkt.currencyLabel,
           filled: true,
@@ -1560,10 +1564,15 @@ class _CurrencyDropdown extends StatelessWidget {
           ),
         ),
         dropdownColor: ThixPolicy.card,
-        items: const [
-          DropdownMenuItem(value: 'USD', child: Text('USD (\$)')),
-          DropdownMenuItem(value: 'CDF', child: Text('CDF (FC)')),
-        ],
+        items: sortedCurrencies.map((cur) {
+          return DropdownMenuItem(
+            value: cur.code,
+            child: Text(
+              '${cur.symbol}  ${cur.displayName(lang)}',
+              overflow: TextOverflow.ellipsis,
+            ),
+          );
+        }).toList(),
         onChanged: onChanged,
       ),
     );
