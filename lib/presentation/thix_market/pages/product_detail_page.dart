@@ -1,11 +1,13 @@
 // lib/presentation/thix_market/pages/product_detail_page.dart
 // ============================================================================
-// PRODUCT DETAIL PAGE — Production Enterprise v5
+// PRODUCT DETAIL PAGE — Production Enterprise v6
 // ----------------------------------------------------------------------------
 //  • ✅ Conversion automatique des prix dans la devise sélectionnée
 //  • ✅ Formatage intelligent (milliers, décimales selon devise)
 //  • ✅ Indicateur visuel si devise différente du vendeur
 //  • ✅ Support FR / EN / SW via Localizations
+//  • ✅ Bouton Chat : crée/retrouve la conversation avec le vendeur et ouvre
+//     le chat avec le produit en référence (style Alibaba)
 // ============================================================================
 
 import 'dart:async';
@@ -20,6 +22,7 @@ import 'package:html/parser.dart' as html_parser;
 
 import '../core/african_countries.dart';
 import '../core/african_currencies.dart';
+import '../core/chat_service.dart';
 import '../core/currency_service.dart';
 import '../providers/currency_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -287,6 +290,7 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
   String? _variant;
   String? _colorSel;
   bool _adding = false;
+  bool _openingChat = false;
   bool _descExpanded = false;
   int _imgIndex = 0;
 
@@ -404,23 +408,102 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     }
   }
 
-  void _openChat(Map<String, dynamic> product) {
-    HapticFeedback.selectionClick();
-    final shop = product['shop'] as Map<String, dynamic>?;
-    final shopId = product['shop_id'];
+  String? _firstImage(Map<String, dynamic> product) {
+    final raw = product['images'];
+    if (raw is List) {
+      for (final e in raw) {
+        final u = _V.sanitizeUrl(e?.toString());
+        if (u != null) return u;
+      }
+    }
+    return _V.sanitizeUrl(product['image_url']?.toString());
+  }
 
-    if (shopId == null) {
+  /// Ouvre le chat avec le vendeur, produit en référence (style Alibaba).
+  Future<void> _openChat(Map<String, dynamic> product) async {
+    if (_openingChat) return;
+    HapticFeedback.selectionClick();
+
+    final shop = product['shop'] is Map ? Map<String, dynamic>.from(product['shop'] as Map) : null;
+    final shopId = product['shop_id']?.toString();
+
+    if (shopId == null || shopId.isEmpty) {
       _showError(_t(context, 'Boutique indisponible', 'Store unavailable', 'Duka halipatikani'));
       return;
     }
 
-    final name = _V.sanitize(shop?['name']?.toString() ?? 'Vendeur', maxLength: 60);
+    final db = ref.read(supabaseClientProvider);
+    if (db.auth.currentUser == null) {
+      _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
+      return;
+    }
+
+    final sellerId = ChatService.sellerIdFrom(product, shop);
+    if (sellerId == null) {
+      _showError(_t(context, 'Vendeur indisponible', 'Seller unavailable', 'Muuzaji hapatikani'));
+      return;
+    }
+
+    final lang = Localizations.localeOf(context).languageCode;
+    final name = _V.sanitize(
+      shop?['name']?.toString() ?? _t(context, 'Vendeur', 'Seller', 'Muuzaji'),
+      maxLength: 60,
+    );
     final avatar = _V.sanitizeUrl(shop?['logo_url']?.toString());
 
-    context.push(
-      '/market/chat/$shopId',
-      extra: {'title': name, 'userName': name, 'userAvatar': avatar},
-    );
+    // Prix unitaire (promo si valide) dans la devise du vendeur
+    final price = _V.toNum(product['price'])?.toDouble();
+    final dp = _V.toNum(product['discount_price'])?.toDouble();
+    final hasDiscount = price != null && dp != null && dp > 0 && dp < price;
+    final unitPrice = hasDiscount ? dp : price;
+    final sellerCurrency = (product['currency'] ?? 'CDF').toString().toUpperCase();
+
+    setState(() => _openingChat = true);
+    try {
+      final convId = await ChatService(db).getOrCreateConversation(otherUserId: sellerId);
+      if (!mounted) return;
+
+      context.push(
+        '/market/chat/$convId',
+        extra: {
+          'title': name,
+          'userName': name,
+          'userAvatar': avatar,
+          'shopId': shopId,
+          'sellerId': sellerId,
+          'isProductChat': true,
+          'locale': lang,
+          'productContext': {
+            'id': widget.productId,
+            'title': _V.sanitize(product['title']?.toString(), maxLength: 150),
+            'price': unitPrice,
+            'currency_code': sellerCurrency,
+            'image_url': _firstImage(product),
+            'shop_id': shopId,
+          },
+        },
+      );
+    } on ChatException catch (e) {
+      debugPrint('[ProductDetail] ❌ Open chat: $e');
+      switch (e.code) {
+        case 'not_logged_in':
+          _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
+          break;
+        case 'self_chat':
+          _showError(_t(context, "C'est votre propre boutique", 'This is your own store', 'Hii ni duka lako'));
+          break;
+        case 'no_seller':
+          _showError(_t(context, 'Vendeur indisponible', 'Seller unavailable', 'Muuzaji hapatikani'));
+          break;
+        default:
+          _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.", 'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
+      }
+    } catch (e) {
+      debugPrint('[ProductDetail] ❌ Open chat: $e');
+      _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.", 'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
+    } finally {
+      if (mounted) setState(() => _openingChat = false);
+    }
   }
 
   void _openShop(String? shopId) {
@@ -565,14 +648,14 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   Widget _buildContent(Map<String, dynamic> product, bool isFav) {
     final lang = Localizations.localeOf(context).languageCode;
-    
+
     // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
     final displayCurrencyCode = ref.watch(currencyProvider);
-    
+
     // Devise du vendeur (stockée dans le produit)
     final sellerCurrencyCode = (product['currency'] ?? 'CDF').toString().toUpperCase();
     final isDifferentCurrency = sellerCurrencyCode != displayCurrencyCode;
-    
+
     final currencyService = CurrencyService.instance;
 
     // ─── Images ───
@@ -794,24 +877,28 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         ),
                       ),
                       if ((product['city']?.toString().trim().isNotEmpty ?? false) ||
-    product['country'] != null) ...[
-  const SizedBox(height: 6),
-  Row(
-    children: [
-      const Icon(Icons.location_on_outlined, size: 14, color: ThixPolicy.textMuted),
-      const SizedBox(width: 4),
-      Flexible(
-        child: Text(
-          AfricanCountries.locationLine(
-            city: product['city']?.toString() ?? '',
-            code: product['country']?.toString(),
-          ),
-          style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.w600),
-        ),
-      ),
-    ],
-  ),
-],
+                          product['country'] != null) ...[
+                        const SizedBox(height: 6),
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on_outlined, size: 14, color: ThixPolicy.textMuted),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                AfricanCountries.locationLine(
+                                  city: product['city']?.toString() ?? '',
+                                  code: product['country']?.toString(),
+                                ),
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: ThixPolicy.textSecondary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
@@ -1071,7 +1158,8 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                 _bottomIconBtn(
                   icon: Icons.chat_bubble_outline_rounded,
                   label: 'Chat',
-                  onTap: () => _openChat(product),
+                  loading: _openingChat,
+                  onTap: _openingChat ? null : () => _openChat(product),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
@@ -1344,7 +1432,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     );
   }
 
-  Widget _bottomIconBtn({required IconData icon, required String label, VoidCallback? onTap}) {
+  Widget _bottomIconBtn({
+    required IconData icon,
+    required String label,
+    VoidCallback? onTap,
+    bool loading = false,
+  }) {
     return Semantics(
       button: true,
       label: label,
@@ -1358,7 +1451,17 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(icon, color: onTap == null ? ThixPolicy.textDisabled : ThixPolicy.textMain, size: 22),
+                if (loading)
+                  const SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: Padding(
+                      padding: EdgeInsets.all(2),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
+                    ),
+                  )
+                else
+                  Icon(icon, color: onTap == null ? ThixPolicy.textDisabled : ThixPolicy.textMain, size: 22),
                 const SizedBox(height: 2),
                 Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600)),
               ],
