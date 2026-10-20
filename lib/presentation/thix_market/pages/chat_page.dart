@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/chat_page.dart
 // ============================================================================
-// CHAT PAGE — Production Enterprise v7 (Alibaba-style)
+// CHAT PAGE — Production Enterprise v7 (Alibaba-style) + EXCEPTION THIX MARKET
 // ----------------------------------------------------------------------------
 //  • extra lu depuis le widget OU directement depuis GoRouterState
 //  • Nom / logo / boutique retrouvés en base si absents
@@ -9,6 +9,7 @@
 //  • Carte produit cliquable dans les bulles, prix converti en temps réel
 //  • Temps réel, indicateur de saisie, accusés de lecture, séparateurs de date
 //  • 3 langues FR / EN / SW (sans dépendre de clés l10n)
+//  ✅ EXCEPTION THIX MARKET : visiteurs non connectés peuvent envoyer (session anonyme)
 // ============================================================================
 
 import 'dart:async';
@@ -208,6 +209,9 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _service = ChatService(ref.read(supabaseClientProvider));
     debugPrint('[Chat] 💬 Opened conversation ${widget.conversationId}');
 
+    // ✅ EXCEPTION THIX MARKET : garantir une session (anonyme si nécessaire) au démarrage
+    unawaited(_ensureSession());
+
     if (_ChatValidators.isValidId(widget.conversationId)) {
       _typingChannel = _service.subscribeTyping(widget.conversationId, (userId, typing) {
         if (!mounted || userId == _me) return;
@@ -231,6 +235,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     _extrasLoaded = true;
     _extractExtraData();
     _resolvePeerIfNeeded();
+  }
+
+  /// ✅ EXCEPTION THIX MARKET : Garantit une session (invité anonyme si nécessaire) avant tout envoi
+  Future<bool> _ensureSession() async {
+    final db = ref.read(supabaseClientProvider);
+    if (db.auth.currentUser != null) return true;
+    
+    try {
+      await db.auth.signInAnonymously();
+      if (mounted) setState(() {}); // Refresh _me getter
+      debugPrint('[Chat] ✓ Anonymous session created');
+      return true;
+    } catch (e) {
+      debugPrint('[Chat] ❌ anon sign-in: $e');
+      return false;
+    }
   }
 
   /// Lit `extra` depuis le widget, sinon directement depuis GoRouterState
@@ -349,6 +369,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   // ─── ENVOI TEXTE ───
   Future<void> _sendMessage() async {
+    // ✅ EXCEPTION THIX MARKET : Garantir une session avant envoi
+    if (!await _ensureSession()) {
+      _showError(_tr(context, 'Connexion impossible. Réessayez.',
+          'Connection failed. Try again.', 'Imeshindwa kuunganisha. Jaribu tena.'));
+      return;
+    }
+    
     final text = _ChatValidators.sanitize(_controller.text, maxLength: _kMaxMessageLength);
     if (text.isEmpty || _isSending) return;
     if (!_ChatValidators.isValidId(widget.conversationId)) return;
@@ -371,6 +398,13 @@ class _ChatPageState extends ConsumerState<ChatPage> {
 
   // ─── ENVOI CARTE PRODUIT ───
   Future<void> _sendProductCard() async {
+    // ✅ EXCEPTION THIX MARKET : Garantir une session avant envoi
+    if (!await _ensureSession()) {
+      _showError(_tr(context, 'Connexion impossible. Réessayez.',
+          'Connection failed. Try again.', 'Imeshindwa kuunganisha. Jaribu tena.'));
+      return;
+    }
+    
     final ctx = _productContext;
     if (ctx == null || _isSendingProduct) return;
     if (!_ChatValidators.isValidId(widget.conversationId)) return;
@@ -389,6 +423,22 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       debugPrint('[Chat] 📎 Product card sent');
     } catch (e) {
       debugPrint('[Chat] ❌ Product send error: $e');
+      
+      // ✅ EXCEPTION THIX MARKET : retry automatique si la session était morte
+      if (e is ChatException && e.code == 'not_logged_in' && await _ensureSession()) {
+        try {
+          final ref0 = ProductRef.fromContext({
+            ...ctx,
+            'currency_code': _ChatValidators.normalizeCurrencyCode(ctx['currency_code']),
+            'shop_id': ctx['shop_id'] ?? (_shopId.isEmpty ? null : _shopId),
+          });
+          await _service.sendProduct(widget.conversationId, ref0);
+          if (mounted) setState(() => _sentProductIds.add(ref0.id));
+          debugPrint('[Chat] 📎 Product card sent (retry after session)');
+          return;
+        } catch (_) {}
+      }
+      
       _showError(_tr(context, 'Produit non envoyé. Réessayez.', 'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _isSendingProduct = false);
@@ -672,7 +722,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
                 },
               ),
             ],
-          ),
+          ],
         ),
       ),
     );
