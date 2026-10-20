@@ -1,8 +1,14 @@
 // lib/presentation/auth/login_page.dart
 //
 // ============================================================================
-// 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly) — v2
+// 🔐 LOGIN PAGE — THIX HUB (Enterprise · Design épuré · UX-friendly) — v3
 // ============================================================================
+// ✅ v3 : plus jamais d'écran "mort" après une déconnexion
+//    • chargement LOCAL (_signingIn) dès le clic, au lieu du provider global
+//    • timeout sur CHAQUE appel réseau + message "erreur réseau" (non compté
+//      comme mauvais mot de passe)
+//    • reset d'un provider d'auth resté bloqué + resynchro du routeur à l'ouverture
+//    • logs [Login] ⏳/✓/✗ avec durée de chaque étape
 // ✅ FIX Google : redirectTo = thix://login-callback (deep link) sur mobile
 //    → plus de page web / 404 : authentification puis retour dans l'application
 // ✅ FIX Google : écoute de la session AVANT l'ouverture du navigateur
@@ -66,6 +72,11 @@ const int _kResetLockSeconds = 300;
 const int _kGoogleAuthTimeoutSeconds = 60;
 const int _kGoogleMaxAttempts = 8;
 const int _kGoogleLockSeconds = 600;
+
+// Réseau — aucune requête ne doit pouvoir bloquer l'écran indéfiniment
+const Duration _kNetTimeout = Duration(seconds: 10);
+const Duration _kSignInTimeout = Duration(seconds: 30);
+const Duration _kFireAndForgetTimeout = Duration(seconds: 6);
 
 /// Deep link de retour OAuth (scheme "thix" déclaré dans le Manifest Android).
 /// À ajouter dans Supabase → Authentication → URL Configuration → Redirect URLs.
@@ -154,6 +165,26 @@ String _fmtWait(BuildContext ctx, int seconds) {
     return '${(seconds / 60).ceil()} ${_tx(ctx, 'login_minutes_short')}';
   }
   return '$seconds${_tx(ctx, 'login_seconds_suffix')}';
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// RÉSEAU — timeout + log de durée (identifie l'étape qui bloque)
+// ════════════════════════════════════════════════════════════════════════════
+Future<T> _timed<T>(
+  String label,
+  Future<T> Function() fn, {
+  Duration timeout = _kNetTimeout,
+}) async {
+  final sw = Stopwatch()..start();
+  debugPrint('[Login] ⏳ $label…');
+  try {
+    final r = await fn().timeout(timeout);
+    debugPrint('[Login] ✓ $label (${sw.elapsedMilliseconds} ms)');
+    return r;
+  } catch (e) {
+    debugPrint('[Login] ✗ $label (${sw.elapsedMilliseconds} ms): $e');
+    rethrow;
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
@@ -309,6 +340,11 @@ class _AntiBotEngine {
 // AUTH ERROR TRANSLATOR
 // ════════════════════════════════════════════════════════════════════════════
 String _translateAuthError(Object e, AppLocalizations l10n) {
+  // Délai dépassé = problème réseau, pas un mauvais mot de passe.
+  if (e is TimeoutException) {
+    return l10n.t('auth_error_network');
+  }
+
   if (e is AuthException) {
     switch (e.code) {
       case AuthErrorCode.identifierRequired:
@@ -665,6 +701,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
   Timer? _resetCooldownTimer;
 
   bool _isInitialVerifying = true;
+  Timer? _initWatchdog;
+
+  /// Chargement LOCAL de la connexion par mot de passe (démarre dès le clic,
+  /// se remet toujours à zéro) — ne dépend plus d'un état global resté bloqué.
+  bool _signingIn = false;
+
   bool _googleLoading = false;
   String? _identifierError;
   String? _passwordError;
@@ -678,7 +720,17 @@ class _LoginPageState extends ConsumerState<LoginPage>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Filet de sécurité : l'écran n'attend jamais plus de 6 s la vérification initiale.
+    _initWatchdog = Timer(const Duration(seconds: 6), () {
+      if (mounted && _isInitialVerifying) {
+        debugPrint('[Login] ⚠️ Initial verification watchdog released the screen');
+        setState(() => _isInitialVerifying = false);
+      }
+    });
+
     _checkInitialSession();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _prepareFreshLogin());
   }
 
   Future<void> _checkInitialSession() async {
@@ -697,6 +749,26 @@ class _LoginPageState extends ConsumerState<LoginPage>
     }
   }
 
+  /// Après une déconnexion, des états globaux peuvent rester dans un état périmé
+  /// (provider d'auth bloqué en chargement / en erreur, contrôleur du routeur
+  /// qui croit encore l'utilisateur connecté). On les remet d'aplomb à l'ouverture.
+  Future<void> _prepareFreshLogin() async {
+    try {
+      final hasSession = Supabase.instance.client.auth.currentSession != null;
+      if (hasSession) return;
+
+      final st = ref.read(authControllerProvider);
+      if (st.isLoading || st.hasError) {
+        debugPrint(
+            '[Login] 🔄 Reset du provider d\'auth (loading=${st.isLoading}, error=${st.hasError})');
+        ref.invalidate(authControllerProvider);
+      }
+      await _syncRouterController();
+    } catch (e) {
+      debugPrint('[Login] ⚠️ prepareFreshLogin: $e');
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -706,6 +778,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
     _honeyC.dispose();
     _lockoutTimer?.cancel();
     _resetCooldownTimer?.cancel();
+    _initWatchdog?.cancel();
     super.dispose();
   }
 
@@ -844,7 +917,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
           'timestamp': DateTime.now().toIso8601String(),
         },
         'created_at': DateTime.now().toIso8601String(),
-      });
+      }).timeout(_kFireAndForgetTimeout);
     } catch (e) {
       debugPrint('[Login] ⚠️ Failed to log attempt: $e');
     }
@@ -853,9 +926,12 @@ class _LoginPageState extends ConsumerState<LoginPage>
   // ── RATE LIMITING SERVEUR (source de vérité) ─────────────────────
   Future<bool> _checkLoginAllowed(String identifier) async {
     try {
-      final result = await Supabase.instance.client.rpc(
-        'check_login_allowed',
-        params: {'p_identifier': identifier},
+      final result = await _timed(
+        'rpc check_login_allowed',
+        () => Supabase.instance.client.rpc(
+          'check_login_allowed',
+          params: {'p_identifier': identifier},
+        ),
       );
       final map = result is Map
           ? Map<String, dynamic>.from(result)
@@ -877,7 +953,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       await Supabase.instance.client.rpc(
         'record_failed_login',
         params: {'p_identifier': identifier},
-      );
+      ).timeout(_kFireAndForgetTimeout);
     } catch (e) {
       debugPrint('[Login] ⚠️ record_failed_login failed: $e');
     }
@@ -888,7 +964,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       await Supabase.instance.client.rpc(
         'clear_login_attempts',
         params: {'p_identifier': identifier},
-      );
+      ).timeout(_kFireAndForgetTimeout);
     } catch (e) {
       debugPrint('[Login] ⚠️ clear_login_attempts failed: $e');
     }
@@ -1000,6 +1076,8 @@ class _LoginPageState extends ConsumerState<LoginPage>
 
   // ── SIGN IN (mot de passe) ───────────────────────────────────────
   Future<void> _signIn() async {
+    if (_signingIn) return;
+
     final l10n = AppLocalizations.of(context);
     FocusScope.of(context).unfocus();
 
@@ -1014,6 +1092,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
     // 🔒 Garde-fou UI léger : 5 échecs en 60 s → pause 10 s.
     final uiPause = await _Throttle.blockedSeconds('login_ui_burst');
     if (uiPause > 0) {
+      if (!mounted) return;
       _showError(_tx(context, 'login_error_too_many_attempts',
           args: [_fmtWait(context, uiPause)]));
       return;
@@ -1051,29 +1130,37 @@ class _LoginPageState extends ConsumerState<LoginPage>
       return;
     }
 
-    // 🌐 Rate limiting serveur (source de vérité)
-    final allowed = await _checkLoginAllowed(identifier.toLowerCase());
-    if (!allowed) {
-      _showError(
-        '${l10n.t('login_error_too_many_attempts_prefix')} '
-        '$_lockoutSecondsLeft${_tx(context, 'login_seconds_suffix')}',
-      );
-      return;
-    }
-
+    // ⏳ Le chargement démarre IMMÉDIATEMENT (avant tout appel réseau)
+    // et se remet TOUJOURS à zéro dans le finally.
+    setState(() => _signingIn = true);
     HapticFeedback.mediumImpact();
-    final authNotifier = ref.read(authControllerProvider.notifier);
 
     try {
+      // 🌐 Rate limiting serveur (source de vérité)
+      final allowed = await _checkLoginAllowed(identifier.toLowerCase());
+      if (!allowed) {
+        if (mounted) {
+          _showError(
+            '${l10n.t('login_error_too_many_attempts_prefix')} '
+            '$_lockoutSecondsLeft${_tx(context, 'login_seconds_suffix')}',
+          );
+        }
+        return;
+      }
+
+      final authNotifier = ref.read(authControllerProvider.notifier);
       String finalIdentifier = identifier;
 
       // 1. Résolution téléphone → email
       if (_LoginValidators.looksLikePhone(identifier) &&
           !identifier.contains('@')) {
         try {
-          final response = await Supabase.instance.client.rpc(
-            'resolve_phone_to_email',
-            params: {'p_phone': identifier},
+          final response = await _timed(
+            'rpc resolve_phone_to_email',
+            () => Supabase.instance.client.rpc(
+              'resolve_phone_to_email',
+              params: {'p_phone': identifier},
+            ),
           );
           if (response is String && response.isNotEmpty) {
             finalIdentifier = response;
@@ -1084,34 +1171,43 @@ class _LoginPageState extends ConsumerState<LoginPage>
           await _logLoginAttempt(
             identifier: identifier,
             success: false,
-            failureReason: 'phone_resolution_failed',
+            failureReason: e is TimeoutException
+                ? 'network_timeout'
+                : 'phone_resolution_failed',
           );
           rethrow;
         }
       }
 
       // 2. Liste noire
-      final blocked = await Supabase.instance.client.rpc(
-        'is_blocked',
-        params: {
-          'p_type': 'identifier',
-          'p_value': finalIdentifier.toLowerCase(),
-        },
+      final blocked = await _timed(
+        'rpc is_blocked',
+        () => Supabase.instance.client.rpc(
+          'is_blocked',
+          params: {
+            'p_type': 'identifier',
+            'p_value': finalIdentifier.toLowerCase(),
+          },
+        ),
       );
       if (blocked == true) {
         SecurityReporter.reportLoginBlocked(
           identifier: finalIdentifier,
           reason: 'identifiant en liste noire',
         );
-        _showError(l10n.t('login_error_suspended'));
+        if (mounted) _showError(l10n.t('login_error_suspended'));
         return;
       }
 
       // 3. Connexion
-      await authNotifier.signIn(
-        identifier: finalIdentifier,
-        password: password,
-        rememberMe: _rememberMe,
+      await _timed(
+        'auth.signIn',
+        () => authNotifier.signIn(
+          identifier: finalIdentifier,
+          password: password,
+          rememberMe: _rememberMe,
+        ),
+        timeout: _kSignInTimeout,
       );
 
       if (!mounted) return;
@@ -1130,31 +1226,41 @@ class _LoginPageState extends ConsumerState<LoginPage>
       if (kDebugMode) debugPrint('[Login] ❌ Sign in error: $e');
       if (!mounted) return;
 
+      final isNetworkIssue = e is TimeoutException;
       final loginIdentifier = _identifierC.text.trim();
-      final reason = e is AuthException ? e.code.name : e.toString();
+      final reason = isNetworkIssue
+          ? 'network_timeout'
+          : (e is AuthException ? e.code.name : e.toString());
 
       await _logLoginAttempt(
         identifier: loginIdentifier,
         success: false,
         failureReason: reason,
       );
-      SecurityReporter.reportLoginFailure(
-        identifier: loginIdentifier,
-        reason: reason,
-      );
 
-      // Serveur : enregistre l'échec pour le vrai lockout
-      await _recordFailedLogin(loginIdentifier.toLowerCase());
+      // Un délai dépassé n'est pas un mauvais mot de passe : on ne le compte pas.
+      if (!isNetworkIssue) {
+        SecurityReporter.reportLoginFailure(
+          identifier: loginIdentifier,
+          reason: reason,
+        );
 
-      // UI : simple garde-fou anti-burst (5 échecs / 60 s → 10 s de pause)
-      await _Throttle.hit(
-        'login_ui_burst',
-        _kUiBurstMaxAttempts,
-        _kUiBurstPauseSeconds,
-      );
+        // Serveur : enregistre l'échec pour le vrai lockout
+        await _recordFailedLogin(loginIdentifier.toLowerCase());
 
-      _antiBot.registerFailure();
-      _showError(_translateAuthError(e, l10n));
+        // UI : simple garde-fou anti-burst (5 échecs / 60 s → 10 s de pause)
+        await _Throttle.hit(
+          'login_ui_burst',
+          _kUiBurstMaxAttempts,
+          _kUiBurstPauseSeconds,
+        );
+
+        _antiBot.registerFailure();
+      }
+
+      if (mounted) _showError(_translateAuthError(e, l10n));
+    } finally {
+      if (mounted) setState(() => _signingIn = false);
     }
   }
 
@@ -1163,7 +1269,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
     final l10n = AppLocalizations.of(context);
     FocusScope.of(context).unfocus();
 
-    if (_googleLoading || _lockoutSecondsLeft > 0) return;
+    if (_googleLoading || _signingIn || _lockoutSecondsLeft > 0) return;
 
     // 🤖 Anti-bot silencieux + garde-fou UI
     _antiBot.setHoneypot(_honeyC.text);
@@ -1249,11 +1355,13 @@ class _LoginPageState extends ConsumerState<LoginPage>
         reason: reason,
       );
       final msg = e.toString().toLowerCase();
-      _showError(
-        msg.contains('google_launch_failed') || msg.contains('oauth')
-            ? _tx(context, 'login_google_failed')
-            : _translateAuthError(e, l10n),
-      );
+      if (mounted) {
+        _showError(
+          msg.contains('google_launch_failed') || msg.contains('oauth')
+              ? _tx(context, 'login_google_failed')
+              : _translateAuthError(e, l10n),
+        );
+      }
     } finally {
       _endGoogleWait(false);
       if (mounted) setState(() => _googleLoading = false);
@@ -1275,7 +1383,10 @@ class _LoginPageState extends ConsumerState<LoginPage>
     await _Throttle.hit('reset_send', _kResetMaxAttempts, _kResetLockSeconds);
 
     try {
-      await Supabase.instance.client.auth.resetPasswordForEmail(email);
+      await _timed(
+        'auth.resetPasswordForEmail',
+        () => Supabase.instance.client.auth.resetPasswordForEmail(email),
+      );
       await _logLoginAttempt(
         identifier: email,
         success: true,
@@ -1326,8 +1437,9 @@ class _LoginPageState extends ConsumerState<LoginPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final authState = ref.watch(authControllerProvider);
-    final isLoading = authState.isLoading || _isInitialVerifying;
+    // Chargement 100 % local : un provider global resté en "chargement"
+    // après une déconnexion ne peut plus bloquer le bouton.
+    final isLoading = _signingIn || _isInitialVerifying;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -2111,12 +2223,15 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       }
       setState(() => _isSending = true);
       HapticFeedback.mediumImpact();
-      await widget.onSendReset(email);
-      if (mounted) {
-        setState(() {
-          _isSending = false;
-          _isOtpSent = true;
-        });
+      try {
+        await widget.onSendReset(email);
+      } finally {
+        if (mounted) {
+          setState(() {
+            _isSending = false;
+            _isOtpSent = true;
+          });
+        }
       }
       return;
     }
@@ -2151,15 +2266,17 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     HapticFeedback.mediumImpact();
 
     try {
-      final res = await Supabase.instance.client.auth.verifyOTP(
-        email: _emailC.text.trim(),
-        token: otp,
-        type: OtpType.recovery,
-      );
+      final res = await Supabase.instance.client.auth
+          .verifyOTP(
+            email: _emailC.text.trim(),
+            token: otp,
+            type: OtpType.recovery,
+          )
+          .timeout(_kNetTimeout);
       if (res.user != null) {
-        await Supabase.instance.client.auth.updateUser(
-          UserAttributes(password: newPass),
-        );
+        await Supabase.instance.client.auth
+            .updateUser(UserAttributes(password: newPass))
+            .timeout(_kNetTimeout);
         await widget.logAttempt(
           identifier: _emailC.text.trim(),
           success: true,
@@ -2187,6 +2304,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           ),
         );
+      } else if (mounted) {
+        setState(() => _isSending = false);
       }
     } catch (e) {
       debugPrint('[Login] ❌ Password reset error: $e');
