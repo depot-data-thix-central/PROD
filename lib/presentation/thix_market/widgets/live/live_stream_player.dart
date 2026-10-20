@@ -170,7 +170,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
           // ✅ Compteur spectateurs temps réel
           onRtcStats: (RtcConnection connection, RtcStats stats) {
             if (mounted && widget.isHost) {
-              setState(() => _viewerCount = stats.userCount);
+              setState(() => _viewerCount = stats.userCount ?? 0);
             }
           },
           onError: (ErrorCodeType err, String msg) {
