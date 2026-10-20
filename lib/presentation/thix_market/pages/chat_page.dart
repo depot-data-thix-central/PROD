@@ -404,7 +404,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           'Connection failed. Try again.', 'Imeshindwa kuunganisha. Jaribu tena.'));
       return;
     }
-    
+
     final ctx = _productContext;
     if (ctx == null || _isSendingProduct) return;
     if (!_ChatValidators.isValidId(widget.conversationId)) return;
@@ -423,7 +423,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
       debugPrint('[Chat] 📎 Product card sent');
     } catch (e) {
       debugPrint('[Chat] ❌ Product send error: $e');
-      
+
       // ✅ EXCEPTION THIX MARKET : retry automatique si la session était morte
       if (e is ChatException && e.code == 'not_logged_in' && await _ensureSession()) {
         try {
@@ -438,7 +438,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
           return;
         } catch (_) {}
       }
-      
+
       _showError(_tr(context, 'Produit non envoyé. Réessayez.', 'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _isSendingProduct = false);
