@@ -396,7 +396,7 @@ class _ChatPageState extends ConsumerState<ChatPage> {
     }
   }
 
-  // ─── ENVOI CARTE PRODUIT ───
+// ─── ENVOI CARTE PRODUIT ───
   Future<void> _sendProductCard() async {
     // ✅ EXCEPTION THIX MARKET : Garantir une session avant envoi
     if (!await _ensureSession()) {
@@ -439,12 +439,12 @@ class _ChatPageState extends ConsumerState<ChatPage> {
         } catch (_) {}
       }
 
-      _showError(_tr(context, 'Produit non envoyé. Réessayez.', 'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
+      _showError(_tr(context, 'Produit non envoyé. Réessayez.',
+          'Product not sent. Try again.', 'Bidhaa haijatumwa. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _isSendingProduct = false);
     }
   }
-
   // ─── NAVIGATION ───
   void _openProduct(String? productId) {
     if (!_ChatValidators.isValidId(productId)) return;
