@@ -1,25 +1,47 @@
 // lib/presentation/thix_market/widgets/live/live_stream_player.dart
 // ============================================================================
-// LIVE STREAM PLAYER — PROD Enterprise
-// Intégration Live Shopping :
-//   ✅ Pré-pin produits au démarrage du live (hôte)
-//   ✅ Overlay bouton "Produits" flottant (hôte)
-//   ✅ Overlay carousel produits + bouton vote (spectateur)
-//   ✅ Riverpod providers Realtime (pinned + votes)
-//   ✅ Zéro impact sur le flux vidéo Agora
+// LIVE STREAM PLAYER — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Pré-pin produits au démarrage du live (hôte)
+//  • ✅ Overlay bouton "Produits" flottant avec badge compteur (hôte)
+//  • ✅ Overlay carousel produits + bouton vote (spectateur)
+//  • ✅ Positionnement corrigé (plus de chevauchement)
+//  • ✅ Support FR / EN / SW via AppLocalizations
+//  • ✅ Compteur spectateurs temps réel
+//  • ✅ Gestion reconnexion réseau
+//  • ✅ Zéro impact sur le flux vidéo Agora
 // ============================================================================
 
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 
 import 'package:thix_id/presentation/thix_market/widgets/live/live_host_control_panel.dart';
 import 'package:thix_id/presentation/thix_market/widgets/live/live_viewer_carousel.dart';
 import 'package:thix_id/presentation/thix_market/widgets/live/live_voting_panel.dart';
+import 'package:thix_id/presentation/thix_market/providers/live_shopping_providers.dart';
 import 'package:thix_id/services/live_shopping_service.dart';
 
+// ============================================================================
+// PROVIDER LOCAL — Nombre de produits épinglés (pour badge bouton hôte)
+// ============================================================================
+final _pinnedCountProvider = StreamProvider.family<int, String>((ref, sessionId) {
+  return Supabase.instance.client
+      .from('live_pinned_products')
+      .stream(primaryKey: ['id'])
+      .eq('session_id', sessionId)
+      .isFilter('unpinned_at', null)
+      .map((rows) => rows.length);
+});
+
+// ============================================================================
+// WIDGET PRINCIPAL
+// ============================================================================
 class LiveStreamPlayer extends ConsumerStatefulWidget {
   final String channelName;
   final String liveId;
@@ -38,7 +60,7 @@ class LiveStreamPlayer extends ConsumerStatefulWidget {
   ConsumerState<LiveStreamPlayer> createState() => _LiveStreamPlayerState();
 }
 
-class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
+class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with WidgetsBindingObserver {
   RtcEngine? _engine;
   bool _isJoined = false;
   int _remoteUid = 0;
@@ -48,24 +70,51 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
   bool _isEnding = false;
   bool _isLoadingToken = true;
   String? _fetchedToken;
+  int _viewerCount = 0;
 
   final TextEditingController _messageController = TextEditingController();
 
+  // Timer pour refresh token (Agora tokens expirent après ~1h)
+  Timer? _tokenRefreshTimer;
+
   static const Color gold = Color(0xFFC9962C);
   static const Color danger = Color(0xFFE53935);
+  static const Duration _kTokenRefreshInterval = Duration(minutes: 50);
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _initializeLive();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _tokenRefreshTimer?.cancel();
     _messageController.dispose();
     _engine?.leaveChannel();
     _engine?.release();
+    debugPrint('[LivePlayer] 👋 Disposed');
     super.dispose();
+  }
+
+  // ✅ Gestion cycle de vie app (pause/reprise)
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (!widget.isHost || _engine == null) return;
+    switch (state) {
+      case AppLifecycleState.paused:
+        _engine?.muteLocalAudioStream(true);
+        _engine?.muteLocalVideoStream(true);
+        break;
+      case AppLifecycleState.resumed:
+        if (!_isMuted) _engine?.muteLocalAudioStream(false);
+        if (!_isVideoOff) _engine?.muteLocalVideoStream(false);
+        break;
+      default:
+        break;
+    }
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -110,16 +159,41 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
         RtcEngineEventHandler(
           onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
             if (mounted) setState(() => _isJoined = true);
+            debugPrint('[LivePlayer] ✓ Joined channel: ${connection.channelId}');
           },
           onUserJoined: (RtcConnection connection, int uid, int elapsed) {
             if (mounted) setState(() => _remoteUid = uid);
           },
-          onUserOffline: (RtcConnection connection, int uid,
-              UserOfflineReasonType reason) {
+          onUserOffline: (RtcConnection connection, int uid, UserOfflineReasonType reason) {
             if (mounted) setState(() => _remoteUid = 0);
           },
+          // ✅ Compteur spectateurs temps réel
+          onRtcStats: (RtcConnection connection, RtcStats stats) {
+            if (mounted && widget.isHost) {
+              setState(() => _viewerCount = stats.userCount);
+            }
+          },
           onError: (ErrorCodeType err, String msg) {
-            debugPrint('Agora error [$err]: $msg');
+            debugPrint('[LivePlayer] ❌ Agora error [$err]: $msg');
+          },
+          // ✅ Gestion reconnexion réseau
+          onConnectionStateChanged: (RtcConnection connection, ConnectionStateType state, ConnectionChangedReasonType reason) {
+            debugPrint('[LivePlayer] 🔗 Connection state: $state (reason: $reason)');
+            if (state == ConnectionStateType.connectionStateDisconnected) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(AppLocalizations.of(context).t('live_connection_lost')),
+                    backgroundColor: danger,
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            } else if (state == ConnectionStateType.connectionStateConnected) {
+              if (mounted) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              }
+            }
           },
         ),
       );
@@ -143,9 +217,12 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
         ),
       );
 
-      // ══════════════════════════════════════════════════════════════════
-      // ✅ NOUVEAU : PRÉ-PIN produits au démarrage (hôte uniquement)
-      // ══════════════════════════════════════════════════════════════════
+      // ✅ Refresh token périodique (avant expiration Agora ~1h)
+      if (widget.isHost) {
+        _tokenRefreshTimer = Timer.periodic(_kTokenRefreshInterval, (_) => _refreshToken());
+      }
+
+      // ✅ PRÉ-PIN produits au démarrage (hôte uniquement)
       if (widget.isHost) {
         try {
           final session = await Supabase.instance.client
@@ -157,21 +234,22 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
           final prePinned = List<String>.from(
               (session?['pre_pinned_products'] as List?) ?? []);
           if (prePinned.isNotEmpty) {
-            await LiveShoppingService()
-                .applyPrePinned(widget.liveId, prePinned);
+            await LiveShoppingService().applyPrePinned(widget.liveId, prePinned);
             debugPrint('[LiveShopping] Pre-pinned ${prePinned.length} products');
           }
         } catch (e) {
-          debugPrint('Pre-pin apply failed (non-critical): $e');
+          debugPrint('[LiveShopping] Pre-pin apply failed (non-critical): $e');
         }
       }
     } catch (e) {
-      debugPrint('Erreur init live: $e');
+      debugPrint('[LivePlayer] ❌ Init error: $e');
       if (mounted) {
+        final l10n = AppLocalizations.of(context);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content: Text('Erreur connexion live: $e'),
-              backgroundColor: danger),
+            content: Text('${l10n.t("live_connection_error")}: $e'),
+            backgroundColor: danger,
+          ),
         );
       }
     } finally {
@@ -179,8 +257,28 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
     }
   }
 
+  /// ✅ Rafraîchir le token Agora sans interrompre le stream
+  Future<void> _refreshToken() async {
+    try {
+      final response = await Supabase.instance.client.functions.invoke(
+        'generate-rtc-token',
+        body: {
+          'channelName': widget.channelName,
+          'role': widget.isHost ? 'publisher' : 'subscriber',
+        },
+      );
+      final newToken = response.data?['token']?.toString();
+      if (newToken != null && _engine != null) {
+        await _engine!.renewToken(newToken);
+        debugPrint('[LivePlayer] 🔄 Token refreshed');
+      }
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ Token refresh failed: $e');
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════
-  // CONTRÔLES HOST (inchangés)
+  // CONTRÔLES HOST
   // ══════════════════════════════════════════════════════════════════════
   Future<void> _toggleMute() async {
     setState(() => _isMuted = !_isMuted);
@@ -207,6 +305,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
   Future<void> _endLive({bool pop = true}) async {
     if (_isEnding) return;
     setState(() => _isEnding = true);
+    _tokenRefreshTimer?.cancel();
 
     try {
       await Supabase.instance.client.from('live_sessions').update({
@@ -214,7 +313,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
         'ended_at': DateTime.now().toIso8601String(),
       }).eq('id', widget.liveId);
     } catch (e) {
-      debugPrint('Erreur endLive DB: $e');
+      debugPrint('[LivePlayer] ❌ EndLive DB error: $e');
     }
 
     try {
@@ -222,35 +321,30 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
       await _engine?.release();
       _engine = null;
     } catch (e) {
-      debugPrint('Erreur leave Agora: $e');
+      debugPrint('[LivePlayer] ❌ Leave Agora error: $e');
     }
 
-    if (pop && mounted) {
-      Navigator.of(context).pop();
-    }
+    if (pop && mounted) Navigator.of(context).pop();
   }
 
   Future<void> _confirmEndLive() async {
+    final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1D2333),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Terminer le live ?',
-            style: TextStyle(color: Colors.white)),
-        content: const Text(
-          'La diffusion sera coupée pour tous les spectateurs.',
-          style: TextStyle(color: Colors.white70),
-        ),
+        title: Text(l10n.t('live_end_confirm_title'), style: const TextStyle(color: Colors.white)),
+        content: Text(l10n.t('live_end_confirm_desc'), style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler', style: TextStyle(color: Colors.white54)),
+            child: Text(l10n.t('common_cancel'), style: const TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Couper', style: TextStyle(color: Colors.white)),
+            child: Text(l10n.t('live_end_confirm_btn'), style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -281,7 +375,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
           'created_at': DateTime.now().toIso8601String(),
         });
       } catch (e) {
-        debugPrint('Erreur envoi message: $e');
+        debugPrint('[LivePlayer] ❌ Send message error: $e');
       }
     }
 
@@ -289,7 +383,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // ✅ NOUVEAU : OUVERTURE PANNEAUX LIVE SHOPPING
+  // OUVERTURE PANNEAUX LIVE SHOPPING
   // ══════════════════════════════════════════════════════════════════════
   Future<void> _openHostControlPanel() async {
     List<String> productIds = [];
@@ -302,7 +396,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
           .timeout(const Duration(seconds: 5));
       productIds = List<String>.from((session?['products'] as List?) ?? []);
     } catch (e) {
-      debugPrint('Load products failed: $e');
+      debugPrint('[LivePlayer] ❌ Load products failed: $e');
     }
 
     if (!mounted) return;
@@ -328,7 +422,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // UI (inchangée + 2 overlays ajoutés)
+  // UI HELPERS
   // ══════════════════════════════════════════════════════════════════════
   Widget _buildVideo() {
     if (!_isJoined || _engine == null) {
@@ -337,13 +431,16 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
 
     if (widget.isHost) {
       if (_isVideoOff) {
-        return const Center(
+        return Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 64),
-              SizedBox(height: 12),
-              Text('Caméra désactivée', style: TextStyle(color: Colors.white70)),
+              const Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 64),
+              const SizedBox(height: 12),
+              Text(
+                AppLocalizations.of(context).t('live_camera_off'),
+                style: const TextStyle(color: Colors.white70),
+              ),
             ],
           ),
         );
@@ -365,9 +462,12 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
         ),
       );
     }
-    return const Center(
-      child: Text('En attente du diffuseur...',
-          style: TextStyle(color: Colors.white70, fontSize: 16)),
+
+    return Center(
+      child: Text(
+        AppLocalizations.of(context).t('live_waiting_host'),
+        style: const TextStyle(color: Colors.white70, fontSize: 16),
+      ),
     );
   }
 
@@ -392,36 +492,44 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    // ✅ Badge compteur produits épinglés (hôte)
+    final pinnedCountAsync = widget.isHost
+        ? ref.watch(_pinnedCountProvider(widget.liveId))
+        : null;
+    final pinnedCount = pinnedCountAsync?.valueOrNull ?? 0;
+
     return PopScope(
       canPop: !widget.isHost,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (widget.isHost) {
-          await _confirmEndLive();
-        }
+        if (widget.isHost) await _confirmEndLive();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
         body: _isLoadingToken
-            ? const Center(
+            ? Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    CircularProgressIndicator(color: gold),
-                    SizedBox(height: 12),
-                    Text('Connexion au serveur sécurisé...',
-                        style: TextStyle(color: Colors.white70)),
+                    const CircularProgressIndicator(color: gold),
+                    const SizedBox(height: 12),
+                    Text(l10n.t('live_connecting'), style: const TextStyle(color: Colors.white70)),
                   ],
                 ),
               )
             : Stack(
                 children: [
-                  // ── Vidéo plein écran (inchangé) ──
+                  // ── Vidéo plein écran ──
                   Positioned.fill(child: _buildVideo()),
 
-                  // ── Gradients (inchangé) ──
+                  // ── Gradient haut ──
                   Positioned(
                     top: 0, left: 0, right: 0, height: 140,
                     child: Container(
@@ -434,6 +542,8 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                       ),
                     ),
                   ),
+
+                  // ── Gradient bas ──
                   Positioned(
                     bottom: 0, left: 0, right: 0, height: 220,
                     child: Container(
@@ -447,43 +557,66 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                     ),
                   ),
 
-                  // ── Badge LIVE (inchangé) ──
+                  // ── Badge LIVE + Compteur spectateurs ──
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 12,
                     left: 16,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                      decoration: BoxDecoration(
-                        color: danger,
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
-                          SizedBox(width: 4),
-                          Text('LIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: danger,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
+                              SizedBox(width: 4),
+                              Text('LIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                            ],
+                          ),
+                        ),
+                        // ✅ Compteur spectateurs (hôte uniquement)
+                        if (widget.isHost) ...[
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.5),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.visibility_rounded, color: Colors.white70, size: 12),
+                                const SizedBox(width: 4),
+                                Text(
+                                  '$_viewerCount',
+                                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12),
+                                ),
+                              ],
+                            ),
+                          ),
                         ],
-                      ),
+                      ],
                     ),
                   ),
 
-                  // ── Bouton fermer / Couper (inchangé) ──
+                  // ── Bouton fermer / Couper ──
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 8,
                     right: 12,
-                    child: widget.isHost
-                        ? IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                            onPressed: _isEnding ? null : _confirmEndLive,
-                          )
-                        : IconButton(
-                            icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                            onPressed: () => Navigator.pop(context),
-                          ),
+                    child: IconButton(
+                      icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                      onPressed: widget.isHost
+                          ? (_isEnding ? null : _confirmEndLive)
+                          : () => Navigator.pop(context),
+                    ),
                   ),
 
-                  // ── Barre de contrôles HOST (inchangé) ──
+                  // ── Contrôles HOST ──
                   if (widget.isHost)
                     Positioned(
                       bottom: 90,
@@ -518,7 +651,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                       ),
                     ),
 
-                  // ── Mute pour spectateur (inchangé) ──
+                  // ── Mute spectateur ──
                   if (!widget.isHost)
                     Positioned(
                       bottom: 90,
@@ -538,7 +671,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                       ),
                     ),
 
-                  // ── Champ message (inchangé) ──
+                  // ── Champ message ──
                   Positioned(
                     bottom: 20,
                     left: 16,
@@ -554,7 +687,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                               textInputAction: TextInputAction.send,
                               onSubmitted: (_) => _sendMessage(),
                               decoration: InputDecoration(
-                                hintText: 'Message...',
+                                hintText: l10n.t('live_message_hint'),
                                 filled: true,
                                 fillColor: Colors.white,
                                 border: OutlineInputBorder(
@@ -579,7 +712,8 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                   ),
 
                   // ════════════════════════════════════════════════════════
-                  // ✅ NOUVEAU : OVERLAY HÔTE — Bouton flottant "Produits"
+                  // ✅ OVERLAY HÔTE — Bouton flottant "Produits" + BADGE
+                  // Positionné AU-DESSUS des contrôles (bottom: 160)
                   // ════════════════════════════════════════════════════════
                   if (widget.isHost && _isJoined)
                     Positioned(
@@ -587,56 +721,77 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> {
                       right: 16,
                       child: GestureDetector(
                         onTap: _openHostControlPanel,
-                        child: Container(
-                          width: 56,
-                          height: 56,
-                          decoration: BoxDecoration(
-                            color: gold,
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: gold.withOpacity(0.55),
-                                blurRadius: 14,
-                                spreadRadius: 1,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            Container(
+                              width: 56,
+                              height: 56,
+                              decoration: BoxDecoration(
+                                color: gold,
+                                shape: BoxShape.circle,
+                                boxShadow: [
+                                  BoxShadow(color: gold.withOpacity(0.55), blurRadius: 14, spreadRadius: 1),
+                                  BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3)),
+                                ],
                               ),
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.3),
-                                blurRadius: 8,
-                                offset: const Offset(0, 3),
+                              child: const Icon(Icons.shopping_bag_rounded, color: Color(0xFF1B2A4A), size: 24),
+                            ),
+                            // ✅ Badge compteur produits épinglés
+                            if (pinnedCount > 0)
+                              Positioned(
+                                top: -4,
+                                right: -4,
+                                child: Container(
+                                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                  padding: const EdgeInsets.symmetric(horizontal: 5),
+                                  decoration: BoxDecoration(
+                                    color: danger,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.black, width: 2),
+                                  ),
+                                  alignment: Alignment.center,
+                                  child: Text(
+                                    pinnedCount > 99 ? '99+' : '$pinnedCount',
+                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                                  ),
+                                ),
                               ),
-                            ],
-                          ),
-                          child: const Icon(Icons.shopping_bag_rounded,
-                              color: Color(0xFF1B2A4A), size: 24),
+                          ],
                         ),
                       ),
                     ),
 
                   // ════════════════════════════════════════════════════════
-                  // ✅ NOUVEAU : OVERLAY SPECTATEUR — Carousel + vote
+                  // ✅ OVERLAY SPECTATEUR — Carousel + vote
+                  // Positionné AU-DESSUS de la barre de message (bottom: 80)
+                  // Hauteur contrainte pour éviter débordement
                   // ════════════════════════════════════════════════════════
                   if (!widget.isHost && _isJoined)
                     Positioned(
                       left: 0,
                       right: 0,
                       bottom: 80,
-                      child: LiveViewerCarousel(
-                        sessionId: widget.liveId,
-                        onOpenVoting: _openVotingPanel,
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 260),
+                        child: LiveViewerCarousel(
+                          sessionId: widget.liveId,
+                          onOpenVoting: _openVotingPanel,
+                        ),
                       ),
                     ),
 
-                  // ── Overlay "fin en cours" (inchangé, toujours en dernier) ──
+                  // ── Overlay "fin en cours" ──
                   if (_isEnding)
                     Container(
                       color: Colors.black54,
-                      child: const Center(
+                      child: Center(
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            CircularProgressIndicator(color: Colors.white),
-                            SizedBox(height: 12),
-                            Text('Fin du live...', style: TextStyle(color: Colors.white)),
+                            const CircularProgressIndicator(color: Colors.white),
+                            const SizedBox(height: 12),
+                            Text(l10n.t('live_ending'), style: const TextStyle(color: Colors.white)),
                           ],
                         ),
                       ),
