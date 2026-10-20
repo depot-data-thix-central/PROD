@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/product_detail_page.dart
 // ============================================================================
-// PRODUCT DETAIL PAGE — Production Enterprise v6
+// PRODUCT DETAIL PAGE — Production Enterprise v6 + EXCEPTION THIX MARKET
 // ----------------------------------------------------------------------------
 //  • ✅ Conversion automatique des prix dans la devise sélectionnée
 //  • ✅ Formatage intelligent (milliers, décimales selon devise)
@@ -8,8 +8,9 @@
 //  • ✅ Support FR / EN / SW via Localizations
 //  • ✅ Bouton Chat : crée/retrouve la conversation avec le vendeur et ouvre
 //     le chat avec le produit en référence (style Alibaba)
+//  ✅ EXCEPTION THIX MARKET : les visiteurs non connectés peuvent ouvrir le
+//     chat — une session anonyme est créée automatiquement avant l'envoi
 // ============================================================================
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +20,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 import 'package:intl/intl.dart';
 import 'package:html/parser.dart' as html_parser;
-
 import '../core/african_countries.dart';
 import '../core/african_currencies.dart';
 import '../core/chat_service.dart';
@@ -46,7 +46,6 @@ const double _kSimilarCardWidth = 150;
 // ============================================================================
 class _V {
   _V._();
-
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -117,13 +116,11 @@ final productDetailProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, productId) async {
   debugPrint('[ProductDetail] 📦 Loading product $productId');
   final db = ref.read(supabaseClientProvider);
-
   final prod = await _withRetry(
     () => db.from('products').select().eq('id', productId).maybeSingle(),
     label: 'fetchProduct',
   );
   if (prod == null) throw Exception('Produit introuvable');
-
   final shopId = prod['shop_id']?.toString();
 
   Future<Map<String, dynamic>?> shopF() async {
@@ -159,7 +156,6 @@ final productDetailProvider =
   final results = await Future.wait<dynamic>([shopF(), reviewsF()]);
   final shop = results[0] as Map<String, dynamic>?;
   final reviews = results[1] as List<Map<String, dynamic>>;
-
   double rating = 0;
   if (reviews.isNotEmpty) {
     double sum = 0;
@@ -168,9 +164,7 @@ final productDetailProvider =
     }
     rating = sum / reviews.length;
   }
-
   debugPrint('[ProductDetail] ✓ Loaded product with ${reviews.length} reviews');
-
   return {
     ...prod,
     'shop': shop ?? {},
@@ -187,7 +181,6 @@ final similarProductsProvider =
   final prod = await ref.watch(productDetailProvider(productId).future);
   final category = prod['category']?.toString();
   final shopId = prod['shop_id']?.toString();
-
   final result = <Map<String, dynamic>>[];
   final seen = <String>{productId};
 
@@ -246,7 +239,6 @@ final similarProductsProvider =
       debugPrint('[ProductDetail] ⚠️ similar(latest) error: $e');
     }
   }
-
   debugPrint('[ProductDetail] ✓ ${result.length} similar products');
   return result;
 });
@@ -256,7 +248,6 @@ final isFavoriteProvider =
   final db = ref.read(supabaseClientProvider);
   final uid = db.auth.currentUser?.id;
   if (uid == null) return false;
-
   try {
     final res = await _withRetry(
       () => db
@@ -279,7 +270,6 @@ final isFavoriteProvider =
 class ProductDetailPage extends ConsumerStatefulWidget {
   final String productId;
   const ProductDetailPage({super.key, required this.productId});
-
   @override
   ConsumerState<ProductDetailPage> createState() => _ProductDetailPageState();
 }
@@ -313,12 +303,10 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     HapticFeedback.selectionClick();
     final db = ref.read(supabaseClientProvider);
     final uid = db.auth.currentUser?.id;
-
     if (uid == null) {
       _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
       return;
     }
-
     try {
       if (!currentlyFav) {
         await _withRetry(
@@ -340,34 +328,27 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   Future<void> _addToCart({int maxStock = 0}) async {
     if (_adding) return;
-
     if (maxStock <= 0) {
       _showError(_t(context, 'Rupture de stock', 'Out of stock', 'Stoku imeisha'));
       return;
     }
-
     final db = ref.read(supabaseClientProvider);
     final uid = db.auth.currentUser?.id;
-
     if (uid == null) {
       _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
       return;
     }
-
     if (_qty > maxStock) {
       _showError(_t(context, 'Stock limité à $maxStock', 'Stock limited to $maxStock', 'Stoku imezuiliwa kwa $maxStock'));
       return;
     }
-
     HapticFeedback.mediumImpact();
     setState(() => _adding = true);
-
     try {
       final existing = await _withRetry(
         () => db.from('cart').select().match({'user_id': uid, 'product_id': widget.productId}).maybeSingle(),
         label: 'checkCart',
       );
-
       if (existing != null) {
         final cur = (existing['quantity'] as num?)?.toInt() ?? 0;
         final newQty = cur + _qty;
@@ -393,7 +374,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
           label: 'insertCart',
         );
       }
-
       _showSuccess(
         _t(context, 'Ajouté au panier !', 'Added to cart!', 'Imeongezwa kwenye kikapu!'),
         actionLabel: _t(context, 'Voir le panier', 'View cart', 'Ona kikapu'),
@@ -419,22 +399,40 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     return _V.sanitizeUrl(product['image_url']?.toString());
   }
 
+  /// ✅ EXCEPTION THIX MARKET : Garantit une session (invité anonyme si nécessaire)
+  /// pour permettre aux visiteurs non connectés d'ouvrir le chat.
+  ///
+  /// Retourne :
+  ///  - `true`  : une session (connectée ou anonyme) est active
+  ///  - `false` : impossible (Supabase sans anonymous activé, ou réseau)
+  Future<bool> _ensureMarketSession() async {
+    final db = ref.read(supabaseClientProvider);
+    if (db.auth.currentUser != null) return true;
+    try {
+      await _withRetry(
+        () => db.auth.signInAnonymously(),
+        label: 'anonSignIn_market',
+        maxRetries: 1,
+      );
+      debugPrint('[ProductDetail] ✓ Anonymous session created for market chat');
+      return true;
+    } catch (e) {
+      debugPrint('[ProductDetail] ❌ Anonymous sign-in failed: $e');
+      return false;
+    }
+  }
+
   /// Ouvre le chat avec le vendeur, produit en référence (style Alibaba).
+  /// ✅ EXCEPTION THIX MARKET : les visiteurs non connectés peuvent aussi
+  /// ouvrir le chat — une session anonyme est créée automatiquement.
   Future<void> _openChat(Map<String, dynamic> product) async {
     if (_openingChat) return;
     HapticFeedback.selectionClick();
 
     final shop = product['shop'] is Map ? Map<String, dynamic>.from(product['shop'] as Map) : null;
     final shopId = product['shop_id']?.toString();
-
     if (shopId == null || shopId.isEmpty) {
       _showError(_t(context, 'Boutique indisponible', 'Store unavailable', 'Duka halipatikani'));
-      return;
-    }
-
-    final db = ref.read(supabaseClientProvider);
-    if (db.auth.currentUser == null) {
-      _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
       return;
     }
 
@@ -459,7 +457,15 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final sellerCurrency = (product['currency'] ?? 'CDF').toString().toUpperCase();
 
     setState(() => _openingChat = true);
+
     try {
+      // ✅ EXCEPTION THIX MARKET : garantir une session avant la création de la conversation
+      if (!await _ensureMarketSession()) {
+        _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
+        return;
+      }
+
+      final db = ref.read(supabaseClientProvider);
       final convId = await ChatService(db).getOrCreateConversation(otherUserId: sellerId);
       if (!mounted) return;
 
@@ -472,6 +478,9 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
           'shopId': shopId,
           'sellerId': sellerId,
           'isProductChat': true,
+          // ✅ FLAG THIX MARKET : lève la règle "connexion paire obligatoire"
+          // dans ChatScreen et ChatPage (acheteur ↔ vendeur sans connexion mutuelle)
+          'bypassConnection': true,
           'locale': lang,
           'productContext': {
             'id': widget.productId,
@@ -487,6 +496,38 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
       debugPrint('[ProductDetail] ❌ Open chat: $e');
       switch (e.code) {
         case 'not_logged_in':
+          // ✅ EXCEPTION THIX MARKET : retenter avec session anonyme
+          if (await _ensureMarketSession()) {
+            try {
+              final db = ref.read(supabaseClientProvider);
+              final convId = await ChatService(db).getOrCreateConversation(otherUserId: sellerId);
+              if (!mounted) return;
+              context.push(
+                '/market/chat/$convId',
+                extra: {
+                  'title': name,
+                  'userName': name,
+                  'userAvatar': avatar,
+                  'shopId': shopId,
+                  'sellerId': sellerId,
+                  'isProductChat': true,
+                  'bypassConnection': true,
+                  'locale': lang,
+                  'productContext': {
+                    'id': widget.productId,
+                    'title': _V.sanitize(product['title']?.toString(), maxLength: 150),
+                    'price': unitPrice,
+                    'currency_code': sellerCurrency,
+                    'image_url': _firstImage(product),
+                    'shop_id': shopId,
+                  },
+                },
+              );
+              return;
+            } catch (retryErr) {
+              debugPrint('[ProductDetail] ❌ Retry failed: $retryErr');
+            }
+          }
           _showError(_t(context, 'Veuillez vous connecter', 'Please log in', 'Tafadhali ingia'));
           break;
         case 'self_chat':
@@ -496,11 +537,13 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
           _showError(_t(context, 'Vendeur indisponible', 'Seller unavailable', 'Muuzaji hapatikani'));
           break;
         default:
-          _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.", 'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
+          _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.",
+              'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
       }
     } catch (e) {
       debugPrint('[ProductDetail] ❌ Open chat: $e');
-      _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.", 'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
+      _showError(_t(context, "Impossible d'ouvrir le chat. Réessayez.",
+          'Unable to open chat. Try again.', 'Imeshindwa kufungua gumzo. Jaribu tena.'));
     } finally {
       if (mounted) setState(() => _openingChat = false);
     }
@@ -560,7 +603,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final favAsync = ref.watch(isFavoriteProvider(widget.productId));
     // ✅ Écoute le provider de devise pour forcer le rebuild lors du changement
     ref.watch(currencyProvider);
-
     return detailAsync.when(
       loading: () => _buildSkeleton(),
       error: (e, _) => _buildErrorState(e.toString()),
@@ -648,14 +690,11 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   Widget _buildContent(Map<String, dynamic> product, bool isFav) {
     final lang = Localizations.localeOf(context).languageCode;
-
     // ✅ Devise sélectionnée par l'utilisateur (déclenche rebuild si changement)
     final displayCurrencyCode = ref.watch(currencyProvider);
-
     // Devise du vendeur (stockée dans le produit)
     final sellerCurrencyCode = (product['currency'] ?? 'CDF').toString().toUpperCase();
     final isDifferentCurrency = sellerCurrencyCode != displayCurrencyCode;
-
     final currencyService = CurrencyService.instance;
 
     // ─── Images ───
@@ -704,7 +743,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final shopId = product['shop_id']?.toString();
     final shop = product['shop'] as Map<String, dynamic>?;
     final shopName = _V.sanitize(shop?['name']?.toString(), maxLength: 60);
-
     final title = _V.sanitize(product['title']?.toString() ?? '', maxLength: 150);
     final description = _V.sanitize(product['description']?.toString() ?? '', maxLength: 2000);
     final rating = _V.clampRating(product['rating']);
@@ -773,7 +811,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                     )
                   else
                     const Center(child: Icon(Icons.shopping_bag_outlined, size: 64, color: ThixPolicy.textMuted)),
-
                   // Badge réduction
                   if (hasDiscount)
                     Positioned(
@@ -791,7 +828,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
                         ),
                       ),
                     ),
-
                   // Compteur 1/3
                   if (images.length > 1)
                     Positioned(
@@ -1129,14 +1165,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
                 // ─────────── PRODUITS SIMILAIRES ───────────
                 _buildSimilarSection(),
-
                 const SizedBox(height: 110),
               ],
             ),
           ),
         ],
       ),
-
       // ─────────── BARRE DU BAS ───────────
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -1318,7 +1352,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
 
   Widget _buildSimilarSection() {
     final similarAsync = ref.watch(similarProductsProvider(widget.productId));
-
     return similarAsync.when(
       loading: () => const SizedBox.shrink(),
       error: (_, __) => const SizedBox.shrink(),
@@ -1399,7 +1432,6 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
         : lowStock
             ? _t(context, 'Plus que $stock !', 'Only $stock left!', 'Zimebaki $stock tu!')
             : _t(context, '$stock disponibles', '$stock in stock', '$stock zinapatikana');
-
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
@@ -1586,14 +1618,12 @@ class _ProductDetailPageState extends ConsumerState<ProductDetailPage> {
     final avatar = _V.sanitizeUrl(user?['avatar']?.toString());
     final rating = _V.clampRating(review['rating']);
     final comment = _V.sanitize(review['comment']?.toString() ?? '', maxLength: 500);
-
     String date = '';
     if (review['created_at'] != null) {
       try {
         date = DateFormat('dd/MM/yyyy').format(DateTime.parse(review['created_at'].toString()));
       } catch (_) {}
     }
-
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
