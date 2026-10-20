@@ -1,16 +1,23 @@
 // lib/presentation/thix_market/providers/live_shopping_providers.dart
-// AJOUTER À LA FIN DU FICHIER
+// ============================================================================
+// LIVE SHOPPING PROVIDERS — Realtime + Polling
+// ============================================================================
 
-import '../core/currency_service.dart';
-import '../core/african_currencies.dart';
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// Charge les détails complets d'un produit épinglé via jointure Supabase
+import 'package:thix_id/presentation/thix_market/models/live_shopping_models.dart';
+import 'package:thix_id/services/live_shopping_service.dart';
+
+/// Charge les détails complets d'un produit épinglé
 final livePinnedProductDetailProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>?, String>((ref, productId) async {
   try {
     final res = await Supabase.instance.client
         .from('products')
-        .select('id, title, price, discount_price, currency, image_url, images, stock, shop:shops(name)')
+        .select('id, title, price, discount_price, currency, image_url, images, stock')
         .eq('id', productId)
         .maybeSingle()
         .timeout(const Duration(seconds: 8));
@@ -21,18 +28,41 @@ final livePinnedProductDetailProvider =
   }
 });
 
-/// Version enrichie du stream pinned products avec détails produit joints
-final livePinnedProductsEnrichedProvider =
-    StreamProvider.family<List<Map<String, dynamic>>, String>((ref, sessionId) {
+/// Stream Realtime : liste des produits actuellement épinglés
+final livePinnedProductsProvider =
+    StreamProvider.family<List<LivePinnedProduct>, String>((ref, sessionId) {
   return Supabase.instance.client
       .from('live_pinned_products')
       .stream(primaryKey: ['id'])
       .eq('session_id', sessionId)
       .isFilter('unpinned_at', null)
-      .map((rows) {
-        final list = rows.map((e) => Map<String, dynamic>.from(e)).toList();
-        list.sort((a, b) => ((a['position'] as num?)?.toInt() ?? 0)
-            .compareTo(((b['position'] as num?)?.toInt() ?? 0)));
-        return list;
-      });
+      .map((rows) => rows
+          .map((e) => LivePinnedProduct.fromJson(Map<String, dynamic>.from(e)))
+          .toList()
+        ..sort((a, b) => a.position.compareTo(b.position)));
+});
+
+/// Polling 3s : candidats au vote + compteurs
+final liveVoteCandidatesProvider =
+    FutureProvider.autoDispose.family<List<LiveVoteCandidate>, String>(
+        (ref, sessionId) async {
+  final service = LiveShoppingService();
+  final uid = Supabase.instance.client.auth.currentUser?.id;
+
+  final timer = Timer.periodic(const Duration(seconds: 3), (_) {
+    ref.invalidateSelf();
+  });
+
+  ref.onDispose(() {
+    timer.cancel();
+  });
+
+  return service.getVoteCandidates(sessionId, uid);
+});
+
+/// ID du produit actuellement "featured"
+final liveFeaturedProductIdProvider =
+    Provider.family<String?, List<LivePinnedProduct>>((ref, pinned) {
+  final featured = pinned.where((p) => p.isFeatured).toList();
+  return featured.isEmpty ? null : featured.first.productId;
 });
