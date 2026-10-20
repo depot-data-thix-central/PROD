@@ -21,8 +21,8 @@ import 'package:thix_id/presentation/thix_market/providers/live_shopping_provide
 import 'package:thix_id/services/live_shopping_service.dart';
 import '../../core/african_currencies.dart';
 import '../../core/currency_service.dart';
-import '../../providers/currency_provider.dart';
-
+import '../../providers/currency_provider.dart'; 
+import 'package:thix_id/presentation/thix_market/providers/live_shopping_providers.dart'; 
 // ============================================================================
 // PROVIDER LOCAL — Détails produit pour le panneau de vote
 // ============================================================================
