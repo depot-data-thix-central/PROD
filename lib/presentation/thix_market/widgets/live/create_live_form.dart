@@ -1,30 +1,35 @@
 // lib/presentation/thix_market/widgets/live/create_live_form.dart
 // ============================================================================
-// CREATE LIVE FORM — PROD Enterprise v2
-// ============================================================================
-// Fonctionnalités :
-//   - Upload thumbnail (Supabase Storage)
-//   - Token Agora avec fallback sécurisé
-//   - Sélection catalogue produits (bibliothèque de base)
-//   - Enchères (startingPrice + auctionEndTime)
-//   - Vote interactif (spectateurs votent pour le prochain produit)
-//   - Contrôle dynamique (hôte pin/unpin en direct)
-//   - Pré-pin (produits épinglés automatiquement au démarrage)
+// CREATE LIVE FORM — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Compatible Web + Mobile (plus de dart:io, XFile partout)
+//  • ✅ Support 54 devises africaines + conversion automatique
+//  • ✅ Internationalisation FR / EN / SW
+//  • ✅ Upload thumbnail via bytes (web-safe)
+//  • ✅ Navigation via GoRouter (plus de Navigator.push)
+//  • ✅ Validation robuste + feedback haptique
+//  • ✅ Gestion erreurs avec messages traduits
 // ============================================================================
 
-import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:intl/intl.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
 
-import '../../pages/live_stream_page.dart';
+import '../../core/african_currencies.dart';
+import '../../core/currency_service.dart';
+import '../../providers/currency_provider.dart';
 
 // ============================================================================
-// DESIGN TOKENS (Enterprise palette)
+// DESIGN TOKENS
 // ============================================================================
 class _LiveFormPalette {
   static const Color navy = Color(0xFF1B2A4A);
@@ -54,9 +59,7 @@ class _FormLogger {
 
   static void _log(String level, String msg, Map<String, dynamic>? data) {
     if (!kDebugMode && level == 'INFO') return;
-    final d = data == null
-        ? ''
-        : ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
+    final d = data == null ? '' : ' ${data.entries.map((e) => '${e.key}=${e.value}').join(', ')}';
     debugPrint('[$_tag] [$level] $msg$d');
   }
 }
@@ -69,27 +72,31 @@ const Duration _kUploadTimeout = Duration(seconds: 30);
 const int _kMaxTitleLength = 100;
 const int _kMaxDescriptionLength = 500;
 const int _kMaxPrePinned = 6;
+const int _kImageMaxDim = 1280;
+const int _kImageQuality = 85;
 
 // ============================================================================
 // FORM
 // ============================================================================
-class CreateLiveForm extends StatefulWidget {
+class CreateLiveForm extends ConsumerStatefulWidget {
   final String shopId;
   final Function(Map<String, dynamic>)? onSuccess;
 
   const CreateLiveForm({super.key, required this.shopId, this.onSuccess});
 
   @override
-  State<CreateLiveForm> createState() => _CreateLiveFormState();
+  ConsumerState<CreateLiveForm> createState() => _CreateLiveFormState();
 }
 
-class _CreateLiveFormState extends State<CreateLiveForm> {
+class _CreateLiveFormState extends ConsumerState<CreateLiveForm> {
   final _formKey = GlobalKey<FormState>();
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _startingPriceController = TextEditingController();
 
-  // ── Thumbnail ──
-  File? _thumbnail;
+  // ── Thumbnail (XFile pour compatibilité Web) ──
+  XFile? _thumbnailFile;
+  Uint8List? _thumbnailBytes;
   final ImagePicker _picker = ImagePicker();
 
   // ── Catalogue produits ──
@@ -99,23 +106,19 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
   // ── Enchères ──
   bool _hasAuction = false;
-  double _startingPrice = 0;
   DateTime? _auctionEndTime;
 
   // ── Vote interactif ──
   bool _allowVoting = true;
 
-  // ── Contrôle dynamique (hôte pin/unpin en live) ──
+  // ── Contrôle dynamique ──
   bool _allowDynamicControl = true;
 
-  // ── Pré-pin (produits épinglés au démarrage) ──
+  // ── Pré-pin ──
   List<String> _prePinnedProductIds = [];
 
   bool _isLoading = false;
 
-  // ============================================================================
-  // LIFECYCLE
-  // ============================================================================
   @override
   void initState() {
     super.initState();
@@ -127,6 +130,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   void dispose() {
     _titleController.dispose();
     _descriptionController.dispose();
+    _startingPriceController.dispose();
     super.dispose();
   }
 
@@ -138,9 +142,10 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
     try {
       final response = await Supabase.instance.client
           .from('products')
-          .select('id, title, price, image_url')
+          .select('id, title, price, currency, image_url, images')
           .eq('shop_id', widget.shopId)
           .eq('status', 'active')
+          .order('created_at', ascending: false)
           .timeout(_kQueryTimeout);
       if (!mounted) return;
       setState(() {
@@ -152,49 +157,51 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
       _FormLogger.error('loadProducts failed', {'error': '$e'});
       if (!mounted) return;
       setState(() => _loadingProducts = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Impossible de charger les produits'),
-          backgroundColor: _LiveFormPalette.danger,
-        ),
-      );
+      _showError(AppLocalizations.of(context).t('live_form_load_products_error'));
     }
   }
 
   // ============================================================================
-  // THUMBNAIL
+  // THUMBNAIL (Web-safe avec XFile + Uint8List)
   // ============================================================================
   Future<void> _pickThumbnail() async {
     try {
       final XFile? image = await _picker.pickImage(
         source: ImageSource.gallery,
-        maxWidth: 1280,
-        maxHeight: 720,
-        imageQuality: 85,
+        maxWidth: _kImageMaxDim.toDouble(),
+        maxHeight: (_kImageMaxDim * 0.5625).toDouble(), // 16:9
+        imageQuality: _kImageQuality,
       );
       if (image != null && mounted) {
-        setState(() => _thumbnail = File(image.path));
+        final bytes = await image.readAsBytes();
+        setState(() {
+          _thumbnailFile = image;
+          _thumbnailBytes = bytes;
+        });
+        HapticFeedback.selectionClick();
       }
     } catch (e) {
       _FormLogger.error('pickThumbnail failed', {'error': '$e'});
+      _showError(AppLocalizations.of(context).t('live_form_thumbnail_error'));
     }
   }
 
   Future<String?> _uploadThumbnail() async {
-    if (_thumbnail == null) return null;
+    if (_thumbnailBytes == null || _thumbnailFile == null) return null;
     try {
-      final fileExt = _thumbnail!.path.split('.').last;
-      final fileName = '${const Uuid().v4()}.$fileExt';
+      final fileName = '${const Uuid().v4()}.jpg';
       final filePath = 'live_thumbnails/$fileName';
 
       await Supabase.instance.client.storage
           .from('live_images')
-          .upload(filePath, _thumbnail!)
+          .uploadBinary(filePath, _thumbnailBytes!, fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+            cacheControl: '31536000',
+            upsert: false,
+          ))
           .timeout(_kUploadTimeout);
 
-      return Supabase.instance.client.storage
-          .from('live_images')
-          .getPublicUrl(filePath);
+      return Supabase.instance.client.storage.from('live_images').getPublicUrl(filePath);
     } catch (e) {
       _FormLogger.error('uploadThumbnail failed', {'error': '$e'});
       rethrow;
@@ -202,7 +209,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ============================================================================
-  // PRODUCT SELECTION (catalogue)
+  // PRODUCT SELECTION
   // ============================================================================
   void _toggleProductSelection(String productId) {
     HapticFeedback.selectionClick();
@@ -223,12 +230,7 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         _prePinnedProductIds.remove(productId);
       } else {
         if (_prePinnedProductIds.length >= _kMaxPrePinned) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Maximum $_kMaxPrePinned produits pré-épinglés'),
-              backgroundColor: _LiveFormPalette.info,
-            ),
-          );
+          _showWarning(AppLocalizations.of(context).t('live_form_max_prepinned', args: ['$_kMaxPrePinned']));
           return;
         }
         _prePinnedProductIds.add(productId);
@@ -240,73 +242,66 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   // SUBMIT
   // ============================================================================
   Future<void> _processLive({required bool startNow}) async {
+    final l10n = AppLocalizations.of(context);
+
     if (!_formKey.currentState!.validate()) return;
 
-    // ── Validations métier ──
-    if (_thumbnail == null) {
-      _showWarning('Veuillez ajouter une miniature');
+    if (_thumbnailBytes == null) {
+      _showWarning(l10n.t('live_form_thumbnail_required'));
       return;
     }
     if (_selectedProductIds.isEmpty) {
-      _showWarning('Sélectionnez au moins un produit à présenter');
+      _showWarning(l10n.t('live_form_product_required'));
       return;
     }
-    if (_hasAuction && _startingPrice <= 0) {
-      _showWarning('Veuillez définir un prix de départ valide');
-      return;
-    }
-    if (_hasAuction && _auctionEndTime == null) {
-      _showWarning('Veuillez définir une date de fin pour les enchères');
-      return;
-    }
-    if (_hasAuction &&
-        _auctionEndTime != null &&
-        _auctionEndTime!.isBefore(DateTime.now())) {
-      _showWarning('La date de fin des enchères doit être future');
-      return;
+    if (_hasAuction) {
+      final price = double.tryParse(_startingPriceController.text.replaceAll(RegExp(r'[^\d.]'), ''));
+      if (price == null || price <= 0) {
+        _showWarning(l10n.t('live_form_auction_price_required'));
+        return;
+      }
+      if (_auctionEndTime == null) {
+        _showWarning(l10n.t('live_form_auction_date_required'));
+        return;
+      }
+      if (_auctionEndTime!.isBefore(DateTime.now())) {
+        _showWarning(l10n.t('live_form_auction_date_future'));
+        return;
+      }
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // ── Upload thumbnail ──
       final thumbnailUrl = await _uploadThumbnail();
-
-      // ── Token Agora ──
       final channelName = 'live_${DateTime.now().millisecondsSinceEpoch}';
       final userId = Supabase.instance.client.auth.currentUser?.id;
 
+      // Token Agora
       String token;
       try {
         final tokenResponse = await Supabase.instance.client.functions
-            .invoke(
-              'generate-rtc-token',
-              body: {'channelName': channelName},
-            )
+            .invoke('generate-rtc-token', body: {'channelName': channelName, 'role': 'publisher'})
             .timeout(_kQueryTimeout);
-        token = tokenResponse.data['token']?.toString() ?? '';
-        if (token.isEmpty) throw Exception('Token Agora vide');
+        token = tokenResponse.data?['token']?.toString() ?? '';
+        if (token.isEmpty) throw Exception('Token vide');
         _FormLogger.info('Agora token generated');
       } catch (e) {
         _FormLogger.warn('Agora token fallback', {'error': '$e'});
         token = 'test_token_${DateTime.now().millisecondsSinceEpoch}';
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('⚠️ Token Agora de test (fonction indisponible)'),
-              backgroundColor: Colors.orange,
-            ),
-          );
-        }
+        if (mounted) _showWarning(l10n.t('live_form_token_fallback'));
       }
 
-      // ── Timestamps ──
-      final now = DateTime.now();
+      final now = DateTime.now().toUtc();
       final liveStatus = startNow ? 'live' : 'scheduled';
-      final scheduledStart =
-          startNow ? now : now.add(const Duration(minutes: 5));
+      final scheduledStart = startNow ? now : now.add(const Duration(minutes: 5));
+      final startingPrice = _hasAuction
+          ? double.tryParse(_startingPriceController.text.replaceAll(RegExp(r'[^\d.]'), '')) ?? 0
+          : null;
 
-      // ── Payload live_sessions ──
+      // Devise par défaut du shop (CDF)
+      final auctionCurrency = 'CDF';
+
       final liveData = {
         'shop_id': widget.shopId,
         'host_id': userId,
@@ -316,13 +311,13 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         'channel_name': channelName,
         'token': token,
         'products': _selectedProductIds,
-        'pre_pinned_products': _prePinnedProductIds, // ✅ NEW
-        'allow_voting': _allowVoting, // ✅ NEW
-        'allow_dynamic_control': _allowDynamicControl, // ✅ NEW
+        'pre_pinned_products': _prePinnedProductIds,
+        'allow_voting': _allowVoting,
+        'allow_dynamic_control': _allowDynamicControl,
         'has_auction': _hasAuction,
-        'starting_price': _hasAuction ? _startingPrice : null,
-        'auction_end_time':
-            _hasAuction ? _auctionEndTime?.toIso8601String() : null,
+        'starting_price': startingPrice,
+        'auction_currency': _hasAuction ? auctionCurrency : null,
+        'auction_end_time': _hasAuction ? _auctionEndTime?.toUtc().toIso8601String() : null,
         'status': liveStatus,
         'source': 'market',
         'scheduled_start': scheduledStart.toIso8601String(),
@@ -342,8 +337,6 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         'status': liveStatus,
         'products': _selectedProductIds.length,
         'prePinned': _prePinnedProductIds.length,
-        'voting': _allowVoting,
-        'dynamic': _allowDynamicControl,
       });
 
       widget.onSuccess?.call(response);
@@ -352,46 +345,51 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(startNow
-              ? '🔴 Live lancé avec succès !'
-              : '📅 Live programmé avec succès'),
+          content: Text(startNow ? l10n.t('live_form_started_success') : l10n.t('live_form_scheduled_success')),
           backgroundColor: _LiveFormPalette.success,
+          behavior: SnackBarBehavior.floating,
         ),
       );
 
       if (startNow) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => LiveStreamPage(
-              liveId: response['id'].toString(),
-              channelName: channelName,
-              token: token,
-              isHost: true,
-            ),
-          ),
-        );
+        // ✅ Navigation via GoRouter
+        context.go('/market/live/${response['id']}', extra: {
+          'channelName': channelName,
+          'token': token,
+          'isHost': true,
+        });
       } else {
-        Navigator.pop(context);
+        context.pop();
       }
     } catch (e) {
       _FormLogger.error('processLive failed', {'error': '$e'});
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur : ${e.toString()}'),
-            backgroundColor: _LiveFormPalette.danger,
-          ),
-        );
-      }
+      if (mounted) _showError('${l10n.t("common_error")}: $e');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
   }
 
   void _showWarning(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message), backgroundColor: Colors.orange),
+      SnackBar(content: Text(message), backgroundColor: Colors.orange, behavior: SnackBarBehavior.floating),
+    );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: _LiveFormPalette.danger,
+        behavior: SnackBarBehavior.floating,
+      ),
     );
   }
 
@@ -400,6 +398,12 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   // ============================================================================
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final lang = Localizations.localeOf(context).languageCode;
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
+    final currencySymbol = AfricanCurrencies.byCode(displayCurrencyCode)?.symbol ?? 'FC';
+
     return Form(
       key: _formKey,
       child: SingleChildScrollView(
@@ -407,25 +411,25 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildHeroHeader(),
+            _buildHeroHeader(l10n),
             const SizedBox(height: 20),
-            _buildThumbnailSection(),
+            _buildThumbnailSection(l10n),
             const SizedBox(height: 20),
-            _buildTitleSection(),
+            _buildTitleSection(l10n),
             const SizedBox(height: 16),
-            _buildDescriptionSection(),
+            _buildDescriptionSection(l10n),
             const SizedBox(height: 24),
-            _buildProductsSection(),
+            _buildProductsSection(l10n, displayCurrencyCode, currencyService, lang),
             if (_selectedProductIds.isNotEmpty) ...[
               const SizedBox(height: 16),
-              _buildPrePinnedSection(),
+              _buildPrePinnedSection(l10n),
             ],
             const SizedBox(height: 24),
-            _buildInteractiveFeaturesSection(),
+            _buildInteractiveFeaturesSection(l10n),
             const SizedBox(height: 24),
-            _buildAuctionSection(),
+            _buildAuctionSection(l10n, currencySymbol),
             const SizedBox(height: 32),
-            _buildActionButtons(),
+            _buildActionButtons(l10n),
             const SizedBox(height: 16),
           ],
         ),
@@ -434,54 +438,29 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ HERO HEADER ═══════════════════
-  Widget _buildHeroHeader() {
+  Widget _buildHeroHeader(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_LiveFormPalette.navy, _LiveFormPalette.navy2],
-        ),
+        gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_LiveFormPalette.navy, _LiveFormPalette.navy2]),
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: _LiveFormPalette.navy.withOpacity(0.25),
-            blurRadius: 14,
-            offset: const Offset(0, 6),
-          ),
-        ],
+        boxShadow: [BoxShadow(color: _LiveFormPalette.navy.withOpacity(0.25), blurRadius: 14, offset: const Offset(0, 6))],
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: _LiveFormPalette.gold,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(Icons.live_tv_rounded,
-                color: _LiveFormPalette.navy, size: 22),
+            decoration: BoxDecoration(color: _LiveFormPalette.gold, borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.live_tv_rounded, color: _LiveFormPalette.navy, size: 22),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('Créer un live shopping',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.2,
-                    )),
+                Text(l10n.t('live_form_title'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: -0.2)),
                 const SizedBox(height: 2),
-                Text('Diffusez, vendez, interagissez en direct',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.7),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    )),
+                Text(l10n.t('live_form_subtitle'), style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 12, fontWeight: FontWeight.w500)),
               ],
             ),
           ),
@@ -491,12 +470,11 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ THUMBNAIL ═══════════════════
-  Widget _buildThumbnailSection() {
+  Widget _buildThumbnailSection(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel('Miniature *', Icons.photo_library_rounded,
-            _LiveFormPalette.info),
+        _sectionLabel(l10n.t('live_form_thumbnail_label'), Icons.photo_library_rounded, _LiveFormPalette.info),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _pickThumbnail,
@@ -507,36 +485,18 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
               color: _LiveFormPalette.bgApp,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(color: _LiveFormPalette.border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
             ),
-            child: _thumbnail != null
+            child: _thumbnailBytes != null
                 ? Stack(
                     fit: StackFit.expand,
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: Image.file(_thumbnail!, fit: BoxFit.cover),
-                      ),
+                      ClipRRect(borderRadius: BorderRadius.circular(14), child: Image.memory(_thumbnailBytes!, fit: BoxFit.cover)),
                       Positioned(
-                        top: 8,
-                        right: 8,
+                        top: 8, right: 8,
                         child: GestureDetector(
                           onTap: _pickThumbnail,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.6),
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.edit_rounded,
-                                color: Colors.white, size: 16),
-                          ),
+                          child: Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), shape: BoxShape.circle), child: const Icon(Icons.edit_rounded, color: Colors.white, size: 16)),
                         ),
                       ),
                     ],
@@ -544,24 +504,11 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
                 : Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: _LiveFormPalette.gold.withOpacity(0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.add_photo_alternate_rounded,
-                            size: 32, color: _LiveFormPalette.gold),
-                      ),
+                      Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: _LiveFormPalette.gold.withOpacity(0.15), shape: BoxShape.circle), child: const Icon(Icons.add_photo_alternate_rounded, size: 32, color: _LiveFormPalette.gold)),
                       const SizedBox(height: 10),
-                      const Text('Ajouter une miniature',
-                          style: TextStyle(
-                              color: _LiveFormPalette.textSub,
-                              fontWeight: FontWeight.w600)),
+                      Text(l10n.t('live_form_add_thumbnail'), style: const TextStyle(color: _LiveFormPalette.textSub, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 2),
-                      const Text('1280 × 720 recommandé',
-                          style: TextStyle(
-                              color: _LiveFormPalette.textMuted, fontSize: 11)),
+                      Text(l10n.t('live_form_thumbnail_hint'), style: const TextStyle(color: _LiveFormPalette.textMuted, fontSize: 11)),
                     ],
                   ),
           ),
@@ -571,31 +518,25 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ TITLE ═══════════════════
-  Widget _buildTitleSection() {
+  Widget _buildTitleSection(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel('Titre *', Icons.title_rounded, _LiveFormPalette.navy2),
+        _sectionLabel(l10n.t('live_form_title_field'), Icons.title_rounded, _LiveFormPalette.navy2),
         const SizedBox(height: 6),
         TextFormField(
           controller: _titleController,
           maxLength: _kMaxTitleLength,
           decoration: InputDecoration(
-            hintText: 'Ex: Vente flash mode été',
+            hintText: l10n.t('live_form_title_hint'),
             counterText: '',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LiveFormPalette.gold, width: 2),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LiveFormPalette.border),
-            ),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.gold, width: 2)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.border)),
           ),
           validator: (v) {
-            if (v == null || v.trim().isEmpty) return 'Champ requis';
-            if (v.trim().length < 3) return 'Titre trop court (min. 3 caractères)';
+            if (v == null || v.trim().isEmpty) return l10n.t('common_required');
+            if (v.trim().length < 3) return l10n.t('live_form_title_too_short');
             return null;
           },
         ),
@@ -604,29 +545,22 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ DESCRIPTION ═══════════════════
-  Widget _buildDescriptionSection() {
+  Widget _buildDescriptionSection(AppLocalizations l10n) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionLabel(
-            'Description', Icons.description_rounded, _LiveFormPalette.navy2),
+        _sectionLabel(l10n.t('live_form_description_label'), Icons.description_rounded, _LiveFormPalette.navy2),
         const SizedBox(height: 6),
         TextFormField(
           controller: _descriptionController,
           maxLines: 3,
           maxLength: _kMaxDescriptionLength,
           decoration: InputDecoration(
-            hintText: 'Décrivez votre live...',
+            hintText: l10n.t('live_form_description_hint'),
             counterText: '',
             border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LiveFormPalette.gold, width: 2),
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(10),
-              borderSide: const BorderSide(color: _LiveFormPalette.border),
-            ),
+            focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.gold, width: 2)),
+            enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.border)),
           ),
         ),
       ],
@@ -634,101 +568,70 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ PRODUCTS CATALOGUE ═══════════════════
-  Widget _buildProductsSection() {
+  Widget _buildProductsSection(AppLocalizations l10n, String displayCurrencyCode, CurrencyService currencyService, String lang) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
-            _sectionLabel('Produits à présenter *',
-                Icons.shopping_bag_rounded, _LiveFormPalette.navy2),
+            _sectionLabel(l10n.t('live_form_products_label'), Icons.shopping_bag_rounded, _LiveFormPalette.navy2),
             const Spacer(),
             if (_selectedProductIds.isNotEmpty)
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: _LiveFormPalette.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text('${_selectedProductIds.length} sélectionné(s)',
-                    style: const TextStyle(
-                        color: _LiveFormPalette.gold,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(color: _LiveFormPalette.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                child: Text('${_selectedProductIds.length} ${l10n.t("live_form_selected")}', style: const TextStyle(color: _LiveFormPalette.gold, fontSize: 11, fontWeight: FontWeight.w800)),
               ),
           ],
         ),
         const SizedBox(height: 10),
         if (_loadingProducts)
-          const Center(
-              child: Padding(
-            padding: EdgeInsets.all(24),
-            child: CircularProgressIndicator(color: _LiveFormPalette.gold),
-          ))
+          const Center(child: Padding(padding: EdgeInsets.all(24), child: CircularProgressIndicator(color: _LiveFormPalette.gold)))
         else if (_availableProducts.isEmpty)
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: _LiveFormPalette.bgApp,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: _LiveFormPalette.border),
-            ),
-            child: Column(
-              children: [
-                const Icon(Icons.inventory_2_outlined,
-                    size: 40, color: _LiveFormPalette.textMuted),
-                const SizedBox(height: 10),
-                const Text('Aucun produit disponible',
-                    style: TextStyle(
-                        color: _LiveFormPalette.textSub,
-                        fontWeight: FontWeight.w600)),
-                const SizedBox(height: 4),
-                const Text('Ajoutez des produits à votre boutique',
-                    style: TextStyle(
-                        color: _LiveFormPalette.textMuted, fontSize: 12)),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: _loadProducts,
-                  icon: const Icon(Icons.refresh_rounded, size: 16),
-                  label: const Text('Rafraîchir'),
-                ),
-              ],
-            ),
+            decoration: BoxDecoration(color: _LiveFormPalette.bgApp, borderRadius: BorderRadius.circular(12), border: Border.all(color: _LiveFormPalette.border)),
+            child: Column(children: [
+              const Icon(Icons.inventory_2_outlined, size: 40, color: _LiveFormPalette.textMuted),
+              const SizedBox(height: 10),
+              Text(l10n.t('live_form_no_products'), style: const TextStyle(color: _LiveFormPalette.textSub, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              Text(l10n.t('live_form_no_products_hint'), style: const TextStyle(color: _LiveFormPalette.textMuted, fontSize: 12)),
+              const SizedBox(height: 12),
+              TextButton.icon(onPressed: _loadProducts, icon: const Icon(Icons.refresh_rounded, size: 16), label: Text(l10n.t('common_refresh'))),
+            ]),
           )
         else
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: 8, runSpacing: 8,
             children: _availableProducts.map((product) {
               final id = product['id'].toString();
               final isSelected = _selectedProductIds.contains(id);
+              // Prix converti dans la devise d'affichage
+              final sellerCurrency = (product['currency'] ?? 'CDF').toString().toUpperCase();
+              final priceRaw = (product['price'] as num?)?.toDouble() ?? 0;
+              final convertedPrice = currencyService.convert(priceRaw, from: sellerCurrency, to: displayCurrencyCode);
+              final formattedPrice = currencyService.formatPrice(convertedPrice, currencyCode: displayCurrencyCode, lang: lang);
+
               return FilterChip(
-                label: Text(
-                  product['title'] ?? 'Sans titre',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: isSelected
-                        ? _LiveFormPalette.navy
-                        : _LiveFormPalette.textSub,
-                    fontWeight:
-                        isSelected ? FontWeight.w700 : FontWeight.w500,
-                  ),
+                label: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(product['title'] ?? l10n.t('live_form_untitled'), maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: isSelected ? _LiveFormPalette.navy : _LiveFormPalette.textSub, fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500, fontSize: 12)),
+                    if (priceRaw > 0)
+                      Text(formattedPrice, style: TextStyle(color: isSelected ? _LiveFormPalette.gold : _LiveFormPalette.textMuted, fontSize: 10, fontWeight: FontWeight.w700)),
+                  ],
                 ),
                 selected: isSelected,
                 onSelected: (_) => _toggleProductSelection(id),
                 selectedColor: _LiveFormPalette.goldLight,
                 backgroundColor: _LiveFormPalette.bgApp,
                 checkmarkColor: _LiveFormPalette.navy,
-                side: BorderSide(
-                  color: isSelected
-                      ? _LiveFormPalette.gold
-                      : _LiveFormPalette.border,
-                ),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(20)),
+                side: BorderSide(color: isSelected ? _LiveFormPalette.gold : _LiveFormPalette.border),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                 avatar: _productAvatar(product),
               );
             }).toList(),
@@ -738,125 +641,63 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   Widget? _productAvatar(Map<String, dynamic> product) {
-    final url = product['image_url']?.toString();
+    String? url = product['image_url']?.toString();
+    if ((url == null || url.isEmpty) && product['images'] is List) {
+      final images = product['images'] as List;
+      if (images.isNotEmpty) url = images.first.toString();
+    }
     if (url == null || url.isEmpty) return null;
     return ClipRRect(
       borderRadius: BorderRadius.circular(12),
       child: CachedNetworkImage(
-        imageUrl: url,
-        width: 24,
-        height: 24,
-        fit: BoxFit.cover,
-        placeholder: (_, __) => const SizedBox(
-            width: 16,
-            height: 16,
-            child:
-                CircularProgressIndicator(strokeWidth: 2, color: _LiveFormPalette.gold)),
-        errorWidget: (_, __, ___) =>
-            const Icon(Icons.image, size: 16, color: _LiveFormPalette.textMuted),
+        imageUrl: url, width: 24, height: 24, fit: BoxFit.cover,
+        placeholder: (_, __) => const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _LiveFormPalette.gold)),
+        errorWidget: (_, __, ___) => const Icon(Icons.image, size: 16, color: _LiveFormPalette.textMuted),
       ),
     );
   }
 
   // ═══════════════════ PRE-PINNED ═══════════════════
-  Widget _buildPrePinnedSection() {
+  Widget _buildPrePinnedSection(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _LiveFormPalette.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _LiveFormPalette.border),
-      ),
+      decoration: BoxDecoration(color: _LiveFormPalette.bgCard, borderRadius: BorderRadius.circular(14), border: Border.all(color: _LiveFormPalette.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: _LiveFormPalette.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.push_pin_rounded,
-                    size: 14, color: _LiveFormPalette.gold),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Produits pré-épinglés au démarrage',
-                    style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _LiveFormPalette.textMain)),
-              ),
-              Text('${_prePinnedProductIds.length}/$_kMaxPrePinned',
-                  style: const TextStyle(
-                      color: _LiveFormPalette.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700)),
-            ],
-          ),
+          Row(children: [
+            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _LiveFormPalette.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.push_pin_rounded, size: 14, color: _LiveFormPalette.gold)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(l10n.t('live_form_prepinned_title'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _LiveFormPalette.textMain))),
+            Text('${_prePinnedProductIds.length}/$_kMaxPrePinned', style: const TextStyle(color: _LiveFormPalette.textMuted, fontSize: 11, fontWeight: FontWeight.w700)),
+          ]),
           const SizedBox(height: 4),
-          const Text(
-              'Ces produits apparaîtront automatiquement dans le carousel dès le début du live.',
-              style: TextStyle(
-                  color: _LiveFormPalette.textMuted,
-                  fontSize: 11,
-                  height: 1.4)),
+          Text(l10n.t('live_form_prepinned_desc'), style: const TextStyle(color: _LiveFormPalette.textMuted, fontSize: 11, height: 1.4)),
           const SizedBox(height: 10),
           Wrap(
-            spacing: 6,
-            runSpacing: 6,
+            spacing: 6, runSpacing: 6,
             children: _selectedProductIds.map((id) {
-              final product = _availableProducts.firstWhere(
-                (p) => p['id'].toString() == id,
-                orElse: () => <String, dynamic>{},
-              );
+              final product = _availableProducts.firstWhere((p) => p['id'].toString() == id, orElse: () => <String, dynamic>{});
               final isPrePinned = _prePinnedProductIds.contains(id);
               return GestureDetector(
                 onTap: () => _togglePrePinned(id),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
-                    color: isPrePinned
-                        ? _LiveFormPalette.gold
-                        : _LiveFormPalette.bgApp,
+                    color: isPrePinned ? _LiveFormPalette.gold : _LiveFormPalette.bgApp,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: isPrePinned
-                          ? _LiveFormPalette.gold
-                          : _LiveFormPalette.border,
+                    border: Border.all(color: isPrePinned ? _LiveFormPalette.gold : _LiveFormPalette.border),
+                  ),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(isPrePinned ? Icons.push_pin_rounded : Icons.push_pin_outlined, size: 12, color: isPrePinned ? _LiveFormPalette.navy : _LiveFormPalette.textMuted),
+                    const SizedBox(width: 5),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 120),
+                      child: Text(product['title']?.toString() ?? l10n.t('live_form_product_fallback'), maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: isPrePinned ? _LiveFormPalette.navy : _LiveFormPalette.textSub, fontSize: 11, fontWeight: FontWeight.w700)),
                     ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isPrePinned
-                            ? Icons.push_pin_rounded
-                            : Icons.push_pin_outlined,
-                        size: 12,
-                        color: isPrePinned
-                            ? _LiveFormPalette.navy
-                            : _LiveFormPalette.textMuted,
-                      ),
-                      const SizedBox(width: 5),
-                      Text(
-                        product['title']?.toString() ?? 'Produit',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: isPrePinned
-                              ? _LiveFormPalette.navy
-                              : _LiveFormPalette.textSub,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
-                  ),
+                  ]),
                 ),
               );
             }).toList(),
@@ -867,68 +708,33 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ INTERACTIVE FEATURES ═══════════════════
-  Widget _buildInteractiveFeaturesSection() {
+  Widget _buildInteractiveFeaturesSection(AppLocalizations l10n) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            _LiveFormPalette.navy.withOpacity(0.04),
-            _LiveFormPalette.navy2.withOpacity(0.02),
-          ],
-        ),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_LiveFormPalette.navy.withOpacity(0.04), _LiveFormPalette.navy2.withOpacity(0.02)]),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _LiveFormPalette.border),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: _LiveFormPalette.info.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.auto_awesome_rounded,
-                    size: 14, color: _LiveFormPalette.info),
-              ),
-              const SizedBox(width: 8),
-              const Text('Fonctionnalités interactives',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w900,
-                      color: _LiveFormPalette.textMain)),
-            ],
-          ),
+          Row(children: [
+            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _LiveFormPalette.info.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.auto_awesome_rounded, size: 14, color: _LiveFormPalette.info)),
+            const SizedBox(width: 8),
+            Text(l10n.t('live_form_interactive_title'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _LiveFormPalette.textMain)),
+          ]),
           const SizedBox(height: 12),
           _FeatureToggle(
-            icon: Icons.how_to_vote_rounded,
-            iconColor: const Color(0xFF7C3AED),
-            title: 'Vote interactif',
-            subtitle:
-                'Les spectateurs votent pour le prochain produit à présenter',
-            value: _allowVoting,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              setState(() => _allowVoting = v);
-            },
+            icon: Icons.how_to_vote_rounded, iconColor: const Color(0xFF7C3AED),
+            title: l10n.t('live_form_voting_title'), subtitle: l10n.t('live_form_voting_desc'),
+            value: _allowVoting, onChanged: (v) { HapticFeedback.selectionClick(); setState(() => _allowVoting = v); },
           ),
           const Divider(height: 24, color: _LiveFormPalette.borderSoft),
           _FeatureToggle(
-            icon: Icons.tune_rounded,
-            iconColor: const Color(0xFF059669),
-            title: 'Contrôle dynamique',
-            subtitle:
-                'L\'hôte peut épingler / retirer des produits en direct',
-            value: _allowDynamicControl,
-            onChanged: (v) {
-              HapticFeedback.selectionClick();
-              setState(() => _allowDynamicControl = v);
-            },
+            icon: Icons.tune_rounded, iconColor: const Color(0xFF059669),
+            title: l10n.t('live_form_dynamic_title'), subtitle: l10n.t('live_form_dynamic_desc'),
+            value: _allowDynamicControl, onChanged: (v) { HapticFeedback.selectionClick(); setState(() => _allowDynamicControl = v); },
           ),
         ],
       ),
@@ -936,86 +742,41 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
   }
 
   // ═══════════════════ AUCTION ═══════════════════
-  Widget _buildAuctionSection() {
+  Widget _buildAuctionSection(AppLocalizations l10n, String currencySymbol) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _LiveFormPalette.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: _hasAuction ? _LiveFormPalette.gold : _LiveFormPalette.border,
-          width: _hasAuction ? 1.5 : 1,
-        ),
+        color: _LiveFormPalette.bgCard, borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _hasAuction ? _LiveFormPalette.gold : _LiveFormPalette.border, width: _hasAuction ? 1.5 : 1),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: _LiveFormPalette.gold.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(Icons.gavel_rounded,
-                    size: 14, color: _LiveFormPalette.gold),
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text('Enchères',
-                    style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: _LiveFormPalette.textMain)),
-              ),
-              Switch(
-                value: _hasAuction,
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _hasAuction = v);
-                },
-                activeColor: _LiveFormPalette.gold,
-              ),
-            ],
-          ),
+          Row(children: [
+            Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _LiveFormPalette.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.gavel_rounded, size: 14, color: _LiveFormPalette.gold)),
+            const SizedBox(width: 8),
+            Expanded(child: Text(l10n.t('live_form_auction_title'), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _LiveFormPalette.textMain))),
+            Switch(value: _hasAuction, onChanged: (v) { HapticFeedback.selectionClick(); setState(() => _hasAuction = v); }, activeColor: _LiveFormPalette.gold),
+          ]),
           if (_hasAuction) ...[
             const SizedBox(height: 12),
-            _sectionLabel('Prix de départ *', Icons.payments_rounded,
-                _LiveFormPalette.navy2),
+            _sectionLabel(l10n.t('live_form_starting_price'), Icons.payments_rounded, _LiveFormPalette.navy2),
             const SizedBox(height: 6),
             TextFormField(
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
+              controller: _startingPriceController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: InputDecoration(
-                hintText: '0',
-                suffixText: 'FCFA',
-                border:
-                    OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: _LiveFormPalette.gold, width: 2),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(10),
-                  borderSide:
-                      const BorderSide(color: _LiveFormPalette.border),
-                ),
+                hintText: '0', suffixText: currencySymbol,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.gold, width: 2)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: _LiveFormPalette.border)),
               ),
-              onChanged: (v) => _startingPrice = double.tryParse(v) ?? 0,
-              validator: (v) => _hasAuction && (v == null || v.isEmpty)
-                  ? 'Champ requis'
-                  : null,
+              validator: (v) => _hasAuction && (v == null || v.trim().isEmpty) ? l10n.t('common_required') : null,
             ),
             const SizedBox(height: 14),
-            _sectionLabel('Fin des enchères *', Icons.event_rounded,
-                _LiveFormPalette.navy2),
+            _sectionLabel(l10n.t('live_form_auction_end'), Icons.event_rounded, _LiveFormPalette.navy2),
             const SizedBox(height: 6),
-            _AuctionDatePicker(
-              value: _auctionEndTime,
-              onTap: _pickAuctionEndTime,
-            ),
+            _AuctionDatePicker(value: _auctionEndTime, onTap: _pickAuctionEndTime, l10n: l10n),
           ],
         ],
       ),
@@ -1024,95 +785,46 @@ class _CreateLiveFormState extends State<CreateLiveForm> {
 
   Future<void> _pickAuctionEndTime() async {
     final date = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().add(const Duration(days: 1)),
-      firstDate: DateTime.now().add(const Duration(hours: 2)),
-      lastDate: DateTime.now().add(const Duration(days: 30)),
+      context: context, initialDate: DateTime.now().add(const Duration(days: 1)),
+      firstDate: DateTime.now().add(const Duration(hours: 2)), lastDate: DateTime.now().add(const Duration(days: 30)),
     );
-    if (date == null) return;
-    final time = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(hour: 18, minute: 0),
-    );
-    if (time == null) return;
-    setState(() {
-      _auctionEndTime = DateTime(
-        date.year,
-        date.month,
-        date.day,
-        time.hour,
-        time.minute,
-      );
-    });
+    if (date == null || !mounted) return;
+    final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 18, minute: 0));
+    if (time == null || !mounted) return;
+    setState(() => _auctionEndTime = DateTime(date.year, date.month, date.day, time.hour, time.minute));
   }
 
   // ═══════════════════ ACTIONS ═══════════════════
-  Widget _buildActionButtons() {
-    return Column(
-      children: [
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: ElevatedButton.icon(
-            onPressed: _isLoading ? null : () => _processLive(startNow: true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _LiveFormPalette.danger,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-              disabledBackgroundColor: _LiveFormPalette.danger.withOpacity(0.5),
-            ),
-            icon: _isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.circle, size: 14),
-            label: Text(
-              _isLoading ? 'Lancement...' : 'Lancer le live maintenant',
-              style:
-                  const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
-            ),
-          ),
+  Widget _buildActionButtons(AppLocalizations l10n) {
+    return Column(children: [
+      SizedBox(
+        width: double.infinity, height: 52,
+        child: ElevatedButton.icon(
+          onPressed: _isLoading ? null : () => _processLive(startNow: true),
+          style: ElevatedButton.styleFrom(backgroundColor: _LiveFormPalette.danger, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), elevation: 0, disabledBackgroundColor: _LiveFormPalette.danger.withOpacity(0.5)),
+          icon: _isLoading ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)) : const Icon(Icons.circle, size: 14),
+          label: Text(_isLoading ? l10n.t('live_form_launching') : l10n.t('live_form_start_now'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
         ),
-        const SizedBox(height: 12),
-        SizedBox(
-          width: double.infinity,
-          height: 52,
-          child: OutlinedButton.icon(
-            onPressed: _isLoading ? null : () => _processLive(startNow: false),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: _LiveFormPalette.gold,
-              side: const BorderSide(color: _LiveFormPalette.gold, width: 1.5),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-            ),
-            icon: const Icon(Icons.schedule_rounded, size: 18),
-            label: const Text('Programmer pour plus tard',
-                style:
-                    TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
-          ),
+      ),
+      const SizedBox(height: 12),
+      SizedBox(
+        width: double.infinity, height: 52,
+        child: OutlinedButton.icon(
+          onPressed: _isLoading ? null : () => _processLive(startNow: false),
+          style: OutlinedButton.styleFrom(foregroundColor: _LiveFormPalette.gold, side: const BorderSide(color: _LiveFormPalette.gold, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          icon: const Icon(Icons.schedule_rounded, size: 18),
+          label: Text(l10n.t('live_form_schedule'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
         ),
-      ],
-    );
+      ),
+    ]);
   }
 
-  // ═══════════════════ HELPERS ═══════════════════
   Widget _sectionLabel(String label, IconData icon, Color color) {
-    return Row(
-      children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 6),
-        Text(label,
-            style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-                color: _LiveFormPalette.textMain,
-                letterSpacing: -0.1)),
-      ],
-    );
+    return Row(children: [
+      Icon(icon, size: 14, color: color),
+      const SizedBox(width: 6),
+      Text(label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _LiveFormPalette.textMain, letterSpacing: -0.1)),
+    ]);
   }
 }
 
@@ -1127,56 +839,22 @@ class _FeatureToggle extends StatelessWidget {
   final bool value;
   final ValueChanged<bool> onChanged;
 
-  const _FeatureToggle({
-    required this.icon,
-    required this.iconColor,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
+  const _FeatureToggle({required this.icon, required this.iconColor, required this.title, required this.subtitle, required this.value, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => onChanged(!value),
-      behavior: HitTestBehavior.opaque,
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 14, color: iconColor),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _LiveFormPalette.textMain)),
-                const SizedBox(height: 2),
-                Text(subtitle,
-                    style: const TextStyle(
-                        fontSize: 11,
-                        color: _LiveFormPalette.textSub,
-                        height: 1.3)),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeColor: _LiveFormPalette.gold,
-          ),
-        ],
-      ),
+      onTap: () => onChanged(!value), behavior: HitTestBehavior.opaque,
+      child: Row(children: [
+        Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: iconColor.withOpacity(0.12), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 14, color: iconColor)),
+        const SizedBox(width: 10),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: _LiveFormPalette.textMain)),
+          const SizedBox(height: 2),
+          Text(subtitle, style: const TextStyle(fontSize: 11, color: _LiveFormPalette.textSub, height: 1.3)),
+        ])),
+        Switch(value: value, onChanged: onChanged, activeColor: _LiveFormPalette.gold),
+      ]),
     );
   }
 }
@@ -1187,44 +865,29 @@ class _FeatureToggle extends StatelessWidget {
 class _AuctionDatePicker extends StatelessWidget {
   final DateTime? value;
   final VoidCallback onTap;
+  final AppLocalizations l10n;
 
-  const _AuctionDatePicker({required this.value, required this.onTap});
+  const _AuctionDatePicker({required this.value, required this.onTap, required this.l10n});
 
   @override
   Widget build(BuildContext context) {
+    final lang = Localizations.localeOf(context).languageCode;
     return GestureDetector(
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-        decoration: BoxDecoration(
-          color: _LiveFormPalette.bgApp,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _LiveFormPalette.border),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.event_rounded,
-                color: _LiveFormPalette.gold, size: 18),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                value != null
-                    ? '${value!.day}/${value!.month}/${value!.year} à ${value!.hour.toString().padLeft(2, '0')}:${value!.minute.toString().padLeft(2, '0')}'
-                    : 'Sélectionner une date et une heure',
-                style: TextStyle(
-                  color: value != null
-                      ? _LiveFormPalette.textMain
-                      : _LiveFormPalette.textMuted,
-                  fontWeight:
-                      value != null ? FontWeight.w700 : FontWeight.w500,
-                  fontSize: 13,
-                ),
-              ),
+        decoration: BoxDecoration(color: _LiveFormPalette.bgApp, borderRadius: BorderRadius.circular(10), border: Border.all(color: _LiveFormPalette.border)),
+        child: Row(children: [
+          const Icon(Icons.event_rounded, color: _LiveFormPalette.gold, size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              value != null ? DateFormat('dd/MM/yyyy HH:mm', lang).format(value!) : l10n.t('live_form_select_datetime'),
+              style: TextStyle(color: value != null ? _LiveFormPalette.textMain : _LiveFormPalette.textMuted, fontWeight: value != null ? FontWeight.w700 : FontWeight.w500, fontSize: 13),
             ),
-            const Icon(Icons.chevron_right_rounded,
-                color: _LiveFormPalette.textMuted, size: 18),
-          ],
-        ),
+          ),
+          const Icon(Icons.chevron_right_rounded, color: _LiveFormPalette.textMuted, size: 18),
+        ]),
       ),
     );
   }
