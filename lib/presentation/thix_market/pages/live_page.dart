@@ -7,6 +7,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/live_provider.dart';
@@ -544,7 +545,7 @@ class _LiveCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final id = live['id']?.toString() ?? '';
-    final thumbnail = _LiveValidators.sanitizeUrl(live['thumbnail']?.toString());
+    final thumbnail = _LiveValidators.sanitizeUrl(live['thumbnail_url']?.toString() ?? live['thumbnail']?.toString());
     final title = _LiveValidators.sanitize(live['title']?.toString() ?? 'Live sans titre', maxLength: 80);
     final shopName = _LiveValidators.sanitize(live['shop_name']?.toString() ?? 'Boutique', maxLength: 60);
     final shopAvatar = _LiveValidators.sanitizeUrl(live['shop_avatar']?.toString());
@@ -561,8 +562,14 @@ class _LiveCard extends StatelessWidget {
             return;
           }
           HapticFeedback.selectionClick();
-          context.push('/market/live/$id');
-          debugPrint('[Live] ▶️ Open live $id');
+          final channelName = live['channel_name']?.toString();
+          final hostId = live['host_id']?.toString();
+          final me = Supabase.instance.client.auth.currentUser?.id;
+          context.push('/market/live/$id', extra: {
+            if (channelName != null && channelName.isNotEmpty) 'channelName': channelName,
+            'isHost': me != null && hostId != null && hostId == me,
+          });
+          debugPrint('[Live] ▶️ Open live $id channel=$channelName isHost=${me == hostId}');
         },
         child: Container(
           margin: isFeatured ? const EdgeInsets.symmetric(horizontal: 4) : null,
@@ -822,7 +829,7 @@ class _MyLiveCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final id = live['id']?.toString() ?? '';
-    final thumbnail = _LiveValidators.sanitizeUrl(live['thumbnail']?.toString());
+    final thumbnail = _LiveValidators.sanitizeUrl(live['thumbnail_url']?.toString() ?? live['thumbnail']?.toString());
     final title = _LiveValidators.sanitize(live['title']?.toString() ?? 'Live', maxLength: 80);
     final viewers = _LiveValidators.safeInt(live['viewers']);
     final productsSold = _LiveValidators.safeInt(live['products_sold']);
@@ -890,8 +897,17 @@ class _MyLiveCard extends StatelessWidget {
                       onPressed: () {
                         if (!_LiveValidators.isValidId(id)) return;
                         HapticFeedback.selectionClick();
-                        final route = isLive ? '/market/live/$id' : '/market/live/$id/replay';
-                        context.push(route);
+                        if (isLive) {
+                          final channelName = live['channel_name']?.toString();
+                          final hostId = live['host_id']?.toString();
+                          final me = Supabase.instance.client.auth.currentUser?.id;
+                          context.push('/market/live/$id', extra: {
+                            if (channelName != null && channelName.isNotEmpty) 'channelName': channelName,
+                            'isHost': me != null && hostId != null && hostId == me,
+                          });
+                        } else {
+                          context.push('/market/live/$id/replay');
+                        }
                         debugPrint('[Live] ${isLive ? "▶️ Join" : "⏪ Replay"} $id');
                       },
                       style: OutlinedButton.styleFrom(
