@@ -1,6 +1,6 @@
 // lib/presentation/chat/chat_screen.dart
 // ============================================================================
-// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v2.2
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v2.3
 // ----------------------------------------------------------------------------
 //  ✅ Swipe DROITE = répondre, sur TOUS les messages (moi + autres)
 //  ✅ Swipe GAUCHE = menu (répondre, rappel, transférer, copier, favori, épingler,
@@ -14,6 +14,9 @@
 //  ✅ Sanitisation durcie : bidi/contrôles, URLs strictes, extensions dangereuses
 //  ✅ v2.2 : carte PRODUIT (référence THIX Market) rendue dans le chat au lieu
 //     du token brut [PRODUCT_REF:...], aperçus lisibles partout
+//  ✅ v2.3 : EXCEPTION THIX MARKET (bypass connexion paire pour acheteur↔vendeur)
+//  ✅ v2.3 : Envoi VIDÉO + DOCUMENTS (pdf/doc/xls/csv/zip/txt) avec icônes adaptées
+//  ✅ v2.3 : Bouton envoi FLUIDE style WhatsApp (animation + haptic + debounce)
 // ============================================================================
 import 'dart:async';
 import 'dart:convert';
@@ -21,7 +24,6 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -39,7 +41,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:record/record.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -60,7 +61,6 @@ import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
-
 // THIX Market : décodage de la référence produit + conversion de devise
 import 'package:thix_id/presentation/thix_market/core/african_currencies.dart';
 import 'package:thix_id/presentation/thix_market/core/chat_service.dart' as market_chat;
@@ -89,7 +89,7 @@ const int _kSearchDebounceMs = 350;
 const int _kEditWindowMinutes = 15;
 const int _kDeleteForAllWindowMinutes = 60;
 const int _kSendThrottleMs = 600;
-const int _kExpirySweepSeconds = 1; // purge auto-destruction à la seconde
+const int _kExpirySweepSeconds = 1;
 const int _kDraftSaveDebounceMs = 500;
 const double _kSwipeTrigger = 60;
 const double _kSwipeMax = 84;
@@ -104,8 +104,6 @@ class _ChatValidators {
 
   static final RegExp _ctrlKeepNl = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]');
   static final RegExp _ctrlAll = RegExp(r'[\x00-\x1F\x7F]');
-  // Contrôles bidirectionnels (spoofing RTL) + BOM / zero-width space.
-  // U+200D (ZWJ) conservé : indispensable aux emojis composés.
   static final RegExp _bidi = RegExp(r'[\u200B\u200E\u200F\u202A-\u202E\u2066-\u2069\uFEFF]');
   static final RegExp _tags = RegExp(r'<[a-zA-Z/!?][^>]*>');
   static final RegExp _jsScheme = RegExp(r'(javascript|vbscript)\s*:', caseSensitive: false);
@@ -161,17 +159,40 @@ class _ChatValidators {
   static const Set<String> _blockedExt = {
     'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'sh', 'ps1', 'vbs', 'js', 'jar', 'apk', 'dll', 'lnk',
   };
+
   static bool isAllowedExtension(String? ext) => !_blockedExt.contains((ext ?? '').toLowerCase());
 
+  /// ✅ v2.3 : Détection média enrichie (vidéo + documents courants)
   static String getMediaType(String ext) {
     const img = {'jpg', 'jpeg', 'png', 'gif', 'webp'};
-    const vid = {'mp4', 'mov', 'avi', 'mkv'};
-    const aud = {'mp3', 'wav', 'm4a', 'webm', 'opus'};
+    const vid = {'mp4', 'mov', 'avi', 'mkv', 'webm', '3gp'};
+    const aud = {'mp3', 'wav', 'm4a', 'ogg', 'opus', 'aac'};
     final e = ext.toLowerCase();
     if (img.contains(e)) return 'image';
     if (vid.contains(e)) return 'video';
     if (aud.contains(e)) return 'audio';
     return 'file';
+  }
+
+  /// ✅ v2.3 : Icône adaptée selon le type de fichier (pour aperçu + bulle)
+  static IconData iconForExtension(String? ext) {
+    final e = (ext ?? '').toLowerCase();
+    // Vidéo
+    if (['mp4', 'mov', 'avi', 'mkv', 'webm', '3gp'].contains(e)) return Icons.videocam_rounded;
+    // Audio
+    if (['mp3', 'wav', 'm4a', 'ogg', 'opus', 'aac'].contains(e)) return Icons.audiotrack_rounded;
+    // PDF
+    if (e == 'pdf') return Icons.picture_as_pdf_rounded;
+    // Documents Office / texte
+    if (['doc', 'docx', 'odt', 'rtf'].contains(e)) return Icons.description_rounded;
+    if (['xls', 'xlsx', 'csv', 'ods'].contains(e)) return Icons.table_chart_rounded;
+    if (['ppt', 'pptx', 'odp'].contains(e)) return Icons.slideshow_rounded;
+    // Archives
+    if (['zip', 'rar', '7z', 'tar', 'gz'].contains(e)) return Icons.folder_zip_rounded;
+    // Texte brut
+    if (['txt', 'md', 'json', 'xml', 'html'].contains(e)) return Icons.article_rounded;
+    // Fallback
+    return Icons.insert_drive_file_rounded;
   }
 
   static int passwordScore(String pwd) {
@@ -192,7 +213,6 @@ class _ChatValidators {
 }
 
 /// l10n avec repli si la clé n'existe pas encore dans app_localizations.
-/// Toutes les chaînes UI passent par une clé (voir liste des clés à ajouter).
 String _tr(AppLocalizations l10n, String key, String fallback) {
   final s = l10n.t(key);
   return s == key ? fallback : s;
@@ -226,7 +246,6 @@ Future<T> _chatRetry<T>(
   }
 }
 
-/// Lance une opération sans bloquer l'UI, en absorbant proprement l'erreur.
 Future<void> _fireAndForget(Future<dynamic> Function() fn) async {
   try {
     await fn();
@@ -238,9 +257,6 @@ Future<void> _fireAndForget(Future<dynamic> Function() fn) async {
 // ============================================================================
 // RÉFÉRENCE PRODUIT (THIX Market) — aperçus lisibles
 // ============================================================================
-
-/// Aperçu lisible d'un message : « 📦 titre » pour une référence produit,
-/// sinon l'aperçu natif du message. Ne montre jamais le token brut.
 String _previewOf(ChatMessage m) {
   final parsed = market_chat.ChatService.parse(m.content);
   final product = parsed.product;
@@ -251,14 +267,12 @@ String _previewOf(ChatMessage m) {
   return rest.isEmpty ? head : '$head — $rest';
 }
 
-/// Texte « humain » d'un message (sans token produit) : copie, menus, etc.
 String _plainTextOf(ChatMessage m) {
   final parsed = market_chat.ChatService.parse(m.content);
   if (parsed.product == null) return m.content;
   return _ChatValidators.sanitize(parsed.text, maxLength: _kMaxMessageLength);
 }
 
-/// Texte indexé pour la recherche locale (titre produit + texte, jamais le token).
 String _searchableText(ChatMessage m) {
   final parsed = market_chat.ChatService.parse(m.content);
   final product = parsed.product;
@@ -288,7 +302,6 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     loadInitial();
   }
 
-  /// Jamais de View-Once ni de message expiré dans le cache local.
   List<Map<String, dynamic>> _cacheable(List<ChatMessage> msgs) =>
       msgs.where((m) => !m.isViewOnce && !m.isExpired).map((m) => m.toJson()).toList();
 
@@ -372,7 +385,6 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     var changed = false;
     for (final msg in updated) {
       final idx = current.indexWhere((m) => m.id == msg.id);
-      // Auto-destruction : expiré ou soft-supprimé par le serveur → disparaît, sans trace.
       final gone = msg.isExpired || (msg.isEphemeral && msg.isDeleted);
       if (gone) {
         if (idx != -1) {
@@ -398,7 +410,6 @@ class ChatMsgNotifier extends StateNotifier<List<ChatMessage>> {
     }
   }
 
-  /// Purge silencieuse des messages auto-destructibles expirés.
   void purgeExpired() {
     if (!mounted) return;
     final keep = state.where((m) => !m.isExpired).toList();
@@ -465,7 +476,6 @@ class _SwipeActions extends StatefulWidget {
   final VoidCallback onReply;
   final VoidCallback onMore;
   const _SwipeActions({super.key, required this.child, required this.onReply, required this.onMore});
-
   @override
   State<_SwipeActions> createState() => _SwipeActionsState();
 }
@@ -553,7 +563,16 @@ class ChatScreen extends ConsumerStatefulWidget {
   final String conversationId;
   final ChatConversation conversation;
 
-  const ChatScreen({super.key, required this.conversationId, required this.conversation});
+  /// ✅ v2.3 EXCEPTION THIX MARKET : lève la règle « être connectés l'un à l'autre »
+  /// pour les conversations acheteur ↔ vendeur.
+  final bool isMarketChat;
+
+  const ChatScreen({
+    super.key,
+    required this.conversationId,
+    required this.conversation,
+    this.isMarketChat = false,
+  });
 
   @override
   ConsumerState<ChatScreen> createState() => _ChatScreenState();
@@ -570,7 +589,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   UserStatus? _otherParticipant;
   List<GroupMember> _groupMembers = [];
   String _replyToId = '';
-
   bool _isEphemeral = false;
   int? _ephemeralDuration;
   bool _isTyping = false;
@@ -589,7 +607,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Uint8List? _audioBytes;
   String? _localAudioPath;
   bool _sendViewOnce = false;
-
   List<PlatformFile> _selectedFiles = [];
 
   Timer? _typingTimer;
@@ -639,6 +656,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ── Ancres de scroll ──
   final Map<String, GlobalKey> _msgKeys = <String, GlobalKey>{};
   List<String> _displayIds = <String>[];
+
+  // ✅ v2.3 : Détection auto du contenu market dans les messages
+  bool _marketByContent = false;
+
+  /// ✅ v2.3 : Vrai si conversation THIX Market (flag route OU référence produit détectée)
+  bool get _isMarketConversation => widget.isMarketChat || _marketByContent;
+
+  /// ✅ v2.3 : Autorisation d'écrire : connexion valide OU exception THIX Market
+  bool get _canWrite => _isConnectionValid || _isMarketConversation;
 
   static List<String> _uniq(List<String> l) => l.toSet().toList();
 
@@ -790,8 +816,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }
       _onMentionQueryChanged(_inputController.text);
     });
-    _searchCtrl.addListener(_onSearchChanged);
 
+    _searchCtrl.addListener(_onSearchChanged);
     _checkConnectionSecurity();
     _loadUserRole();
     _getParticipantInfo();
@@ -810,8 +836,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _log('[Chat] ⚠️ realtime subscribe: $e');
     }
 
-    // Purge silencieuse des messages auto-destructibles (chez moi ET chez l'autre :
-    // chaque client applique la même règle d'expiration, sans aucune confirmation).
     _expiryTimer = Timer.periodic(const Duration(seconds: _kExpirySweepSeconds), (_) {
       if (!mounted) return;
       ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
@@ -879,7 +903,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     });
   }
 
-  /// Sauvegarde immédiate (pause de l'app / fermeture de l'écran).
   void _flushDraft() {
     _draftTimer?.cancel();
     final pending = _editingMessageId.isNotEmpty ? _draftBeforeEdit : _inputController.text;
@@ -905,14 +928,25 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   // CYCLE DE VIE / SÉCURITÉ CONNEXION
   // ==========================================================================
+
+  /// ✅ v2.3 : Bypass connexion paire pour THIX Market
   Future<void> _checkConnectionSecurity() async {
     if (widget.conversation.isGroup || _isAgent) return;
+
+    // ✅ EXCEPTION THIX MARKET : acheteur ↔ vendeur sans connexion obligatoire
+    if (_isMarketConversation) {
+      if (!_isConnectionValid) setState(() => _isConnectionValid = true);
+      return;
+    }
+
     final now = DateTime.now();
     if (_lastConnCheck != null && now.difference(_lastConnCheck!).inSeconds < _kPresenceCheckThrottleSeconds) return;
     _lastConnCheck = now;
+
     final myId = _chatService.currentUserId;
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != myId, orElse: () => '');
     if (otherId.isEmpty) return;
+
     try {
       final isConnected = await _chatRetry(
         () => _connectionService.checkConnection(myId, otherId),
@@ -1059,7 +1093,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   void _sendTypingStatus(bool t) {
-    if (!_isConnectionValid) return;
+    // ✅ v2.3 : Utilise _canWrite au lieu de _isConnectionValid seul
+    if (!_canWrite) return;
     if (_chatService.currentUserId.isEmpty) return;
     unawaited(_fireAndForget(() => _chatService.sendTypingStatus(widget.conversationId, isTyping: t)));
   }
@@ -1105,7 +1140,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     return k;
   }
 
-  /// Aller à un message, même s'il n'est pas encore construit à l'écran.
   void _scrollToMessage(String id, {bool retry = true}) {
     final ctx = _msgKeys[id]?.currentContext;
     if (ctx != null) {
@@ -1158,7 +1192,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (show != _showScrollDown) setState(() => _showScrollDown = show);
   }
 
-  /// Répondre à un message (swipe droite / menu).
   void _setReply(ChatMessage msg) {
     if (msg.isDeleted || msg.isDeletedForAll) return;
     HapticFeedback.selectionClick();
@@ -1174,7 +1207,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     if (m.senderId != _chatService.currentUserId) return false;
     if (m.isDeleted || m.isDeletedForAll || m.isViewOnce || m.hasMedia) return false;
     if ('${m.mediaType}'.startsWith('call_')) return false;
-    if (_isProductRefMessage(m)) return false; // une carte produit ne se modifie pas
+    if (_isProductRefMessage(m)) return false;
     return DateTime.now().difference(m.createdAt.toLocal()).inMinutes < _kEditWindowMinutes;
   }
 
@@ -1245,7 +1278,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // ÉDITION (fenêtre 15 min) + badge "Modifié"
+  // ÉDITION
   // ==========================================================================
   void _startEdit(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
@@ -1300,7 +1333,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
   }
 
-  /// Annule l'édition et RESTAURE le brouillon qui était en cours de saisie.
   void _cancelEdit() {
     final restore = _draftBeforeEdit;
     _draftBeforeEdit = '';
@@ -1314,9 +1346,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   // SUPPRESSIONS
   // ==========================================================================
-  /// Point d'entrée unique de la suppression.
-  ///  • Message éphémère (expiré ou non) → suppression DIRECTE, sans popup.
-  ///  • Message normal → feuille à 2 options (pour moi / pour tous).
   void _showDeleteOptions(ChatMessage msg) {
     if (msg.isExpired || msg.isEphemeral) {
       unawaited(_deleteEphemeral(msg));
@@ -1375,9 +1404,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  /// 💣 Suppression directe d'un message éphémère : aucun popup, aucun message.
-  /// Disparaît localement tout de suite ; côté serveur on supprime pour tous si
-  /// c'est mon message (sinon pour moi), en arrière-plan.
   Future<void> _deleteEphemeral(ChatMessage msg) async {
     final notifier = ref.read(chatMessagesProvider(widget.conversationId).notifier);
     notifier.removeLocal(msg.id);
@@ -1390,7 +1416,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         await _chatRetry(() => _chatService.deleteMessage(msg.id), label: 'deleteEphemeralMe');
       }
     } catch (e) {
-      // Repli : suppression pour moi si « pour tous » est refusé (fenêtre dépassée).
       _log('[Chat] ⚠️ deleteEphemeral: $e');
       await _fireAndForget(() => _chatService.deleteMessage(msg.id));
     }
@@ -1425,7 +1450,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // FORWARD (max 5)
+  // FORWARD
   // ==========================================================================
   void _showForwardSheet(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
@@ -1766,7 +1791,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // INFO MESSAGE + EXPORT (réservé agents)
+  // INFO MESSAGE + EXPORT
   // ==========================================================================
   void _showMessageInfo(ChatMessage msg) {
     final l10n = AppLocalizations.of(context);
@@ -1811,7 +1836,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         ),
       );
 
-  /// Anti-injection CSV (formules Excel) : préfixe les cellules dangereuses.
   String _csvCell(String raw) {
     var s = raw.replaceAll(';', ',').replaceAll('\n', ' ').replaceAll('\r', ' ');
     if (s.isNotEmpty && '=+-@'.contains(s[0])) s = "'$s";
@@ -1874,7 +1898,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
   Future<void> _startCall(CallType type) async {
     final l10n = AppLocalizations.of(context);
-    if (!_isConnectionValid) {
+    // ✅ v2.3 : Utilise _canWrite pour les appels aussi
+    if (!_canWrite) {
       _showError(_tr(l10n, 'chat_call_inactive', 'Connexion inactive avec ce contact'));
       return;
     }
@@ -1890,12 +1915,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final otherId = widget.conversation.participantIds.firstWhere((id) => id != myId, orElse: () => '');
     if (otherId.isEmpty) return;
     ref.read(callProvider.notifier).start(
-          myUserId: myId,
-          calleeId: otherId,
-          calleeName: widget.conversation.displayName,
-          calleeAvatar: widget.conversation.displayAvatar,
-          type: type,
-        );
+      myUserId: myId,
+      calleeId: otherId,
+      calleeName: widget.conversation.displayName,
+      calleeAvatar: widget.conversation.displayAvatar,
+      type: type,
+    );
     Navigator.push(context, MaterialPageRoute(builder: (_) => const CallPage()));
   }
 
@@ -1904,7 +1929,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   Future<void> _startRecording() async {
     final l10n = AppLocalizations.of(context);
-    if (!_isConnectionValid || _isRecording) return;
+    // ✅ v2.3 : Utilise _canWrite
+    if (!_canWrite || _isRecording) return;
     HapticFeedback.mediumImpact();
     final hasPerm = await _checkPermissionWithDisclosure(Permission.microphone, _tr(l10n, 'chat_mic_disclosure', 'Le micro est nécessaire pour les messages vocaux.'));
     if (!hasPerm) return;
@@ -2094,10 +2120,15 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     }
   }
 
+  /// ✅ v2.3 : Picker de fichiers étendu (vidéos, documents, archives…)
   Future<void> _pickFile() async {
     HapticFeedback.selectionClick();
     try {
-      final result = await FilePicker.platform.pickFiles(allowMultiple: true, withData: true);
+      final result = await FilePicker.platform.pickFiles(
+        allowMultiple: true,
+        withData: true,
+        type: FileType.any,
+      );
       if (result != null && result.files.isNotEmpty) {
         final validFiles = result.files
             .where((f) => _ChatValidators.isValidFileSize(f.size) && _ChatValidators.isAllowedExtension(f.extension))
@@ -2219,10 +2250,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   Future<void> _sendMessage() async {
     final l10n = AppLocalizations.of(context);
-    if (!_isConnectionValid) {
+
+    // ✅ v2.3 : Utilise _canWrite au lieu de _isConnectionValid seul
+    if (!_canWrite) {
       _showError(_tr(l10n, 'chat_send_inactive', 'Connexion inactive : envoi impossible'));
       return;
     }
+
     if (_editingMessageId.isNotEmpty) {
       final msgs = ref.read(chatMessagesProvider(widget.conversationId));
       final target = msgs.where((m) => m.id == _editingMessageId).toList();
@@ -2232,15 +2266,18 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       }
       _cancelEdit();
     }
+
     final text = _ChatValidators.sanitize(_inputController.text.trim(), maxLength: _kMaxMessageLength);
     if (text.isEmpty && _selectedFiles.isEmpty && _audioBytes == null) return;
     if (_isSending) return;
+
     final now = DateTime.now();
     if (_lastSendAt != null && now.difference(_lastSendAt!).inMilliseconds < _kSendThrottleMs) return;
     _lastSendAt = now;
 
     _isTyping = false;
     _sendTypingStatus(false);
+
     setState(() => _isSending = true);
     HapticFeedback.mediumImpact();
 
@@ -2290,8 +2327,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       } else if (_selectedFiles.isNotEmpty) {
         final filesToSend = List<PlatformFile>.from(_selectedFiles);
         setState(() => _selectedFiles.clear());
+
         final imageFiles = <PlatformFile>[];
         final otherFiles = <PlatformFile>[];
+
         for (final f in filesToSend) {
           if (!_ChatValidators.isValidFileSize(f.size) || !_ChatValidators.isAllowedExtension(f.extension)) {
             _showError('${_tr(l10n, 'chat_file_rejected', 'Fichier refusé (taille ou type) :')} ${_ChatValidators.sanitize(f.name, maxLength: 40)}');
@@ -2304,6 +2343,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             otherFiles.add(f);
           }
         }
+
         if (imageFiles.isNotEmpty) {
           final urls = <String>[];
           for (final f in imageFiles) {
@@ -2339,6 +2379,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             }
           }
         }
+
+        // ✅ v2.3 : Envoi vidéos + documents avec mediaType correct
         for (final f in otherFiles) {
           final bytes = f.bytes ?? (f.path != null && !kIsWeb ? await File(f.path!).readAsBytes() : null);
           if (bytes == null) continue;
@@ -2381,8 +2423,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         );
         ref.read(chatMessagesProvider(widget.conversationId).notifier).upsertRealtime([msg]);
       }
+
       if (mounted) {
-        // Envoi réussi : le brouillon est supprimé
         _draftTimer?.cancel();
         _restoringDraft = true;
         _inputController.clear();
@@ -2409,7 +2451,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // DIVERS (escalade, notes internes)
+  // DIVERS
   // ==========================================================================
   void _escalateConversation() {
     HapticFeedback.mediumImpact();
@@ -2550,6 +2592,14 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _displayIds = displayItems.map((e) => e.messages.first.id).toList();
     final currentUid = _chatService.currentUserId;
 
+    // ✅ v2.3 : Auto-détection market par contenu
+    final bool marketByContent = visible.any(_isProductRefMessage);
+    if (marketByContent != _marketByContent) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _marketByContent = marketByContent);
+      });
+    }
+
     if (!_unreadAnchorDone && messages.isNotEmpty) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _anchorFirstUnread(messages));
       _scheduleRemindersFor(messages);
@@ -2643,8 +2693,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                             );
                           }
 
-                          // Swipe UNIQUE pour TOUS les messages (moi + autres) :
-                          // droite = répondre · gauche = menu (rappel, infos, ...)
                           content = _SwipeActions(
                             key: ValueKey('swipe_${firstMsg.id}'),
                             onReply: () => _setReply(firstMsg),
@@ -2694,24 +2742,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                           ),
                         ),
                       ),
-                    if (_showScrollDown)
-                      Positioned(
-                        right: 12,
-                        bottom: 12,
-                        child: Material(
-                          color: ThixPolicy.primary,
-                          shape: const CircleBorder(),
-                          elevation: 4,
-                          child: InkWell(
-                            customBorder: const CircleBorder(),
-                            onTap: () => _scrollController.animateTo(0, duration: const Duration(milliseconds: 300), curve: Curves.easeOut),
-                            child: const Padding(
-                              padding: EdgeInsets.all(10),
-                              child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 26),
-                            ),
-                          ),
-                        ),
-                      ),
                   ],
                 ),
               ),
@@ -2725,7 +2755,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                   },
                 ),
               if (_mentionSuggestions.isNotEmpty) _buildMentionSuggestions(),
-              if (_isConnectionValid) _buildInputBar(l10n) else _buildBlockedBanner(l10n),
+              // ✅ v2.3 : Utilise _canWrite pour afficher/masquer la barre d'input
+              if (_canWrite) _buildInputBar(l10n) else _buildBlockedBanner(l10n),
               if (_showStickers) _buildStickerPicker(l10n),
             ],
           ),
@@ -2737,15 +2768,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   // BUBBLE + MENU SWIPE GAUCHE
   // ==========================================================================
-
-  /// Point d'entrée d'un message simple :
-  ///  • référence produit THIX Market → carte produit (+ texte éventuel dessous)
-  ///  • sinon → bulle standard
   Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> messages) {
     final parsed = market_chat.ChatService.parse(msg.content);
     final product = parsed.product;
     if (product == null) return _buildPlainBubble(msg, isOwn, messages);
-
     final rest = _ChatValidators.sanitize(parsed.text, maxLength: _kMaxMessageLength);
     final card = _ProductRefBubble(
       product: product,
@@ -2755,7 +2781,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       onLongPress: () => _showExtraSheet(msg),
     );
     if (rest.isEmpty) return card;
-
     return Column(
       crossAxisAlignment: isOwn ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
@@ -2771,15 +2796,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     final next = idx < messages.length - 1 ? messages[idx + 1] : null;
     final firstInGroup = prev == null || prev.senderId != msg.senderId;
     final lastInGroup = next == null || next.senderId != msg.senderId;
+
     ChatMessage? replyTo;
     if (msg.replyToId != null) {
       final found = messages.where((m) => m.id == msg.replyToId).toList();
       if (found.isNotEmpty) {
         final f = found.first;
-        // Citation d'un message produit : aperçu lisible au lieu du token brut.
         replyTo = _isProductRefMessage(f) ? _overrideMsg(f, {'content': _previewOf(f)}) : f;
       }
     }
+
     return ChatMessageBubble(
       message: msg,
       isOwn: isOwn,
@@ -2788,8 +2814,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
         HapticFeedback.lightImpact();
         unawaited(_fireAndForget(() => _chatService.toggleReaction(msg.id, r)));
       },
-      // Les deux callbacks passent par le même point d'entrée :
-      // éphémère → suppression directe ; sinon feuille « pour moi / pour tous ».
       onDelete: () => _showDeleteOptions(msg),
       onDeleteForAll: () => _showDeleteOptions(msg),
       onEdit: (newContent) => _applyEdit(msg, newContent),
@@ -3175,6 +3199,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   Widget _buildInputBar(AppLocalizations l10n) {
     final hasTextOrImage = _inputController.text.trim().isNotEmpty || _selectedFiles.isNotEmpty;
     final hasViewOnceCandidate = _selectedFiles.any((f) => ['jpg', 'jpeg', 'png', 'gif', 'webp'].contains((f.extension ?? '').toLowerCase()));
+
     return Container(
       decoration: BoxDecoration(color: ThixPolicy.card, border: Border(top: BorderSide(color: ThixPolicy.border, width: 1.2)), boxShadow: ThixPolicy.shadowSoft(opacity: 0.03)),
       child: SafeArea(
@@ -3302,23 +3327,19 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                               ),
                             ),
                             const SizedBox(width: 10),
-                            GestureDetector(
+                            // ✅ v2.3 : Bouton envoi FLUIDE style WhatsApp
+                            _FluidSendButton(
+                              hasContent: hasTextOrImage,
+                              isSending: _isSending,
                               onTap: () {
                                 if (_isSending) return;
-                                HapticFeedback.mediumImpact();
+                                HapticFeedback.lightImpact();
                                 if (hasTextOrImage) {
                                   _sendMessage();
                                 } else {
                                   _startRecording();
                                 }
                               },
-                              child: CircleAvatar(
-                                radius: 22,
-                                backgroundColor: hasTextOrImage ? ThixPolicy.primary : ThixPolicy.gold,
-                                child: _isSending
-                                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                                    : Icon(hasTextOrImage ? Icons.send_rounded : Icons.mic_rounded, color: hasTextOrImage ? Colors.white : ThixPolicy.inkDeep, size: 22),
-                              ),
                             ),
                           ],
                         ),
@@ -3482,12 +3503,12 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 const SizedBox(height: 6),
                 Row(
                   children: List.generate(5, (i) => Expanded(
-                        child: Container(
-                          height: 4,
-                          margin: const EdgeInsets.only(right: 3),
-                          decoration: BoxDecoration(color: i < score ? colors[score] : ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-                        ),
-                      )),
+                    child: Container(
+                      height: 4,
+                      margin: const EdgeInsets.only(right: 3),
+                      decoration: BoxDecoration(color: i < score ? colors[score] : ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
+                    ),
+                  )),
                 ),
                 const SizedBox(height: 4),
                 Align(
@@ -3638,11 +3659,57 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 }
 
 // ============================================================================
+// ✅ v2.3 : BOUTON ENVOI FLUIDE (style WhatsApp)
+// ============================================================================
+class _FluidSendButton extends StatelessWidget {
+  final bool hasContent;
+  final bool isSending;
+  final VoidCallback onTap;
+
+  const _FluidSendButton({
+    required this.hasContent,
+    required this.isSending,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: isSending ? null : onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeInOut,
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: hasContent ? ThixPolicy.primary : ThixPolicy.gold,
+          shape: BoxShape.circle,
+          boxShadow: hasContent
+              ? [BoxShadow(color: ThixPolicy.primary.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 2))]
+              : [],
+        ),
+        child: Center(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 150),
+            transitionBuilder: (child, animation) => FadeTransition(opacity: animation, child: ScaleTransition(scale: animation, child: child)),
+            child: isSending
+                ? const SizedBox(key: ValueKey('sending'), width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                : Icon(
+                    key: ValueKey(hasContent ? 'send' : 'mic'),
+                    hasContent ? Icons.send_rounded : Icons.mic_rounded,
+                    color: hasContent ? Colors.white : ThixPolicy.inkDeep,
+                    size: 22,
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // WIDGETS ANNEXES
 // ============================================================================
-
-/// Carte produit THIX Market dans la conversation :
-/// image, titre, prix converti dans la devise choisie, tap → fiche produit.
 class _ProductRefBubble extends ConsumerWidget {
   final market_chat.ProductRef product;
   final bool isOwn;
@@ -3823,7 +3890,6 @@ class _ProductRefBubble extends ConsumerWidget {
 class _UnreadDivider extends StatelessWidget {
   final AppLocalizations l10n;
   const _UnreadDivider({required this.l10n});
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -3847,7 +3913,6 @@ class _ViewOnceOpenedBubble extends StatelessWidget {
   final bool isOwn;
   final bool isSender;
   const _ViewOnceOpenedBubble({required this.isOwn, required this.isSender});
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -3880,9 +3945,7 @@ class _ImageGroupBubble extends StatelessWidget {
   final List<ChatMessage> images;
   final bool isOwn;
   final void Function(List<ChatMessage>, int)? onOpenGallery;
-
   const _ImageGroupBubble({required this.images, required this.isOwn, this.onOpenGallery});
-
   @override
   Widget build(BuildContext context) {
     final shown = images.take(4).toList();
@@ -3954,7 +4017,6 @@ class _PhotoPager extends StatefulWidget {
   final List<ChatMessage> images;
   final int initialIndex;
   const _PhotoPager({required this.images, required this.initialIndex});
-
   @override
   State<_PhotoPager> createState() => _PhotoPagerState();
 }
@@ -3962,20 +4024,17 @@ class _PhotoPager extends StatefulWidget {
 class _PhotoPagerState extends State<_PhotoPager> {
   late final PageController _ctrl;
   int _idx = 0;
-
   @override
   void initState() {
     super.initState();
     _idx = widget.initialIndex.clamp(0, widget.images.length - 1);
     _ctrl = PageController(initialPage: _idx);
   }
-
   @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -4013,9 +4072,7 @@ class _CallBubble extends StatelessWidget {
   final ChatMessage message;
   final bool isOwn;
   final VoidCallback onCallback;
-
   const _CallBubble({required this.message, required this.isOwn, required this.onCallback});
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -4082,7 +4139,6 @@ class _CallBubble extends StatelessWidget {
 class _TypingPill extends StatelessWidget {
   final AppLocalizations l10n;
   const _TypingPill({required this.l10n});
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -4107,14 +4163,12 @@ class _TypingPill extends StatelessWidget {
 class _Dot extends StatefulWidget {
   final int delay;
   const _Dot({this.delay = 0});
-
   @override
   State<_Dot> createState() => _DotState();
 }
 
 class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
   late AnimationController _c;
-
   @override
   void initState() {
     super.initState();
@@ -4127,13 +4181,11 @@ class _DotState extends State<_Dot> with SingleTickerProviderStateMixin {
       _c.forward();
     }
   }
-
   @override
   void dispose() {
     _c.dispose();
     super.dispose();
   }
-
   @override
   Widget build(BuildContext context) => FadeTransition(
         opacity: _c,
@@ -4145,7 +4197,6 @@ class _ReplyBanner extends StatelessWidget {
   final String text;
   final VoidCallback onClose;
   const _ReplyBanner({required this.text, required this.onClose});
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -4164,11 +4215,11 @@ class _ReplyBanner extends StatelessWidget {
   }
 }
 
+/// ✅ v2.3 : Aperçu fichier avec icône adaptée (vidéo, pdf, doc, archive…)
 class _FilesPreview extends StatelessWidget {
   final List<PlatformFile> files;
   final void Function(int) onRemove;
   const _FilesPreview({required this.files, required this.onRemove});
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -4181,8 +4232,11 @@ class _FilesPreview extends StatelessWidget {
         itemCount: files.length,
         itemBuilder: (ctx, i) {
           final f = files[i];
-          final isImg = ['jpg', 'jpeg', 'png', 'webp'].contains(f.extension?.toLowerCase() ?? '');
+          final ext = f.extension?.toLowerCase() ?? '';
+          final isImg = ['jpg', 'jpeg', 'png', 'webp', 'gif'].contains(ext);
           final safeName = _ChatValidators.sanitize(f.name, maxLength: 50);
+          final icon = _ChatValidators.iconForExtension(ext);
+
           return Stack(
             clipBehavior: Clip.none,
             children: [
@@ -4193,7 +4247,7 @@ class _FilesPreview extends StatelessWidget {
                 clipBehavior: Clip.hardEdge,
                 child: isImg && f.bytes != null
                     ? Image.memory(f.bytes!, fit: BoxFit.cover)
-                    : const Center(child: Icon(Icons.insert_drive_file_rounded, color: ThixPolicy.primary, size: 24)),
+                    : Center(child: Icon(icon, color: ThixPolicy.primary, size: 24)),
               ),
               Positioned(
                 top: -4,
@@ -4219,7 +4273,6 @@ class _ChatWaveformAudioPlayer extends StatefulWidget {
   final String audioUrl;
   final bool isLocal;
   const _ChatWaveformAudioPlayer({required this.audioUrl, this.isLocal = false});
-
   @override
   State<_ChatWaveformAudioPlayer> createState() => _ChatWaveformAudioPlayerState();
 }
