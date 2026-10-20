@@ -6,14 +6,14 @@ class LiveStreamPage extends StatelessWidget {
   final String liveId;
   final String? token;
   final String? channelName;
-  final bool isHost; // Permet de savoir si c'est le diffuseur ou un spectateur
+  final bool isHost;
 
   const LiveStreamPage({
-    super.key, 
+    super.key,
     required this.liveId,
     this.token,
     this.channelName,
-    this.isHost = false, // Spectateur par défaut
+    this.isHost = false,
   });
 
   @override
@@ -29,13 +29,15 @@ class LiveStreamPage extends StatelessWidget {
         ),
       );
     }
-    
-    // On passe TOUTES les informations au vrai lecteur vidéo
+
+    // Ne plus fallback channelName sur liveId (UUID ≠ channel Agora).
+    // Si channelName/isHost absents (ouverture depuis la liste),
+    // LiveStreamPlayer les résout depuis live_sessions.
     return LiveStreamPlayer(
       liveId: liveId,
-      channelName: channelName ?? liveId, 
+      channelName: channelName?.trim() ?? '',
       token: token,
-      isHost: isHost, // C'est ici que la magie s'opère pour allumer ta caméra !
+      isHost: isHost,
     );
   }
 }
