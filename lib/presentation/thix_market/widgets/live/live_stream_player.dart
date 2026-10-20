@@ -1,15 +1,13 @@
 // lib/presentation/thix_market/widgets/live/live_stream_player.dart
 // ============================================================================
-// LIVE STREAM PLAYER — Production Enterprise v5
+// LIVE STREAM PLAYER — Production Enterprise v5.1
 // ----------------------------------------------------------------------------
-//  • ✅ Pré-pin produits au démarrage du live (hôte)
-//  • ✅ Overlay bouton "Produits" flottant avec badge compteur (hôte)
-//  • ✅ Overlay carousel produits + bouton vote (spectateur)
-//  • ✅ Positionnement corrigé (plus de chevauchement)
-//  • ✅ Support FR / EN / SW via AppLocalizations
-//  • ✅ Compteur spectateurs temps réel
-//  • ✅ Gestion reconnexion réseau
-//  • ✅ Zéro impact sur le flux vidéo Agora
+//  • ✅ Résolution channel_name + isHost depuis live_sessions si absents
+//  • ✅ Refus de joindre un live déjà ended
+//  • ✅ Fin de live (status ended) au dispose hôte + bouton Terminer
+//  • ✅ Token Agora toujours régénéré (pas de test_token)
+//  • ✅ Refresh token hôte + spectateur
+//  • ✅ Pré-pin produits, overlays shopping, FR/EN/SW
 // ============================================================================
 
 import 'dart:async';
@@ -72,18 +70,23 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   String? _fetchedToken;
   int _viewerCount = 0;
 
+  /// Valeurs résolues (extra route OU table live_sessions)
+  late String _channelName;
+  late bool _isHost;
+
   final TextEditingController _messageController = TextEditingController();
 
-  // Timer pour refresh token (Agora tokens expirent après ~1h)
   Timer? _tokenRefreshTimer;
 
   static const Color gold = Color(0xFFC9962C);
   static const Color danger = Color(0xFFE53935);
-  static const Duration _kTokenRefreshInterval = Duration(minutes: 50);
+  static const Duration _kTokenRefreshInterval = Duration(minutes: 45);
 
   @override
   void initState() {
     super.initState();
+    _channelName = widget.channelName.trim();
+    _isHost = widget.isHost;
     WidgetsBinding.instance.addObserver(this);
     _initializeLive();
   }
@@ -93,16 +96,36 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     WidgetsBinding.instance.removeObserver(this);
     _tokenRefreshTimer?.cancel();
     _messageController.dispose();
-    _engine?.leaveChannel();
-    _engine?.release();
+
+    // Best-effort : si hôte quitte sans passer par "Terminer", couper le live en DB
+    if (_isHost && !_isEnding) {
+      unawaited(_markEndedInDb());
+    }
+
+    try {
+      _engine?.leaveChannel();
+      _engine?.release();
+    } catch (_) {}
+    _engine = null;
     debugPrint('[LivePlayer] 👋 Disposed');
     super.dispose();
   }
 
-  // ✅ Gestion cycle de vie app (pause/reprise)
+  Future<void> _markEndedInDb() async {
+    try {
+      await Supabase.instance.client.from('live_sessions').update({
+        'status': 'ended',
+        'ended_at': DateTime.now().toIso8601String(),
+      }).eq('id', widget.liveId);
+      debugPrint('[LivePlayer] ✓ Live marked ended (dispose)');
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ markEnded dispose: $e');
+    }
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!widget.isHost || _engine == null) return;
+    if (!_isHost || _engine == null) return;
     switch (state) {
       case AppLifecycleState.paused:
         _engine?.muteLocalAudioStream(true);
@@ -112,9 +135,51 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
         if (!_isMuted) _engine?.muteLocalAudioStream(false);
         if (!_isVideoOff) _engine?.muteLocalVideoStream(false);
         break;
+      case AppLifecycleState.detached:
+        if (_isHost && !_isEnding) unawaited(_markEndedInDb());
+        break;
       default:
         break;
     }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // RÉSOLUTION SESSION (channel + rôle hôte)
+  // ══════════════════════════════════════════════════════════════════════
+  Future<void> _resolveSession() async {
+    final me = Supabase.instance.client.auth.currentUser?.id;
+
+    final session = await Supabase.instance.client
+        .from('live_sessions')
+        .select('channel_name, host_id, status')
+        .eq('id', widget.liveId)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 8));
+
+    if (session == null) {
+      throw Exception('Live introuvable');
+    }
+
+    final status = session['status']?.toString() ?? '';
+    if (status == 'ended') {
+      throw Exception('Ce live est terminé');
+    }
+
+    final dbChannel = session['channel_name']?.toString()?.trim() ?? '';
+    if (dbChannel.isNotEmpty) {
+      _channelName = dbChannel;
+    }
+
+    if (_channelName.isEmpty) {
+      throw Exception('channel_name manquant pour ce live');
+    }
+
+    final hostId = session['host_id']?.toString();
+    if (me != null && hostId != null && hostId == me) {
+      _isHost = true;
+    }
+
+    debugPrint('[LivePlayer] Resolved channel=$_channelName isHost=$_isHost status=$status');
   }
 
   // ══════════════════════════════════════════════════════════════════════
@@ -122,22 +187,37 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   // ══════════════════════════════════════════════════════════════════════
   Future<void> _initializeLive() async {
     try {
+      // 1) Résoudre channel + isHost depuis la DB (corrige extra manquant)
+      await _resolveSession();
+      if (mounted) setState(() {}); // rafraîchir UI avec _isHost réel
+
       await [Permission.microphone, Permission.camera].request();
 
       final response = await Supabase.instance.client.functions.invoke(
         'generate-rtc-token',
         body: {
-          'channelName': widget.channelName,
-          'role': widget.isHost ? 'publisher' : 'subscriber',
+          'channelName': _channelName,
+          'role': _isHost ? 'publisher' : 'subscriber',
         },
       );
 
       final data = response.data;
+      if (data == null) {
+        throw Exception('Réponse token vide (generate-rtc-token)');
+      }
+
       final String appId = data['appId']?.toString() ?? '';
       _fetchedToken = data['token']?.toString() ?? widget.token;
 
       if (appId.isEmpty) {
         throw Exception('Impossible de récupérer l\'App ID du serveur');
+      }
+      if (_fetchedToken == null || _fetchedToken!.isEmpty) {
+        throw Exception('Token Agora vide');
+      }
+      // Refuser les faux tokens de fallback
+      if (_fetchedToken!.startsWith('test_token_')) {
+        throw Exception('Token de test invalide — vérifiez generate-rtc-token');
       }
 
       _engine = createAgoraRtcEngine();
@@ -151,7 +231,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
 
       await _engine!.enableVideo();
 
-      if (widget.isHost) {
+      if (_isHost) {
         await _engine!.startPreview();
       }
 
@@ -167,16 +247,14 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
           onUserOffline: (RtcConnection connection, int uid, UserOfflineReasonType reason) {
             if (mounted) setState(() => _remoteUid = 0);
           },
-          // ✅ Compteur spectateurs temps réel
           onRtcStats: (RtcConnection connection, RtcStats stats) {
-            if (mounted && widget.isHost) {
+            if (mounted && _isHost) {
               setState(() => _viewerCount = stats.userCount ?? 0);
             }
           },
           onError: (ErrorCodeType err, String msg) {
             debugPrint('[LivePlayer] ❌ Agora error [$err]: $msg');
           },
-          // ✅ Gestion reconnexion réseau
           onConnectionStateChanged: (RtcConnection connection, ConnectionStateType state, ConnectionChangedReasonType reason) {
             debugPrint('[LivePlayer] 🔗 Connection state: $state (reason: $reason)');
             if (state == ConnectionStateType.connectionStateDisconnected) {
@@ -199,31 +277,29 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
       );
 
       await _engine!.setClientRole(
-        role: widget.isHost
+        role: _isHost
             ? ClientRoleType.clientRoleBroadcaster
             : ClientRoleType.clientRoleAudience,
       );
 
       await _engine!.joinChannel(
         token: _fetchedToken ?? '',
-        channelId: widget.channelName,
+        channelId: _channelName,
         uid: 0,
         options: ChannelMediaOptions(
-          publishCameraTrack: widget.isHost && !_isVideoOff,
-          publishMicrophoneTrack: widget.isHost && !_isMuted,
-          clientRoleType: widget.isHost
+          publishCameraTrack: _isHost && !_isVideoOff,
+          publishMicrophoneTrack: _isHost && !_isMuted,
+          clientRoleType: _isHost
               ? ClientRoleType.clientRoleBroadcaster
               : ClientRoleType.clientRoleAudience,
         ),
       );
 
-      // ✅ Refresh token périodique (avant expiration Agora ~1h)
-      if (widget.isHost) {
-        _tokenRefreshTimer = Timer.periodic(_kTokenRefreshInterval, (_) => _refreshToken());
-      }
+      // Refresh token pour hôte ET spectateur
+      _tokenRefreshTimer = Timer.periodic(_kTokenRefreshInterval, (_) => _refreshToken());
 
-      // ✅ PRÉ-PIN produits au démarrage (hôte uniquement)
-      if (widget.isHost) {
+      // Pré-pin produits (hôte uniquement)
+      if (_isHost) {
         try {
           final session = await Supabase.instance.client
               .from('live_sessions')
@@ -257,19 +333,22 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     }
   }
 
-  /// ✅ Rafraîchir le token Agora sans interrompre le stream
   Future<void> _refreshToken() async {
     try {
       final response = await Supabase.instance.client.functions.invoke(
         'generate-rtc-token',
         body: {
-          'channelName': widget.channelName,
-          'role': widget.isHost ? 'publisher' : 'subscriber',
+          'channelName': _channelName,
+          'role': _isHost ? 'publisher' : 'subscriber',
         },
       );
       final newToken = response.data?['token']?.toString();
-      if (newToken != null && _engine != null) {
+      if (newToken != null &&
+          newToken.isNotEmpty &&
+          !newToken.startsWith('test_token_') &&
+          _engine != null) {
         await _engine!.renewToken(newToken);
+        _fetchedToken = newToken;
         debugPrint('[LivePlayer] 🔄 Token refreshed');
       }
     } catch (e) {
@@ -293,7 +372,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     } else {
       await _engine?.enableVideo();
       await _engine?.muteLocalVideoStream(false);
-      if (widget.isHost) await _engine?.startPreview();
+      if (_isHost) await _engine?.startPreview();
     }
   }
 
@@ -307,14 +386,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     setState(() => _isEnding = true);
     _tokenRefreshTimer?.cancel();
 
-    try {
-      await Supabase.instance.client.from('live_sessions').update({
-        'status': 'ended',
-        'ended_at': DateTime.now().toIso8601String(),
-      }).eq('id', widget.liveId);
-    } catch (e) {
-      debugPrint('[LivePlayer] ❌ EndLive DB error: $e');
-    }
+    await _markEndedInDb();
 
     try {
       await _engine?.leaveChannel();
@@ -324,7 +396,11 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
       debugPrint('[LivePlayer] ❌ Leave Agora error: $e');
     }
 
-    if (pop && mounted) Navigator.of(context).pop();
+    if (pop && mounted) {
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      }
+    }
   }
 
   Future<void> _confirmEndLive() async {
@@ -382,9 +458,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     _messageController.clear();
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // OUVERTURE PANNEAUX LIVE SHOPPING
-  // ══════════════════════════════════════════════════════════════════════
   Future<void> _openHostControlPanel() async {
     List<String> productIds = [];
     try {
@@ -421,15 +494,12 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     );
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // UI HELPERS
-  // ══════════════════════════════════════════════════════════════════════
   Widget _buildVideo() {
     if (!_isJoined || _engine == null) {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
     }
 
-    if (widget.isHost) {
+    if (_isHost) {
       if (_isVideoOff) {
         return Center(
           child: Column(
@@ -458,7 +528,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
         controller: VideoViewController.remote(
           rtcEngine: _engine!,
           canvas: VideoCanvas(uid: _remoteUid),
-          connection: RtcConnection(channelId: widget.channelName),
+          connection: RtcConnection(channelId: _channelName),
         ),
       );
     }
@@ -492,24 +562,20 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     );
   }
 
-  // ══════════════════════════════════════════════════════════════════════
-  // BUILD
-  // ══════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
-    // ✅ Badge compteur produits épinglés (hôte)
-    final pinnedCountAsync = widget.isHost
+    final pinnedCountAsync = _isHost
         ? ref.watch(_pinnedCountProvider(widget.liveId))
         : null;
     final pinnedCount = pinnedCountAsync?.valueOrNull ?? 0;
 
     return PopScope(
-      canPop: !widget.isHost,
+      canPop: !_isHost,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
-        if (widget.isHost) await _confirmEndLive();
+        if (_isHost) await _confirmEndLive();
       },
       child: Scaffold(
         backgroundColor: Colors.black,
@@ -526,10 +592,8 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
               )
             : Stack(
                 children: [
-                  // ── Vidéo plein écran ──
                   Positioned.fill(child: _buildVideo()),
 
-                  // ── Gradient haut ──
                   Positioned(
                     top: 0, left: 0, right: 0, height: 140,
                     child: Container(
@@ -543,7 +607,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                     ),
                   ),
 
-                  // ── Gradient bas ──
                   Positioned(
                     bottom: 0, left: 0, right: 0, height: 220,
                     child: Container(
@@ -557,7 +620,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                     ),
                   ),
 
-                  // ── Badge LIVE + Compteur spectateurs ──
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 12,
                     left: 16,
@@ -578,8 +640,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                             ],
                           ),
                         ),
-                        // ✅ Compteur spectateurs (hôte uniquement)
-                        if (widget.isHost) ...[
+                        if (_isHost) ...[
                           const SizedBox(width: 8),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
@@ -604,20 +665,18 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                     ),
                   ),
 
-                  // ── Bouton fermer / Couper ──
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 8,
                     right: 12,
                     child: IconButton(
                       icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                      onPressed: widget.isHost
+                      onPressed: _isHost
                           ? (_isEnding ? null : _confirmEndLive)
                           : () => Navigator.pop(context),
                     ),
                   ),
 
-                  // ── Contrôles HOST ──
-                  if (widget.isHost)
+                  if (_isHost)
                     Positioned(
                       bottom: 90,
                       left: 0,
@@ -651,8 +710,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                       ),
                     ),
 
-                  // ── Mute spectateur ──
-                  if (!widget.isHost)
+                  if (!_isHost)
                     Positioned(
                       bottom: 90,
                       right: 16,
@@ -671,7 +729,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                       ),
                     ),
 
-                  // ── Champ message ──
                   Positioned(
                     bottom: 20,
                     left: 16,
@@ -711,11 +768,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                     ),
                   ),
 
-                  // ════════════════════════════════════════════════════════
-                  // ✅ OVERLAY HÔTE — Bouton flottant "Produits" + BADGE
-                  // Positionné AU-DESSUS des contrôles (bottom: 160)
-                  // ════════════════════════════════════════════════════════
-                  if (widget.isHost && _isJoined)
+                  if (_isHost && _isJoined)
                     Positioned(
                       bottom: 160,
                       right: 16,
@@ -737,7 +790,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                               ),
                               child: const Icon(Icons.shopping_bag_rounded, color: Color(0xFF1B2A4A), size: 24),
                             ),
-                            // ✅ Badge compteur produits épinglés
                             if (pinnedCount > 0)
                               Positioned(
                                 top: -4,
@@ -762,12 +814,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                       ),
                     ),
 
-                  // ════════════════════════════════════════════════════════
-                  // ✅ OVERLAY SPECTATEUR — Carousel + vote
-                  // Positionné AU-DESSUS de la barre de message (bottom: 80)
-                  // Hauteur contrainte pour éviter débordement
-                  // ════════════════════════════════════════════════════════
-                  if (!widget.isHost && _isJoined)
+                  if (!_isHost && _isJoined)
                     Positioned(
                       left: 0,
                       right: 0,
@@ -781,7 +828,6 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                       ),
                     ),
 
-                  // ── Overlay "fin en cours" ──
                   if (_isEnding)
                     Container(
                       color: Colors.black54,
