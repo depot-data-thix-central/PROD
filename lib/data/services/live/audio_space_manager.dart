@@ -1,12 +1,13 @@
 // lib/data/services/live/audio_space_manager.dart
 //
 // ============================================================================
-// 🧠 AUDIO SPACE MANAGER — Singleton global (Production) — v2.1
+// 🧠 AUDIO SPACE MANAGER — Singleton global (Production) — v2.2
 // ----------------------------------------------------------------------------
 //  ✅ Fin de salon fiable : RPC → UPDATE direct → vérification en base
 //  ✅ Broadcast "ended" toujours envoyé, même si la base échoue
 //  ✅ Réessai en arrière-plan si la fermeture en base échoue
 //  ✅ Les participants vérifient le statut du salon en base (poll + reprise app)
+//  ✅ v2.2 : salon invisible (RLS, salon privé terminé) = salon terminé
 // ============================================================================
 import 'dart:async';
 
@@ -328,7 +329,7 @@ class AudioSpaceManager {
 
     if (await _isEndedInDb(spaceId) == true) return true;
 
-    // 2) UPDATE direct (peut être bloqué par la RLS sans erreur)
+    // 2) UPDATE direct (autorisé pour l'hôte par audio_spaces_update)
     try {
       await _service.endSpace(spaceId);
     } catch (e) {
@@ -385,6 +386,7 @@ class AudioSpaceManager {
   }
 
   /// Filet de sécurité : si le broadcast "ended" est raté, la base reste la vérité.
+  /// Un salon qui n'est plus lisible (RLS : salon privé terminé) compte comme terminé.
   Future<void> _checkSpaceStillLive() async {
     final spaceId = _state.spaceId;
     if (spaceId == null || !_state.isActive || _closing) return;
@@ -395,13 +397,15 @@ class AudioSpaceManager {
           .eq('id', spaceId)
           .maybeSingle()
           .timeout(_kDbTimeout);
-      if (row == null) return;
-      final status = row['status']?.toString();
-      if (status != null && status != 'live') {
-        debugPrint('[AudioSpaceManager] Salon terminé détecté en base (status=$status)');
+
+      final status = row?['status']?.toString();
+      if (row == null || (status != null && status != 'live')) {
+        debugPrint(
+            '[AudioSpaceManager] Salon terminé détecté en base (status=${status ?? "invisible"})');
         await _handleRemoteEnded('Salon terminé par l\'hôte.');
       }
     } catch (e) {
+      // Erreur réseau : on ne conclut rien, le prochain tick réessaiera.
       debugPrint('[AudioSpaceManager] ⚠️ _checkSpaceStillLive: $e');
     }
   }
