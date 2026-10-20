@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/messages_page.dart
 // ============================================================================
-// MESSAGES PAGE — Production Enterprise v5 (FIXED)
+// MESSAGES PAGE — Production Enterprise v5 (FIXED) + EXCEPTION THIX MARKET
 // ============================================================================
 
 import 'dart:async';
@@ -373,6 +373,9 @@ class _MessagesPageState extends ConsumerState<MessagesPage> with SingleTickerPr
         'userAvatar': userAvatar,
         'productContext': productData,
         'isProductChat': productData != null,
+        // ✅ EXCEPTION THIX MARKET : lève la règle "connexion paire obligatoire"
+        // dans ChatScreen et ChatPage pour les conversations acheteur ↔ vendeur
+        'bypassConnection': true,
         'locale': Localizations.localeOf(context).languageCode,
       },
     );
