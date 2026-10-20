@@ -1,7 +1,12 @@
 // lib/data/services/live/audio_space_manager.dart
 //
 // ============================================================================
-// 🧠 AUDIO SPACE MANAGER — Singleton global (Production)
+// 🧠 AUDIO SPACE MANAGER — Singleton global (Production) — v2.1
+// ----------------------------------------------------------------------------
+//  ✅ Fin de salon fiable : RPC → UPDATE direct → vérification en base
+//  ✅ Broadcast "ended" toujours envoyé, même si la base échoue
+//  ✅ Réessai en arrière-plan si la fermeture en base échoue
+//  ✅ Les participants vérifient le statut du salon en base (poll + reprise app)
 // ============================================================================
 import 'dart:async';
 
@@ -12,6 +17,9 @@ import 'package:thix_id/data/models/live/audio_space_model.dart';
 import 'package:thix_id/data/services/live/audio_space_service.dart';
 import 'package:thix_id/data/services/live/audio_space_background_service.dart';
 import 'package:thix_id/data/services/live/live_service.dart';
+
+const Duration _kDbTimeout = Duration(seconds: 10);
+const List<int> _kEndRetryDelaysSeconds = [5, 15, 45];
 
 enum ManagerStatus {
   idle,
@@ -112,6 +120,9 @@ class AudioSpaceManager {
   Timer? _elapsedTick;
   DateTime _lastHandRaise = DateTime.fromMillisecondsSinceEpoch(0);
 
+  /// Vrai pendant une fermeture (locale ou distante) : évite les doubles traitements.
+  bool _closing = false;
+
   // ─────────────────────────────────────────────────────────────
   // INITIALISATION
   // ─────────────────────────────────────────────────────────────
@@ -148,6 +159,8 @@ class AudioSpaceManager {
       _backgroundService.exitBackgroundMode();
       _recoverSupabaseSession();
       _loadRoster();
+      // Le salon a peut-être été terminé pendant que l'app était en arrière-plan.
+      _checkSpaceStillLive();
     }
     _emit();
   }
@@ -178,6 +191,7 @@ class AudioSpaceManager {
       return;
     }
 
+    _closing = false;
     _state = _state.copyWith(
       status: ManagerStatus.joining,
       space: space,
@@ -205,7 +219,10 @@ class AudioSpaceManager {
       _rosterTick?.cancel();
       _rosterTick = Timer.periodic(
         const Duration(seconds: 10),
-        (_) => _loadRoster(),
+        (_) {
+          _loadRoster();
+          _checkSpaceStillLive();
+        },
       );
       _elapsedTick?.cancel();
       _elapsedTick = Timer.periodic(
@@ -241,10 +258,11 @@ class AudioSpaceManager {
   // QUITTER / TERMINER
   // ─────────────────────────────────────────────────────────────
   Future<void> leave() async {
-    if (!_state.isActive) return;
+    if (!_state.isActive || _closing) return;
     final spaceId = _state.spaceId;
     if (spaceId == null) return;
 
+    _closing = true;
     try {
       await _service.leaveSpace(spaceId);
     } catch (e) {
@@ -254,8 +272,13 @@ class AudioSpaceManager {
     await _cleanup();
   }
 
+  /// Termine le salon pour tout le monde.
+  ///  1. Fermeture en base (RPC → UPDATE direct → vérification)
+  ///  2. Broadcast "ended" (toujours)
+  ///  3. Coupure locale (Agora, foreground service, canaux)
+  /// Si la base n'a pas pu être fermée, on réessaie en arrière-plan.
   Future<void> endSpace() async {
-    if (!_state.isActive || !_state.isHost) return;
+    if (!_state.isActive || !_state.isHost || _closing) return;
     final spaceId = _state.spaceId;
     final channelName = _state.space?.channelName;
 
@@ -264,26 +287,122 @@ class AudioSpaceManager {
       return;
     }
 
+    _closing = true;
     _state = _state.copyWith(status: ManagerStatus.ending);
     _emit();
 
+    var closed = false;
     try {
-      // ✅ Appel RPC SQL pour fermer le salon côté serveur
-      if (channelName != null && channelName.isNotEmpty) {
-        await Supabase.instance.client
-            .rpc('end_audio_space', params: {'p_channel_name': channelName})
-            .timeout(const Duration(seconds: 10));
-        debugPrint(
-            '[AudioSpaceManager] ✓ Salon fermé via RPC: $channelName');
-      }
-
-      // Fallback via service standard
-      await _service.endSpace(spaceId);
-      await _broadcast('ended', {});
+      closed = await _endInDatabase(spaceId, channelName);
     } catch (e) {
-      debugPrint('[AudioSpaceManager] ❌ endSpace error: $e');
-    } finally {
-      await _cleanup();
+      debugPrint('[AudioSpaceManager] ❌ endSpace DB error: $e');
+    }
+
+    // Les participants doivent TOUJOURS être prévenus, même si la base a échoué.
+    await _broadcast('ended', {});
+
+    if (closed) {
+      debugPrint('[AudioSpaceManager] ✓ Salon terminé en base: $spaceId');
+    } else {
+      debugPrint(
+          '[AudioSpaceManager] ⚠️ Fermeture en base non confirmée — réessai en arrière-plan');
+      _retryRemoteEnd(spaceId, channelName);
+    }
+
+    await _cleanup();
+  }
+
+  /// RPC SECURITY DEFINER d'abord, UPDATE direct ensuite, puis vérification
+  /// réelle du statut en base. Retourne true seulement si le salon n'est plus live.
+  Future<bool> _endInDatabase(String spaceId, String? channelName) async {
+    // 1) RPC (contourne la RLS, vérifie que l'appelant est l'hôte)
+    try {
+      await Supabase.instance.client.rpc('end_audio_space', params: {
+        'p_space_id': spaceId,
+        'p_channel_name': channelName,
+      }).timeout(_kDbTimeout);
+      debugPrint('[AudioSpaceManager] ✓ RPC end_audio_space OK');
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ RPC end_audio_space: $e');
+    }
+
+    if (await _isEndedInDb(spaceId) == true) return true;
+
+    // 2) UPDATE direct (peut être bloqué par la RLS sans erreur)
+    try {
+      await _service.endSpace(spaceId);
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ service.endSpace: $e');
+    }
+
+    return await _isEndedInDb(spaceId) == true;
+  }
+
+  /// true = terminé / introuvable, false = encore live, null = lecture impossible.
+  Future<bool?> _isEndedInDb(String spaceId) async {
+    try {
+      final row = await Supabase.instance.client
+          .from('audio_spaces')
+          .select('status')
+          .eq('id', spaceId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (row == null) return true;
+      return row['status']?.toString() != 'live';
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ _isEndedInDb: $e');
+      return null;
+    }
+  }
+
+  /// Réessaie la fermeture en base après la coupure locale (réseau instable).
+  void _retryRemoteEnd(String spaceId, String? channelName, {int attempt = 0}) {
+    if (attempt >= _kEndRetryDelaysSeconds.length) {
+      debugPrint('[AudioSpaceManager] ✗ Abandon fermeture distante: $spaceId');
+      return;
+    }
+    Timer(Duration(seconds: _kEndRetryDelaysSeconds[attempt]), () async {
+      try {
+        if (await _endInDatabase(spaceId, channelName)) {
+          debugPrint('[AudioSpaceManager] ✓ Fermeture distante réussie (réessai ${attempt + 1})');
+          return;
+        }
+      } catch (_) {}
+      _retryRemoteEnd(spaceId, channelName, attempt: attempt + 1);
+    });
+  }
+
+  /// Le salon est terminé / on est exclu : message + coupure locale, une seule fois.
+  Future<void> _handleRemoteEnded(String message) async {
+    if (_closing || !_state.isActive) return;
+    _closing = true;
+    _state = _state.copyWith(
+      status: ManagerStatus.error,
+      errorMessage: message,
+    );
+    _emit();
+    await _cleanup();
+  }
+
+  /// Filet de sécurité : si le broadcast "ended" est raté, la base reste la vérité.
+  Future<void> _checkSpaceStillLive() async {
+    final spaceId = _state.spaceId;
+    if (spaceId == null || !_state.isActive || _closing) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('audio_spaces')
+          .select('status')
+          .eq('id', spaceId)
+          .maybeSingle()
+          .timeout(_kDbTimeout);
+      if (row == null) return;
+      final status = row['status']?.toString();
+      if (status != null && status != 'live') {
+        debugPrint('[AudioSpaceManager] Salon terminé détecté en base (status=$status)');
+        await _handleRemoteEnded('Salon terminé par l\'hôte.');
+      }
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ _checkSpaceStillLive: $e');
     }
   }
 
@@ -305,10 +424,19 @@ class AudioSpaceManager {
     _rtChannel = null;
     _pgChannel = null;
 
-    await _backgroundService.stopAgora();
-    _backgroundService.exitBackgroundMode();
+    try {
+      await _backgroundService.stopAgora();
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ stopAgora: $e');
+    }
+    try {
+      _backgroundService.exitBackgroundMode();
+    } catch (e) {
+      debugPrint('[AudioSpaceManager] ⚠️ exitBackgroundMode: $e');
+    }
 
     _state = AudioSpaceManagerState.initial;
+    _closing = false;
     _emit();
 
     debugPrint('[AudioSpaceManager] ✓ Cleanup completed');
@@ -483,13 +611,8 @@ class AudioSpaceManager {
         if (userId == _service.currentUserId) return;
         _emit();
       },
-      onEnded: () async {
-        _state = _state.copyWith(
-          status: ManagerStatus.error,
-          errorMessage: 'Salon terminé par l\'hôte.',
-        );
-        _emit();
-        await _cleanup();
+      onEnded: () {
+        _handleRemoteEnded('Salon terminé par l\'hôte.');
       },
       onRosterChanged: _loadRoster,
       onForceMute: (target, muted) async {
@@ -509,14 +632,9 @@ class AudioSpaceManager {
           await _loadRoster();
         }
       },
-      onBanned: (target) async {
+      onBanned: (target) {
         if (target != _service.currentUserId) return;
-        _state = _state.copyWith(
-          status: ManagerStatus.error,
-          errorMessage: 'Vous avez été exclu du salon.',
-        );
-        _emit();
-        await _cleanup();
+        _handleRemoteEnded('Vous avez été exclu du salon.');
       },
     );
   }
