@@ -866,7 +866,26 @@ class AppRouter {
             GoRoute(path: 'dispute/:disputeId', name: 'marketDispute', pageBuilder: (_, state) => NoTransitionPage(child: DisputeDetailPage(disputeId: state.pathParameters['disputeId']!))),
             GoRoute(path: 'announcement/:announcementId/edit', name: 'marketEditAnnouncement', pageBuilder: (_, state) => NoTransitionPage(child: EditAnnouncementPage(announcementId: state.pathParameters['announcementId']!))),
             GoRoute(path: 'live/:liveId/replay', name: 'marketLiveReplay', pageBuilder: (_, state) => NoTransitionPage(child: LiveReplayPage(liveId: state.pathParameters['liveId']!))),
-            GoRoute(path: 'live/:liveId', name: 'marketLiveStream', pageBuilder: (_, state) => NoTransitionPage(child: LiveStreamPage(liveId: state.pathParameters['liveId']!))),
+            
+            GoRoute(
+  path: 'live/:liveId',
+  name: 'marketLiveStream',
+  pageBuilder: (context, state) {
+    final extra = state.extra is Map
+        ? Map<String, dynamic>.from(state.extra as Map)
+        : <String, dynamic>{};
+
+    return NoTransitionPage(
+      child: LiveStreamPage(
+        liveId: state.pathParameters['liveId']!,
+        channelName: extra['channelName']?.toString(),
+        token: extra['token']?.toString(),
+        isHost: extra['isHost'] == true,
+      ),
+    );
+  },
+),
+           
             GoRoute(path: 'chat/:conversationId', name: 'marketChat', pageBuilder: (_, state) => NoTransitionPage(child: ChatPage(conversationId: state.pathParameters['conversationId']!))),
             GoRoute(path: 'flash-sales', name: 'marketFlashSales', pageBuilder: (_, __) => const NoTransitionPage(child: FlashSalesPage())),
             GoRoute(path: 'supermarket/create', name: 'createSupermarket', builder: (c, s) => const CreateSupermarketPage()),
