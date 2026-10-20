@@ -16,7 +16,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/presentation/thix_market/models/live_shopping_models.dart';
 import 'package:thix_id/presentation/thix_market/providers/live_shopping_providers.dart';
 import 'package:thix_id/presentation/thix_market/widgets/live/live_pinned_product_card.dart';
-
+import 'package:thix_id/presentation/thix_market/providers/live_shopping_providers.dart'; 
 class LiveViewerCarousel extends ConsumerStatefulWidget {
   final String sessionId;
   final VoidCallback onOpenVoting;
