@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/widgets/live/create_live_form.dart
 // ============================================================================
-// CREATE LIVE FORM — Production Enterprise v5
+// CREATE LIVE FORM — Production Enterprise v5.1
 // ----------------------------------------------------------------------------
 //  • ✅ Compatible Web + Mobile (plus de dart:io, XFile partout)
 //  • ✅ Support 54 devises africaines + conversion automatique
@@ -8,6 +8,7 @@
 //  • ✅ Upload thumbnail via bytes (web-safe)
 //  • ✅ Navigation via GoRouter (plus de Navigator.push)
 //  • ✅ Validation robuste + feedback haptique
+//  • ✅ Token Agora OBLIGATOIRE (plus de fallback test_token)
 //  • ✅ Gestion erreurs avec messages traduits
 // ============================================================================
 
@@ -277,19 +278,36 @@ class _CreateLiveFormState extends ConsumerState<CreateLiveForm> {
       final channelName = 'live_${DateTime.now().millisecondsSinceEpoch}';
       final userId = Supabase.instance.client.auth.currentUser?.id;
 
-      // Token Agora
-      String token;
+      // ── Token Agora OBLIGATOIRE (plus de fallback test_token) ──
+      final String token;
       try {
         final tokenResponse = await Supabase.instance.client.functions
-            .invoke('generate-rtc-token', body: {'channelName': channelName, 'role': 'publisher'})
+            .invoke('generate-rtc-token', body: {
+              'channelName': channelName,
+              'role': 'publisher',
+            })
             .timeout(_kQueryTimeout);
-        token = tokenResponse.data?['token']?.toString() ?? '';
-        if (token.isEmpty) throw Exception('Token vide');
+
+        final data = tokenResponse.data;
+        final rawToken = data is Map ? data['token']?.toString() ?? '' : '';
+        final appId = data is Map ? data['appId']?.toString() ?? '' : '';
+
+        if (rawToken.isEmpty || rawToken.startsWith('test_token_')) {
+          throw Exception('Token Agora invalide ou vide');
+        }
+        if (appId.isEmpty) {
+          throw Exception('App ID Agora manquant');
+        }
+
+        token = rawToken;
         _FormLogger.info('Agora token generated');
       } catch (e) {
-        _FormLogger.warn('Agora token fallback', {'error': '$e'});
-        token = 'test_token_${DateTime.now().millisecondsSinceEpoch}';
-        if (mounted) _showWarning(l10n.t('live_form_token_fallback'));
+        _FormLogger.error('Agora token failed', {'error': '$e'});
+        if (mounted) {
+          final msg = e.toString().replaceFirst('Exception: ', '').split('\n').first;
+          _showError('${l10n.t('live_form_token_error')} ($msg)');
+        }
+        return; // Ne pas créer le live sans vrai token
       }
 
       final now = DateTime.now().toUtc();
@@ -352,7 +370,7 @@ class _CreateLiveFormState extends ConsumerState<CreateLiveForm> {
       );
 
       if (startNow) {
-        // ✅ Navigation via GoRouter
+        // Navigation avec extra (channelName + token + isHost)
         context.go('/market/live/${response['id']}', extra: {
           'channelName': channelName,
           'token': token,
@@ -608,7 +626,6 @@ class _CreateLiveFormState extends ConsumerState<CreateLiveForm> {
             children: _availableProducts.map((product) {
               final id = product['id'].toString();
               final isSelected = _selectedProductIds.contains(id);
-              // Prix converti dans la devise d'affichage
               final sellerCurrency = (product['currency'] ?? 'CDF').toString().toUpperCase();
               final priceRaw = (product['price'] as num?)?.toDouble() ?? 0;
               final convertedPrice = currencyService.convert(priceRaw, from: sellerCurrency, to: displayCurrencyCode);
