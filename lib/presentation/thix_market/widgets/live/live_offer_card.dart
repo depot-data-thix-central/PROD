@@ -1,9 +1,76 @@
 // lib/presentation/thix_market/widgets/live/live_offer_card.dart
-import 'package:flutter/material.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:intl/intl.dart';
+// ============================================================================
+// LIVE OFFER CARD — Production Enterprise v5
+// ----------------------------------------------------------------------------
+//  • ✅ Conversion automatique des devises (54 devises africaines)
+//  • ✅ Timer compte à rebours temps réel (Timer.periodic 1s)
+//  • ✅ Support FR / EN / SW via AppLocalizations
+//  • ✅ Navigation vers ProductDetailPage au tap
+//  • ✅ Badge réduction + barre de stock visuelle
+//  • ✅ Indicateur 💱 si devise convertie
+//  • ✅ Gestion safe des données (null-safe partout)
+// ============================================================================
 
-class LiveOfferCard extends StatelessWidget {
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../../core/african_currencies.dart';
+import '../../core/currency_service.dart';
+import '../../providers/currency_provider.dart';
+
+// ============================================================================
+// VALIDATEURS
+// ============================================================================
+class _OfferValidators {
+  _OfferValidators._();
+
+  static String sanitize(String? input, {int maxLength = 200}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final s = input.trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    final t = url.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
+    return t;
+  }
+
+  static double safeDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toDouble() ?? fallback;
+    return parsed < 0 || parsed.isNaN || parsed.isInfinite ? fallback : parsed;
+  }
+
+  static int safeInt(dynamic v, {int fallback = 0}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toInt() ?? fallback;
+    return parsed < 0 ? fallback : parsed;
+  }
+
+  static String normalizeCurrencyCode(dynamic c) {
+    if (c == null) return 'CDF';
+    final v = c.toString().toUpperCase().trim();
+    if (AfricanCurrencies.byCode(v) != null) return v;
+    final aliases = <String, String>{
+      'FC': 'CDF', 'FCFA': 'XOF', r'$': 'USD',
+      'DOLLAR': 'USD', 'US': 'USD', 'EURO': 'EUR', '€': 'EUR',
+    };
+    return aliases[v] ?? 'CDF';
+  }
+}
+
+// ============================================================================
+// WIDGET PRINCIPAL — ConsumerStatefulWidget pour timer + devise
+// ============================================================================
+class LiveOfferCard extends ConsumerStatefulWidget {
   final Map<String, dynamic> offer;
   final VoidCallback? onTap;
   final VoidCallback? onClaim;
@@ -15,51 +82,166 @@ class LiveOfferCard extends StatelessWidget {
     this.onClaim,
   });
 
-  // Couleurs de l'application
-  static const Color navy = Color(0xFF1B2A4A);
-  static const Color gold = Color(0xFFC9962C);
-  static const Color danger = Color(0xFFE53935);
-  static const Color textMuted = Color(0xFF8A8FA3);
-  static const Color bgApp = Color(0xFFF6F7FB);
-  static const Color success = Color(0xFF4CAF50);
+  @override
+  ConsumerState<LiveOfferCard> createState() => _LiveOfferCardState();
+}
+
+class _LiveOfferCardState extends ConsumerState<LiveOfferCard> {
+  Timer? _countdownTimer;
+  Duration _timeLeft = Duration.zero;
+  bool _isExpired = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startCountdown();
+  }
+
+  @override
+  void didUpdateWidget(covariant LiveOfferCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Redémarrer le timer si l'offre change
+    if (oldWidget.offer['expires_at'] != widget.offer['expires_at']) {
+      _startCountdown();
+    }
+  }
+
+  @override
+  void dispose() {
+    _countdownTimer?.cancel();
+    super.dispose();
+  }
+
+  void _startCountdown() {
+    _countdownTimer?.cancel();
+
+    final expiresAtStr = widget.offer['expires_at']?.toString();
+    if (expiresAtStr == null) {
+      setState(() => _isExpired = false);
+      return;
+    }
+
+    final endTime = DateTime.tryParse(expiresAtStr);
+    if (endTime == null) {
+      setState(() => _isExpired = false);
+      return;
+    }
+
+    // Mise à jour immédiate
+    _updateTimeLeft(endTime);
+
+    // Puis toutes les secondes
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      _updateTimeLeft(endTime);
+    });
+  }
+
+  void _updateTimeLeft(DateTime endTime) {
+    final remaining = endTime.difference(DateTime.now());
+    final expired = remaining.isNegative;
+
+    setState(() {
+      _timeLeft = expired ? Duration.zero : remaining;
+      _isExpired = expired;
+    });
+
+    // Arrêter le timer si expiré
+    if (expired) {
+      _countdownTimer?.cancel();
+    }
+  }
+
+  String _formatDuration(Duration duration) {
+    if (duration.inSeconds <= 0) return '00:00';
+    final hours = duration.inHours;
+    final minutes = duration.inMinutes.remainder(60);
+    final seconds = duration.inSeconds.remainder(60);
+    if (hours > 0) {
+      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final timeLeft = offer['expires_at'] != null
-        ? DateTime.parse(offer['expires_at']).difference(DateTime.now())
-        : null;
-    final isExpired = timeLeft != null && timeLeft.isNegative;
+    final l10n = AppLocalizations.of(context);
+    final lang = Localizations.localeOf(context).languageCode;
+    final displayCurrencyCode = ref.watch(currencyProvider);
+    final currencyService = CurrencyService.instance;
 
-    // ✅ Devise dynamique
-    final currency = offer['currency'] ?? 'CDF';
-    final currencySymbol = currency == 'USD' ? '\$' : 'FC';
+    // ─── Extraction sécurisée des données ───
+    final sellerCurrencyCode = _OfferValidators.normalizeCurrencyCode(widget.offer['currency']);
+    final isConverted = sellerCurrencyCode != displayCurrencyCode;
 
-    // ✅ Image : image_url ou images[0]
-    String imageUrl = offer['image_url'] ?? '';
-    if (imageUrl.isEmpty) {
-      final images = offer['images'] as List?;
-      if (images != null && images.isNotEmpty) {
-        imageUrl = images[0].toString();
-      }
+    final priceRaw = _OfferValidators.safeDouble(widget.offer['price']);
+    final originalPriceRaw = _OfferValidators.safeDouble(widget.offer['original_price']);
+    final hasDiscount = originalPriceRaw > 0 && priceRaw > 0 && priceRaw < originalPriceRaw;
+    final discountPercent = hasDiscount
+        ? ((originalPriceRaw - priceRaw) / originalPriceRaw * 100).round()
+        : (_OfferValidators.safeInt(widget.offer['discount_percentage']));
+
+    // ✅ Conversion des prix
+    final convertedPrice = currencyService.convert(priceRaw, from: sellerCurrencyCode, to: displayCurrencyCode);
+    final formattedPrice = currencyService.formatPrice(convertedPrice, currencyCode: displayCurrencyCode, lang: lang);
+
+    String? formattedOriginalPrice;
+    if (hasDiscount) {
+      final convertedOriginal = currencyService.convert(originalPriceRaw, from: sellerCurrencyCode, to: displayCurrencyCode);
+      formattedOriginalPrice = currencyService.formatPrice(convertedOriginal, currencyCode: displayCurrencyCode, lang: lang);
     }
 
+    // Image
+    String? imageUrl = _OfferValidators.sanitizeUrl(widget.offer['image_url']?.toString());
+    if (imageUrl == null && widget.offer['images'] is List) {
+      final images = widget.offer['images'] as List;
+      if (images.isNotEmpty) imageUrl = _OfferValidators.sanitizeUrl(images.first.toString());
+    }
+
+    // Titre
+    final title = _OfferValidators.sanitize(
+      widget.offer['title']?.toString() ?? l10n.t('live_offer_fallback_title'),
+    );
+
+    // Stock
+    final stock = _OfferValidators.safeInt(widget.offer['stock']);
+    final stockInitial = _OfferValidators.safeInt(widget.offer['stock_initial'], fallback: stock > 0 ? stock * 2 : 100);
+    final hasStock = widget.offer['stock'] != null && stockInitial > 0;
+    final stockProgress = hasStock
+        ? ((stockInitial - stock) / stockInitial).clamp(0.0, 1.0)
+        : 0.0;
+
+    // Produit ID pour navigation
+    final productId = widget.offer['id']?.toString() ?? widget.offer['product_id']?.toString();
+
+    // Couleur timer
+    final timerColor = _isExpired
+        ? ThixPolicy.textMuted
+        : _timeLeft.inMinutes < 5
+            ? ThixPolicy.danger
+            : const Color(0xFFE5592F);
+
     return GestureDetector(
-      onTap: onTap,
+      onTap: widget.onTap ?? (productId != null ? () {
+        HapticFeedback.selectionClick();
+        context.push('/market/product/$productId');
+      } : null),
       child: Card(
         elevation: 0,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
-          side: BorderSide(color: Colors.grey[200]!),
+          side: BorderSide(color: ThixPolicy.border.withOpacity(0.5)),
         ),
+        color: ThixPolicy.card,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image
+            // ─── IMAGE ───
             ClipRRect(
               borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
               child: Stack(
                 children: [
-                  imageUrl.isNotEmpty
+                  imageUrl != null && imageUrl.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           height: 140,
@@ -67,61 +249,81 @@ class LiveOfferCard extends StatelessWidget {
                           fit: BoxFit.cover,
                           placeholder: (_, __) => Container(
                             height: 140,
-                            color: bgApp,
+                            color: ThixPolicy.surfaceSoft,
                             child: const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                              child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary)),
                             ),
                           ),
                           errorWidget: (_, __, ___) => Container(
                             height: 140,
-                            color: bgApp,
-                            child: Icon(Icons.image, color: textMuted),
+                            color: ThixPolicy.surfaceSoft,
+                            child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted, size: 32),
                           ),
                         )
                       : Container(
                           height: 140,
-                          color: bgApp,
-                          child: Icon(Icons.image, color: textMuted),
+                          color: ThixPolicy.surfaceSoft,
+                          child: const Icon(Icons.shopping_bag_outlined, color: ThixPolicy.textMuted, size: 32),
                         ),
-                  if (offer['discount_percentage'] != null)
+
+                  // Badge réduction
+                  if (discountPercent > 0)
                     Positioned(
-                      top: 8,
-                      left: 8,
+                      top: 8, left: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: danger,
-                          borderRadius: BorderRadius.circular(4),
+                          color: ThixPolicy.danger,
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Text(
-                          '-${offer['discount_percentage'].toInt()}%',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                          ),
+                          '-$discountPercent%',
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 11),
                         ),
                       ),
                     ),
-                  if (timeLeft != null && !isExpired)
+
+                  // Timer countdown
+                  if (!_isExpired && widget.offer['expires_at'] != null)
                     Positioned(
-                      bottom: 8,
-                      right: 8,
+                      bottom: 8, right: 8,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.black54,
-                          borderRadius: BorderRadius.circular(4),
+                          color: timerColor.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(6),
                         ),
                         child: Row(
+                          mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.timer, size: 12, color: Colors.white),
+                            const Icon(Icons.timer_outlined, size: 11, color: Colors.white),
                             const SizedBox(width: 4),
                             Text(
-                              _formatDuration(timeLeft),
-                              style: const TextStyle(color: Colors.white, fontSize: 11),
+                              _formatDuration(_timeLeft),
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
                             ),
                           ],
+                        ),
+                      ),
+                    ),
+
+                  // Badge expiré
+                  if (_isExpired)
+                    Positioned.fill(
+                      child: Container(
+                        color: Colors.black.withOpacity(0.45),
+                        child: Center(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: ThixPolicy.textMuted,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              l10n.t('live_offer_expired'),
+                              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 12),
+                            ),
+                          ),
                         ),
                       ),
                     ),
@@ -129,89 +331,107 @@ class LiveOfferCard extends StatelessWidget {
               ),
             ),
 
-            // Content
+            // ─── CONTENU ───
             Padding(
               padding: const EdgeInsets.all(12),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Titre
                   Text(
-                    offer['title'] ?? 'Offre flash',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 14,
-                      color: navy,
-                    ),
+                    title.isEmpty ? l10n.t('live_offer_fallback_title') : title,
+                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: ThixPolicy.textMain),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 6),
+
+                  // Prix
                   Row(
                     children: [
-                      Text(
-                        '${(offer['price'] as num).toInt()} $currencySymbol',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: gold,
+                      Flexible(
+                        child: Text(
+                          formattedPrice,
+                          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: const Color(0xFFC9962C)),
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      if (offer['original_price'] != null)
-                        Padding(
-                          padding: const EdgeInsets.only(left: 8),
+                      if (isConverted) ...[
+                        const SizedBox(width: 3),
+                        const Icon(Icons.currency_exchange_rounded, size: 12, color: Color(0xFFC9962C)),
+                      ],
+                      if (formattedOriginalPrice != null) ...[
+                        const SizedBox(width: 6),
+                        Flexible(
                           child: Text(
-                            '${(offer['original_price'] as num).toInt()} $currencySymbol',
-                            style: TextStyle(
+                            formattedOriginalPrice,
+                            style: ThixPolicy.captionStyle.copyWith(
                               decoration: TextDecoration.lineThrough,
-                              fontSize: 12,
-                              color: textMuted,
+                              fontSize: 11,
+                              color: ThixPolicy.textMuted,
                             ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                      ],
                     ],
                   ),
-                  const SizedBox(height: 8),
-                  if (offer['stock'] != null) ...[
-                    LinearProgressIndicator(
-                      value: ((offer['stock_initial'] - offer['stock']) / offer['stock_initial'])
-                          .clamp(0.0, 1.0),
-                      backgroundColor: Colors.grey[200],
-                      valueColor: AlwaysStoppedAnimation<Color>(gold),
-                      minHeight: 6,
+
+                  // Barre de stock
+                  if (hasStock) ...[
+                    const SizedBox(height: 10),
+                    ClipRRect(
                       borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: stockProgress,
+                        minHeight: 6,
+                        backgroundColor: ThixPolicy.border.withOpacity(0.3),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          stock <= 3 ? ThixPolicy.danger : const Color(0xFFC9962C),
+                        ),
+                      ),
                     ),
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Plus que ${offer['stock']} disponibles',
-                        style: TextStyle(fontSize: 10, color: textMuted),
+                        stock <= 0
+                            ? l10n.t('live_offer_out_of_stock')
+                            : l10n.t('live_offer_stock_remaining', args: ['$stock']),
+                        style: ThixPolicy.microStyle.copyWith(
+                          fontSize: 10,
+                          color: stock <= 3 ? ThixPolicy.danger : ThixPolicy.textMuted,
+                          fontWeight: stock <= 3 ? ThixPolicy.bold : ThixPolicy.regular,
+                        ),
                       ),
                     ),
                   ],
-                  const SizedBox(height: 12),
-                  if (onClaim != null)
+
+                  // Bouton Profiter
+                  if (widget.onClaim != null) ...[
+                    const SizedBox(height: 12),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
-                        onPressed: isExpired ? null : onClaim,
+                        onPressed: (_isExpired || stock <= 0) ? null : widget.onClaim,
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: isExpired ? textMuted : gold,
-                          foregroundColor: isExpired ? Colors.white : navy,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          backgroundColor: (_isExpired || stock <= 0) ? ThixPolicy.textMuted : const Color(0xFFC9962C),
+                          foregroundColor: (_isExpired || stock <= 0) ? Colors.white : const Color(0xFF1B2A4A),
+                          disabledBackgroundColor: ThixPolicy.textMuted.withOpacity(0.5),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                          padding: const EdgeInsets.symmetric(vertical: 10),
                           elevation: 0,
                         ),
                         child: Text(
-                          isExpired ? 'Expirée' : 'Profiter',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
+                          _isExpired
+                              ? l10n.t('live_offer_expired')
+                              : stock <= 0
+                                  ? l10n.t('live_offer_out_of_stock')
+                                  : l10n.t('live_offer_claim_btn'),
+                          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
                         ),
                       ),
                     ),
+                  ],
                 ],
               ),
             ),
@@ -219,12 +439,5 @@ class LiveOfferCard extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  String _formatDuration(Duration duration) {
-    if (duration.inSeconds <= 0) return '00:00';
-    final minutes = duration.inMinutes.remainder(60);
-    final seconds = duration.inSeconds.remainder(60);
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }
