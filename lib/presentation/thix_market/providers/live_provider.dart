@@ -1,8 +1,12 @@
+// lib/presentation/thix_market/providers/live_provider.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class LiveProvider extends ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
+
+  /// Les lives THIX Market sont isolés de THIX PRO par cette valeur
+  static const String _kSource = 'market';
 
   List<Map<String, dynamic>> _liveSessions = [];
   List<Map<String, dynamic>> _auctions = [];
@@ -18,15 +22,31 @@ class LiveProvider extends ChangeNotifier {
   bool get isLoadingAuctions => _isLoadingAuctions;
   bool get isLoadingMyLives => _isLoadingMyLives;
 
+  /// Aligne les colonnes DB sur les clés lues par live_page.dart
+  Map<String, dynamic> _normalizeLive(Map<String, dynamic> row) {
+    final shop = row['shop'] is Map
+        ? Map<String, dynamic>.from(row['shop'] as Map)
+        : const <String, dynamic>{};
+    return {
+      ...row,
+      'viewers': row['viewers'] ?? row['viewer_count'] ?? 0,
+      'shop_name': row['shop_name'] ?? shop['name'],
+      'shop_avatar': row['shop_avatar'] ?? shop['logo_url'],
+    };
+  }
+
   Future<void> loadLiveSessions() async {
     _setLoading(true);
     try {
       final response = await _supabase
-          .from('live_sessions') // ✅ UNIFIÉ
+          .from('live_sessions')
           .select('*, shop:shops(name, logo_url)')
           .eq('status', 'live')
+          .eq('source', _kSource)
           .order('viewer_count', ascending: false);
-      _liveSessions = List<Map<String, dynamic>>.from(response);
+      _liveSessions = List<Map<String, dynamic>>.from(response)
+          .map(_normalizeLive)
+          .toList();
     } catch (e) {
       debugPrint('Error loading live sessions: $e');
     } finally {
@@ -58,11 +78,14 @@ class LiveProvider extends ChangeNotifier {
     _setLoadingMyLives(true);
     try {
       final response = await _supabase
-          .from('live_sessions') // ✅ UNIFIÉ
+          .from('live_sessions')
           .select()
           .eq('shop_id', shopId)
+          .eq('source', _kSource)
           .order('created_at', ascending: false);
-      _myLives = List<Map<String, dynamic>>.from(response);
+      _myLives = List<Map<String, dynamic>>.from(response)
+          .map(_normalizeLive)
+          .toList();
     } catch (e) {
       debugPrint('Error loading my lives: $e');
     } finally {
@@ -94,12 +117,12 @@ class LiveProvider extends ChangeNotifier {
 
     try {
       final response = await _supabase
-          .from('live_sessions') // ✅ UNIFIÉ
+          .from('live_sessions')
           .insert({
             ...liveData,
             'shop_id': shopId,
             'host_id': userId,
-            'source': 'market',
+            'source': _kSource,
             'status': 'scheduled',
             'created_at': DateTime.now().toIso8601String(),
           })
