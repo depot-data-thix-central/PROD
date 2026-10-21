@@ -1,19 +1,21 @@
 // lib/presentation/thix_market/widgets/live/live_stream_player.dart
 // ============================================================================
-// LIVE STREAM PLAYER — Production Enterprise v5.1
+// LIVE STREAM PLAYER — Production Enterprise v6
 // ----------------------------------------------------------------------------
-//  • ✅ Résolution channel_name + isHost depuis live_sessions si absents
-//  • ✅ Refus de joindre un live déjà ended
-//  • ✅ Fin de live (status ended) au dispose hôte + bouton Terminer
-//  • ✅ Token Agora toujours régénéré (pas de test_token)
-//  • ✅ Refresh token hôte + spectateur
-//  • ✅ Pré-pin produits, overlays shopping, FR/EN/SW
+//  • ✅ Erreurs de connexion visibles (écran + Réessayer) — plus de spinner infini
+//  • ✅ Token toujours frais, retry auto sur erreur de token, timeout de join 20 s
+//  • ✅ Heartbeat hôte (last_heartbeat_at) toutes les 25 s
+//  • ✅ Fin de live vérifiée (0 ligne mise à jour = alerte visible)
+//  • ✅ Agora libéré proprement (stopPreview + leave + release attendus)
+//  • ✅ Spectateurs éjectés quand le live passe à ended (realtime + polling)
+//  • ✅ Navigation via go_router (plus de Navigator.pop)
 // ============================================================================
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -43,6 +45,9 @@ final _pinnedCountProvider = StreamProvider.family<int, String>((ref, sessionId)
 class LiveStreamPlayer extends ConsumerStatefulWidget {
   final String channelName;
   final String liveId;
+
+  /// Conservé pour compatibilité avec la route, mais ignoré :
+  /// un token frais est toujours demandé à generate-rtc-token.
   final String? token;
   final bool isHost;
 
@@ -67,6 +72,10 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   bool _isFrontCamera = true;
   bool _isEnding = false;
   bool _isLoadingToken = true;
+  bool _hostEnded = false;
+  bool _recovering = false;
+  int _tokenRetries = 0;
+  String? _error;
   String? _fetchedToken;
   int _viewerCount = 0;
 
@@ -77,11 +86,21 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   final TextEditingController _messageController = TextEditingController();
 
   Timer? _tokenRefreshTimer;
+  Timer? _heartbeatTimer;
+  Timer? _statusPollTimer;
+  Timer? _joinTimeout;
+  RealtimeChannel? _statusChannel;
 
   static const Color gold = Color(0xFFC9962C);
   static const Color danger = Color(0xFFE53935);
   static const Duration _kTokenRefreshInterval = Duration(minutes: 45);
+  static const Duration _kHeartbeatInterval = Duration(seconds: 25);
+  static const Duration _kStatusPollInterval = Duration(seconds: 10);
+  static const Duration _kJoinTimeout = Duration(seconds: 20);
 
+  // ══════════════════════════════════════════════════════════════════════
+  // CYCLE DE VIE
+  // ══════════════════════════════════════════════════════════════════════
   @override
   void initState() {
     super.initState();
@@ -95,51 +114,183 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _tokenRefreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _statusPollTimer?.cancel();
+    _joinTimeout?.cancel();
+    try {
+      _statusChannel?.unsubscribe();
+    } catch (_) {}
     _messageController.dispose();
 
-    // Best-effort : si hôte quitte sans passer par "Terminer", couper le live en DB
-    if (_isHost && !_isEnding) {
+    // Best-effort : l'hôte quitte sans passer par "Terminer" → couper le live en DB
+    if (_isHost && !_isEnding && !_hostEnded) {
       unawaited(_markEndedInDb());
     }
+    unawaited(_shutdownEngine());
 
-    try {
-      _engine?.leaveChannel();
-      _engine?.release();
-    } catch (_) {}
-    _engine = null;
     debugPrint('[LivePlayer] 👋 Disposed');
     super.dispose();
   }
 
-  Future<void> _markEndedInDb() async {
-    try {
-      await Supabase.instance.client.from('live_sessions').update({
-        'status': 'ended',
-        'ended_at': DateTime.now().toIso8601String(),
-      }).eq('id', widget.liveId);
-      debugPrint('[LivePlayer] ✓ Live marked ended (dispose)');
-    } catch (e) {
-      debugPrint('[LivePlayer] ⚠️ markEnded dispose: $e');
-    }
-  }
-
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!_isHost || _engine == null) return;
     switch (state) {
       case AppLifecycleState.paused:
-        _engine?.muteLocalAudioStream(true);
-        _engine?.muteLocalVideoStream(true);
+        if (_isHost && _engine != null) {
+          _engine?.muteLocalAudioStream(true);
+          _engine?.muteLocalVideoStream(true);
+        }
         break;
       case AppLifecycleState.resumed:
-        if (!_isMuted) _engine?.muteLocalAudioStream(false);
-        if (!_isVideoOff) _engine?.muteLocalVideoStream(false);
+        if (_isHost && _engine != null) {
+          if (!_isMuted) _engine?.muteLocalAudioStream(false);
+          if (!_isVideoOff) _engine?.muteLocalVideoStream(false);
+        }
+        if (!_isEnding && !_hostEnded) unawaited(_checkStillLive());
         break;
       case AppLifecycleState.detached:
         if (_isHost && !_isEnding) unawaited(_markEndedInDb());
         break;
       default:
         break;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // HELPERS
+  // ══════════════════════════════════════════════════════════════════════
+  /// Traduction avec repli (les clés l10n manquantes renvoient la clé brute)
+  String _t(String key, String fallback) {
+    final s = AppLocalizations.of(context).t(key);
+    return s == key ? fallback : s;
+  }
+
+  String _friendly(Object e) {
+    var m = e.toString().replaceFirst('Exception: ', '');
+    m = m.split('\n').first.trim();
+    if (m.length > 220) m = m.substring(0, 220);
+    return m;
+  }
+
+  bool _looksLikeTokenError(String s) => s.toLowerCase().contains('token');
+
+  void _setError(String msg) {
+    if (!mounted) return;
+    _joinTimeout?.cancel();
+    debugPrint('[LivePlayer] ❌ $msg');
+    setState(() {
+      _error = msg;
+      _isLoadingToken = false;
+    });
+  }
+
+  void _leavePage() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/market/live');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // DB : fin de live / heartbeat / statut
+  // ══════════════════════════════════════════════════════════════════════
+  /// Retourne true si la base a bien enregistré la fin du live
+  Future<bool> _markEndedInDb() async {
+    try {
+      final rows = await Supabase.instance.client
+          .from('live_sessions')
+          .update({
+            'status': 'ended',
+            'ended_at': DateTime.now().toUtc().toIso8601String(),
+          })
+          .eq('id', widget.liveId)
+          .select('id');
+      final ok = (rows as List).isNotEmpty;
+      debugPrint(ok
+          ? '[LivePlayer] ✓ Live marqué ended en DB'
+          : '[LivePlayer] ⚠️ 0 ligne mise à jour (RLS ?) — live toujours actif en DB');
+      return ok;
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ markEnded: $e');
+      return false;
+    }
+  }
+
+  void _startHeartbeat() {
+    _heartbeatTimer?.cancel();
+    unawaited(_sendHeartbeat());
+    _heartbeatTimer = Timer.periodic(_kHeartbeatInterval, (_) => _sendHeartbeat());
+  }
+
+  Future<void> _sendHeartbeat() async {
+    try {
+      await Supabase.instance.client.from('live_sessions').update({
+        'last_heartbeat_at': DateTime.now().toUtc().toIso8601String(),
+      }).eq('id', widget.liveId);
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ heartbeat: $e');
+    }
+  }
+
+  void _startStatusWatch() {
+    try {
+      _statusChannel?.unsubscribe();
+      _statusChannel = Supabase.instance.client
+          .channel('live_status_${widget.liveId}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'live_sessions',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'id',
+              value: widget.liveId,
+            ),
+            callback: (payload) {
+              if (payload.newRecord['status']?.toString() == 'ended') {
+                unawaited(_onRemoteEnded());
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ status realtime: $e');
+    }
+    // Filet de sécurité si le realtime n'est pas activé sur la table
+    _statusPollTimer?.cancel();
+    _statusPollTimer = Timer.periodic(_kStatusPollInterval, (_) => _checkStillLive());
+  }
+
+  Future<void> _checkStillLive() async {
+    if (!mounted || _isEnding || _hostEnded) return;
+    try {
+      final s = await Supabase.instance.client
+          .from('live_sessions')
+          .select('status')
+          .eq('id', widget.liveId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 6));
+      if (s != null && s['status']?.toString() == 'ended') {
+        await _onRemoteEnded();
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _onRemoteEnded() async {
+    if (!mounted || _isEnding || _hostEnded) return;
+    debugPrint('[LivePlayer] 🛑 Live terminé (statut DB)');
+    _tokenRefreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _statusPollTimer?.cancel();
+    await _shutdownEngine();
+    if (mounted) {
+      setState(() {
+        _hostEnded = true;
+        _isJoined = false;
+        _remoteUid = 0;
+      });
     }
   }
 
@@ -165,7 +316,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
       throw Exception('Ce live est terminé');
     }
 
-    final dbChannel = session['channel_name']?.toString()?.trim() ?? '';
+    final dbChannel = session['channel_name']?.toString().trim() ?? '';
     if (dbChannel.isNotEmpty) {
       _channelName = dbChannel;
     }
@@ -183,176 +334,281 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // INITIALISATION AGORA + PRÉ-PIN
+  // TOKEN
+  // ══════════════════════════════════════════════════════════════════════
+  Future<Map<String, String>> _fetchToken() async {
+    final response = await Supabase.instance.client.functions
+        .invoke(
+          'generate-rtc-token',
+          body: {
+            'channelName': _channelName,
+            'role': _isHost ? 'publisher' : 'subscriber',
+          },
+        )
+        .timeout(const Duration(seconds: 15));
+
+    final data = response.data;
+    if (data is! Map) {
+      throw Exception('Réponse token invalide (generate-rtc-token)');
+    }
+    final appId = data['appId']?.toString() ?? '';
+    final token = data['token']?.toString() ?? '';
+    if (appId.isEmpty) throw Exception('App ID Agora manquant');
+    if (token.isEmpty) throw Exception('Token Agora vide');
+    if (token.startsWith('test_token_')) {
+      throw Exception('Token de test invalide — vérifiez generate-rtc-token');
+    }
+    return {'appId': appId, 'token': token};
+  }
+
+  /// Renouvellement pendant le live (hôte et spectateur)
+  Future<void> _refreshToken() async {
+    try {
+      final creds = await _fetchToken();
+      final eng = _engine;
+      if (eng != null) {
+        await eng.renewToken(creds['token']!);
+        _fetchedToken = creds['token'];
+        debugPrint('[LivePlayer] 🔄 Token refreshed');
+      }
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ Token refresh failed: $e');
+    }
+  }
+
+  /// Token refusé par Agora : on en redemande un frais (2 essais max)
+  Future<void> _recoverFromTokenError() async {
+    if (_recovering || !mounted) return;
+    _recovering = true;
+    try {
+      if (_tokenRetries >= 2) {
+        _setError('Token Agora refusé après 2 essais. Vérifiez le déploiement de '
+            'generate-rtc-token et le certificat Agora.');
+        return;
+      }
+      _tokenRetries++;
+      debugPrint('[LivePlayer] 🔁 Token refusé — nouvel essai $_tokenRetries/2');
+      final creds = await _fetchToken();
+      _fetchedToken = creds['token'];
+      final eng = _engine;
+      if (eng == null) return;
+      if (_isJoined) {
+        await eng.renewToken(creds['token']!);
+      } else {
+        await eng.leaveChannel();
+        await _joinChannel(creds['token']!);
+      }
+    } catch (e) {
+      _setError(_friendly(e));
+    } finally {
+      _recovering = false;
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // AGORA : init / join / shutdown
   // ══════════════════════════════════════════════════════════════════════
   Future<void> _initializeLive() async {
+    if (mounted) {
+      setState(() {
+        _isLoadingToken = true;
+        _error = null;
+      });
+    }
     try {
-      // 1) Résoudre channel + isHost depuis la DB (corrige extra manquant)
       await _resolveSession();
-      if (mounted) setState(() {}); // rafraîchir UI avec _isHost réel
+      if (mounted) setState(() {}); // rafraîchir l'UI avec _isHost réel
 
       await [Permission.microphone, Permission.camera].request();
 
-      final response = await Supabase.instance.client.functions.invoke(
-        'generate-rtc-token',
-        body: {
-          'channelName': _channelName,
-          'role': _isHost ? 'publisher' : 'subscriber',
-        },
-      );
+      final creds = await _fetchToken();
+      _fetchedToken = creds['token'];
 
-      final data = response.data;
-      if (data == null) {
-        throw Exception('Réponse token vide (generate-rtc-token)');
-      }
+      await _setupEngineAndJoin(creds['appId']!, creds['token']!);
 
-      final String appId = data['appId']?.toString() ?? '';
-      _fetchedToken = data['token']?.toString() ?? widget.token;
-
-      if (appId.isEmpty) {
-        throw Exception('Impossible de récupérer l\'App ID du serveur');
-      }
-      if (_fetchedToken == null || _fetchedToken!.isEmpty) {
-        throw Exception('Token Agora vide');
-      }
-      // Refuser les faux tokens de fallback
-      if (_fetchedToken!.startsWith('test_token_')) {
-        throw Exception('Token de test invalide — vérifiez generate-rtc-token');
-      }
-
-      _engine = createAgoraRtcEngine();
-
-      await _engine!.initialize(
-        RtcEngineContext(
-          appId: appId,
-          channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
-        ),
-      );
-
-      await _engine!.enableVideo();
-
-      if (_isHost) {
-        await _engine!.startPreview();
-      }
-
-      _engine!.registerEventHandler(
-        RtcEngineEventHandler(
-          onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-            if (mounted) setState(() => _isJoined = true);
-            debugPrint('[LivePlayer] ✓ Joined channel: ${connection.channelId}');
-          },
-          onUserJoined: (RtcConnection connection, int uid, int elapsed) {
-            if (mounted) setState(() => _remoteUid = uid);
-          },
-          onUserOffline: (RtcConnection connection, int uid, UserOfflineReasonType reason) {
-            if (mounted) setState(() => _remoteUid = 0);
-          },
-          onRtcStats: (RtcConnection connection, RtcStats stats) {
-            if (mounted && _isHost) {
-              setState(() => _viewerCount = stats.userCount ?? 0);
-            }
-          },
-          onError: (ErrorCodeType err, String msg) {
-            debugPrint('[LivePlayer] ❌ Agora error [$err]: $msg');
-          },
-          onConnectionStateChanged: (RtcConnection connection, ConnectionStateType state, ConnectionChangedReasonType reason) {
-            debugPrint('[LivePlayer] 🔗 Connection state: $state (reason: $reason)');
-            if (state == ConnectionStateType.connectionStateDisconnected) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(AppLocalizations.of(context).t('live_connection_lost')),
-                    backgroundColor: danger,
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              }
-            } else if (state == ConnectionStateType.connectionStateConnected) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              }
-            }
-          },
-        ),
-      );
-
-      await _engine!.setClientRole(
-        role: _isHost
-            ? ClientRoleType.clientRoleBroadcaster
-            : ClientRoleType.clientRoleAudience,
-      );
-
-      await _engine!.joinChannel(
-        token: _fetchedToken ?? '',
-        channelId: _channelName,
-        uid: 0,
-        options: ChannelMediaOptions(
-          publishCameraTrack: _isHost && !_isVideoOff,
-          publishMicrophoneTrack: _isHost && !_isMuted,
-          clientRoleType: _isHost
-              ? ClientRoleType.clientRoleBroadcaster
-              : ClientRoleType.clientRoleAudience,
-        ),
-      );
-
-      // Refresh token pour hôte ET spectateur
+      _tokenRefreshTimer?.cancel();
       _tokenRefreshTimer = Timer.periodic(_kTokenRefreshInterval, (_) => _refreshToken());
+      _startStatusWatch();
 
-      // Pré-pin produits (hôte uniquement)
       if (_isHost) {
-        try {
-          final session = await Supabase.instance.client
-              .from('live_sessions')
-              .select('pre_pinned_products, allow_voting, allow_dynamic_control')
-              .eq('id', widget.liveId)
-              .maybeSingle()
-              .timeout(const Duration(seconds: 5));
-          final prePinned = List<String>.from(
-              (session?['pre_pinned_products'] as List?) ?? []);
-          if (prePinned.isNotEmpty) {
-            await LiveShoppingService().applyPrePinned(widget.liveId, prePinned);
-            debugPrint('[LiveShopping] Pre-pinned ${prePinned.length} products');
-          }
-        } catch (e) {
-          debugPrint('[LiveShopping] Pre-pin apply failed (non-critical): $e');
-        }
+        _startHeartbeat();
+        await _applyPrePinned();
       }
     } catch (e) {
       debugPrint('[LivePlayer] ❌ Init error: $e');
-      if (mounted) {
-        final l10n = AppLocalizations.of(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('${l10n.t("live_connection_error")}: $e'),
-            backgroundColor: danger,
-          ),
-        );
-      }
+      await _shutdownEngine();
+      _setError(_friendly(e));
     } finally {
       if (mounted) setState(() => _isLoadingToken = false);
     }
   }
 
-  Future<void> _refreshToken() async {
-    try {
-      final response = await Supabase.instance.client.functions.invoke(
-        'generate-rtc-token',
-        body: {
-          'channelName': _channelName,
-          'role': _isHost ? 'publisher' : 'subscriber',
+  Future<void> _setupEngineAndJoin(String appId, String token) async {
+    final eng = createAgoraRtcEngine();
+    _engine = eng;
+
+    await eng.initialize(
+      RtcEngineContext(
+        appId: appId,
+        channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+      ),
+    );
+
+    await eng.enableVideo();
+
+    eng.registerEventHandler(
+      RtcEngineEventHandler(
+        onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+          _joinTimeout?.cancel();
+          if (mounted) {
+            setState(() {
+              _isJoined = true;
+              _error = null;
+            });
+          }
+          debugPrint('[LivePlayer] ✓ Joined channel: ${connection.channelId}');
         },
-      );
-      final newToken = response.data?['token']?.toString();
-      if (newToken != null &&
-          newToken.isNotEmpty &&
-          !newToken.startsWith('test_token_') &&
-          _engine != null) {
-        await _engine!.renewToken(newToken);
-        _fetchedToken = newToken;
-        debugPrint('[LivePlayer] 🔄 Token refreshed');
+        onUserJoined: (RtcConnection connection, int uid, int elapsed) {
+          if (mounted) setState(() => _remoteUid = uid);
+        },
+        onUserOffline: (RtcConnection connection, int uid, UserOfflineReasonType reason) {
+          if (mounted) setState(() => _remoteUid = 0);
+        },
+        onRtcStats: (RtcConnection connection, RtcStats stats) {
+          if (mounted && _isHost) {
+            final n = (stats.userCount ?? 1) - 1; // sans l'hôte
+            setState(() => _viewerCount = n < 0 ? 0 : n);
+          }
+        },
+        onTokenPrivilegeWillExpire: (RtcConnection connection, String token) {
+          unawaited(_refreshToken());
+        },
+        onRequestToken: (RtcConnection connection) {
+          unawaited(_refreshToken());
+        },
+        onError: (ErrorCodeType err, String msg) {
+          debugPrint('[LivePlayer] ❌ Agora error [$err]: $msg');
+          if (!_isJoined && _looksLikeTokenError('$err $msg')) {
+            unawaited(_recoverFromTokenError());
+          }
+        },
+        onConnectionStateChanged:
+            (RtcConnection connection, ConnectionStateType state, ConnectionChangedReasonType reason) {
+          debugPrint('[LivePlayer] 🔗 Connection state: $state (reason: $reason)');
+          if (state == ConnectionStateType.connectionStateFailed) {
+            if (_looksLikeTokenError('$reason')) {
+              unawaited(_recoverFromTokenError());
+            } else {
+              _setError('Connexion au direct impossible ($reason)');
+            }
+          } else if (state == ConnectionStateType.connectionStateDisconnected) {
+            if (mounted && _isJoined) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(_t('live_connection_lost', 'Connexion perdue, reconnexion…')),
+                  backgroundColor: danger,
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          } else if (state == ConnectionStateType.connectionStateConnected) {
+            if (mounted) ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          }
+        },
+      ),
+    );
+
+    await eng.setClientRole(
+      role: _isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+    );
+
+    if (_isHost) {
+      await eng.startPreview();
+    }
+
+    await _joinChannel(token);
+  }
+
+  Future<void> _joinChannel(String token) async {
+    final eng = _engine;
+    if (eng == null) return;
+
+    _joinTimeout?.cancel();
+    _joinTimeout = Timer(_kJoinTimeout, () {
+      if (!_isJoined && mounted && _error == null && !_recovering) {
+        _setError('Connexion au direct impossible (délai dépassé). '
+            'Vérifiez votre réseau puis réessayez.');
+      }
+    });
+
+    await eng.joinChannel(
+      token: token,
+      channelId: _channelName,
+      uid: 0,
+      options: ChannelMediaOptions(
+        publishCameraTrack: _isHost && !_isVideoOff,
+        publishMicrophoneTrack: _isHost && !_isMuted,
+        clientRoleType:
+            _isHost ? ClientRoleType.clientRoleBroadcaster : ClientRoleType.clientRoleAudience,
+      ),
+    );
+  }
+
+  /// Libération complète d'Agora (caméra / micro coupés)
+  Future<void> _shutdownEngine() async {
+    final eng = _engine;
+    _engine = null;
+    _joinTimeout?.cancel();
+    if (eng == null) return;
+    try {
+      if (_isHost) await eng.stopPreview();
+    } catch (_) {}
+    try {
+      await eng.leaveChannel();
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ leaveChannel: $e');
+    }
+    try {
+      await eng.release();
+    } catch (e) {
+      debugPrint('[LivePlayer] ⚠️ release: $e');
+    }
+    _isJoined = false;
+    debugPrint('[LivePlayer] ✓ Engine released');
+  }
+
+  Future<void> _retry() async {
+    HapticFeedback.selectionClick();
+    _tokenRetries = 0;
+    _recovering = false;
+    _heartbeatTimer?.cancel();
+    _statusPollTimer?.cancel();
+    _tokenRefreshTimer?.cancel();
+    await _shutdownEngine();
+    if (mounted) {
+      setState(() {
+        _isJoined = false;
+        _remoteUid = 0;
+      });
+    }
+    await _initializeLive();
+  }
+
+  Future<void> _applyPrePinned() async {
+    try {
+      final session = await Supabase.instance.client
+          .from('live_sessions')
+          .select('pre_pinned_products, allow_voting, allow_dynamic_control')
+          .eq('id', widget.liveId)
+          .maybeSingle()
+          .timeout(const Duration(seconds: 5));
+      final prePinned = List<String>.from((session?['pre_pinned_products'] as List?) ?? []);
+      if (prePinned.isNotEmpty) {
+        await LiveShoppingService().applyPrePinned(widget.liveId, prePinned);
+        debugPrint('[LiveShopping] Pre-pinned ${prePinned.length} products');
       }
     } catch (e) {
-      debugPrint('[LivePlayer] ⚠️ Token refresh failed: $e');
+      debugPrint('[LiveShopping] Pre-pin apply failed (non-critical): $e');
     }
   }
 
@@ -381,46 +637,53 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     setState(() => _isFrontCamera = !_isFrontCamera);
   }
 
-  Future<void> _endLive({bool pop = true}) async {
+  Future<void> _endLive() async {
     if (_isEnding) return;
     setState(() => _isEnding = true);
     _tokenRefreshTimer?.cancel();
+    _heartbeatTimer?.cancel();
+    _statusPollTimer?.cancel();
 
-    await _markEndedInDb();
+    final ok = await _markEndedInDb();
+    await _shutdownEngine();
 
-    try {
-      await _engine?.leaveChannel();
-      await _engine?.release();
-      _engine = null;
-    } catch (e) {
-      debugPrint('[LivePlayer] ❌ Leave Agora error: $e');
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(_t(
+            'live_end_not_confirmed',
+            'Diffusion arrêtée, mais le serveur n\'a pas confirmé la fin du live (droits de mise à jour).',
+          )),
+          backgroundColor: danger,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
     }
 
-    if (pop && mounted) {
-      if (Navigator.of(context).canPop()) {
-        Navigator.of(context).pop();
-      }
-    }
+    _leavePage();
   }
 
   Future<void> _confirmEndLive() async {
-    final l10n = AppLocalizations.of(context);
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1D2333),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text(l10n.t('live_end_confirm_title'), style: const TextStyle(color: Colors.white)),
-        content: Text(l10n.t('live_end_confirm_desc'), style: const TextStyle(color: Colors.white70)),
+        title: Text(_t('live_end_confirm_title', 'Terminer le live ?'),
+            style: const TextStyle(color: Colors.white)),
+        content: Text(
+          _t('live_end_confirm_desc', 'La diffusion sera arrêtée pour tous les spectateurs.'),
+          style: const TextStyle(color: Colors.white70),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(l10n.t('common_cancel'), style: const TextStyle(color: Colors.white54)),
+            child: Text(_t('common_cancel', 'Annuler'), style: const TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: danger),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(l10n.t('live_end_confirm_btn'), style: const TextStyle(color: Colors.white)),
+            child: Text(_t('live_end_confirm_btn', 'Terminer'), style: const TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -440,7 +703,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
         'live_id': widget.liveId,
         'user_id': userId,
         'comment': text,
-        'created_at': DateTime.now().toIso8601String(),
+        'created_at': DateTime.now().toUtc().toIso8601String(),
       });
     } catch (_) {
       try {
@@ -448,7 +711,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
           'live_id': widget.liveId,
           'user_id': userId,
           'message': text,
-          'created_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toUtc().toIso8601String(),
         });
       } catch (e) {
         debugPrint('[LivePlayer] ❌ Send message error: $e');
@@ -494,6 +757,9 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
     );
   }
 
+  // ══════════════════════════════════════════════════════════════════════
+  // UI
+  // ══════════════════════════════════════════════════════════════════════
   Widget _buildVideo() {
     if (!_isJoined || _engine == null) {
       return const Center(child: CircularProgressIndicator(color: Colors.white));
@@ -508,7 +774,7 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
               const Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 64),
               const SizedBox(height: 12),
               Text(
-                AppLocalizations.of(context).t('live_camera_off'),
+                _t('live_camera_off', 'Caméra désactivée'),
                 style: const TextStyle(color: Colors.white70),
               ),
             ],
@@ -535,8 +801,101 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
 
     return Center(
       child: Text(
-        AppLocalizations.of(context).t('live_waiting_host'),
+        _t('live_waiting_host', 'En attente de l\'hôte…'),
         style: const TextStyle(color: Colors.white70, fontSize: 16),
+      ),
+    );
+  }
+
+  Widget _buildErrorView() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFF0B1F44),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(24),
+                  decoration: const BoxDecoration(color: Color(0xFF1D2333), shape: BoxShape.circle),
+                  child: const Icon(Icons.error_outline_rounded, color: danger, size: 56),
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _t('live_connection_error_title', 'Erreur de connexion'),
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _error ?? '',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Color(0xFFEF5350), fontSize: 14, height: 1.4),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton.icon(
+                  onPressed: _retry,
+                  icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                  label: Text(_t('live_retry', 'Réessayer'),
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF2F6BDE),
+                    padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: _isHost ? _endLive : _leavePage,
+                  child: Text(
+                    _isHost
+                        ? _t('live_end_and_leave', 'Terminer le live et quitter')
+                        : _t('live_back', 'Retour'),
+                    style: const TextStyle(color: Colors.white70),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEndedView() {
+    return Container(
+      width: double.infinity,
+      color: const Color(0xFF0B1F44),
+      child: SafeArea(
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.live_tv_rounded, color: Colors.white54, size: 64),
+                const SizedBox(height: 16),
+                Text(
+                  _t('live_ended_title', 'Le live est terminé'),
+                  style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 24),
+                ElevatedButton(
+                  onPressed: _leavePage,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: gold,
+                    padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 14),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
+                  ),
+                  child: Text(_t('live_back', 'Retour'),
+                      style: const TextStyle(color: Color(0xFF1B2A4A), fontWeight: FontWeight.w800)),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -564,17 +923,17 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    final pinnedCountAsync = _isHost
-        ? ref.watch(_pinnedCountProvider(widget.liveId))
-        : null;
+    final pinnedCountAsync = _isHost ? ref.watch(_pinnedCountProvider(widget.liveId)) : null;
     final pinnedCount = pinnedCountAsync?.valueOrNull ?? 0;
 
     return PopScope(
-      canPop: !_isHost,
+      canPop: !_isHost || _hostEnded,
       onPopInvokedWithResult: (didPop, _) async {
         if (didPop) return;
+        if (_isHost && _error != null) {
+          await _endLive();
+          return;
+        }
         if (_isHost) await _confirmEndLive();
       },
       child: Scaffold(
@@ -586,264 +945,277 @@ class _LiveStreamPlayerState extends ConsumerState<LiveStreamPlayer> with Widget
                   children: [
                     const CircularProgressIndicator(color: gold),
                     const SizedBox(height: 12),
-                    Text(l10n.t('live_connecting'), style: const TextStyle(color: Colors.white70)),
+                    Text(_t('live_connecting', 'Connexion au direct…'),
+                        style: const TextStyle(color: Colors.white70)),
                   ],
                 ),
               )
-            : Stack(
-                children: [
-                  Positioned.fill(child: _buildVideo()),
+            : _error != null
+                ? _buildErrorView()
+                : _hostEnded
+                    ? _buildEndedView()
+                    : Stack(
+                        children: [
+                          Positioned.fill(child: _buildVideo()),
 
-                  Positioned(
-                    top: 0, left: 0, right: 0, height: 140,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [Colors.black.withOpacity(0.65), Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  Positioned(
-                    bottom: 0, left: 0, right: 0, height: 220,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.bottomCenter,
-                          end: Alignment.topCenter,
-                          colors: [Colors.black.withOpacity(0.8), Colors.transparent],
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 12,
-                    left: 16,
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: danger,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
-                              SizedBox(width: 4),
-                              Text('LIVE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
-                            ],
-                          ),
-                        ),
-                        if (_isHost) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.black.withOpacity(0.5),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.visibility_rounded, color: Colors.white70, size: 12),
-                                const SizedBox(width: 4),
-                                Text(
-                                  '$_viewerCount',
-                                  style: const TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12),
+                          Positioned(
+                            top: 0, left: 0, right: 0, height: 140,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [Colors.black.withOpacity(0.65), Colors.transparent],
                                 ),
+                              ),
+                            ),
+                          ),
+
+                          Positioned(
+                            bottom: 0, left: 0, right: 0, height: 220,
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.bottomCenter,
+                                  end: Alignment.topCenter,
+                                  colors: [Colors.black.withOpacity(0.8), Colors.transparent],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          Positioned(
+                            top: MediaQuery.of(context).padding.top + 12,
+                            left: 16,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: danger,
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.fiber_manual_record, color: Colors.white, size: 10),
+                                      SizedBox(width: 4),
+                                      Text('LIVE',
+                                          style: TextStyle(
+                                              color: Colors.white, fontWeight: FontWeight.bold, fontSize: 12)),
+                                    ],
+                                  ),
+                                ),
+                                if (_isHost) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withOpacity(0.5),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.visibility_rounded, color: Colors.white70, size: 12),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          '$_viewerCount',
+                                          style: const TextStyle(
+                                              color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 12),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                           ),
-                        ],
-                      ],
-                    ),
-                  ),
 
-                  Positioned(
-                    top: MediaQuery.of(context).padding.top + 8,
-                    right: 12,
-                    child: IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white, size: 28),
-                      onPressed: _isHost
-                          ? (_isEnding ? null : _confirmEndLive)
-                          : () => Navigator.pop(context),
-                    ),
-                  ),
-
-                  if (_isHost)
-                    Positioned(
-                      bottom: 90,
-                      left: 0,
-                      right: 0,
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _hostControlButton(
-                            icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                            isDanger: _isMuted,
-                            onTap: _toggleMute,
-                          ),
-                          const SizedBox(width: 14),
-                          _hostControlButton(
-                            icon: _isVideoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
-                            isDanger: _isVideoOff,
-                            onTap: _toggleVideo,
-                          ),
-                          const SizedBox(width: 14),
-                          _hostControlButton(
-                            icon: Icons.flip_camera_ios_rounded,
-                            onTap: _switchCamera,
-                          ),
-                          const SizedBox(width: 14),
-                          _hostControlButton(
-                            icon: Icons.call_end_rounded,
-                            isDanger: true,
-                            onTap: _isEnding ? () {} : _confirmEndLive,
-                          ),
-                        ],
-                      ),
-                    ),
-
-                  if (!_isHost)
-                    Positioned(
-                      bottom: 90,
-                      right: 16,
-                      child: FloatingActionButton(
-                        mini: true,
-                        backgroundColor: Colors.black54,
-                        elevation: 0,
-                        onPressed: () {
-                          setState(() => _isMuted = !_isMuted);
-                          _engine?.muteAllRemoteAudioStreams(_isMuted);
-                        },
-                        child: Icon(
-                          _isMuted ? Icons.volume_off : Icons.volume_up,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-
-                  Positioned(
-                    bottom: 20,
-                    left: 16,
-                    right: 16,
-                    child: SafeArea(
-                      top: false,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: TextField(
-                              controller: _messageController,
-                              style: const TextStyle(color: Colors.black87),
-                              textInputAction: TextInputAction.send,
-                              onSubmitted: (_) => _sendMessage(),
-                              decoration: InputDecoration(
-                                hintText: l10n.t('live_message_hint'),
-                                filled: true,
-                                fillColor: Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(30),
-                                  borderSide: BorderSide.none,
-                                ),
-                                contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          CircleAvatar(
-                            backgroundColor: gold,
+                          Positioned(
+                            top: MediaQuery.of(context).padding.top + 8,
+                            right: 12,
                             child: IconButton(
-                              onPressed: _sendMessage,
-                              icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                              icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                              onPressed: _isHost ? (_isEnding ? null : _confirmEndLive) : _leavePage,
                             ),
                           ),
-                        ],
-                      ),
-                    ),
-                  ),
 
-                  if (_isHost && _isJoined)
-                    Positioned(
-                      bottom: 160,
-                      right: 16,
-                      child: GestureDetector(
-                        onTap: _openHostControlPanel,
-                        child: Stack(
-                          clipBehavior: Clip.none,
-                          children: [
-                            Container(
-                              width: 56,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: gold,
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(color: gold.withOpacity(0.55), blurRadius: 14, spreadRadius: 1),
-                                  BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 8, offset: const Offset(0, 3)),
+                          if (_isHost)
+                            Positioned(
+                              bottom: 90,
+                              left: 0,
+                              right: 0,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _hostControlButton(
+                                    icon: _isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                                    isDanger: _isMuted,
+                                    onTap: _toggleMute,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  _hostControlButton(
+                                    icon: _isVideoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+                                    isDanger: _isVideoOff,
+                                    onTap: _toggleVideo,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  _hostControlButton(
+                                    icon: Icons.flip_camera_ios_rounded,
+                                    onTap: _switchCamera,
+                                  ),
+                                  const SizedBox(width: 14),
+                                  _hostControlButton(
+                                    icon: Icons.call_end_rounded,
+                                    isDanger: true,
+                                    onTap: _isEnding ? () {} : _confirmEndLive,
+                                  ),
                                 ],
                               ),
-                              child: const Icon(Icons.shopping_bag_rounded, color: Color(0xFF1B2A4A), size: 24),
                             ),
-                            if (pinnedCount > 0)
-                              Positioned(
-                                top: -4,
-                                right: -4,
-                                child: Container(
-                                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
-                                  padding: const EdgeInsets.symmetric(horizontal: 5),
-                                  decoration: BoxDecoration(
-                                    color: danger,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.black, width: 2),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    pinnedCount > 99 ? '99+' : '$pinnedCount',
-                                    style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
-                                  ),
+
+                          if (!_isHost)
+                            Positioned(
+                              bottom: 90,
+                              right: 16,
+                              child: FloatingActionButton(
+                                mini: true,
+                                backgroundColor: Colors.black54,
+                                elevation: 0,
+                                onPressed: () {
+                                  setState(() => _isMuted = !_isMuted);
+                                  _engine?.muteAllRemoteAudioStreams(_isMuted);
+                                },
+                                child: Icon(
+                                  _isMuted ? Icons.volume_off : Icons.volume_up,
+                                  color: Colors.white,
                                 ),
                               ),
-                          ],
-                        ),
-                      ),
-                    ),
+                            ),
 
-                  if (!_isHost && _isJoined)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 80,
-                      child: ConstrainedBox(
-                        constraints: const BoxConstraints(maxHeight: 260),
-                        child: LiveViewerCarousel(
-                          sessionId: widget.liveId,
-                          onOpenVoting: _openVotingPanel,
-                        ),
-                      ),
-                    ),
+                          Positioned(
+                            bottom: 20,
+                            left: 16,
+                            right: 16,
+                            child: SafeArea(
+                              top: false,
+                              child: Row(
+                                children: [
+                                  Expanded(
+                                    child: TextField(
+                                      controller: _messageController,
+                                      style: const TextStyle(color: Colors.black87),
+                                      textInputAction: TextInputAction.send,
+                                      onSubmitted: (_) => _sendMessage(),
+                                      decoration: InputDecoration(
+                                        hintText: _t('live_message_hint', 'Écrire un message…'),
+                                        filled: true,
+                                        fillColor: Colors.white,
+                                        border: OutlineInputBorder(
+                                          borderRadius: BorderRadius.circular(30),
+                                          borderSide: BorderSide.none,
+                                        ),
+                                        contentPadding:
+                                            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  CircleAvatar(
+                                    backgroundColor: gold,
+                                    child: IconButton(
+                                      onPressed: _sendMessage,
+                                      icon: const Icon(Icons.send, color: Colors.white, size: 20),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
 
-                  if (_isEnding)
-                    Container(
-                      color: Colors.black54,
-                      child: Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const CircularProgressIndicator(color: Colors.white),
-                            const SizedBox(height: 12),
-                            Text(l10n.t('live_ending'), style: const TextStyle(color: Colors.white)),
-                          ],
-                        ),
+                          if (_isHost && _isJoined)
+                            Positioned(
+                              bottom: 160,
+                              right: 16,
+                              child: GestureDetector(
+                                onTap: _openHostControlPanel,
+                                child: Stack(
+                                  clipBehavior: Clip.none,
+                                  children: [
+                                    Container(
+                                      width: 56,
+                                      height: 56,
+                                      decoration: BoxDecoration(
+                                        color: gold,
+                                        shape: BoxShape.circle,
+                                        boxShadow: [
+                                          BoxShadow(color: gold.withOpacity(0.55), blurRadius: 14, spreadRadius: 1),
+                                          BoxShadow(
+                                              color: Colors.black.withOpacity(0.3),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 3)),
+                                        ],
+                                      ),
+                                      child: const Icon(Icons.shopping_bag_rounded,
+                                          color: Color(0xFF1B2A4A), size: 24),
+                                    ),
+                                    if (pinnedCount > 0)
+                                      Positioned(
+                                        top: -4,
+                                        right: -4,
+                                        child: Container(
+                                          constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                                          padding: const EdgeInsets.symmetric(horizontal: 5),
+                                          decoration: BoxDecoration(
+                                            color: danger,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(color: Colors.black, width: 2),
+                                          ),
+                                          alignment: Alignment.center,
+                                          child: Text(
+                                            pinnedCount > 99 ? '99+' : '$pinnedCount',
+                                            style: const TextStyle(
+                                                color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900),
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                              ),
+                            ),
+
+                          if (!_isHost && _isJoined)
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              bottom: 80,
+                              child: ConstrainedBox(
+                                constraints: const BoxConstraints(maxHeight: 260),
+                                child: LiveViewerCarousel(
+                                  sessionId: widget.liveId,
+                                  onOpenVoting: _openVotingPanel,
+                                ),
+                              ),
+                            ),
+
+                          if (_isEnding)
+                            Container(
+                              color: Colors.black54,
+                              child: Center(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const CircularProgressIndicator(color: Colors.white),
+                                    const SizedBox(height: 12),
+                                    Text(_t('live_ending', 'Fermeture du live…'),
+                                        style: const TextStyle(color: Colors.white)),
+                                  ],
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
-                    ),
-                ],
-              ),
       ),
     );
   }
