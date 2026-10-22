@@ -1,6 +1,6 @@
 // lib/presentation/thix_media/live/pages/live_host_page.dart
 //
-// LiveHostPage v3.0 — Production TikTok-Grade
+// LiveHostPage v3.0.1 — Production TikTok-Grade
 //
 // Améliorations v3.0 :
 // ✅ Multi-guest fonctionnel (spectateur → demande → host invite → join broadcaster)
@@ -10,6 +10,10 @@
 // ✅ Contrôles (mute/video/flip) à gauche, actions (like/chat/guests) à droite
 // ✅ Split-screen dynamique 1→5 streams avec layout adaptatif
 // ✅ Notifications push temps réel (pas polling)
+//
+// Corrections v3.0.1 :
+// ✅ Import liveServiceProvider
+// ✅ Retrait const devant BoxDecoration avec .withValues()
 //
 import 'dart:async';
 import 'dart:math';
@@ -27,6 +31,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
 import '../services/live_rtc_service.dart';
 import '../services/live_service.dart';
+import '../providers/live_providers.dart'; // ✅ AJOUT v3.0.1
 
 // ============================================================================
 // CONSTANTS (optimisés TikTok-grade)
@@ -182,8 +187,8 @@ class _JoinRequest {
 
 class _GuestState {
   final int uid;
-  final String userId;
   String username;
+  String? userId;
   String? avatarUrl;
   bool videoEnabled;
   bool audioEnabled;
@@ -191,8 +196,8 @@ class _GuestState {
 
   _GuestState({
     required this.uid,
-    required this.userId,
     required this.username,
+    this.userId,
     this.avatarUrl,
     this.videoEnabled = true,
     this.audioEnabled = true,
@@ -357,7 +362,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
           setState(() {
             _remoteUids.putIfAbsent(
               remoteUid,
-              () => _GuestState(uid: remoteUid, userId: '', username: 'Guest'),
+              () => _GuestState(uid: remoteUid, username: 'Guest'),
             );
           });
           _refreshGuestsFromDb();
@@ -936,7 +941,9 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
         },
         onRemoveGuest: (g) {
           Navigator.pop(ctx);
-          _removeGuest(g.uid, g.userId, g.username);
+          if (g.userId != null) {
+            _removeGuest(g.uid, g.userId!, g.username);
+          }
         },
         l10n: l10n,
       ),
@@ -1128,8 +1135,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
           isHost: false,
           videoEnabled: guests[0].videoEnabled,
           audioEnabled: guests[0].audioEnabled,
-          onRemove: guests[0].userId.isNotEmpty
-              ? () => _removeGuest(guests[0].uid, guests[0].userId, guests[0].username)
+          onRemove: guests[0].userId != null && guests[0].userId!.isNotEmpty
+              ? () => _removeGuest(guests[0].uid, guests[0].userId!, guests[0].username)
               : null,
         )),
       ]);
@@ -1146,8 +1153,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
               isHost: false,
               videoEnabled: guests[0].videoEnabled,
               audioEnabled: guests[0].audioEnabled,
-              onRemove: guests[0].userId.isNotEmpty
-                  ? () => _removeGuest(guests[0].uid, guests[0].userId, guests[0].username)
+              onRemove: guests[0].userId != null && guests[0].userId!.isNotEmpty
+                  ? () => _removeGuest(guests[0].uid, guests[0].userId!, guests[0].username)
                   : null,
             )),
         ]),
@@ -1160,8 +1167,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
               isHost: false,
               videoEnabled: guests[1].videoEnabled,
               audioEnabled: guests[1].audioEnabled,
-              onRemove: guests[1].userId.isNotEmpty
-                  ? () => _removeGuest(guests[1].uid, guests[1].userId, guests[1].username)
+              onRemove: guests[1].userId != null && guests[1].userId!.isNotEmpty
+                  ? () => _removeGuest(guests[1].uid, guests[1].userId!, guests[1].username)
                   : null,
             )),
             if (guests.length > 2)
@@ -1170,8 +1177,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                 isHost: false,
                 videoEnabled: guests[2].videoEnabled,
                 audioEnabled: guests[2].audioEnabled,
-                onRemove: guests[2].userId.isNotEmpty
-                    ? () => _removeGuest(guests[2].uid, guests[2].userId, guests[2].username)
+                onRemove: guests[2].userId != null && guests[2].userId!.isNotEmpty
+                    ? () => _removeGuest(guests[2].uid, guests[2].userId!, guests[2].username)
                     : null,
               ))
             else
@@ -1380,7 +1387,7 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                     onTap: () => _showChatOverlay(l10n),
                   ),
                   const SizedBox(height: 20),
-                  // Like button (TikTok-style)
+                  // Like button (TikTok-style) — ✅ CORRECTION v3.0.1
                   GestureDetector(
                     onTap: _spawnTikTokLike,
                     onDoubleTap: () {
@@ -1393,8 +1400,8 @@ class _LiveHostPageState extends ConsumerState<LiveHostPage>
                       children: [
                         Container(
                           padding: const EdgeInsets.all(14),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE11D48),
+                          decoration: BoxDecoration(  // ✅ Retiré const
+                            color: const Color(0xFFE11D48),
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
@@ -1861,7 +1868,7 @@ class _GuestsPanel extends StatelessWidget {
                       username: g.username,
                       avatarUrl: g.avatarUrl,
                       isCoHost: g.isCoHost,
-                      onRemove: g.userId.isNotEmpty
+                      onRemove: g.userId != null && g.userId!.isNotEmpty
                           ? () => onRemoveGuest(g)
                           : null,
                     )),
