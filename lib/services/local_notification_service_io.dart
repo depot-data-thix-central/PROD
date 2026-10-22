@@ -7,10 +7,8 @@
 /// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v3)
 /// ✅ FIX: Son personnalisé (notification.mp3 + ringtone.mp3 dans res/raw/)
 /// ✅ FIX: showBadge: true pour compteur sur l'icône
-/// ✅ NEW: Actions Ouvrir / Répondre sur les notifications
+/// ✅ NEW: Actions Ouvrir / Répondre / Marquer lu / Muet (Quick Reply)
 /// ✅ v3  : Bump canaux _v2 → _v3 (les v2 sont muets à jamais : immuables)
-/// ✅ v3  : Suppression automatique des canaux legacy au démarrage
-/// ✅ v3  : Canal appels avec son 'ringtone' (res/raw/ringtone.mp3)
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -31,6 +29,8 @@ const int _kMaxNotificationId = 2147483647;
 // Action IDs
 const String kActionOpen = 'OPEN';
 const String kActionReply = 'REPLY';
+const String kActionMarkAsRead = 'MARK_AS_READ';
+const String kActionMute = 'MUTE';
 
 // ============================================================================
 // VALIDATORS & SANITIZERS
@@ -76,14 +76,10 @@ class LocalNotificationService {
   bool _initialized = false;
   bool _initializing = false;
 
-  // ✅ v3 : canaux bumpés de _v2 → _v3 (les v2 sont muets à jamais :
-  // Android verrouille un canal une fois créé ; les v2 avaient été créés
-  // AVANT que les fichiers son res/raw/ existent)
   static const String channelDefault = 'thix_id_default_v3';
   static const String channelChat = 'thix_chat_v3';
   static const String channelCalls = 'thix_calls_v3';
 
-  // ✅ v3 : canaux legacy à supprimer au démarrage (muets à jamais)
   static const List<String> _legacyChannels = [
     'thix_id_default_v2',
     'thix_chat_v2',
@@ -94,7 +90,8 @@ class LocalNotificationService {
   ];
 
   /// Callback quand l'utilisateur tape la notification ou une action
-  void Function(String? payload, {String? actionId})? onNotificationTap;
+  /// ✅ MIS À JOUR : Prend maintenant en compte le champ `input` (Quick Reply)
+  void Function(String? payload, {String? actionId, String? input})? onNotificationTap;
 
   BuildContext? _context;
 
@@ -105,7 +102,6 @@ class LocalNotificationService {
     }
 
     if (_initializing) {
-      debugPrint('[LocalNotif] ⏳ Initialization in progress, waiting...');
       while (_initializing) {
         await Future.delayed(const Duration(milliseconds: 100));
       }
@@ -133,6 +129,8 @@ class LocalNotificationService {
             onDidReceiveNotificationResponse: (response) {
               _handleNotificationResponse(response);
             },
+            // ✅ Ajout de la gestion des actions en arrière-plan
+            onDidReceiveBackgroundNotificationResponse: _handleBackgroundNotificationResponse,
           )
           .timeout(_kNotificationTimeout);
 
@@ -140,7 +138,6 @@ class LocalNotificationService {
           AndroidFlutterLocalNotificationsPlugin>();
 
       if (android != null) {
-        // ✅ v3 : purge des canaux legacy (muets à jamais) AVANT de recréer
         await _purgeLegacyChannels(android);
         await _createAndroidChannels(android);
       }
@@ -152,25 +149,19 @@ class LocalNotificationService {
     } catch (e, stackTrace) {
       debugPrint('[LocalNotif] ❌ Initialization failed: $e');
       if (kDebugMode) {
-        debugPrint(
-            '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
+        debugPrint('[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
       }
     } finally {
       _initializing = false;
     }
   }
 
-  // ✅ v3 : Suppression des anciens canaux immuables (créés sans fichier son)
   Future<void> _purgeLegacyChannels(
       AndroidFlutterLocalNotificationsPlugin android) async {
-    debugPrint('[LocalNotif] 🧹 Purging legacy channels...');
     for (final id in _legacyChannels) {
       try {
         await android.deleteNotificationChannel(id);
-        debugPrint('[LocalNotif] 🗑️ Legacy channel supprimé: $id');
-      } catch (e) {
-        // Normal : le canal n'existe pas encore → on ignore silencieusement
-      }
+      } catch (_) {}
     }
   }
 
@@ -203,7 +194,6 @@ class LocalNotificationService {
         ),
       );
 
-      // ✅ v3 : AJOUT du son 'ringtone' au canal appels (était absent en v2)
       await android.createNotificationChannel(
         const AndroidNotificationChannel(
           channelCalls,
@@ -213,51 +203,41 @@ class LocalNotificationService {
           playSound: true,
           enableVibration: true,
           showBadge: true,
-          sound: RawResourceAndroidNotificationSound('ringtone'), // ✅ AJOUTÉ
+          sound: RawResourceAndroidNotificationSound('ringtone'),
         ),
       );
-
-      debugPrint('[LocalNotif] ✓ Android channels created (v3) with sound + badge');
     } catch (e) {
       debugPrint('[LocalNotif] ⚠️ Failed to create Android channels: $e');
     }
   }
 
   void _handleNotificationResponse(NotificationResponse response) {
-    if (_context != null && !_context!.mounted) {
-      debugPrint('[LocalNotif] ⚠️ Notification response ignored: context not mounted');
-      return;
-    }
-
-    final payload = response.payload;
-    final actionId = response.actionId;
+    if (_context != null && !_context!.mounted) return;
 
     try {
-      onNotificationTap?.call(payload, actionId: actionId);
-      debugPrint(
-          '[LocalNotif] ✓ Notification response: action=$actionId payload=$payload');
-    } catch (e, stackTrace) {
+      onNotificationTap?.call(
+        response.payload, 
+        actionId: response.actionId,
+        input: response.input, // ✅ Récupère le texte tapé (Quick Reply)
+      );
+    } catch (e) {
       debugPrint('[LocalNotif] ❌ Notification response callback error: $e');
-      if (kDebugMode) {
-        debugPrint(
-            '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
-      }
     }
   }
 
-  @Deprecated('Use initialize() instead')
-  Future<void> init() => initialize();
+  // ✅ Gestionnaire pour quand l'app est complètement fermée (isolate séparé)
+  @pragma('vm:entry-point')
+  static void _handleBackgroundNotificationResponse(NotificationResponse response) {
+    debugPrint('[LocalNotif-BG] Action: ${response.actionId}, input: ${response.input}');
+    // Note : Pour faire des requêtes Supabase ici, il faut ré-initialiser Firebase/Supabase.
+    // Généralement, on ouvre juste l'app ou on utilise un service isolé.
+  }
 
   Future<bool> requestPermission() async {
-    debugPrint('[LocalNotif] 🔐 Requesting permissions...');
-
     try {
       if (defaultTargetPlatform == TargetPlatform.android) {
         final status = await Permission.notification.request();
-        final granted = status.isGranted;
-        debugPrint(
-            '[LocalNotif] ${granted ? "✓" : "❌"} Android permission: $status');
-        return granted;
+        return status.isGranted;
       }
 
       if (defaultTargetPlatform == TargetPlatform.iOS) {
@@ -265,26 +245,16 @@ class LocalNotificationService {
             .resolvePlatformSpecificImplementation<
                 IOSFlutterLocalNotificationsPlugin>()
             ?.requestPermissions(alert: true, badge: true, sound: true);
-        final result = granted ?? false;
-        debugPrint(
-            '[LocalNotif] ${result ? "✓" : "❌"} iOS permission: $result');
-        return result;
+        return granted ?? false;
       }
 
       return true;
-    } catch (e, stackTrace) {
-      debugPrint('[LocalNotif] ❌ requestPermission failed: $e');
-      if (kDebugMode) {
-        debugPrint(
-            '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
-      }
+    } catch (e) {
       return false;
     }
   }
 
   /// Affiche une notification locale avec actions selon le type.
-  ///
-  /// [showReplyAction] : true pour les messages chat → bouton Répondre
   Future<bool> show({
     required int id,
     required String title,
@@ -292,46 +262,30 @@ class LocalNotificationService {
     String? payload,
     String? channelId,
     bool showReplyAction = false,
+    bool showMarkAsReadAction = false, // ✅ NOUVEAU
+    bool showMuteAction = false,      // ✅ NOUVEAU
   }) async {
-    if (!_Validators.isValidNotificationId(id)) {
-      debugPrint('[LocalNotif] ⚠️ show: invalid ID $id');
-      return false;
-    }
+    if (!_Validators.isValidNotificationId(id)) return false;
 
     final sanitizedTitle = _Validators.validateAndSanitizeTitle(title);
-    if (sanitizedTitle == null) {
-      debugPrint('[LocalNotif] ⚠️ show: empty or invalid title');
-      return false;
-    }
+    if (sanitizedTitle == null) return false;
 
     final sanitizedBody = _Validators.validateAndSanitizeBody(body);
-    if (sanitizedBody == null) {
-      debugPrint('[LocalNotif] ⚠️ show: empty or invalid body');
-      return false;
-    }
+    if (sanitizedBody == null) return false;
 
     if (!_initialized) {
-      debugPrint('[LocalNotif] ⏳ Auto-initializing...');
       await initialize();
-      if (!_initialized) {
-        debugPrint('[LocalNotif] ❌ show: initialization failed');
-        return false;
-      }
+      if (!_initialized) return false;
     }
 
     final channel = channelId ?? channelDefault;
     final isCall = channel == channelCalls;
-    final isChat = channel == channelChat || showReplyAction;
+    final isChat = channel == channelChat;
 
-    debugPrint(
-        '[LocalNotif] 📢 Showing notification: id=$id, channel=$channel, '
-        'title="${sanitizedTitle.substring(0, sanitizedTitle.length.clamp(0, 30))}..."');
-
-    // Actions selon le type
+    // ✅ NOUVEAU : Construction dynamique des actions
     final List<AndroidNotificationAction> actions = [];
 
     if (!isCall) {
-      // Bouton Ouvrir pour toutes les notifs (sauf appels)
       actions.add(
         const AndroidNotificationAction(
           kActionOpen,
@@ -340,13 +294,33 @@ class LocalNotificationService {
         ),
       );
 
-      // Bouton Répondre uniquement pour le chat
-      if (isChat) {
+      if (isChat && showReplyAction) {
         actions.add(
           const AndroidNotificationAction(
             kActionReply,
             'Répondre',
-            showsUserInterface: true,
+            showsUserInterface: false, 
+            allowsUserInput: true, // ✅ Active le champ de texte
+          ),
+        );
+      }
+
+      if (isChat && showMarkAsReadAction) {
+        actions.add(
+          const AndroidNotificationAction(
+            kActionMarkAsRead,
+            'Marquer lu',
+            showsUserInterface: false, // Fait l'action en fond sans ouvrir l'app
+          ),
+        );
+      }
+
+      if (isChat && showMuteAction) {
+        actions.add(
+          const AndroidNotificationAction(
+            kActionMute,
+            'Muet',
+            showsUserInterface: false, 
           ),
         );
       }
@@ -354,11 +328,7 @@ class LocalNotificationService {
 
     final androidDetails = AndroidNotificationDetails(
       channel,
-      isCall
-          ? 'Appels THIX'
-          : isChat
-              ? 'Messages THIX Chat'
-              : 'THIX ID',
+      isCall ? 'Appels THIX' : isChat ? 'Messages THIX Chat' : 'THIX ID',
       channelDescription: isCall
           ? 'Appels entrants'
           : isChat
@@ -379,7 +349,6 @@ class LocalNotificationService {
       channelShowBadge: true,
       autoCancel: true,
       actions: actions.isEmpty ? null : actions,
-      // ✅ v3 : son conditionnel — 'ringtone' pour appels, 'notification' sinon
       sound: isCall
           ? const RawResourceAndroidNotificationSound('ringtone')
           : const RawResourceAndroidNotificationSound('notification'),
@@ -406,36 +375,13 @@ class LocalNotificationService {
       await _plugin
           .show(id, sanitizedTitle, sanitizedBody, details, payload: payload)
           .timeout(_kNotificationTimeout);
-      debugPrint('[LocalNotif] ✓ Notification shown: id=$id');
       return true;
-    } on TimeoutException {
-      debugPrint('[LocalNotif] ❌ show: timeout for id=$id');
-      return false;
-    } catch (e, stackTrace) {
-      debugPrint('[LocalNotif] ❌ show failed: $e');
-      if (kDebugMode) {
-        debugPrint(
-            '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
-      }
+    } catch (e) {
       return false;
     }
   }
 
-  Future<bool> showIncomingCall({
-    required int id,
-    required String title,
-    required String body,
-    String? payload,
-  }) {
-    return show(
-      id: id,
-      title: title,
-      body: body,
-      payload: payload,
-      channelId: channelCalls,
-    );
-  }
-
+  /// ✅ Raccourci pour les messages de chat avec toutes les actions
   Future<bool> showChatMessage({
     required int id,
     required String title,
@@ -449,27 +395,16 @@ class LocalNotificationService {
       payload: payload,
       channelId: channelChat,
       showReplyAction: true,
+      showMarkAsReadAction: true, // ✅ Actives par défaut pour le chat
+      showMuteAction: true,       // ✅ Actives par défaut pour le chat
     );
   }
 
-  Future<bool> cancel(int id) {
-    if (!_Validators.isValidNotificationId(id)) {
-      debugPrint('[LocalNotif] ⚠️ cancel: invalid ID $id');
-      return Future.value(false);
-    }
-    return _cancelInternal(id);
-  }
-
-  Future<bool> _cancelInternal(int id) async {
+  Future<bool> cancel(int id) async {
     try {
       await _plugin.cancel(id).timeout(_kNotificationTimeout);
-      debugPrint('[LocalNotif] ✓ Notification cancelled: id=$id');
       return true;
-    } on TimeoutException {
-      debugPrint('[LocalNotif] ❌ cancel: timeout for id=$id');
-      return false;
     } catch (e) {
-      debugPrint('[LocalNotif] ❌ cancel failed: $e');
       return false;
     }
   }
@@ -477,31 +412,12 @@ class LocalNotificationService {
   Future<bool> cancelAll() async {
     try {
       await _plugin.cancelAll().timeout(_kNotificationTimeout);
-      debugPrint('[LocalNotif] ✓ All notifications cancelled');
       return true;
-    } on TimeoutException {
-      debugPrint('[LocalNotif] ❌ cancelAll: timeout');
-      return false;
     } catch (e) {
-      debugPrint('[LocalNotif] ❌ cancelAll failed: $e');
       return false;
     }
   }
 
-  void registerContext(BuildContext context) {
-    _context = context;
-  }
-
-  void unregisterContext() {
-    _context = null;
-  }
-
-  @visibleForTesting
-  Future<void> resetForTesting() async {
-    debugPrint('[LocalNotif] 🔄 Resetting for testing...');
-    _initialized = false;
-    _initializing = false;
-    onNotificationTap = null;
-    _context = null;
-  }
+  void registerContext(BuildContext context) => _context = context;
+  void unregisterContext() => _context = null;
 }
