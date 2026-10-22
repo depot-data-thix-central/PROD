@@ -1,7 +1,7 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v3.0 (Group Calls Support)
+// CALL PROVIDER — v3.1 (Group Calls Support + addInvitedUser)
 // ============================================================================
 
 import 'dart:async';
@@ -289,7 +289,7 @@ class CallNotifier extends StateNotifier<CallState> {
     );
   }
 
-  // ✅ NOUVEAU : Hydrater un participant de groupe
+  // ✅ Hydrater un participant de groupe
   Future<void> _hydrateGroupPeer(int agoraUid) async {
     if (_isDisposed) return;
 
@@ -309,6 +309,17 @@ class CallNotifier extends StateNotifier<CallState> {
     final newPeers = Map<int, CallPeer>.from(state.peers);
     newPeers[agoraUid] = peer;
     state = state.copyWith(peers: newPeers);
+  }
+
+  // ✅ NOUVEAU (v3.1) : Ajoute un utilisateur à la liste des invités mid-call
+  // Permet à _hydrateGroupPeer de retrouver son UUID Supabase depuis son Agora UID
+  void addInvitedUser(String userId) {
+    if (!_CallValidators.isValidUuid(userId)) return;
+    if (state.invitedUserIds.contains(userId)) return;
+
+    final newIds = List<String>.from(state.invitedUserIds)..add(userId);
+    state = state.copyWith(invitedUserIds: newIds);
+    debugPrint('[CallProvider] ➕ Invited user added: ${_obfuscate(userId)}');
   }
 
   void _fail(String where, Object e) {
