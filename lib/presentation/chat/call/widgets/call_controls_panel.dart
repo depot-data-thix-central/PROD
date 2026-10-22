@@ -98,85 +98,111 @@ class _CallControlsPanelState extends State<CallControlsPanel>
     });
   }
 
+  // ✅ NOUVEAU : Fonction pour fermer le panneau en cliquant à côté
+  void _closeOptions() {
+    if (!_showOptions) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _showOptions = false;
+      _animationController.reverse();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
+        // ✅ NOUVEAU : Barrière invisible pour fermer le panneau en cliquant à côté
+        if (_showOptions)
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _closeOptions,
+              behavior: HitTestBehavior.translucent,
+              child: Container(color: Colors.black.withOpacity(0.3)), // Voile sombre
+            ),
+          ),
+
         // Contrôles principaux
         Positioned(
           left: 0,
           right: 0,
-          bottom: 40,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _buildControlButton(
-                    icon: widget.state.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
-                    label: widget.state.muted ? widget.l10n.t('call_unmute') : widget.l10n.t('call_mute'),
-                    onTap: widget.isHangingUp ? null : widget.onToggleMute,
-                    isActive: widget.state.muted,
-                    activeColor: Colors.orange,
-                  ),
-                  if (widget.state.isVideo)
+          // ✅ NOUVEAU : Baisse les boutons quand le panneau est ouvert
+          bottom: _showOptions ? -100 : 40, 
+          child: AnimatedOpacity(
+            // ✅ NOUVEAU : Cache les boutons principaux quand le panneau est ouvert
+            opacity: _showOptions ? 0.0 : 1.0, 
+            duration: const Duration(milliseconds: 200),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
                     _buildControlButton(
-                      icon: widget.state.videoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
-                      label: widget.l10n.t('call_camera'),
-                      onTap: widget.isHangingUp ? null : widget.onToggleVideo,
-                      isActive: widget.state.videoOff,
-                      activeColor: Colors.red,
+                      icon: widget.state.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                      label: widget.state.muted ? widget.l10n.t('call_unmute') : widget.l10n.t('call_mute'),
+                      onTap: widget.isHangingUp ? null : widget.onToggleMute,
+                      isActive: widget.state.muted,
+                      activeColor: Colors.orange,
                     ),
-                  
-                  // Bouton raccrocher (central et plus grand)
-                  _buildHangUpButton(),
-                  
-                  if (widget.state.isVideo)
+                    if (widget.state.isVideo)
+                      _buildControlButton(
+                        icon: widget.state.videoOff ? Icons.videocam_off_rounded : Icons.videocam_rounded,
+                        label: widget.l10n.t('call_camera'),
+                        onTap: widget.isHangingUp ? null : widget.onToggleVideo,
+                        isActive: widget.state.videoOff,
+                        activeColor: Colors.red,
+                      ),
+                    
+                    // Bouton raccrocher (central et plus grand)
+                    _buildHangUpButton(),
+                    
+                    if (widget.state.isVideo)
+                      _buildControlButton(
+                        icon: Icons.cameraswitch_rounded,
+                        label: widget.l10n.t('call_flip_camera'),
+                        onTap: widget.isHangingUp ? null : widget.onSwitchCamera,
+                        isActive: false,
+                        activeColor: Colors.white,
+                      ),
+                    
                     _buildControlButton(
-                      icon: Icons.cameraswitch_rounded,
-                      label: widget.l10n.t('call_flip_camera'),
-                      onTap: widget.isHangingUp ? null : widget.onSwitchCamera,
-                      isActive: false,
-                      activeColor: Colors.white,
+                      icon: widget.state.speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
+                      label: widget.l10n.t('call_speaker'),
+                      onTap: widget.isHangingUp ? null : widget.onToggleSpeaker,
+                      isActive: widget.state.speakerOn,
+                      activeColor: Colors.blue,
                     ),
-                  
-                  _buildControlButton(
-                    icon: widget.state.speakerOn ? Icons.volume_up_rounded : Icons.volume_off_rounded,
-                    label: widget.l10n.t('call_speaker'),
-                    onTap: widget.isHangingUp ? null : widget.onToggleSpeaker,
-                    isActive: widget.state.speakerOn,
-                    activeColor: Colors.blue,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              
-              // Toggle options
-              TextButton.icon(
-                onPressed: _toggleOptions,
-                icon: Icon(
-                  _showOptions ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                  color: Colors.white.withOpacity(0.8),
-                  size: 24,
+                  ],
                 ),
-                label: Text(
-                  _showOptions ? 'Masquer options' : 'Plus d\'options',
-                  style: TextStyle(
+                const SizedBox(height: 20),
+                
+                // Toggle options
+                TextButton.icon(
+                  onPressed: _toggleOptions,
+                  icon: Icon(
+                    _showOptions ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
                     color: Colors.white.withOpacity(0.8),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    letterSpacing: 0.5,
+                    size: 24,
+                  ),
+                  label: Text(
+                    _showOptions ? 'Masquer options' : 'Plus d\'options',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.8),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                    backgroundColor: Colors.white.withOpacity(0.1),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                   ),
                 ),
-                style: TextButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  backgroundColor: Colors.white.withOpacity(0.1),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
 
@@ -359,9 +385,7 @@ class _CallControlsPanelState extends State<CallControlsPanel>
               _buildOptionItem(
                 icon: Icons.bluetooth_rounded,
                 label: 'Bluetooth',
-                onTap: () {
-                  // TODO: Intégrer avec flutter_blue_plus ou device_info
-                },
+                onTap: () {},
               ),
               _buildOptionItem(
                 icon: Icons.record_voice_over_rounded,
@@ -375,16 +399,12 @@ class _CallControlsPanelState extends State<CallControlsPanel>
               _buildOptionItem(
                 icon: Icons.settings_rounded,
                 label: 'Paramètres',
-                onTap: () {
-                  // TODO: Navigator.push vers CallSettingsPage
-                },
+                onTap: () {},
               ),
               _buildOptionItem(
                 icon: Icons.report_problem_rounded,
                 label: 'Signaler',
-                onTap: () {
-                  // TODO: Ouvrir modal de signalement
-                },
+                onTap: () {},
                 color: Colors.orange,
               ),
             ],
@@ -424,7 +444,7 @@ class _CallControlsPanelState extends State<CallControlsPanel>
                         style: TextStyle(
                           fontWeight: FontWeight.w700,
                           fontSize: 14,
-                          color: ThixPolicy.textMain, // ✅ CORRIGÉ: textPrimary → textMain
+                          color: ThixPolicy.textMain,
                         ),
                       ),
                       const SizedBox(height: 4),
