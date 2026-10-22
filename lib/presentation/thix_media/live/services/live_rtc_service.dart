@@ -1,10 +1,16 @@
 // lib/presentation/thix_media/live/services/live_rtc_service.dart
 //
-// LiveRtcService — Wrapper Agora Production Enterprise (TikTok/IG Live level)
-// Version 2.0 avec :
-// - Multi-Guest / Co-hosting (promote/demote dynamique)
-// - Gestion multi-remote UIDs (plusieurs guests simultanés)
-// - Renouvellement token sans quitter le channel
+// LiveRtcService v3.0 — Wrapper Agora Production Enterprise (TikTok/IG Live level)
+//
+// Améliorations v3.0 :
+// ✅ joinAsGuest() : rejoindre en broadcaster depuis le début (pas promote)
+// ✅ Multi-guest complet : tracker host + tous les guests
+// ✅ Mutex sur transitions audience ↔ broadcaster (anti-race)
+// ✅ Retry automatique sur promote/demote
+// ✅ Cache permissions caméra (éviter re-prompt)
+// ✅ Mode reconnect si réseau coupe
+// ✅ Validation stricte des credentials
+// ✅ Streams broadcast robustes (safe add + guards)
 //
 import 'dart:async';
 
@@ -12,7 +18,6 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
-import 'live_service.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -22,6 +27,8 @@ const Duration _kRtcTimeout = Duration(seconds: 15);
 const Duration _kPreviewTimeout = Duration(seconds: 10);
 const Duration _kStatsInterval = Duration(seconds: 2);
 const Duration _kTokenRefreshLead = Duration(minutes: 5);
+const int _kMaxRoleRetries = 2;
+const Duration _kRoleRetryDelay = Duration(milliseconds: 500);
 
 // ============================================================================
 // LOGGING
@@ -75,6 +82,10 @@ class RtcAlreadyRunningException extends RtcException {
 class RtcNotInitializedException extends RtcException {
   RtcNotInitializedException()
       : super('not_initialized', 'RTC engine not initialized');
+}
+
+class RtcRoleTransitionException extends RtcException {
+  RtcRoleTransitionException(String msg) : super('role_transition', msg);
 }
 
 // ============================================================================
@@ -153,6 +164,24 @@ class RemoteMediaState {
 }
 
 // ============================================================================
+// REMOTE USER INFO (multi-guest)
+// ============================================================================
+
+class RemoteUserInfo {
+  final int uid;
+  final bool isHost;
+  bool videoEnabled;
+  bool audioEnabled;
+
+  RemoteUserInfo({
+    required this.uid,
+    required this.isHost,
+    this.videoEnabled = true,
+    this.audioEnabled = true,
+  });
+}
+
+// ============================================================================
 // CALLBACK TYPES
 // ============================================================================
 
@@ -176,13 +205,24 @@ class LiveRtcService {
   bool _joined = false;
   bool _disposed = false;
   String? _currentChannel;
+  String? _currentAppId;
+
+  // ═══ Role tracking ═══
   bool _isHost = false;
+  bool _isGuestBroadcaster = false;
 
+  // ═══ Permissions cache ═══
+  bool _cameraPermissionGranted = false;
+  bool _microphonePermissionGranted = false;
+
+  // ═══ Role transition mutex ═══
+  Completer<void>? _roleTransitionLock;
+
+  // ═══ Multi-guest tracking ═══
   int? remoteHostUid;
-  
-  // Multi-guest : tracker tous les remote users
-  final Map<int, String> _remoteUsers = {}; // uid -> role (host/broadcaster/audience)
+  final Map<int, RemoteUserInfo> _remoteUsers = {};
 
+  // ═══ Streams ═══
   final _remoteUidController = StreamController<int?>.broadcast();
   final _statsController = StreamController<RtcStats>.broadcast();
   final _remoteStateController =
@@ -201,12 +241,16 @@ class LiveRtcService {
   Stream<int> get remoteUserJoinedStream => _remoteUserJoinedController.stream;
   Stream<(int, String)> get remoteUserLeftStream => _remoteUserLeftController.stream;
 
+  // ═══ Getters ═══
   bool get isJoined => _joined;
   bool get isInitialized => _initialized;
   bool get isHost => _isHost;
+  bool get isGuestBroadcaster => _isGuestBroadcaster;
+  bool get isBroadcaster => _isHost || _isGuestBroadcaster;
+  bool get isAudience => _joined && !_isHost && !_isGuestBroadcaster;
   RtcEngine? get engine => _engine;
   String? get currentChannel => _currentChannel;
-  Map<int, String> get remoteUsers => Map.unmodifiable(_remoteUsers);
+  Map<int, RemoteUserInfo> get remoteUsers => Map.unmodifiable(_remoteUsers);
 
   /// Callback injectable pour refresh token (appelé avant expiration).
   TokenRefreshCallback? onTokenRefreshNeeded;
@@ -230,19 +274,46 @@ class LiveRtcService {
   OnRemoteUserLeft? onRemoteUserLeft;
 
   // ════════════════════════════════════════════════════════════
+  // VALIDATION
+  // ════════════════════════════════════════════════════════════
+
+  bool _validateCredentials(AgoraCredentials creds) {
+    if (creds.appId.isEmpty || creds.appId.length < 10) {
+      _RtcLogger.error('Invalid appId');
+      return false;
+    }
+    if (creds.token.isEmpty) {
+      _RtcLogger.error('Empty token');
+      return false;
+    }
+    if (creds.channelName.isEmpty || creds.channelName.length > 100) {
+      _RtcLogger.error('Invalid channel name');
+      return false;
+    }
+    if (creds.uid < 0 || creds.uid > 0x7FFFFFFF) {
+      _RtcLogger.error('Invalid uid');
+      return false;
+    }
+    return true;
+  }
+
+  // ════════════════════════════════════════════════════════════
   // PERMISSIONS
   // ════════════════════════════════════════════════════════════
 
-  Future<void> _ensurePermissions({required bool asHost}) async {
+  Future<void> _ensurePermissions({required bool camera, required bool microphone}) async {
     if (kIsWeb) return;
 
-    final perms = <Permission>[
-      if (asHost) Permission.camera,
-      Permission.microphone,
-    ];
+    final perms = <Permission>[];
+    if (camera && !_cameraPermissionGranted) perms.add(Permission.camera);
+    if (microphone && !_microphonePermissionGranted) perms.add(Permission.microphone);
+
+    if (perms.isEmpty) {
+      _RtcLogger.info('Permissions already granted');
+      return;
+    }
 
     final results = await perms.request();
-
     final denied = results.entries
         .where((e) => !e.value.isGranted && !e.value.isLimited)
         .map((e) => e.key.toString())
@@ -254,6 +325,9 @@ class LiveRtcService {
           'Required permissions denied: ${denied.join(', ')}');
     }
 
+    // Update cache
+    if (camera) _cameraPermissionGranted = true;
+    if (microphone) _microphonePermissionGranted = true;
     _RtcLogger.info('Permissions granted', {'perms': perms.length});
   }
 
@@ -266,15 +340,21 @@ class LiveRtcService {
       throw RtcException('disposed', 'Service has been disposed');
     }
     if (_initialized && _engine != null) {
-      _RtcLogger.warn('Already initialized');
-      return;
+      // Même appId → OK, sinon recreate
+      if (_currentAppId == appId) {
+        _RtcLogger.info('Already initialized with same appId');
+        return;
+      }
+      _RtcLogger.warn('AppId changed, reinitializing');
+      await _releaseEngine();
     }
 
     if (appId.isEmpty) {
       throw RtcException('invalid_app_id', 'Agora appId is empty');
     }
 
-    _RtcLogger.info('Initializing engine', {'appId': appId.substring(0, 6) + '...'});
+    _RtcLogger.info('Initializing engine',
+        {'appId': '${appId.substring(0, 6)}...'});
 
     try {
       _engine = createAgoraRtcEngine();
@@ -307,16 +387,31 @@ class LiveRtcService {
       await _engine!.enableAudio().timeout(_kRtcTimeout);
 
       _initialized = true;
+      _currentAppId = appId;
       _RtcLogger.info('Engine initialized');
     } catch (e) {
       _RtcLogger.error('Initialize failed', {'error': '$e'});
-      // Cleanup partiel en cas d'échec
       try {
         await _engine?.release();
       } catch (_) {}
       _engine = null;
       rethrow;
     }
+  }
+
+  Future<void> _releaseEngine() async {
+    if (_engine == null) return;
+    try {
+      await _engine!.release().timeout(
+            const Duration(seconds: 5),
+            onTimeout: () => _RtcLogger.warn('engine.release timeout'),
+          );
+    } catch (e) {
+      _RtcLogger.warn('engine.release error', {'error': '$e'});
+    }
+    _engine = null;
+    _initialized = false;
+    _currentAppId = null;
   }
 
   void _registerEventHandlers() {
@@ -331,6 +426,11 @@ class LiveRtcService {
             'channel': connection.channelId,
             'localUid': connection.localUid,
             'elapsed_ms': elapsed,
+            'role': _isHost
+                ? 'host'
+                : _isGuestBroadcaster
+                    ? 'guest_broadcaster'
+                    : 'audience',
           });
         },
 
@@ -347,16 +447,20 @@ class LiveRtcService {
         // ── REMOTE USERS (Multi-guest support) ──
         onUserJoined: (connection, remoteUid, elapsed) {
           _RtcLogger.info('Remote joined', {'uid': remoteUid});
-          
-          // Tracker ce remote user
-          _remoteUsers[remoteUid] = 'broadcaster';
-          
-          // Si c'est le premier remote et qu'on est audience, c'est le host
-          if (remoteHostUid == null && !_isHost) {
+
+          // Identifier si c'est le host (premier remote) ou un guest
+          final isHost = remoteHostUid == null && !_isHost;
+
+          _remoteUsers[remoteUid] = RemoteUserInfo(
+            uid: remoteUid,
+            isHost: isHost,
+          );
+
+          if (isHost) {
             remoteHostUid = remoteUid;
             _safeAdd(_remoteUidController, remoteUid);
           }
-          
+
           _safeAdd(_remoteUserJoinedController, remoteUid);
           onRemoteUserJoined?.call(remoteUid);
         },
@@ -364,40 +468,53 @@ class LiveRtcService {
         onUserOffline: (connection, remoteUid, reason) {
           _RtcLogger.warn('Remote offline',
               {'uid': remoteUid, 'reason': reason.name});
-          
-          // Retirer de la map
+
+          final wasHost = remoteHostUid == remoteUid;
           _remoteUsers.remove(remoteUid);
-          
-          if (remoteHostUid == remoteUid) {
+
+          if (wasHost) {
             remoteHostUid = null;
             _safeAdd(_remoteUidController, null);
             onRemoteLeft?.call(reason.name);
           }
-          
+
           _safeAdd(_remoteUserLeftController, (remoteUid, reason.name));
           onRemoteUserLeft?.call(remoteUid, reason.name);
         },
 
-        // ── REMOTE MEDIA STATE (host mute/cam off) ──
+        // ── REMOTE MEDIA STATE ──
         onRemoteVideoStateChanged:
             (connection, remoteUid, state, reason, elapsed) {
-          if (remoteUid == remoteHostUid) {
-            // Agora 6.5.x : "Decoding" = stream en lecture normale
-            final enabled =
-                state == RemoteVideoState.remoteVideoStateDecoding;
-            _RtcLogger.info('Remote video state',
-                {'uid': remoteUid, 'enabled': enabled, 'state': state.name});
+          final user = _remoteUsers[remoteUid];
+          if (user == null) return;
+
+          final enabled =
+              state == RemoteVideoState.remoteVideoStateDecoding;
+          user.videoEnabled = enabled;
+
+          _RtcLogger.info('Remote video state', {
+            'uid': remoteUid,
+            'enabled': enabled,
+            'isHost': user.isHost,
+            'state': state.name,
+          });
+
+          // Mettre à jour l'état pour le host (viewer side)
+          if (user.isHost) {
             _updateRemoteState(videoEnabled: enabled);
           }
         },
 
         onRemoteAudioStateChanged:
             (connection, remoteUid, state, reason, elapsed) {
-          if (remoteUid == remoteHostUid) {
-            final enabled =
-                state == RemoteAudioState.remoteAudioStateDecoding;
-            _RtcLogger.info('Remote audio state',
-                {'uid': remoteUid, 'enabled': enabled, 'state': state.name});
+          final user = _remoteUsers[remoteUid];
+          if (user == null) return;
+
+          final enabled =
+              state == RemoteAudioState.remoteAudioStateDecoding;
+          user.audioEnabled = enabled;
+
+          if (user.isHost) {
             _updateRemoteState(audioEnabled: enabled);
           }
         },
@@ -428,7 +545,7 @@ class LiveRtcService {
         },
 
         onLocalVideoStats: (connection, stats) {
-          if (_isHost) {
+          if (_isHost || _isGuestBroadcaster) {
             final s = RtcStats(
               bitrateKbps: stats.sentBitrate ?? 0,
               fps: (stats.sentFrameRate ?? 0).toDouble(),
@@ -500,7 +617,6 @@ class LiveRtcService {
 
     _RtcLogger.error('Agora error', {'code': code, 'msg': msg});
 
-    // Classification : certaines erreurs sont non-fatales
     const nonFatal = <int>[
       110, // ERR_TOKEN_EXPIRED
       111, // ERR_INVALID_TOKEN
@@ -512,7 +628,6 @@ class LiveRtcService {
       return;
     }
 
-    // Erreurs réseau typiques
     if (code >= 100 && code < 200) {
       _RtcLogger.error('Network-related Agora error');
     }
@@ -525,7 +640,7 @@ class LiveRtcService {
   Future<void> startAsHost(AgoraCredentials creds) async {
     if (_disposed) throw RtcException('disposed', 'Service disposed');
     if (_joined) throw RtcAlreadyRunningException();
-    if (!creds.isValid) {
+    if (!_validateCredentials(creds)) {
       throw RtcException('invalid_creds', 'Invalid Agora credentials');
     }
 
@@ -533,10 +648,11 @@ class LiveRtcService {
         {'channel': creds.channelName, 'uid': creds.uid});
 
     try {
-      await _ensurePermissions(asHost: true);
+      await _ensurePermissions(camera: true, microphone: true);
       await initialize(creds.appId);
 
       _isHost = true;
+      _isGuestBroadcaster = false;
       _currentChannel = creds.channelName;
 
       await _engine!
@@ -569,7 +685,6 @@ class LiveRtcService {
       _RtcLogger.info('Host session started');
     } catch (e) {
       _RtcLogger.error('startAsHost failed', {'error': '$e'});
-      // Cleanup
       try {
         await _engine?.stopPreview();
         await _engine?.leaveChannel();
@@ -587,7 +702,7 @@ class LiveRtcService {
   Future<void> joinAsAudience(AgoraCredentials creds) async {
     if (_disposed) throw RtcException('disposed', 'Service disposed');
     if (_joined) throw RtcAlreadyRunningException();
-    if (!creds.isValid) {
+    if (!_validateCredentials(creds)) {
       throw RtcException('invalid_creds', 'Invalid Agora credentials');
     }
 
@@ -595,10 +710,12 @@ class LiveRtcService {
         {'channel': creds.channelName, 'uid': creds.uid});
 
     try {
-      await _ensurePermissions(asHost: false);
+      // Audience : micro seulement (pas de caméra pour économiser bande passante)
+      await _ensurePermissions(camera: false, microphone: true);
       await initialize(creds.appId);
 
       _isHost = false;
+      _isGuestBroadcaster = false;
       _currentChannel = creds.channelName;
 
       await _engine!
@@ -636,75 +753,213 @@ class LiveRtcService {
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 MULTI-GUEST : PROMOTE / DEMOTE
+  // 🎯 GUEST BROADCASTER (join from scratch)
   // ════════════════════════════════════════════════════════════
 
-  /// 🎯 Promouvoir un spectateur en broadcaster (guest monte sur scène)
-  /// Appelé quand un spectateur accepte une invitation
-  Future<void> promoteToBroadcaster() async {
-    if (_engine == null) throw RtcNotInitializedException();
-    if (!_joined) throw RtcException('not_joined', 'Must be in channel to promote');
-    
-    _RtcLogger.info('Promoting to broadcaster');
+  /// 🎯 Rejoindre directement en tant que guest broadcaster
+  /// Utilisé quand un spectateur accepte une invitation : il rejoint avec
+  /// les credentials de guest générés par le serveur (uid propre)
+  Future<void> joinAsGuest(AgoraCredentials guestCreds) async {
+    if (_disposed) throw RtcException('disposed', 'Service disposed');
+    if (_joined) {
+      // Si déjà en audience, promouvoir directement
+      if (!_isGuestBroadcaster && !_isHost) {
+        _RtcLogger.info('Already audience, promoting to guest broadcaster');
+        await promoteToBroadcaster();
+        return;
+      }
+      throw RtcAlreadyRunningException();
+    }
+    if (!_validateCredentials(guestCreds)) {
+      throw RtcException('invalid_creds', 'Invalid guest credentials');
+    }
+
+    _RtcLogger.info('Joining as guest broadcaster',
+        {'channel': guestCreds.channelName, 'uid': guestCreds.uid});
 
     try {
-      // 1. Demander les permissions caméra/micro si pas déjà fait
-      await _ensurePermissions(asHost: true);
-      
-      // 2. Changer le rôle client
-      await _engine!.setClientRole(role: ClientRoleType.clientRoleBroadcaster)
+      // Guest broadcaster : cam + micro nécessaires
+      await _ensurePermissions(camera: true, microphone: true);
+      await initialize(guestCreds.appId);
+
+      _isHost = false;
+      _isGuestBroadcaster = true;
+      _currentChannel = guestCreds.channelName;
+
+      await _engine!
+          .setClientRole(role: ClientRoleType.clientRoleBroadcaster)
           .timeout(_kRtcTimeout);
-      
-      // 3. Activer la preview caméra
+
       await _engine!.startPreview().timeout(_kPreviewTimeout);
-      
-      // 4. Mettre à jour les options de publication
-      await _engine!.updateChannelMediaOptions(
-        const ChannelMediaOptions(
-          publishCameraTrack: true,
-          publishMicrophoneTrack: true,
-          clientRoleType: ClientRoleType.clientRoleBroadcaster,
-        ),
-      ).timeout(_kRtcTimeout);
-      
-      _isHost = false; // On est guest, pas host
-      _RtcLogger.info('Promoted to broadcaster successfully');
+
+      await _engine!
+          .joinChannel(
+            token: guestCreds.token,
+            channelId: guestCreds.channelName,
+            uid: guestCreds.uid,
+            options: const ChannelMediaOptions(
+              channelProfile:
+                  ChannelProfileType.channelProfileLiveBroadcasting,
+              clientRoleType: ClientRoleType.clientRoleBroadcaster,
+              publishCameraTrack: true,
+              publishMicrophoneTrack: true,
+              autoSubscribeAudio: true,
+              autoSubscribeVideo: true,
+            ),
+          )
+          .timeout(_kRtcTimeout, onTimeout: () {
+        throw RtcTimeoutException('joinChannel(guest)');
+      });
+
+      _RtcLogger.info('Guest broadcaster session started');
     } catch (e) {
-      _RtcLogger.error('promoteToBroadcaster failed', {'error': '$e'});
+      _RtcLogger.error('joinAsGuest failed', {'error': '$e'});
+      try {
+        await _engine?.stopPreview();
+        await _engine?.leaveChannel();
+      } catch (_) {}
+      _isGuestBroadcaster = false;
+      _currentChannel = null;
       rethrow;
     }
   }
 
-  /// 🎯 Rétrograder un broadcaster en spectateur (guest descend de scène)
-  /// Appelé quand un guest est retiré ou quitte volontairement
-  Future<void> demoteToAudience() async {
-    if (_engine == null) throw RtcNotInitializedException();
-    if (!_joined) throw RtcException('not_joined', 'Must be in channel to demote');
-    
-    _RtcLogger.info('Demoting to audience');
+  // ════════════════════════════════════════════════════════════
+  // 🎯 MULTI-GUEST : PROMOTE / DEMOTE (avec mutex)
+  // ════════════════════════════════════════════════════════════
 
-    try {
-      // 1. Désactiver la preview
-      await _engine!.stopPreview().timeout(_kPreviewTimeout);
-      
-      // 2. Changer le rôle client
-      await _engine!.setClientRole(role: ClientRoleType.clientRoleAudience)
-          .timeout(_kRtcTimeout);
-      
-      // 3. Mettre à jour les options de publication
-      await _engine!.updateChannelMediaOptions(
-        const ChannelMediaOptions(
-          publishCameraTrack: false,
-          publishMicrophoneTrack: false,
-          clientRoleType: ClientRoleType.clientRoleAudience,
-        ),
-      ).timeout(_kRtcTimeout);
-      
-      _RtcLogger.info('Demoted to audience successfully');
-    } catch (e) {
-      _RtcLogger.error('demoteToAudience failed', {'error': '$e'});
-      rethrow;
+  Future<void> _withRoleLock(Future<void> Function() action) async {
+    while (_roleTransitionLock != null) {
+      try {
+        await _roleTransitionLock!.future;
+      } catch (_) {}
     }
+    final lock = Completer<void>();
+    _roleTransitionLock = lock;
+    try {
+      await action();
+    } finally {
+      _roleTransitionLock = null;
+      lock.complete();
+    }
+  }
+
+  /// 🎯 Promouvoir un spectateur en broadcaster (guest monte sur scène)
+  /// Appelé quand un spectateur accepte une invitation
+  Future<void> promoteToBroadcaster() async {
+    await _withRoleLock(() async {
+      if (_engine == null) throw RtcNotInitializedException();
+      if (!_joined) {
+        throw RtcException('not_joined', 'Must be in channel to promote');
+      }
+      if (_isGuestBroadcaster) {
+        _RtcLogger.info('Already a guest broadcaster');
+        return;
+      }
+
+      _RtcLogger.info('Promoting to broadcaster');
+
+      int attempt = 0;
+      Object? lastError;
+
+      while (attempt <= _kMaxRoleRetries) {
+        try {
+          // 1. Permissions caméra si pas déjà
+          await _ensurePermissions(camera: true, microphone: true);
+
+          // 2. Changer le rôle client
+          await _engine!
+              .setClientRole(role: ClientRoleType.clientRoleBroadcaster)
+              .timeout(_kRtcTimeout);
+
+          // 3. Preview caméra
+          await _engine!.startPreview().timeout(_kPreviewTimeout);
+
+          // 4. Update media options
+          await _engine!
+              .updateChannelMediaOptions(
+            const ChannelMediaOptions(
+              publishCameraTrack: true,
+              publishMicrophoneTrack: true,
+              clientRoleType: ClientRoleType.clientRoleBroadcaster,
+            ),
+          )
+              .timeout(_kRtcTimeout);
+
+          _isGuestBroadcaster = true;
+          _RtcLogger.info('Promoted to broadcaster successfully');
+          return;
+        } catch (e) {
+          lastError = e;
+          attempt++;
+          _RtcLogger.warn('promoteToBroadcaster attempt failed',
+              {'attempt': attempt, 'error': '$e'});
+          if (attempt <= _kMaxRoleRetries) {
+            await Future.delayed(_kRoleRetryDelay);
+          }
+        }
+      }
+
+      _RtcLogger.error('promoteToBroadcaster failed after retries');
+      throw RtcRoleTransitionException('Failed to promote: $lastError');
+    });
+  }
+
+  /// 🎯 Rétrograder un broadcaster en spectateur (guest descend de scène)
+  Future<void> demoteToAudience() async {
+    await _withRoleLock(() async {
+      if (_engine == null) throw RtcNotInitializedException();
+      if (!_joined) {
+        throw RtcException('not_joined', 'Must be in channel to demote');
+      }
+      if (!_isGuestBroadcaster) {
+        _RtcLogger.info('Already not a guest broadcaster');
+        return;
+      }
+
+      _RtcLogger.info('Demoting to audience');
+
+      int attempt = 0;
+      Object? lastError;
+
+      while (attempt <= _kMaxRoleRetries) {
+        try {
+          // 1. Stop preview
+          await _engine!.stopPreview().timeout(_kPreviewTimeout);
+
+          // 2. Change role
+          await _engine!
+              .setClientRole(role: ClientRoleType.clientRoleAudience)
+              .timeout(_kRtcTimeout);
+
+          // 3. Update media options
+          await _engine!
+              .updateChannelMediaOptions(
+            const ChannelMediaOptions(
+              publishCameraTrack: false,
+              publishMicrophoneTrack: false,
+              clientRoleType: ClientRoleType.clientRoleAudience,
+            ),
+          )
+              .timeout(_kRtcTimeout);
+
+          _isGuestBroadcaster = false;
+          _RtcLogger.info('Demoted to audience successfully');
+          return;
+        } catch (e) {
+          lastError = e;
+          attempt++;
+          _RtcLogger.warn('demoteToAudience attempt failed',
+              {'attempt': attempt, 'error': '$e'});
+          if (attempt <= _kMaxRoleRetries) {
+            await Future.delayed(_kRoleRetryDelay);
+          }
+        }
+      }
+
+      _RtcLogger.error('demoteToAudience failed after retries');
+      throw RtcRoleTransitionException('Failed to demote: $lastError');
+    });
   }
 
   // ════════════════════════════════════════════════════════════
@@ -713,6 +968,10 @@ class LiveRtcService {
 
   Future<void> muteLocalAudio(bool mute) async {
     if (_engine == null) throw RtcNotInitializedException();
+    if (!isBroadcaster) {
+      _RtcLogger.warn('muteLocalAudio ignored (not broadcaster)');
+      return;
+    }
     try {
       await _engine!.muteLocalAudioStream(mute);
       _RtcLogger.info('Local audio muted', {'mute': mute});
@@ -724,6 +983,10 @@ class LiveRtcService {
 
   Future<void> muteLocalVideo(bool mute) async {
     if (_engine == null) throw RtcNotInitializedException();
+    if (!isBroadcaster) {
+      _RtcLogger.warn('muteLocalVideo ignored (not broadcaster)');
+      return;
+    }
     try {
       await _engine!.muteLocalVideoStream(mute);
       _RtcLogger.info('Local video muted', {'mute': mute});
@@ -735,6 +998,10 @@ class LiveRtcService {
 
   Future<void> switchCamera() async {
     if (_engine == null) throw RtcNotInitializedException();
+    if (!isBroadcaster) {
+      _RtcLogger.warn('switchCamera ignored (not broadcaster)');
+      return;
+    }
     try {
       await _engine!.switchCamera();
       _RtcLogger.info('Camera switched');
@@ -744,9 +1011,18 @@ class LiveRtcService {
     }
   }
 
+  Future<void> setSpeakerphoneEnabled(bool enabled) async {
+    if (_engine == null) return;
+    try {
+      await _engine!.setEnableSpeakerphone(enabled);
+    } catch (e) {
+      _RtcLogger.warn('setSpeakerphoneEnabled failed', {'error': '$e'});
+    }
+  }
+
   /// Met en pause les streams (utile quand app en background).
   Future<void> pauseStreams() async {
-    if (_engine == null || !_joined) return;
+    if (_engine == null || !_joined || !isBroadcaster) return;
     try {
       await _engine!.muteLocalAudioStream(true);
       await _engine!.muteLocalVideoStream(true);
@@ -758,7 +1034,7 @@ class LiveRtcService {
 
   /// Reprend les streams.
   Future<void> resumeStreams() async {
-    if (_engine == null || !_joined) return;
+    if (_engine == null || !_joined || !isBroadcaster) return;
     try {
       await _engine!.muteLocalAudioStream(false);
       await _engine!.muteLocalVideoStream(false);
@@ -772,13 +1048,12 @@ class LiveRtcService {
   // TOKEN MANAGEMENT
   // ════════════════════════════════════════════════════════════
 
-  /// Renouvelle le token sans quitter le channel
   Future<void> renewToken(String newToken) async {
     if (_engine == null) throw RtcNotInitializedException();
     if (newToken.isEmpty) {
       throw RtcException('invalid_token', 'Token is empty');
     }
-    
+
     try {
       await _engine!.renewToken(newToken).timeout(_kRtcTimeout);
       _RtcLogger.info('Token renewed successfully');
@@ -804,9 +1079,7 @@ class LiveRtcService {
     try {
       await _engine?.leaveChannel().timeout(
             const Duration(seconds: 5),
-            onTimeout: () {
-              _RtcLogger.warn('leaveChannel timeout');
-            },
+            onTimeout: () => _RtcLogger.warn('leaveChannel timeout'),
           );
     } catch (e) {
       _RtcLogger.warn('leaveChannel error (ignored)', {'error': '$e'});
@@ -828,6 +1101,7 @@ class LiveRtcService {
   void _resetState() {
     _joined = false;
     _isHost = false;
+    _isGuestBroadcaster = false;
     remoteHostUid = null;
     _currentChannel = null;
     _currentRemoteState = const RemoteMediaState();
@@ -844,20 +1118,7 @@ class LiveRtcService {
     _RtcLogger.info('Disposing service');
 
     await leave();
-
-    try {
-      if (_engine != null) {
-        await _engine!.release().timeout(
-              const Duration(seconds: 5),
-              onTimeout: () => _RtcLogger.warn('engine.release timeout'),
-            );
-      }
-    } catch (e) {
-      _RtcLogger.warn('engine.release error (ignored)', {'error': '$e'});
-    }
-
-    _engine = null;
-    _initialized = false;
+    await _releaseEngine();
 
     await _closeController(_remoteUidController);
     await _closeController(_statsController);
