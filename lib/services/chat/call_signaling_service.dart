@@ -1,29 +1,7 @@
 // lib/services/chat/call_signaling_service.dart
 //
 // ============================================================================
-// CALL SIGNALING SERVICE — Production Enterprise
-// ============================================================================
-//
-// Service de signalisation pour les appels VoIP via Supabase Realtime.
-//
-// Architecture :
-//   - SupabaseClient injecté via Riverpod (testable)
-//   - Realtime channels pour événements temps réel
-//   - Polling de secours pour réseau instable
-//   - Edge Functions pour tokens Agora
-//
-// Sécurité :
-//   - Validation UUID stricte sur tous les IDs
-//   - Validation regex sur channel names
-//   - Timeout + retry sur tous les appels réseau
-//   - Stack traces masquées en production (kDebugMode)
-//   - Sanitization sur toutes les entrées
-//
-// Robustesse :
-//   - _isDisposed guard sur toutes les méthodes
-//   - Limite max de channels Realtime (protection DoS)
-//   - Cleanup garanti des subscriptions
-//   - Backoff exponentiel sur polling
+// CALL SIGNALING SERVICE — Production Enterprise (v3.0 - Group Calls Support)
 // ============================================================================
 
 import 'dart:async';
@@ -39,8 +17,8 @@ import 'package:thix_id/models/chat/call_status.dart';
 // ============================================================================
 const int _kMinAppIdLength = 10;
 const int _kMaxChannelLength = 100;
-const int _kMaxStatusChannels = 20; // Limite pour éviter fuite mémoire
-const int _kPollingIntervalSec = 5; // Backoff augmenté (était 3s)
+const int _kMaxStatusChannels = 20;
+const int _kPollingIntervalSec = 5;
 const int _kPollingWindowMinutes = 2;
 const int _kMinExpireSec = 60;
 const int _kMaxExpireSec = 86400;
@@ -56,7 +34,6 @@ const int _kMaxRetries = 2;
 class _CallSignalingValidators {
   _CallSignalingValidators._();
 
-  /// Valide un UUID v4 strict.
   static bool isValidUuid(String? id) {
     if (id == null) return false;
     final trimmed = id.trim();
@@ -67,7 +44,6 @@ class _CallSignalingValidators {
     ).hasMatch(trimmed);
   }
 
-  /// Valide un channel name Agora (alphanumérique + underscore + tiret).
   static bool isValidChannelName(String? name) {
     if (name == null) return false;
     final trimmed = name.trim();
@@ -75,7 +51,6 @@ class _CallSignalingValidators {
     return RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(trimmed);
   }
 
-  /// Sanitize un channel name.
   static String sanitizeChannelName(String? name) {
     if (name == null) return '';
     return name
@@ -84,7 +59,6 @@ class _CallSignalingValidators {
         .substring(0, name.length.clamp(0, _kMaxChannelLength));
   }
 
-  /// Obfusque un ID pour les logs.
   static String obfuscate(String? s) {
     if (s == null || s.length <= 8) return '***';
     return '${s.substring(0, 4)}...${s.substring(s.length - 4)}';
@@ -94,8 +68,6 @@ class _CallSignalingValidators {
 // ============================================================================
 // AGORA TOKEN RESULT
 // ============================================================================
-
-/// Résultat token Agora (Edge Function `agora-token`).
 class AgoraTokenResult {
   final String token;
   final String appId;
@@ -124,30 +96,12 @@ class AgoraTokenResult {
     );
   }
 
-  /// Vrai si le token est valide (non vide + appId min 10 caractères).
-  bool get isValid =>
-      token.isNotEmpty && appId.length >= _kMinAppIdLength;
+  bool get isValid => token.isNotEmpty && appId.length >= _kMinAppIdLength;
 }
 
 // ============================================================================
 // CALL SIGNALING SERVICE
 // ============================================================================
-
-/// Service de signalisation pour les appels VoIP.
-///
-/// Gère :
-/// - Signalisation RPC Supabase (start, accept, reject, cancel, end)
-/// - Tokens Agora via Edge Function
-/// - Realtime channels pour appels entrants
-/// - Polling de secours pour réseau instable
-///
-/// **Usage via Riverpod** :
-/// ```dart
-/// final callSignalingServiceProvider = Provider<CallSignalingService>((ref) {
-///   final client = ref.watch(supabaseClientProvider);
-///   return CallSignalingService(client: client);
-/// });
-/// ```
 class CallSignalingService {
   CallSignalingService({SupabaseClient? client})
       : _db = client ?? Supabase.instance.client {
@@ -165,18 +119,8 @@ class CallSignalingService {
   String get _uid => _db.auth.currentUser?.id ?? '';
 
   // ============================================================
-  // START CALL (signalisation)
+  // START CALL (1-to-1)
   // ============================================================
-
-  /// Démarre un appel (signalisation côté serveur).
-  ///
-  /// **Validation** :
-  ///   - `calleeId` doit être un UUID valide différent de l'utilisateur courant
-  ///
-  /// **Throws** :
-  ///   - [ArgumentError] si les inputs sont invalides
-  ///   - [TimeoutException] si le RPC timeout
-  ///   - [StateError] si le service est disposé
   Future<CallInvite> startCall({
     required String calleeId,
     required CallType type,
@@ -185,12 +129,10 @@ class CallSignalingService {
       throw StateError('CallSignalingService disposed');
     }
 
-    // Validation auth
     if (_uid.isEmpty || !_CallSignalingValidators.isValidUuid(_uid)) {
       throw StateError('Non authentifié ou ID invalide');
     }
 
-    // Validation inputs
     if (!_CallSignalingValidators.isValidUuid(calleeId)) {
       throw ArgumentError('calleeId invalide');
     }
@@ -236,18 +178,68 @@ class CallSignalingService {
   }
 
   // ============================================================
+  // ✅ START GROUP CALL
+  // ============================================================
+  Future<CallInvite> startGroupCall({
+    required List<String> participantIds,
+    required CallType type,
+  }) async {
+    if (_isDisposed) {
+      throw StateError('CallSignalingService disposed');
+    }
+
+    if (_uid.isEmpty || !_CallSignalingValidators.isValidUuid(_uid)) {
+      throw StateError('Non authentifié ou ID invalide');
+    }
+
+    final validIds = participantIds
+        .where((id) => _CallSignalingValidators.isValidUuid(id) && id != _uid)
+        .toList();
+
+    if (validIds.isEmpty) {
+      throw ArgumentError('Aucun participant valide');
+    }
+
+    debugPrint('[CallSignalingService] 👥 startGroupCall → '
+        '${validIds.length} participants');
+
+    try {
+      final res = await _db
+          .rpc(
+            'rpc_start_group_call',
+            params: {
+              'p_participant_ids': validIds,
+              'p_call_type': type == CallType.video ? 'video' : 'audio',
+            },
+          )
+          .timeout(_kRpcTimeout);
+
+      final row = _asMap(res);
+      if (row.isEmpty) {
+        throw Exception('rpc_start_group_call a renvoyé une réponse vide');
+      }
+
+      debugPrint('[CallSignalingService] ✓ Group call started');
+
+      return _inviteFromRow(
+        row,
+        fallbackCaller: _uid,
+        fallbackCallee: '',
+        fallbackType: type,
+      );
+    } on TimeoutException {
+      debugPrint('[CallSignalingService] ❌ startGroupCall timeout');
+      rethrow;
+    } catch (e) {
+      debugPrint('[CallSignalingService] ❌ startGroupCall failed: '
+          '${kDebugMode ? e : e.toString().split('\n').first}');
+      rethrow;
+    }
+  }
+
+  // ============================================================
   // AGORA TOKEN (Edge Function Supabase)
   // ============================================================
-
-  /// Récupère un token RTC via Edge Function `agora-token`.
-  ///
-  /// **Validation** :
-  ///   - `channelName` doit être alphanumérique + underscore + tiret
-  ///   - `expireSec` clamped entre 60 et 86400
-  ///
-  /// **Throws** :
-  ///   - [ArgumentError] si channelName invalide
-  ///   - [TimeoutException] si Edge Function timeout
   Future<AgoraTokenResult> fetchAgoraToken({
     required String channelName,
     int uid = 0,
@@ -257,17 +249,14 @@ class CallSignalingService {
       throw StateError('CallSignalingService disposed');
     }
 
-    // Validation auth
     if (_uid.isEmpty || !_CallSignalingValidators.isValidUuid(_uid)) {
       throw StateError('Non authentifié ou ID invalide');
     }
 
-    // Validation channel
     if (!_CallSignalingValidators.isValidChannelName(channelName)) {
       throw ArgumentError('channelName invalide');
     }
 
-    // Sanitize expireSec
     final safeExpireSec = expireSec.clamp(_kMinExpireSec, _kMaxExpireSec);
 
     debugPrint('[CallSignalingService] 🎫 fetchAgoraToken '
@@ -281,16 +270,14 @@ class CallSignalingService {
               'channelName': channelName.trim(),
               'uid': uid,
               'expireSec': safeExpireSec,
-              'role': 1, // publisher
+              'role': 1,
             },
           )
           .timeout(_kEdgeFunctionTimeout);
 
       if (res.status != 200) {
         debugPrint('[CallSignalingService] ❌ agora-token status=${res.status}');
-        throw Exception(
-          'agora-token failed (${res.status})',
-        );
+        throw Exception('agora-token failed (${res.status})');
       }
 
       final map = _asMap(res.data);
@@ -315,7 +302,6 @@ class CallSignalingService {
     }
   }
 
-  /// startCall + token en une étape (caller).
   Future<({CallInvite invite, AgoraTokenResult agora})> startCallWithToken({
     required String calleeId,
     required CallType type,
@@ -330,7 +316,6 @@ class CallSignalingService {
     return (invite: invite, agora: agora);
   }
 
-  /// Token pour le callee après accept.
   Future<AgoraTokenResult> tokenForInvite(
     CallInvite invite, {
     int uid = 0,
@@ -345,23 +330,18 @@ class CallSignalingService {
   // ============================================================
   // ACTIONS (RPC)
   // ============================================================
-
-  /// Accepte un appel.
   Future<void> accept(String inviteId) async {
     await _executeRpc('rpc_accept_call', {'p_invite_id': inviteId}, inviteId);
   }
 
-  /// Rejette un appel.
   Future<void> reject(String inviteId) async {
     await _executeRpc('rpc_reject_call', {'p_invite_id': inviteId}, inviteId);
   }
 
-  /// Annule un appel (côté caller).
   Future<void> cancel(String inviteId) async {
     await _executeRpc('rpc_cancel_call', {'p_invite_id': inviteId}, inviteId);
   }
 
-  /// Termine un appel (avec durée).
   Future<void> end(String inviteId, {int durationSec = 0}) async {
     await _executeRpc('rpc_end_call', {
       'p_invite_id': inviteId,
@@ -369,7 +349,6 @@ class CallSignalingService {
     }, inviteId);
   }
 
-  /// Marque un appel comme manqué.
   Future<void> markMissed(String inviteId) async {
     if (_isDisposed) return;
 
@@ -384,7 +363,6 @@ class CallSignalingService {
           .timeout(_kRpcTimeout);
       debugPrint('[CallSignalingService] ✓ Call marked missed');
     } catch (e) {
-      // Fallback si RPC absente
       debugPrint('[CallSignalingService] ⚠️ RPC miss_call failed, fallback to update');
       try {
         await _db
@@ -401,7 +379,6 @@ class CallSignalingService {
     }
   }
 
-  /// Marque un appel comme en cours.
   Future<void> markOngoing(String inviteId) async {
     if (_isDisposed) return;
 
@@ -432,7 +409,6 @@ class CallSignalingService {
     }
   }
 
-  /// Helper : exécute un RPC avec validation et timeout.
   Future<void> _executeRpc(
     String rpcName,
     Map<String, dynamic> params,
@@ -465,8 +441,6 @@ class CallSignalingService {
   // ============================================================
   // REALTIME — incoming (callee)
   // ============================================================
-
-  /// Stream des appels entrants (Realtime uniquement).
   Stream<CallInvite> watchIncoming() {
     if (_isDisposed) {
       return const Stream.empty();
@@ -504,7 +478,6 @@ class CallSignalingService {
               final status = (map['status'] ?? '').toString();
               if (status != 'ringing') return;
 
-              // Validation de l'invite reçu
               final inviteId = map['id']?.toString();
               if (!_CallSignalingValidators.isValidUuid(inviteId)) {
                 debugPrint('[CallSignalingService] ⚠️ Invalid invite ID received');
@@ -523,7 +496,6 @@ class CallSignalingService {
     return controller.stream;
   }
 
-  /// Incoming + poll de secours (réseau instable).
   Stream<CallInvite> watchIncomingWithPoll() {
     if (_isDisposed) {
       return const Stream.empty();
@@ -568,7 +540,6 @@ class CallSignalingService {
     return controller.stream;
   }
 
-  /// Poll DB pour invites ringing récents.
   Future<void> _pollIncoming(
     String myId,
     Set<String> seen,
@@ -580,19 +551,40 @@ class CallSignalingService {
           .subtract(const Duration(minutes: _kPollingWindowMinutes))
           .toIso8601String();
 
-      final rows = await _db
+      final directCalls = await _db
           .from('call_invites')
           .select()
           .eq('callee_id', myId)
           .eq('status', 'ringing')
+          .eq('is_group', false)
           .gte('created_at', since)
           .timeout(_kRpcTimeout);
 
-      for (final row in (rows as List)) {
+      final groupCalls = await _db
+          .from('call_invites')
+          .select()
+          .eq('status', 'ringing')
+          .eq('is_group', true)
+          .gte('created_at', since)
+          .timeout(_kRpcTimeout);
+
+      final allRows = [...directCalls, ...groupCalls];
+
+      for (final row in (allRows as List)) {
         final map = Map<String, dynamic>.from(row as Map);
         final id = map['id']?.toString() ?? '';
         if (id.isEmpty || !seen.add(id)) continue;
         if (!_CallSignalingValidators.isValidUuid(id)) continue;
+
+        final isGroup = map['is_group'] == true;
+        if (isGroup) {
+          final participants = (map['participant_ids'] as List?)
+                  ?.map((e) => e.toString())
+                  .toList() ??
+              [];
+          if (!participants.contains(myId)) continue;
+        }
+
         if (!controller.isClosed) {
           controller.add(CallInvite.fromJson(map));
         }
@@ -606,20 +598,16 @@ class CallSignalingService {
   // ============================================================
   // REALTIME — status invite (caller / callee)
   // ============================================================
-
-  /// Stream des changements de statut d'un invite.
   Stream<CallStatus> watchInviteStatus(String inviteId) {
     if (_isDisposed) {
       return const Stream.empty();
     }
 
-    // Validation
     if (!_CallSignalingValidators.isValidUuid(inviteId)) {
       debugPrint('[CallSignalingService] ⚠️ watchInviteStatus: invalid inviteId');
       return const Stream.empty();
     }
 
-    // Protection contre croissance infinie
     if (_statusChannels.length >= _kMaxStatusChannels) {
       debugPrint('[CallSignalingService] ⚠️ Max status channels reached, '
           'cleaning oldest');
@@ -662,7 +650,6 @@ class CallSignalingService {
         )
         .subscribe();
 
-    // Snapshot initial
     scheduleMicrotask(() async {
       if (_isDisposed || controller.isClosed) return;
       try {
@@ -694,7 +681,6 @@ class CallSignalingService {
     return controller.stream;
   }
 
-  /// Nettoie le channel status le plus ancien si limite atteinte.
   void _cleanupOldestStatusChannel() {
     if (_statusChannels.isEmpty) return;
     final oldestKey = _statusChannels.keys.first;
@@ -711,7 +697,6 @@ class CallSignalingService {
   // ============================================================
   // HELPERS
   // ============================================================
-
   CallInvite _inviteFromRow(
     Map<String, dynamic> row, {
     required String fallbackCaller,
@@ -731,7 +716,6 @@ class CallSignalingService {
     });
   }
 
-  /// Parse une réponse RPC en Map (plus strict que l'original).
   Map<String, dynamic> _asMap(dynamic res) {
     if (res == null) return {};
     if (res is Map<String, dynamic>) return res;
@@ -795,7 +779,6 @@ class CallSignalingService {
     }
   }
 
-  /// Libère toutes les ressources (à appeler en dispose).
   void dispose() {
     if (_isDisposed) return;
     _isDisposed = true;
