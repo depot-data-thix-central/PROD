@@ -2350,8 +2350,7 @@ class _WaveNavPainter extends CustomPainter {
 class _PulseDot extends StatefulWidget {
   final Color color;
   final double size;
-  const _PulseDot({required this.color, required this.size = 10});
-
+  const _PulseDot({required this.color, this.size = 10});
   @override
   State<_PulseDot> createState() => _PulseDotState();
 }
