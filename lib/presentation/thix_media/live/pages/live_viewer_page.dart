@@ -1,13 +1,17 @@
 // lib/presentation/thix_media/live/pages/live_viewer_page.dart
 //
-// LiveViewerPage — Viewer Live Production Enterprise (niveau TikTok/IG Live)
-// Version 2.0 avec :
-// - Popup d'invitation realtime pour monter sur scène
-// - Bouton "Demander à monter" (requête au host)
-// - Promotion dynamique audience → broadcaster (Agora)
-// - Contrôles cam/mic locaux quand sur scène
-// - Affichage multi-guest (split screen + PiP)
-// - Like ultra-rapide TikTok-style (overlay animé + RPC atomique)
+// LiveViewerPage v3.0 — Production TikTok-Grade (Spectateur)
+//
+// Améliorations v3.0 :
+// ✅ Multi-guest fonctionnel : voit host + tous les guests en split-screen
+// ✅ Popup d'invitation avec countdown visuel (30s)
+// ✅ Promotion audience → broadcaster via Agora (setClientRole)
+// ✅ Contrôles locaux (mute/video) à gauche quand sur scène
+// ✅ Design TikTok : actions à droite, contrôles à gauche
+// ✅ PiP locale en haut à droite quand sur scène
+// ✅ Rate limiter par user (anti-spam)
+// ✅ Anti-XSS renforcé, validation UUID
+// ✅ Like ultra-rapide avec optimistic UI
 //
 import 'dart:async';
 import 'dart:math';
@@ -22,23 +26,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
-import '../providers/go_live_provider.dart';
+import 'package:thix_id/data/models/live/live_model.dart';
 import '../services/live_rtc_service.dart';
 import '../services/live_service.dart';
-import 'package:thix_id/data/models/live/live_model.dart';
+
 // ============================================================================
-// CONSTANTS
+// CONSTANTS (optimisés TikTok-grade)
 // ============================================================================
 
 const int _kMaxChatLength = 200;
-const int _kMaxMessagesInMemory = 80;
-const Duration _kStatsPolling = Duration(seconds: 3);
-const Duration _kChatThrottle = Duration(milliseconds: 600);
-const Duration _kLikeThrottle = Duration(milliseconds: 300);
-const Duration _kActionThrottle = Duration(milliseconds: 400);
+const int _kMaxMessagesInMemory = 100;
+const Duration _kChatThrottle = Duration(milliseconds: 80);
+const Duration _kActionThrottle = Duration(milliseconds: 250);
+const Duration _kLikeBatchInterval = Duration(milliseconds: 400);
 const Duration _kInviteTimeout = Duration(seconds: 30);
-const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮'];
+const Duration _kRequestCooldown = Duration(seconds: 30);
+const List<String> _kReactions = ['❤️', '🔥', '👏', '😂', '😮', '🎉'];
 
 // ============================================================================
 // LOGGING
@@ -59,7 +62,7 @@ class _LiveViewerLogger {
 }
 
 // ============================================================================
-// SANITIZER
+// SANITIZER (anti-XSS renforcé, identique au host)
 // ============================================================================
 
 class _LiveSanitizer {
@@ -67,25 +70,39 @@ class _LiveSanitizer {
 
   static const int _kMaxUsernameLength = 24;
   static const List<String> _kAllowedTypes = [
-    'chat', 'reaction', 'gift', 'invite', 'request_join', 'promote', 'demote'
+    'chat', 'reaction', 'gift', 'invite', 'request_join',
+    'promote', 'demote', 'kick', 'join', 'leave', 'system'
   ];
+
+  static final RegExp _uuidRegex = RegExp(
+    r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+    caseSensitive: false,
+  );
+
+  static bool isValidUuid(String? s) => s != null && _uuidRegex.hasMatch(s);
 
   static String chat(String? input) {
     if (input == null) return '';
     var s = input;
     String prev;
+    int iterations = 0;
     do {
       prev = s;
       s = s.replaceAll(RegExp(r'<[^>]*>'), '');
-    } while (s != prev);
+      s = s.replaceAll(RegExp(r'&[a-z]+;', caseSensitive: false), '');
+      iterations++;
+    } while (s != prev && iterations < 5);
 
     s = s
         .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-        .replaceAll(RegExp(r'data:text/html', caseSensitive: false), '')
+        .replaceAll(RegExp(r'vbscript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'data:(?!image\/)', caseSensitive: false), '')
         .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'expression\s*\(', caseSensitive: false), '')
+        .replaceAll(RegExp(r'url\s*\(', caseSensitive: false), '')
+        .replaceAll(RegExp(r'@import', caseSensitive: false), '')
         .replaceAll(RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]'), '')
-        .replaceAll(
-            RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]'), '')
+        .replaceAll(RegExp(r'[\u200B-\u200F\u202A-\u202E\u2060-\u206F]'), '')
         .trim();
 
     if (s.length > _kMaxChatLength) s = s.substring(0, _kMaxChatLength);
@@ -119,28 +136,44 @@ enum _NetQ { excellent, good, poor, offline }
 extension _NetQX on _NetQ {
   Color color() {
     switch (this) {
-      case _NetQ.excellent:
-        return const Color(0xFF22C55E);
-      case _NetQ.good:
-        return const Color(0xFFEAB308);
-      case _NetQ.poor:
-        return const Color(0xFFF97316);
-      case _NetQ.offline:
-        return const Color(0xFFEF4444);
+      case _NetQ.excellent: return const Color(0xFF22C55E);
+      case _NetQ.good:      return const Color(0xFFEAB308);
+      case _NetQ.poor:      return const Color(0xFFF97316);
+      case _NetQ.offline:   return const Color(0xFFEF4444);
     }
   }
 
   String label(AppLocalizations l10n) {
     switch (this) {
-      case _NetQ.excellent:
-        return l10n.t('live_network_excellent');
-      case _NetQ.good:
-        return l10n.t('live_network_good');
-      case _NetQ.poor:
-        return l10n.t('live_network_poor');
-      case _NetQ.offline:
-        return l10n.t('live_network_offline');
+      case _NetQ.excellent: return l10n.t('live_network_excellent');
+      case _NetQ.good:      return l10n.t('live_network_good');
+      case _NetQ.poor:      return l10n.t('live_network_poor');
+      case _NetQ.offline:   return l10n.t('live_network_offline');
     }
+  }
+}
+
+// ============================================================================
+// RATE LIMITER (par user)
+// ============================================================================
+
+class _UserRateLimiter {
+  final Map<String, List<DateTime>> _userActions = {};
+  final int maxPerWindow;
+  final Duration window;
+
+  _UserRateLimiter({
+    this.maxPerWindow = 10,
+    this.window = const Duration(seconds: 5),
+  });
+
+  bool allow(String userId) {
+    final now = DateTime.now();
+    _userActions[userId] ??= [];
+    _userActions[userId]!.removeWhere((t) => now.difference(t) > window);
+    if (_userActions[userId]!.length >= maxPerWindow) return false;
+    _userActions[userId]!.add(now);
+    return true;
   }
 }
 
@@ -159,6 +192,28 @@ class _GuestInvite {
     required this.hostId,
     required this.hostUsername,
     required this.receivedAt,
+  });
+}
+
+// ============================================================================
+// REMOTE BROADCASTER (host ou guest)
+// ============================================================================
+
+class _RemoteBroadcaster {
+  final int uid;
+  String username;
+  String? avatarUrl;
+  bool isHost;
+  bool videoEnabled;
+  bool audioEnabled;
+
+  _RemoteBroadcaster({
+    required this.uid,
+    required this.username,
+    this.avatarUrl,
+    this.isHost = false,
+    this.videoEnabled = true,
+    this.audioEnabled = true,
   });
 }
 
@@ -183,11 +238,12 @@ class LiveViewerPage extends ConsumerStatefulWidget {
 }
 
 class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final _rtc = LiveRtcService();
   final _chatCtrl = TextEditingController();
   final _chatScroll = ScrollController();
   final _random = Random();
+  final _rateLimiter = _UserRateLimiter();
 
   LiveSession? _session;
   AgoraCredentials? _creds;
@@ -199,12 +255,11 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   String? _error;
   _NetQ _netQuality = _NetQ.good;
 
-  int? _hostUid;
   int _viewerCount = 0;
   int _likeCount = 0;
   DateTime? _lastChat;
-  DateTime? _lastLike;
   DateTime? _lastAction;
+  DateTime? _lastRequestTime;
   int _reactionBurst = 0;
   String _lastReaction = '';
   List<_ChatLine> _messages = [];
@@ -218,42 +273,47 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   bool _isLocallyMuted = false;
   bool _isLocalVideoOff = false;
   bool _requestingJoin = false;
-  final Map<int, String> _remoteUsers = {}; // uid -> role/username
+
+  // Tous les broadcasters : uid -> RemoteBroadcaster
+  // Inclut host + guests
+  final Map<int, _RemoteBroadcaster> _remoteBroadcasters = {};
 
   RealtimeChannel? _msgChannel;
-  RealtimeChannel? _inviteChannel;
-  Timer? _statsTimer;
+  RealtimeChannel? _guestsChannel;
   Timer? _netTimer;
   Timer? _inviteExpireTimer;
-  StreamSubscription<int?>? _remoteSub;
-  StreamSubscription<int>? _remoteJoinedSub;
-  StreamSubscription<(int, String)>? _remoteLeftSub;
   StreamSubscription<List<ConnectivityResult>>? _netSub;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _bootstrap();
     _LiveViewerLogger.info('LiveViewerPage init', {'liveId': widget.liveId});
   }
 
   @override
   void dispose() {
-    _statsTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _netTimer?.cancel();
     _inviteExpireTimer?.cancel();
     _likeBatchTimer?.cancel();
-    _remoteSub?.cancel();
-    _remoteJoinedSub?.cancel();
-    _remoteLeftSub?.cancel();
     _netSub?.cancel();
     _msgChannel?.unsubscribe();
-    _inviteChannel?.unsubscribe();
+    _guestsChannel?.unsubscribe();
     _chatCtrl.dispose();
     _chatScroll.dispose();
     _rtc.dispose();
     _LiveViewerLogger.info('LiveViewerPage disposed');
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Auto-mute en arrière-plan si sur scène
+    if (state == AppLifecycleState.paused && _isOnStage && !_isLocallyMuted) {
+      _toggleLocalMute(force: true);
+    }
   }
 
   // ════════════════════════════════════════════════════════════
@@ -276,46 +336,62 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
       _viewerCount = _session!.viewerCount;
       _likeCount = _session!.likeCount;
 
+      // Rejoindre en audience
       await _rtc.joinAsAudience(_creds!);
 
-      _remoteSub = _rtc.remoteUidStream.listen((uid) {
-        if (!mounted) return;
-        setState(() => _hostUid = uid ?? _rtc.remoteHostUid);
-      });
-
-      // Multi-guest : écouter les autres remote users
-      _remoteJoinedSub = _rtc.remoteUserJoinedStream.listen((uid) {
-        if (!mounted) return;
-        setState(() {
-          _remoteUsers[uid] = 'broadcaster';
-          if (_hostUid == null) _hostUid = uid;
-        });
-      });
-
-      _remoteLeftSub = _rtc.remoteUserLeftStream.listen((event) {
-        if (!mounted) return;
-        final uid = event.$1;
-        setState(() => _remoteUsers.remove(uid));
-      });
-
-      if (_rtc.remoteHostUid != null) {
-        _hostUid = _rtc.remoteHostUid;
-        _remoteUsers[_rtc.remoteHostUid!] = 'host';
-      }
+      // Écouter les events Agora pour détecter tous les broadcasters
+      _rtc.engine?.registerEventHandler(RtcEngineEventHandler(
+        onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
+          if (!mounted) return;
+          _LiveViewerLogger.info('Remote user joined', {'uid': remoteUid});
+          setState(() {
+            _remoteBroadcasters.putIfAbsent(
+              remoteUid,
+              () => _RemoteBroadcaster(
+                uid: remoteUid,
+                username: 'Broadcaster',
+              ),
+            );
+          });
+          // Refresh depuis DB pour obtenir les vrais noms
+          _refreshBroadcastersFromDb();
+        },
+        onUserOffline: (RtcConnection connection, int remoteUid,
+            UserOfflineReasonType reason) {
+          if (!mounted) return;
+          _LiveViewerLogger.info('Remote user offline', {'uid': remoteUid});
+          setState(() => _remoteBroadcasters.remove(remoteUid));
+        },
+        onRemoteVideoStateChanged: (RtcConnection connection, int remoteUid,
+            RemoteVideoState state, RemoteVideoStateReason reason, int elapsed) {
+          if (!mounted || !_remoteBroadcasters.containsKey(remoteUid)) return;
+          setState(() {
+            _remoteBroadcasters[remoteUid]!.videoEnabled =
+                state == RemoteVideoState.remoteVideoStateDecoding;
+          });
+        },
+        onRemoteAudioStateChanged: (RtcConnection connection, int remoteUid,
+            RemoteAudioState state, RemoteAudioStateReason reason, int elapsed) {
+          if (!mounted || !_remoteBroadcasters.containsKey(remoteUid)) return;
+          setState(() {
+            _remoteBroadcasters[remoteUid]!.audioEnabled =
+                state == RemoteAudioState.remoteAudioStateDecoding;
+          });
+        },
+      ));
 
       _subscribeChat();
-      _subscribeInviteChannel();
-      _startStatsPolling();
+      _subscribeGuestsChannel();
       _startNetworkMonitor();
       _startLikeBatching();
+      _refreshBroadcastersFromDb();
 
       if (!mounted) return;
       setState(() {
         _joining = false;
         _ready = true;
       });
-      _LiveViewerLogger.info('Live joined',
-          {'liveId': widget.liveId, 'hostUid': _hostUid});
+      _LiveViewerLogger.info('Live joined', {'liveId': widget.liveId});
     } catch (e, stack) {
       _LiveViewerLogger.error('Bootstrap failed',
           {'error': '$e', 'stack': stack.toString()});
@@ -328,7 +404,92 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 INVITE CHANNEL (Recevoir invitations du host)
+  // BROADCASTERS REFRESH (sync avec DB live_guests)
+  // ════════════════════════════════════════════════════════════
+
+  Future<void> _refreshBroadcastersFromDb() async {
+    if (_session == null) return;
+    try {
+      final guests = await ref
+          .read(liveServiceProvider)
+          .getLiveGuests(_session!.id);
+      if (!mounted) return;
+
+      setState(() {
+        // Identifier le host (pas dans live_guests, c'est le créateur du live)
+        final hostId = _session!.hostId;
+        for (final entry in _remoteBroadcasters.entries) {
+          final bc = entry.value;
+          final matchingGuest = guests.firstWhere(
+            (g) => g.agoraUid == bc.uid && g.isOnStage,
+            orElse: () => LiveGuest.empty(),
+          );
+
+          if (matchingGuest.agoraUid != null) {
+            // C'est un guest
+            bc.username = matchingGuest.username;
+            bc.avatarUrl = matchingGuest.avatarUrl;
+            bc.isHost = false;
+          } else {
+            // Probablement le host (pas dans live_guests)
+            bc.username = _session!.hostUsername;
+            bc.avatarUrl = _session!.hostAvatarUrl;
+            bc.isHost = true;
+          }
+        }
+      });
+    } catch (e) {
+      _LiveViewerLogger.warn('Refresh broadcasters failed', {'error': '$e'});
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🎯 GUESTS CHANNEL (realtime updates)
+  // ════════════════════════════════════════════════════════════
+
+  void _subscribeGuestsChannel() {
+    final liveId = _session?.id ?? widget.liveId;
+    final client = Supabase.instance.client;
+    _guestsChannel = client
+        .channel('live_guests_$liveId')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.insert,
+          schema: 'public',
+          table: 'live_guests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'live_id',
+            value: liveId,
+          ),
+          callback: (_) => _refreshBroadcastersFromDb(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'live_guests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'live_id',
+            value: liveId,
+          ),
+          callback: (_) => _refreshBroadcastersFromDb(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.delete,
+          schema: 'public',
+          table: 'live_guests',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'live_id',
+            value: liveId,
+          ),
+          callback: (_) => _refreshBroadcastersFromDb(),
+        )
+        .subscribe();
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // 🎯 INVITE CHANNEL (recevoir invitations du host)
   // ════════════════════════════════════════════════════════════
 
   void _subscribeInviteChannel() {
@@ -336,19 +497,23 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     if (user == null) return;
 
     final client = Supabase.instance.client;
-    _inviteChannel = client.channel('live_invite_${user.id}')
+    final channel = client.channel('live_invite_${user.id}')
       ..onBroadcast(event: 'guest_invite', callback: (payload) {
         if (!mounted) return;
-        final data = payload;
-        
-        // Vérifier que c'est bien pour ce live
-        final inviteLiveId = data['live_id']?.toString();
+
+        final inviteLiveId = payload['live_id']?.toString();
         if (inviteLiveId != widget.liveId && inviteLiveId != _session?.id) {
           return;
         }
 
+        final hostId = payload['host_id']?.toString() ?? '';
+        if (!_LiveSanitizer.isValidUuid(hostId)) {
+          _LiveViewerLogger.warn('Invalid host ID in invite');
+          return;
+        }
+
         final hostUsername = _LiveSanitizer.username(
-          data['host_username']?.toString(),
+          payload['host_username']?.toString(),
         );
 
         _LiveViewerLogger.info('Invite received', {
@@ -359,7 +524,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         setState(() {
           _pendingInvite = _GuestInvite(
             liveId: inviteLiveId ?? widget.liveId,
-            hostId: data['host_id']?.toString() ?? '',
+            hostId: hostId,
             hostUsername: hostUsername,
             receivedAt: DateTime.now(),
           );
@@ -376,8 +541,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
           }
         });
       });
-    _inviteChannel!.subscribe();
-    _LiveViewerLogger.info('Invite channel subscribed', {'userId': user.id});
+    channel.subscribe();
   }
 
   // ════════════════════════════════════════════════════════════
@@ -387,6 +551,8 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   void _subscribeChat() {
     final liveId = _session?.id ?? widget.liveId;
     final client = Supabase.instance.client;
+    final myUserId = client.auth.currentUser?.id;
+
     _msgChannel = client
         .channel('live_view_msgs_$liveId')
         .onPostgresChanges(
@@ -399,90 +565,95 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
             value: liveId,
           ),
           callback: (payload) {
-            final row = payload.newRecord;
-            final text = _LiveSanitizer.chat(row['text']?.toString());
-            final user = _LiveSanitizer.username(row['username']?.toString());
-            final type = _LiveSanitizer.messageType(row['type']?.toString());
-            if (!mounted || text.isEmpty) return;
-
-            // Gestion spéciale des événements système
-            if (type == 'promote') {
-              _handlePromoteEvent(row);
-              return;
-            }
-            if (type == 'demote') {
-              _handleDemoteEvent();
-              return;
-            }
-
-            setState(() {
-              _messages = [
-                ..._messages,
-                _ChatLine(username: user, text: text, type: type),
-              ];
-              if (_messages.length > _kMaxMessagesInMemory) {
-                _messages = _messages.sublist(
-                    _messages.length - _kMaxMessagesInMemory);
-              }
-            });
-
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (_chatScroll.hasClients) {
-                _chatScroll.animateTo(
-                  0,
-                  duration: const Duration(milliseconds: 200),
-                  curve: Curves.easeOut,
-                );
-              }
-            });
+            _handleIncomingMessage(payload.newRecord, myUserId);
           },
         )
         .subscribe();
+
+    _subscribeInviteChannel();
     _LiveViewerLogger.info('Chat channel subscribed');
   }
 
-  // ════════════════════════════════════════════════════════════
-  // 🎯 GUEST EVENTS (Promote / Demote)
-  // ════════════════════════════════════════════════════════════
+  void _handleIncomingMessage(Map<String, dynamic> row, String? myUserId) {
+    final text = _LiveSanitizer.chat(row['text']?.toString());
+    final user = _LiveSanitizer.username(row['username']?.toString());
+    final type = _LiveSanitizer.messageType(row['type']?.toString());
+    final senderId = row['user_id']?.toString();
+    final targetId = row['target_user_id']?.toString();
 
-  void _handlePromoteEvent(Map<String, dynamic> row) {
-    final targetUserId = row['user_id']?.toString();
-    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
-    
-    if (targetUserId != currentUserId) return;
+    if (!mounted || senderId == null || !_LiveSanitizer.isValidUuid(senderId)) return;
 
-    _LiveViewerLogger.info('Received promote event');
-    _becomeBroadcaster();
+    // Anti-spam par user (sauf pour les messages système)
+    if (type == 'chat' && !_rateLimiter.allow(senderId)) {
+      return;
+    }
+
+    // Événements système ciblés (promote / demote / invite)
+    if (targetId != null && targetId == myUserId) {
+      if (type == 'promote') {
+        _becomeBroadcaster();
+        return;
+      }
+      if (type == 'demote' || type == 'kick') {
+        _becomeAudience();
+        return;
+      }
+      if (type == 'invite') {
+        // Invitation reçue via message système
+        return;
+      }
+    }
+
+    // Ignore nos propres messages (déjà affichés optimistiquement)
+    if (senderId == myUserId && type == 'chat') return;
+
+    if (text.isEmpty && type != 'reaction') return;
+
+    setState(() {
+      _messages = [
+        ..._messages,
+        _ChatLine(username: user, text: text, type: type, userId: senderId),
+      ];
+      if (_messages.length > _kMaxMessagesInMemory) {
+        _messages = _messages.sublist(_messages.length - _kMaxMessagesInMemory);
+      }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_chatScroll.hasClients) {
+        _chatScroll.animateTo(
+          0,
+          duration: const Duration(milliseconds: 150),
+          curve: Curves.easeOut,
+        );
+      }
+    });
   }
 
-  void _handleDemoteEvent() {
-    _LiveViewerLogger.info('Received demote event');
-    _becomeAudience();
-  }
+  // ════════════════════════════════════════════════════════════
+  // 🎯 PROMOTE / DEMOTE (audience ↔ broadcaster)
+  // ════════════════════════════════════════════════════════════
 
   Future<void> _becomeBroadcaster() async {
     if (_isOnStage) return;
-    
+    _LiveViewerLogger.info('Promoted to broadcaster');
+
     try {
       await _rtc.promoteToBroadcaster();
       if (!mounted) return;
-      setState(() {
-        _isOnStage = true;
-      });
+      setState(() => _isOnStage = true);
       _snack(AppLocalizations.of(context).t('live_now_on_stage'));
       HapticFeedback.heavyImpact();
     } catch (e) {
       _LiveViewerLogger.error('Promotion failed', {'error': '$e'});
-      _snack(
-        AppLocalizations.of(context).t('live_promote_failed'),
-        error: true,
-      );
+      _snack(AppLocalizations.of(context).t('live_promote_failed'), error: true);
     }
   }
 
   Future<void> _becomeAudience() async {
     if (!_isOnStage) return;
-    
+    _LiveViewerLogger.info('Demoted to audience');
+
     try {
       await _rtc.demoteToAudience();
       if (!mounted) return;
@@ -498,45 +669,13 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // STATS POLLING + NETWORK
+  // NETWORK
   // ════════════════════════════════════════════════════════════
-
-  void _startStatsPolling() {
-    final liveId = _session?.id ?? widget.liveId;
-    _statsTimer = Timer.periodic(_kStatsPolling, (_) async {
-      try {
-        final row = await Supabase.instance.client
-            .from('lives')
-            .select('viewer_count, like_count, status')
-            .eq('id', liveId)
-            .maybeSingle()
-            .timeout(const Duration(seconds: 5));
-        if (row == null || !mounted) return;
-
-        final status = (row['status'] ?? '').toString();
-        if (status == 'ended') {
-          _onHostEnded();
-          return;
-        }
-
-        setState(() {
-          _viewerCount =
-              (row['viewer_count'] as num?)?.toInt() ?? _viewerCount;
-          _likeCount = (row['like_count'] as num?)?.toInt() ?? _likeCount;
-        });
-      } catch (e) {
-        _LiveViewerLogger.warn('Stats poll failed', {'error': '$e'});
-      }
-    });
-  }
 
   void _startNetworkMonitor() {
     _checkNetwork();
-    _netSub = Connectivity().onConnectivityChanged.listen((r) {
-      _evaluateNetwork(r);
-    });
-    _netTimer = Timer.periodic(
-        const Duration(seconds: 10), (_) => _checkNetwork());
+    _netSub = Connectivity().onConnectivityChanged.listen((r) => _evaluateNetwork(r));
+    _netTimer = Timer.periodic(const Duration(seconds: 10), (_) => _checkNetwork());
   }
 
   Future<void> _checkNetwork() async {
@@ -558,21 +697,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     } else {
       q = _NetQ.poor;
     }
-    if (mounted && _netQuality != q) {
-      setState(() => _netQuality = q);
-    }
-  }
-
-  void _onHostEnded() {
-    if (!mounted) return;
-    _LiveViewerLogger.info('Host ended live', {'liveId': widget.liveId});
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(AppLocalizations.of(context).t('live_ended_by_host')),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-    _leave(force: true);
+    if (mounted && _netQuality != q) setState(() => _netQuality = q);
   }
 
   // ════════════════════════════════════════════════════════════
@@ -580,7 +705,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   // ════════════════════════════════════════════════════════════
 
   void _startLikeBatching() {
-    _likeBatchTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
+    _likeBatchTimer = Timer.periodic(_kLikeBatchInterval, (_) {
       if (_pendingLikes > 0) {
         _flushLikes(_pendingLikes);
         _pendingLikes = 0;
@@ -605,43 +730,33 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // THROTTLE
+  // THROTTLE & HELPERS
   // ════════════════════════════════════════════════════════════
 
   bool _throttleChat() {
     final now = DateTime.now();
-    if (_lastChat != null && now.difference(_lastChat!) < _kChatThrottle) {
-      return false;
-    }
+    if (_lastChat != null && now.difference(_lastChat!) < _kChatThrottle) return false;
     _lastChat = now;
-    return true;
-  }
-
-  bool _throttleLike() {
-    final now = DateTime.now();
-    if (_lastLike != null && now.difference(_lastLike!) < _kLikeThrottle) {
-      return false;
-    }
-    _lastLike = now;
     return true;
   }
 
   bool _throttleAction() {
     final now = DateTime.now();
-    if (_lastAction != null &&
-        now.difference(_lastAction!) < _kActionThrottle) {
-      return false;
-    }
+    if (_lastAction != null && now.difference(_lastAction!) < _kActionThrottle) return false;
     _lastAction = now;
     return true;
+  }
+
+  bool _canRequestToJoin() {
+    if (_lastRequestTime == null) return true;
+    return DateTime.now().difference(_lastRequestTime!) >= _kRequestCooldown;
   }
 
   void _snack(String msg, {bool error = false}) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg),
-      backgroundColor:
-          error ? ThixPolicy.danger : ThixPolicy.domainMedia,
+      backgroundColor: error ? ThixPolicy.danger : ThixPolicy.domainMedia,
       behavior: SnackBarBehavior.floating,
     ));
   }
@@ -649,9 +764,14 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   String _currentUsername() {
     final user = Supabase.instance.client.auth.currentUser;
     final raw = user?.userMetadata?['username']?.toString() ??
-        user?.email?.split('@').first ??
-        'Viewer';
+        user?.email?.split('@').first ?? 'Viewer';
     return _LiveSanitizer.username(raw);
+  }
+
+  String _formatCount(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
+    return '$n';
   }
 
   // ════════════════════════════════════════════════════════════
@@ -665,21 +785,17 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
     if (mounted) setState(() => _chatSending = true);
     try {
-      final name = _currentUsername();
       await ref.read(liveServiceProvider).sendMessage(
             liveId: _session!.id,
             text: text,
-            username: name,
+            username: _currentUsername(),
           );
       _chatCtrl.clear();
       HapticFeedback.lightImpact();
     } catch (e) {
       _LiveViewerLogger.error('Send chat failed', {'error': '$e'});
       if (mounted) {
-        _snack(
-          AppLocalizations.of(context).t('live_chat_send_error'),
-          error: true,
-        );
+        _snack(AppLocalizations.of(context).t('live_chat_send_error'), error: true);
       }
     } finally {
       if (mounted) setState(() => _chatSending = false);
@@ -689,21 +805,22 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   void _sendLike() {
     HapticFeedback.lightImpact();
     _spawnFloatingLike();
-    if (mounted) setState(() {
-      _likeCount++;
-      _pendingLikes++;
-    });
+    if (mounted) {
+      setState(() {
+        _likeCount++;
+        _pendingLikes++;
+      });
+    }
   }
 
   Future<void> _sendReaction(String emoji) async {
     if (!_throttleChat() || _session == null) return;
     HapticFeedback.lightImpact();
-    final name = _currentUsername();
     try {
       await ref.read(liveServiceProvider).sendMessage(
             liveId: _session!.id,
             text: emoji,
-            username: name,
+            username: _currentUsername(),
             type: 'reaction',
           );
       if (mounted) {
@@ -726,11 +843,9 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         _floatingLikes.add(_FloatingLike(id: id, dx: dx, color: color));
       });
     }
-    Future.delayed(const Duration(milliseconds: 1200), () {
+    Future.delayed(const Duration(milliseconds: 1500), () {
       if (!mounted) return;
-      setState(() {
-        _floatingLikes.removeWhere((e) => e.id == id);
-      });
+      setState(() => _floatingLikes.removeWhere((e) => e.id == id));
     });
   }
 
@@ -743,12 +858,11 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // 🎯 INVITE ACTIONS (Accept / Reject / Request)
+  // 🎯 INVITE ACTIONS
   // ════════════════════════════════════════════════════════════
 
   void _showInviteDialog() {
     if (!mounted || _pendingInvite == null) return;
-    
     final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
@@ -777,25 +891,16 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     _LiveViewerLogger.info('Accepting invite', {'liveId': invite.liveId});
 
     try {
-      final liveService = ref.read(liveServiceProvider);
-      
-      // 1. Accepter côté serveur
-      await liveService.acceptGuestInvite(invite.liveId);
-      
-      // 2. Changer de rôle Agora (audience → broadcaster)
+      await ref.read(liveServiceProvider).acceptGuestInvite(invite.liveId);
       await _becomeBroadcaster();
-      
       if (!mounted) return;
       setState(() => _pendingInvite = null);
-      
       _snack(AppLocalizations.of(context).t('live_invite_accepted'));
     } catch (e) {
       _LiveViewerLogger.error('Accept invite failed', {'error': '$e'});
       if (mounted) {
-        _snack(
-          AppLocalizations.of(context).t('live_invite_accept_failed'),
-          error: true,
-        );
+        _snack(AppLocalizations.of(context).t('live_invite_accept_failed'),
+            error: true);
       }
     }
   }
@@ -805,57 +910,49 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     if (invite == null) return;
 
     _inviteExpireTimer?.cancel();
-    _LiveViewerLogger.info('Rejecting invite', {
-      'liveId': invite.liveId,
-      'auto': auto,
-    });
-
     try {
-      final liveService = ref.read(liveServiceProvider);
-      await liveService.rejectGuestInvite(invite.liveId);
+      await ref.read(liveServiceProvider).rejectGuestInvite(invite.liveId);
     } catch (e) {
       _LiveViewerLogger.warn('Reject invite failed', {'error': '$e'});
     }
 
     if (!mounted) return;
     setState(() => _pendingInvite = null);
-
-    if (auto) {
-      _snack(AppLocalizations.of(context).t('live_invite_expired'));
-    }
+    if (auto) _snack(AppLocalizations.of(context).t('live_invite_expired'));
   }
 
   Future<void> _requestToJoin() async {
     if (_requestingJoin || _isOnStage || _session == null) return;
     if (!_throttleAction()) return;
+    if (!_canRequestToJoin()) {
+      _snack(AppLocalizations.of(context).t('live_request_cooldown'), error: true);
+      return;
+    }
 
     if (mounted) setState(() => _requestingJoin = true);
     HapticFeedback.mediumImpact();
 
     try {
-      final name = _currentUsername();
       await ref.read(liveServiceProvider).sendMessage(
             liveId: _session!.id,
-            text: '🙋 ${AppLocalizations.of(context).t("live_request_to_join")}',
-            username: name,
+            text: '🙋 ${_currentUsername()}',
+            username: _currentUsername(),
             type: 'request_join',
           );
+      _lastRequestTime = DateTime.now();
       _snack(AppLocalizations.of(context).t('live_request_sent'));
     } catch (e) {
       _LiveViewerLogger.error('Request to join failed', {'error': '$e'});
       if (mounted) {
-        _snack(
-          AppLocalizations.of(context).t('live_request_failed'),
-          error: true,
-        );
+        _snack(AppLocalizations.of(context).t('live_request_failed'), error: true);
       }
     } finally {
       if (mounted) setState(() => _requestingJoin = false);
     }
   }
 
-  Future<void> _toggleLocalMute() async {
-    if (!_isOnStage || !_throttleAction()) return;
+  Future<void> _toggleLocalMute({bool force = false}) async {
+    if (!_isOnStage || (!force && !_throttleAction())) return;
     HapticFeedback.selectionClick();
     try {
       final next = !_isLocallyMuted;
@@ -885,21 +982,15 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1A1A1A),
-        title: Text(
-          l10n.t('live_leave_stage_title'),
-          style: const TextStyle(color: Colors.white),
-        ),
-        content: Text(
-          l10n.t('live_leave_stage_confirm'),
-          style: const TextStyle(color: Colors.white70),
-        ),
+        title: Text(l10n.t('live_leave_stage_title'),
+            style: const TextStyle(color: Colors.white)),
+        content: Text(l10n.t('live_leave_stage_confirm'),
+            style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              l10n.t('common_cancel'),
-              style: const TextStyle(color: Colors.white70),
-            ),
+            child: Text(l10n.t('common_cancel'),
+                style: const TextStyle(color: Colors.white70)),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
@@ -913,7 +1004,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
     try {
       await _becomeAudience();
-      // Notifier le serveur (optionnel, le host verra l'événement onUserOffline)
     } catch (e) {
       _LiveViewerLogger.error('Leave stage failed', {'error': '$e'});
     }
@@ -928,21 +1018,15 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         context: context,
         builder: (ctx) => AlertDialog(
           backgroundColor: const Color(0xFF1A1A1A),
-          title: Text(
-            l10n.t('live_leave_title'),
-            style: const TextStyle(color: Colors.white),
-          ),
-          content: Text(
-            l10n.t('live_leave_confirm'),
-            style: const TextStyle(color: Colors.white70),
-          ),
+          title: Text(l10n.t('live_leave_title'),
+              style: const TextStyle(color: Colors.white)),
+          content: Text(l10n.t('live_leave_confirm'),
+              style: const TextStyle(color: Colors.white70)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text(
-                l10n.t('common_cancel'),
-                style: const TextStyle(color: Colors.white70),
-              ),
+              child: Text(l10n.t('common_cancel'),
+                  style: const TextStyle(color: Colors.white70)),
             ),
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
@@ -956,8 +1040,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     }
 
     if (mounted) setState(() => _leaving = true);
-    _LiveViewerLogger.info('Leaving live', {'liveId': widget.liveId});
-
     try {
       await _rtc.leave();
     } catch (e) {
@@ -969,13 +1051,276 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   }
 
   // ════════════════════════════════════════════════════════════
-  // HELPERS
+  // VIDEO BUILDERS
   // ════════════════════════════════════════════════════════════
 
-  String _formatCount(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(1)}K';
-    return '$n';
+  Widget _buildRemoteVideo(_RemoteBroadcaster bc) {
+    final engine = _rtc.engine;
+    if (engine == null || !bc.videoEnabled) {
+      return Container(
+        color: Colors.black87,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 36,
+                backgroundColor: Colors.white24,
+                backgroundImage: bc.avatarUrl != null
+                    ? NetworkImage(bc.avatarUrl!) : null,
+                child: bc.avatarUrl == null
+                    ? Text(
+                        bc.username.isNotEmpty
+                            ? bc.username[0].toUpperCase() : '?',
+                        style: const TextStyle(
+                            color: Colors.white, fontSize: 28),
+                      )
+                    : null,
+              ),
+              const SizedBox(height: 8),
+              Icon(Icons.videocam_off, color: Colors.white54, size: 20),
+            ],
+          ),
+        ),
+      );
+    }
+    return AgoraVideoView(
+      controller: VideoViewController.remote(
+        rtcEngine: engine,
+        canvas: VideoCanvas(uid: bc.uid),
+        connection: RtcConnection(channelId: _creds!.channelName),
+      ),
+    );
+  }
+
+  Widget _buildVideoLayer() {
+    final engine = _rtc.engine;
+
+    if (!_ready || engine == null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: _joining
+              ? const CircularProgressIndicator(color: Colors.white)
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.live_tv_rounded,
+                        size: 56, color: Colors.white.withValues(alpha: 0.35)),
+                    const SizedBox(height: 12),
+                    Text(
+                      AppLocalizations.of(context).t('live_waiting_host'),
+                      style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+                    ),
+                  ],
+                ),
+        ),
+      );
+    }
+
+    final broadcasters = _remoteBroadcasters.values.toList();
+
+    if (broadcasters.isEmpty) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: Text(
+            AppLocalizations.of(context).t('live_waiting_host'),
+            style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+          ),
+        ),
+      );
+    }
+
+    // Layout adaptatif selon le nombre de broadcasters
+    if (broadcasters.length == 1) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          _buildRemoteVideo(broadcasters[0]),
+          _buildBroadcasterLabel(broadcasters[0]),
+        ],
+      );
+    }
+
+    // 2+ broadcasters : split screen
+    if (broadcasters.length == 2) {
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          Row(
+            children: [
+              Expanded(child: _buildRemoteVideo(broadcasters[0])),
+              Expanded(child: _buildRemoteVideo(broadcasters[1])),
+            ],
+          ),
+          Positioned(
+            top: 8, left: 8,
+            child: _buildBroadcasterLabel(broadcasters[0], compact: true),
+          ),
+          Positioned(
+            top: 8, right: 8,
+            child: _buildBroadcasterLabel(broadcasters[1], compact: true),
+          ),
+        ],
+      );
+    }
+
+    // 3+ : grid 2x2
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        Column(
+          children: [
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(child: _buildRemoteVideo(broadcasters[0])),
+                  Expanded(child: _buildRemoteVideo(broadcasters[1])),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Row(
+                children: [
+                  Expanded(child: _buildRemoteVideo(broadcasters[2])),
+                  if (broadcasters.length > 3)
+                    Expanded(child: _buildRemoteVideo(broadcasters[3]))
+                  else
+                    const Expanded(child: SizedBox()),
+                ],
+              ),
+            ),
+          ],
+        ),
+        // Labels en overlay
+        ...List.generate(broadcasters.length.take(4).length, (i) {
+          final positions = [
+            Alignment.topLeft,
+            Alignment.topRight,
+            Alignment.bottomLeft,
+            Alignment.bottomRight,
+          ];
+          return Positioned.fill(
+            child: Align(
+              alignment: positions[i],
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: _buildBroadcasterLabel(broadcasters[i], compact: true),
+              ),
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildBroadcasterLabel(_RemoteBroadcaster bc, {bool compact = false}) {
+    final bgColor = bc.isHost ? const Color(0xFFE11D48) : Colors.black54;
+    return Container(
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 12,
+        vertical: compact ? 4 : 6,
+      ),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (bc.isHost) ...[
+            const Text('HOST',
+                style: TextStyle(color: Colors.white,
+                    fontSize: 10, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 4),
+          ],
+          if (!bc.audioEnabled)
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: Icon(Icons.mic_off, color: Colors.red, size: 12),
+            ),
+          if (bc.avatarUrl != null && !compact)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: CircleAvatar(
+                radius: 8,
+                backgroundImage: NetworkImage(bc.avatarUrl!),
+              ),
+            ),
+          Flexible(
+            child: Text(bc.username,
+                style: const TextStyle(color: Colors.white,
+                    fontSize: 11, fontWeight: FontWeight.w600),
+                overflow: TextOverflow.ellipsis),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLocalPiP() {
+    final engine = _rtc.engine;
+    if (!_isOnStage || engine == null || _isLocalVideoOff) {
+      return Container(
+        decoration: BoxDecoration(
+          color: Colors.black87,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white30, width: 2),
+        ),
+        child: Center(
+          child: Icon(Icons.videocam_off, color: Colors.white54, size: 24),
+        ),
+      );
+    }
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white30, width: 2),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withValues(alpha: 0.5), blurRadius: 12),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          AgoraVideoView(
+            controller: VideoViewController(
+              rtcEngine: engine,
+              canvas: const VideoCanvas(uid: 0),
+            ),
+          ),
+          // Mute indicator
+          if (_isLocallyMuted)
+            Positioned(
+              top: 6, left: 6,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: const BoxDecoration(
+                  color: Colors.black54,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.mic_off, color: Colors.red, size: 14),
+              ),
+            ),
+          // "YOU" badge
+          Positioned(
+            bottom: 6, left: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: const Color(0xFF22C55E),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Text('YOU',
+                  style: TextStyle(color: Colors.white,
+                      fontSize: 9, fontWeight: FontWeight.w900)),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ════════════════════════════════════════════════════════════
@@ -985,7 +1330,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final engine = _rtc.engine;
 
     if (_error != null) {
       return Scaffold(
@@ -996,14 +1340,11 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.error_outline,
-                    color: Colors.white54, size: 48),
+                const Icon(Icons.error_outline, color: Colors.white54, size: 48),
                 const SizedBox(height: 12),
-                Text(
-                  _error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(color: Colors.white70),
-                ),
+                Text(_error!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.white70)),
                 const SizedBox(height: 20),
                 ElevatedButton(
                   onPressed: () => Navigator.pop(context),
@@ -1026,57 +1367,44 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
         body: Stack(
           fit: StackFit.expand,
           children: [
-            // ── Vidéo (host + guests si multi) ──────────────────────────────────
+            // ── Video layer ───────────────────────────────────
             GestureDetector(
               onDoubleTap: _sendLike,
-              child: _buildVideoLayer(engine),
+              child: _buildVideoLayer(),
             ),
 
-            // ── Vidéo locale (quand sur scène) ──────────────────────────────────
-            if (_isOnStage && engine != null && !_isLocalVideoOff)
+            // ── Local PiP (quand sur scène) ─────────────────────
+            if (_isOnStage)
               Positioned(
                 top: 80,
                 right: 12,
-                width: 120,
-                height: 180,
-                child: Container(
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.white30, width: 2),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.5),
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                  clipBehavior: Clip.antiAlias,
-                  child: AgoraVideoView(
-                    controller: VideoViewController(
-                      rtcEngine: engine,
-                      canvas: const VideoCanvas(uid: 0),
-                    ),
-                  ),
-                ),
+                width: 100,
+                height: 150,
+                child: _buildLocalPiP(),
               ),
 
-            // ── Réactions burst ───────────────────────────────
+            // ── Floating likes ─────────────────────────────────
+            ..._floatingLikes.map(
+              (f) => Positioned(
+                right: f.dx,
+                bottom: 120,
+                child: _FloatingLikeWidget(like: f),
+              ),
+            ),
+
+            // ── Reaction burst ─────────────────────────────────
             if (_reactionBurst > 0)
               Positioned(
-                right: 24,
-                bottom: 280,
+                right: 100, bottom: 200,
                 child: _ReactionBurst(
                   key: ValueKey(_reactionBurst),
                   emoji: _lastReaction,
                 ),
               ),
 
-            // Gradient bas
+            // ── Gradient overlay ───────────────────────────────
             const Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              height: 240,
+              left: 0, right: 0, bottom: 0, height: 260,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -1088,72 +1416,64 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
               ),
             ),
 
-            // ── Top bar ───────────────────────────────────────
+            // ── Top bar ────────────────────────────────────────
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 8, 0),
                 child: Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 5,
-                      ),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: const Color(0xFFE11D48),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Text(
-                        'LIVE',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                        ),
+                      child: const Text('LIVE',
+                          style: TextStyle(color: Colors.white,
+                              fontWeight: FontWeight.w900, fontSize: 12)),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: Colors.black45,
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.group, size: 12, color: Colors.white),
+                          const SizedBox(width: 4),
+                          Text('${_remoteBroadcasters.length}',
+                              style: const TextStyle(color: Colors.white,
+                                  fontWeight: FontWeight.w700, fontSize: 12)),
+                        ],
                       ),
                     ),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 8),
                     Expanded(
-                      child: GestureDetector(
-                        onTap: () => _showHostProfile(l10n),
-                        child: Text(
-                          _session?.title ?? l10n.t('live_unknown'),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15,
-                          ),
-                        ),
+                      child: Text(
+                        _session?.title ?? l10n.t('live_unknown'),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white,
+                            fontWeight: FontWeight.w800, fontSize: 15),
                       ),
                     ),
                     _NetworkIndicator(q: _netQuality, l10n: l10n),
                     const SizedBox(width: 6),
-                    Semantics(
-                      label: '${l10n.t("live_viewers")}: $_viewerCount',
-                      child: _StatChip(
-                        icon: Icons.remove_red_eye_outlined,
-                        value: _formatCount(_viewerCount),
-                      ),
+                    _StatChip(
+                      icon: Icons.remove_red_eye_outlined,
+                      value: _formatCount(_viewerCount),
+                      label: l10n.t('live_viewers'),
                     ),
                     const SizedBox(width: 6),
-                    Semantics(
-                      label: '${l10n.t("live_likes")}: $_likeCount',
-                      child: _StatChip(
-                        icon: Icons.favorite,
-                        value: _formatCount(_likeCount),
-                      ),
+                    _StatChip(
+                      icon: Icons.favorite_border,
+                      value: _formatCount(_likeCount),
+                      label: l10n.t('live_likes'),
                     ),
-                    Semantics(
-                      button: true,
-                      label: l10n.t('live_share'),
-                      child: IconButton(
-                        onPressed: _leaving ? null : () => _shareLive(l10n),
-                        icon: const Icon(Icons.share_rounded,
-                            color: Colors.white),
-                      ),
-                    ),
+                    const SizedBox(width: 4),
                     Semantics(
                       button: true,
                       label: l10n.t('live_leave_btn'),
@@ -1167,52 +1487,138 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
               ),
             ),
 
-            // ── Likes flottants ────────────────────────────────
-            ..._floatingLikes.map(
-              (f) => Positioned(
-                right: f.dx,
-                bottom: 120,
-                child: TweenAnimationBuilder<double>(
-                  tween: Tween(begin: 0, end: 1),
-                  duration: const Duration(milliseconds: 1200),
-                  curve: Curves.easeOutCubic,
-                  builder: (_, t, child) => Opacity(
-                    opacity: 1 - t,
-                    child: Transform.translate(
-                      offset: Offset(0, -120 * t),
-                      child: child,
+            // ── LEFT SIDE : Contrôles locaux (quand sur scène) ─
+            if (_isOnStage)
+              Positioned(
+                left: 12, bottom: 120,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // "ON STAGE" badge
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF22C55E),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF22C55E).withValues(alpha: 0.5),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.circle, size: 8, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(l10n.t('live_on_stage'),
+                              style: const TextStyle(color: Colors.white,
+                                  fontWeight: FontWeight.w700, fontSize: 12)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    // Boutons de contrôle
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _ControlButton(
+                          icon: _isLocallyMuted ? Icons.mic_off : Icons.mic,
+                          label: _isLocallyMuted ? 'Muted' : 'Mic',
+                          active: _isLocallyMuted,
+                          onTap: _toggleLocalMute,
+                        ),
+                        const SizedBox(width: 8),
+                        _ControlButton(
+                          icon: _isLocalVideoOff ? Icons.videocam_off : Icons.videocam,
+                          label: _isLocalVideoOff ? 'Off' : 'Video',
+                          active: _isLocalVideoOff,
+                          onTap: _toggleLocalVideo,
+                        ),
+                        const SizedBox(width: 8),
+                        _ControlButton(
+                          icon: Icons.logout,
+                          label: 'Leave',
+                          active: false,
+                          onTap: _leaveStage,
+                          dangerColor: true,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── RIGHT SIDE : TikTok-style actions verticales ─
+            Positioned(
+              right: 12, bottom: 120,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Share button
+                  _SideActionButton(
+                    icon: Icons.share_rounded,
+                    label: '',
+                    onTap: () => _shareLive(l10n),
+                  ),
+                  const SizedBox(height: 20),
+                  // Like button (TikTok-style)
+                  GestureDetector(
+                    onTap: _sendLike,
+                    onDoubleTap: () {
+                      _sendLike();
+                      _sendLike();
+                      _sendLike();
+                    },
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(14),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE11D48),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFE11D48).withValues(alpha: 0.5),
+                                blurRadius: 12, spreadRadius: 2,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(Icons.favorite,
+                              color: Colors.white, size: 32),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(_formatCount(_likeCount),
+                            style: const TextStyle(color: Colors.white,
+                                fontWeight: FontWeight.w800, fontSize: 13)),
+                      ],
                     ),
                   ),
-                  child: Icon(
-                    Icons.favorite,
-                    color: f.color,
-                    size: 28 + (10 * (1 - 0.5)),
-                  ),
-                ),
+                ],
               ),
             ),
 
-            // ── Chat + actions ────────────────────────────────
+            // ── Bottom chat + reactions + input + request button ─
             Positioned(
-              left: 12,
-              right: 12,
+              left: 12, right: _isOnStage ? 12 : 80,
               bottom: 0,
               child: SafeArea(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // Messages
                     SizedBox(
-                      height: 130,
+                      height: 120,
                       child: _messages.isEmpty
                           ? Center(
-                              child: Text(
-                                l10n.t('live_chat_empty'),
-                                style: TextStyle(
-                                  color: Colors.white.withValues(alpha: 0.4),
-                                  fontSize: 12,
-                                ),
-                              ),
+                              child: Text(l10n.t('live_chat_empty'),
+                                  style: TextStyle(
+                                      color: Colors.white.withValues(alpha: 0.4),
+                                      fontSize: 12)),
                             )
                           : ListView.builder(
                               controller: _chatScroll,
@@ -1220,42 +1626,36 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                               padding: EdgeInsets.zero,
                               itemCount: _messages.length,
                               itemBuilder: (context, i) {
-                                final m =
-                                    _messages[_messages.length - 1 - i];
+                                final m = _messages[_messages.length - 1 - i];
                                 return _buildChatLine(m, l10n);
                               },
                             ),
                     ),
                     const SizedBox(height: 8),
-
-                    // ── Réactions emoji row ──
+                    // Reactions
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
                         for (final e in _kReactions)
                           Semantics(
-                            button: true,
-                            label: e,
+                            button: true, label: e,
                             child: GestureDetector(
                               onTap: () => _sendReaction(e),
                               child: Container(
-                                width: 40,
-                                height: 32,
+                                width: 40, height: 32,
                                 alignment: Alignment.center,
                                 decoration: BoxDecoration(
                                   color: Colors.white12,
                                   borderRadius: BorderRadius.circular(16),
                                 ),
-                                child: Text(e,
-                                    style: const TextStyle(fontSize: 16)),
+                                child: Text(e, style: const TextStyle(fontSize: 16)),
                               ),
                             ),
                           ),
                       ],
                     ),
                     const SizedBox(height: 8),
-
-                    // ── Input + actions ──
+                    // Input
                     Row(
                       children: [
                         Expanded(
@@ -1271,15 +1671,11 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                               decoration: InputDecoration(
                                 counterText: '',
                                 hintText: l10n.t('live_chat_hint'),
-                                hintStyle:
-                                    const TextStyle(color: Colors.white38),
+                                hintStyle: const TextStyle(color: Colors.white38),
                                 filled: true,
-                                fillColor:
-                                    Colors.white.withValues(alpha: 0.12),
+                                fillColor: Colors.white.withValues(alpha: 0.12),
                                 contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 10,
-                                ),
+                                    horizontal: 14, vertical: 10),
                                 border: OutlineInputBorder(
                                   borderRadius: BorderRadius.circular(24),
                                   borderSide: BorderSide.none,
@@ -1291,74 +1687,37 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                         const SizedBox(width: 8),
                         Semantics(
                           button: true,
-                          label: l10n.t('live_like'),
-                          child: _RoundBtn(
-                            icon: Icons.favorite,
-                            color: const Color(0xFFE11D48),
-                            onTap: _sendLike,
-                          ),
-                        ),
-                        Semantics(
-                          button: true,
                           label: l10n.t('live_send'),
-                          child: _RoundBtn(
-                            icon: Icons.send_rounded,
+                          child: GestureDetector(
                             onTap: _chatSending ? null : _sendChat,
+                            child: Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: _chatSending
+                                    ? Colors.grey : ThixPolicy.domainMedia,
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.send_rounded,
+                                  color: Colors.white, size: 20),
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-
-                    // ── Bouton "Demander à monter" / Contrôles scène ──
-                    _buildStageControls(l10n),
+                    const SizedBox(height: 10),
+                    // Bouton "Demander à monter" (uniquement si pas sur scène)
+                    if (!_isOnStage)
+                      _RequestToJoinButton(
+                        requesting: _requestingJoin,
+                        canRequest: _canRequestToJoin(),
+                        onTap: _requestToJoin,
+                        l10n: l10n,
+                      ),
                     const SizedBox(height: 10),
                   ],
                 ),
               ),
             ),
-
-            // ── Indicateur "On Stage" ──────────────────────────────────────────
-            if (_isOnStage)
-              Positioned(
-                top: 80,
-                left: 12,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF22C55E),
-                    borderRadius: BorderRadius.circular(20),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF22C55E).withValues(alpha: 0.5),
-                        blurRadius: 8,
-                      ),
-                    ],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(
-                        Icons.circle,
-                        size: 8,
-                        color: Colors.white,
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        l10n.t('live_on_stage'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
 
             if (_leaving)
               Container(
@@ -1369,11 +1728,8 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                     children: [
                       const CircularProgressIndicator(color: Colors.white),
                       const SizedBox(height: 12),
-                      Text(
-                        l10n.t('live_leaving'),
-                        style: const TextStyle(
-                            color: Colors.white70, fontSize: 13),
-                      ),
+                      Text(l10n.t('live_leaving'),
+                          style: const TextStyle(color: Colors.white70, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -1384,138 +1740,14 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
     );
   }
 
-  Widget _buildVideoLayer(RtcEngine? engine) {
-    if (!_ready || engine == null) {
-      return Container(
-        color: Colors.black,
-        child: Center(
-          child: _joining
-              ? const CircularProgressIndicator(color: Colors.white)
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.live_tv_rounded,
-                      size: 56,
-                      color: Colors.white.withValues(alpha: 0.35),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      AppLocalizations.of(context).t('live_waiting_host'),
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.5),
-                      ),
-                    ),
-                  ],
-                ),
-        ),
-      );
-    }
-
-    // Afficher le host en plein écran
-    if (_hostUid != null) {
-      return AgoraVideoView(
-        controller: VideoViewController.remote(
-          rtcEngine: engine,
-          canvas: VideoCanvas(uid: _hostUid),
-          connection: RtcConnection(channelId: _creds!.channelName),
-        ),
-      );
-    }
-
-    return Container(
-      color: Colors.black,
-      child: Center(
-        child: Text(
-          AppLocalizations.of(context).t('live_waiting_host'),
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildStageControls(AppLocalizations l10n) {
-    if (_isOnStage) {
-      // Contrôles scène : mute, video, quitter la scène
-      return Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _StageBtn(
-            icon: _isLocallyMuted ? Icons.mic_off : Icons.mic,
-            label: _isLocallyMuted ? l10n.t('live_unmute') : l10n.t('live_mute'),
-            active: _isLocallyMuted,
-            onTap: _toggleLocalMute,
-          ),
-          const SizedBox(width: 8),
-          _StageBtn(
-            icon: _isLocalVideoOff ? Icons.videocam_off : Icons.videocam,
-            label: _isLocalVideoOff
-                ? l10n.t('live_video_on')
-                : l10n.t('live_video_off'),
-            active: _isLocalVideoOff,
-            onTap: _toggleLocalVideo,
-          ),
-          const SizedBox(width: 8),
-          _StageBtn(
-            icon: Icons.logout,
-            label: l10n.t('live_leave_stage_btn'),
-            color: ThixPolicy.danger,
-            onTap: _leaveStage,
-          ),
-        ],
-      );
-    } else {
-      // Bouton "Demander à monter"
-      return GestureDetector(
-        onTap: _requestingJoin ? null : _requestToJoin,
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          decoration: BoxDecoration(
-            color: ThixPolicy.domainMedia.withValues(alpha: 0.9),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: ThixPolicy.domainMedia.withValues(alpha: 0.4),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (_requestingJoin)
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.white,
-                  ),
-                )
-              else
-                const Icon(Icons.front_hand, color: Colors.white, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                _requestingJoin
-                    ? l10n.t('live_request_pending')
-                    : l10n.t('live_request_to_join'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-  }
-
   Widget _buildChatLine(_ChatLine m, AppLocalizations l10n) {
-    // Cas spécial : message de type request_join (affiché en highlight)
+    if (m.type == 'reaction') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Text(m.text, style: const TextStyle(color: Colors.white, fontSize: 22)),
+      );
+    }
+
     if (m.type == 'request_join') {
       return Padding(
         padding: const EdgeInsets.only(bottom: 6),
@@ -1524,9 +1756,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
           decoration: BoxDecoration(
             color: ThixPolicy.domainMedia.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: ThixPolicy.domainMedia.withValues(alpha: 0.5),
-            ),
+            border: Border.all(color: ThixPolicy.domainMedia.withValues(alpha: 0.5)),
           ),
           child: Row(
             children: [
@@ -1536,21 +1766,11 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                 child: Text.rich(
                   TextSpan(
                     children: [
-                      TextSpan(
-                        text: '${m.username} ',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w800,
-                          fontSize: 13,
-                        ),
-                      ),
-                      TextSpan(
-                        text: l10n.t('live_wants_to_join'),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 13,
-                        ),
-                      ),
+                      TextSpan(text: '${m.username} ',
+                          style: const TextStyle(color: Colors.white,
+                              fontWeight: FontWeight.w800, fontSize: 13)),
+                      TextSpan(text: l10n.t('live_wants_to_join'),
+                          style: const TextStyle(color: Colors.white, fontSize: 13)),
                     ],
                   ),
                 ),
@@ -1561,86 +1781,53 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
       );
     }
 
+    if (m.type == 'system' || m.type == 'kick' || m.type == 'promote' ||
+        m.type == 'join' || m.type == 'demote') {
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.white12,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text.rich(
+            TextSpan(
+              children: [
+                TextSpan(text: '⚡ ${m.username} ',
+                    style: const TextStyle(color: Colors.amber,
+                        fontWeight: FontWeight.w700, fontSize: 12)),
+                TextSpan(text: m.text,
+                    style: const TextStyle(color: Colors.white70, fontSize: 12)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
-      child: Text.rich(
-        TextSpan(
-          children: [
-            TextSpan(
-              text: '${m.username} ',
-              style: TextStyle(
-                color: m.type == 'gift'
-                    ? Colors.amber
-                    : m.type == 'reaction'
-                        ? Colors.white
-                        : ThixPolicy.primary,
-                fontWeight: FontWeight.w800,
-                fontSize: m.type == 'reaction' ? 16 : 13,
-              ),
-            ),
-            TextSpan(
-              text: m.text,
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: m.type == 'reaction' ? 18 : 13,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black.withValues(alpha: 0.3),
+          borderRadius: BorderRadius.circular(12),
         ),
-        maxLines: 3,
-        overflow: TextOverflow.ellipsis,
-      ),
-    );
-  }
-
-  void _showHostProfile(AppLocalizations l10n) {
-    if (!_throttleAction() || _session == null) return;
-    HapticFeedback.selectionClick();
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1A1A1A),
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        child: Text.rich(
+          TextSpan(
             children: [
-              Container(
-                width: 64,
-                height: 64,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ThixPolicy.surfaceSoft,
-                ),
-                child: const Icon(Icons.person,
-                    size: 32, color: Colors.white54),
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _session!.title,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                '${_formatCount(_viewerCount)} ${l10n.t("live_viewers")} · ${_formatCount(_likeCount)} ${l10n.t("live_likes")}',
-                style: const TextStyle(color: Colors.white54, fontSize: 12),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: Text(l10n.t('common_close'),
-                      style: const TextStyle(color: Colors.white70)),
-                ),
-              ),
+              TextSpan(text: '${m.username} ',
+                  style: TextStyle(
+                    color: m.type == 'gift' ? Colors.amber : ThixPolicy.primary,
+                    fontWeight: FontWeight.w800, fontSize: 13,
+                  )),
+              TextSpan(text: m.text,
+                  style: const TextStyle(color: Colors.white, fontSize: 13)),
             ],
           ),
+          maxLines: 3,
+          overflow: TextOverflow.ellipsis,
         ),
       ),
     );
@@ -1655,7 +1842,13 @@ class _ChatLine {
   final String username;
   final String text;
   final String type;
-  _ChatLine({required this.username, required this.text, this.type = 'chat'});
+  final String? userId;
+  _ChatLine({
+    required this.username,
+    required this.text,
+    this.type = 'chat',
+    this.userId,
+  });
 }
 
 class _FloatingLike {
@@ -1665,38 +1858,261 @@ class _FloatingLike {
   _FloatingLike({required this.id, required this.dx, required this.color});
 }
 
-class _StatChip extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  const _StatChip({required this.icon, required this.value});
+// ============================================================================
+// FLOATING LIKE WIDGET
+// ============================================================================
+
+class _FloatingLikeWidget extends StatelessWidget {
+  final _FloatingLike like;
+  const _FloatingLikeWidget({required this.like});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.black45,
-        borderRadius: BorderRadius.circular(20),
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 1500),
+      curve: Curves.easeOutCubic,
+      builder: (_, t, child) => Opacity(
+        opacity: 1 - t,
+        child: Transform.translate(
+          offset: Offset(0, -300 * t),
+          child: Transform.scale(
+            scale: 1 + 0.3 * t,
+            child: child,
+          ),
+        ),
       ),
-      child: Row(
+      child: Icon(Icons.favorite, color: like.color, size: 32),
+    );
+  }
+}
+
+// ============================================================================
+// CONTROL BUTTON (mute/video/leave stage)
+// ============================================================================
+
+class _ControlButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool active;
+  final bool dangerColor;
+  final VoidCallback onTap;
+
+  const _ControlButton({
+    required this.icon,
+    required this.label,
+    this.active = false,
+    this.dangerColor = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    Color bgColor;
+    if (dangerColor) {
+      bgColor = const Color(0xFFEF4444);
+    } else if (active) {
+      bgColor = const Color(0xFFE11D48);
+    } else {
+      bgColor = Colors.white12;
+    }
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 14, color: Colors.white),
-          const SizedBox(width: 4),
-          Text(
-            value,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w700,
-              fontSize: 12,
-              fontFeatures: [FontFeature.tabularFigures()],
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: bgColor,
+              shape: BoxShape.circle,
             ),
+            child: Icon(icon, color: Colors.white, size: 20),
           ),
+          const SizedBox(height: 2),
+          Text(label,
+              style: const TextStyle(color: Colors.white70,
+                  fontSize: 10, fontWeight: FontWeight.w600)),
         ],
       ),
     );
   }
 }
+
+// ============================================================================
+// SIDE ACTION BUTTON (TikTok vertical right bar)
+// ============================================================================
+
+class _SideActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int badgeCount;
+  final VoidCallback onTap;
+
+  const _SideActionButton({
+    required this.icon,
+    required this.label,
+    this.badgeCount = 0,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        GestureDetector(
+          onTap: onTap,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: const BoxDecoration(
+                  color: Colors.black45,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, color: Colors.white, size: 26),
+              ),
+              if (label.isNotEmpty) ...[
+                const SizedBox(height: 4),
+                Text(label,
+                    style: const TextStyle(color: Colors.white,
+                        fontWeight: FontWeight.w700, fontSize: 12)),
+              ],
+            ],
+          ),
+        ),
+        if (badgeCount > 0)
+          Positioned(
+            right: -4, top: -4,
+            child: Container(
+              padding: const EdgeInsets.all(4),
+              decoration: const BoxDecoration(
+                color: Color(0xFFEF4444),
+                shape: BoxShape.circle,
+              ),
+              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+              child: Text(
+                badgeCount > 9 ? '9+' : '$badgeCount',
+                style: const TextStyle(color: Colors.white, fontSize: 10,
+                    fontWeight: FontWeight.w900),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ============================================================================
+// REQUEST TO JOIN BUTTON
+// ============================================================================
+
+class _RequestToJoinButton extends StatelessWidget {
+  final bool requesting;
+  final bool canRequest;
+  final VoidCallback onTap;
+  final AppLocalizations l10n;
+
+  const _RequestToJoinButton({
+    required this.requesting,
+    required this.canRequest,
+    required this.onTap,
+    required this.l10n,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = requesting || !canRequest;
+    return GestureDetector(
+      onTap: disabled ? null : onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: disabled
+              ? Colors.grey
+              : ThixPolicy.domainMedia.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: disabled
+              ? null
+              : [
+                  BoxShadow(
+                    color: ThixPolicy.domainMedia.withValues(alpha: 0.4),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (requesting)
+              const SizedBox(
+                width: 16, height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+              )
+            else
+              const Icon(Icons.front_hand, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              requesting
+                  ? l10n.t('live_request_pending')
+                  : canRequest
+                      ? l10n.t('live_request_to_join')
+                      : l10n.t('live_request_cooldown_short'),
+              style: const TextStyle(color: Colors.white,
+                  fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// STAT CHIP
+// ============================================================================
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String? label;
+  const _StatChip({required this.icon, required this.value, this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      label: label != null ? '$label: $value' : value,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.black45,
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: Colors.white),
+            const SizedBox(width: 4),
+            Text(value,
+                style: const TextStyle(color: Colors.white,
+                    fontWeight: FontWeight.w700, fontSize: 12,
+                    fontFeatures: [FontFeature.tabularFigures()])),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// NETWORK INDICATOR
+// ============================================================================
 
 class _NetworkIndicator extends StatelessWidget {
   final _NetQ q;
@@ -1707,7 +2123,7 @@ class _NetworkIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = q.color();
     return Semantics(
-      label: '${l10n.t("live_network_quality")}: ${q.label(l10n)}',
+      label: '${l10n.t('live_network_quality')}: ${q.label(l10n)}',
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
@@ -1715,93 +2131,9 @@ class _NetworkIndicator extends StatelessWidget {
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: c.withValues(alpha: 0.4)),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 6,
-              height: 6,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: c),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _RoundBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final Color? color;
-
-  const _RoundBtn({required this.icon, this.onTap, this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4),
-      child: Material(
-        color: color ?? Colors.white12,
-        shape: const CircleBorder(),
-        child: InkWell(
-          customBorder: const CircleBorder(),
-          onTap: onTap,
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, color: Colors.white, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StageBtn extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final VoidCallback? onTap;
-  final bool active;
-  final Color? color;
-
-  const _StageBtn({
-    required this.icon,
-    required this.label,
-    this.onTap,
-    this.active = false,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final bgColor = color ?? (active ? ThixPolicy.danger : Colors.white24);
-    return Semantics(
-      button: true,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: bgColor,
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: Colors.white, size: 18),
-              const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-              ),
-            ],
-          ),
+          width: 8, height: 8,
+          decoration: BoxDecoration(shape: BoxShape.circle, color: c),
         ),
       ),
     );
@@ -1809,7 +2141,7 @@ class _StageBtn extends StatelessWidget {
 }
 
 // ============================================================================
-// REACTION BURST (animé)
+// REACTION BURST
 // ============================================================================
 
 class _ReactionBurst extends StatefulWidget {
@@ -1844,7 +2176,8 @@ class _ReactionBurstState extends State<_ReactionBurst>
     return FadeTransition(
       opacity: Tween<double>(begin: 1, end: 0).animate(_ctrl),
       child: SlideTransition(
-        position: Tween<Offset>(begin: const Offset(0, 0.4), end: Offset.zero)
+        position: Tween<Offset>(
+                begin: const Offset(0, 0.4), end: Offset.zero)
             .animate(_ctrl),
         child: Text(widget.emoji, style: const TextStyle(fontSize: 32)),
       ),
@@ -1853,7 +2186,7 @@ class _ReactionBurstState extends State<_ReactionBurst>
 }
 
 // ============================================================================
-// INVITE DIALOG
+// INVITE DIALOG (avec countdown visuel)
 // ============================================================================
 
 class _InviteDialog extends StatefulWidget {
@@ -1877,6 +2210,8 @@ class _InviteDialogState extends State<_InviteDialog>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
   late final Animation<double> _scaleAnim;
+  late final AnimationController _countdownCtrl;
+  int _secondsLeft = 30;
 
   @override
   void initState() {
@@ -1887,11 +2222,33 @@ class _InviteDialogState extends State<_InviteDialog>
     );
     _scaleAnim = CurvedAnimation(parent: _ctrl, curve: Curves.elasticOut);
     _ctrl.forward();
+
+    _countdownCtrl = AnimationController(
+      vsync: this,
+      duration: _kInviteTimeout,
+    )..forward();
+
+    _countdownCtrl.addListener(() {
+      final remaining = (_kInviteTimeout.inSeconds *
+          (1 - _countdownCtrl.value)).round();
+      if (remaining != _secondsLeft && mounted) {
+        setState(() => _secondsLeft = remaining);
+      }
+    });
+
+    _countdownCtrl.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        // Auto-reject quand le timer expire
+        Navigator.of(context).pop();
+        widget.onReject();
+      }
+    });
   }
 
   @override
   void dispose() {
     _ctrl.dispose();
+    _countdownCtrl.dispose();
     super.dispose();
   }
 
@@ -1914,44 +2271,69 @@ class _InviteDialogState extends State<_InviteDialog>
             mainAxisSize: MainAxisSize.min,
             children: [
               // Icône pulsée
+              Stack(
+                alignment: Alignment.center,
+                children: [
+                  SizedBox(
+                    width: 80, height: 80,
+                    child: CircularProgressIndicator(
+                      value: 1 - _countdownCtrl.value,
+                      strokeWidth: 4,
+                      backgroundColor: Colors.white12,
+                      color: ThixPolicy.domainMedia,
+                    ),
+                  ),
+                  Container(
+                    width: 64, height: 64,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ThixPolicy.domainMedia.withValues(alpha: 0.2),
+                    ),
+                    child: const Icon(
+                      Icons.handshake_rounded,
+                      size: 32,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              // Countdown
               Container(
-                width: 80,
-                height: 80,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: ThixPolicy.domainMedia.withValues(alpha: 0.2),
+                  color: _secondsLeft <= 10
+                      ? const Color(0xFFEF4444).withValues(alpha: 0.2)
+                      : Colors.white12,
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(
-                  Icons.handshake_rounded,
-                  size: 40,
-                  color: Colors.white,
+                child: Text(
+                  '$_secondsLeft s',
+                  style: TextStyle(
+                    color: _secondsLeft <= 10 ? const Color(0xFFEF4444) : Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
                 ),
               ),
               const SizedBox(height: 16),
               Text(
                 widget.l10n.t('live_invite_title'),
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
+                style: const TextStyle(color: Colors.white,
+                    fontSize: 18, fontWeight: FontWeight.w800),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text.rich(
                 TextSpan(
                   children: [
-                    TextSpan(
-                      text: widget.invite.hostUsername,
-                      style: TextStyle(
-                        color: ThixPolicy.primary,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
+                    TextSpan(text: widget.invite.hostUsername,
+                        style: TextStyle(color: ThixPolicy.primary,
+                            fontWeight: FontWeight.w700)),
                     TextSpan(
                       text: ' ${widget.l10n.t("live_invite_desc")}',
-                      style: const TextStyle(color: Colors.white70),
-                    ),
+                      style: const TextStyle(color: Colors.white70)),
                   ],
                 ),
                 textAlign: TextAlign.center,
@@ -1967,13 +2349,10 @@ class _InviteDialogState extends State<_InviteDialog>
                         side: const BorderSide(color: Colors.white24),
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                          borderRadius: BorderRadius.circular(12)),
                       ),
-                      child: Text(
-                        widget.l10n.t('live_invite_decline'),
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
+                      child: Text(widget.l10n.t('live_invite_decline'),
+                          style: const TextStyle(fontWeight: FontWeight.w600)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -1985,14 +2364,11 @@ class _InviteDialogState extends State<_InviteDialog>
                         foregroundColor: Colors.white,
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
+                          borderRadius: BorderRadius.circular(12)),
                         elevation: 4,
                       ),
-                      child: Text(
-                        widget.l10n.t('live_invite_accept'),
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
+                      child: Text(widget.l10n.t('live_invite_accept'),
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
                     ),
                   ),
                 ],
