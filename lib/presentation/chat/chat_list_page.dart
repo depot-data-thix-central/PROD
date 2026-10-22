@@ -1,12 +1,13 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — v3 (enterprise)
+// ChatListPage — v3.1 (enterprise)
+// ✅ v3.1 : Badge « Connexions » = demandes REÇUES en attente (persistant,
+//          comme le badge Chat) + snackbar de notification temps réel
+//          quand une nouvelle demande de connexion arrive.
 // ✅ Non lus : tuile surlignée, nom/aperçu en gras, heure bleue, pastille (grise si muet)
 // ✅ Escalades : DEUX profils (client + agent), DEUX barres côte à côte, pulse si non acceptée
 // ✅ Appels : aperçu entrant / sortant / manqué (rouge) dans la liste
 // ✅ Badges numérotés : appels manqués + demandes de connexion (comme les messages)
-//    - appels manqués : max(compteur provider, calcul local depuis la liste)
-//    - effacés à l'ouverture de l'onglet concerné
 // ✅ Brouillons visibles dans la liste (« Brouillon : … » en rouge)
 // ✅ Conversation verrouillée : aperçu masqué, retrait du verrou protégé par mot de passe
 // ✅ Vault : mot de passe salé + hashé (SHA-256 itéré), anti-force-brute (5 essais → 30 s)
@@ -637,6 +638,12 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     _scroll.addListener(_onScroll);
     unawaited(_loadDrafts());
     unawaited(_loadCallsSeen());
+
+    // ✅ v3.1 : force le calcul des compteurs (badge connexions) dès l'ouverture
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(notificationCountersProvider.notifier).refresh(immediate: true);
+    });
   }
 
   @override
@@ -661,7 +668,11 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _refreshAllCounters();
+    if (state == AppLifecycleState.resumed) {
+      _refreshAllCounters();
+      // ✅ v3.1 : refresh immédiat au retour sur l'app (badge à jour)
+      ref.read(notificationCountersProvider.notifier).refresh(immediate: true);
+    }
   }
 
   void _refreshAllCounters() {
@@ -844,8 +855,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
 
     switch (idx) {
       case 0:
-        // Le badge reste affiché jusqu'à l'ouverture de l'écran (comme WhatsApp)
-        countersNotifier.clearNewConnections();
+        // ✅ v3.1 : on n'efface PLUS le compteur ici.
+        // Le badge reflète les demandes RÉELLEMENT en attente (comme le badge
+        // Chat) : il tombe à 0 tout seul quand elles sont acceptées/refusées.
         context.pushNamed('connections').then((_) {
           if (mounted) _refreshAllCounters();
         });
@@ -1393,12 +1405,16 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
     return ListTile(
       title: Text(label, style: ThixPolicy.titleStyle),
       leading: const Icon(Icons.timer_outlined, color: ThixPolicy.primary),
-      onTap: () async {
-        Navigator.pop(ctx);
-        await _guard(() => ref.read(chatListProvider.notifier).toggleMute(convId, duration: duration));
-        _showSuccess(_s(context, 'chatlist_muted_success'));
-      },
+      onTap: asyncGuard(ctx, convId, duration),
     );
+  }
+
+  VoidCallback asyncGuard(BuildContext ctx, String convId, Duration? duration) {
+    return () async {
+      Navigator.pop(ctx);
+      await _guard(() => ref.read(chatListProvider.notifier).toggleMute(convId, duration: duration));
+      _showSuccess(_s(context, 'chatlist_muted_success'));
+    };
   }
 
   Future<void> _confirmAndDeleteSingle(ChatConversation conv) async {
@@ -1579,6 +1595,42 @@ class _ChatListPageState extends ConsumerState<ChatListPage> with WidgetsBinding
   Widget build(BuildContext context) {
     final state = ref.watch(chatListProvider);
     final counters = ref.watch(notificationCountersProvider);
+
+    // ✅ v3.1 : notification visuelle quand une NOUVELLE demande de connexion arrive
+    ref.listen<NotificationCounters>(notificationCountersProvider, (previous, next) {
+      if (!mounted) return;
+      final prevCount = previous?.newConnections ?? 0;
+      final newCount = next.newConnections;
+
+      if (newCount > prevCount && newCount > 0) {
+        HapticFeedback.mediumImpact();
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.person_add_rounded, color: Colors.white, size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    _s(context, 'chatlist_new_connections', args: ['$newCount']),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: ThixPolicy.primary,
+            behavior: SnackBarBehavior.floating,
+            duration: const Duration(seconds: 4),
+            action: SnackBarAction(
+              label: _s(context, 'chatlist_network'),
+              textColor: Colors.white,
+              onPressed: () => _navigateTo(0),
+            ),
+          ),
+        );
+      }
+    });
 
     final currentUser = ref.watch(authControllerProvider).value;
     final currentUserName = _ListValidators.sanitize(currentUser?.displayName ?? '', maxLength: _kMaxChatNameLength);
@@ -2298,7 +2350,7 @@ class _WaveNavPainter extends CustomPainter {
 class _PulseDot extends StatefulWidget {
   final Color color;
   final double size;
-  const _PulseDot({required this.color, this.size = 10});
+  const _PulseDot({required this.color, required this.size = 10});
 
   @override
   State<_PulseDot> createState() => _PulseDotState();
