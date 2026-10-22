@@ -1,13 +1,4 @@
 // lib/presentation/chat/call/call_page.dart
-//
-// ============================================================================
-// CALL PAGE — v3.0 (Support Appels de Groupe)
-// ============================================================================
-// Nouveau : Gestion de plusieurs participants (remoteUids).
-//           Affichage en grille si > 1 participant.
-//           Bouton pour inviter un participant.
-// ============================================================================
-
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -18,14 +9,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_status.dart';
-import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
+import 'package:thix_id/presentation/chat/call/call_ui_state.dart'; // Assure-toi que CallState est ici ou dans le provider
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
 import 'package:thix_id/services/chat/call_service.dart';
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
 const double _kAvatarRadius = 64.0;
 const double _kPipWidth = 100.0;
 const double _kPipHeight = 150.0;
@@ -50,7 +38,6 @@ class _CallPageState extends ConsumerState<CallPage> {
   void initState() {
     super.initState();
     _media = ref.read(callMediaServiceProvider);
-    markCallPageOpened();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -62,7 +49,6 @@ class _CallPageState extends ConsumerState<CallPage> {
   @override
   void dispose() {
     _autoCloseTimer?.cancel();
-    markCallPageClosed();
     super.dispose();
   }
 
@@ -122,7 +108,7 @@ class _CallPageState extends ConsumerState<CallPage> {
       case CallStatus.accepted:
         return l10n.t('call_status_connecting');
       case CallStatus.ongoing:
-        final count = state.remoteUids.length + 1; // +1 pour soi-même
+        final count = state.remoteUids.length + 1; 
         final time = _formatDuration(state.duration);
         return count > 2 ? '$count participants · $time' : time;
       case CallStatus.busy:
@@ -145,36 +131,15 @@ class _CallPageState extends ConsumerState<CallPage> {
     _closePage();
   }
 
-  void _toggleMute() {
-    HapticFeedback.selectionClick();
-    ref.read(callProvider.notifier).toggleMute();
-  }
+  void _toggleMute() => ref.read(callProvider.notifier).toggleMute();
+  void _toggleVideo() => ref.read(callProvider.notifier).toggleVideo();
+  void _switchCamera() => ref.read(callProvider.notifier).switchCamera();
+  void _toggleSpeaker() => ref.read(callProvider.notifier).toggleSpeaker();
+  void _minimize() => Navigator.maybePop(context);
 
-  void _toggleVideo() {
-    HapticFeedback.selectionClick();
-    ref.read(callProvider.notifier).toggleVideo();
-  }
-
-  void _switchCamera() {
-    HapticFeedback.selectionClick();
-    ref.read(callProvider.notifier).switchCamera();
-  }
-
-  void _toggleSpeaker() {
-    HapticFeedback.selectionClick();
-    ref.read(callProvider.notifier).toggleSpeaker();
-  }
-
-  void _minimize() {
-    HapticFeedback.selectionClick();
-    Navigator.maybePop(context);
-  }
-
-  // ✅ NOUVEAU : Bouton pour ajouter un participant
   void _inviteParticipant() {
     HapticFeedback.selectionClick();
-    // TODO: Ouvrir une modale pour choisir un contact
-    // et faire un insert dans Supabase (table call_invites) avec is_group = true
+    // Cette méthode sera déclenchée par le bouton et ouvrira le sélecteur de contacts
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Fonctionnalité : Choisir un contact à inviter')),
     );
@@ -188,9 +153,7 @@ class _CallPageState extends ConsumerState<CallPage> {
       if (!mounted) return;
       if (next.status == CallStatus.failed && prev?.status != CallStatus.failed) {
         _handleCallError(next.error);
-      } else if (next.status == CallStatus.idle &&
-          prev != null &&
-          prev.status != CallStatus.idle) {
+      } else if (next.status == CallStatus.idle && prev != null && prev.status != CallStatus.idle) {
         _closePage();
       }
     });
@@ -198,15 +161,13 @@ class _CallPageState extends ConsumerState<CallPage> {
     final state = ref.watch(callProvider);
     final engine = _media.engine;
     final engineReady = engine != null;
-    final channelId = state.channelName;
-    final hasChannel = channelId != null && channelId.isNotEmpty;
 
     final participantCount = state.remoteUids.length;
     
-    // Logique d'affichage
+    // Logique d'affichage adaptative
     final isSingleRemoteVideo = state.isVideo && participantCount == 1 && engineReady && !state.videoOff;
     final showLocalFull = state.isVideo && participantCount == 0 && !state.videoOff && engineReady;
-    final showGrid = participantCount > 1; // Si plusieurs personnes, on affiche la grille
+    final showGrid = participantCount > 1; 
 
     final statusLabel = _getStatusLabel(state, l10n);
     final displayName = showGrid 
@@ -230,10 +191,8 @@ class _CallPageState extends ConsumerState<CallPage> {
         child: SafeArea(
           child: Stack(
             children: [
-              // 1. Affichage principal
               _buildMainArea(state, engine, showGrid, isSingleRemoteVideo, showLocalFull, l10n),
               
-              // 2. Overlay sombre pour lisibilité
               Positioned.fill(
                 child: IgnorePointer(
                   child: Container(
@@ -253,10 +212,9 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
               
-              // 3. Header
               _buildHeader(displayName, statusLabel, state),
               
-              // 4. Bouton "Ajouter un participant" (en haut à droite)
+              // Bouton d'ajout de participant
               Positioned(
                 top: 80,
                 right: 16,
@@ -269,14 +227,11 @@ class _CallPageState extends ConsumerState<CallPage> {
                 ),
               ),
 
-              // 5. PIP Local (si vidéo et pas déjà en plein écran)
               if (state.isVideo && !state.videoOff && engineReady && !showLocalFull) 
                 _buildDraggablePip(engine),
 
-              // 6. Indicateurs (Muet, etc.)
               _buildStatusIndicators(state),
               
-              // 7. Contrôles
               CallControlsPanel(
                 state: state,
                 l10n: l10n,
@@ -294,10 +249,6 @@ class _CallPageState extends ConsumerState<CallPage> {
     );
   }
 
-  // ==========================================================================
-  // UI BUILDERS
-  // ==========================================================================
-
   Widget _buildMainArea(
     CallState state, 
     RtcEngine? engine, 
@@ -307,7 +258,6 @@ class _CallPageState extends ConsumerState<CallPage> {
     AppLocalizations l10n,
   ) {
     if (showGrid) {
-      // ✅ Affichage en Grille (Appel de groupe)
       return Positioned.fill(
         child: Padding(
           padding: const EdgeInsets.only(top: 130, bottom: 180, left: 16, right: 16),
@@ -321,16 +271,39 @@ class _CallPageState extends ConsumerState<CallPage> {
             itemCount: state.remoteUids.length,
             itemBuilder: (context, index) {
               final uid = state.remoteUids[index];
+              // Note: On utilisera state.peers[uid] pour récupérer les infos du participant (Nom, Avatar, état vidéo)
+              final peer = state.peers[uid]; 
+              
               if (state.isVideo && engine != null) {
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(16),
-                  child: AgoraVideoView(
-                    key: ValueKey('remote_grid_$uid'),
-                    controller: VideoViewController.remote(
-                      rtcEngine: engine,
-                      canvas: VideoCanvas(uid: uid),
-                      connection: RtcConnection(channelId: state.channelName!),
-                    ),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      AgoraVideoView(
+                        key: ValueKey('remote_grid_$uid'),
+                        controller: VideoViewController.remote(
+                          rtcEngine: engine,
+                          canvas: VideoCanvas(uid: uid),
+                          connection: RtcConnection(channelId: state.channelName!),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            peer?.name ?? 'Participant', 
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      )
+                    ],
                   ),
                 );
               } else {
@@ -339,8 +312,21 @@ class _CallPageState extends ConsumerState<CallPage> {
                     color: Colors.white.withOpacity(0.1), 
                     borderRadius: BorderRadius.circular(16)
                   ),
-                  child: const Center(
-                    child: Icon(Icons.person, size: 50, color: Colors.white54)
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        backgroundImage: peer?.avatar != null ? NetworkImage(peer!.avatar!) : null,
+                        child: peer?.avatar == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        peer?.name ?? 'Participant',
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
                   ),
                 );
               }
@@ -351,7 +337,6 @@ class _CallPageState extends ConsumerState<CallPage> {
     }
 
     if (showLocalFull && engine != null) {
-      // On est seul, on affiche notre vidéo en grand
       return Positioned.fill(
         child: RepaintBoundary(
           child: AgoraVideoView(
@@ -366,7 +351,6 @@ class _CallPageState extends ConsumerState<CallPage> {
     }
 
     if (isSingleRemoteVideo && engine != null) {
-      // 1 seul interlocuteur en vidéo, plein écran
       return Positioned.fill(
         child: RepaintBoundary(
           child: AgoraVideoView(
@@ -381,7 +365,6 @@ class _CallPageState extends ConsumerState<CallPage> {
       );
     }
 
-    // Fallback Avatar (Appel audio 1-1)
     return _buildAvatarFallback(state, l10n);
   }
 
@@ -443,19 +426,15 @@ class _CallPageState extends ConsumerState<CallPage> {
       right: 16,
       child: Row(
         children: [
-          Semantics(
-            button: true,
-            label: 'Réduire l’appel',
-            child: Material(
-              color: Colors.white.withOpacity(0.2),
+          Material(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: _minimize,
               borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                onTap: _minimize,
-                borderRadius: BorderRadius.circular(12),
-                child: const Padding(
-                  padding: EdgeInsets.all(8),
-                  child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 28),
-                ),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 28),
               ),
             ),
           ),
