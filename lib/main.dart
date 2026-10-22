@@ -1,10 +1,21 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.8)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.9)
 //
-// v2.8 : ✅ Actions de notification (Répondre, Marquer lu, Muet) branchées sur Supabase
+// CHANGELOG v2.9 (depuis v2.8) :
+//   ✅ Intégration du buffer d'actions pending de LocalNotificationService v3.1
+//      (les actions tapées au cold-start sont maintenant rejouées)
+//   ✅ Appel à CallPermissionHelper.ensureAtStartup() après le login
+//      (permissions NOTIFICATIONS, PHONE, FSI, BATTERY demandées une fois)
+//   ✅ Signature onNotificationTap alignée sur v3.1 (paramètre `input`)
+//   ✅ Import de call_permission_helper ajouté
+//   ✅ Nettoyage : plus aucune référence à VoipCallService (supprimé)
+//
+// Conserve tous les correctifs v2.8 : actions notif Supabase, pending nav,
+// route normalization, zone error handling, offline-safe auth.
 // ============================================================================
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -26,6 +37,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
+import 'package:thix_id/services/chat/call_permission_helper.dart'; // ✅ v2.9
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
 import 'package:thix_id/presentation/chat/call/callkit_call_handler.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
@@ -37,7 +49,6 @@ import 'package:thix_id/core/security/security_reporter.dart';
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-// Action IDs
 const String kActionOpen = 'OPEN';
 const String kActionReply = 'REPLY';
 const String kActionMarkAsRead = 'MARK_AS_READ';
@@ -55,7 +66,7 @@ bool _appLaunched = false;
 bool _routerReady = false;
 
 String? _pendingCallId;
-({String payload, String? actionId})? _pendingTap;
+({String payload, String? actionId, String? input})? _pendingTap; // ✅ v2.9 : +input
 
 void _openCall(String inviteId, String channelName, bool isVideo) {
   if (inviteId.isEmpty) return;
@@ -83,7 +94,11 @@ void _flushPendingNav() {
   final tap = _pendingTap;
   if (tap != null) {
     _pendingTap = null;
-    _handleLocalNotificationTap(tap.payload, actionId: tap.actionId);
+    _handleLocalNotificationTap(
+      tap.payload,
+      actionId: tap.actionId,
+      input: tap.input, // ✅ v2.9
+    );
   }
 }
 
@@ -91,7 +106,11 @@ void _flushPendingNav() {
 // ACTIONS DE NOTIFICATION (Répondre, Lu, Muet)
 // ============================================================================
 
-Future<void> _handleNotificationAction(String? payload, String actionId, String? input) async {
+Future<void> _handleNotificationAction(
+  String? payload,
+  String actionId,
+  String? input,
+) async {
   if (payload == null || !payload.startsWith('chat:')) return;
 
   final convId = payload.substring(5);
@@ -99,7 +118,7 @@ Future<void> _handleNotificationAction(String? payload, String actionId, String?
 
   final supabase = SupabaseConfig.client;
   final currentUserId = SupabaseConfig.currentUser?.id;
-  
+
   if (currentUserId == null) return;
 
   try {
@@ -111,29 +130,22 @@ Future<void> _handleNotificationAction(String? payload, String actionId, String?
         'content': input.trim(),
         'type': 'text',
       });
-      LocalNotificationService.instance.cancelAll();
-    } 
-    else if (actionId == kActionMarkAsRead) {
+      // Ne pas cancelAll ici : l'utilisateur peut avoir d'autres notifs
+      // non liées à cette conversation. Le badge se met à jour via Realtime.
+    } else if (actionId == kActionMarkAsRead) {
       _log('👁️ Marquer comme lu pour conv: $convId');
       await supabase
           .from('messages')
           .update({'is_read': true})
           .eq('conversation_id', convId)
           .neq('sender_id', currentUserId);
-      LocalNotificationService.instance.cancelAll();
-    } 
-    else if (actionId == kActionMute) {
+    } else if (actionId == kActionMute) {
       _log('🔇 Mute la conversation: $convId');
       await supabase
           .from('conversations')
           .update({'is_muted': true})
           .eq('id', convId);
-      LocalNotificationService.instance.cancelAll();
     }
-    
-    // NOTE : Le badge est déjà mis à jour automatiquement par AppBadgeSyncService
-    // (qui écoute Supabase en Realtime). Pas besoin d'appeler refreshBadge() ici.
-    
   } catch (e) {
     _log('❌ Erreur action notif: $e');
   }
@@ -176,17 +188,23 @@ String _normalizeRoute(String route) {
 // NOTIFICATION TAP HANDLER (global)
 // ============================================================================
 
-void _handleLocalNotificationTap(String? payload, {String? actionId}) {
+/// ✅ v2.9 : signature enrichie avec `input` pour supporter Quick Reply
+/// depuis le buffer pending et depuis les taps au premier plan.
+void _handleLocalNotificationTap(
+  String? payload, {
+  String? actionId,
+  String? input,
+}) {
   if (payload == null || payload.isEmpty) return;
 
   final ctx = rootNavigatorKey.currentContext;
   if (!_routerReady || ctx == null || !ctx.mounted) {
-    _pendingTap = (payload: payload, actionId: actionId);
+    _pendingTap = (payload: payload, actionId: actionId, input: input);
     _log('NotifTap mis en attente (routeur pas prêt) payload=$payload');
     return;
   }
 
-  _log('NotifTap action=$actionId payload=$payload');
+  _log('NotifTap action=$actionId payload=$payload input=$input');
 
   // ── Chat message ──────────────────────────────────────
   if (payload.startsWith('chat:')) {
@@ -255,7 +273,8 @@ Future<void> main() async {
 
       FlutterError.onError = (details) {
         final msg = details.exceptionAsString().toLowerCase();
-        final isNetworkAuthError = msg.contains('authretryablefetchexception') ||
+        final isNetworkAuthError =
+            msg.contains('authretryablefetchexception') ||
             msg.contains('socketexception') ||
             msg.contains('connection reset') ||
             msg.contains('stream has already been listened');
@@ -300,26 +319,29 @@ Future<void> main() async {
         _log('⚠️ Supabase: $e');
       }
 
+      // ✅ v2.9 : Initialisation LocalNotificationService AVANT le callback
+      // pour que le buffer pending soit prêt à recevoir les actions cold-start.
       try {
         await LocalNotificationService.instance
             .initialize()
             .timeout(_kInitTimeout);
 
-        // ✅ BRANCHEMENT DES ACTIONS ET DU TAP
+        // ✅ v2.9 : Callback enrichi avec `input` pour Quick Reply
         LocalNotificationService.instance.onNotificationTap =
             (payload, {actionId, input}) async {
-          
-          // 1. Gestion des actions spécifiques (Répondre, Lu, Muet)
-          if (actionId == kActionReply || actionId == kActionMarkAsRead || actionId == kActionMute) {
-             await _handleNotificationAction(payload, actionId!, input);
-             return;
+          // 1. Actions spécifiques (Répondre, Lu, Muet)
+          if (actionId == kActionReply ||
+              actionId == kActionMarkAsRead ||
+              actionId == kActionMute) {
+            await _handleNotificationAction(payload, actionId!, input);
+            return;
           }
-          
-          // 2. Ouverture classique (Clic sur la notification ou bouton "Ouvrir")
-          _handleLocalNotificationTap(payload, actionId: actionId);
+
+          // 2. Ouverture classique (tap sur notification ou bouton Ouvrir)
+          _handleLocalNotificationTap(payload, actionId: actionId, input: input);
         };
 
-        _log('✓ LocalNotif OK');
+        _log('✓ LocalNotif OK (v3.1 with pending buffer)');
       } catch (e) {
         _log('⚠️ LocalNotif: $e');
       }
@@ -380,11 +402,11 @@ Future<void> main() async {
       final errorStr = error.toString().toLowerCase();
       final isNetworkAuthError =
           errorStr.contains('authretryablefetchexception') ||
-              errorStr.contains('socketexception') ||
-              errorStr.contains('connection reset') ||
-              errorStr.contains('clientexception') ||
-              errorStr.contains('failed host lookup') ||
-              errorStr.contains('network is unreachable');
+          errorStr.contains('socketexception') ||
+          errorStr.contains('connection reset') ||
+          errorStr.contains('clientexception') ||
+          errorStr.contains('failed host lookup') ||
+          errorStr.contains('network is unreachable');
 
       if (_appLaunched && isNetworkAuthError) {
         _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
@@ -401,7 +423,8 @@ Future<void> main() async {
                 padding: const EdgeInsets.all(24),
                 child: SelectableText(
                   '❌ Erreur de démarrage :\n$error',
-                  style: const TextStyle(color: Colors.redAccent, fontSize: 13),
+                  style:
+                      const TextStyle(color: Colors.redAccent, fontSize: 13),
                   textAlign: TextAlign.center,
                 ),
               ),
@@ -429,6 +452,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   GoRouter? _router;
   bool _ready = false;
   bool _pushRegistered = false;
+  bool _startupPermissionsRequested = false; // ✅ v2.9
 
   @override
   void initState() {
@@ -491,6 +515,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     if (!_auth.isAuthenticated) {
       if (_pushRegistered) {
         _pushRegistered = false;
+        _startupPermissionsRequested = false; // ✅ v2.9 : reset au logout
         AppBadgeSyncService.stopListening();
         unawaited(AppBadgeSyncService.sync(0));
         _log('ℹ️ Session absente : badge arrêté (token push conservé)');
@@ -510,9 +535,33 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         await AppBadgeSyncService.startListening(uid);
         _log('✓ Badge Realtime started for ${_maskUid(uid)}');
       }
+
+      // ✅ v2.9 : Demander les permissions système critiques UNE FOIS par session
+      // (NOTIFICATIONS, PHONE, FSI, BATTERY). Ne bloque pas le flux si refusé.
+      if (!_startupPermissionsRequested && Platform.isAndroid && mounted) {
+        _startupPermissionsRequested = true;
+        unawaited(_requestStartupPermissions());
+      }
     } catch (e) {
       _pushRegistered = false;
       _log('⚠️ Push sync: $e');
+    }
+  }
+
+  /// ✅ v2.9 : Demande les permissions système critiques pour VoIP.
+  /// Non-bloquant : si l'utilisateur refuse, les appels fonctionnent
+  /// partiellement (pas de push en arrière-plan, pas d'écran verrouillé).
+  Future<void> _requestStartupPermissions() async {
+    try {
+      final ctx = rootNavigatorKey.currentContext;
+      if (ctx == null || !ctx.mounted) {
+        _log('⚠️ Startup permissions: context not ready, skipping');
+        return;
+      }
+      await CallPermissionHelper.ensureAtStartup(ctx);
+      _log('✓ Startup permissions requested');
+    } catch (e) {
+      _log('⚠️ Startup permissions failed: $e');
     }
   }
 
@@ -540,7 +589,8 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         theme: ThixPolicy.lightTheme(),
         darkTheme: ThixPolicy.darkTheme(),
         themeMode: ThemeMode.light,
-        home: const Scaffold(body: Center(child: CircularProgressIndicator())),
+        home:
+            const Scaffold(body: Center(child: CircularProgressIndicator())),
       );
     }
 
