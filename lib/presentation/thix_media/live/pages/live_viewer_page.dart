@@ -1,6 +1,6 @@
 // lib/presentation/thix_media/live/pages/live_viewer_page.dart
 //
-// LiveViewerPage v3.0 — Production TikTok-Grade (Spectateur)
+// LiveViewerPage v3.0.1 — Production TikTok-Grade (Spectateur)
 //
 // Améliorations v3.0 :
 // ✅ Multi-guest fonctionnel : voit host + tous les guests en split-screen
@@ -12,6 +12,11 @@
 // ✅ Rate limiter par user (anti-spam)
 // ✅ Anti-XSS renforcé, validation UUID
 // ✅ Like ultra-rapide avec optimistic UI
+//
+// Corrections v3.0.1 :
+// ✅ Import liveServiceProvider
+// ✅ int.take(4) remplacé par min()
+// ✅ Retrait const devant BoxDecoration avec .withValues()
 //
 import 'dart:async';
 import 'dart:math';
@@ -29,6 +34,7 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/data/models/live/live_model.dart';
 import '../services/live_rtc_service.dart';
 import '../services/live_service.dart';
+import '../providers/live_providers.dart'; // ✅ AJOUT v3.0.1
 
 // ============================================================================
 // CONSTANTS (optimisés TikTok-grade)
@@ -417,7 +423,6 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
 
       setState(() {
         // Identifier le host (pas dans live_guests, c'est le créateur du live)
-        final hostId = _session!.hostId;
         for (final entry in _remoteBroadcasters.entries) {
           final bc = entry.value;
           final matchingGuest = guests.firstWhere(
@@ -1193,24 +1198,27 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
             ),
           ],
         ),
-        // Labels en overlay
-        ...List.generate(broadcasters.length.take(4).length, (i) {
-          final positions = [
-            Alignment.topLeft,
-            Alignment.topRight,
-            Alignment.bottomLeft,
-            Alignment.bottomRight,
-          ];
-          return Positioned.fill(
-            child: Align(
-              alignment: positions[i],
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: _buildBroadcasterLabel(broadcasters[i], compact: true),
+        // Labels en overlay — ✅ CORRECTION v3.0.1
+        ...List.generate(
+          broadcasters.length > 4 ? 4 : broadcasters.length,  // ✅ remplacé .take(4).length
+          (i) {
+            final positions = [
+              Alignment.topLeft,
+              Alignment.topRight,
+              Alignment.bottomLeft,
+              Alignment.bottomRight,
+            ];
+            return Positioned.fill(
+              child: Align(
+                alignment: positions[i],
+                child: Padding(
+                  padding: const EdgeInsets.all(8),
+                  child: _buildBroadcasterLabel(broadcasters[i], compact: true),
+                ),
               ),
-            ),
-          );
-        }),
+            );
+          },
+        ),
       ],
     );
   }
@@ -1495,10 +1503,10 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // "ON STAGE" badge
+                    // "ON STAGE" badge — ✅ CORRECTION v3.0.1
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      decoration: BoxDecoration(
+                      decoration: BoxDecoration(  // ✅ Retiré const
                         color: const Color(0xFF22C55E),
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [
@@ -1564,7 +1572,7 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                     onTap: () => _shareLive(l10n),
                   ),
                   const SizedBox(height: 20),
-                  // Like button (TikTok-style)
+                  // Like button (TikTok-style) — ✅ CORRECTION v3.0.1
                   GestureDetector(
                     onTap: _sendLike,
                     onDoubleTap: () {
@@ -1577,8 +1585,8 @@ class _LiveViewerPageState extends ConsumerState<LiveViewerPage>
                       children: [
                         Container(
                           padding: const EdgeInsets.all(14),
-                          decoration: const BoxDecoration(
-                            color: Color(0xFFE11D48),
+                          decoration: BoxDecoration(  // ✅ Retiré const
+                            color: const Color(0xFFE11D48),
                             shape: BoxShape.circle,
                             boxShadow: [
                               BoxShadow(
