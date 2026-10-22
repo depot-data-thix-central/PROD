@@ -132,8 +132,10 @@ Future<void> _handleNotificationAction(String? payload, String actionId, String?
       LocalNotificationService.instance.cancelAll();
     }
     
-    // Mettre à jour le badge
-    await PushNotificationService.instance.refreshBadge();
+    // Mettre à jour le badge (uniquement sur Mobile)
+    if (!kIsWeb) {
+      await PushNotificationService.instance.refreshBadge();
+    }
   } catch (e) {
     _log('❌ Erreur action notif: $e');
   }
