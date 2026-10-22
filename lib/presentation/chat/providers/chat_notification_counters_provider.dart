@@ -5,7 +5,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ PLUS D'IMPORT DE AUTH_CONTROLLER ICI ! (100% indépendant)
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 
 // ============================================================================
@@ -129,7 +128,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   RealtimeChannel? _missedCallsChannel;
   RealtimeChannel? _connectionsChannel;
   RealtimeChannel? _escalationsChannel;
-  ProviderSubscription<String?>? _authSubscription; // ✅ TYPE CORRIGÉ EN String?
+  ProviderSubscription<String?>? _authSubscription;
 
   NotificationCountersNotifier(this._ref)
       : super(const NotificationCounters()) {
@@ -144,19 +143,18 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
   void dispose() {
     _isDisposed = true;
     _refreshDebounce?.cancel();
-    _authSubscription?.close(); // ✅ BONNE MÉTHODE POUR RIVERPOD 2.x
+    _authSubscription?.close();
     _cleanupChannels();
     debugPrint('[NotificationCounters] 👋 Disposed');
     super.dispose();
   }
 
   void _bindAuthChanges() {
-    // ✅ MODIFIÉ : On utilise supabaseUserIdProvider au lieu de currentUserProvider
     _authSubscription = _ref.listen<String?>(
       supabaseUserIdProvider,
       (previous, next) {
-        final prevId = previous; 
-        final nextId = next;     
+        final prevId = previous;
+        final nextId = next;
         if (prevId == nextId) return;
 
         debugPrint('[NotificationCounters] 🔄 Auth changed: '
@@ -188,7 +186,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     debugPrint(
         '[NotificationCounters] 🌐 Init for user ${_obfuscate(userId)}');
 
-    await refresh();
+    await refresh(immediate: true);
     _subscribeRealtime();
   }
 
@@ -267,6 +265,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
     }
   }
 
+  // ✅ CORRIGÉ : Ne compter que les demandes REÇUES (où je suis responder)
   Future<int> _safeCountConnections() async {
     int attempt = 0;
     while (true) {
@@ -275,9 +274,11 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
             .from('connections')
             .select('id')
             .eq('status', _kConnectionPending)
-            .or('requester_id.eq.${_userId!},responder_id.eq.${_userId!}')
+            .eq('responder_id', _userId!)  // ← CHANGÉ : seulement les demandes reçues
             .timeout(_kDbTimeout);
-        return _NotificationValidators.safeCount((res as List).length);
+        final count = _NotificationValidators.safeCount((res as List).length);
+        debugPrint('[NotificationCounters] 📊 Pending connections: $count');
+        return count;
       } catch (e) {
         attempt++;
         if (attempt > _kMaxRetries) {
@@ -377,6 +378,7 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
         });
   }
 
+  // ✅ CORRIGÉ : Améliorer les logs et forcer refresh après insert
   void _subscribeConnections() {
     final userId = _userId;
     if (userId == null) return;
@@ -396,11 +398,21 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
                 _NotificationValidators.extractUserId(record, 'responder_id');
             final status = record['status']?.toString();
 
-            if (status == _kConnectionPending &&
-                (requesterId == userId || responderId == userId)) {
+            debugPrint('[NotificationCounters] 🔔 New connection event: '
+                'requester=${_obfuscate(requesterId)} '
+                'responder=${_obfuscate(responderId)} '
+                'status=$status');
+
+            // ✅ CORRIGÉ : Incrémenter seulement si je suis le responder (demande reçue)
+            if (status == _kConnectionPending && responderId == userId) {
+              debugPrint('[NotificationCounters] ✅ New connection request for me');
               state = state.copyWith(
                   newConnections: state.newConnections + 1);
-              debugPrint('[NotificationCounters] ➕ New connection request');
+              
+              // ✅ Force un refresh pour s'assurer que l'UI se met à jour
+              Future.delayed(const Duration(milliseconds: 200), () {
+                if (!_isDisposed) refresh(immediate: true);
+              });
             }
           },
         )
@@ -408,8 +420,20 @@ class NotificationCountersNotifier extends StateNotifier<NotificationCounters> {
           event: PostgresChangeEvent.update,
           schema: 'public',
           table: 'connections',
-          callback: (_) {
-            if (!_isDisposed) refresh();
+          callback: (payload) {
+            if (_isDisposed) return;
+            final record = payload.newRecord;
+            final responderId = _NotificationValidators.extractUserId(record, 'responder_id');
+            final status = record['status']?.toString();
+            
+            debugPrint('[NotificationCounters] 🔄 Connection update: '
+                'responder=${_obfuscate(responderId)} status=$status');
+            
+            // Si une connexion que j'ai reçue change de statut (acceptée/refusée), refresh
+            if (responderId == userId && status != _kConnectionPending) {
+              debugPrint('[NotificationCounters] 🔄 Connection status changed, refreshing');
+              refresh(immediate: true);
+            }
           },
         )
         .onPostgresChanges(
