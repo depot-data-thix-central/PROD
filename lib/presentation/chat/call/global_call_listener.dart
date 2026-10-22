@@ -1,18 +1,19 @@
 // lib/presentation/chat/call/global_call_listener.dart
 //
 // ============================================================================
-// GLOBAL CALL LISTENER — v2.3
+// GLOBAL CALL LISTENER — v2.4
 // ============================================================================
+// v2.4 (coordination CallKit v8.9) :
+//  ✅ Si CallKit a déjà été déclenché (push FCM/VoIP), on n'ouvre PAS
+//     IncomingCallPage. Évite le double écran d'appel.
+//  ✅ markShownCallkit appelé dans push_notification_service_io.dart
+//     marque automatiquement isShownInApp = true → ce listener ignore
+//     l'invite même si Supabase Realtime arrive en parallèle.
+//
+// v2.3 : coordination CallKit (accept/refuse/terminate)
 // v2.2 : barre « Appel en cours » en haut de toute l'app quand l'appel est réduit.
 // v2.1 : plus de double route, page d'appel entrant fermée si l'appelant annule,
 //        un seul affichage par invitation.
-//
-// v2.3 (coordination avec CallKit via CallHandledRegistry) :
-//  ✅ un appel déjà accepté / terminé depuis CallKit n'ouvre plus la page d'appel
-//     entrant ET n'est plus rejeté automatiquement (cas « occupé » abusif)
-//  ✅ refus depuis CallKit → l'appelant est prévenu (reject envoyé au serveur)
-//  ✅ acceptation depuis CallKit → la page d'appel entrant de l'app est fermée
-//  ✅ la page d'appel entrant est déclarée « affichée » (évite le double CallKit)
 // ============================================================================
 
 import 'dart:async';
@@ -299,6 +300,14 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
       return;
     }
 
+    // ✅ v2.4 : CallKit a déjà été déclenché par un push FCM/VoIP
+    // → on n'ouvre PAS IncomingCallPage (évite le double écran d'appel).
+    if (CallHandledRegistry.isShownCallkit(invite.id)) {
+      _lastShownInviteId = invite.id;
+      debugPrint('[GlobalCallListener] ℹ️ Appel déjà sur CallKit, on ne montre pas IncomingCallPage: ${_obfuscate(invite.id)}');
+      return;
+    }
+
     final busy = ref.read(callProvider).isActive || (_incomingRoute?.isActive ?? false);
     if (busy) {
       _lastShownInviteId = invite.id;
@@ -350,7 +359,8 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
 
       _incomingRoute = route;
       _incomingInviteId = invite.id;
-      // ✅ v2.3 : évite que CallKit double la page d'appel de l'app
+      // ✅ v2.3 : marque que la page d'appel entrant de l'app a été affichée.
+      // Cela empêche CallKit de se déclencher en parallèle (fallback foreground).
       CallHandledRegistry.markShownInApp(invite.id);
       _watchInviteEnd(invite, route);
 
