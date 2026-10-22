@@ -1,12 +1,14 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v3.3 (Group Calls + sonnerie d'attente corrigée)
+// CALL PROVIDER — v3.4 (Group Calls + bip d'attente indépendant du silencieux)
 // ============================================================================
-// FIX v3.3 : sonnerie d'attente sur le flux MÉDIA (comme avant) : plus liée
-//            au volume « sonnerie » / mode silencieux.
+// FIX v3.4 : bip d'attente / tonalité de fin sur le flux d'APPEL VOCAL
+//            (voiceCommunication) : le mode silencieux / vibreur du téléphone
+//            ne le coupe plus. Volume = volume des appels.
+// FIX v3.4 : contexte audio réappliqué avant chaque lecture + 2e essai avec
+//            le contexte par défaut si le premier échoue.
 // FIX v3.3 : la sonnerie démarre AVANT l'aperçu caméra Agora (appel vidéo).
-// NEW v3.3 : logs [CallProvider] 🔔 pour diagnostiquer le son.
 // NEW v3.2 : promoteToGroup() : un appel 1-to-1 devient un appel de groupe.
 // ============================================================================
 
@@ -209,7 +211,6 @@ class CallNotifier extends StateNotifier<CallState> {
   bool _isDisposed = false;
   bool _agoraJoinStarted = false;
   bool _hangingUp = false;
-  bool _audioConfigured = false;
 
   CallNotifier(this._ref, this._media, this._signal) : super(const CallState()) {
     debugPrint('[CallProvider] 🚀 Initialized');
@@ -221,64 +222,72 @@ class CallNotifier extends StateNotifier<CallState> {
   // SONS
   // ==================================================================
 
-  /// Sonnerie sur le flux MÉDIA (comme avant) : elle ne dépend ni du volume
-  /// « sonnerie » ni du mode silencieux. Sortie haut-parleur.
-  Future<void> _configureRingAudio() async {
-    if (_audioConfigured) return;
+  /// Contexte « appel vocal » : le bip d'attente passe par le flux d'appel
+  /// (comme une vraie communication). Le mode silencieux / vibreur du
+  /// téléphone ne le coupe pas. Sortie haut-parleur.
+  /// iOS : playAndRecord ignore l'interrupteur silencieux.
+  AudioContext _voiceCallContext() {
+    return AudioContext(
+      iOS: AudioContextIOS(
+        category: AVAudioSessionCategory.playAndRecord,
+        options: const {
+          AVAudioSessionOptions.defaultToSpeaker,
+          AVAudioSessionOptions.mixWithOthers,
+        },
+      ),
+      android: const AudioContextAndroid(
+        isSpeakerphoneOn: true,
+        stayAwake: true,
+        audioMode: AndroidAudioMode.normal,
+        contentType: AndroidContentType.sonification,
+        usageType: AndroidUsageType.voiceCommunication,
+        audioFocus: AndroidAudioFocus.gain,
+      ),
+    );
+  }
+
+  Future<void> _applyRingAudioContext() async {
     try {
-      await _ringPlayer.setAudioContext(
-        AudioContext(
-          iOS: AudioContextIOS(
-            category: AVAudioSessionCategory.playAndRecord,
-            options: const {
-              AVAudioSessionOptions.defaultToSpeaker,
-              AVAudioSessionOptions.mixWithOthers,
-            },
-          ),
-          android: const AudioContextAndroid(
-            isSpeakerphoneOn: true,
-            stayAwake: true,
-            contentType: AndroidContentType.music,
-            usageType: AndroidUsageType.media,
-            audioFocus: AndroidAudioFocus.gain,
-          ),
-        ),
-      );
-      _audioConfigured = true;
+      await _ringPlayer.setAudioContext(_voiceCallContext());
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Ring audio context error: $e');
     }
   }
 
-  /// Retourne dès que la lecture a démarré (3 s max) pour pouvoir lancer
-  /// l'aperçu caméra Agora APRÈS la sonnerie.
-  Future<void> _playRingtone() async {
-    try {
-      await _configureRingAudio();
+  /// Joue un son d'attente. 2e essai avec le contexte par défaut si échec.
+  Future<void> _playAsset(String asset, ReleaseMode mode, String label) async {
+    Future<void> attempt() async {
       await _ringPlayer.stop();
-      await _ringPlayer.setReleaseMode(ReleaseMode.loop);
+      await _ringPlayer.setReleaseMode(mode);
       await _ringPlayer.setVolume(1.0);
       await _ringPlayer
-          .play(AssetSource('sounds/ringtone.mp3'))
+          .play(AssetSource(asset))
           .timeout(_kRingStartTimeout);
-      debugPrint('[CallProvider] 🔔 Ringback started');
+    }
+
+    try {
+      await _applyRingAudioContext();
+      await attempt();
+      debugPrint('[CallProvider] 🔔 $label started');
     } catch (e) {
-      debugPrint('[CallProvider] ⚠️ Ringtone error: $e');
+      debugPrint('[CallProvider] ⚠️ $label error: $e → retry (default ctx)');
+      try {
+        await _ringPlayer.setAudioContext(AudioContext());
+        await attempt();
+        debugPrint('[CallProvider] 🔔 $label started (default ctx)');
+      } catch (e2) {
+        debugPrint('[CallProvider] ❌ $label failed: $e2');
+      }
     }
   }
 
-  Future<void> _playOfflineTone() async {
-    try {
-      await _configureRingAudio();
-      await _ringPlayer.stop();
-      await _ringPlayer.setReleaseMode(ReleaseMode.release);
-      await _ringPlayer.setVolume(1.0);
-      await _ringPlayer.play(AssetSource('sounds/offline.mp3'));
-      debugPrint('[CallProvider] 🔔 Offline tone started');
-    } catch (e) {
-      debugPrint('[CallProvider] ⚠️ Offline tone error: $e');
-    }
-  }
+  /// Retourne dès que la lecture a démarré (3 s max) pour pouvoir lancer
+  /// l'aperçu caméra Agora APRÈS la sonnerie.
+  Future<void> _playRingtone() =>
+      _playAsset('sounds/ringtone.mp3', ReleaseMode.loop, 'Ringback');
+
+  Future<void> _playOfflineTone() =>
+      _playAsset('sounds/offline.mp3', ReleaseMode.release, 'Offline tone');
 
   Future<void> _stopRingtone() async {
     try {
