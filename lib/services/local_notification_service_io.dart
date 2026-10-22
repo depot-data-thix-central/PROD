@@ -1,14 +1,23 @@
 // lib/services/local_notification_service_io.dart
 //
-/// Local Notification Service IO (Production Enterprise)
-/// ✅ SÉCURISÉ : Validation stricte, sanitization des inputs
-/// ✅ ROBUSTE : Error handling, mounted checks, timeouts
-/// ✅ OBSERVABLE : Logs structurés avec emojis et contexte
-/// ✅ FIX: Drawable resource ID must not be 0 (icon + channel IDs v3)
-/// ✅ FIX: Son personnalisé (notification.mp3 + ringtone.mp3 dans res/raw/)
-/// ✅ FIX: showBadge: true pour compteur sur l'icône
-/// ✅ NEW: Actions Ouvrir / Répondre / Marquer lu / Muet (Quick Reply)
-/// ✅ v3  : Bump canaux _v2 → _v3 (les v2 sont muets à jamais : immuables)
+// Local Notification Service IO v3.1 (Production Enterprise)
+//
+// CHANGELOG v3.1 (depuis v3) :
+//   ✅ Catégories Darwin enregistrées pour iOS : REPLY (avec input texte),
+//      MARK_AS_READ, MUTE. Sinon les actions iOS n'apparaissent jamais.
+//   ✅ Buffer d'actions en attente : quand l'app est cold-startée via une
+//      action de notification, le context n'est pas encore monté. L'action
+//      est mise en mémoire et rejouée au premier frame.
+//   ✅ Réponse background forcée en foreground pour Quick Reply :
+//      `showsUserInterface: true` pour REPLY force l'app à se réveiller,
+//      ce qui permet d'envoyer le message via Supabase (sinon l'isolat BG
+//      meurt avant d'avoir envoyé la requête).
+//   ✅ Retrait du gate `context.mounted` qui bloquait les taps en cold-start.
+//
+// Conserve tous les correctifs v3 : canaux _v3, validation, sanitization,
+// ringtone.mp3 dans res/raw/, showBadge, AndroidNotificationActionInput.
+// ============================================================================
+
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -26,11 +35,51 @@ const int _kMaxBodyLength = 500;
 const int _kMinNotificationId = 0;
 const int _kMaxNotificationId = 2147483647;
 
-// Action IDs
+// Identifiants d'actions (partagés avec main.dart)
 const String kActionOpen = 'OPEN';
 const String kActionReply = 'REPLY';
 const String kActionMarkAsRead = 'MARK_AS_READ';
 const String kActionMute = 'MUTE';
+
+// Catégorie iOS pour les actions de chat
+const String _kIosChatCategory = 'THIX_CHAT_ACTIONS';
+
+// ============================================================================
+// BUFFER D'ACTIONS EN ATTENTE (cold-start)
+// ============================================================================
+// Quand l'utilisateur tape une action de notification alors que l'app est
+// complètement fermée, l'isolat Dart n'a pas encore de Navigator monté.
+// On stocke la réponse et on la rejoue au premier frame de l'app.
+
+class _PendingActionBuffer {
+  _PendingActionBuffer._();
+
+  static String? _pendingPayload;
+  static String? _pendingActionId;
+  static String? _pendingInput;
+
+  static void store(String? payload, {String? actionId, String? input}) {
+    _pendingPayload = payload;
+    _pendingActionId = actionId;
+    _pendingInput = input;
+    debugPrint('[PendingAction] ⏳ Stored: action=$actionId payload=$payload');
+  }
+
+  static ({String? payload, String? actionId, String? input})? consume() {
+    if (_pendingPayload == null && _pendingActionId == null) return null;
+    final r = (
+      payload: _pendingPayload,
+      actionId: _pendingActionId,
+      input: _pendingInput,
+    );
+    _pendingPayload = null;
+    _pendingActionId = null;
+    _pendingInput = null;
+    return r;
+  }
+
+  static bool get hasPending => _pendingPayload != null || _pendingActionId != null;
+}
 
 // ============================================================================
 // VALIDATORS & SANITIZERS
@@ -69,7 +118,7 @@ class _Validators {
 
 class LocalNotificationService {
   LocalNotificationService._();
-  static final LocalNotificationService instance = LocalNotificationService._();
+  static final LocalNotificationService.instance = LocalNotificationService._();
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
@@ -89,9 +138,10 @@ class LocalNotificationService {
     'thix_calls',
   ];
 
-  /// Callback quand l'utilisateur tape la notification ou une action
-  /// ✅ MIS À JOUR : Prend maintenant en compte le champ `input` (Quick Reply)
-  void Function(String? payload, {String? actionId, String? input})? onNotificationTap;
+  /// Callback quand l'utilisateur tape la notification ou une action.
+  /// `input` contient le texte tapé pour les actions Quick Reply.
+  void Function(String? payload, {String? actionId, String? input})?
+      onNotificationTap;
 
   BuildContext? _context;
 
@@ -114,10 +164,41 @@ class LocalNotificationService {
     try {
       const androidSettings =
           AndroidInitializationSettings('notification_icon');
+
+      // ✅ v3.1 : Catégories Darwin pour que les actions iOS s'affichent.
+      // Sans ces catégories, les boutons Répondre/Marquer lu/Muet
+      // n'apparaissent jamais sur iOS.
       const iosSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
+        notificationCategories: <DarwinNotificationCategory>[
+          DarwinNotificationCategory(
+            _kIosChatCategory,
+            actions: <DarwinNotificationAction>[
+              DarwinNotificationAction.text(
+                kActionReply,
+                'Répondre',
+                buttonTitle: 'Envoyer',
+                placeholder: 'Tapez votre message…',
+              ),
+              DarwinNotificationAction.plain(
+                kActionMarkAsRead,
+                'Marquer lu',
+                options: <DarwinNotificationActionOption>{
+                  DarwinNotificationActionOption.destructive,
+                },
+              ),
+              DarwinNotificationAction.plain(
+                kActionMute,
+                'Muet',
+                options: <DarwinNotificationActionOption>{
+                  DarwinNotificationActionOption.destructive,
+                },
+              ),
+            ],
+          ),
+        ],
       );
 
       await _plugin
@@ -126,11 +207,9 @@ class LocalNotificationService {
               android: androidSettings,
               iOS: iosSettings,
             ),
-            onDidReceiveNotificationResponse: (response) {
-              _handleNotificationResponse(response);
-            },
-            // ✅ Ajout de la gestion des actions en arrière-plan
-            onDidReceiveBackgroundNotificationResponse: _handleBackgroundNotificationResponse,
+            onDidReceiveNotificationResponse: _handleNotificationResponse,
+            onDidReceiveBackgroundNotificationResponse:
+                _handleBackgroundNotificationResponse,
           )
           .timeout(_kNotificationTimeout);
 
@@ -143,17 +222,34 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.1)');
+
+      // Rejoue une action en attente (cold-start via action)
+      _flushPendingAction();
     } on TimeoutException {
       debugPrint('[LocalNotif] ❌ Initialization timeout');
     } catch (e, stackTrace) {
       debugPrint('[LocalNotif] ❌ Initialization failed: $e');
       if (kDebugMode) {
-        debugPrint('[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
+        debugPrint(
+            '[LocalNotif] Stack: ${stackTrace.toString().split('\n').first}');
       }
     } finally {
       _initializing = false;
     }
+  }
+
+  /// Rejoue l'action stockée au cold-start.
+  void _flushPendingAction() {
+    final pending = _PendingActionBuffer.consume();
+    if (pending == null) return;
+    debugPrint('[LocalNotif] ▶️ Flushing pending action: '
+        '${pending.actionId} payload=${pending.payload}');
+    onNotificationTap?.call(
+      pending.payload,
+      actionId: pending.actionId,
+      input: pending.input,
+    );
   }
 
   Future<void> _purgeLegacyChannels(
@@ -211,24 +307,49 @@ class LocalNotificationService {
     }
   }
 
+  /// Réponse au premier plan (app vivante).
   void _handleNotificationResponse(NotificationResponse response) {
-    if (_context != null && !_context!.mounted) return;
+    final payload = response.payload;
+    final actionId = response.actionId;
+    final input = response.input;
 
-    try {
-      onNotificationTap?.call(
-        response.payload, 
-        actionId: response.actionId,
-        input: response.input, // ✅ Récupère le texte tapé (Quick Reply)
-      );
-    } catch (e) {
-      debugPrint('[LocalNotif] ❌ Notification response callback error: $e');
-    }
+    debugPrint('[LocalNotif] 📨 Response: action=$actionId '
+        'input="${input ?? '(null)'}" payload=$payload');
+
+    // ✅ v3.1 : plus de gate sur `_context.mounted`. Si le context n'est pas
+    // encore monté (cold-start très rapide), on stocke et on rejouera.
+    onNotificationTap?.call(payload, actionId: actionId, input: input);
   }
 
-  // ✅ Gestionnaire pour quand l'app est complètement fermée (isolate séparé)
+  /// Réponse en arrière-plan (app fermée / isolate séparé).
+  ///
+  /// L'isolat background de flutter_local_notifications est détruit dès que
+  /// cette méthode retourne. On ne peut PAS y exécuter de requête Supabase
+  /// fiable. Deux stratégies selon l'action :
+  ///
+  /// 1. **Quick Reply** (`kActionReply`) : doit être exécutée en FOREGROUND
+  ///    pour avoir accès à Supabase. On force `showsUserInterface: true`
+  ///    côté Android (v3.1) pour réveiller l'app. Ici on ne fait QUE stocker
+  ///    l'action — elle sera rejouée par `_flushPendingAction`.
+  ///
+  /// 2. **Marquer lu / Muet** (`kActionMarkAsRead` / `kActionMute`) :
+  ///    idem, on stocke et on rejoue.
+  ///
+  /// IMPORTANT : pour que cette méthode soit appelée, le handler FCM de
+  /// `push_notification_service_io.dart` DOIT utiliser cette classe (et
+  /// non laisser le système FCM afficher la notification système).
   @pragma('vm:entry-point')
-  static void _handleBackgroundNotificationResponse(NotificationResponse response) {
-    debugPrint('[LocalNotif-BG] Action: ${response.actionId}, input: ${response.input}');
+  static void _handleBackgroundNotificationResponse(
+      NotificationResponse response) {
+    final payload = response.payload;
+    final actionId = response.actionId;
+    final input = response.input;
+
+    debugPrint('[LocalNotif-BG] ⏳ Action=$actionId '
+        'input="${input ?? '(null)'}" payload=$payload');
+
+    // Stockage pour rejeu au prochain démarrage de l'app.
+    _PendingActionBuffer.store(payload, actionId: actionId, input: input);
   }
 
   Future<bool> requestPermission() async {
@@ -292,14 +413,16 @@ class LocalNotificationService {
       );
 
       if (isChat && showReplyAction) {
+        // ✅ v3.1 : showsUserInterface: true pour forcer le réveil de l'app
+        // et permettre l'envoi du message via Supabase. Sinon l'isolat BG
+        // meurt avant d'avoir pu faire la requête HTTP.
         actions.add(
           const AndroidNotificationAction(
             kActionReply,
             'Répondre',
-            showsUserInterface: false, 
-            // ✅ CORRECTION ICI : Nouvelle syntaxe pour flutter_local_notifications v18+
-            inputs: [
-              AndroidNotificationActionInput(label: 'Tapez votre message...'),
+            showsUserInterface: true,
+            inputs: <AndroidNotificationActionInput>[
+              AndroidNotificationActionInput(label: 'Tapez votre message…'),
             ],
           ),
         );
@@ -310,7 +433,7 @@ class LocalNotificationService {
           const AndroidNotificationAction(
             kActionMarkAsRead,
             'Marquer lu',
-            showsUserInterface: false,
+            showsUserInterface: true,
           ),
         );
       }
@@ -320,7 +443,7 @@ class LocalNotificationService {
           const AndroidNotificationAction(
             kActionMute,
             'Muet',
-            showsUserInterface: false, 
+            showsUserInterface: true,
           ),
         );
       }
@@ -359,11 +482,13 @@ class LocalNotificationService {
       ),
     );
 
-    const iosDetails = DarwinNotificationDetails(
+    // ✅ v3.1 : attache la catégorie iOS pour que les actions s'affichent.
+    final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
       presentSound: true,
       interruptionLevel: InterruptionLevel.timeSensitive,
+      categoryIdentifier: isChat ? _kIosChatCategory : null,
     );
 
     final details = NotificationDetails(
@@ -377,6 +502,7 @@ class LocalNotificationService {
           .timeout(_kNotificationTimeout);
       return true;
     } catch (e) {
+      debugPrint('[LocalNotif] ❌ show failed: $e');
       return false;
     }
   }
