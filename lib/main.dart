@@ -110,7 +110,6 @@ Future<void> _handleNotificationAction(String? payload, String actionId, String?
         'sender_id': currentUserId,
         'content': input.trim(),
         'type': 'text',
-        // Ajoute d'autres champs si nécessaires (ex: created_at)
       });
       LocalNotificationService.instance.cancelAll();
     } 
@@ -132,10 +131,9 @@ Future<void> _handleNotificationAction(String? payload, String actionId, String?
       LocalNotificationService.instance.cancelAll();
     }
     
-    // Mettre à jour le badge (uniquement sur Mobile)
-    if (!kIsWeb) {
-      await PushNotificationService.instance.refreshBadge();
-    }
+    // NOTE : Le badge est déjà mis à jour automatiquement par AppBadgeSyncService
+    // (qui écoute Supabase en Realtime). Pas besoin d'appeler refreshBadge() ici.
+    
   } catch (e) {
     _log('❌ Erreur action notif: $e');
   }
