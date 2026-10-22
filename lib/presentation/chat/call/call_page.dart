@@ -5,6 +5,7 @@ import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -13,6 +14,8 @@ import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
 import 'package:thix_id/services/chat/call_service.dart';
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart' 
+    show supabaseClientProvider, supabaseUserIdProvider;
 
 const double _kAvatarRadius = 64.0;
 const double _kPipWidth = 100.0;
@@ -137,11 +140,29 @@ class _CallPageState extends ConsumerState<CallPage> {
   void _toggleSpeaker() => ref.read(callProvider.notifier).toggleSpeaker();
   void _minimize() => Navigator.maybePop(context);
 
+  // ✅ NOUVEAU : Ouvre la modale de sélection de contacts
   void _inviteParticipant() {
     HapticFeedback.selectionClick();
-    // Cette méthode sera déclenchée par le bouton et ouvrira le sélecteur de contacts
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Fonctionnalité : Choisir un contact à inviter')),
+    final state = ref.read(callProvider);
+    if (state.channelName == null || state.channelName!.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _InviteParticipantSheet(
+        channelName: state.channelName!,
+        onInvited: (name) {
+          Navigator.pop(ctx);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$name a été invité à rejoindre l\'appel.'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -164,7 +185,6 @@ class _CallPageState extends ConsumerState<CallPage> {
 
     final participantCount = state.remoteUids.length;
     
-    // Logique d'affichage adaptative
     final isSingleRemoteVideo = state.isVideo && participantCount == 1 && engineReady && !state.videoOff;
     final showLocalFull = state.isVideo && participantCount == 0 && !state.videoOff && engineReady;
     final showGrid = participantCount > 1; 
@@ -317,7 +337,6 @@ class _CallPageState extends ConsumerState<CallPage> {
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: Colors.white.withOpacity(0.2),
-                        // ⚠️ CORRECTION ICI : Utilisation de avatarUrl au lieu de avatar
                         backgroundImage: peer?.avatarUrl != null ? NetworkImage(peer!.avatarUrl!) : null,
                         child: peer?.avatarUrl == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
                       ),
@@ -585,6 +604,259 @@ class _CallPageState extends ConsumerState<CallPage> {
             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// MODALE D'INVITATION (v2 - Corrigé)
+// ============================================================================
+
+class _InviteParticipantSheet extends ConsumerStatefulWidget {
+  final String channelName;
+  final void Function(String name) onInvited;
+
+  const _InviteParticipantSheet({
+    required this.channelName,
+    required this.onInvited,
+  });
+
+  @override
+  ConsumerState<_InviteParticipantSheet> createState() => _InviteParticipantSheetState();
+}
+
+class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet> {
+  final _ctrl = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  bool _loading = false;
+  Timer? _searchDebounce;
+  String? _invitingId;
+
+  @override
+  void initState() {
+    super.initState();
+    _search('');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  SupabaseClient get _db => ref.read(supabaseClientProvider);
+  String? get _myId => ref.read(supabaseUserIdProvider);
+
+  Future<void> _search(String q) async {
+    final query = q.trim().toLowerCase();
+    final myId = _myId;
+    if (myId == null || myId.isEmpty) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // Récupérer les connexions
+      final rows = await _db
+          .from('connections')
+          .select('user1_id, user2_id')
+          .or('user1_id.eq.$myId,user2_id.eq.$myId');
+
+      final peerIds = <String>{};
+      for (final r in (rows as List)) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final u1 = '${m['user1_id']}';
+        final u2 = '${m['user2_id']}';
+        if (u1 == myId && u2.isNotEmpty) peerIds.add(u2);
+        if (u2 == myId && u1.isNotEmpty) peerIds.add(u1);
+      }
+
+      if (peerIds.isEmpty) {
+        if (mounted) setState(() { _results = []; _loading = false; });
+        return;
+      }
+
+      // Récupérer les profils
+      final profiles = await _db
+          .from('profiles')
+          .select('id, display_name, full_name, avatar_url')
+          .inFilter('id', peerIds.toList());
+
+      var list = (profiles as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      if (query.isNotEmpty) {
+        list = list.where((p) {
+          final name = '${p['display_name'] ?? p['full_name'] ?? ''}'.toLowerCase();
+          return name.contains(query);
+        }).toList();
+      }
+
+      if (mounted) {
+        setState(() {
+          _results = list;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[InviteSheet] ❌ Search failed: $e');
+      if (mounted) setState(() { _results = []; _loading = false; });
+    }
+  }
+
+  void _debouncedSearch(String q) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () => _search(q));
+  }
+
+  // ✅ CORRIGÉ : Type d'appel dynamique + ajout à invitedUserIds
+  Future<void> _sendInvite(String userId, String name) async {
+    if (_invitingId != null) return;
+    setState(() => _invitingId = userId);
+
+    try {
+      // ✅ Récupère le type d'appel en cours (audio ou vidéo)
+      final currentCallType = ref.read(callProvider).type == CallType.video ? 'video' : 'audio';
+      final myId = _myId;
+      
+      if (myId == null || myId.isEmpty) {
+        throw Exception('Utilisateur non identifié');
+      }
+
+      await _db.from('call_invites').insert({
+        'channel_name': widget.channelName,
+        'caller_id': myId,
+        'callee_id': userId,
+        'status': 'ringing',
+        'call_type': currentCallType, // ✅ Dynamique (était 'audio' en dur)
+        'is_group': true,
+      });
+      
+      // ✅ Ajoute l'utilisateur à la liste des invités pour que son nom s'affiche
+      ref.read(callProvider.notifier).addInvitedUser(userId);
+      
+      widget.onInvited(name);
+    } catch (e) {
+      debugPrint('[InviteSheet] ❌ Invite failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de l\'invitation')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _invitingId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: ThixPolicy.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: ThixPolicy.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+              child: Text(
+                'Ajouter à l\'appel',
+                style: ThixPolicy.titleStyle.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                onChanged: _debouncedSearch,
+                decoration: InputDecoration(
+                  hintText: 'Rechercher un contact...',
+                  prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                  filled: true,
+                  fillColor: ThixPolicy.surfaceSoft,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            if (_loading) const LinearProgressIndicator(),
+            Expanded(
+              child: _results.isEmpty && !_loading
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline_rounded, size: 64, color: ThixPolicy.textMuted.withOpacity(0.4)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Aucun contact trouvé',
+                            style: ThixPolicy.bodyStyle.copyWith(
+                              color: ThixPolicy.textMuted,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _results.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                      itemBuilder: (context, i) {
+                        final p = _results[i];
+                        final id = '${p['id'] ?? ''}';
+                        final name = '${p['display_name'] ?? p['full_name'] ?? 'Contact'}';
+                        final avatar = p['avatar_url']?.toString();
+                        final isInviting = _invitingId == id;
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: ThixPolicy.surfaceSoft,
+                            backgroundImage: avatar != null && avatar.isNotEmpty
+                                ? NetworkImage(avatar)
+                                : null,
+                            child: avatar == null || avatar.isEmpty
+                                ? Text(name[0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold))
+                                : null,
+                          ),
+                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: isInviting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.person_add_alt_1, color: ThixPolicy.primary),
+                                  onPressed: () => _sendInvite(id, name),
+                                  tooltip: 'Inviter',
+                                ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
