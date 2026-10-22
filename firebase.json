@@ -1,27 +1,29 @@
 {
-  "flutter": {
-    "platforms": {
-      "android": {
-        "default": {
-          "projectId": "thix-id",
-          "appId": "1:27116360434:android:5e44da9f1323350943766b",
-          "fileOutput": "android/app/google-services.json"
+  "project_info": {
+    "project_number": "311992604589",
+    "project_id": "thixid",
+    "storage_bucket": "thixid.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:311992604589:android:44246a2eb9f107fba17324",
+        "android_client_info": {
+          "package_name": "com.thixhub"
         }
       },
-      "dart": {
-        "lib/firebase_options.dart": {
-          "projectId": "thix-id",
-          "configurations": {
-            "android": "1:27116360434:android:5e44da9f1323350943766b",
-            "ios": "1:27116360434:ios:e0f53c667476124743766b",
-            "web": "1:27116360434:web:926a689f227db09243766b"
-          }
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCDxaIYxwP9kKIg_GofKwxnmf0PzAqnIRs"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
         }
       }
     }
-  },
-  "firestore": {
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
-  }
+  ],
+  "configuration_version": "1"
 }
