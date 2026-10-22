@@ -1,13 +1,13 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v3.2 (Group Calls + sonnerie d'attente corrigée)
+// CALL PROVIDER — v3.3 (Group Calls + sonnerie d'attente corrigée)
 // ============================================================================
-// FIX v3.2 : lecteur de sonnerie configuré en « signalisation d'appel »
-//            (pas de prise de focus audio → Agora ne le coupe plus, sortie
-//            haut-parleur).
-// NEW v3.2 : promoteToGroup() : un appel 1-to-1 devient un appel de groupe
-//            quand on invite quelqu'un en cours d'appel.
+// FIX v3.3 : sonnerie d'attente sur le flux MÉDIA (comme avant) : plus liée
+//            au volume « sonnerie » / mode silencieux.
+// FIX v3.3 : la sonnerie démarre AVANT l'aperçu caméra Agora (appel vidéo).
+// NEW v3.3 : logs [CallProvider] 🔔 pour diagnostiquer le son.
+// NEW v3.2 : promoteToGroup() : un appel 1-to-1 devient un appel de groupe.
 // ============================================================================
 
 import 'dart:async';
@@ -32,6 +32,7 @@ const Duration _kBusyDelay = Duration(seconds: 3);
 const Duration _kFailDelay = Duration(seconds: 2);
 const Duration _kUserLeftDelay = Duration(seconds: 1);
 const Duration _kNetworkTimeout = Duration(seconds: 15);
+const Duration _kRingStartTimeout = Duration(seconds: 3);
 const int _kMaxRetries = 2;
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxNameLength = 100;
@@ -220,8 +221,8 @@ class CallNotifier extends StateNotifier<CallState> {
   // SONS
   // ==================================================================
 
-  /// Contexte audio « signalisation d'appel » : pas de focus audio pris
-  /// (Agora ne coupe plus la sonnerie), sortie haut-parleur.
+  /// Sonnerie sur le flux MÉDIA (comme avant) : elle ne dépend ni du volume
+  /// « sonnerie » ni du mode silencieux. Sortie haut-parleur.
   Future<void> _configureRingAudio() async {
     if (_audioConfigured) return;
     try {
@@ -237,9 +238,9 @@ class CallNotifier extends StateNotifier<CallState> {
           android: const AudioContextAndroid(
             isSpeakerphoneOn: true,
             stayAwake: true,
-            contentType: AndroidContentType.sonification,
-            usageType: AndroidUsageType.voiceCommunicationSignalling,
-            audioFocus: AndroidAudioFocus.none,
+            contentType: AndroidContentType.music,
+            usageType: AndroidUsageType.media,
+            audioFocus: AndroidAudioFocus.gain,
           ),
         ),
       );
@@ -249,13 +250,18 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
+  /// Retourne dès que la lecture a démarré (3 s max) pour pouvoir lancer
+  /// l'aperçu caméra Agora APRÈS la sonnerie.
   Future<void> _playRingtone() async {
     try {
       await _configureRingAudio();
       await _ringPlayer.stop();
       await _ringPlayer.setReleaseMode(ReleaseMode.loop);
       await _ringPlayer.setVolume(1.0);
-      await _ringPlayer.play(AssetSource('sounds/ringtone.mp3'));
+      await _ringPlayer
+          .play(AssetSource('sounds/ringtone.mp3'))
+          .timeout(_kRingStartTimeout);
+      debugPrint('[CallProvider] 🔔 Ringback started');
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Ringtone error: $e');
     }
@@ -268,6 +274,7 @@ class CallNotifier extends StateNotifier<CallState> {
       await _ringPlayer.setReleaseMode(ReleaseMode.release);
       await _ringPlayer.setVolume(1.0);
       await _ringPlayer.play(AssetSource('sounds/offline.mp3'));
+      debugPrint('[CallProvider] 🔔 Offline tone started');
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Offline tone error: $e');
     }
@@ -534,7 +541,10 @@ class CallNotifier extends StateNotifier<CallState> {
       }
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
-      unawaited(_playRingtone());
+
+      // La sonnerie démarre AVANT l'aperçu caméra Agora
+      await _playRingtone();
+      if (_isDisposed) return;
 
       if (type == CallType.video) {
         unawaited(prepareLocalPreview(myUserId).catchError((e) {
@@ -636,7 +646,9 @@ class CallNotifier extends StateNotifier<CallState> {
       }
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
-      unawaited(_playRingtone());
+
+      await _playRingtone();
+      if (_isDisposed) return;
 
       if (type == CallType.video) {
         unawaited(prepareLocalPreview(myUserId).catchError((e) {
