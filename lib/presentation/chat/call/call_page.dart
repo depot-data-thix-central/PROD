@@ -9,7 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_status.dart';
-import 'package:thix_id/presentation/chat/call/call_ui_state.dart'; // Assure-toi que CallState est ici ou dans le provider
+import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
 import 'package:thix_id/services/chat/call_service.dart';
@@ -271,7 +271,6 @@ class _CallPageState extends ConsumerState<CallPage> {
             itemCount: state.remoteUids.length,
             itemBuilder: (context, index) {
               final uid = state.remoteUids[index];
-              // Note: On utilisera state.peers[uid] pour récupérer les infos du participant (Nom, Avatar, état vidéo)
               final peer = state.peers[uid]; 
               
               if (state.isVideo && engine != null) {
@@ -318,8 +317,9 @@ class _CallPageState extends ConsumerState<CallPage> {
                       CircleAvatar(
                         radius: 30,
                         backgroundColor: Colors.white.withOpacity(0.2),
-                        backgroundImage: peer?.avatar != null ? NetworkImage(peer!.avatar!) : null,
-                        child: peer?.avatar == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
+                        // ⚠️ CORRECTION ICI : Utilisation de avatarUrl au lieu de avatar
+                        backgroundImage: peer?.avatarUrl != null ? NetworkImage(peer!.avatarUrl!) : null,
+                        child: peer?.avatarUrl == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
                       ),
                       const SizedBox(height: 8),
                       Text(
