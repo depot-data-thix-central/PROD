@@ -1,6 +1,6 @@
 // lib/presentation/thix_media/live/providers/live_providers.dart
 //
-// Live Providers v3.0 — Providers Riverpod pour le système Live
+// Live Providers v3.0.2 — Providers Riverpod pour le système Live
 //
 // Ce fichier expose les providers partagés entre :
 //   - LiveHostPage (host)
@@ -12,9 +12,11 @@
 //
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+// ✅ IMPORT pour usage INTERNE dans ce fichier
+import 'package:thix_id/data/models/live/live_model.dart';
 import '../services/live_service.dart';
 
-// ✅ EXPORTS EN HAUT (avant toute déclaration)
+// ✅ EXPORT pour usage EXTERNE (par les fichiers qui importent ce fichier)
 // Ré-export pour faciliter l'accès depuis les widgets
 export 'package:thix_id/data/models/live/live_model.dart'
     show LiveRole, GuestStatus, LiveGuest;
