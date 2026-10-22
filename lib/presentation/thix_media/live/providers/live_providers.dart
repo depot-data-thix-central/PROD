@@ -14,6 +14,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../services/live_service.dart';
 
+// ✅ EXPORTS EN HAUT (avant toute déclaration)
+// Ré-export pour faciliter l'accès depuis les widgets
+export 'package:thix_id/data/models/live/live_model.dart'
+    show LiveRole, GuestStatus, LiveGuest;
+
 // ============================================================================
 // LIVE SERVICE (singleton global)
 // ============================================================================
@@ -177,17 +182,3 @@ final currentLiveProvider =
     StateNotifierProvider<CurrentLiveNotifier, CurrentLiveState>((ref) {
   return CurrentLiveNotifier();
 });
-
-// ============================================================================
-// LIVE ROLE ENUM (exporté pour usage externe)
-// ============================================================================
-
-/// Rôle de l'utilisateur dans un live (exporté depuis live_model.dart).
-///
-/// Ré-export pour faciliter l'accès depuis les widgets :
-/// ```dart
-/// import 'live_providers.dart';
-/// if (currentLive.role == LiveRole.host) { ... }
-/// ```
-export 'package:thix_id/data/models/live/live_model.dart'
-    show LiveRole, GuestStatus, LiveGuest;
