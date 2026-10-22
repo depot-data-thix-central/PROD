@@ -231,67 +231,68 @@ class _VoipCallManager {
   }
 
   Future<void> showIncomingCall({
-    required String inviteId,
-    required String callerName,
-    String? callerAvatar,
-    required String channelName,
-    bool isVideo = false,
-  }) async {
-    if (!_isInitialized) {
-      await initialize();
-    }
-
-    final safeInviteId = _Validators.isValidUuid(inviteId) ? inviteId : '';
-    final safeChannel =
-        _Validators.sanitizeString(channelName, maxLength: 64);
-    final safeName = _Validators.sanitizeString(callerName, maxLength: 50);
-
-    if (safeInviteId.isEmpty || safeChannel.isEmpty) {
-      debugPrint(
-          '[VOIP] ⚠️ Appel ignoré : invite_id invalide ou channel_name vide '
-          '(inviteId="$inviteId", channel="$channelName")');
-      return;
-    }
-
-    final params = CallKitParams(
-      id: safeInviteId,
-      nameCaller: safeName,
-      appName: 'THIX Hub',
-      avatar: _Validators.sanitizeUrl(callerAvatar) ?? '',
-      handle: safeName,
-      type: isVideo ? 1 : 0,
-      duration: _kCallDurationMs,
-      textAccept: 'Accepter',
-      textDecline: 'Refuser',
-      extra: <String, dynamic>{
-        'invite_id': safeInviteId,
-        'channel_name': safeChannel,
-        'caller_name': safeName,
-        'is_video': isVideo,
-      },
-      android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: true,
-        ringtonePath: 'ringtone',
-        backgroundColor: '#0A2F5C',
-        actionColor: '#4CAF50',
-      ),
-      ios: IOSParams(
-        iconName: 'AppIcon',
-        handleType: 'generic',
-        supportsVideo: isVideo,
-        ringtonePath: 'ringtone',
-      ),
-    );
-
-    try {
-      await FlutterCallkitIncoming.showCallkitIncoming(params)
-          .timeout(_kCallkitTimeout);
-      debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
-    } catch (e) {
-      debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e');
-    }
+  required String inviteId,
+  required String callerName,
+  String? callerAvatar,
+  required String channelName,
+  bool isVideo = false,
+}) async {
+  if (!_isInitialized) {
+    await initialize();
   }
+
+  final safeInviteId = _Validators.isValidUuid(inviteId) ? inviteId : '';
+  final safeChannel = _Validators.sanitizeString(channelName, maxLength: 64);
+  final safeName = _Validators.sanitizeString(callerName, maxLength: 50);
+
+  if (safeInviteId.isEmpty || safeChannel.isEmpty) {
+    debugPrint('[VOIP] ⚠️ Appel ignoré : invite_id invalide ou channel_name vide');
+    return;
+  }
+
+  final params = CallKitParams(
+    id: safeInviteId,
+    nameCaller: safeName,
+    appName: 'THIX Hub',
+    avatar: _Validators.sanitizeUrl(callerAvatar) ?? '',
+    handle: safeName,
+    type: isVideo ? 1 : 0,
+    duration: _kCallDurationMs, // 60 secondes
+    textAccept: 'Accepter',
+    textDecline: 'Refuser',
+    extra: <String, dynamic>{
+      'invite_id': safeInviteId,
+      'channel_name': safeChannel,
+      'caller_name': safeName,
+      'is_video': isVideo,
+    },
+    android: const AndroidParams(
+      isCustomNotification: true,
+      isShowLogo: true,
+      // 👇 CORRECTION 1 : Utiliser la sonnerie système qui boucle à l'infini
+      ringtonePath: 'system_ringtone_default', 
+      backgroundColor: '#0A2F5C',
+      actionColor: '#4CAF50',
+      // 👇 CORRECTION 2 : Obliger l'affichage plein écran (persistant)
+      isShowFullLockedScreen: true,
+    ),
+    ios: IOSParams(
+      iconName: 'AppIcon',
+      handleType: 'generic',
+      supportsVideo: isVideo,
+      // 👇 Sur iOS aussi, utiliser la sonnerie par défaut
+      ringtonePath: 'system_ringtone_default', 
+    ),
+  );
+
+  try {
+    await FlutterCallkitIncoming.showCallkitIncoming(params)
+        .timeout(_kCallkitTimeout);
+    debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
+  } catch (e) {
+    debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e');
+  }
+}
 
   Future<void> endCall(String inviteId) async {
     try {
