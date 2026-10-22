@@ -3,16 +3,6 @@
 // ============================================================================
 // CALL HISTORY PAGE — Production Enterprise v2.0
 // ============================================================================
-//
-// Historique des appels avec design moderne, états de chargement granulaires
-// et expérience utilisateur fluide (inspirée des standards iOS/Android).
-//
-// Améliorations clés :
-//   - État de chargement scoped (un seul bouton affiche un spinner à la fois)
-//   - UI modernisée avec hiérarchie visuelle claire et icônes de statut colorées
-//   - Optimisation des rebuilds via des widgets Stateless dédiés
-//   - Gestion élégante des états vides et des erreurs
-// ============================================================================
 
 import 'dart:async';
 
@@ -164,7 +154,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       for (final inv in invites) {
         final peer = inv.callerId == uid ? inv.calleeId : inv.callerId;
         if (_CallHistoryValidators.isValidUuid(peer)) {
-          peerIds.add(peer);
+          // ✅ CORRECTION 1 : Ajout du ! car peer a été validé par isValidUuid
+          peerIds.add(peer!); 
         }
       }
 
@@ -201,7 +192,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
         return _CallRow(
           invite: inv,
-          peerId: peerId,
+          // ✅ CORRECTION 2 : Ajout de ?? '' au cas où peerId serait null
+          peerId: peerId ?? '', 
           peerName: name,
           peerAvatar: avatar ?? avatarById[peerId],
         );
@@ -294,52 +286,6 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     );
   }
 
-  String _subtitle(_CallRow row, AppLocalizations l10n) {
-    final inv = row.invite;
-    final isVideoCall = inv.callType == CallType.video;
-    final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
-    
-    if (inv.durationSec > 0) {
-      final m = (inv.durationSec / 60).floor();
-      final s = inv.durationSec % 60;
-      final mm = m.toString().padLeft(2, '0');
-      final ss = s.toString().padLeft(2, '0');
-      return '$type · ${inv.status.label} · $mm:$ss';
-    }
-    return '$type · ${inv.status.label}';
-  }
-
-  IconData _dirIcon(CallInvite inv) {
-    final missed = inv.status == CallStatus.missed ||
-        inv.status == CallStatus.rejected ||
-        inv.status == CallStatus.canceled;
-    if (missed) return Icons.call_missed_rounded;
-    if (inv.callerId == _myId) return Icons.call_made_rounded;
-    return Icons.call_received_rounded;
-  }
-
-  Color _iconColor(CallInvite inv) {
-    final missed = inv.status == CallStatus.missed ||
-        inv.status == CallStatus.rejected ||
-        inv.status == CallStatus.canceled;
-    if (missed) return ThixPolicy.danger;
-    if (inv.callerId == _myId) return ThixPolicy.success;
-    return ThixPolicy.primary;
-  }
-
-  String _fmtDate(DateTime d, AppLocalizations l10n) {
-    final local = d.toLocal();
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final day = DateTime(local.year, local.month, local.day);
-    
-    if (day == today) return DateFormat('HH:mm').format(local);
-    if (day == today.subtract(const Duration(days: 1))) {
-      return l10n.t('call_yesterday');
-    }
-    return DateFormat('dd/MM/yy').format(local);
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -366,7 +312,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         backgroundColor: ThixPolicy.primary,
         foregroundColor: Colors.white,
         onPressed: _callingPeerId != null ? null : _openSearchToCall,
-        icon: const Icon(Icons.add_ic_call), // ✅ CORRIGÉ: add_call_rounded → add_ic_call
+        icon: const Icon(Icons.add_ic_call), 
         label: Text(l10n.t('call_new_call')),
       ),
       body: Column(
@@ -594,7 +540,7 @@ class _CallHistoryTile extends StatelessWidget {
                       const SizedBox(width: 4),
                       Expanded(
                         child: Text(
-                          _subtitle(row, l10n), // ✅ CORRIGÉ: méthode maintenant définie ci-dessous
+                          _subtitle(row, l10n),
                           style: ThixPolicy.captionStyle.copyWith(
                             color: ThixPolicy.textMuted,
                             fontSize: 13,
@@ -613,7 +559,7 @@ class _CallHistoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  _fmtDate(inv.createdAt, l10n), // ✅ CORRIGÉ: méthode maintenant définie ci-dessous
+                  _fmtDate(inv.createdAt, l10n),
                   style: ThixPolicy.captionStyle.copyWith(
                     color: ThixPolicy.textMuted,
                     fontSize: 12,
@@ -660,7 +606,6 @@ class _CallHistoryTile extends StatelessWidget {
     return ThixPolicy.primary;
   }
 
-  // ✅ CORRIGÉ: Ajout de la méthode _subtitle
   String _subtitle(_CallRow row, AppLocalizations l10n) {
     final inv = row.invite;
     final isVideoCall = inv.callType == CallType.video;
@@ -676,7 +621,6 @@ class _CallHistoryTile extends StatelessWidget {
     return '$type · ${inv.status.label}';
   }
 
-  // ✅ CORRIGÉ: Ajout de la méthode _fmtDate
   String _fmtDate(DateTime d, AppLocalizations l10n) {
     final local = d.toLocal();
     final now = DateTime.now();
@@ -723,12 +667,14 @@ class _ActionIconButton extends StatelessWidget {
             shape: BoxShape.circle,
           ),
           child: isCalling
-              ? SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    valueColor: AlwaysStoppedAnimation<Color>(color),
+              ? Center(
+                  child: SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.5,
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
                   ),
                 )
               : Icon(icon, color: color, size: 20),
