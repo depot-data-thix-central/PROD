@@ -1,42 +1,21 @@
 // lib/services/chat/call_permission_helper.dart
 //
 // ============================================================================
-// CALL PERMISSION HELPER v2.0 — Production Enterprise
+// CALL PERMISSION HELPER v2.1 — Production Enterprise
 // ============================================================================
 //
-// CHANGELOG v2.0 (depuis v1.0) :
-//   ✅ Ajout de `ensureAtStartup()` pour les permissions système critiques :
-//      - NOTIFICATIONS (Android 13+) : recevoir les pushs FCM
-//      - ANSWER_PHONE_CALLS (Android 8+) : accepter depuis CallKit
-//      - FULL_SCREEN_INTENT (Android 14+) : écran d'appel verrouillé
-//      - IGNORE_BATTERY_OPTIMIZATIONS : fiabilité en Doze mode
-//   ✅ Séparation claire entre :
-//      - `ensure(type)` : micro/caméra AVANT chaque appel
-//      - `ensureAtStartup()` : permissions système AU PREMIER LANCEMENT
-//   ✅ Gestion propre des permissions "special app access" (FSI, Battery)
-//      qui nécessitent d'ouvrir les paramètres système plutôt qu'une
-//      demande runtime classique.
+// CHANGELOG v2.1 (depuis v2.0) :
+//   ✅ FIX: Paramètre `permission` ajouté à `_handlePermanentlyDenied`
+//      pour corriger "Undefined name 'permission'" en build Web.
+//   ✅ FIX: `Semantics(dialog: true)` remplacé par
+//      `Semantics(container: true, explicitChildNodes: true)`
+//      car `dialog` n'existe pas dans l'API Flutter actuelle.
+//   ✅ Guard `!kIsWeb` ajouté dans `ensureAtStartup` pour éviter
+//      d'accéder à `Platform.isAndroid` sur Web (compile-time error).
 //
-// Architecture :
-//   - Explication préalable avant demande système (conformité App Store / Play Store)
-//   - Détection "permanently denied" avec redirection vers réglages OS
-//   - Widget AlertDialog extrait (DRY) avec ThixPolicy
-//   - Support Web (permission_handler a un comportement différent)
-//
-// Sécurité & UX :
-//   - i18n complète (8+ clés)
-//   - Semantics VoiceOver sur tous les éléments
-//   - HapticFeedback sur actions
-//   - mounted checks après tous les awaits
-//   - Logs structurés [CallPermission]
-//
-// ⚠️ IMPORTANT :
-//   - `ensure(type)` doit être appelé AVANT tout appel à Agora
-//     (startCall, acceptIncoming, prepareLocalPreview).
-//   - `ensureAtStartup()` doit être appelé UNE FOIS au login / premier lancement.
+// Conserve tous les correctifs v2.0 : permissions système complètes,
+// séparation ensure/ensureAtStartup, dialogues ThixPolicy, i18n.
 // ============================================================================
-
-import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -151,7 +130,17 @@ class CallPermissionHelper {
   static Future<bool> ensureAtStartup(BuildContext context) async {
     debugPrint('[CallPermission] 🔐 ensureAtStartup()');
 
-    if (kIsWeb || !Platform.isAndroid) {
+    // ✅ v2.1 : Guard kIsWeb AVANT tout accès à Platform.isAndroid
+    // pour éviter les erreurs de compilation Web.
+    if (kIsWeb) {
+      debugPrint('[CallPermission] ℹ️ Web platform, skipping startup permissions');
+      return true;
+    }
+
+    // dart:io n'est pas disponible sur Web, mais le guard kIsWeb ci-dessus
+    // garantit qu'on n'atteint jamais cette ligne sur Web.
+    // ignore: avoid_web_libraries_in_flutter
+    if (!_isAndroid()) {
       debugPrint('[CallPermission] ℹ️ Non-Android platform, skipping');
       return true;
     }
@@ -160,7 +149,6 @@ class CallPermissionHelper {
     var allOk = true;
 
     // 1. Notifications (Android 13+)
-    // Sans cette permission, l'app ne reçoit PAS les pushs FCM.
     if (await Permission.notification.status.isDenied) {
       debugPrint('[CallPermission] 📲 Requesting NOTIFICATIONS');
       final result = await _showPermissionDialog(
@@ -186,7 +174,6 @@ class CallPermissionHelper {
     }
 
     // 2. Phone / ANSWER_PHONE_CALLS (Android 8+)
-    // Sans cette permission, le bouton "Accepter" de CallKit ne fait rien.
     if (await Permission.phone.status.isDenied) {
       debugPrint('[CallPermission] 📞 Requesting PHONE');
       final result = await _showPermissionDialog(
@@ -207,13 +194,10 @@ class CallPermissionHelper {
       final granted = await Permission.phone.status.isGranted;
       if (!granted) {
         debugPrint('[CallPermission] ⚠️ PHONE denied (CallKit accept may fail)');
-        // Pas bloquant : CallKit peut fonctionner partiellement sans
       }
     }
 
     // 3. Full Screen Intent (Android 14+)
-    // Permission "special app access" : pas de demande runtime, il faut
-    // ouvrir les paramètres système.
     if (await _needsFullScreenIntentPermission()) {
       debugPrint('[CallPermission] 🖥️ FULL_SCREEN_INTENT not granted');
       final result = await _showPermissionDialog(
@@ -233,7 +217,6 @@ class CallPermissionHelper {
     }
 
     // 4. Ignore Battery Optimizations
-    // Pour éviter que Doze mode tue les pushs en arrière-plan.
     if (await Permission.ignoreBatteryOptimizations.status.isDenied) {
       debugPrint('[CallPermission] 🔋 Requesting IGNORE_BATTERY_OPTIMIZATIONS');
       final result = await _showPermissionDialog(
@@ -257,39 +240,45 @@ class CallPermissionHelper {
     return allOk;
   }
 
+  /// ✅ v2.1 : Helper pour vérifier la plateforme sans importer dart:io
+  /// directement dans le flux principal (évite les erreurs Web).
+  static bool _isAndroid() {
+    try {
+      // ignore: avoid_web_libraries_in_flutter
+      return defaultTargetPlatform == TargetPlatform.android;
+    } catch (_) {
+      return false;
+    }
+  }
+
   /// Vérifie si la permission FULL_SCREEN_INTENT est accordée (Android 14+).
   /// Retourne `false` si la permission est accordée, `true` si elle manque.
   static Future<bool> _needsFullScreenIntentPermission() async {
-    if (!Platform.isAndroid) return false;
+    if (kIsWeb || !_isAndroid()) return false;
 
     try {
-      // flutter_callkit_incoming expose cette vérification
-      // Si la méthode n'existe pas, on considère que la permission est OK
       final canUse = await _checkFullScreenIntentStatus();
       return !canUse;
     } catch (e) {
       debugPrint('[CallPermission] ⚠️ FSI check failed: $e');
-      return false; // En cas d'erreur, on ne bloque pas
+      return false;
     }
   }
 
   /// Vérifie le statut FSI via le plugin CallKit.
   static Future<bool> _checkFullScreenIntentStatus() async {
-    // Note : flutter_callkit_incoming expose `canUseFullScreenIntent`
-    // depuis la version 2.0+. Si cette méthode n'existe pas, retourner true.
     try {
-      // ignore: invalid_use_of_visible_for_testing_member
       final result = await MethodChannel('flutter_callkit_incoming')
           .invokeMethod<bool>('canUseFullScreenIntent');
       return result ?? true;
     } catch (e) {
       debugPrint('[CallPermission] ⚠️ canUseFullScreenIntent not available: $e');
-      return true; // Considérer comme OK si la méthode n'existe pas
+      return true;
     }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
-  // HELPERS PRIVÉS (inchangés depuis v1.0)
+  // HELPERS PRIVÉS
   // ═══════════════════════════════════════════════════════════════════════
 
   /// Vérifie/demande une permission spécifique avec dialogue explicatif.
@@ -304,7 +293,6 @@ class CallPermissionHelper {
   }) async {
     final status = await permission.status;
 
-    // Déjà accordée
     if (status.isGranted) {
       debugPrint('[CallPermission] ✓ $permissionLabel already granted');
       return true;
@@ -312,10 +300,11 @@ class CallPermissionHelper {
 
     debugPrint('[CallPermission] ℹ️ $permissionLabel status: $status');
 
-    // Permanently denied → dialogue explicatif + redirection réglages
     if (status.isPermanentlyDenied) {
+      // ✅ v2.1 : passage du paramètre `permission` à _handlePermanentlyDenied
       return await _handlePermanentlyDenied(
         context: context,
+        permission: permission,
         title: title,
         message: message,
         deniedMessage: deniedMessage,
@@ -324,7 +313,6 @@ class CallPermissionHelper {
       );
     }
 
-    // Denied ou non-déterminé → dialogue explicatif + demande système
     return await _handleRequestPermission(
       context: context,
       permission: permission,
@@ -336,8 +324,12 @@ class CallPermissionHelper {
   }
 
   /// Gère le cas "permanently denied" : explique + propose d'ouvrir les réglages OS.
+  ///
+  /// ✅ v2.1 : Le paramètre `permission` est maintenant passé explicitement
+  /// pour permettre la revérification du statut après ouverture des paramètres.
   static Future<bool> _handlePermanentlyDenied({
     required BuildContext context,
+    required Permission permission, // ✅ AJOUTÉ v2.1
     required String title,
     required String message,
     required String deniedMessage,
@@ -364,14 +356,11 @@ class CallPermissionHelper {
       HapticFeedback.mediumImpact();
       await openAppSettings();
 
-      // Attendre que l'utilisateur revienne dans l'app
-      // et revérifier le statut
       if (!context.mounted) return false;
       await Future.delayed(const Duration(milliseconds: 300));
 
-      final newStatus = await Permission.values
-          .firstWhere((p) => p.value == permission.value)
-          .status;
+      // ✅ v2.1 : utilisation directe de `permission` maintenant accessible
+      final newStatus = await permission.status;
       return newStatus.isGranted;
     }
 
@@ -420,9 +409,6 @@ class CallPermissionHelper {
 
   // ── WIDGET PRIVÉ : DIALOGUE DE PERMISSION ─────────────────────────────
 
-  /// Affiche un dialogue de permission stylisé ThixPolicy avec Semantics.
-  ///
-  /// Retourne `true` si l'utilisateur confirme, `false` sinon.
   static Future<bool?> _showPermissionDialog({
     required BuildContext context,
     required String title,
@@ -449,7 +435,7 @@ class CallPermissionHelper {
 }
 
 // ============================================================================
-// PERMISSION DIALOG WIDGET (privé, inchangé depuis v1.0)
+// PERMISSION DIALOG WIDGET (privé)
 // ============================================================================
 
 class _PermissionDialog extends StatelessWidget {
@@ -471,8 +457,12 @@ class _PermissionDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ v2.1 : `dialog: true` n'existe pas dans Semantics.
+    // Remplacé par `container: true` + `explicitChildNodes: true`
+    // qui est l'équivalent sémantique correct pour un dialogue.
     return Semantics(
-      dialog: true,
+      container: true,
+      explicitChildNodes: true,
       label: '$title. $message',
       child: AlertDialog(
         backgroundColor: ThixPolicy.primaryDeep,
@@ -531,9 +521,8 @@ class _PermissionDialog extends StatelessWidget {
                 Navigator.pop(context, true);
               },
               style: ElevatedButton.styleFrom(
-                backgroundColor: isDestructive
-                    ? ThixPolicy.gold
-                    : Colors.white,
+                backgroundColor:
+                    isDestructive ? ThixPolicy.gold : Colors.white,
                 foregroundColor: ThixPolicy.primaryDeep,
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(_kButtonBorderRadius),
