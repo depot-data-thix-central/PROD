@@ -229,8 +229,6 @@ class LocalNotificationService {
   @pragma('vm:entry-point')
   static void _handleBackgroundNotificationResponse(NotificationResponse response) {
     debugPrint('[LocalNotif-BG] Action: ${response.actionId}, input: ${response.input}');
-    // Note : Pour faire des requêtes Supabase ici, il faut ré-initialiser Firebase/Supabase.
-    // Généralement, on ouvre juste l'app ou on utilise un service isolé.
   }
 
   Future<bool> requestPermission() async {
@@ -262,8 +260,8 @@ class LocalNotificationService {
     String? payload,
     String? channelId,
     bool showReplyAction = false,
-    bool showMarkAsReadAction = false, // ✅ NOUVEAU
-    bool showMuteAction = false,      // ✅ NOUVEAU
+    bool showMarkAsReadAction = false,
+    bool showMuteAction = false,
   }) async {
     if (!_Validators.isValidNotificationId(id)) return false;
 
@@ -282,7 +280,6 @@ class LocalNotificationService {
     final isCall = channel == channelCalls;
     final isChat = channel == channelChat;
 
-    // ✅ NOUVEAU : Construction dynamique des actions
     final List<AndroidNotificationAction> actions = [];
 
     if (!isCall) {
@@ -300,7 +297,10 @@ class LocalNotificationService {
             kActionReply,
             'Répondre',
             showsUserInterface: false, 
-            allowsUserInput: true, // ✅ Active le champ de texte
+            // ✅ CORRECTION ICI : Nouvelle syntaxe pour flutter_local_notifications v18+
+            inputs: [
+              AndroidNotificationActionInput(label: 'Tapez votre message...'),
+            ],
           ),
         );
       }
@@ -310,7 +310,7 @@ class LocalNotificationService {
           const AndroidNotificationAction(
             kActionMarkAsRead,
             'Marquer lu',
-            showsUserInterface: false, // Fait l'action en fond sans ouvrir l'app
+            showsUserInterface: false,
           ),
         );
       }
@@ -381,7 +381,6 @@ class LocalNotificationService {
     }
   }
 
-  /// ✅ Raccourci pour les messages de chat avec toutes les actions
   Future<bool> showChatMessage({
     required int id,
     required String title,
@@ -395,8 +394,8 @@ class LocalNotificationService {
       payload: payload,
       channelId: channelChat,
       showReplyAction: true,
-      showMarkAsReadAction: true, // ✅ Actives par défaut pour le chat
-      showMuteAction: true,       // ✅ Actives par défaut pour le chat
+      showMarkAsReadAction: true,
+      showMuteAction: true,
     );
   }
 
