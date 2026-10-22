@@ -1,14 +1,23 @@
 // lib/presentation/chat/call/incoming_call_page.dart
 //
 // ============================================================================
-// INCOMING CALL PAGE — v2.2
+// INCOMING CALL PAGE — v2.3
 // ============================================================================
-// Nouveau : affiche le NOM et la PHOTO de l'appelant (chargés depuis `profiles`)
-//           dès la sonnerie, et les transmet à l'appel une fois décroché.
-// Aussi : délai de service porté à 25 s, textes de secours si une clé de
-//         traduction manque (plus de « call_incoming_audio » brut).
+// NEW v2.3 : SONNERIE + VIBRATION de l'application quand la page est affichée
+//            (app au premier plan). Avant : aucun son, une seule vibration.
+//   - son : assets/sounds/ringtone.mp3 en boucle
+//   - flux d'appel vocal : le mode silencieux du téléphone ne le coupe pas
+//     (voir _kIgnoreSilentMode)
+//   - vibration répétée tant que l'appel sonne
+//   - app en arrière-plan : la page se tait (CallKit sonne à sa place),
+//     elle reprend au retour au premier plan
+//   - arrêt immédiat à l'acceptation / au refus / à la fermeture
+// v2.2 : nom + photo de l'appelant, délai de service 25 s, textes de secours.
 // ============================================================================
 
+import 'dart:async';
+
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -29,6 +38,12 @@ const double _kButtonSize = 72.0;
 const double _kIconSize = 32.0;
 const Duration _kAnimationDuration = Duration(milliseconds: 1500);
 const Duration _kServiceTimeout = Duration(seconds: 25);
+const Duration _kRingStartTimeout = Duration(seconds: 3);
+const Duration _kVibrateInterval = Duration(milliseconds: 1500);
+
+/// true  = la sonnerie ignore le mode silencieux (flux d'appel vocal)
+/// false = la sonnerie suit le volume « sonnerie » du téléphone
+const bool _kIgnoreSilentMode = true;
 
 // ── Textes de secours [EN, FR] si la clé l10n manque ──
 const Map<String, List<String>> _kFb = {
@@ -95,10 +110,15 @@ class IncomingCallPage extends ConsumerStatefulWidget {
 }
 
 class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late AnimationController _ringController;
   late Animation<double> _ringAnimation;
   late Animation<double> _glowAnimation;
+
+  // ── Sonnerie + vibration de l'app ──
+  final AudioPlayer _ringPlayer = AudioPlayer();
+  Timer? _vibrateTimer;
+  bool _ringing = false;
 
   bool _isProcessing = false;
   String? _processingAction;
@@ -127,6 +147,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
 
     _ringController = AnimationController(duration: _kAnimationDuration, vsync: this)
       ..repeat(reverse: true);
@@ -138,15 +159,105 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       CurvedAnimation(parent: _ringController, curve: Curves.easeInOut),
     );
 
-    HapticFeedback.vibrate();
+    _startRing();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopRing();
+    _ringPlayer.dispose();
     _ringController.dispose();
     super.dispose();
   }
 
+  // App au premier plan → la page sonne. Arrière-plan → CallKit sonne,
+  // la page se tait (pas de double son).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (!_isProcessing) _startRing();
+    } else {
+      _stopRing();
+    }
+  }
+
+  // ── SONNERIE ─────────────────────────────────────────────────────────
+  AudioContext _ringContext() {
+    return AudioContext(
+      iOS: AudioContextIOS(
+        category: AVAudioSessionCategory.playAndRecord,
+        options: const {
+          AVAudioSessionOptions.defaultToSpeaker,
+          AVAudioSessionOptions.mixWithOthers,
+        },
+      ),
+      android: AudioContextAndroid(
+        isSpeakerphoneOn: true,
+        stayAwake: true,
+        audioMode: AndroidAudioMode.normal,
+        contentType: AndroidContentType.sonification,
+        usageType: _kIgnoreSilentMode
+            ? AndroidUsageType.voiceCommunication
+            : AndroidUsageType.notificationRingtone,
+        audioFocus: AndroidAudioFocus.gain,
+      ),
+    );
+  }
+
+  Future<void> _startRing() async {
+    if (_ringing || !mounted) return;
+    if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) return;
+    _ringing = true;
+
+    // Vibration répétée
+    HapticFeedback.vibrate();
+    _vibrateTimer?.cancel();
+    _vibrateTimer = Timer.periodic(_kVibrateInterval, (_) {
+      if (_ringing) HapticFeedback.vibrate();
+    });
+
+    // Sonnerie de l'app (2e essai avec le contexte par défaut si échec)
+    Future<void> play() async {
+      await _ringPlayer.stop();
+      await _ringPlayer.setReleaseMode(ReleaseMode.loop);
+      await _ringPlayer.setVolume(1.0);
+      await _ringPlayer.play(AssetSource('sounds/ringtone.mp3')).timeout(_kRingStartTimeout);
+    }
+
+    try {
+      await _ringPlayer.setAudioContext(_ringContext());
+      await play();
+      debugPrint('[IncomingCall] 🔔 Ringtone started');
+    } catch (e) {
+      debugPrint('[IncomingCall] ⚠️ Ringtone error: $e → retry (default ctx)');
+      try {
+        await _ringPlayer.setAudioContext(AudioContext());
+        await play();
+        debugPrint('[IncomingCall] 🔔 Ringtone started (default ctx)');
+      } catch (e2) {
+        debugPrint('[IncomingCall] ❌ Ringtone failed: $e2');
+      }
+    }
+
+    // La page a été fermée / traitée pendant le démarrage du son
+    if (!_ringing || !mounted) {
+      try {
+        await _ringPlayer.stop();
+      } catch (_) {}
+    }
+  }
+
+  void _stopRing() {
+    _ringing = false;
+    _vibrateTimer?.cancel();
+    _vibrateTimer = null;
+    try {
+      _ringPlayer.stop();
+    } catch (_) {}
+  }
+
+  // ── UI HELPERS ───────────────────────────────────────────────────────
   void _snack(String message, Color bg, IconData icon) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -170,8 +281,10 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
 
   void _showInfo(String message) => _snack(message, ThixPolicy.primary, Icons.info_outline_rounded);
 
+  // ── ACTIONS ──────────────────────────────────────────────────────────
   Future<void> _rejectCall() async {
     if (_isProcessing) return;
+    _stopRing();
     setState(() {
       _isProcessing = true;
       _processingAction = 'reject';
@@ -190,6 +303,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _processingAction = null;
         });
         _showError(_t(context, 'call_error_reject_failed'));
+        _startRing();
       }
     }
   }
@@ -203,6 +317,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       return;
     }
 
+    _stopRing();
     setState(() {
       _isProcessing = true;
       _processingAction = 'crisis';
@@ -221,6 +336,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _processingAction = null;
         });
         _showInfo(_t(context, 'call_no_active_sos'));
+        _startRing();
         return;
       }
 
@@ -238,6 +354,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _processingAction = null;
         });
         _showError(_t(context, 'call_error_crisis_room_failed'));
+        _startRing();
       }
     }
   }
@@ -251,6 +368,7 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
       return;
     }
 
+    _stopRing();
     setState(() {
       _isProcessing = true;
       _processingAction = 'accept';
@@ -278,10 +396,12 @@ class _IncomingCallPageState extends ConsumerState<IncomingCallPage>
           _processingAction = null;
         });
         _showError(_t(context, 'call_error_accept_failed'));
+        _startRing();
       }
     }
   }
 
+  // ── BUILD ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     // On observe le profil : l'écran se met à jour dès que nom/photo arrivent
