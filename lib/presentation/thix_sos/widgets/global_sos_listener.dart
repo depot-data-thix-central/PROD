@@ -25,7 +25,7 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
   StreamSubscription<AuthState>? _authSub;
   final Set<String> _handled = {};
   
-  // Utilisation de Function? pour éviter tout conflit de signature entre le getter et le setter
+  // Utilisation de Function? pour éviter tout conflit de signature
   Function? _prevTap;
   String? _subscribedFor;
 
@@ -46,17 +46,21 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
     _authSub?.cancel();
     _ch?.unsubscribe();
     
-    // Restauration sécurisée du callback précédent
+    // ✅ CORRECTION : Accepte le paramètre `input`
     final svc = LocalNotificationService.instance;
     final prev = _prevTap;
     if (prev != null) {
-      svc.onNotificationTap = (payload, {actionId}) {
+      svc.onNotificationTap = (payload, {actionId, input}) {
         try {
-          (prev as dynamic)(payload, actionId: actionId);
+          (prev as dynamic)(payload, actionId: actionId, input: input);
         } catch (_) {
           try {
-            (prev as dynamic)(payload);
-          } catch (_) {}
+            (prev as dynamic)(payload, actionId: actionId);
+          } catch (_) {
+            try {
+              (prev as dynamic)(payload);
+            } catch (_) {}
+          }
         }
       };
     } else {
@@ -76,7 +80,8 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
     final svc = LocalNotificationService.instance;
     _prevTap = svc.onNotificationTap;
     
-    svc.onNotificationTap = (payload, {actionId}) {
+    // ✅ CORRECTION : Accepte le paramètre `input`
+    svc.onNotificationTap = (payload, {actionId, input}) {
       if (payload != null && payload.startsWith('sos_crisis:')) {
         final parts = payload.split(':');
         if (parts.length >= 3) {
@@ -88,11 +93,15 @@ class _GlobalSosListenerState extends State<GlobalSosListener>
       final prev = _prevTap;
       if (prev != null) {
         try {
-          (prev as dynamic)(payload, actionId: actionId);
+          (prev as dynamic)(payload, actionId: actionId, input: input);
         } catch (_) {
           try {
-            (prev as dynamic)(payload);
-          } catch (_) {}
+            (prev as dynamic)(payload, actionId: actionId);
+          } catch (_) {
+            try {
+              (prev as dynamic)(payload);
+            } catch (_) {}
+          }
         }
       }
     };
