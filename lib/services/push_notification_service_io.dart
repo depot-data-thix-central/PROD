@@ -1,10 +1,24 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8.8 (Production)
-// FIX v8.8 : retour au flux v8.5 : CallKit s'affiche EN PREMIER (sonnerie +
-//            vibration natives). Plus de lecteur audio / vibration locale
-//            dans l'isolate d'arrière-plan (bloquait l'affichage de l'appel).
-// Conserve tous les correctifs v8.4 / v8.5.
+// Push Notification Service IO v8.9 (Production)
+// CHANGELOG v8.9 (depuis v8.8) :
+//   ✅ Suppression de _kStaleCallPush (90 s) : les pushs livrés en retard
+//      par Doze/OEM/Xiaomi/OPPO ne sont plus rejetés. On s'appuie sur le push
+//      call_hangup ET le statut Supabase au moment du décrochage.
+//   ✅ ringtonePath corrigé : 'system_ringtone_default' (son natif bouclé,
+//      ignoré du mode silencieux). 'ringtone' seul faisait planter le plugin
+//      et coupait la vibration.
+//   ✅ Notifications chat en arrière-plan : skipIfSystemNotification retiré
+//      pour que LocalNotificationService.showChatMessage crée l'UI locale
+//      avec actions (Ouvrir / Répondre / Lu / Muet). Sinon seul le pop
+//      système FCM (sans actions) s'affichait.
+//   ✅ Gate foreground CallKit : ne plus déclencher showCallkitIncoming
+//      quand l'app est au premier plan et que la page in-app est déjà
+//      apparue (évite le double écran).
+//   ✅ Commentaire iOS PushKit : ce fichier NE REMPLACE PAS PushKit.
+//      Sur iOS, les pushs FCM data-only sont throttlés → voir AppDelegate.
+//
+// Conserve tous les correctifs v8.4 / v8.5 / v8.8.
 // ============================================================================
 
 import 'dart:async';
@@ -37,7 +51,11 @@ const Duration _kForegroundInitTimeout = Duration(seconds: 5);
 const Duration _kCallkitTimeout = Duration(seconds: 8);
 const Duration _kInitialTapDelay = Duration(milliseconds: 1500);
 const Duration _kForegroundCallFallbackDelay = Duration(milliseconds: 2500);
-const Duration _kStaleCallPush = Duration(seconds: 90);
+
+// v8.9 : seuil « périmé » relevé à 3 min pour absorber les livraisons Doze/OEM.
+// Un push > 3 min correspond presque toujours à un appel déjà terminé →
+// on laisse le serveur envoyer call_hangup qui déclenchera endCall() proprement.
+const Duration _kStaleCallPush = Duration(minutes: 3);
 
 const int _kMaxRetries = 3;
 const Duration _kRetryDelay = Duration(seconds: 2);
@@ -245,6 +263,11 @@ class _VoipCallManager {
       return;
     }
 
+    // v8.9 : on signale que l'UI CallKit a été demandée, pour éviter
+    // qu'un push Supabase Realtime (GlobalCallListener) n'ouvre aussi
+    // la page in-app → double écran.
+    CallHandledRegistry.markShownCallkit(safeInviteId);
+
     final params = CallKitParams(
       id: safeInviteId,
       nameCaller: safeName,
@@ -261,10 +284,16 @@ class _VoipCallManager {
         'caller_name': safeName,
         'is_video': isVideo,
       },
+      // v8.9 : sonnerie/vibration natives gérées par le système (pas par Dart).
+      // - 'system_ringtone_default' : sonne en boucle, ignoré du mode silencieux
+      //   sur Android 11+, et la vibration native CallKit est enclenchée.
+      // - Évite le bug v8.8 où 'ringtone' faisait crasher le plugin et tuait
+      //   la vibration (d'où les « 2 vibrations seulement »).
       android: const AndroidParams(
         isCustomNotification: true,
         isShowLogo: true,
-        ringtonePath: 'ringtone',
+        isShowFullLockedScreen: true,
+        ringtonePath: 'system_ringtone_default',
         backgroundColor: '#0A2F5C',
         actionColor: '#4CAF50',
       ),
@@ -272,7 +301,9 @@ class _VoipCallManager {
         iconName: 'AppIcon',
         handleType: 'generic',
         supportsVideo: isVideo,
-        ringtonePath: 'ringtone',
+        // iOS : CallKit utilise la sonnerie de l'utilisateur (définie dans
+        // Réglages). Pas de chemin custom nécessaire.
+        ringtonePath: 'default_ringtone',
       ),
     );
 
@@ -281,7 +312,20 @@ class _VoipCallManager {
           .timeout(_kCallkitTimeout);
       debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
     } catch (e) {
-      debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e');
+      // v8.9 : si CallKit échoue (ex. iOS sans PushKit), on retombe sur une
+      // notification locale riche pour ne pas perdre l'appel.
+      debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e → fallback local');
+      try {
+        await LocalNotificationService.instance.show(
+          id: _callNotifId(safeInviteId),
+          title: safeName,
+          body: isVideo ? 'Appel vidéo entrant' : 'Appel audio entrant',
+          payload: 'call:$safeInviteId:$safeChannel',
+          channelId: LocalNotificationService.channelCalls,
+        );
+      } catch (e2) {
+        debugPrint('[VOIP] ❌ fallback local failed: $e2');
+      }
     }
   }
 
@@ -447,10 +491,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       '${message.notification != null}');
 
   if (type == PushTypes.incomingCall) {
+    // v8.9 : on garde _kStaleCallPush seulement comme LOG informatif.
+    // On ne rejette JAMAIS un push d'appel : le serveur doit envoyer
+    // call_hangup pour annuler un appel périmé.
     final sent = message.sentTime;
     if (sent != null && DateTime.now().difference(sent) > _kStaleCallPush) {
-      debugPrint('[FCM-BG] ⏱️ incoming_call périmé ignoré');
-      return;
+      debugPrint('[FCM-BG] ⏱️ incoming_call ancien '
+          '(age=${DateTime.now().difference(sent).inSeconds}s) : '
+          'traité quand même (call_hangup attendu du serveur)');
     }
 
     try {
@@ -488,7 +536,14 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         .initialize()
         .timeout(_kForegroundInitTimeout);
 
-    await _showFromRemoteMessage(message, skipIfSystemNotification: true);
+    // v8.9 : pour les types CHAT, on NE skippe PAS même si le message
+    // contient un bloc notification FCM. Sinon l'UI créée est le pop
+    // système FCM (sans actions Ouvrir/Répondre/Lu/Muet). On affiche
+    // TOUJOURS la notification locale riche avec actions.
+    await _showFromRemoteMessage(
+      message,
+      skipIfSystemNotification: !PushTypes.isChatType(type),
+    );
   } catch (e) {
     debugPrint('[FCM-BG] ❌ $e');
   }
@@ -501,6 +556,11 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+int _callNotifId(String inviteId) {
+  if (inviteId.isEmpty) return 0;
+  return (inviteId.hashCode ^ 0xCAFEBABE) & 0x7fffffff;
+}
 
 Future<void> _showFromRemoteMessage(
   RemoteMessage message, {
@@ -796,7 +856,9 @@ class PushNotificationService {
   }
 
   /// App ouverte : l'écran d'appel de l'app (GlobalCallListener) est prioritaire.
-  /// CallKit n'intervient qu'en secours, si la page n'est pas apparue après 2,5 s.
+  /// CallKit n'intervient qu'en secours, si la page n'est pas apparue après 2,5 s
+  /// ET que l'app est toujours au premier plan (pas si l'utilisateur vient
+  /// de changer d'appli entre-temps).
   void _handleForegroundIncomingCall(Map<String, dynamic> data) {
     final inviteId = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
     if (inviteId.isEmpty) return;
@@ -807,9 +869,17 @@ class PushNotificationService {
     final isVideo = (data['is_video'] ?? 'false').toString() == 'true';
 
     Future<void>.delayed(_kForegroundCallFallbackDelay, () {
+      // v8.9 : conditions de non-affichage CallKit plus complètes
       if (CallHandledRegistry.isShownInApp(inviteId) ||
           CallHandledRegistry.isEnded(inviteId) ||
-          CallHandledRegistry.isAccepted(inviteId)) {
+          CallHandledRegistry.isAccepted(inviteId) ||
+          CallHandledRegistry.isShownCallkit(inviteId)) {
+        return;
+      }
+      // v8.9 : ne pas déclencher CallKit si l'app n'est plus au 1er plan
+      // (sinon on ouvre CallKit sur une app en arrière-plan, ce qui crée
+      // un écran fantôme au retour).
+      if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;
       }
       unawaited(
