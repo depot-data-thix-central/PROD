@@ -118,7 +118,7 @@ class _Validators {
 
 class LocalNotificationService {
   LocalNotificationService._();
-  static final LocalNotificationService.instance = LocalNotificationService._();
+  static final LocalNotificationService instance = LocalNotificationService._();
 
   final FlutterLocalNotificationsPlugin _plugin =
       FlutterLocalNotificationsPlugin();
