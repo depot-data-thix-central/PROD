@@ -1,956 +1,851 @@
-// lib/services/push_notification_service_io.dart
-//
-// Push Notification Service IO v8.6 (Production)
-// FIX v8.6 : Utilisation de showChatMessage pour afficher les actions (Reply, Read, Mute)
-// ============================================================================
-
+// lib/presentation/chat/call/call_page.dart
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart';
-import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_messaging/firebase_messaging.dart';
-
-import 'package:flutter_callkit_incoming/flutter_callkit_incoming.dart';
-import 'package:flutter_callkit_incoming/entities/call_event.dart';
-import 'package:flutter_callkit_incoming/entities/call_kit_params.dart';
-import 'package:flutter_callkit_incoming/entities/android_params.dart';
-import 'package:flutter_callkit_incoming/entities/ios_params.dart';
-
-import 'package:flutter_app_badger/flutter_app_badger.dart';
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/services/chat/call_handled_registry.dart';
-import 'package:thix_id/services/local_notification_service.dart';
-import 'package:thix_id/supabase/supabase_config.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/l10n/app_localizations.dart';
+import 'package:thix_id/models/chat/call_status.dart';
+import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
+import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
+import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
+import 'package:thix_id/services/chat/call_service.dart';
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart' 
+    show supabaseClientProvider, supabaseUserIdProvider;
 
-// ============================================================================
-// CONSTANTS
-// ============================================================================
+const double _kAvatarRadius = 64.0;
+const double _kPipWidth = 100.0;
+const double _kPipHeight = 150.0;
+const Duration _kAutoCloseDelay = Duration(seconds: 4);
 
-const Duration _kSupabaseTimeout = Duration(seconds: 15);
-const Duration _kBackgroundInitTimeout = Duration(seconds: 10);
-const Duration _kForegroundInitTimeout = Duration(seconds: 5);
-const Duration _kCallkitTimeout = Duration(seconds: 8);
-const Duration _kInitialTapDelay = Duration(milliseconds: 1500);
-const Duration _kForegroundCallFallbackDelay = Duration(milliseconds: 2500);
-const Duration _kStaleCallPush = Duration(seconds: 90);
+class CallPage extends ConsumerStatefulWidget {
+  const CallPage({super.key});
 
-const int _kMaxRetries = 3;
-const Duration _kRetryDelay = Duration(seconds: 2);
-
-const int _kMaxTitleLength = 100;
-const int _kMaxBodyLength = 500;
-const int _kMaxPayloadLength = 500;
-const int _kMaxTokenLength = 500;
-
-const int _kMinUidLength = 20;
-const int _kMaxUidLength = 64;
-
-const int _kCallDurationMs = 60000;
-
-// ============================================================================
-// TYPES
-// ============================================================================
-
-class PushTypes {
-  PushTypes._();
-
-  static const String chatMessage = 'chat_message';
-  static const String chat = 'chat';
-  static const String message = 'message';
-  static const String incomingCall = 'incoming_call';
-  static const String callHangup = 'call_hangup';
-  static const String notification = 'notification';
-  static const String sos = 'sos';
-  static const String like = 'like';
-  static const String follow = 'follow';
-  static const String comment = 'comment';
-  static const String commentReply = 'comment_reply';
-  static const String commentLike = 'comment_like';
-  static const String repost = 'repost';
-  static const String connection = 'connection';
-
-  static const Set<String> allowed = <String>{
-    chatMessage,
-    chat,
-    message,
-    incomingCall,
-    callHangup,
-    notification,
-    sos,
-    like,
-    follow,
-    comment,
-    commentReply,
-    commentLike,
-    repost,
-    connection,
-  };
-
-  static bool isAllowed(String type) => allowed.contains(type);
-
-  static bool isCallType(String type) =>
-      type == incomingCall || type == callHangup;
-
-  static bool isChatType(String type) =>
-      type == chatMessage || type == chat || type == message;
+  @override
+  ConsumerState<CallPage> createState() => _CallPageState();
 }
 
-// ============================================================================
-// VALIDATORS
-// ============================================================================
-
-class _Validators {
-  _Validators._();
-
-  static bool isValidUid(String? uid) {
-    if (uid == null || uid.isEmpty) return false;
-    if (uid.length < _kMinUidLength || uid.length > _kMaxUidLength) {
-      return false;
-    }
-    return RegExp(r'^[A-Za-z0-9_\-]+$').hasMatch(uid);
-  }
-
-  static bool isValidToken(String? token) {
-    if (token == null || token.isEmpty) return false;
-    if (token.length > _kMaxTokenLength) return false;
-    return RegExp(r'^[A-Za-z0-9_\-:]+$').hasMatch(token);
-  }
-
-  static String sanitizeString(String? input, {required int maxLength}) {
-    if (input == null) return '';
-
-    final s = input
-        .replaceAll(RegExp(r'<[^>]*>'), '')
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .trim();
-
-    if (s.length > maxLength) {
-      return '${s.substring(0, maxLength)}…';
-    }
-    return s;
-  }
-
-  static bool isValidRoute(String? route) {
-    if (route == null || route.isEmpty || route.length > _kMaxPayloadLength) {
-      return false;
-    }
-
-    const prefixes = <String>[
-      'call:',
-      'chat:',
-      '/chat',
-      '/profile',
-      '/notification',
-      '/sos',
-      '/event',
-      '/call',
-      '/network',
-      '/money',
-      '/media',
-      '/health',
-      '/market',
-      '/jobs',
-      '/opportunities',
-      '/education',
-      '/reservation',
-      '/country',
-      '/doc',
-      '/ia',
-    ];
-
-    for (final prefix in prefixes) {
-      if (route.startsWith(prefix)) return true;
-    }
-    return false;
-  }
-
-  static String? sanitizePayload(String? payload) {
-    if (payload == null || payload.isEmpty) return null;
-    return sanitizeString(payload, maxLength: _kMaxPayloadLength);
-  }
-
-  static bool isValidUuid(String? id) {
-    if (id == null || id.isEmpty) return false;
-    return RegExp(
-      r'^[0-9a-fA-F]{8}-'
-      r'[0-9a-fA-F]{4}-'
-      r'[0-9a-fA-F]{4}-'
-      r'[0-9a-fA-F]{4}-'
-      r'[0-9a-fA-F]{12}$',
-    ).hasMatch(id);
-  }
-
-  static String? sanitizeUrl(String? url) {
-    if (url == null || url.isEmpty || url.length > 500) return null;
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      return null;
-    }
-    return url;
-  }
-}
-
-// ============================================================================
-// VOIP CALL MANAGER
-// ============================================================================
-
-class _VoipCallManager {
-  _VoipCallManager._();
-
-  static final _VoipCallManager instance = _VoipCallManager._();
-
-  StreamSubscription<CallEvent?>? _eventSub;
-  bool _isInitialized = false;
-
-  void Function(String inviteId, String channelName, bool isVideo)? onAcceptCall;
-  void Function(String inviteId)? onDeclineCall;
-
-  Future<void> initialize() async {
-    if (_isInitialized) return;
-
-    try {
-      await _eventSub?.cancel();
-      _eventSub = FlutterCallkitIncoming.onEvent.listen(_onCallEvent);
-      _isInitialized = true;
-      debugPrint('[VOIP] ✓ CallKit listener attached');
-    } catch (e) {
-      debugPrint('[VOIP] ❌ Init failed: $e');
-    }
-  }
-
-  Future<void> showIncomingCall({
-    required String inviteId,
-    required String callerName,
-    String? callerAvatar,
-    required String channelName,
-    bool isVideo = false,
-  }) async {
-    if (!_isInitialized) {
-      await initialize();
-    }
-
-    final safeInviteId = _Validators.isValidUuid(inviteId) ? inviteId : '';
-    final safeChannel = _Validators.sanitizeString(channelName, maxLength: 64);
-    final safeName = _Validators.sanitizeString(callerName, maxLength: 50);
-
-    if (safeInviteId.isEmpty || safeChannel.isEmpty) {
-      debugPrint('[VOIP] ⚠️ Appel ignoré : invite_id invalide ou channel_name vide');
-      return;
-    }
-
-    final params = CallKitParams(
-      id: safeInviteId,
-      nameCaller: safeName,
-      appName: 'THIX Hub',
-      avatar: _Validators.sanitizeUrl(callerAvatar) ?? '',
-      handle: safeName,
-      type: isVideo ? 1 : 0,
-      duration: _kCallDurationMs, // 60 secondes
-      textAccept: 'Accepter',
-      textDecline: 'Refuser',
-      extra: <String, dynamic>{
-        'invite_id': safeInviteId,
-        'channel_name': safeChannel,
-        'caller_name': safeName,
-        'is_video': isVideo,
-      },
-      android: const AndroidParams(
-        isCustomNotification: true,
-        isShowLogo: true,
-        ringtonePath: 'system_ringtone_default', 
-        backgroundColor: '#0A2F5C',
-        actionColor: '#4CAF50',
-        isShowFullLockedScreen: true,
-      ),
-      ios: IOSParams(
-        iconName: 'AppIcon',
-        handleType: 'generic',
-        supportsVideo: isVideo,
-        ringtonePath: 'system_ringtone_default', 
-      ),
-    );
-
-    try {
-      await FlutterCallkitIncoming.showCallkitIncoming(params)
-          .timeout(_kCallkitTimeout);
-      debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
-    } catch (e) {
-      debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e');
-    }
-  }
-
-  Future<void> endCall(String inviteId) async {
-    try {
-      await FlutterCallkitIncoming.endCall(inviteId);
-    } catch (e) {
-      debugPrint('[VOIP] ❌ endCall: $e');
-    }
-  }
-
-  Future<void> endAllCalls() async {
-    try {
-      await FlutterCallkitIncoming.endAllCalls();
-    } catch (e) {
-      debugPrint('[VOIP] ❌ endAllCalls: $e');
-    }
-  }
-
-  void _emitAccept(String inviteId, String channelName, bool isVideo) {
-    if (!CallHandledRegistry.markAccepted(inviteId)) {
-      debugPrint('[VOIP] ℹ️ Acceptation en double ignorée: $inviteId');
-      return;
-    }
-    onAcceptCall?.call(inviteId, channelName, isVideo);
-  }
-
-  Future<void> resumeAcceptedCalls() async {
-    try {
-      final calls = await FlutterCallkitIncoming.activeCalls();
-      if (calls is! List) return;
-
-      for (final c in calls) {
-        if (c is! Map) continue;
-        if (c['isAccepted'] != true) continue;
-
-        final extra = (c['extra'] as Map?)?.cast<String, dynamic>() ??
-            <String, dynamic>{};
-        final inviteId = (extra['invite_id'] ?? c['id'] ?? '').toString();
-        final channelName = (extra['channel_name'] ?? '').toString();
-        final isVideo = extra['is_video'] == true;
-
-        if (inviteId.isEmpty) continue;
-        debugPrint('[VOIP] ↩️ Appel accepté rattrapé au démarrage: $inviteId');
-        _emitAccept(inviteId, channelName, isVideo);
-      }
-    } catch (e) {
-      debugPrint('[VOIP] ⚠️ resumeAcceptedCalls: $e');
-    }
-  }
-
-  void _onCallEvent(CallEvent? event) {
-    if (event == null) return;
-
-    final type = event.event;
-
-    final extra = (event.body?['extra'] as Map?)?.cast<String, dynamic>() ??
-        <String, dynamic>{};
-
-    final inviteId = extra['invite_id']?.toString() ?? '';
-    final channelName = extra['channel_name']?.toString() ?? '';
-    final isVideo = extra['is_video'] == true;
-
-    if (type == Event.actionCallAccept) {
-      _emitAccept(inviteId, channelName, isVideo);
-    } else if (type == Event.actionCallDecline) {
-      CallHandledRegistry.emitDeclined(inviteId);
-      onDeclineCall?.call(inviteId);
-    } else if (type == Event.actionCallTimeout) {
-      CallHandledRegistry.markEnded(inviteId);
-      onDeclineCall?.call(inviteId);
-    }
-  }
-
-  void dispose() {
-    unawaited(_eventSub?.cancel());
-    _eventSub = null;
-    _isInitialized = false;
-    onAcceptCall = null;
-    onDeclineCall = null;
-  }
-}
-
-// ============================================================================
-// BADGE MANAGER
-// ============================================================================
-
-class _BadgeManager {
-  _BadgeManager._();
-
-  static final _BadgeManager instance = _BadgeManager._();
-
-  int _lastCount = -1;
-
-  Future<void> sync(int count) async {
-    final safe = count < 0 ? 0 : count;
-    if (safe == _lastCount) return;
-    _lastCount = safe;
-
-    try {
-      final supported = await FlutterAppBadger.isAppBadgeSupported();
-      if (!supported) return;
-
-      if (safe == 0) {
-        FlutterAppBadger.removeBadge();
-      } else {
-        FlutterAppBadger.updateBadgeCount(safe);
-      }
-    } catch (e) {
-      debugPrint('[Badge] ❌ $e');
-    }
-  }
-
-  Future<int> fetchUnreadCount() async {
-    try {
-      final uid = SupabaseConfig.currentUser?.id;
-      if (uid == null || !_Validators.isValidUid(uid)) return -1;
-
-      return await SupabaseConfig.client
-          .from('notifications')
-          .count(CountOption.exact)
-          .eq('user_id', uid)
-          .eq('is_read', false)
-          .timeout(_kSupabaseTimeout);
-    } catch (_) {
-      return -1;
-    }
-  }
-
-  Future<void> refreshFromDb() async {
-    final count = await fetchUnreadCount();
-    if (count < 0) return;
-    await sync(count);
-  }
-}
-
-// ============================================================================
-// BACKGROUND HANDLER
-// ============================================================================
-
-@pragma('vm:entry-point')
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  var attempts = 0;
-
-  while (attempts < _kMaxRetries) {
-    try {
-      await Firebase.initializeApp().timeout(_kBackgroundInitTimeout);
-      break;
-    } catch (e) {
-      attempts++;
-      if (attempts >= _kMaxRetries) return;
-      await Future.delayed(_kRetryDelay);
-    }
-  }
-
-  final data = message.data;
-  final type = (data['type'] ?? '').toString().toLowerCase();
-
-  if (type == PushTypes.incomingCall) {
-    final sent = message.sentTime;
-    if (sent != null && DateTime.now().difference(sent) > _kStaleCallPush) {
-      return;
-    }
-
-    try {
-      await _VoipCallManager.instance.initialize();
-      await _VoipCallManager.instance.showIncomingCall(
-        inviteId: (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
-        callerName: (data['caller_name'] ?? data['callerName'] ?? 'Appel entrant').toString(),
-        callerAvatar: data['caller_avatar']?.toString(),
-        channelName: (data['channel_name'] ?? data['channelName'] ?? '').toString(),
-        isVideo: (data['is_video'] ?? data['isVideo'] ?? 'false').toString() == 'true',
-      );
-      return;
-    } catch (e) {
-      debugPrint('[FCM-BG] ❌ incoming_call: $e');
-    }
-  }
-
-  if (type == PushTypes.callHangup) {
-    final id = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
-    if (id.isNotEmpty) {
-      CallHandledRegistry.markEnded(id);
-      await _VoipCallManager.instance.endCall(id);
-    }
-    return;
-  }
-
-  try {
-    await LocalNotificationService.instance.initialize().timeout(_kForegroundInitTimeout);
-    await _showFromRemoteMessage(message, skipIfSystemNotification: true);
-  } catch (e) {
-    debugPrint('[FCM-BG] ❌ $e');
-  }
-
-  try {
-    await _BadgeManager.instance.refreshFromDb();
-  } catch (_) {}
-}
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-
-Future<void> _showFromRemoteMessage(
-  RemoteMessage message, {
-  bool skipIfSystemNotification = false,
-}) async {
-  final data = message.data;
-  final type = (data['type'] ?? '').toString().toLowerCase();
-
-  if (PushTypes.isCallType(type)) return;
-
-  final hasContent = message.notification != null ||
-      data['title'] != null ||
-      data['body'] != null ||
-      data['message'] != null;
-  if (!hasContent) {
-    debugPrint('[Push] ℹ️ message sans contenu ignoré (type="$type")');
-    return;
-  }
-
-  if (skipIfSystemNotification && message.notification != null) return;
-
-  try {
-    final title = _Validators.sanitizeString(
-      message.notification?.title ??
-          data['title']?.toString() ??
-          _defaultTitle(type),
-      maxLength: _kMaxTitleLength,
-    );
-
-    final body = _Validators.sanitizeString(
-      message.notification?.body ??
-          data['body']?.toString() ??
-          data['message']?.toString() ??
-          'Notification',
-      maxLength: _kMaxBodyLength,
-    );
-
-    final payload = _buildPayload(data);
-    final notifId = _generateNotifId(message);
-
-    // ✅ v8.6 : Utiliser les actions pour les messages de chat
-    if (PushTypes.isChatType(type)) {
-      await LocalNotificationService.instance.showChatMessage(
-        id: notifId,
-        title: title,
-        body: body,
-        payload: payload,
-      );
-    } else {
-      await LocalNotificationService.instance.show(
-        id: notifId,
-        title: title,
-        body: body,
-        payload: payload,
-        channelId: _getChannelForType(type),
-      );
-    }
-  } catch (e) {
-    debugPrint('[Push] ❌ affichage notification: $e');
-  }
-}
-
-String _getChannelForType(String type) {
-  if (type == PushTypes.incomingCall || type == PushTypes.sos) {
-    return LocalNotificationService.channelCalls;
-  }
-  if (PushTypes.isChatType(type)) {
-    return LocalNotificationService.channelChat;
-  }
-  return LocalNotificationService.channelDefault;
-}
-
-String _defaultTitle(String type) {
-  switch (type) {
-    case PushTypes.incomingCall: return 'Appel entrant';
-    case PushTypes.chatMessage:
-    case PushTypes.chat:
-    case PushTypes.message: return 'Nouveau message';
-    case PushTypes.sos: return 'Alerte SOS';
-    case PushTypes.like: return 'Nouveau like';
-    case PushTypes.follow: return 'Nouvel abonné';
-    case PushTypes.comment: return 'Nouveau commentaire';
-    case PushTypes.commentReply: return 'Réponse à votre commentaire';
-    case PushTypes.commentLike: return 'Like sur votre commentaire';
-    case PushTypes.repost: return 'Republication';
-    case PushTypes.connection: return 'Nouvelle connexion';
-    default: return 'THIX Hub';
-  }
-}
-
-String? _buildPayload(Map<String, dynamic> data) {
-  final route = data['route']?.toString();
-
-  if (route != null && route.isNotEmpty && _Validators.isValidRoute(route)) {
-    return _Validators.sanitizePayload(route);
-  }
-
-  final type = (data['type'] ?? '').toString().toLowerCase();
-
-  if (type == PushTypes.incomingCall) {
-    final inviteId = _Validators.sanitizeString(
-      (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
-      maxLength: 64,
-    );
-    final channel = _Validators.sanitizeString(
-      (data['channel_name'] ?? data['channelName'] ?? '').toString(),
-      maxLength: 64,
-    );
-
-    if (inviteId.isNotEmpty && channel.isNotEmpty) {
-      return 'call:$inviteId:$channel';
-    }
-    return null;
-  }
-
-  if (PushTypes.isChatType(type)) {
-    final convId = _Validators.sanitizeString(
-      (data['conversation_id'] ?? data['conversationId'] ?? '').toString(),
-      maxLength: 64,
-    );
-
-    if (convId.isNotEmpty) return 'chat:$convId';
-  }
-
-  final id = data['notification_id']?.toString() ?? data['id']?.toString();
-  return id != null ? _Validators.sanitizePayload(id) : null;
-}
-
-int _generateNotifId(RemoteMessage message) {
-  final id = message.messageId ??
-      message.data['invite_id']?.toString() ??
-      message.data['conversation_id']?.toString();
-
-  if (id != null && id.isNotEmpty) {
-    return (id.hashCode ^ 0x12345678) & 0x7fffffff;
-  }
-
-  final now = DateTime.now().microsecondsSinceEpoch;
-  return (now ^ (now >> 16)) & 0x7fffffff;
-}
-
-// ============================================================================
-// PUSH NOTIFICATION SERVICE
-// ============================================================================
-
-class PushNotificationService {
-  PushNotificationService._();
-
-  static final PushNotificationService instance = PushNotificationService._();
-
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-
-  static const String _tokensTable = 'user_device_tokens';
-
-  bool _initialized = false;
-  bool _initializing = false;
-
-  StreamSubscription<String>? _tokenRefreshSub;
-  StreamSubscription<RemoteMessage>? _foregroundSub;
-  StreamSubscription<RemoteMessage>? _openedAppSub;
-
-  BuildContext? _context;
-
-  static void Function(Map<String, dynamic> data)? onPushTap;
-
-  void Function(String inviteId, String channelName, bool isVideo)? onVoipAccept;
-  void Function(String inviteId)? onVoipDecline;
-
-  Future<void> initialize() async {
-    if (_initialized) {
-      await _registerToken();
-      return;
-    }
-
-    if (_initializing) {
-      while (_initializing) {
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-      return;
-    }
-
-    _initializing = true;
-
-    try {
-      await _messaging.requestPermission(
-        alert: true,
-        badge: true,
-        sound: true,
-      );
-
-      try {
-        await LocalNotificationService.instance.requestPermission();
-      } catch (_) {}
-
-      try {
-        await FlutterCallkitIncoming.requestFullIntentPermission();
-      } catch (e) {
-        debugPrint('[PushNotif] ⚠️ FullIntent: $e');
-      }
-
-      try {
-        await _VoipCallManager.instance.initialize();
-        _VoipCallManager.instance.onAcceptCall = _handleVoipAccept;
-        _VoipCallManager.instance.onDeclineCall = _handleVoipDecline;
-        await _VoipCallManager.instance.resumeAcceptedCalls();
-      } catch (e) {
-        debugPrint('[PushNotif] ⚠️ VoIP: $e');
-      }
-
-      await _registerToken();
-
-      await _tokenRefreshSub?.cancel();
-      _tokenRefreshSub = _messaging.onTokenRefresh.listen((_) {
-        unawaited(_registerToken());
-      });
-
-      await _foregroundSub?.cancel();
-      _foregroundSub =
-          FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-
-      await _openedAppSub?.cancel();
-      _openedAppSub =
-          FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-
-      final initial = await _messaging.getInitialMessage();
-      if (initial != null) {
-        Future.delayed(_kInitialTapDelay, () => _handleNotificationTap(initial));
-      }
-
-      await _BadgeManager.instance.refreshFromDb();
-
-      _initialized = true;
-    } catch (e) {
-      debugPrint('[PushNotif] ❌ Init failed: $e');
-    } finally {
-      _initializing = false;
-    }
-  }
-
-  void _handleVoipAccept(String id, String ch, bool v) {
-    if (_context != null && !_context!.mounted) return;
-    try {
-      onVoipAccept?.call(id, ch, v);
-    } catch (_) {}
-  }
-
-  void _handleVoipDecline(String id) {
-    try {
-      onVoipDecline?.call(id);
-    } catch (_) {}
-  }
-
-  Future<void> endVoipCall(String inviteId) async {
-    await _VoipCallManager.instance.endCall(inviteId);
-  }
-
-  Future<void> endAllVoipCalls() async {
-    await _VoipCallManager.instance.endAllCalls();
-  }
-
-  Future<void> onSignedIn({required String userId}) async {
-    if (!_Validators.isValidUid(userId)) return;
-    _cleanupListeners();
-    _initialized = false;
-    await initialize();
-  }
-
-  Future<void> onSignedOut() async {
-    _cleanupListeners();
-    await unregisterToken();
-    await _BadgeManager.instance.sync(0);
-    await _VoipCallManager.instance.endAllCalls();
-    _initialized = false;
-  }
-
-  void _cleanupListeners() {
-    unawaited(_tokenRefreshSub?.cancel());
-    _tokenRefreshSub = null;
-    unawaited(_foregroundSub?.cancel());
-    _foregroundSub = null;
-    unawaited(_openedAppSub?.cancel());
-    _openedAppSub = null;
-  }
-
-  void _handleForegroundIncomingCall(Map<String, dynamic> data) {
-    final inviteId = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
-    if (inviteId.isEmpty) return;
-
-    final callerName = (data['caller_name'] ?? 'Appel entrant').toString();
-    final callerAvatar = data['caller_avatar']?.toString();
-    final channelName = (data['channel_name'] ?? '').toString();
-    final isVideo = (data['is_video'] ?? 'false').toString() == 'true';
-
-    Future<void>.delayed(_kForegroundCallFallbackDelay, () {
-      if (CallHandledRegistry.isShownInApp(inviteId) ||
-          CallHandledRegistry.isEnded(inviteId) ||
-          CallHandledRegistry.isAccepted(inviteId)) {
-        return;
-      }
-      unawaited(
-        _VoipCallManager.instance.showIncomingCall(
-          inviteId: inviteId,
-          callerName: callerName,
-          callerAvatar: callerAvatar,
-          channelName: channelName,
-          isVideo: isVideo,
-        ),
-      );
+class _CallPageState extends ConsumerState<CallPage> {
+  late final CallMediaService _media;
+  Timer? _autoCloseTimer;
+  bool _isHangingUp = false;
+  bool _closed = false;
+  bool _errorShown = false;
+  Offset _pipPosition = const Offset(16, 100);
+
+  @override
+  void initState() {
+    super.initState();
+    _media = ref.read(callMediaServiceProvider);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final s = ref.read(callProvider);
+      if (s.status == CallStatus.failed) _handleCallError(s.error);
     });
   }
 
-  void _handleForegroundMessage(RemoteMessage message) {
-    final data = message.data;
-    final type = (data['type'] ?? '').toString().toLowerCase();
-
-    if (type == PushTypes.incomingCall) {
-      _handleForegroundIncomingCall(data);
-      return;
-    }
-
-    if (type == PushTypes.callHangup) {
-      final id = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
-      if (id.isNotEmpty) {
-        CallHandledRegistry.markEnded(id);
-        unawaited(_VoipCallManager.instance.endCall(id));
-      }
-      return;
-    }
-
-    final hasVisual = message.notification != null ||
-        data['title'] != null ||
-        data['body'] != null ||
-        data['type'] != null;
-
-    if (!hasVisual) return;
-
-    Future<void> work() async {
-      await _showFromRemoteMessage(message);
-      await _BadgeManager.instance.refreshFromDb();
-    }
-
-    unawaited(work());
-  }
-
-  void _handleNotificationTap(RemoteMessage message) {
-    if (_context != null && !_context!.mounted) return;
-
-    final payload = _buildPayload(message.data);
-
-    try {
-      // ✅ MIS À JOUR : Gère actionId et input (bien que null pour un simple tap)
-      LocalNotificationService.instance.onNotificationTap?.call(payload);
-    } catch (_) {}
-
-    try {
-      onPushTap?.call(message.data);
-    } catch (_) {}
-
-    unawaited(_BadgeManager.instance.refreshFromDb());
-  }
-
-  // ──────────────────────────────────────────────────────────────
-  // TOKEN FCM → SUPABASE
-  // ──────────────────────────────────────────────────────────────
-  Future<void> _registerToken() async {
-    var attempts = 0;
-
-    while (attempts < _kMaxRetries) {
-      try {
-        final token = await _messaging.getToken();
-        final uid = SupabaseConfig.currentUser?.id;
-
-        if (token == null || !_Validators.isValidToken(token)) {
-          debugPrint('[PushNotif] ⚠️ Token FCM absent ou invalide '
-              '(Google Play Services / google-services.json ?)');
-          return;
-        }
-        if (uid == null || !_Validators.isValidUid(uid)) {
-          debugPrint(
-              '[PushNotif] ⚠️ Pas d\'utilisateur connecté : token non enregistré');
-          return;
-        }
-
-        await _saveTokenRow(uid, token);
-        debugPrint('[PushNotif] ✓ Token enregistré en base');
-        return;
-      } catch (e) {
-        attempts++;
-        debugPrint(
-            '[PushNotif] ❌ Enregistrement token ($attempts/$_kMaxRetries): $e');
-        if (attempts >= _kMaxRetries) return;
-        await Future.delayed(_kRetryDelay);
-      }
-    }
-  }
-
-  Future<void> _saveTokenRow(String uid, String token) async {
-    final client = SupabaseConfig.client;
-
-    try {
-      await client
-          .from(_tokensTable)
-          .delete()
-          .eq('fcm_token', token)
-          .neq('user_id', uid)
-          .timeout(_kSupabaseTimeout);
-    } catch (_) {}
-
-    final row = <String, dynamic>{
-      'user_id': uid,
-      'fcm_token': token,
-      'platform': defaultTargetPlatform.name,
-      'updated_at': DateTime.now().toUtc().toIso8601String(),
-    };
-
-    try {
-      await client
-          .from(_tokensTable)
-          .upsert(row, onConflict: 'user_id,fcm_token')
-          .timeout(_kSupabaseTimeout);
-    } catch (e) {
-      debugPrint('[PushNotif] ⚠️ upsert échoué ($e) → plan B delete+insert');
-      await client
-          .from(_tokensTable)
-          .delete()
-          .eq('user_id', uid)
-          .eq('fcm_token', token)
-          .timeout(_kSupabaseTimeout);
-      await client.from(_tokensTable).insert(row).timeout(_kSupabaseTimeout);
-    }
-  }
-
-  Future<void> unregisterToken() async {
-    try {
-      final token = await _messaging.getToken();
-      if (token == null || !_Validators.isValidToken(token)) return;
-
-      await SupabaseConfig.client
-          .from(_tokensTable)
-          .delete()
-          .eq('fcm_token', token)
-          .timeout(_kSupabaseTimeout);
-    } catch (e) {
-      debugPrint('[PushNotif] ⚠️ unregisterToken: $e');
-    }
-  }
-
-  void registerContext(BuildContext context) {
-    _context = context;
-  }
-
-  void unregisterContext() {
-    _context = null;
-  }
-
-  Future<void> updateBadge(int count) async {
-    await _BadgeManager.instance.sync(count);
-  }
-
-  Future<void> refreshBadge() async {
-    await _BadgeManager.instance.refreshFromDb();
-  }
-
+  @override
   void dispose() {
-    _cleanupListeners();
-    _VoipCallManager.instance.dispose();
-    onPushTap = null;
-    onVoipAccept = null;
-    onVoipDecline = null;
-    _context = null;
-    _initialized = false;
-    _initializing = false;
+    _autoCloseTimer?.cancel();
+    super.dispose();
+  }
+
+  void _closePage() {
+    if (_closed || !mounted) return;
+    _closed = true;
+    _autoCloseTimer?.cancel();
+
+    final route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
+    final nav = Navigator.of(context);
+    if (route.isCurrent) {
+      nav.pop();
+    } else {
+      nav.removeRoute(route);
+    }
+  }
+
+  void _handleCallError(String? error) {
+    if (_errorShown || !mounted) return;
+    _errorShown = true;
+
+    final l10n = AppLocalizations.of(context);
+    final message = error ?? l10n.t('call_error_generic');
+    HapticFeedback.heavyImpact();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 5),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+
+    _autoCloseTimer?.cancel();
+    _autoCloseTimer = Timer(_kAutoCloseDelay, _closePage);
+  }
+
+  String _formatDuration(Duration d) {
+    final m = d.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final s = d.inSeconds.remainder(60).toString().padLeft(2, '0');
+    final h = d.inHours;
+    return h > 0 ? '$h:$m:$s' : '$m:$s';
+  }
+
+  String _getStatusLabel(CallState state, AppLocalizations l10n) {
+    switch (state.status) {
+      case CallStatus.idle:
+      case CallStatus.ringing:
+        return state.isCaller ? l10n.t('call_status_calling') : l10n.t('call_status_connecting');
+      case CallStatus.accepted:
+        return l10n.t('call_status_connecting');
+      case CallStatus.ongoing:
+        final count = state.remoteUids.length + 1; 
+        final time = _formatDuration(state.duration);
+        return count > 2 ? '$count participants · $time' : time;
+      case CallStatus.busy:
+        return l10n.t('call_status_busy');
+      case CallStatus.failed:
+        return l10n.t('call_status_failed');
+      default:
+        return state.status.label;
+    }
+  }
+
+  Future<void> _hangUp() async {
+    if (_isHangingUp) return;
+    setState(() => _isHangingUp = true);
+    HapticFeedback.mediumImpact();
+
+    try {
+      await ref.read(callProvider.notifier).hangUp();
+    } catch (_) {}
+    _closePage();
+  }
+
+  void _toggleMute() => ref.read(callProvider.notifier).toggleMute();
+  void _toggleVideo() => ref.read(callProvider.notifier).toggleVideo();
+  void _switchCamera() => ref.read(callProvider.notifier).switchCamera();
+  void _toggleSpeaker() => ref.read(callProvider.notifier).toggleSpeaker();
+  void _minimize() => Navigator.maybePop(context);
+
+  // ✅ NOUVEAU : Ouvre la modale de sélection de contacts
+  void _inviteParticipant() {
+    HapticFeedback.selectionClick();
+    final state = ref.read(callProvider);
+    if (state.channelName == null || state.channelName!.isEmpty) return;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _InviteParticipantSheet(
+        channelName: state.channelName!,
+        onInvited: (name) {
+          Navigator.pop(ctx);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$name a été invité à rejoindre l\'appel.'),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    ref.listen<CallState>(callProvider, (prev, next) {
+      if (!mounted) return;
+      if (next.status == CallStatus.failed && prev?.status != CallStatus.failed) {
+        _handleCallError(next.error);
+      } else if (next.status == CallStatus.idle && prev != null && prev.status != CallStatus.idle) {
+        _closePage();
+      }
+    });
+
+    final state = ref.watch(callProvider);
+    final engine = _media.engine;
+    final engineReady = engine != null;
+
+    final participantCount = state.remoteUids.length;
+    
+    final isSingleRemoteVideo = state.isVideo && participantCount == 1 && engineReady && !state.videoOff;
+    final showLocalFull = state.isVideo && participantCount == 0 && !state.videoOff && engineReady;
+    final showGrid = participantCount > 1; 
+
+    final statusLabel = _getStatusLabel(state, l10n);
+    final displayName = showGrid 
+        ? 'Appel de groupe' 
+        : (state.remoteName ?? l10n.t('call_unknown_contact'));
+
+    return Scaffold(
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              ThixPolicy.primaryDeep,
+              ThixPolicy.primary.withOpacity(0.8),
+              ThixPolicy.surface,
+            ],
+            stops: const [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              _buildMainArea(state, engine, showGrid, isSingleRemoteVideo, showLocalFull, l10n),
+              
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.3),
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.6),
+                        ],
+                        stops: const [0.0, 0.4, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              
+              _buildHeader(displayName, statusLabel, state),
+              
+              // Bouton d'ajout de participant
+              Positioned(
+                top: 80,
+                right: 16,
+                child: FloatingActionButton.small(
+                  heroTag: 'add_participant',
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  elevation: 0,
+                  onPressed: _inviteParticipant,
+                  child: const Icon(Icons.person_add_alt_1, color: Colors.white, size: 20),
+                ),
+              ),
+
+              if (state.isVideo && !state.videoOff && engineReady && !showLocalFull) 
+                _buildDraggablePip(engine),
+
+              _buildStatusIndicators(state),
+              
+              CallControlsPanel(
+                state: state,
+                l10n: l10n,
+                onToggleMute: _toggleMute,
+                onToggleVideo: _toggleVideo,
+                onSwitchCamera: _switchCamera,
+                onToggleSpeaker: _toggleSpeaker,
+                onHangUp: _hangUp,
+                isHangingUp: _isHangingUp,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMainArea(
+    CallState state, 
+    RtcEngine? engine, 
+    bool showGrid, 
+    bool isSingleRemoteVideo, 
+    bool showLocalFull,
+    AppLocalizations l10n,
+  ) {
+    if (showGrid) {
+      return Positioned.fill(
+        child: Padding(
+          padding: const EdgeInsets.only(top: 130, bottom: 180, left: 16, right: 16),
+          child: GridView.builder(
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: state.remoteUids.length > 4 ? 3 : 2,
+              crossAxisSpacing: 8,
+              mainAxisSpacing: 8,
+              childAspectRatio: 0.75,
+            ),
+            itemCount: state.remoteUids.length,
+            itemBuilder: (context, index) {
+              final uid = state.remoteUids[index];
+              final peer = state.peers[uid]; 
+              
+              if (state.isVideo && engine != null) {
+                return ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      AgoraVideoView(
+                        key: ValueKey('remote_grid_$uid'),
+                        controller: VideoViewController.remote(
+                          rtcEngine: engine,
+                          canvas: VideoCanvas(uid: uid),
+                          connection: RtcConnection(channelId: state.channelName!),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            peer?.name ?? 'Participant', 
+                            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      )
+                    ],
+                  ),
+                );
+              } else {
+                return Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.1), 
+                    borderRadius: BorderRadius.circular(16)
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: Colors.white.withOpacity(0.2),
+                        backgroundImage: peer?.avatarUrl != null ? NetworkImage(peer!.avatarUrl!) : null,
+                        child: peer?.avatarUrl == null ? const Icon(Icons.person, size: 40, color: Colors.white) : null,
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        peer?.name ?? 'Participant',
+                        style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                );
+              }
+            },
+          ),
+        ),
+      );
+    }
+
+    if (showLocalFull && engine != null) {
+      return Positioned.fill(
+        child: RepaintBoundary(
+          child: AgoraVideoView(
+            key: const ValueKey('local_full'),
+            controller: VideoViewController(
+              rtcEngine: engine,
+              canvas: const VideoCanvas(uid: 0),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (isSingleRemoteVideo && engine != null) {
+      return Positioned.fill(
+        child: RepaintBoundary(
+          child: AgoraVideoView(
+            key: ValueKey('remote_single_${state.remoteUids.first}'),
+            controller: VideoViewController.remote(
+              rtcEngine: engine,
+              canvas: VideoCanvas(uid: state.remoteUids.first),
+              connection: RtcConnection(channelId: state.channelName!),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _buildAvatarFallback(state, l10n);
+  }
+
+  Widget _buildAvatarFallback(CallState state, AppLocalizations l10n) {
+    final remoteName = state.remoteName ?? l10n.t('call_unknown_contact');
+
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 20, spreadRadius: 5),
+              ],
+            ),
+            child: CircleAvatar(
+              radius: _kAvatarRadius,
+              backgroundColor: Colors.white,
+              backgroundImage: state.remoteAvatar != null ? NetworkImage(state.remoteAvatar!) : null,
+              child: state.remoteAvatar == null
+                  ? Icon(Icons.person, size: _kAvatarRadius * 0.8, color: ThixPolicy.primary)
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            remoteName,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 28,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.2),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              _getStatusLabel(state, l10n),
+              style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeader(String displayName, String statusLabel, CallState state) {
+    return Positioned(
+      top: 16,
+      left: 16,
+      right: 16,
+      child: Row(
+        children: [
+          Material(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
+              onTap: _minimize,
+              borderRadius: BorderRadius.circular(12),
+              child: const Padding(
+                padding: EdgeInsets.all(8),
+                child: Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white, size: 28),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  displayName,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    shadows: [Shadow(color: Colors.black26, blurRadius: 4)],
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  statusLabel,
+                  style: TextStyle(
+                    color: Colors.white.withOpacity(0.8),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: state.isVideo ? Colors.blue.withOpacity(0.8) : Colors.green.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(state.isVideo ? Icons.videocam_rounded : Icons.phone_rounded,
+                    color: Colors.white, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  state.isVideo ? 'Vidéo' : 'Audio',
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDraggablePip(RtcEngine engine) {
+    return Positioned(
+      left: _pipPosition.dx,
+      top: _pipPosition.dy,
+      child: GestureDetector(
+        onPanUpdate: (details) {
+          final size = MediaQuery.of(context).size;
+          final maxX = (size.width - _kPipWidth).clamp(0.0, double.infinity).toDouble();
+          final maxY = (size.height - _kPipHeight - 140).clamp(0.0, double.infinity).toDouble();
+          setState(() {
+            _pipPosition = Offset(
+              (_pipPosition.dx + details.delta.dx).clamp(0.0, maxX).toDouble(),
+              (_pipPosition.dy + details.delta.dy).clamp(0.0, maxY).toDouble(),
+            );
+          });
+        },
+        child: Container(
+          width: _kPipWidth,
+          height: _kPipHeight,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.4), blurRadius: 12, spreadRadius: 2),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                RepaintBoundary(
+                  child: AgoraVideoView(
+                    key: const ValueKey('local_pip'),
+                    controller: VideoViewController(
+                      rtcEngine: engine,
+                      canvas: const VideoCanvas(uid: 0),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  bottom: 4,
+                  left: 4,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.6),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      'Vous',
+                      style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w500),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStatusIndicators(CallState state) {
+    return Positioned(
+      top: 100,
+      left: 16,
+      child: Column(
+        children: [
+          if (state.muted) _buildStatusBadge(Icons.mic_off_rounded, 'Muet', Colors.orange),
+          if (state.videoOff) _buildStatusBadge(Icons.videocam_off_rounded, 'Vidéo OFF', Colors.red),
+          if (state.speakerOn) _buildStatusBadge(Icons.volume_up_rounded, 'Haut-parleur', Colors.blue),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusBadge(IconData icon, String label, Color color) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.9),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 8)],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 16),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// MODALE D'INVITATION (Nouveau)
+// ============================================================================
+
+class _InviteParticipantSheet extends ConsumerStatefulWidget {
+  final String channelName;
+  final void Function(String name) onInvited;
+
+  const _InviteParticipantSheet({
+    required this.channelName,
+    required this.onInvited,
+  });
+
+  @override
+  ConsumerState<_InviteParticipantSheet> createState() => _InviteParticipantSheetState();
+}
+
+class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet> {
+  final _ctrl = TextEditingController();
+  List<Map<String, dynamic>> _results = [];
+  bool _loading = false;
+  Timer? _searchDebounce;
+  String? _invitingId;
+
+  @override
+  void initState() {
+    super.initState();
+    _search('');
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    _searchDebounce?.cancel();
+    super.dispose();
+  }
+
+  SupabaseClient get _db => ref.read(supabaseClientProvider);
+  String? get _myId => ref.read(supabaseUserIdProvider);
+
+  Future<void> _search(String q) async {
+    final query = q.trim().toLowerCase();
+    final myId = _myId;
+    if (myId == null || myId.isEmpty) return;
+
+    setState(() => _loading = true);
+
+    try {
+      // Récupérer les connexions
+      final rows = await _db
+          .from('connections')
+          .select('user1_id, user2_id')
+          .or('user1_id.eq.$myId,user2_id.eq.$myId');
+
+      final peerIds = <String>{};
+      for (final r in (rows as List)) {
+        final m = Map<String, dynamic>.from(r as Map);
+        final u1 = '${m['user1_id']}';
+        final u2 = '${m['user2_id']}';
+        if (u1 == myId && u2.isNotEmpty) peerIds.add(u2);
+        if (u2 == myId && u1.isNotEmpty) peerIds.add(u1);
+      }
+
+      if (peerIds.isEmpty) {
+        if (mounted) setState(() { _results = []; _loading = false; });
+        return;
+      }
+
+      // Récupérer les profils
+      final profiles = await _db
+          .from('profiles')
+          .select('id, display_name, full_name, avatar_url')
+          .inFilter('id', peerIds.toList());
+
+      var list = (profiles as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+      if (query.isNotEmpty) {
+        list = list.where((p) {
+          final name = '${p['display_name'] ?? p['full_name'] ?? ''}'.toLowerCase();
+          return name.contains(query);
+        }).toList();
+      }
+
+      if (mounted) {
+        setState(() {
+          _results = list;
+          _loading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('[InviteSheet] ❌ Search failed: $e');
+      if (mounted) setState(() { _results = []; _loading = false; });
+    }
+  }
+
+  void _debouncedSearch(String q) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 300), () => _search(q));
+  }
+
+  Future<void> _sendInvite(String userId, String name) async {
+    if (_invitingId != null) return;
+    setState(() => _invitingId = userId);
+
+    try {
+      await _db.from('call_invites').insert({
+        'channel_name': widget.channelName,
+        'caller_id': _myId,
+        'callee_id': userId,
+        'status': 'ringing',
+        'call_type': 'audio', // ou 'video' selon le contexte
+        'is_group': true,     // Si tu as une colonne pour distinguer les appels de groupe
+      });
+      
+      widget.onInvited(name);
+    } catch (e) {
+      debugPrint('[InviteSheet] ❌ Invite failed: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Erreur lors de l\'invitation')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _invitingId = null);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.of(context).viewInsets.bottom;
+
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.75,
+      decoration: BoxDecoration(
+        color: ThixPolicy.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Padding(
+        padding: EdgeInsets.only(bottom: bottom),
+        child: Column(
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: ThixPolicy.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+              child: Text(
+                'Ajouter à l\'appel',
+                style: ThixPolicy.titleStyle.copyWith(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 20,
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: TextField(
+                controller: _ctrl,
+                autofocus: true,
+                onChanged: _debouncedSearch,
+                decoration: InputDecoration(
+                  hintText: 'Rechercher un contact...',
+                  prefixIcon: Icon(Icons.search_rounded, color: ThixPolicy.textMuted),
+                  filled: true,
+                  fillColor: ThixPolicy.surfaceSoft,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(vertical: 14),
+                ),
+              ),
+            ),
+            if (_loading) const LinearProgressIndicator(),
+            Expanded(
+              child: _results.isEmpty && !_loading
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline_rounded, size: 64, color: ThixPolicy.textMuted.withOpacity(0.4)),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Aucun contact trouvé',
+                            style: ThixPolicy.bodyStyle.copyWith(
+                              color: ThixPolicy.textMuted,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : ListView.separated(
+                      itemCount: _results.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
+                      itemBuilder: (context, i) {
+                        final p = _results[i];
+                        final id = '${p['id'] ?? ''}';
+                        final name = '${p['display_name'] ?? p['full_name'] ?? 'Contact'}';
+                        final avatar = p['avatar_url']?.toString();
+                        final isInviting = _invitingId == id;
+
+                        return ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: ThixPolicy.surfaceSoft,
+                            backgroundImage: avatar != null && avatar.isNotEmpty
+                                ? NetworkImage(avatar)
+                                : null,
+                            child: avatar == null || avatar.isEmpty
+                                ? Text(name[0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold))
+                                : null,
+                          ),
+                          title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: isInviting
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : IconButton(
+                                  icon: const Icon(Icons.person_add_alt_1, color: ThixPolicy.primary),
+                                  onPressed: () => _sendInvite(id, name),
+                                  tooltip: 'Inviter',
+                                ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
