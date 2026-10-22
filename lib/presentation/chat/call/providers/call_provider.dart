@@ -1,7 +1,13 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v3.1 (Group Calls Support + addInvitedUser)
+// CALL PROVIDER — v3.2 (Group Calls + sonnerie d'attente corrigée)
+// ============================================================================
+// FIX v3.2 : lecteur de sonnerie configuré en « signalisation d'appel »
+//            (pas de prise de focus audio → Agora ne le coupe plus, sortie
+//            haut-parleur).
+// NEW v3.2 : promoteToGroup() : un appel 1-to-1 devient un appel de groupe
+//            quand on invite quelqu'un en cours d'appel.
 // ============================================================================
 
 import 'dart:async';
@@ -81,21 +87,21 @@ class _CallValidators {
 }
 
 // ============================================================================
-// STATE (v3.0 - Group Support)
+// STATE
 // ============================================================================
 class CallState {
   final CallStatus status;
   final CallType type;
   final String? inviteId;
   final String? channelName;
-  
+
   // 1-to-1
   final String? remoteUserId;
   final String? remoteName;
   final String? remoteAvatar;
   final int? remoteUid;
-  
-  // ✅ Group
+
+  // Groupe
   final bool isGroup;
   final List<int> remoteUids;
   final Map<int, CallPeer> peers;
@@ -202,6 +208,7 @@ class CallNotifier extends StateNotifier<CallState> {
   bool _isDisposed = false;
   bool _agoraJoinStarted = false;
   bool _hangingUp = false;
+  bool _audioConfigured = false;
 
   CallNotifier(this._ref, this._media, this._signal) : super(const CallState()) {
     debugPrint('[CallProvider] 🚀 Initialized');
@@ -212,9 +219,42 @@ class CallNotifier extends StateNotifier<CallState> {
   // ==================================================================
   // SONS
   // ==================================================================
+
+  /// Contexte audio « signalisation d'appel » : pas de focus audio pris
+  /// (Agora ne coupe plus la sonnerie), sortie haut-parleur.
+  Future<void> _configureRingAudio() async {
+    if (_audioConfigured) return;
+    try {
+      await _ringPlayer.setAudioContext(
+        AudioContext(
+          iOS: AudioContextIOS(
+            category: AVAudioSessionCategory.playAndRecord,
+            options: const {
+              AVAudioSessionOptions.defaultToSpeaker,
+              AVAudioSessionOptions.mixWithOthers,
+            },
+          ),
+          android: const AudioContextAndroid(
+            isSpeakerphoneOn: true,
+            stayAwake: true,
+            contentType: AndroidContentType.sonification,
+            usageType: AndroidUsageType.voiceCommunicationSignalling,
+            audioFocus: AndroidAudioFocus.none,
+          ),
+        ),
+      );
+      _audioConfigured = true;
+    } catch (e) {
+      debugPrint('[CallProvider] ⚠️ Ring audio context error: $e');
+    }
+  }
+
   Future<void> _playRingtone() async {
     try {
+      await _configureRingAudio();
+      await _ringPlayer.stop();
       await _ringPlayer.setReleaseMode(ReleaseMode.loop);
+      await _ringPlayer.setVolume(1.0);
       await _ringPlayer.play(AssetSource('sounds/ringtone.mp3'));
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Ringtone error: $e');
@@ -223,7 +263,10 @@ class CallNotifier extends StateNotifier<CallState> {
 
   Future<void> _playOfflineTone() async {
     try {
+      await _configureRingAudio();
+      await _ringPlayer.stop();
       await _ringPlayer.setReleaseMode(ReleaseMode.release);
+      await _ringPlayer.setVolume(1.0);
       await _ringPlayer.play(AssetSource('sounds/offline.mp3'));
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Offline tone error: $e');
@@ -289,7 +332,6 @@ class CallNotifier extends StateNotifier<CallState> {
     );
   }
 
-  // ✅ Hydrater un participant de groupe
   Future<void> _hydrateGroupPeer(int agoraUid) async {
     if (_isDisposed) return;
 
@@ -311,8 +353,8 @@ class CallNotifier extends StateNotifier<CallState> {
     state = state.copyWith(peers: newPeers);
   }
 
-  // ✅ NOUVEAU (v3.1) : Ajoute un utilisateur à la liste des invités mid-call
-  // Permet à _hydrateGroupPeer de retrouver son UUID Supabase depuis son Agora UID
+  /// Ajoute un utilisateur invité en cours d'appel (pour retrouver son profil
+  /// depuis son Agora UID).
   void addInvitedUser(String userId) {
     if (!_CallValidators.isValidUuid(userId)) return;
     if (state.invitedUserIds.contains(userId)) return;
@@ -320,6 +362,32 @@ class CallNotifier extends StateNotifier<CallState> {
     final newIds = List<String>.from(state.invitedUserIds)..add(userId);
     state = state.copyWith(invitedUserIds: newIds);
     debugPrint('[CallProvider] ➕ Invited user added: ${_obfuscate(userId)}');
+  }
+
+  /// Un appel 1-to-1 devient un appel de groupe (invitation en cours d'appel).
+  /// Le correspondant actuel est conservé dans la liste des participants.
+  void promoteToGroup() {
+    if (_isDisposed || state.isGroup || !state.isActive) return;
+
+    final uids = List<int>.from(state.remoteUids);
+    final ids = List<String>.from(state.invitedUserIds);
+
+    final ru = state.remoteUid;
+    if (ru != null && !uids.contains(ru)) uids.add(ru);
+
+    final rid = state.remoteUserId;
+    if (rid != null && _CallValidators.isValidUuid(rid) && !ids.contains(rid)) {
+      ids.add(rid);
+    }
+
+    state = state.copyWith(
+      isGroup: true,
+      remoteUids: uids,
+      invitedUserIds: ids,
+    );
+
+    if (ru != null) unawaited(_hydrateGroupPeer(ru));
+    debugPrint('[CallProvider] 👥 Promoted to group call');
   }
 
   void _fail(String where, Object e) {
@@ -435,6 +503,7 @@ class CallNotifier extends StateNotifier<CallState> {
         status: CallStatus.ringing,
         type: type,
         isCaller: true,
+        isGroup: false,
         remoteUserId: calleeId,
         remoteName: sanitizedName.isEmpty ? _kPeerPlaceholder : sanitizedName,
         remoteAvatar: _CallValidators.sanitizeAvatar(calleeAvatar),
@@ -465,7 +534,7 @@ class CallNotifier extends StateNotifier<CallState> {
       }
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
-      _playRingtone();
+      unawaited(_playRingtone());
 
       if (type == CallType.video) {
         unawaited(prepareLocalPreview(myUserId).catchError((e) {
@@ -515,7 +584,7 @@ class CallNotifier extends StateNotifier<CallState> {
   }
 
   // ==================================================================
-  // ✅ START GROUP CALL
+  // START GROUP CALL
   // ==================================================================
   Future<void> startGroup({
     required String myUserId,
@@ -538,7 +607,10 @@ class CallNotifier extends StateNotifier<CallState> {
     debugPrint('[CallProvider] 👥 Starting group call with ${participantIds.length} participants');
 
     try {
-      final convId = conversationId ?? (participantIds.isNotEmpty ? await _getOrCreateConversationId(myUserId, participantIds.first) : null);
+      final convId = conversationId ??
+          (participantIds.isNotEmpty
+              ? await _getOrCreateConversationId(myUserId, participantIds.first)
+              : null);
       if (_isDisposed) return;
 
       state = state.copyWith(
@@ -564,7 +636,7 @@ class CallNotifier extends StateNotifier<CallState> {
       }
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
-      _playRingtone();
+      unawaited(_playRingtone());
 
       if (type == CallType.video) {
         unawaited(prepareLocalPreview(myUserId).catchError((e) {
@@ -583,7 +655,6 @@ class CallNotifier extends StateNotifier<CallState> {
         }
       });
 
-      // Pour les groupes, on rejoint Agora directement sans attendre que tout le monde accepte
       await _joinAgora(myUserId);
 
       final watchedInvite = invite.id;
@@ -702,7 +773,7 @@ class CallNotifier extends StateNotifier<CallState> {
   }
 
   // ==================================================================
-  // JOIN AGORA (v3.0 - Multi-utilisateurs)
+  // JOIN AGORA
   // ==================================================================
   Future<void> _joinAgora(String myUserId) async {
     if (_isDisposed || _agoraJoinStarted) return;
@@ -730,9 +801,8 @@ class CallNotifier extends StateNotifier<CallState> {
         uid: uid,
         onUserJoined: (remoteUid) async {
           if (_isDisposed) return;
-          
+
           if (state.isGroup) {
-            // ✅ GROUPE : Ajouter à la liste
             if (state.remoteUids.contains(remoteUid)) return;
             final newUids = List<int>.from(state.remoteUids)..add(remoteUid);
             state = state.copyWith(
@@ -741,13 +811,13 @@ class CallNotifier extends StateNotifier<CallState> {
             );
             unawaited(_hydrateGroupPeer(remoteUid));
           } else {
-            // 1-to-1 : Comportement classique
             if (state.status == CallStatus.ongoing && state.remoteUid == remoteUid) return;
             debugPrint('[CallProvider] 👤 Remote user join: $remoteUid');
             state = state.copyWith(remoteUid: remoteUid, status: CallStatus.ongoing);
           }
-          
-          _startTimer();
+
+          _stopRingtone();
+          if (_timer == null) _startTimer();
           if (inviteId != null) {
             try {
               await _retry(
@@ -762,15 +832,13 @@ class CallNotifier extends StateNotifier<CallState> {
         },
         onUserLeft: (remoteUid) async {
           if (_isDisposed) return;
-          
+
           if (state.isGroup) {
-            // ✅ GROUPE : Retirer de la liste
             debugPrint('[CallProvider] 👋 Remote user left (group): $remoteUid');
             final newUids = List<int>.from(state.remoteUids)..remove(remoteUid);
             final newPeers = Map<int, CallPeer>.from(state.peers)..remove(remoteUid);
             state = state.copyWith(remoteUids: newUids, peers: newPeers);
-            
-            // Raccrocher si tout le monde a quitté et qu'on n'est pas l'hôte
+
             if (newUids.isEmpty && !state.isCaller) {
               _playOfflineTone();
               Future.delayed(_kUserLeftDelay, () {
@@ -778,7 +846,6 @@ class CallNotifier extends StateNotifier<CallState> {
               });
             }
           } else {
-            // 1-to-1 : Raccrocher
             debugPrint('[CallProvider] 👋 Remote user left (1-to-1)');
             _playOfflineTone();
             Future.delayed(_kUserLeftDelay, () {
@@ -928,7 +995,7 @@ class CallNotifier extends StateNotifier<CallState> {
           final h = duration.inHours;
           final timeStr = h > 0 ? '$h:$m:$s' : '$m:$s';
 
-          final textType = isGroup 
+          final textType = isGroup
               ? (isVideoCall ? 'Appel vidéo de groupe' : 'Appel audio de groupe')
               : (isVideoCall ? 'Appel vidéo' : 'Appel audio');
           final content = isMissed ? '$textType manqué' : '$textType ($timeStr)';
