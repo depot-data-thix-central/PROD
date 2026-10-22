@@ -1,11 +1,4 @@
 // lib/presentation/chat/call/call_page.dart
-//
-// ============================================================================
-// CALL PAGE — v3 (fusionnée + corrigée)
-// ✅ Grille vidéo multi-participants (remoteUids + peers)
-// ✅ Modale « Ajouter à l'appel » : type d'appel dynamique, exclusions,
-//    connexions acceptées uniquement, sync invitedUserIds (noms affichés)
-// ============================================================================
 import 'dart:async';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
@@ -21,7 +14,7 @@ import 'package:thix_id/presentation/chat/call/call_ui_state.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
 import 'package:thix_id/presentation/chat/call/widgets/call_controls_panel.dart';
 import 'package:thix_id/services/chat/call_service.dart';
-import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
+import 'package:thix_id/presentation/chat/providers/chat_providers.dart' 
     show supabaseClientProvider, supabaseUserIdProvider;
 
 const double _kAvatarRadius = 64.0;
@@ -118,7 +111,7 @@ class _CallPageState extends ConsumerState<CallPage> {
       case CallStatus.accepted:
         return l10n.t('call_status_connecting');
       case CallStatus.ongoing:
-        final count = state.remoteUids.length + 1;
+        final count = state.remoteUids.length + 1; 
         final time = _formatDuration(state.duration);
         return count > 2 ? '$count participants · $time' : time;
       case CallStatus.busy:
@@ -147,26 +140,20 @@ class _CallPageState extends ConsumerState<CallPage> {
   void _toggleSpeaker() => ref.read(callProvider.notifier).toggleSpeaker();
   void _minimize() => Navigator.maybePop(context);
 
-  // ✅ Modale d'invitation : transmet le type d'appel + les IDs à exclure
+  // ✅ NOUVEAU : Ouvre la modale de sélection de contacts
   void _inviteParticipant() {
     HapticFeedback.selectionClick();
-    final s = ref.read(callProvider);
-    if (s.channelName == null || s.channelName!.isEmpty) return;
+    final state = ref.read(callProvider);
+    if (state.channelName == null || state.channelName!.isEmpty) return;
 
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) => _InviteParticipantSheet(
-        channelName: s.channelName!,
-        callType: s.type,
-        excludeIds: {
-          ...s.invitedUserIds,
-          if (s.remoteUserId != null) s.remoteUserId!,
-        },
+        channelName: state.channelName!,
         onInvited: (name) {
           Navigator.pop(ctx);
-          if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('$name a été invité à rejoindre l\'appel.'),
@@ -197,14 +184,14 @@ class _CallPageState extends ConsumerState<CallPage> {
     final engineReady = engine != null;
 
     final participantCount = state.remoteUids.length;
-
+    
     final isSingleRemoteVideo = state.isVideo && participantCount == 1 && engineReady && !state.videoOff;
     final showLocalFull = state.isVideo && participantCount == 0 && !state.videoOff && engineReady;
-    final showGrid = participantCount > 1;
+    final showGrid = participantCount > 1; 
 
     final statusLabel = _getStatusLabel(state, l10n);
-    final displayName = showGrid
-        ? 'Appel de groupe'
+    final displayName = showGrid 
+        ? 'Appel de groupe' 
         : (state.remoteName ?? l10n.t('call_unknown_contact'));
 
     return Scaffold(
@@ -225,7 +212,7 @@ class _CallPageState extends ConsumerState<CallPage> {
           child: Stack(
             children: [
               _buildMainArea(state, engine, showGrid, isSingleRemoteVideo, showLocalFull, l10n),
-
+              
               Positioned.fill(
                 child: IgnorePointer(
                   child: Container(
@@ -244,28 +231,27 @@ class _CallPageState extends ConsumerState<CallPage> {
                   ),
                 ),
               ),
-
+              
               _buildHeader(displayName, statusLabel, state),
-
-              // Bouton d'ajout de participant (visible seulement appel actif)
-              if (state.status == CallStatus.ongoing || state.status == CallStatus.accepted)
-                Positioned(
-                  top: 80,
-                  right: 16,
-                  child: FloatingActionButton.small(
-                    heroTag: 'add_participant',
-                    backgroundColor: Colors.white.withOpacity(0.2),
-                    elevation: 0,
-                    onPressed: _inviteParticipant,
-                    child: const Icon(Icons.person_add_alt_1, color: Colors.white, size: 20),
-                  ),
+              
+              // Bouton d'ajout de participant
+              Positioned(
+                top: 80,
+                right: 16,
+                child: FloatingActionButton.small(
+                  heroTag: 'add_participant',
+                  backgroundColor: Colors.white.withOpacity(0.2),
+                  elevation: 0,
+                  onPressed: _inviteParticipant,
+                  child: const Icon(Icons.person_add_alt_1, color: Colors.white, size: 20),
                 ),
+              ),
 
-              if (state.isVideo && !state.videoOff && engineReady && !showLocalFull)
+              if (state.isVideo && !state.videoOff && engineReady && !showLocalFull) 
                 _buildDraggablePip(engine),
 
               _buildStatusIndicators(state),
-
+              
               CallControlsPanel(
                 state: state,
                 l10n: l10n,
@@ -284,10 +270,10 @@ class _CallPageState extends ConsumerState<CallPage> {
   }
 
   Widget _buildMainArea(
-    CallState state,
-    RtcEngine? engine,
-    bool showGrid,
-    bool isSingleRemoteVideo,
+    CallState state, 
+    RtcEngine? engine, 
+    bool showGrid, 
+    bool isSingleRemoteVideo, 
     bool showLocalFull,
     AppLocalizations l10n,
   ) {
@@ -305,8 +291,8 @@ class _CallPageState extends ConsumerState<CallPage> {
             itemCount: state.remoteUids.length,
             itemBuilder: (context, index) {
               final uid = state.remoteUids[index];
-              final peer = state.peers[uid];
-
+              final peer = state.peers[uid]; 
+              
               if (state.isVideo && engine != null) {
                 return ClipRRect(
                   borderRadius: BorderRadius.circular(16),
@@ -331,7 +317,7 @@ class _CallPageState extends ConsumerState<CallPage> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            peer?.name ?? 'Participant',
+                            peer?.name ?? 'Participant', 
                             style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w600),
                           ),
                         ),
@@ -342,8 +328,8 @@ class _CallPageState extends ConsumerState<CallPage> {
               } else {
                 return Container(
                   decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.white.withOpacity(0.1), 
+                    borderRadius: BorderRadius.circular(16)
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -624,19 +610,15 @@ class _CallPageState extends ConsumerState<CallPage> {
 }
 
 // ============================================================================
-// MODALE D'INVITATION (v3 — corrigée & équilibrée)
+// MODALE D'INVITATION (Nouveau)
 // ============================================================================
 
 class _InviteParticipantSheet extends ConsumerStatefulWidget {
   final String channelName;
-  final CallType callType;
-  final Set<String> excludeIds; // déjà invités / déjà dans l'appel
   final void Function(String name) onInvited;
 
   const _InviteParticipantSheet({
     required this.channelName,
-    required this.callType,
-    required this.excludeIds,
     required this.onInvited,
   });
 
@@ -675,34 +657,27 @@ class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet
     setState(() => _loading = true);
 
     try {
-      // ✅ Connexions de l'utilisateur (tous statuts, filtrés côté client)
+      // Récupérer les connexions
       final rows = await _db
           .from('connections')
-          .select('user1_id, user2_id, status')
+          .select('user1_id, user2_id')
           .or('user1_id.eq.$myId,user2_id.eq.$myId');
 
       final peerIds = <String>{};
       for (final r in (rows as List)) {
         final m = Map<String, dynamic>.from(r as Map);
-        // ✅ Ignorer les connexions non acceptées / rejetées
-        final st = '${m['status'] ?? ''}'.toLowerCase();
-        if (st == 'pending' || st == 'rejected' || st == 'cancelled' || st == 'canceled' || st == 'blocked') {
-          continue;
-        }
         final u1 = '${m['user1_id']}';
         final u2 = '${m['user2_id']}';
         if (u1 == myId && u2.isNotEmpty) peerIds.add(u2);
         if (u2 == myId && u1.isNotEmpty) peerIds.add(u1);
       }
 
-      // ✅ Retirer les personnes déjà invitées / déjà dans l'appel
-      peerIds.removeAll(widget.excludeIds);
-
       if (peerIds.isEmpty) {
         if (mounted) setState(() { _results = []; _loading = false; });
         return;
       }
 
+      // Récupérer les profils
       final profiles = await _db
           .from('profiles')
           .select('id, display_name, full_name, avatar_url')
@@ -734,27 +709,20 @@ class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet
     _searchDebounce = Timer(const Duration(milliseconds: 300), () => _search(q));
   }
 
-  // ✅ CORRIGÉ : type dynamique + myId sûr + sync invitedUserIds
   Future<void> _sendInvite(String userId, String name) async {
     if (_invitingId != null) return;
-    final myId = _myId;
-    if (myId == null || myId.isEmpty || userId.isEmpty || userId == myId) return;
-
     setState(() => _invitingId = userId);
 
     try {
       await _db.from('call_invites').insert({
         'channel_name': widget.channelName,
-        'caller_id': myId,
+        'caller_id': _myId,
         'callee_id': userId,
         'status': 'ringing',
-        'call_type': widget.callType == CallType.video ? 'video' : 'audio', // ✅ dynamique
-        'is_group': true,
+        'call_type': 'audio', // ou 'video' selon le contexte
+        'is_group': true,     // Si tu as une colonne pour distinguer les appels de groupe
       });
-
-      // ✅ Le provider connaît l'invité → son nom s'affichera dans la grille
-      ref.read(callProvider.notifier).addInvitedUser(userId);
-
+      
       widget.onInvited(name);
     } catch (e) {
       debugPrint('[InviteSheet] ❌ Invite failed: $e');
@@ -830,7 +798,7 @@ class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet
                           Icon(Icons.people_outline_rounded, size: 64, color: ThixPolicy.textMuted.withOpacity(0.4)),
                           const SizedBox(height: 16),
                           Text(
-                            'Aucun contact à inviter',
+                            'Aucun contact trouvé',
                             style: ThixPolicy.bodyStyle.copyWith(
                               color: ThixPolicy.textMuted,
                               fontSize: 16,
@@ -856,8 +824,7 @@ class _InviteParticipantSheetState extends ConsumerState<_InviteParticipantSheet
                                 ? NetworkImage(avatar)
                                 : null,
                             child: avatar == null || avatar.isEmpty
-                                ? Text(name.isEmpty ? '?' : name[0].toUpperCase(),
-                                    style: const TextStyle(fontWeight: FontWeight.bold))
+                                ? Text(name[0].toUpperCase(), style: const TextStyle(fontWeight: FontWeight.bold))
                                 : null,
                           ),
                           title: Text(name, style: const TextStyle(fontWeight: FontWeight.w600)),
