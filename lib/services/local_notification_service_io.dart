@@ -1,18 +1,19 @@
 // lib/services/local_notification_service_io.dart
 //
-// Local Notification Service IO v3.1 (Production Enterprise)
+// Local Notification Service IO v3.2 (Production Enterprise)
 //
-// CHANGELOG v3.1 (depuis v3) :
+// CHANGELOG v3.2 (depuis v3.1) :
+//   ✅ FIX BUILD: Retrait de `const` devant `iosSettings` et
+//      `InitializationSettings`. DarwinNotificationAction.text/plain
+//      ne sont pas des constructeurs const dans flutter_local_notifications,
+//      ce qui rendait toute la chaîne invalide en compilation release.
+//
+// CHANGELOG v3.1 :
 //   ✅ Catégories Darwin enregistrées pour iOS : REPLY (avec input texte),
-//      MARK_AS_READ, MUTE. Sinon les actions iOS n'apparaissent jamais.
-//   ✅ Buffer d'actions en attente : quand l'app est cold-startée via une
-//      action de notification, le context n'est pas encore monté. L'action
-//      est mise en mémoire et rejouée au premier frame.
-//   ✅ Réponse background forcée en foreground pour Quick Reply :
-//      `showsUserInterface: true` pour REPLY force l'app à se réveiller,
-//      ce qui permet d'envoyer le message via Supabase (sinon l'isolat BG
-//      meurt avant d'avoir envoyé la requête).
-//   ✅ Retrait du gate `context.mounted` qui bloquait les taps en cold-start.
+//      MARK_AS_READ, MUTE.
+//   ✅ Buffer d'actions en attente (cold-start).
+//   ✅ Réponse background forcée en foreground pour Quick Reply.
+//   ✅ Retrait du gate `context.mounted` qui bloquait les taps cold-start.
 //
 // Conserve tous les correctifs v3 : canaux _v3, validation, sanitization,
 // ringtone.mp3 dans res/raw/, showBadge, AndroidNotificationActionInput.
@@ -47,9 +48,6 @@ const String _kIosChatCategory = 'THIX_CHAT_ACTIONS';
 // ============================================================================
 // BUFFER D'ACTIONS EN ATTENTE (cold-start)
 // ============================================================================
-// Quand l'utilisateur tape une action de notification alors que l'app est
-// complètement fermée, l'isolat Dart n'a pas encore de Navigator monté.
-// On stocke la réponse et on la rejoue au premier frame de l'app.
 
 class _PendingActionBuffer {
   _PendingActionBuffer._();
@@ -78,7 +76,8 @@ class _PendingActionBuffer {
     return r;
   }
 
-  static bool get hasPending => _pendingPayload != null || _pendingActionId != null;
+  static bool get hasPending =>
+      _pendingPayload != null || _pendingActionId != null;
 }
 
 // ============================================================================
@@ -165,10 +164,12 @@ class LocalNotificationService {
       const androidSettings =
           AndroidInitializationSettings('notification_icon');
 
-      // ✅ v3.1 : Catégories Darwin pour que les actions iOS s'affichent.
-      // Sans ces catégories, les boutons Répondre/Marquer lu/Muet
-      // n'apparaissent jamais sur iOS.
-      const iosSettings = DarwinInitializationSettings(
+      // ✅ v3.2 : `final` et NON `const` car DarwinNotificationAction.text()
+      // et DarwinNotificationAction.plain() ne sont pas des constructeurs
+      // const dans flutter_local_notifications. Utiliser `const` ici
+      // provoquait l'erreur "Cannot invoke a non-'const' factory where a
+      // const expression is expected" en build release.
+      final iosSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
         requestSoundPermission: false,
@@ -201,9 +202,10 @@ class LocalNotificationService {
         ],
       );
 
+      // ✅ v3.2 : Pas de `const` ici non plus, car iosSettings est `final`.
       await _plugin
           .initialize(
-            const InitializationSettings(
+            InitializationSettings(
               android: androidSettings,
               iOS: iosSettings,
             ),
@@ -222,7 +224,7 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.1)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.2)');
 
       // Rejoue une action en attente (cold-start via action)
       _flushPendingAction();
@@ -316,28 +318,10 @@ class LocalNotificationService {
     debugPrint('[LocalNotif] 📨 Response: action=$actionId '
         'input="${input ?? '(null)'}" payload=$payload');
 
-    // ✅ v3.1 : plus de gate sur `_context.mounted`. Si le context n'est pas
-    // encore monté (cold-start très rapide), on stocke et on rejouera.
     onNotificationTap?.call(payload, actionId: actionId, input: input);
   }
 
   /// Réponse en arrière-plan (app fermée / isolate séparé).
-  ///
-  /// L'isolat background de flutter_local_notifications est détruit dès que
-  /// cette méthode retourne. On ne peut PAS y exécuter de requête Supabase
-  /// fiable. Deux stratégies selon l'action :
-  ///
-  /// 1. **Quick Reply** (`kActionReply`) : doit être exécutée en FOREGROUND
-  ///    pour avoir accès à Supabase. On force `showsUserInterface: true`
-  ///    côté Android (v3.1) pour réveiller l'app. Ici on ne fait QUE stocker
-  ///    l'action — elle sera rejouée par `_flushPendingAction`.
-  ///
-  /// 2. **Marquer lu / Muet** (`kActionMarkAsRead` / `kActionMute`) :
-  ///    idem, on stocke et on rejoue.
-  ///
-  /// IMPORTANT : pour que cette méthode soit appelée, le handler FCM de
-  /// `push_notification_service_io.dart` DOIT utiliser cette classe (et
-  /// non laisser le système FCM afficher la notification système).
   @pragma('vm:entry-point')
   static void _handleBackgroundNotificationResponse(
       NotificationResponse response) {
@@ -348,7 +332,6 @@ class LocalNotificationService {
     debugPrint('[LocalNotif-BG] ⏳ Action=$actionId '
         'input="${input ?? '(null)'}" payload=$payload');
 
-    // Stockage pour rejeu au prochain démarrage de l'app.
     _PendingActionBuffer.store(payload, actionId: actionId, input: input);
   }
 
@@ -413,9 +396,6 @@ class LocalNotificationService {
       );
 
       if (isChat && showReplyAction) {
-        // ✅ v3.1 : showsUserInterface: true pour forcer le réveil de l'app
-        // et permettre l'envoi du message via Supabase. Sinon l'isolat BG
-        // meurt avant d'avoir pu faire la requête HTTP.
         actions.add(
           const AndroidNotificationAction(
             kActionReply,
@@ -482,7 +462,6 @@ class LocalNotificationService {
       ),
     );
 
-    // ✅ v3.1 : attache la catégorie iOS pour que les actions s'affichent.
     final iosDetails = DarwinNotificationDetails(
       presentAlert: true,
       presentBadge: true,
