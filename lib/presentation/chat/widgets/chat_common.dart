@@ -259,7 +259,13 @@ ParsedRef chatParseRef(ChatMessage m) {
 
 bool isProductRefMessage(ChatMessage m) => chatParseRef(m).product != null;
 
+// ============================================================================
+// ✅ MESSAGES CHIFFRÉS (ENCv1:) — aperçus propres partout
+// ============================================================================
+bool isEncryptedMessage(ChatMessage m) => m.content.trimLeft().startsWith('ENCv1:');
+
 String chatPreviewOf(ChatMessage m) {
+  if (isEncryptedMessage(m)) return '🔒 Message protégé';
   final parsed = chatParseRef(m);
   final product = parsed.product;
   if (product == null) return m.previewText;
@@ -270,12 +276,14 @@ String chatPreviewOf(ChatMessage m) {
 }
 
 String chatPlainTextOf(ChatMessage m) {
+  if (isEncryptedMessage(m)) return '';
   final parsed = chatParseRef(m);
   if (parsed.product == null) return m.content;
   return ChatValidators.sanitize(parsed.text, maxLength: kChatMaxMessageLength);
 }
 
 String chatSearchableText(ChatMessage m) {
+  if (isEncryptedMessage(m)) return '';
   final parsed = chatParseRef(m);
   final product = parsed.product;
   if (product == null) return m.content;
