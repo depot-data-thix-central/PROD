@@ -559,7 +559,6 @@ class _CarouselCardData {
   final Widget widget;
   const _CarouselCardData({required this.isUrgent, required this.widget});
 }
-
 // ============================================================================
 // ✅ ÉTAT DE CHARGEMENT AVEC BOUTON D'URGENCE ROUGE
 // ============================================================================
@@ -572,6 +571,16 @@ class _LoadingWithUrgencyButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    // ✅ l10n.t() ne prend qu'un seul argument → fallback géré manuellement
+    final urgencyLabel = () {
+      final v = l10n.t('home_urgency_label');
+      return (v.trim().isEmpty || v == 'home_urgency_label') ? 'URGENCE' : v;
+    }();
+    final urgencySemantics = () {
+      final v = l10n.t('home_urgency_button');
+      return (v.trim().isEmpty || v == 'home_urgency_button') ? 'Urgence' : v;
+    }();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 4.0),
       child: ClipRRect(
@@ -609,7 +618,7 @@ class _LoadingWithUrgencyButton extends StatelessWidget {
                 bottom: 14,
                 child: Semantics(
                   button: true,
-                  label: l10n.t('home_urgency_button', 'Urgence'),
+                  label: urgencySemantics,
                   child: GestureDetector(
                     onTap: onTap,
                     child: Container(
@@ -632,7 +641,7 @@ class _LoadingWithUrgencyButton extends StatelessWidget {
                           const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
                           const SizedBox(width: 6),
                           Text(
-                            l10n.t('home_urgency_label', 'URGENCE'),
+                            urgencyLabel,
                             style: const TextStyle(
                               color: Colors.white,
                               fontSize: 11,
