@@ -1,5 +1,12 @@
-
 // lib/presentation/thix_market/providers/featured_products_provider.dart
+// ============================================================================
+// FEATURED PRODUCTS — Hero banner + bande "Produits en vedette"
+// ----------------------------------------------------------------------------
+//  • ✅ Exclut les produits locaux (is_local = true)
+//  • ✅ Exclut les supermarchés (shop.type = 'supermarket')
+//  • ✅ Connexion directe à Supabase
+// ============================================================================
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -9,13 +16,20 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// Connexion directe et autonome à Supabase — n'a plus besoin de
 /// bannersProvider, ce qui corrige le souci de connexion.
 final featuredProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
-  final res = await Supabase.instance.client
-    .from('products')
-    .select('*, shop:shops!inner(type)')
-    .eq('is_featured', true)
-    .eq('status', 'active')
-    .neq('shop.type', 'supermarket')
-    .order('updated_at', ascending: false)
-    .limit(12);
-  return List<Map<String, dynamic>>.from(res as List);
+  try {
+    final res = await Supabase.instance.client
+        .from('products')
+        .select('*, shop:shops!inner(id, name, logo_url, city, type)')
+        .eq('is_featured', true)
+        .eq('status', 'active')
+        .neq('shop.type', 'supermarket')
+        .not('is_local', 'is', true) // ✅ AJOUT : exclut les produits locaux
+        .order('updated_at', ascending: false)
+        .limit(12)
+        .timeout(const Duration(seconds: 15));
+    return List<Map<String, dynamic>>.from(res as List);
+  } catch (e) {
+    // Fallback silencieux : retourne une liste vide si erreur
+    return const <Map<String, dynamic>>[];
+  }
 });
