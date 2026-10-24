@@ -13,6 +13,7 @@ import 'package:intl/intl.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/chat_message.dart';
+import 'package:thix_id/presentation/chat/encryption_service.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_common.dart';
 import 'package:thix_id/presentation/chat/widgets/image_viewer.dart';
 import 'package:thix_id/presentation/thix_market/core/african_currencies.dart';
@@ -70,13 +71,30 @@ bool _isJumboEmoji(String s) {
   return runes.every((r) => r > 0x2000);
 }
 
+/// ✅ Préfixe des messages chiffrés par mot de passe
+const String _kEncPrefix = 'ENCv1:';
+bool _isEncryptedText(String s) => s.trimLeft().startsWith(_kEncPrefix);
+
+/// ✅ Ouverture de lien : compatible Web (nouvel onglet) + fallback clipboard
 Future<void> _openExternal(BuildContext context, String? raw) async {
   final u = ChatValidators.sanitizeUrl(raw);
-  if (u == null) return;
+  if (u == null) {
+    if (context.mounted) chatSnack(context, 'Média indisponible ou lien expiré', ChatSnackKind.warning);
+    return;
+  }
   try {
-    await launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
+    if (kIsWeb) {
+      await launchUrl(Uri.parse(u), webOnlyWindowMode: WebOnlyWindowMode.blank);
+    } else {
+      await launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
+    }
   } catch (_) {
-    chatSnack(context, 'Impossible d’ouvrir le lien', ChatSnackKind.error);
+    try {
+      await launchUrl(Uri.parse(u));
+    } catch (_) {
+      await Clipboard.setData(ClipboardData(text: u));
+      if (context.mounted) chatSnack(context, 'Lien copié dans le presse-papiers', ChatSnackKind.info);
+    }
   }
 }
 
@@ -275,7 +293,8 @@ class ChatMessageBubble extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _nameColor(r.senderName))),
-          Text(ChatValidators.sanitize(r.previewText, maxLength: 80),
+          // ✅ Aperçu propre (masque ENCv1: et PRODUCT_REF:)
+          Text(ChatValidators.sanitize(chatPreviewOf(r), maxLength: 80),
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)),
@@ -284,6 +303,14 @@ class ChatMessageBubble extends StatelessWidget {
     }
 
     children.addAll(_body(context, l10n, type, deleted, jumbo, maxW));
+
+    // ✅ COMPTE À REBOURS ÉPHÉMÈRE
+    if (m.isEphemeral && !deleted && (m.ephemeralDuration ?? 0) > 0) {
+      children.add(Padding(
+        padding: const EdgeInsets.only(top: 3),
+        child: EphemeralCountdown(expiresAt: m.createdAt.add(Duration(seconds: m.ephemeralDuration!))),
+      ));
+    }
 
     // Méta (heure, ticks…)
     if (!isSticker) {
@@ -371,7 +398,7 @@ class ChatMessageBubble extends StatelessWidget {
     final muted = ThixPolicy.textMuted;
     return Row(mainAxisSize: MainAxisSize.min, children: [
       if (m.isPinned) Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.push_pin_rounded, size: 11, color: muted)),
-      if (m.isStarred) const Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.star_rounded, size: 11, color: ThixPolicy.gold)),
+      if (m.isStarred) const Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.star_rounded, size: 11, color: ThixPolicy.gold)),
       if (isEphemeralActive) Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.timer_outlined, size: 11, color: muted)),
       if (edited) Padding(padding: const EdgeInsets.only(right: 4), child: Text('modifié', style: TextStyle(fontSize: 10, color: muted, fontStyle: FontStyle.italic))),
       Text(DateFormat('HH:mm').format(m.createdAt.toLocal()), style: TextStyle(fontSize: 10, color: muted)),
@@ -492,7 +519,14 @@ class ChatMessageBubble extends StatelessWidget {
           return [
             InkWell(
               borderRadius: BorderRadius.circular(12),
-              onTap: url == null ? null : () => _openExternal(context, url),
+              // ✅ Sur Web : nouvel onglet ; si URL invalide : snackbar au lieu de rien
+              onTap: () {
+                if (url == null) {
+                  chatSnack(context, chatTr(l10n, 'chat_media_unavailable', 'Média indisponible ou expiré'), ChatSnackKind.warning);
+                  return;
+                }
+                _openExternal(context, url);
+              },
               child: Container(
                 width: 230,
                 padding: const EdgeInsets.all(10),
@@ -524,9 +558,157 @@ class ChatMessageBubble extends StatelessWidget {
         }
     }
 
+    // 🔐 MESSAGE PROTÉGÉ PAR MOT DE PASSE (ENCv1:…)
+    if (type.isEmpty && _isEncryptedText(m.content)) {
+      return [_ProtectedMessageBox(message: m, textStyle: textStyle)];
+    }
+
     // Texte
     if (jumbo) return [Text(m.content.trim(), style: const TextStyle(fontSize: 44))];
     return [_LinkText(text: m.content, style: textStyle)];
+  }
+}
+
+// ============================================================================
+// MESSAGE PROTÉGÉ (ENCv1:) — déblocage par mot de passe
+// ============================================================================
+class _ProtectedMessageBox extends StatefulWidget {
+  final ChatMessage message;
+  final TextStyle textStyle;
+  const _ProtectedMessageBox({required this.message, required this.textStyle});
+  @override
+  State<_ProtectedMessageBox> createState() => _ProtectedMessageBoxState();
+}
+
+class _ProtectedMessageBoxState extends State<_ProtectedMessageBox> {
+  String? _plain;
+  bool _unlocking = false;
+
+  Future<void> _unlock() async {
+    final l10n = AppLocalizations.of(context);
+    final ctrl = TextEditingController();
+    final pwd = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ThixPolicy.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Row(children: [
+          const Icon(Icons.lock_outline_rounded, color: ThixPolicy.gold, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(chatTr(l10n, 'chat_pwd_enter', 'Mot de passe du message'),
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
+          ),
+        ]),
+        content: TextField(
+          controller: ctrl,
+          obscureText: true,
+          autofocus: true,
+          decoration: InputDecoration(labelText: chatTr(l10n, 'chat_password', 'Mot de passe')),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: Text(chatTr(l10n, 'common_cancel', 'Annuler'))),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.inkDeep),
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('OK', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (pwd == null || pwd.isEmpty || !mounted) return;
+    setState(() => _unlocking = true);
+    try {
+      final String? plain = EncryptionService.decryptMessage(widget.message.content, pwd);
+      if (!mounted) return;
+      if (plain == null || plain.isEmpty) throw StateError('decrypt');
+      setState(() {
+        _plain = plain;
+        _unlocking = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _unlocking = false);
+      chatSnack(context, chatTr(l10n, 'chat_pwd_bad', 'Mot de passe incorrect'), ChatSnackKind.error);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    if (_plain != null) return _LinkText(text: _plain!, style: widget.textStyle);
+    return InkWell(
+      onTap: _unlocking ? null : _unlock,
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: ThixPolicy.gold.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: ThixPolicy.gold.withOpacity(0.5)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          _unlocking
+              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.gold))
+              : const Icon(Icons.lock_rounded, size: 18, color: ThixPolicy.gold),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              chatTr(l10n, 'chat_protected_tap', 'Message protégé · toucher pour ouvrir'),
+              style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: ThixPolicy.textMain),
+            ),
+          ),
+        ]),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// COMPTE À REBOURS ÉPHÉMÈRE
+// ============================================================================
+class EphemeralCountdown extends StatefulWidget {
+  final DateTime expiresAt;
+  const EphemeralCountdown({super.key, required this.expiresAt});
+  @override
+  State<EphemeralCountdown> createState() => _EphemeralCountdownState();
+}
+
+class _EphemeralCountdownState extends State<EphemeralCountdown> {
+  Timer? _t;
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = widget.expiresAt.difference(DateTime.now());
+    if (left.isNegative) return const SizedBox.shrink();
+    final s = left.inSeconds;
+    final label = s >= 60 ? '${s ~/ 60} min ${s % 60}s' : '${s}s';
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(color: ThixPolicy.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          const Icon(Icons.timer_outlined, size: 11, color: ThixPolicy.gold),
+          const SizedBox(width: 3),
+          Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: ThixPolicy.gold)),
+        ]),
+      ),
+    );
   }
 }
 
@@ -736,7 +918,6 @@ class TypingPill extends StatelessWidget {
         const _Dot(),
         const SizedBox(width: 3),
         const _Dot(delay: 120),
-        const SizedBox(width: 3),
         const _Dot(delay: 240),
         const SizedBox(width: 8),
         Text(chatTr(l10n, 'chat_typing', 'écrit…'), style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
