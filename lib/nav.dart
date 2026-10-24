@@ -40,7 +40,8 @@ static const String certification = '/certification';
   static const String admin = '/admin';
   static const String thixMarket = '/market';
 static const String thixInfoDownloads = '/thix-info/downloads';
-  
+  static const String marketLocalHome = '/market/local';
+  static const String marketLocalCreate = '/market/local/create';
   // Éducation
   static const String education = '/education';
   static const String trainingHome = '/education';
