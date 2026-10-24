@@ -41,7 +41,7 @@ Future<Map<String, dynamic>> _fetchCertificationFields(String userId) async {
   try {
     final row = await Supabase.instance.client
         .from('profiles')
-        .select('certification_tier, certification_status, is_verified')
+        .select('certification_tier, certification_status, is_verified, calls_enabled')
         .eq('id', userId)
         .maybeSingle();
 
@@ -49,6 +49,7 @@ Future<Map<String, dynamic>> _fetchCertificationFields(String userId) async {
       'certification_tier': row?['certification_tier'],
       'certification_status': row?['certification_status'],
       'is_verified': row?['is_verified'] ?? false,
+      'calls_enabled': row?['calls_enabled'],
     };
   } catch (e) {
     debugPrint('_fetchCertificationFields: $e');
@@ -56,6 +57,7 @@ Future<Map<String, dynamic>> _fetchCertificationFields(String userId) async {
       'certification_tier': null,
       'certification_status': null,
       'is_verified': false,
+      'calls_enabled': null,
     };
   }
 }
@@ -68,7 +70,7 @@ Future<Map<String, dynamic>?> _fetchProfileWithCertification(
         .from('profiles')
         .select(
           'id, display_name, avatar_url, photo_url, username, '
-          'certification_tier, certification_status, is_verified',
+          'certification_tier, certification_status, is_verified, calls_enabled',
         )
         .eq('id', userId)
         .maybeSingle();
