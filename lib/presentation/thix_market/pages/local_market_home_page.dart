@@ -14,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../core/african_countries.dart';
 import '../core/local_sectors.dart';
 import '../providers/local_market_providers.dart';
@@ -61,7 +61,22 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
 
   Future<void> _openSellForm() async {
     HapticFeedback.mediumImpact();
-    final shopId = ref.read(myShopIdProvider).valueOrNull;
+
+    // 1) Provider déjà résolu ?
+    String? shopId = ref.read(myShopIdProvider).valueOrNull;
+
+    // 2) ✅ FIX : attendre le future (corrige la lecture trop tôt)
+    if (shopId == null) {
+      try {
+        shopId = await ref.read(myShopIdProvider.future);
+      } catch (_) {}
+    }
+
+    // 3) ✅ FIX : filet de sécurité requête directe (liste, jamais d'exception "multiple rows")
+    if (shopId == null) {
+      shopId = await _fetchMyShopIdDirect();
+    }
+
     if (!mounted) return;
     if (shopId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -81,9 +96,36 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
       );
       return;
     }
+
     final created = await context.push<bool>('/market/local/create', extra: shopId);
     if (created == true && mounted) {
       invalidateLocalProviders(ref);
+    }
+  }
+
+  /// ✅ Résolution directe : liste de shops, priorité boutique (non-supermarché)
+  Future<String?> _fetchMyShopIdDirect() async {
+    try {
+      final db = Supabase.instance.client;
+      final uid = db.auth.currentUser?.id;
+      if (uid == null) return null;
+      final res = await db
+          .from('shops')
+          .select('id,type')
+          .eq('owner_id', uid)
+          .order('created_at', ascending: true)
+          .limit(5)
+          .timeout(const Duration(seconds: 10));
+      final list = List<Map<String, dynamic>>.from(res as List);
+      if (list.isEmpty) return null;
+      final pick = list.firstWhere(
+        (s) => s['type']?.toString() != 'supermarket',
+        orElse: () => list.first,
+      );
+      return pick['id']?.toString();
+    } catch (e) {
+      debugPrint('[LocalMarket] ⚠️ direct shop resolve: $e');
+      return null;
     }
   }
 
