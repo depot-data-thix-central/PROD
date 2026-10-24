@@ -1,4 +1,16 @@
 // lib/presentation/thix_market/data/market_repository.dart
+// ============================================================================
+// MARKET REPOSITORY — Production Enterprise
+// ============================================================================
+// ✅ Exclusion des produits locaux (is_local = true) de fetchProducts()
+//    => impacte : feed "Pour vous", flash sales, featured, recherche globale
+// ✅ Les produits locaux restent accessibles via :
+//    - fetchProductDetail (URL directe /market/product/:id)
+//    - fetchWishlist / fetchFavorites (choix explicite de l'utilisateur)
+//    - fetchProductsForComparison (sélection explicite)
+//    => cela évite de casser panier, commandes, favoris, alertes prix
+// ============================================================================
+
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -45,6 +57,7 @@ class _RepoValidators {
       'fashion', 'electronics', 'home', 'services',
       'vehicles', 'realestate', 'beauty', 'food',
       'books', 'sports', 'toys', 'pets', 'health',
+      'local', // ✅ AJOUT : catégorie "local" autorisée (pour les produits locaux si besoin)
     };
     return allowed.contains(category.toLowerCase());
   }
@@ -132,6 +145,9 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // PRODUITS (avec pagination + filtres)
+  // ✅ ISOLATION : exclut les produits locaux (is_local = true)
+  //    Les produits locaux vivent dans leur espace dédié (/market/local)
+  //    et ne doivent PAS apparaître dans les listes génériques.
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> fetchProducts({
@@ -141,6 +157,7 @@ class MarketRepository {
     bool featuredOnly = false,
     String? category,
     String? search,
+    bool includeLocal = false, // ✅ NOUVEAU : opt-in pour inclure les locaux
   }) async {
     final safePage = _RepoValidators.clampPage(page);
     final safeLimit = _RepoValidators.clampLimit(limit);
@@ -156,16 +173,20 @@ class MarketRepository {
     return _withRetry(() async {
       debugPrint(
         '[MarketRepo] 📦 Fetching products (page=$safePage, limit=$safeLimit, '
-        'flash=$flashOnly, featured=$featuredOnly, cat=$category)',
+        'flash=$flashOnly, featured=$featuredOnly, cat=$category, includeLocal=$includeLocal)',
       );
 
       // ✅ Même style que shop_detail (qui affiche les produits)
-      // Pas d'embed shop:shops — évite les échecs silencieux
       var q = _db
-    .from('products')
-    .select('*, shop:shops!inner(id, name, logo_url, city, type)')
-    .eq('status', 'active')
-    .neq('shop.type', 'supermarket'); 
+          .from('products')
+          .select('*, shop:shops!inner(id, name, logo_url, city, type)')
+          .eq('status', 'active')
+          .neq('shop.type', 'supermarket');
+
+      // ✅ EXCLUSION DES PRODUITS LOCAUX (par défaut)
+      if (!includeLocal) {
+        q = q.not('is_local', 'is', true);
+      }
 
       if (flashOnly) q = q.eq('is_flash_sale', true);
       if (featuredOnly) q = q.eq('is_featured', true);
@@ -184,6 +205,55 @@ class MarketRepository {
       debugPrint('[MarketRepo] ✓ ${list.length} products loaded');
       return list;
     }, label: 'fetchProducts');
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // PRODUITS LOCAUX — requête dédiée pour l'espace local
+  // ✅ Cette méthode sert UNIQUEMENT l'espace /market/local
+  // ─────────────────────────────────────────────────────────────
+
+  Future<List<Map<String, dynamic>>> fetchLocalProducts({
+    int page = 0,
+    int limit = _kDefaultPageSize,
+    String? sector,
+    String? search,
+  }) async {
+    final safePage = _RepoValidators.clampPage(page);
+    final safeLimit = _RepoValidators.clampLimit(limit);
+    final safeSearch = search != null
+        ? _RepoValidators.sanitizeParam(search, maxLength: _kMaxSearchLength)
+        : null;
+    final safeSector = sector != null
+        ? _RepoValidators.sanitizeParam(sector, maxLength: 50)
+        : null;
+
+    return _withRetry(() async {
+      debugPrint(
+        '[MarketRepo] 🌱 Fetching local products (page=$safePage, limit=$safeLimit, '
+        'sector=$safeSector)',
+      );
+
+      var q = _db
+          .from('products')
+          .select('*, shop:shops!inner(id, name, logo_url, city, type)')
+          .eq('status', 'active')
+          .eq('is_local', true); // ✅ UNIQUEMENT les produits locaux
+
+      if (safeSector != null && safeSector.isNotEmpty) {
+        q = q.eq('local_sector', safeSector);
+      }
+      if (safeSearch != null && safeSearch.isNotEmpty) {
+        q = q.ilike('title', '%$safeSearch%');
+      }
+
+      final res = await q
+          .order('created_at', ascending: false)
+          .range(safePage * safeLimit, (safePage + 1) * safeLimit - 1);
+
+      final list = List<Map<String, dynamic>>.from(res as List);
+      debugPrint('[MarketRepo] ✓ ${list.length} local products loaded');
+      return list;
+    }, label: 'fetchLocalProducts');
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -257,6 +327,8 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // FAVORITES (Legacy — à migrer vers wishlist unifiée)
+  // ⚠️ Pas d'exclusion is_local : l'utilisateur a explicitement mis
+  //    en favori ce produit, il doit pouvoir le voir quel qu'il soit.
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> fetchFavorites() async {
@@ -316,6 +388,7 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // WISHLIST
+  // ⚠️ Pas d'exclusion is_local : même logique que les favoris
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> fetchWishlist() async {
@@ -388,7 +461,10 @@ class MarketRepository {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // RECHERCHE GLOBALE
+  // RECHERCHE GLOBALE (produits + shops)
+  // ⚠️ Les produits locaux sont EXCLUS de la recherche principale
+  //    (via fetchProducts qui a includeLocal: false par défaut)
+  //    Ils ont leur propre recherche dans /market/local
   // ─────────────────────────────────────────────────────────────
 
   Future<Map<String, List<Map<String, dynamic>>>> globalSearch(String query) async {
@@ -429,6 +505,9 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // DÉTAIL PRODUIT
+  // ⚠️ Pas d'exclusion is_local : un produit local doit rester
+  //    accessible via son URL directe /market/product/:id
+  //    (sinon panier, commandes, favoris cassent)
   // ─────────────────────────────────────────────────────────────
 
   Future<Map<String, dynamic>?> fetchProductDetail(String productId) async {
@@ -541,6 +620,8 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // COMPARATEUR PRODUITS
+  // ⚠️ Pas d'exclusion is_local : l'utilisateur a explicitement
+  //    sélectionné ces produits (via wishlist, panier, etc.)
   // ─────────────────────────────────────────────────────────────
 
   Future<List<Map<String, dynamic>>> fetchProductsForComparison(List<String> productIds) async {
@@ -564,6 +645,7 @@ class MarketRepository {
 
   // ─────────────────────────────────────────────────────────────
   // ALERTES PRIX
+  // ⚠️ Pas d'exclusion is_local : l'utilisateur a choisi ce produit
   // ─────────────────────────────────────────────────────────────
 
   Future<void> createPriceAlert({
