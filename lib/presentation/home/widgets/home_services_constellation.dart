@@ -492,7 +492,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   }
 }
 
-// ── NUD ORBITAL ────────────────────────────────────────────────────────────
+// ── NŒUD ORBITAL ────────────────────────────────────────────────────────────
 class _OrbitNode extends StatelessWidget {
   final _ServiceNodeData node;
   final bool active;
@@ -523,7 +523,8 @@ class _OrbitNode extends StatelessWidget {
               ),
             ],
           ),
-          child: Icon(node.icon, color: node.color, size: 20),
+          // ✅ Icône réduite : 20 → 18
+          child: Icon(node.icon, color: node.color, size: 18),
         ),
         // ✅ Badge intelligent avec pulse conditionnel
         if (node.badge != null && node.badge! > 0)
@@ -594,7 +595,8 @@ class _OrbitHub extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(node.icon, color: Colors.white, size: 27),
+                      // ✅ Icône hub réduite : 27 → 24
+                      Icon(node.icon, color: Colors.white, size: 24),
                       const SizedBox(height: 5),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -863,7 +865,8 @@ class _SmartBadgeState extends State<_SmartBadge>
     return '${widget.count}';
   }
 
-  double get _minSize => widget.size == _SmartBadgeSize.large ? 20 : 16;
+  // ✅ Tailles réduites : small 16→15, large 20→18
+  double get _minSize => widget.size == _SmartBadgeSize.large ? 18 : 15;
   double get _fontSize => widget.size == _SmartBadgeSize.large ? 9 : 8;
   double get _borderWidth => widget.size == _SmartBadgeSize.large ? 2 : 1.5;
 
