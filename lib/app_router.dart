@@ -129,7 +129,8 @@ import 'package:thix_id/presentation/thix_market/pages/flash_sales_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/create_supermarket_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/supermarket_space_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/supermarket_manage_page.dart';
-
+import 'presentation/thix_market/pages/local_market_home_page.dart';
+import 'presentation/thix_market/pages/create_local_product_page.dart';
 // === THIX SANTE ===
 import 'package:thix_id/presentation/thix_sante/patient/patient_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_sante/patient/screens/mon_medecin_traitant_page.dart';
@@ -834,6 +835,8 @@ class AppRouter {
           pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()),
           routes: [
             GoRoute(path: 'home', name: 'marketHome', pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage())),
+            GoRoute(path: 'local', name: 'marketLocalHome', pageBuilder: (_, __) => const NoTransitionPage(child: LocalMarketHomePage())),
+            GoRoute(path: 'local/create', name: 'marketLocalCreate', pageBuilder: (c, s) => NoTransitionPage(child: CreateLocalProductPage(shopId: s.extra is String ? s.extra as String : null))),
             GoRoute(path: 'search', name: 'marketSearch', pageBuilder: (_, __) => const NoTransitionPage(child: marketSearch.SearchPage())),
             GoRoute(path: 'shops', name: 'marketShops', pageBuilder: (_, __) => const NoTransitionPage(child: ShopsPage())),
             GoRoute(path: 'buy', name: 'marketBuy', pageBuilder: (_, __) => const NoTransitionPage(child: BuyPage())),
