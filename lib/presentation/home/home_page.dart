@@ -33,6 +33,7 @@ import 'widgets/home_headlines_carousel.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_services_constellation.dart';
 import 'widgets/home_premium_card.dart';
+import 'widgets/home_theme.dart';
 import 'widgets/account_request_sheet.dart';
 
 // ============================================================================
@@ -42,13 +43,12 @@ const Duration _kRequestTimeout = Duration(seconds: 20);
 const Duration _kUploadTimeout = Duration(seconds: 60);
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxRetries = 2;
-const int _kMaxFileSizeBytes = 5 * 1024 * 1024; // 5MB max
+const int _kMaxFileSizeBytes = 5 * 1024 * 1024;
 const int _kMaxTitleLength = 100;
 const int _kMaxTagLength = 30;
 const int _kMinImageWidth = 800;
 const int _kMinImageHeight = 400;
-const double _kMaxAspectRatio = 2.5; // 2.5:1 max
-const List<String> _kAllowedMimeTypes = ['image/jpeg', 'image/png', 'image/webp'];
+const double _kMaxAspectRatio = 2.5;
 
 // ============================================================================
 // VALIDATORS
@@ -63,8 +63,8 @@ class _HomeValidators {
 
   static bool isValidUid(String? uid) {
     if (uid == null || uid.trim().isEmpty) return false;
-    // UUID v4 format
-    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$').hasMatch(uid.trim());
+    return RegExp(r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-4[0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$')
+        .hasMatch(uid.trim());
   }
 
   static String sanitize(String? input, {int maxLength = 500}) {
@@ -82,13 +82,10 @@ class _HomeValidators {
 
   static bool isValidFileType(String? extension) {
     if (extension == null) return false;
-    final ext = extension.toLowerCase();
-    return ['jpg', 'jpeg', 'png', 'webp'].contains(ext);
+    return ['jpg', 'jpeg', 'png', 'webp'].contains(extension.toLowerCase());
   }
 
-  static bool isValidFileSize(int bytes) {
-    return bytes > 0 && bytes <= _kMaxFileSizeBytes;
-  }
+  static bool isValidFileSize(int bytes) => bytes > 0 && bytes <= _kMaxFileSizeBytes;
 
   static String formatFileSize(int bytes) {
     if (bytes < 1024) return '$bytes B';
@@ -100,19 +97,9 @@ class _HomeValidators {
     try {
       final image = img.decodeImage(bytes);
       if (image == null) return false;
-
-      final width = image.width;
-      final height = image.height;
-
-      if (width < _kMinImageWidth || height < _kMinImageHeight) {
-        return false;
-      }
-
-      final aspectRatio = width / height;
-      if (aspectRatio > _kMaxAspectRatio || aspectRatio < 1 / _kMaxAspectRatio) {
-        return false;
-      }
-
+      if (image.width < _kMinImageWidth || image.height < _kMinImageHeight) return false;
+      final ratio = image.width / image.height;
+      if (ratio > _kMaxAspectRatio || ratio < 1 / _kMaxAspectRatio) return false;
       return true;
     } catch (_) {
       return false;
@@ -130,9 +117,6 @@ class _HomeValidators {
   }
 }
 
-// ============================================================================
-// HELPERS
-// ============================================================================
 Future<T> _homeRetry<T>(
   Future<T> Function() fn, {
   required String label,
@@ -149,7 +133,6 @@ Future<T> _homeRetry<T>(
         debugPrint('[HomePage] ❌ $label: timeout after $attempt attempts');
         throw TimeoutException('$label: délai dépassé');
       }
-      debugPrint('[HomePage] ⏱️ $label timeout — retry $attempt/$maxRetries');
       await Future.delayed(_kRetryDelay);
     } catch (e) {
       debugPrint('[HomePage] ❌ $label error: $e');
@@ -181,7 +164,6 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   @override
   void initState() {
     super.initState();
-    debugPrint('[HomePage] 🏠 Page opened');
     _checkAdminRole();
   }
 
@@ -189,51 +171,31 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   void dispose() {
     _searchController.dispose();
     _headlinesController.dispose();
-    debugPrint('[HomePage] 👋 Page disposed');
     super.dispose();
   }
 
-  // ============================================================
-  // ADMIN ROLE CHECK
-  // ============================================================
+  // ── ADMIN ──
   Future<void> _checkAdminRole() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
-
     try {
       final data = await _homeRetry(
-        () => Supabase.instance.client
-            .from('profiles')
-            .select('role, account_type')
-            .eq('id', user.id)
-            .maybeSingle(),
+        () => Supabase.instance.client.from('profiles').select('role, account_type').eq('id', user.id).maybeSingle(),
         label: 'checkAdminRole',
       );
-
       if (!mounted) return;
-
       if (data != null) {
         final role = (data['role'] ?? data['account_type'] ?? '').toString().toLowerCase();
-        final isAdmin = role == 'admin' || role == 'entreprise' || role == 'support';
-        setState(() => _isAdmin = isAdmin);
-        debugPrint('[HomePage] ✓ Admin check: $isAdmin (role=$role)');
+        setState(() => _isAdmin = role == 'admin' || role == 'entreprise' || role == 'support');
       }
     } catch (e) {
       debugPrint('[HomePage] ⚠️ Admin check failed (non-critical): $e');
     }
   }
 
-  // ============================================================
-  // ADMIN: ADD BANNER
-  // ============================================================
   Future<void> _showAddBannerDialog() async {
-    if (!_isAdmin) {
-      debugPrint('[HomePage] ⚠️ Non-admin tried to access banner upload');
-      return;
-    }
-
+    if (!_isAdmin) return;
     HapticFeedback.mediumImpact();
-
     final l10n = AppLocalizations.of(context);
     final titleCtrl = TextEditingController();
     final typeCtrl = TextEditingController(text: l10n.t('home_banner_default_tag'));
@@ -251,29 +213,25 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         onCancel: () => Navigator.pop(ctx),
       ),
     );
+    titleCtrl.dispose();
+    typeCtrl.dispose();
   }
 
   Future<void> _pickAndUploadBanner(String title, String type) async {
     if (!_isAdmin) return;
-
     final l10n = AppLocalizations.of(context);
 
     try {
       final result = await FilePicker.platform.pickFiles(type: FileType.image);
-      if (result == null || result.files.isEmpty) {
-        debugPrint('[HomePage] ℹ️ Banner upload cancelled');
-        return;
-      }
+      if (result == null || result.files.isEmpty) return;
 
       final file = result.files.first;
 
-      // Validation 1: Type de fichier
       if (!_HomeValidators.isValidFileType(file.extension)) {
         _showError(l10n.t('home_banner_invalid_type'));
         return;
       }
 
-      // Validation 2: Taille
       final bytes = file.bytes ?? (file.path != null ? await File(file.path!).readAsBytes() : null);
       if (bytes == null) {
         _showError(l10n.t('home_banner_read_error'));
@@ -287,14 +245,11 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         return;
       }
 
-      // Validation 3: Image valide (dimensions, format)
-      final isValidImage = await _HomeValidators.isValidImage(bytes);
-      if (!isValidImage) {
+      if (!await _HomeValidators.isValidImage(bytes)) {
         _showError(l10n.t('home_banner_invalid_dimensions'));
         return;
       }
 
-      // Sanitization des inputs
       final sanitizedTitle = _HomeValidators.sanitize(
         title.isEmpty ? l10n.t('home_banner_default_title') : title,
         maxLength: _kMaxTitleLength,
@@ -305,26 +260,19 @@ class _HomePagePremiumState extends State<HomePagePremium> {
       );
 
       setState(() => _uploadingBanner = true);
-      debugPrint('[HomePage] 📤 Uploading banner (${_HomeValidators.formatFileSize(bytes.length)})');
 
       final ext = file.extension ?? 'jpg';
       final fileName = 'banner_${DateTime.now().millisecondsSinceEpoch}.$ext';
       final storagePath = 'annonces/$fileName';
 
-      // Upload Storage avec timeout
       await _homeRetry(
-        () => Supabase.instance.client.storage
-            .from('banners')
-            .uploadBinary(storagePath, bytes),
+        () => Supabase.instance.client.storage.from('banners').uploadBinary(storagePath, bytes),
         label: 'uploadBanner',
         timeout: _kUploadTimeout,
       );
 
-      final publicUrl = Supabase.instance.client.storage
-          .from('banners')
-          .getPublicUrl(storagePath);
+      final publicUrl = Supabase.instance.client.storage.from('banners').getPublicUrl(storagePath);
 
-      // Insert DB avec timeout
       await _homeRetry(
         () => Supabase.instance.client.from('banners').insert({
           'image_url': publicUrl,
@@ -336,10 +284,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         label: 'insertBanner',
       );
 
-      if (mounted) {
-        _showSuccess(l10n.t('home_banner_uploaded'));
-      }
-      debugPrint('[HomePage] ✓ Banner uploaded: $fileName');
+      if (mounted) _showSuccess(l10n.t('home_banner_uploaded'));
     } catch (e) {
       debugPrint('[HomePage] ❌ Banner upload error: $e');
       if (mounted) _showError(_HomeValidators.friendlyError(e));
@@ -348,9 +293,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ============================================================
-  // SEARCH & VERIFY
-  // ============================================================
+  // ── RECHERCHE / VÉRIFICATION ──
   Future<void> _handleHomeSearchVerify() async {
     final l10n = AppLocalizations.of(context);
     final raw = _searchController.text.trim();
@@ -379,20 +322,13 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
     setState(() => _searching = true);
     HapticFeedback.selectionClick();
-    debugPrint('[HomePage] 🔍 Verifying ${isThix ? "THIX ID" : "UID"}');
 
     try {
       ThixProfile? profile;
       if (isThix) {
-        profile = await _homeRetry(
-          () => _profileService.fetchPublicProfileByThixId(normalized),
-          label: 'fetchProfileByThixId',
-        );
+        profile = await _homeRetry(() => _profileService.fetchPublicProfileByThixId(normalized), label: 'fetchProfileByThixId');
       } else {
-        profile = await _homeRetry(
-          () => _profileService.fetchPublicProfileByUserId(raw),
-          label: 'fetchProfileByUid',
-        );
+        profile = await _homeRetry(() => _profileService.fetchPublicProfileByUserId(raw), label: 'fetchProfileByUid');
       }
 
       if (!mounted) return;
@@ -426,9 +362,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
     }
   }
 
-  // ============================================================
-  // NAVIGATION & ACTIONS
-  // ============================================================
+  // ── NAVIGATION ──
   void _onProfileTap() {
     HapticFeedback.mediumImpact();
     final user = Supabase.instance.client.auth.currentUser;
@@ -442,11 +376,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _openThixAi() async {
     HapticFeedback.selectionClick();
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) {
-      context.push('/thix-ia');
-    } else {
-      context.push(AppRoutes.login);
-    }
+    context.push(auth.isAuthenticated ? '/thix-ia' : AppRoutes.login);
   }
 
   Future<void> _openThixChat() async {
@@ -462,22 +392,14 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   Future<void> _openEmergency() async {
     HapticFeedback.mediumImpact();
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) {
-      context.push('/home-swipe');
-    } else {
-      if (!mounted) return;
-      context.push(AppRoutes.login);
-    }
+    if (!mounted) return;
+    context.push(auth.isAuthenticated ? '/home-swipe' : AppRoutes.login);
   }
 
   void _openDocumentVault() {
     HapticFeedback.selectionClick();
     final auth = context.read<AuthController>();
-    if (auth.isAuthenticated) {
-      context.push(AppRoutes.vault);
-    } else {
-      context.push(AppRoutes.login);
-    }
+    context.push(auth.isAuthenticated ? AppRoutes.vault : AppRoutes.login);
   }
 
   void _openScanQr() {
@@ -487,8 +409,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
   void _openMiniApps() {
     HapticFeedback.selectionClick();
-    final l10n = AppLocalizations.of(context);
-    _showInfo(l10n.t('home_mini_apps_coming_soon'));
+    _showInfo(AppLocalizations.of(context).t('home_mini_apps_coming_soon'));
   }
 
   Future<void> _handleRequestAccount() async {
@@ -503,12 +424,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
     switch (res) {
       case AccountRequestChoice.personal:
-        if (auth.isAuthenticated) {
-          await auth.signOut();
-        }
-        if (mounted) {
-          context.push(AppRoutes.personalReg);
-        }
+        if (auth.isAuthenticated) await auth.signOut();
+        if (mounted) context.push(AppRoutes.personalReg);
         return;
       case null:
         return;
@@ -521,9 +438,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
     if (uid != null) {
       final section = _mapServiceToSection(serviceKey);
-      if (section != null) {
-        _counters.markSectionSeen(uid: uid, section: section);
-      }
+      if (section != null) _counters.markSectionSeen(uid: uid, section: section);
     }
 
     final route = _getServiceRoute(serviceKey);
@@ -538,93 +453,97 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
   ThixSection? _mapServiceToSection(String key) {
     switch (key) {
-      case 'thixMedia': return ThixSection.media;
-      case 'thixMarket': return ThixSection.market;
-      case 'formations': return ThixSection.formations;
-      case 'emplois': return ThixSection.jobs;
-      case 'thixInfo': return ThixSection.info;
-      case 'opportunites': return ThixSection.opportunities;
-      case 'evenements': return ThixSection.events;
-      case 'reseauPro': return ThixSection.network;
-      case 'thixSante': return ThixSection.health;
-      case 'thixMoney': return ThixSection.money;
-      case 'monPays': return ThixSection.monPays;
-      case 'reservation': return ThixSection.reservation;
-      default: return null;
+      case 'thixMedia':
+        return ThixSection.media;
+      case 'thixMarket':
+        return ThixSection.market;
+      case 'formations':
+        return ThixSection.formations;
+      case 'emplois':
+        return ThixSection.jobs;
+      case 'thixInfo':
+        return ThixSection.info;
+      case 'opportunites':
+        return ThixSection.opportunities;
+      case 'evenements':
+        return ThixSection.events;
+      case 'reseauPro':
+        return ThixSection.network;
+      case 'thixSante':
+        return ThixSection.health;
+      case 'thixMoney':
+        return ThixSection.money;
+      case 'monPays':
+        return ThixSection.monPays;
+      case 'reservation':
+        return ThixSection.reservation;
+      default:
+        return null;
     }
   }
 
   String? _getServiceRoute(String key) {
     switch (key) {
-      case 'thixMedia': return AppRoutes.thixMedia;
-      case 'thixMarket': return AppRoutes.thixMarket;
-      case 'formations': return AppRoutes.trainingHome;
-      case 'emplois': return AppRoutes.jobs;
-      case 'thixInfo': return AppRoutes.thixInfo;
-      case 'opportunites': return AppRoutes.opportunities;
-      case 'evenements': return '/thix-event';
-      case 'reseauPro': return 'go:${AppRoutes.network}';
-      case 'thixSante': return AppRoutes.thixSante;
-      case 'thixMoney': return AppRoutes.thixMoney;
-      case 'monPays': return AppRoutes.monPays;
-      case 'reservation': return AppRoutes.reservation;
-      case 'thixRetrouve': return '/home-swipe';
-      default: return null;
+      case 'thixMedia':
+        return AppRoutes.thixMedia;
+      case 'thixMarket':
+        return AppRoutes.thixMarket;
+      case 'formations':
+        return AppRoutes.trainingHome;
+      case 'emplois':
+        return AppRoutes.jobs;
+      case 'thixInfo':
+        return AppRoutes.thixInfo;
+      case 'opportunites':
+        return AppRoutes.opportunities;
+      case 'evenements':
+        return '/thix-event';
+      case 'reseauPro':
+        return 'go:${AppRoutes.network}';
+      case 'thixSante':
+        return AppRoutes.thixSante;
+      case 'thixMoney':
+        return AppRoutes.thixMoney;
+      case 'monPays':
+        return AppRoutes.monPays;
+      case 'reservation':
+        return AppRoutes.reservation;
+      case 'thixRetrouve':
+        return '/home-swipe';
+      default:
+        return null;
     }
   }
 
-  // ============================================================
-  // FEEDBACK
-  // ============================================================
-  void _showSuccess(String message) {
+  // ── FEEDBACK ──
+  void _snack(String message, Color bg, IconData icon) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Row(children: [
+            Icon(icon, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message)),
+          ]),
+          backgroundColor: bg,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        ),
+      );
   }
 
-  void _showError(String message) {
-    if (!mounted) return;
+  void _showSuccess(String m) => _snack(m, ThixPolicy.success, Icons.check_circle_rounded);
+
+  void _showError(String m) {
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    _snack(m, ThixPolicy.danger, Icons.error_outline_rounded);
   }
 
-  void _showInfo(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.warning,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
+  void _showInfo(String m) => _snack(m, HomeTheme.ink, Icons.info_outline_rounded);
 
-  // ============================================================
-  // BUILD
-  // ============================================================
+  // ── BUILD ──
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthController>();
@@ -644,10 +563,10 @@ class _HomePagePremiumState extends State<HomePagePremium> {
         : _counters.streamCounts(auth.currentUser!.id);
 
     return Scaffold(
-      backgroundColor: ThixPolicy.surfaceSoft,
+      backgroundColor: Colors.white,
       body: Stack(
         children: [
-          _HomeBackground(),
+          const Positioned.fill(child: HomeSoftBackground()),
           _HomeContent(
             safeTop: safeTop,
             displayName: displayName,
@@ -671,7 +590,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             onMiniAppsTap: _openMiniApps,
             onScanQrTap: _openScanQr,
           ),
-          if (_searching) _SearchingOverlay(),
+          if (_searching) const _SearchingOverlay(),
           const NoConnectionOverlay(),
         ],
       ),
@@ -680,50 +599,8 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 }
 
 // ============================================================================
-// COMPOSANTS
+// CONTENU
 // ============================================================================
-
-class _HomeBackground extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned(
-          top: -100,
-          right: -50,
-          child: _BlurOrb(color: ThixPolicy.primary.withOpacity(0.04), size: 300),
-        ),
-        Positioned(
-          bottom: 200,
-          left: -100,
-          child: _BlurOrb(color: ThixPolicy.primaryDeep.withOpacity(0.03), size: 350),
-        ),
-        const HomeSoftBackground(),
-      ],
-    );
-  }
-}
-
-class _BlurOrb extends StatelessWidget {
-  final Color color;
-  final double size;
-
-  const _BlurOrb({required this.color, required this.size});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: color),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
-        child: Container(color: Colors.transparent),
-      ),
-    );
-  }
-}
-
 class _HomeContent extends StatelessWidget {
   final double safeTop;
   final String displayName;
@@ -773,6 +650,8 @@ class _HomeContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    const hPad = EdgeInsets.symmetric(horizontal: ThixPolicy.s20);
+
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
@@ -788,21 +667,17 @@ class _HomeContent extends StatelessWidget {
             onAccountRequest: onAccountRequest,
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-            child: HomeSearch(
-              controller: searchController,
-              isSearching: searching,
-              onVerify: onSearchVerify,
-            ),
+            padding: hPad,
+            child: HomeSearch(controller: searchController, isSearching: searching, onVerify: onSearchVerify),
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
+            padding: hPad,
             child: Stack(
               clipBehavior: Clip.none,
               children: [
@@ -816,19 +691,16 @@ class _HomeContent extends StatelessWidget {
                   Positioned(
                     top: 10,
                     right: 10,
-                    child: _AdminBannerButton(
-                      isUploading: uploadingBanner,
-                      onTap: onAddBanner,
-                    ),
+                    child: _AdminBannerButton(isUploading: uploadingBanner, onTap: onAddBanner),
                   ),
               ],
             ),
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
         SliverToBoxAdapter(
           child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
+            padding: hPad,
             child: HomeQuickActions(
               onScanTap: onScanTap,
               onDocumentTap: onDocumentTap,
@@ -838,42 +710,58 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+        // Constellation dans un panneau verre clair
         SliverToBoxAdapter(
-          child: StreamBuilder<SectionBadgeCounts>(
-            stream: badgeCountsStream,
-            builder: (context, snap) {
-              final counts = snap.data ?? SectionBadgeCounts.zero;
-              return HomeServicesConstellation(
-                counts: counts,
-                avatarUrl: photoUrl,
-                onServiceTap: onServiceTap,
-                onHomeTap: onProfileTap,
-                onMiniAppsTap: onMiniAppsTap,
-                onDocumentsTap: onDocumentTap,
-                onProfileTap: onProfileTap,
-                onScanTap: onScanQrTap,
-              );
-            },
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-        const SliverToBoxAdapter(
           child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s20),
-            child: HomePremiumCard(),
+            padding: hPad,
+            child: Container(
+              padding: const EdgeInsets.fromLTRB(8, 10, 8, 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(32),
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [Colors.white.withOpacity(0.92), HomeTheme.skyMist.withOpacity(0.85)],
+                ),
+                border: Border.all(color: Colors.white, width: 1.4),
+                boxShadow: HomeTheme.softShadow(0.09),
+              ),
+              child: StreamBuilder<SectionBadgeCounts>(
+                stream: badgeCountsStream,
+                builder: (context, snap) {
+                  final counts = snap.data ?? SectionBadgeCounts.zero;
+                  return HomeServicesConstellation(
+                    counts: counts,
+                    avatarUrl: photoUrl,
+                    onServiceTap: onServiceTap,
+                    onHomeTap: onProfileTap,
+                    onMiniAppsTap: onMiniAppsTap,
+                    onDocumentsTap: onDocumentTap,
+                    onProfileTap: onProfileTap,
+                    onScanTap: onScanQrTap,
+                  );
+                },
+              ),
+            ),
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: 100)),
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
+        const SliverToBoxAdapter(
+          child: Padding(padding: hPad, child: HomePremiumCard()),
+        ),
+        const SliverToBoxAdapter(child: SizedBox(height: 110)),
       ],
     );
   }
 }
 
+// ============================================================================
+// COMPOSANTS
+// ============================================================================
 class _AdminBannerButton extends StatelessWidget {
   final bool isUploading;
   final VoidCallback onTap;
-
   const _AdminBannerButton({required this.isUploading, required this.onTap});
 
   @override
@@ -884,27 +772,21 @@ class _AdminBannerButton extends StatelessWidget {
       enabled: !isUploading,
       child: GestureDetector(
         onTap: isUploading ? null : onTap,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+        child: ClipOval(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
             child: Container(
-              padding: const EdgeInsets.all(10),
+              width: 40,
+              height: 40,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.7),
                 shape: BoxShape.circle,
-                border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.5),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4)),
-                ],
+                border: Border.all(color: Colors.white.withOpacity(0.95), width: 1.5),
               ),
+              alignment: Alignment.center,
               child: isUploading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
-                    )
-                  : const Icon(Icons.add_a_photo_rounded, size: 20, color: ThixPolicy.primaryDeep),
+                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: HomeTheme.sky))
+                  : const Icon(Icons.add_a_photo_rounded, size: 19, color: HomeTheme.skyDeep),
             ),
           ),
         ),
@@ -914,18 +796,16 @@ class _AdminBannerButton extends StatelessWidget {
 }
 
 class _SearchingOverlay extends StatelessWidget {
+  const _SearchingOverlay();
+
   @override
   Widget build(BuildContext context) {
     return Positioned.fill(
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            color: Colors.white.withOpacity(0.6),
-            child: const Center(
-              child: CircularProgressIndicator(color: ThixPolicy.primary),
-            ),
-          ),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          color: Colors.white.withOpacity(0.6),
+          child: const Center(child: CircularProgressIndicator(color: HomeTheme.sky)),
         ),
       ),
     );
@@ -947,57 +827,45 @@ class _BannerUploadDialog extends StatelessWidget {
     required this.onCancel,
   });
 
+  InputDecoration _deco(String label) => InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: HomeTheme.skyMist,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: HomeTheme.sky, width: 1.4)),
+      );
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
       child: AlertDialog(
-        backgroundColor: Colors.white.withOpacity(0.95),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: BorderSide(color: Colors.white.withOpacity(0.8)),
-        ),
+        backgroundColor: Colors.white.withOpacity(0.96),
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(26)),
         title: Text(
           l10n.t('home_new_announcement'),
-          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: ThixPolicy.textMain),
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: HomeTheme.ink),
         ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            TextField(
-              controller: titleController,
-              maxLength: _kMaxTitleLength,
-              decoration: InputDecoration(
-                labelText: l10n.t('home_banner_title'),
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.5),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: typeController,
-              maxLength: _kMaxTagLength,
-              decoration: InputDecoration(
-                labelText: l10n.t('home_banner_tag'),
-                filled: true,
-                fillColor: Colors.white.withOpacity(0.5),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-              ),
-            ),
+            TextField(controller: titleController, maxLength: _kMaxTitleLength, decoration: _deco(l10n.t('home_banner_title'))),
+            const SizedBox(height: 10),
+            TextField(controller: typeController, maxLength: _kMaxTagLength, decoration: _deco(l10n.t('home_banner_tag'))),
           ],
         ),
         actions: [
           TextButton(
             onPressed: isUploading ? null : onCancel,
-            child: Text(l10n.t('home_cancel'), style: const TextStyle(color: ThixPolicy.textSecondary)),
+            child: Text(l10n.t('home_cancel'), style: const TextStyle(color: HomeTheme.inkSoft)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
-              backgroundColor: ThixPolicy.primary,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              backgroundColor: HomeTheme.skyDeep,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
             onPressed: isUploading ? null : onUpload,
             child: Text(l10n.t('home_choose_photo'), style: const TextStyle(color: Colors.white)),
