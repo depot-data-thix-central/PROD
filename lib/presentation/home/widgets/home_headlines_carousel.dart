@@ -17,7 +17,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 const Duration _kRequestTimeout = Duration(seconds: 15);
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxRetries = 2;
-const double _kBannerHeight = 160.0;
+const double _kBannerHeight = 185.0; // ✅ Agrandi vers le bas (160 → 185)
 const int _kAutoScrollInterval = 5; // secondes
 const int _kMaxTitleLength = 100;
 const int _kMaxTagLength = 30;
@@ -70,6 +70,13 @@ class _CarouselValidators {
       debugPrint('[Carousel] ⚠️ Failed to parse image URL: $e');
     }
     return null;
+  }
+
+  /// ✅ Détecte si un tag est urgent
+  static bool isUrgentTag(String? tag) {
+    if (tag == null) return false;
+    final t = tag.toLowerCase();
+    return t.contains('urgent') || t.contains('sos') || t.contains('alert');
   }
 }
 
@@ -130,6 +137,8 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
   int _cardCount = 0;
   bool _isAdmin = false;
   bool _isAppVisible = true;
+  bool _isLoading = true; // ✅ État de chargement initial
+  bool _hasNavigatedToUrgent = false; // ✅ Évite la navigation répétée
 
   @override
   void initState() {
@@ -206,6 +215,51 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
     );
   }
 
+  /// ✅ Navigue automatiquement vers la première bannière urgente
+  void _navigateToUrgent(int urgentIndex) {
+    if (_hasNavigatedToUrgent) return;
+    if (!widget.controller.hasClients) return;
+
+    _hasNavigatedToUrgent = true;
+    _autoTimer?.cancel(); // Pause l'auto-scroll pour laisser l'utilisateur voir
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !widget.controller.hasClients) return;
+      widget.controller.animateToPage(
+        urgentIndex,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+      );
+      debugPrint('[Carousel] 🚨 Auto-navigated to urgent banner at index $urgentIndex');
+
+      // Reprendre l'auto-scroll après un délai plus long
+      Future.delayed(const Duration(seconds: 8), () {
+        if (mounted) _startAutoScroll();
+      });
+    });
+  }
+
+  /// ✅ Force la navigation vers l'urgence depuis le bouton rouge
+  void _forceNavigateToUrgent(List<_CarouselCardData> cards) {
+    HapticFeedback.mediumImpact();
+    final urgentIndex = cards.indexWhere((c) => c.isUrgent);
+    if (urgentIndex >= 0 && widget.controller.hasClients) {
+      _autoTimer?.cancel();
+      widget.controller.animateToPage(
+        urgentIndex,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeOutBack,
+      );
+      // Reprendre l'auto-scroll après un délai
+      Future.delayed(const Duration(seconds: 8), () {
+        if (mounted) _startAutoScroll();
+      });
+    } else {
+      // Pas de bannière urgente → ouvrir les notifications
+      NotificationsSheet.show(context);
+    }
+  }
+
   Future<void> _checkAdminRole() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) return;
@@ -275,13 +329,11 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
     debugPrint('[Carousel] 🗑️ Deleting banner $id');
 
     try {
-      // Delete DB
       await _carouselRetry(
         () => Supabase.instance.client.from('banners').delete().eq('id', id),
         label: 'deleteBanner[$id]',
       );
 
-      // Delete storage (si image existe)
       final storagePath = _CarouselValidators.extractStoragePath(imageUrl);
       if (storagePath != null) {
         try {
@@ -367,27 +419,50 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
         return StreamBuilder<List<Map<String, dynamic>>>(
           stream: _bannersStream,
           builder: (context, bannerSnap) {
+            // ✅ État de chargement : afficher le bouton d'urgence rouge
+            if (bannerSnap.connectionState == ConnectionState.waiting && _isLoading) {
+              return _LoadingWithUrgencyButton(
+                height: _kBannerHeight,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  NotificationsSheet.show(context);
+                },
+              );
+            }
+
+            // Marquer le chargement comme terminé
+            if (_isLoading && mounted) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) setState(() => _isLoading = false);
+              });
+            }
+
             final banners = bannerSnap.data ?? const <Map<String, dynamic>>[];
-            final cards = <Widget>[];
+
+            // ✅ Construire les données structurées pour détecter l'urgence
+            final cardDataList = <_CarouselCardData>[];
 
             // 1. Notification prioritaire
             if (priorityNotif != null) {
-              cards.add(_HeadlineBanner(
-                label: l10n.t('home_headline_notif_priority'),
-                title: _CarouselValidators.sanitize(
-                  (priorityNotif['title'] as String?) ??
-                      (priorityNotif['message'] as String?) ??
-                      l10n.t('home_headline_new_notif'),
-                  maxLength: _kMaxTitleLength,
+              cardDataList.add(_CarouselCardData(
+                isUrgent: true,
+                widget: _HeadlineBanner(
+                  label: l10n.t('home_headline_notif_priority'),
+                  title: _CarouselValidators.sanitize(
+                    (priorityNotif['title'] as String?) ??
+                        (priorityNotif['message'] as String?) ??
+                        l10n.t('home_headline_new_notif'),
+                    maxLength: _kMaxTitleLength,
+                  ),
+                  imageUrl: _CarouselValidators.sanitizeUrl(priorityNotif['image_url'] as String?),
+                  icon: Icons.priority_high_rounded,
+                  accent: ThixPolicy.danger,
+                  height: _kBannerHeight,
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    NotificationsSheet.show(context);
+                  },
                 ),
-                imageUrl: _CarouselValidators.sanitizeUrl(priorityNotif['image_url'] as String?),
-                icon: Icons.priority_high_rounded,
-                accent: ThixPolicy.danger,
-                height: _kBannerHeight,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  NotificationsSheet.show(context);
-                },
               ));
             }
 
@@ -404,9 +479,11 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
               );
               final imageUrl = _CarouselValidators.sanitizeUrl(b['image_url'] as String?);
               final accent = _getAccentColor(tag);
+              final isUrgent = _CarouselValidators.isUrgentTag(tag);
 
-              cards.add(
-                Stack(
+              cardDataList.add(_CarouselCardData(
+                isUrgent: isUrgent,
+                widget: Stack(
                   children: [
                     _HeadlineBanner(
                       label: tag,
@@ -434,15 +511,22 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
                       ),
                   ],
                 ),
-              );
+              ));
             }
 
             // 3. Fallback si aucune annonce
-            if (cards.isEmpty) {
+            if (cardDataList.isEmpty) {
               return _EmptyBanner(message: l10n.t('banner_empty'));
             }
 
-            _cardCount = cards.length;
+            // ✅ Auto-navigation vers l'urgence
+            final urgentIndex = cardDataList.indexWhere((c) => c.isUrgent);
+            if (urgentIndex >= 0) {
+              _navigateToUrgent(urgentIndex);
+            }
+
+            _cardCount = cardDataList.length;
+            final cards = cardDataList.map((c) => c.widget).toList();
 
             return RepaintBoundary(
               child: Column(
@@ -463,6 +547,109 @@ class _HomeHeadlinesCarouselState extends State<HomeHeadlinesCarousel>
           },
         );
       },
+    );
+  }
+}
+
+// ============================================================================
+// DONNÉES STRUCTURÉES POUR CARTE
+// ============================================================================
+class _CarouselCardData {
+  final bool isUrgent;
+  final Widget widget;
+  const _CarouselCardData({required this.isUrgent, required this.widget});
+}
+
+// ============================================================================
+// ✅ ÉTAT DE CHARGEMENT AVEC BOUTON D'URGENCE ROUGE
+// ============================================================================
+class _LoadingWithUrgencyButton extends StatelessWidget {
+  final double height;
+  final VoidCallback onTap;
+
+  const _LoadingWithUrgencyButton({required this.height, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 4.0),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Container(
+          height: height,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            border: Border.all(color: ThixPolicy.border.withOpacity(0.6), width: 1.2),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              // Indicateur de chargement discret
+              Center(
+                child: SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.5,
+                    color: ThixPolicy.border,
+                  ),
+                ),
+              ),
+              // ✅ Bouton d'urgence rouge en bas à droite
+              Positioned(
+                right: 14,
+                bottom: 14,
+                child: Semantics(
+                  button: true,
+                  label: l10n.t('home_urgency_button', 'Urgence'),
+                  child: GestureDetector(
+                    onTap: onTap,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.danger,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: ThixPolicy.danger.withOpacity(0.4),
+                            blurRadius: 10,
+                            spreadRadius: 1,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 16),
+                          const SizedBox(width: 6),
+                          Text(
+                            l10n.t('home_urgency_label', 'URGENCE'),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.8,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
