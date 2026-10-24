@@ -2,6 +2,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'home_theme.dart';
+import 'dart:ui' show PointMode;
 
 class HomeSoftBackground extends StatefulWidget {
   const HomeSoftBackground({super.key});
