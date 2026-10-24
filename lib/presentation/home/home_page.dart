@@ -28,7 +28,6 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import 'widgets/home_background.dart';
 import 'widgets/home_header_delegate.dart';
-import 'widgets/home_search.dart';
 import 'widgets/home_headlines_carousel.dart';
 import 'widgets/home_quick_actions.dart';
 import 'widgets/home_services_constellation.dart';
@@ -655,6 +654,7 @@ class _HomeContent extends StatelessWidget {
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
+        // ✅ Header avec icône 🔍 rétractable intégrée
         SliverPersistentHeader(
           pinned: true,
           delegate: HomeHeaderDelegate(
@@ -665,13 +665,10 @@ class _HomeContent extends StatelessWidget {
             badgeCountsStream: badgeCountsStream,
             onProfileTap: onProfileTap,
             onAccountRequest: onAccountRequest,
-          ),
-        ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-        SliverToBoxAdapter(
-          child: Padding(
-            padding: hPad,
-            child: HomeSearch(controller: searchController, isSearching: searching, onVerify: onSearchVerify),
+            // ✅ Recherche rétractable dans le header
+            searchController: searchController,
+            isSearching: searching,
+            onVerify: onSearchVerify,
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
