@@ -1,17 +1,18 @@
 // lib/presentation/chat/chat_screen.dart
 // ============================================================================
-// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v3.0
+// THIX CHAT — ÉCRAN DE CONVERSATION (PRODUCTION ENTREPRISE) — v3.1
 // ----------------------------------------------------------------------------
 //  ✅ Fichier principal allégé : widgets dans /chat/widgets
 //     - chat_input_bar.dart      (saisie, audio, fichiers, stickers)
 //     - chat_message_bubble.dart (bulles, séparateurs, lecteur audio…)
 //     - chat_common.dart         (validateurs, couleurs, snackbars, cache)
-//  ✅ v3.0 : alerte capture d'écran, désactivation des appels (2 côtés),
-//     sélection multiple + suppression, envoi optimiste façon WhatsApp,
-//     fonds d'écran (8 + photo), nom/avatar, bulles grises/blanches,
-//     séparateurs de date, bouton « descendre » + compteur, liens cliquables,
-//     gros emojis, vitesse audio, réactions rapides, performances (cache,
-//     index O(1), saisie sans rebuild global).
+//  ✅ v3.0 : alerte capture d'écran, sélection multiple + suppression, envoi
+//     optimiste façon WhatsApp, fonds d'écran (8 + photo), nom/avatar, bulles
+//     grises/blanches, séparateurs de date, bouton « descendre » + compteur,
+//     liens cliquables, gros emojis, vitesse audio, performances.
+//  ✅ v3.1 : DÉSACTIVATION DES APPELS PAR CONVERSATION (table chat_call_blocks)
+//     - le bouton d'appel disparaît chez les DEUX participants
+//     - seul celui qui a désactivé en premier peut réactiver
 // ============================================================================
 import 'dart:async';
 import 'dart:io';
@@ -32,7 +33,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:screenshot_callback/screenshot_callback.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/features/network/presentation/providers/user_profile_providers.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -51,6 +51,7 @@ import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_common.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_input_bar.dart';
 import 'package:thix_id/presentation/chat/widgets/chat_message_bubble.dart';
+import 'package:thix_id/services/chat/call_block_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
@@ -76,12 +77,12 @@ const int _kSendThrottleMs = 250;
 const int _kExpirySweepSeconds = 1;
 const int _kDraftSaveDebounceMs = 500;
 const int _kScreenshotThrottleSeconds = 8;
+const int _kCallBlockPollSeconds = 15;
 const double _kSwipeTrigger = 60;
 const double _kSwipeMax = 84;
 const String _kDraftPrefix = 'thix_chat_draft_v1_';
 const String _kWallpaperPrefix = 'thix_chat_wallpaper_v1_';
 const String _kWallpaperPhotoPrefix = 'thix_chat_wallpaper_photo_v1_';
-const String _kCallsPrefPrefix = 'thix_chat_calls_v1_';
 
 String _tr(AppLocalizations l10n, String key, String fallback) => chatTr(l10n, key, fallback);
 
@@ -517,8 +518,11 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ── Fond d'écran ──
   String _wallpaperId = 'default';
   String? _wallpaperPhoto;
-  // ── Appels ──
-  bool? _myCallsOverride;
+  // ── Appels : blocage par conversation ──
+  final CallBlockService _callBlock = CallBlockService();
+  String? _callBlockedBy;
+  StreamSubscription<String?>? _callBlockSub;
+  Timer? _callBlockPoll;
   // ── Capture d'écran ──
   ScreenshotCallback? _screenshotCb;
   DateTime? _lastShotAt;
@@ -526,6 +530,9 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   bool _marketByContent = false;
   bool get _isMarketConversation => widget.isMarketChat || _marketByContent;
   bool get _canWrite => _isConnectionValid || _isMarketConversation;
+
+  bool get _callsBlocked => _callBlockedBy != null;
+  bool get _iBlockedCalls => _callBlockedBy != null && _callBlockedBy == _chatService.currentUserId;
 
   String get _otherId =>
       widget.conversation.participantIds.firstWhere((id) => id != _chatService.currentUserId, orElse: () => '');
@@ -569,7 +576,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _loadStarred();
     _restoreDraft();
     _loadWallpaper();
-    _loadMyCallsPref();
+    _initCallBlock();
     _markAsRead();
     _initScreenshotGuard();
 
@@ -613,6 +620,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _draftTimer?.cancel();
     _messageSub?.cancel();
     _presenceSub?.cancel();
+    _callBlockSub?.cancel();
+    _callBlockPoll?.cancel();
     for (final t in _reminderTimers.values) {
       t.cancel();
     }
@@ -651,56 +660,64 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // APPELS : activer / désactiver
+  // APPELS : blocage par conversation (premier qui bloque = seul à réactiver)
   // ==========================================================================
-  Future<void> _loadMyCallsPref() async {
-    final myId = _chatService.currentUserId;
-    if (myId.isEmpty) return;
+  void _initCallBlock() {
+    if (widget.conversation.isGroup) return;
+    unawaited(_refreshCallBlock());
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getBool('$_kCallsPrefPrefix$myId');
-      if (!mounted || v == null) return;
-      setState(() => _myCallsOverride = v);
+      _callBlockSub = _callBlock.watch(widget.conversationId).listen(
+        (by) {
+          if (mounted && by != _callBlockedBy) setState(() => _callBlockedBy = by);
+        },
+        onError: (e) => chatLog('[Chat] ⚠️ callBlock stream: $e'),
+      );
     } catch (e) {
-      chatLog('[Chat] ⚠️ loadCallsPref: $e');
+      chatLog('[Chat] ⚠️ callBlock watch: $e');
+    }
+    // Rattrape les suppressions (réactivation) et les pertes de connexion
+    _callBlockPoll = Timer.periodic(const Duration(seconds: _kCallBlockPollSeconds), (_) => _refreshCallBlock());
+  }
+
+  Future<void> _refreshCallBlock() async {
+    if (widget.conversation.isGroup) return;
+    try {
+      final by = await _callBlock.fetch(widget.conversationId);
+      if (mounted && by != _callBlockedBy) setState(() => _callBlockedBy = by);
+    } catch (e) {
+      chatLog('[Chat] ⚠️ refreshCallBlock: $e');
     }
   }
 
-  Future<void> _toggleMyCalls(bool allow) async {
+  Future<void> _toggleCallBlock() async {
     final l10n = AppLocalizations.of(context);
-    final myId = _chatService.currentUserId;
-    if (myId.isEmpty) return;
+    final me = _chatService.currentUserId;
+    if (me.isEmpty) return;
     HapticFeedback.selectionClick();
-    setState(() => _myCallsOverride = allow);
 
-    // ✅ Mémoire locale immédiate : l'état survit à la fermeture de l'écran
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('$_kCallsPrefPrefix$myId', allow);
-    } catch (e) {
-      chatLog('[Chat] ⚠️ persist calls pref: $e');
+    // L'autre a désactivé en premier : lui seul peut réactiver
+    if (_callsBlocked && !_iBlockedCalls) {
+      _showWarning(_tr(l10n, 'chat_calls_locked_other', 'Seul le contact qui a désactivé les appels peut les réactiver.'));
+      return;
     }
 
     try {
-      await Supabase.instance.client.from('profiles').update({'calls_enabled': allow}).eq('id', myId);
-      ref.invalidate(userProfileProvider(myId));
-      if (mounted) {
-        chatSnack(
-          context,
-          allow ? _tr(l10n, 'chat_calls_on', 'Appels activés') : _tr(l10n, 'chat_calls_off', 'Appels désactivés : le bouton disparaît aussi chez vos contacts'),
-          ChatSnackKind.success,
-        );
+      if (_iBlockedCalls) {
+        await _chatRetry(() => _callBlock.unblock(widget.conversationId, me), label: 'unblockCalls');
+        if (mounted) setState(() => _callBlockedBy = null);
+        _showSuccess(_tr(l10n, 'chat_calls_on', 'Appels réactivés'));
+      } else {
+        final ok = await _chatRetry(() => _callBlock.block(widget.conversationId, me), label: 'blockCalls');
+        if (!ok) {
+          await _refreshCallBlock();
+          _showWarning(_tr(l10n, 'chat_calls_locked_other', 'Seul le contact qui a désactivé les appels peut les réactiver.'));
+          return;
+        }
+        if (mounted) setState(() => _callBlockedBy = me);
+        _showSuccess(_tr(l10n, 'chat_calls_off', 'Appels désactivés pour vous deux. Vous seul pouvez les réactiver.'));
       }
     } catch (e) {
-      chatLog('[Chat] ❌ toggle calls: $e');
-      if (mounted) {
-        setState(() => _myCallsOverride = !allow);
-        try {
-          final prefs = await SharedPreferences.getInstance();
-          await prefs.setBool('$_kCallsPrefPrefix$myId', !allow);
-        } catch (_) {}
-        chatSnack(context, ChatValidators.friendlyError(e), ChatSnackKind.error);
-      }
+      _showError(ChatValidators.friendlyError(e));
     }
   }
 
@@ -930,6 +947,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       case AppLifecycleState.resumed:
         _chatService.startPresenceHeartbeat();
         _checkConnectionSecurity();
+        _refreshCallBlock();
         ref.read(chatMessagesProvider(widget.conversationId).notifier).purgeExpired();
         final o = _otherId;
         if (o.isNotEmpty) ref.invalidate(userProfileProvider(o));
@@ -1600,7 +1618,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  // ==========================================================================
+  // ▲▲▲ FIN DE LA PARTIE 1/2 — ne ferme PAS la classe _ChatScreenState ▲▲▲
+    // ==========================================================================
   // PIN / STAR
   // ==========================================================================
   Future<void> _togglePin(ChatMessage msg) async {
@@ -1897,14 +1916,17 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _showError(_tr(l10n, 'chat_call_inactive', 'Connexion inactive avec ce contact'));
       return;
     }
-    final other = ref.read(userProfileProvider(_otherId)).valueOrNull;
-    final otherAllows = other == null || other['calls_enabled'] != false;
-    final me = ref.read(userProfileProvider(_chatService.currentUserId)).valueOrNull;
-    final myAllows = _myCallsOverride ?? (me == null || me['calls_enabled'] != false);
-    if (!otherAllows || !myAllows) {
-      _showWarning(_tr(l10n, 'chat_calls_disabled', 'Les appels sont désactivés pour cette conversation'));
+
+    // Vérification fraîche côté serveur (évite un état périmé)
+    await _refreshCallBlock();
+    if (!mounted) return;
+    if (_callsBlocked) {
+      _showWarning(_iBlockedCalls
+          ? _tr(l10n, 'chat_calls_blocked_me', 'Vous avez désactivé les appels. Réactivez-les depuis le menu.')
+          : _tr(l10n, 'chat_calls_blocked_other', 'Ce contact a désactivé les appels.'));
       return;
     }
+
     HapticFeedback.mediumImpact();
     final hasMic = await chatCheckPermission(context, Permission.microphone, _tr(l10n, 'chat_mic_call_disclosure', 'Le micro est nécessaire pour les appels.'));
     if (!hasMic || !mounted) return;
@@ -2275,17 +2297,8 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       _scheduleRemindersFor(messages);
     }
 
-    // Appels : visibles seulement si MOI et L'AUTRE les autorisent
-    bool myCalls = true;
-    bool otherCalls = true;
-    if (!widget.conversation.isGroup) {
-      final myProfile = currentUid.isEmpty ? null : ref.watch(userProfileProvider(currentUid)).valueOrNull;
-      myCalls = _myCallsOverride ?? (myProfile == null || myProfile['calls_enabled'] != false);
-      final oid = _otherId;
-      final otherProfile = oid.isEmpty ? null : ref.watch(userProfileProvider(oid)).valueOrNull;
-      otherCalls = otherProfile == null || otherProfile['calls_enabled'] != false;
-    }
-    final callsVisible = !widget.conversation.isGroup && myCalls && otherCalls;
+    // Appels : visibles seulement si personne n'a désactivé (blocage par conversation)
+    final callsVisible = !widget.conversation.isGroup && !_callsBlocked;
 
     final int firstUnreadIdx = _firstUnreadId.isEmpty ? -1 : displayItems.indexWhere((it) => it.messages.first.id == _firstUnreadId);
     final pendingCount = _pending.length;
@@ -2298,7 +2311,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       },
       child: Scaffold(
         backgroundColor: ThixPolicy.surfaceSoft,
-        appBar: _selectionMode ? _buildSelectionAppBar(l10n) : _buildAppBar(l10n, callsVisible, myCalls),
+        appBar: _selectionMode ? _buildSelectionAppBar(l10n) : _buildAppBar(l10n, callsVisible),
         body: Stack(children: [
           Positioned.fill(child: RepaintBoundary(child: _buildWallpaper())),
           Column(children: [
@@ -2468,14 +2481,13 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
 
     if (_selectionMode) {
       content = _SelectableRow(selected: ids.every(_selectedIds.contains), onTap: () => _toggleSelection(ids), child: content);
-    } else {
-      if (type != 'system_screenshot') {
-        content = _SwipeActions(
-          onReply: () => _setReply(firstMsg),
-          onMore: () => _showMessageMenu(firstMsg, l10n),
-          child: content,
-        );
-      }
+    } else if (type != 'system_screenshot') {
+      content = _SwipeActions(
+        key: ValueKey('swipe_${firstMsg.id}'),
+        onReply: () => _setReply(firstMsg),
+        onMore: () => _showMessageMenu(firstMsg, l10n),
+        child: content,
+      );
     }
 
     return Padding(
@@ -2488,24 +2500,28 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // BULLE UNIQUE
   // ==========================================================================
   Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
-    // Récupère le message de réponse complet (pas juste le texte)
-    final replyMsg = _replyToId.isEmpty
-        ? null
-        : (idIndex.containsKey(_replyToId) ? visible[idIndex[_replyToId]!] : null);
+    // ✅ Corrigé : on cite le message auquel CE message répond (msg.replyToId),
+    // et non la réponse en cours de saisie (_replyToId).
+    ChatMessage? replyMsg;
+    final rid = msg.replyToId;
+    if (rid != null && rid.isNotEmpty) {
+      final ri = idIndex[rid];
+      if (ri != null) {
+        final f = visible[ri];
+        replyMsg = isProductRefMessage(f) ? _overrideMsg(f, {'content': chatPreviewOf(f)}) : f;
+      }
+    }
 
     // Résolution de l'avatar de l'expéditeur
     String? avatarUrl;
     if (!isOwn) {
       if (widget.conversation.isGroup) {
-        // En groupe : on cherche dans la liste des membres
         avatarUrl = _groupById[msg.senderId]?.avatarUrl;
       } else {
-        // En 1:1 : on prend l'avatar de l'autre participant
         avatarUrl = _otherParticipant?.avatarUrl;
-        // Fallback via le provider de profil si UserStatus n'a pas l'avatar
         if (avatarUrl == null && _otherId.isNotEmpty) {
-          final p = ref.read(userProfileProvider(_otherId)).valueOrNull;
-          avatarUrl = p?['avatar_url'] as String?;
+          final pr = ref.read(userProfileProvider(_otherId)).valueOrNull;
+          avatarUrl = pr?['avatar_url'] as String?;
         }
       }
     }
@@ -2527,109 +2543,124 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   void _showMessageMenu(ChatMessage msg, AppLocalizations l10n) {
     final me = _chatService.currentUserId;
-    final isOwn = msg.senderId == me;
     final canEdit = _canEdit(msg);
-    final canDeleteAll = msg.canBeDeletedForAll(me);
     final canReply = !msg.isDeleted && !msg.isDeletedForAll;
     final canForward = !msg.isDeleted && !msg.isDeletedForAll && !msg.isViewOnce;
+    final live = !msg.isDeleted && !msg.isDeletedForAll;
+    // ignore: unused_local_variable
+    final isOwn = msg.senderId == me;
 
     HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
       backgroundColor: ThixPolicy.card,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
       builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
-            const SizedBox(height: 10),
-            if (canReply)
-              ListTile(
-                leading: const Icon(Icons.reply_rounded, color: ThixPolicy.inkDeep),
-                title: Text(_tr(l10n, 'chat_reply', 'Répondre')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _setReply(msg);
-                },
-              ),
-            if (canForward)
-              ListTile(
-                leading: const Icon(Icons.forward_rounded, color: ThixPolicy.inkDeep),
-                title: Text(_tr(l10n, 'chat_forward', 'Transférer')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showForwardSheet(msg);
-                },
-              ),
-            if (!msg.isDeleted && !msg.isDeletedForAll && !msg.isViewOnce)
-              ListTile(
-                leading: Icon(_starredIds.contains(msg.id) ? Icons.star_rounded : Icons.star_outline_rounded, color: ThixPolicy.gold),
-                title: Text(_starredIds.contains(msg.id) ? _tr(l10n, 'chat_unstar', 'Retirer des favoris') : _tr(l10n, 'chat_star', 'Ajouter aux favoris')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _toggleStar(msg);
-                },
-              ),
-            if (!msg.isDeleted && !msg.isDeletedForAll && !msg.isViewOnce)
-              ListTile(
-                leading: Icon(msg.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined, color: ThixPolicy.inkDeep),
-                title: Text(msg.isPinned ? _tr(l10n, 'chat_unpin', 'Désépingler') : _tr(l10n, 'chat_pin', 'Épingler')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _togglePin(msg);
-                },
-              ),
-            if (!msg.isDeleted && !msg.isDeletedForAll)
-              ListTile(
-                leading: const Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold),
-                title: Text(_tr(l10n, 'chat_remind', 'Me rappeler')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showRemindSheet(msg);
-                },
-              ),
-            if (canEdit)
-              ListTile(
-                leading: const Icon(Icons.edit_rounded, color: ThixPolicy.inkDeep),
-                title: Text(_tr(l10n, 'chat_edit', 'Modifier')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _startEdit(msg);
-                },
-              ),
-            if (canForward)
-              ListTile(
-                leading: const Icon(Icons.copy_rounded, color: ThixPolicy.inkDeep),
-                title: Text(_tr(l10n, 'chat_copy', 'Copier')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  final text = chatPlainTextOf(msg).trim();
-                  if (text.isNotEmpty) {
-                    Clipboard.setData(ClipboardData(text: text));
-                    _showSuccess(_tr(l10n, 'chat_copied', 'Copié'));
-                  }
-                },
-              ),
-            if (!msg.isExpired)
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded, color: ThixPolicy.textSecondary),
-                title: Text(_tr(l10n, 'chat_info', 'Infos du message')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showMessageInfo(msg);
-                },
-              ),
-            if (!msg.isExpired)
-              ListTile(
-                leading: Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger),
-                title: Text(_tr(l10n, 'chat_delete', 'Supprimer')),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _showDeleteOptions(msg);
-                },
-              ),
-          ]),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.8),
+          child: SingleChildScrollView(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 18),
+              child: Column(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4))),
+                const SizedBox(height: 10),
+                if (canReply)
+                  ListTile(
+                    leading: const Icon(Icons.reply_rounded, color: ThixPolicy.inkDeep),
+                    title: Text(_tr(l10n, 'chat_reply', 'Répondre')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _setReply(msg);
+                    },
+                  ),
+                if (canForward)
+                  ListTile(
+                    leading: const Icon(Icons.forward_rounded, color: ThixPolicy.inkDeep),
+                    title: Text(_tr(l10n, 'chat_forward', 'Transférer')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showForwardSheet(msg);
+                    },
+                  ),
+                if (live && !msg.isViewOnce)
+                  ListTile(
+                    leading: Icon(_starredIds.contains(msg.id) ? Icons.star_rounded : Icons.star_outline_rounded, color: ThixPolicy.gold),
+                    title: Text(_starredIds.contains(msg.id) ? _tr(l10n, 'chat_unstar', 'Retirer des favoris') : _tr(l10n, 'chat_star', 'Ajouter aux favoris')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _toggleStar(msg);
+                    },
+                  ),
+                if (live && !msg.isViewOnce)
+                  ListTile(
+                    leading: Icon(msg.isPinned ? Icons.push_pin_rounded : Icons.push_pin_outlined, color: ThixPolicy.inkDeep),
+                    title: Text(msg.isPinned ? _tr(l10n, 'chat_unpin', 'Désépingler') : _tr(l10n, 'chat_pin', 'Épingler')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _togglePin(msg);
+                    },
+                  ),
+                if (live)
+                  ListTile(
+                    leading: const Icon(Icons.notifications_active_outlined, color: ThixPolicy.gold),
+                    title: Text(_tr(l10n, 'chat_remind', 'Me rappeler')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showRemindSheet(msg);
+                    },
+                  ),
+                if (canEdit)
+                  ListTile(
+                    leading: const Icon(Icons.edit_rounded, color: ThixPolicy.inkDeep),
+                    title: Text(_tr(l10n, 'chat_edit', 'Modifier')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _startEdit(msg);
+                    },
+                  ),
+                if (canForward && chatPlainTextOf(msg).trim().isNotEmpty)
+                  ListTile(
+                    leading: const Icon(Icons.copy_rounded, color: ThixPolicy.inkDeep),
+                    title: Text(_tr(l10n, 'chat_copy', 'Copier')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      final text = chatPlainTextOf(msg).trim();
+                      if (text.isNotEmpty) {
+                        Clipboard.setData(ClipboardData(text: text));
+                        _showSuccess(_tr(l10n, 'chat_copied', 'Copié'));
+                      }
+                    },
+                  ),
+                ListTile(
+                  leading: const Icon(Icons.checklist_rounded, color: ThixPolicy.inkDeep),
+                  title: Text(_tr(l10n, 'chat_select', 'Sélectionner')),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    _enterSelection(msg.id);
+                  },
+                ),
+                if (!msg.isExpired)
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded, color: ThixPolicy.textSecondary),
+                    title: Text(_tr(l10n, 'chat_info', 'Infos du message')),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showMessageInfo(msg);
+                    },
+                  ),
+                if (!msg.isExpired)
+                  ListTile(
+                    leading: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger),
+                    title: Text(_tr(l10n, 'chat_delete', 'Supprimer'), style: const TextStyle(color: ThixPolicy.danger, fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _showDeleteOptions(msg);
+                    },
+                  ),
+              ]),
+            ),
+          ),
         ),
       ),
     );
@@ -2835,7 +2866,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  PreferredSizeWidget _buildAppBar(AppLocalizations l10n, bool callsVisible, bool myCalls) {
+  PreferredSizeWidget _buildAppBar(AppLocalizations l10n, bool callsVisible) {
     final safeAvatar = ChatValidators.sanitizeUrl(widget.conversation.displayAvatar);
     return AppBar(
       backgroundColor: ThixPolicy.card,
@@ -2972,7 +3003,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
                 _showWallpaperSheet();
                 break;
               case 'calls':
-                _toggleMyCalls(!myCalls);
+                _toggleCallBlock();
                 break;
               case 'select':
                 final msgs = ref.read(chatMessagesProvider(widget.conversationId));
@@ -2998,11 +3029,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
             _menuItem('select', Icons.checklist_rounded, ThixPolicy.inkDeep, _tr(l10n, 'chat_select', 'Sélectionner')),
             _menuItem('wallpaper', Icons.wallpaper_rounded, ThixPolicy.inkDeep, _tr(l10n, 'chat_wallpaper', 'Fond d’écran')),
             if (!widget.conversation.isGroup)
-              _menuItem(
-                'calls',
-                myCalls ? Icons.phone_disabled_rounded : Icons.phone_enabled_rounded,
-                myCalls ? ThixPolicy.danger : ThixPolicy.success,
-                myCalls ? _tr(l10n, 'chat_calls_disable', 'Désactiver les appels') : _tr(l10n, 'chat_calls_enable', 'Activer les appels'),
+              PopupMenuItem<String>(
+                value: 'calls',
+                enabled: !_callsBlocked || _iBlockedCalls,
+                child: Row(children: [
+                  Icon(
+                    _callsBlocked ? Icons.phone_enabled_rounded : Icons.phone_disabled_rounded,
+                    color: _callsBlocked ? (_iBlockedCalls ? ThixPolicy.success : ThixPolicy.textMuted) : ThixPolicy.danger,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      !_callsBlocked
+                          ? _tr(l10n, 'chat_calls_disable', 'Désactiver les appels')
+                          : (_iBlockedCalls
+                              ? _tr(l10n, 'chat_calls_enable', 'Réactiver les appels')
+                              : _tr(l10n, 'chat_calls_disabled_by_other', 'Appels désactivés par ce contact')),
+                    ),
+                  ),
+                ]),
               ),
             _menuItem('escalate', Icons.arrow_upward, ThixPolicy.warning, _tr(l10n, 'chat_escalate', 'Escalader')),
             _menuItem('history', Icons.history, ThixPolicy.inkDeep, _tr(l10n, 'chat_history', 'Historique')),
@@ -3238,7 +3284,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       confirmCtrl.dispose();
     });
   }
-}
+} // ◄◄◄ FIN DE LA CLASSE _ChatScreenState
 
 // ============================================================================
 // FOND « THIX CHAT » (motif par défaut)
@@ -3280,3 +3326,4 @@ class _ThixChatBackgroundPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+  
