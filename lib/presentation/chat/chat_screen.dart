@@ -81,6 +81,7 @@ const double _kSwipeMax = 84;
 const String _kDraftPrefix = 'thix_chat_draft_v1_';
 const String _kWallpaperPrefix = 'thix_chat_wallpaper_v1_';
 const String _kWallpaperPhotoPrefix = 'thix_chat_wallpaper_photo_v1_';
+const String _kCallsPrefPrefix = 'thix_chat_calls_v1_';
 
 String _tr(AppLocalizations l10n, String key, String fallback) => chatTr(l10n, key, fallback);
 
@@ -568,6 +569,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     _loadStarred();
     _restoreDraft();
     _loadWallpaper();
+    _loadMyCallsPref();
     _markAsRead();
     _initScreenshotGuard();
 
@@ -651,12 +653,34 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   // ==========================================================================
   // APPELS : activer / désactiver
   // ==========================================================================
+  Future<void> _loadMyCallsPref() async {
+    final myId = _chatService.currentUserId;
+    if (myId.isEmpty) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final v = prefs.getBool('$_kCallsPrefPrefix$myId');
+      if (!mounted || v == null) return;
+      setState(() => _myCallsOverride = v);
+    } catch (e) {
+      chatLog('[Chat] ⚠️ loadCallsPref: $e');
+    }
+  }
+
   Future<void> _toggleMyCalls(bool allow) async {
     final l10n = AppLocalizations.of(context);
     final myId = _chatService.currentUserId;
     if (myId.isEmpty) return;
     HapticFeedback.selectionClick();
     setState(() => _myCallsOverride = allow);
+
+    // ✅ Mémoire locale immédiate : l'état survit à la fermeture de l'écran
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('$_kCallsPrefPrefix$myId', allow);
+    } catch (e) {
+      chatLog('[Chat] ⚠️ persist calls pref: $e');
+    }
+
     try {
       await Supabase.instance.client.from('profiles').update({'calls_enabled': allow}).eq('id', myId);
       ref.invalidate(userProfileProvider(myId));
@@ -671,6 +695,10 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       chatLog('[Chat] ❌ toggle calls: $e');
       if (mounted) {
         setState(() => _myCallsOverride = !allow);
+        try {
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setBool('$_kCallsPrefPrefix$myId', !allow);
+        } catch (_) {}
         chatSnack(context, ChatValidators.friendlyError(e), ChatSnackKind.error);
       }
     }
@@ -2445,43 +2473,44 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       child: content,
     );
   }
-// ==========================================================================
-// BULLE UNIQUE
-// ==========================================================================
-Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
-  // Récupère le message de réponse complet (pas juste le texte)
-  final replyMsg = _replyToId.isEmpty
-      ? null
-      : (idIndex.containsKey(_replyToId) ? visible[idIndex[_replyToId]!] : null);
 
-  // Résolution de l'avatar de l'expéditeur
-  String? avatarUrl;
-  if (!isOwn) {
-    if (widget.conversation.isGroup) {
-      // En groupe : on cherche dans la liste des membres
-      avatarUrl = _groupById[msg.senderId]?.avatarUrl;
-    } else {
-      // En 1:1 : on prend l'avatar de l'autre participant
-      avatarUrl = _otherParticipant?.avatarUrl;
-      // Fallback via le provider de profil si UserStatus n'a pas l'avatar
-      if (avatarUrl == null && _otherId.isNotEmpty) {
-        final p = ref.read(userProfileProvider(_otherId)).valueOrNull;
-        avatarUrl = p?['avatar_url'] as String?;
+  // ==========================================================================
+  // BULLE UNIQUE
+  // ==========================================================================
+  Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
+    // Récupère le message de réponse complet (pas juste le texte)
+    final replyMsg = _replyToId.isEmpty
+        ? null
+        : (idIndex.containsKey(_replyToId) ? visible[idIndex[_replyToId]!] : null);
+
+    // Résolution de l'avatar de l'expéditeur
+    String? avatarUrl;
+    if (!isOwn) {
+      if (widget.conversation.isGroup) {
+        // En groupe : on cherche dans la liste des membres
+        avatarUrl = _groupById[msg.senderId]?.avatarUrl;
+      } else {
+        // En 1:1 : on prend l'avatar de l'autre participant
+        avatarUrl = _otherParticipant?.avatarUrl;
+        // Fallback via le provider de profil si UserStatus n'a pas l'avatar
+        if (avatarUrl == null && _otherId.isNotEmpty) {
+          final p = ref.read(userProfileProvider(_otherId)).valueOrNull;
+          avatarUrl = p?['avatar_url'] as String?;
+        }
       }
     }
-  }
 
-  return ChatMessageBubble(
-    key: _keyFor(msg.id),
-    message: msg,
-    isOwn: isOwn,
-    replyToMessage: replyMsg,
-    onViewOnceOpened: () => _onViewOnceOpened(msg),
-    showSender: !isOwn,
-    senderName: msg.senderName,
-    senderAvatarUrl: avatarUrl,
-  );
-}
+    return ChatMessageBubble(
+      key: _keyFor(msg.id),
+      message: msg,
+      isOwn: isOwn,
+      replyToMessage: replyMsg,
+      onViewOnceOpened: () => _onViewOnceOpened(msg),
+      showSender: !isOwn,
+      senderName: msg.senderName,
+      senderAvatarUrl: avatarUrl,
+    );
+  }
 
   // ==========================================================================
   // MENU CONTEXTUEL D'UN MESSAGE
