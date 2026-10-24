@@ -92,118 +92,118 @@ class _ChatInputBarState extends State<ChatInputBar> {
   static final List<String> _emojis = _uniq(const [
     '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
     '🙂','🙃','😉','😌','😍','🥰','😘','😗','😙','😚',
-    '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','🤐',
-    '😐','😑','😶','😏','😒','🙄','😬','😮‍💨','😔','😪',
-    '🤤','😴','😷','🤒','🤕','🤢','🤮','🥵','🥶','🥴',
-    '😵','😵‍💫','🤯','🤠','🥳','🥸','😎','🤓','🧐','😕',
-    '😟','🙁','☹️','😮','😯','😲','😳','🥺','😦','😧',
+    '😋','😛','😜','😝','🤑','🤗','🤭','🤫','🤔','',
+    '😐','😑','😶','😏','😒','🙄','😬','😮‍','😔','😪',
+    '🤤','😴','😷','🤒','','🤢','','🥵','','🥴',
+    '😵','😵‍💫','🤯','🤠','','🥸','😎','🤓','','😕',
+    '😟','🙁','️','😮','😯','😲','😳','🥺','😦','😧',
     '😨','😰','😥','😢','😭','😱','😖','😣','😞','😓',
-    '😩','😫','🥱','😤','😡','😠','🤬','🤡','👹','👺',
-    '👻','💀','☠️','👽','👾','🤖','💩','😺','😸','😹',
-    '😻','😼','😽','🙀','😿','😾','🫠','🫡','🫢','🫣',
-    '🫤','🫥','🫨','🥹','🥲','🫶','🤩','😈','👿','🙈',
+    '😩','😫','🥱','','😡','😠','🤬','🤡','👹','👺',
+    '👻','💀','️','👽','👾','','💩','','😸','😹',
+    '😻','😼','😽','🙀','😿','😾','🫠','🫡','🫢','',
+    '🫤','🫥','🫨','🥹','','🫶','','😈','','🙈',
     '🙉','🙊','💯','✨','🔥','⭐','🌟','💫','💥','💢',
   ]);
 
   static final List<String> _reactions = _uniq(const [
-    '👍','👎','👌','🤌','🤏','✌️','🤞','🫰','🤟','🤘',
-    '🤙','👈','👉','👆','👇','☝️','👋','🤚','🖐️','✋',
-    '🖖','👏','🙌','👐','🤲','🤝','🙏','💪','🦾','✍️',
-    '💅','🤳','👊','✊','🤛','🤜','🫂','🫳','🫴','🫵',
-    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','🩷',
-    '🩵','🩶','💔','❤️‍🔥','❤️‍🩹','❣️','💕','💞','💓','💗',
+    '👍','👎','👌','🤌','','✌️','🤞','🫰','','🤘',
+    '🤙','👈','','👆','','☝️','👋','🤚','️','✋',
+    '🖖','👏','🙌','👐','🤲','','🙏','💪','🦾','️',
+    '💅','🤳','','✊','','🤜','🫂','🫳','🫴','',
+    '❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','',
+    '🩵','🩶','💔','❤️‍🔥','❤️‍','❣️','💕','💞','💓','💗',
     '💖','💘','💝','💟','♥️','💌','💋',
     '😀','😃','😄','😁','😆','😅','😂','🤣','😊','😇',
-    '🙂','😉','🥰','😍','😘','🤩','🥳','😎','🤗','🤪',
-    '😮','😯','😲','😳','🤯','😱','😵','🤨','🧐',
-    '😔','😟','🙁','😞','😓','😩','😫','🥺','😢','😭',
-    '😤','😡','😠','🤬','😈',
-    '✅','☑️','✔️','🏆','🥇','🥈','🥉','🎯','💡',
-    '❌','🚫','⛔','⚠️','🙅','🤦','❗','❓','‼️','⁉️',
-    '⚡','🚀','🏅','🎖️','👑','💎','🎉','🎊','🎈','🎁',
-    '🎂','🍰','🍾','🥂','🎆','🎇','🪩','🪅',
+    '🙂','😉','🥰','😍','😘','🤩','🥳','😎','🤗','',
+    '😮','😯','😲','😳','🤯','😱','😵','🤨','',
+    '😔','😟','🙁','','😓','😩','😫','🥺','','😭',
+    '😤','😡','😠','🤬','',
+    '✅','️','✔️','🏆','🥇','🥈','🥉','🎯','💡',
+    '❌','','⛔','⚠️','🙅','','❗','','‼️','️',
+    '⚡','🚀','','🎖️','','💎','','🎊','🎈','🎁',
+    '🎂','🍰','🍾','','🎆','','🪩','',
     '💭','🧠','😮‍💨','😴','🥱','😌','☀️','🌈',
   ]);
 
   static final List<String> _objects = _uniq(const [
-    '📱','💻','🖥️','⌨️','🖱️','🖨️','💾','💿','📀','📷',
-    '📸','📹','📼','🎥','📽️','📡','🛰️','📟','🔌','🔋',
+    '📱','','🖥️','⌨️','️','️','💾','💿','📀','',
+    '📸','📹','📼','🎥','📽️','📡','🛰️','📟','🔌','',
     '🔦','🔍','🔎','🕹️','🎮','💽',
     '📝','📄','📃','📑','📊','📈','📉','📋','📌','📍',
-    '📎','🖇️','📐','📏','✏️','✒️','🖊️','🖋️','🗂️','📁',
-    '📂','🗄️','🗃️','🗑️','📦','📬','📭','📮','📫','📚',
-    '📖','📕','📗','📘','📙','📒','📓','📔','📇','🗒️',
-    '📅','📆','🗓️','⏰','⌚','⏳','⌛',
-    '💼','🧰','🔧','🔨','⚙️','🪛','🪚','🪓','⛏️','🔩',
-    '🧲','🪜','🧱','🛠️','🧯','🪣','🧹','🧺','🧴','🧼',
-    '🪥','🪒','🔑','🗝️','🔒','🔓','🔐','🔏','🪢',
-    '💰','💵','💴','💶','💷','💳','🪙','🏧','🧾',
-    '🏷️','🛒','🛍️','💸','💲','💹','🏪','🏬','🏭','🏦',
-    '🏠','🏡','🏢','🚪','🪟','🛋️','🪑','🛏️','🚿','🛁',
-    '🚽','🪞','🕯️','🪴','🍽️','🥄','🍴','🔪','☕','🫖','🍳',
-    '💊','💉','🩺','🩹','🧬','🔬','🔭','🧪','🧫','🧮',
-    '🦷','🩻','🩼','🦽','🦯','⚕️',
-    '🚗','🚕','🚙','🚌','🚎','🚓','🚑','🚒','🚚','🚛',
-    '🚜','🏍️','🛵','🚲','🛴','🛹','🚆','🚇','🚉','🚂',
-    '🚃','🚋','🚝','🚄','🚅','🚈','🚞','🚊','✈️','🛫',
-    '🛬','🚁','🛸','🚀','⛵','🚤','🛥️','🚢','🛳️','⚓',
-    '🛟','🗺️','🧭','🛣️','🛤️','⛽','🚦','🚧','🅿️',
+    '📎','🖇️','📐','📏','✏️','✒️','🖊️','️','️','📁',
+    '📂','🗄️','️','️','📦','📬','📭','📮','📫','📚',
+    '📖','📕','','📘','','📒','','📔','','🗒️',
+    '📅','📆','️','⏰','⌚','⏳','⌛',
+    '💼','🧰','🔧','🔨','️','🪛','🪚','','⛏️','🔩',
+    '🧲','🪜','','🛠️','','🪣','🧹','','🧴','',
+    '🪥','🪒','🔑','🗝️','','🔓','🔐','🔏','',
+    '💰','💵','💴','💶','💷','💳','🪙','','🧾',
+    '🏷️','🛒','️','💸','💲','💹','🏪','🏬','','🏦',
+    '🏠','🏡','','🚪','','🛋️','','🛏️','🚿','🛁',
+    '🚽','🪞','️','🪴','🍽️','🥄','🍴','🔪','','🫖','',
+    '💊','💉','🩺','🩹','','🔬','','🧪','','🧮',
+    '🦷','🩻','','🦽','🦯','⚕️',
+    '🚗','🚕','🚙','🚌','🚎','','🚑','','🚚','',
+    '🚜','🏍️','🛵','','🛴','','🚆','🚇','🚉','🚂',
+    '🚃','','🚝','','🚅','','🚞','','✈️','🛫',
+    '🛬','🚁','','🚀','','','🛥️','🚢','️','',
+    '🛟','🗺️','🧭','🛣️','🛤️','⛽','','🚧','🅿️',
     '🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐',
-    '🍒','🍑','🥭','🍍','🥥','🥝','🍅','🥑','🥦','🥕',
-    '🌽','🥔','🍠','🧅','🧄','🍞','🥐','🥖','🥨','🧀',
+    '🍒','🍑','🥭','','🥥','','🍅','🥑','','🥕',
+    '🌽','🥔','','🧅','','🍞','🥐','🥖','','🧀',
     '🥚','🍗','🍖','🍔','🍟','🍕','🌭','🌮','🌯',
-    '🥪','🥗','🍝','🍜','🍲','🍛','🍣','🍤','🍚','🍙',
-    '🍱','🥟','🧁','🍩','🍪','🍫','🍬','🍭',
-    '🍿','🍯','🥜','🍵','🧃','🥤','🧋',
-    '🎧','🎤','🎙️','🎸','🎹','🥁','🎺','🎻','🎷','🪕',
-    '🎼','🎵','🎶','🎬','🎞️','🎭','🎨','🖌️','🖍️','🧩',
-    '🎲','♟️','🎪','🎡','🎢','🎠','🎫','🎟️',
+    '🥪','','🍝','','🍲','','🍣','','🍚','',
+    '🍱','🥟','🧁','🍩','','🍫','','🍭',
+    '🍿','🍯','','🍵','','🥤','',
+    '🎧','🎤','🎙️','🎸','🎹','🥁','','🎻','','🪕',
+    '🎼','🎵','🎶','🎬','🎞️','🎭','🎨','🖌️','🖍️','',
+    '🎲','♟️','🎪','','🎢','','🎫','️',
     '🎀','🧨','💐',
-    '⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱',
-    '🏓','🏸','🏒','🏑','🥍','🏏','🥊','🥋','⛳','🏹',
-    '🎣','🤿','🏋️','🤸','⛹️','🤾','🏊','🚴','🏃','🧗','🎽',
-    '🌱','🌿','☘️','🍀','🌳','🌲','🌴','🌵','🌾','🌻',
-    '🌹','🌷','🌺','🌸','🌼','🪻','🪷','🍁','🍂','🍃',
+    '','🏀','','⚾','🥎','','🏐','','🥏','',
+    '🏓','🏸','🏒','🏑','🥍','','🥊','🥋','⛳','🏹',
+    '🎣','🤿','️','🤸','⛹️','','🏊','🚴','','🧗','',
+    '🌱','🌿','☘️','🍀','','🌲','','🌵','','🌻',
+    '🌹','🌷','🌺','🌸','🌼','🪻','🪷','🍁','','🍃',
     '🌍','🌎','🌏','🌙','🌞','🌝','🌚',
-    '☁️','⛅','🌤️','🌧️','⛈️','🌩️','🌨️','❄️','🌪️',
-    '🌊','💧','💦','🌋','🏔️','🗻','🏝️','🏜️','🏕️','🏞️','🏖️',
-    '🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯',
-    '🦁','🐮','🐷','🐸','🐵','🐔','🐧',
-    '🐦','🐤','🦆','🦅','🦉','🦇','🐺','🐗','🐴','🦄',
-    '🐝','🦋','🐌','🐞','🐜','🕷️','🐢','🐍','🦎','🐙',
-    '🦑','🦀','🐠','🐟','🐬','🐳','🐋','🦈','🐊','🦓',
-    '🦒','🐘','🦏','🦛','🐪','🐫','🦘','🦥','🦦','🦫',
-    '🏥','🏨','🏫','⛪','🕌','🕍','⛩️','🛕','🏛️',
+    '☁️','⛅','️','️','⛈️','🌩️','️','❄️','🌪️',
+    '🌊','💧','💦','🌋','🏔️','','️','🏜️','🏕️','️','️',
+    '','🐱','','🐹','🐰','🦊','','🐼','🐨','🐯',
+    '🦁','🐮','🐷','','🐵','','🐧',
+    '🐦','🐤','🦆','🦅','🦉','🦇','','🐗','🐴','🦄',
+    '🐝','🦋','','🐞','','🕷️','','🐍','🦎','🐙',
+    '🦑','🦀','🐠','','🐬','','🐋','','🐊','🦓',
+    '🦒','','🦏','🦛','🐪','🐫','🦘','🦥','🦦','🦫',
+    '🏥','🏨','🏫','⛪','🕌','🕍','️','','🏛️',
     '🗼','🗽','🗿','🏰','🏯','⛺','🏟️',
   ]);
 
   static final List<String> _flags = _uniq(const [
-    '🇦🇱','🇦🇩','🇦🇹','🇧🇾','🇧🇪','🇧🇦','🇧🇬','🇭🇷','🇨🇾','🇨🇿',
-    '🇩🇰','🇪🇪','🇫🇮','🇫🇷','🇩🇪','🇬🇷','🇭🇺','🇮🇸','🇮🇪','🇮🇹',
-    '🇽🇰','🇱🇻','🇱🇮','🇱🇹','🇱🇺','🇲🇹','🇲🇩','🇲🇨','🇲🇪','🇳🇱',
-    '🇲🇰','🇳🇴','🇵🇱','🇵🇹','🇷🇴','🇷🇺','🇸🇲','🇷🇸','🇸🇰','🇸🇮',
-    '🇪🇸','🇸🇪','🇨🇭','🇺🇦','🇬🇧','🇻🇦',
-    '🇩🇿','🇦🇴','🇧🇯','🇧🇼','🇧🇫','🇧🇮','🇨🇻','🇨🇲','🇨🇫','🇹🇩',
-    '🇰🇲','🇨🇬','🇨🇩','🇨🇮','🇩🇯','🇪🇬','🇬🇶','🇪🇷','🇸🇿','🇪🇹',
-    '🇬🇦','🇬🇲','🇬🇭','🇬🇳','🇬🇼','🇰🇪','🇱🇸','🇱🇷','🇱🇾','🇲🇬',
-    '🇲🇼','🇲🇱','🇲🇷','🇲🇺','🇲🇦','🇲🇿','🇳🇦','🇳🇪','🇳🇬','🇷🇼',
-    '🇸🇹','🇸🇳','🇸🇨','🇸🇱','🇸🇴','🇿🇦','🇸🇸','🇸🇩','🇹🇿','🇹🇬',
-    '🇹🇳','🇺🇬','🇿🇲','🇿🇼',
-    '🇦🇬','🇧🇸','🇧🇧','🇧🇿','🇨🇦','🇨🇷','🇨🇺','🇩🇲','🇩🇴','🇸🇻',
-    '🇬🇩','🇬🇹','🇭🇹','🇭🇳','🇯🇲','🇲🇽','🇳🇮','🇵🇦','🇰🇳','🇱🇨',
-    '🇻🇨','🇹🇹','🇺🇸',
-    '🇦🇷','🇧🇴','🇧🇷','🇨🇱','🇨🇴','🇪🇨','🇬🇾','🇵🇾','🇵🇪','🇸🇷',
-    '🇺🇾','🇻🇪',
-    '🇦🇫','🇦🇲','🇦🇿','🇧🇭','🇧🇩','🇧🇹','🇧🇳','🇰🇭','🇨🇳','🇬🇪',
-    '🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇱','🇯🇵','🇯🇴','🇰🇿','🇰🇼','🇰🇬',
-    '🇱🇦','🇱🇧','🇲🇾','🇲🇻','🇲🇳','🇲🇲','🇳🇵','🇰🇵','🇴🇲','🇵🇰',
-    '🇵🇸','🇵🇭','🇶🇦','🇸🇦','🇸🇬','🇰🇷','🇱🇰','🇸🇾','🇹🇯','🇹🇭',
-    '🇹🇱','🇹🇷','🇹🇲','🇦🇪','🇺🇿','🇻🇳','🇾🇪',
-    '🇦🇺','🇫🇯','🇰🇮','🇲🇭','🇫🇲','🇳🇷','🇳🇿','🇵🇼','🇵🇬','🇼🇸',
-    '🇸🇧','🇹🇴','🇹🇻','🇻🇺',
-    '🇦🇽','🇦🇸','🇦🇼','🇧🇲','🇧🇶','🇨🇽','🇨🇨','🇨🇰','🇨🇼','🇫🇴',
-    '🇬🇮','🇬🇱','🇬🇵','🇬🇺','🇭🇰','🇮🇲','🇯🇪','🇰🇾','🇲🇴',
-    '🇲🇶','🇲🇸','🇳🇨','🇳🇫','🇵🇫','🇵🇷','🇷🇪','🇸🇽','🇹🇨','🇻🇬',
+    '🇦🇱','🇦🇩','🇹','🇾','🇪','🇦','🇬','🇷','🇾','🇨🇿',
+    '🇩🇰','🇪','🇮','🇷','🇩🇪','🇷','🇭🇺','🇸','🇪','🇹',
+    '🇽🇰','🇻','🇱🇮','🇹','🇱🇺','🇹','🇩','🇨','🇲🇪','🇱',
+    '🇲🇰','🇴','🇵🇱','🇹','🇴','🇷🇺','🇲','🇷🇸','🇰','🇮',
+    '🇪🇸','🇪','🇭','🇺🇦','🇧','🇻🇦',
+    '🇩🇿','🇴','🇯','🇧🇼','🇫','🇧🇮','🇻','🇨🇲','🇫','🇹🇩',
+    '🇰🇲','🇬','🇨🇩','🇮','🇩🇯','🇬','🇬🇶','🇷','🇸🇿','🇹',
+    '🇬🇦','🇬🇲','🇭','🇬🇳','🇼','🇰🇪','🇸','🇷','🇾','🇬',
+    '🇲🇼','🇱','🇷','🇲🇺','🇦','🇿','🇦','🇳🇪','🇬','🇷🇼',
+    '🇸🇹','🇳','🇨','🇱','🇴','🇦','🇸','🇩','🇿','🇬',
+    '🇹🇳','🇬','🇿🇲','🇼',
+    '🇦🇬','🇸','🇧🇧','🇿','🇦','🇨🇷','🇺','🇩🇲','🇴','🇻',
+    '🇬🇩','🇹','🇹','🇳','🇲','🇽','🇮','🇦','🇳','🇨',
+    '🇻🇨','🇹','🇸',
+    '🇦🇷','🇧🇴','🇧🇷','🇨🇱','🇴','🇨','🇾','🇵🇾','🇪','🇸🇷',
+    '🇺🇾','🇻',
+    '🇦🇫','🇲','🇿','🇧🇭','🇩','🇹','🇳','🇭','🇨🇳','🇪',
+    '🇮🇳','🇩','🇷','🇮🇶','🇱','🇵','🇴','🇰🇿','🇼','🇬',
+    '🇱🇦','🇧','🇾','🇻','🇳','🇲','🇵','🇰🇵','🇴🇲','🇰',
+    '🇵🇸','🇵🇭','🇦','🇸🇦','🇬','🇰🇷','🇰','🇾','🇯','🇭',
+    '🇹🇱','🇷','🇲','🇪','🇿','🇻🇳','🇾🇪',
+    '🇦🇺','🇫','🇮','🇭','🇲','🇳🇷','🇿','🇼','🇵🇬','🇼🇸',
+    '🇸','🇹🇴','🇹','🇺',
+    '🇦🇽','🇸','🇦🇼','🇲','🇶','🇽','🇨🇨','🇰','🇼','🇫🇴',
+    '🇬🇮','🇱','🇬🇵','🇺','🇭🇰','🇲','🇯🇪','🇾','🇲🇴',
+    '🇲🇶','🇸','🇨','🇫','🇵🇫','🇷','🇪','🇽','🇨','🇻🇬',
     '🇻🇮',
   ]);
 
@@ -560,7 +560,7 @@ class _ChatInputBarState extends State<ChatInputBar> {
           if (_files.isNotEmpty) ChatFilesPreview(files: _files, onRemove: _removeFile),
           if (hasViewOnceCandidate && !widget.isEditing)
             Padding(
-              padding: const EdgeInsets.fromLTRB(12, 4, 12, 0),
+              padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
               child: Row(children: [
                 GestureDetector(
                   onTap: () {
@@ -588,14 +588,15 @@ class _ChatInputBarState extends State<ChatInputBar> {
             ),
           if ((widget.isEphemeral || widget.isInternalNoteMode) && !_isRecording)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 6, 14, 0),
+              padding: const EdgeInsets.fromLTRB(10, 6, 10, 0),
               child: Row(children: [
                 if (widget.isEphemeral) _chip(Icons.timer_outlined, chatTr(l10n, 'chat_ephemeral', 'Éphémère'), widget.onEphemeralTap),
                 if (widget.isEphemeral && widget.isInternalNoteMode) const SizedBox(width: 6),
                 if (widget.isInternalNoteMode) _chip(Icons.note_alt_outlined, chatTr(l10n, 'chat_internal_note', 'Note interne'), widget.onToggleInternalNote),
               ]),
             ),
-          Padding(padding: const EdgeInsets.fromLTRB(8, 6, 8, 8), child: _mainRow(l10n)),
+          // ✅ Marges externes minimales : le champ gagne ~4 px de chaque côté
+          Padding(padding: const EdgeInsets.fromLTRB(6, 6, 6, 8), child: _mainRow(l10n)),
           if (_showStickers) _buildStickerPicker(l10n),
         ]),
       ),
@@ -647,23 +648,14 @@ class _ChatInputBarState extends State<ChatInputBar> {
     // 2) Enregistrement en cours
     if (_isRecording) return _buildRecordingBar(l10n);
 
-    // 3) Saisie normale
+    // 3) ✅ Saisie normale — champ LARGE : « + » et emoji intégrés, caméra retirée
     return ValueListenableBuilder<TextEditingValue>(
       valueListenable: widget.controller,
       builder: (context, value, _) {
         final hasText = value.text.trim().isNotEmpty;
         final hasContent = hasText || _files.isNotEmpty;
         return Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          if (!widget.isEditing)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, right: 6),
-              child: _RoundIconButton(icon: Icons.add_rounded, onTap: _showAttachSheet),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.only(bottom: 2, right: 6),
-              child: _RoundIconButton(icon: Icons.close_rounded, onTap: widget.onCancelEdit),
-            ),
+          // ✅ Le champ occupe TOUTE la largeur disponible
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -672,19 +664,21 @@ class _ChatInputBarState extends State<ChatInputBar> {
                 border: Border.all(color: ThixPolicy.border),
               ),
               child: Row(crossAxisAlignment: CrossAxisAlignment.end, children: [
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.sentiment_satisfied_alt_rounded, color: ThixPolicy.textSecondary, size: 24),
-                  onPressed: () {
-                    HapticFeedback.selectionClick();
-                    if (_showStickers) {
-                      setState(() => _showStickers = false);
-                      widget.focusNode.requestFocus();
-                    } else {
-                      FocusScope.of(context).unfocus();
-                      setState(() => _showStickers = true);
-                    }
-                  },
+                // ✅ Bouton « + » (ou « ✕ » en édition) DEDANS, en tête
+                Padding(
+                  padding: const EdgeInsets.only(left: 2, bottom: 2),
+                  child: IconButton(
+                    visualDensity: VisualDensity.compact,
+                    tooltip: widget.isEditing
+                        ? chatTr(l10n, 'common_cancel', 'Annuler')
+                        : chatTr(l10n, 'chat_attach', 'Joindre'),
+                    icon: Icon(
+                      widget.isEditing ? Icons.close_rounded : Icons.add_rounded,
+                      color: ThixPolicy.inkDeep,
+                      size: 24,
+                    ),
+                    onPressed: widget.isEditing ? widget.onCancelEdit : _showAttachSheet,
+                  ),
                 ),
                 Expanded(
                   child: TextField(
@@ -703,22 +697,32 @@ class _ChatInputBarState extends State<ChatInputBar> {
                       hintStyle: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
                       border: InputBorder.none,
                       isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                      contentPadding: const EdgeInsets.symmetric(vertical: 11, horizontal: 2),
                     ),
                   ),
                 ),
-                if (!hasText && !widget.isEditing)
-                  IconButton(
+                // ✅ Emoji DEDANS, en queue (compact)
+                Padding(
+                  padding: const EdgeInsets.only(right: 2, bottom: 2),
+                  child: IconButton(
                     visualDensity: VisualDensity.compact,
-                    icon: const Icon(Icons.photo_camera_outlined, color: ThixPolicy.textSecondary, size: 24),
-                    onPressed: _pickFromCamera,
-                  )
-                else
-                  const SizedBox(width: 10),
+                    icon: Icon(_showStickers ? Icons.keyboard_rounded : Icons.sentiment_satisfied_alt_rounded, color: ThixPolicy.textSecondary, size: 24),
+                    onPressed: () {
+                      HapticFeedback.selectionClick();
+                      if (_showStickers) {
+                        setState(() => _showStickers = false);
+                        widget.focusNode.requestFocus();
+                      } else {
+                        FocusScope.of(context).unfocus();
+                        setState(() => _showStickers = true);
+                      }
+                    },
+                  ),
+                ),
               ]),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 6),
           ChatFluidSendButton(
             hasContent: hasContent,
             isEditing: widget.isEditing,
@@ -882,24 +886,6 @@ class _AttachItem {
   _AttachItem(this.icon, this.label, this.color, this.onTap);
 }
 
-class _RoundIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  const _RoundIconButton({required this.icon, required this.onTap});
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 40,
-        height: 40,
-        decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, shape: BoxShape.circle, border: Border.all(color: ThixPolicy.border)),
-        child: Icon(icon, color: ThixPolicy.inkDeep, size: 24),
-      ),
-    );
-  }
-}
-
 // ============================================================================
 // BOUTON ENVOI FLUIDE (neutre, sans jaune)
 // ============================================================================
@@ -961,7 +947,7 @@ class ChatFilesPreview extends StatelessWidget {
     return Container(
       height: 74,
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
         itemCount: files.length,
