@@ -1,11 +1,6 @@
 // lib/presentation/thix_market/pages/local_market_home_page.dart
 // ============================================================================
-// HOME PRODUITS LOCAUX — v2 ULTRA MODERNE (inspiré Grocery UI Kit)
-//  • ✅ Hero banner auto-scroll : les 10 derniers produits locaux
-//  • ✅ Catégories circulaires horizontales (style Groceria)
-//  • ✅ Vert prioritaire, cartes blanches épurées, coins arrondis 24
-//  • ✅ FAB "Vendre local" SUPPRIMÉ → bouton "+" discret dans le header
-//  • ✅ Recherche in-page, filtres secteurs, producteurs, grille produits
+// HOME PRODUITS LOCAUX — v2 ULTRA MODERNE
 // ============================================================================
 
 import 'dart:async';
@@ -27,7 +22,6 @@ import '../providers/local_market_providers.dart';
 import '../providers/market_providers.dart' show myShopIdProvider;
 import '../widgets/products/local_product_card.dart';
 
-// ── Design tokens locaux ──
 const Duration _kHeroAutoPlay = Duration(seconds: 4);
 const int _kMaxHeroItems = 10;
 const double _kHeroHeight = 210;
@@ -76,7 +70,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     return lang == 'fr' ? fr : en;
   }
 
-  // ── Hero auto-scroll ──
   void _startHeroAuto(int count) {
     if (_heroReady || count <= 1) return;
     _heroReady = true;
@@ -92,7 +85,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     });
   }
 
-  // ── Accès formulaire (résolution shop robuste) ──
   Future<void> _openSellForm() async {
     HapticFeedback.mediumImpact();
 
@@ -203,7 +195,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ HEADER VERT ARRONDI ═══════════════════
   Widget _buildHeader() {
     return Container(
       decoration: const BoxDecoration(
@@ -253,7 +244,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                       ],
                     ),
                   ),
-                  // ✅ Bouton PUBLIER discret (remplace le FAB)
                   _headerCircle(Icons.add_rounded, _openSellForm,
                       tooltip: _t('Publier un produit local', 'Publish a local product')),
                   const SizedBox(width: 8),
@@ -261,7 +251,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 ],
               ),
               const SizedBox(height: 16),
-              // Search pill
               Container(
                 height: 50,
                 decoration: BoxDecoration(
@@ -325,7 +314,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ HERO BANNER AUTO-SCROLL (10 derniers) ═══════════════════
   Widget _buildHero(List<Map<String, dynamic>> newest) {
     if (newest.isEmpty) {
       return Padding(
@@ -354,7 +342,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             ),
           ),
         ),
-      ),
+      );
     }
 
     return Column(
@@ -418,7 +406,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
       if (f.startsWith('http')) img = f;
     }
 
-    // Prix converti
     final displayCur = ref.watch(currencyProvider);
     final sellerCur = (p['currency'] ?? 'CDF').toString().toUpperCase();
     final svc = CurrencyService.instance;
@@ -458,7 +445,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                     fit: BoxFit.cover,
                     errorWidget: (_, __, ___) => const SizedBox.shrink(),
                   ),
-                // Dégradé de lisibilité
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -468,7 +454,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                     ),
                   ),
                 ),
-                // Chip secteur
                 Positioned(
                   top: 12,
                   left: 12,
@@ -489,7 +474,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                     ),
                   ),
                 ),
-                // Chip NOUVEAU
                 Positioned(
                   top: 12,
                   right: 12,
@@ -503,7 +487,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                         style: const TextStyle(color: Color(0xFF78350F), fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
                   ),
                 ),
-                // Infos bas
                 Positioned(
                   left: 14,
                   right: 14,
@@ -572,7 +555,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ CATÉGORIES CIRCULAIRES (style Groceria) ═══════════════════
   Widget _buildCategories(String lang, String? selected) {
     final counts = ref.watch(localSectorCountsProvider);
     return Column(
@@ -689,7 +671,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ BANNIÈRE PROMO ═══════════════════
   Widget _buildPromoBanner() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -750,7 +731,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ PRODUCTEURS ═══════════════════
   Widget _buildProducers(AsyncValue<List<Map<String, dynamic>>> async) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -865,7 +845,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ GRILLE PRODUITS ═══════════════════
   Widget _buildProductsHeader(String? sector, int count, String lang) {
     final s = localSectorById(sector);
     return Padding(
