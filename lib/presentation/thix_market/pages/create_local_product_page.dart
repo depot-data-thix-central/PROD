@@ -1,72 +1,190 @@
-// lib/presentation/thix_market/pages/local_market_home_page.dart
+// lib/presentation/thix_market/pages/create_local_product_page.dart
 // ============================================================================
-// HOME PRODUITS LOCAUX — v2 ULTRA MODERNE (inspiré Grocery UI Kit)
-//  • ✅ Hero banner auto-scroll : les 10 derniers produits locaux
-//  • ✅ Catégories circulaires horizontales (style Groceria)
-//  • ✅ Vert prioritaire, cartes blanches épurées, coins arrondis 24
-//  • ✅ FAB "Vendre local" SUPPRIMÉ → bouton "+" discret dans le header
-//  • ✅ Recherche in-page, filtres secteurs, producteurs, grille produits
+// FORMULAIRE PRODUIT LOCAL — suit la logique existante (_ProductFormSheet)
+//  + champs locaux : secteur*, terroir, producteur, certifications
+//  Insert dans `products` avec is_local = true  =>  espace dédié uniquement
 // ============================================================================
 
 import 'dart:async';
+import 'dart:typed_data';
 
-import 'package:cached_network_image/cached_network_image.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
-import '../core/african_countries.dart';
-import '../core/currency_service.dart';
 import '../core/local_sectors.dart';
-import '../providers/currency_provider.dart';
 import '../providers/local_market_providers.dart';
-import '../providers/market_providers.dart' show myShopIdProvider;
-import '../widgets/products/local_product_card.dart';
 
-// ── Design tokens locaux ──
-const Duration _kHeroAutoPlay = Duration(seconds: 4);
-const int _kMaxHeroItems = 10;
-const double _kHeroHeight = 210;
+// ── Mêmes constantes que supermarket_manage_page (logique existante) ──
+const Duration _kDbTimeout = Duration(seconds: 20);
+const Duration _kUploadTimeout = Duration(seconds: 40);
+const int _kMaxImages = 5;
+const int _kMaxFileSizeMB = 5;
+const int _kImageMaxDim = 1280;
+const int _kImageQuality = 82;
+const int _kMaxNameLength = 120;
+const int _kMaxDescLength = 1000;
+const String _kBucket = 'product_images';
 
-class LocalMarketHomePage extends ConsumerStatefulWidget {
-  const LocalMarketHomePage({super.key});
-  @override
-  ConsumerState<LocalMarketHomePage> createState() => _LocalMarketHomePageState();
+class _LV {
+  _LV._();
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    var s = input
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static double? parseDouble(String? t) {
+    if (t == null) return null;
+    final c = t.trim().replaceAll(',', '.').replaceAll(RegExp(r'[^\d.]'), '');
+    if (c.isEmpty) return null;
+    final v = double.tryParse(c);
+    if (v == null || v.isNaN || v.isInfinite || v < 0 || v > 999999999) return null;
+    return v;
+  }
+
+  static int? parseInt(String? t) {
+    final c = (t ?? '').replaceAll(RegExp(r'[^\d]'), '');
+    if (c.isEmpty) return null;
+    final v = int.tryParse(c);
+    if (v == null || v < 0 || v > 999999) return null;
+    return v;
+  }
+
+  static bool isValidBarcode(String code) => RegExp(r'^\d{8,14}$').hasMatch(code);
+
+  static String contentType(XFile f) {
+    const byExt = {'jpg': 'image/jpeg', 'jpeg': 'image/jpeg', 'png': 'image/png', 'webp': 'image/webp', 'heic': 'image/heic'};
+    final i = f.name.lastIndexOf('.');
+    final e = i >= 0 ? f.name.substring(i + 1).toLowerCase() : '';
+    if (byExt.containsKey(e)) return byExt[e]!;
+    final mime = f.mimeType?.toLowerCase();
+    if (mime != null && mime.startsWith('image/')) return mime;
+    return 'image/jpeg';
+  }
+
+  static String extFromContentType(String ct) {
+    const map = {'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/heic': 'heic'};
+    return map[ct] ?? 'jpg';
+  }
+
+  static String friendlyError(dynamic e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
+    if (msg.contains('network') || msg.contains('socket')) return 'Erreur réseau. Réessayez.';
+    if (msg.contains('permission') || msg.contains('policy')) return 'Accès non autorisé.';
+    if (msg.contains('storage') || msg.contains('upload')) return 'Échec upload image. Réessayez.';
+    if (msg.contains('is_local') || msg.contains('column') || msg.contains('does not exist')) {
+      return 'Migration SQL "local_products" non appliquée sur Supabase.';
+    }
+    return 'Une erreur est survenue. Réessayez.';
+  }
 }
 
-class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
-  final ScrollController _scroll = ScrollController();
-  final TextEditingController _searchCtrl = TextEditingController();
-  final PageController _heroCtrl = PageController(viewportFraction: 0.92);
-  Timer? _heroTimer;
-  int _heroIndex = 0;
-  bool _heroReady = false;
+class _LocalUploadFailure implements Exception {
+  final Object cause;
+  _LocalUploadFailure(this.cause);
+  @override
+  String toString() => cause.toString();
+}
+
+class CreateLocalProductPage extends ConsumerStatefulWidget {
+  const CreateLocalProductPage({super.key, this.shopId});
+  final String? shopId;
+
+  @override
+  ConsumerState<CreateLocalProductPage> createState() => _CreateLocalProductPageState();
+}
+
+class _CreateLocalProductPageState extends ConsumerState<CreateLocalProductPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _price = TextEditingController();
+  final _promoPrice = TextEditingController();
+  final _stock = TextEditingController();
+  final _barcode = TextEditingController();
+  final _terroir = TextEditingController();
+  final _producer = TextEditingController();
+  final _description = TextEditingController();
+  final ImagePicker _picker = ImagePicker();
+
+  String? _shopId;
+  bool _shopResolved = false;
+
+  String _currency = 'CDF';
+  String _unit = 'pcs';
+  String? _sector;
+  final Set<String> _certs = {};
+  bool _hasPromo = false;
+  bool _perishable = false;
+  DateTime? _expiry;
+
+  final List<String> _existingUrls = [];
+  final List<XFile> _newImages = [];
+  final Map<String, Uint8List> _bytes = {};
+
+  bool _saving = false;
+  bool _uploading = false;
+  int _progress = 0;
+  int _total = 0;
+
+  SupabaseClient get _db => Supabase.instance.client;
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
-    debugPrint('[LocalMarket] 🏠 Local home v2 opened');
+    _shopId = widget.shopId;
+    _resolveShop();
   }
 
-  void _onScroll() {
-    if (!_scroll.hasClients) return;
-    if (_scroll.position.pixels > _scroll.position.maxScrollExtent - 600) {
-      ref.read(localProductsProvider.notifier).loadMore();
+  Future<void> _resolveShop() async {
+    if (_shopId != null) {
+      setState(() => _shopResolved = true);
+      return;
     }
+    try {
+      final uid = _db.auth.currentUser?.id;
+      if (uid != null) {
+        // ✅ FIX : liste + priorité boutique (fonctionne avec plusieurs shops)
+        final me = await _db
+            .from('shops')
+            .select('id,type')
+            .eq('owner_id', uid)
+            .order('created_at', ascending: true)
+            .limit(5)
+            .timeout(_kDbTimeout);
+        final list = List<Map<String, dynamic>>.from(me as List);
+        if (list.isNotEmpty) {
+          final pick = list.firstWhere(
+            (s) => s['type']?.toString() != 'supermarket',
+            orElse: () => list.first,
+          );
+          _shopId = pick['id']?.toString();
+        }
+      }
+    } catch (e) {
+      debugPrint('[LocalForm] ⚠️ shop resolve: $e');
+    }
+    if (mounted) setState(() => _shopResolved = true);
   }
 
   @override
   void dispose() {
-    _scroll.removeListener(_onScroll);
-    _scroll.dispose();
-    _searchCtrl.dispose();
-    _heroTimer?.cancel();
-    _heroCtrl.dispose();
+    for (final c in [_name, _price, _promoPrice, _stock, _barcode, _terroir, _producer, _description]) {
+      c.dispose();
+    }
     super.dispose();
   }
 
@@ -76,891 +194,728 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     return lang == 'fr' ? fr : en;
   }
 
-  // ── Hero auto-scroll ──
-  void _startHeroAuto(int count) {
-    if (_heroReady || count <= 1) return;
-    _heroReady = true;
-    _heroTimer?.cancel();
-    _heroTimer = Timer.periodic(_kHeroAutoPlay, (_) {
-      if (!mounted || !_heroCtrl.hasClients) return;
-      _heroIndex = (_heroIndex + 1) % count;
-      _heroCtrl.animateToPage(
-        _heroIndex,
-        duration: const Duration(milliseconds: 650),
-        curve: Curves.easeOutCubic,
-      );
-    });
+  void _err(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(msg), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating),
+    );
   }
 
-  // ── Accès formulaire (résolution shop robuste) ──
-  Future<void> _openSellForm() async {
-    HapticFeedback.mediumImpact();
-
-    String? shopId = ref.read(myShopIdProvider).valueOrNull;
-    if (shopId == null) {
-      try {
-        shopId = await ref.read(myShopIdProvider.future);
-      } catch (_) {}
+  // ─────────── IMAGES (même logique que l'existant) ───────────
+  Future<void> _pickImages() async {
+    HapticFeedback.selectionClick();
+    final remaining = _kMaxImages - _existingUrls.length - _newImages.length;
+    if (remaining <= 0) {
+      _err('Maximum $_kMaxImages photos');
+      return;
     }
-    if (shopId == null) shopId = await _fetchMyShopIdDirect();
+    try {
+      List<XFile> picked;
+      if (remaining == 1) {
+        final one = await _picker.pickImage(
+            source: ImageSource.gallery,
+            maxWidth: _kImageMaxDim.toDouble(),
+            maxHeight: _kImageMaxDim.toDouble(),
+            imageQuality: _kImageQuality);
+        picked = one == null ? [] : [one];
+      } else {
+        picked = await _picker.pickMultiImage(
+            maxWidth: _kImageMaxDim.toDouble(),
+            maxHeight: _kImageMaxDim.toDouble(),
+            imageQuality: _kImageQuality,
+            limit: remaining);
+      }
+      if (picked.isEmpty) return;
+      final accepted = <XFile>[];
+      int skipped = 0;
+      for (final f in picked.take(remaining)) {
+        try {
+          final b = await f.readAsBytes();
+          if (b.length > _kMaxFileSizeMB * 1024 * 1024) {
+            skipped++;
+            continue;
+          }
+          _bytes[f.path] = b;
+          accepted.add(f);
+        } catch (_) {
+          skipped++;
+        }
+      }
+      if (!mounted) return;
+      setState(() => _newImages.addAll(accepted));
+      if (skipped > 0) _err('$skipped image(s) ignorée(s) (> $_kMaxFileSizeMB Mo)');
+    } catch (e) {
+      debugPrint('[LocalForm] ❌ pick: $e');
+      _err('Erreur lors de la sélection des photos');
+    }
+  }
 
-    if (!mounted) return;
-    if (shopId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(_t(
-              'Créez d\'abord une boutique pour vendre un produit local',
-              'Create a shop first to sell a local product')),
-          backgroundColor: ThixPolicy.warning,
-          behavior: SnackBarBehavior.floating,
-          action: SnackBarAction(
-            label: _t('Créer', 'Create'),
-            textColor: Colors.white,
-            onPressed: () => context.push('/market/shop/create'),
-          ),
-        ),
-      );
+  Future<List<String>> _uploadImages() async {
+    if (_newImages.isEmpty) return [];
+    final urls = <String>[];
+    setState(() {
+      _uploading = true;
+      _progress = 0;
+      _total = _newImages.length;
+    });
+    try {
+      for (int i = 0; i < _newImages.length; i++) {
+        final f = _newImages[i];
+        final bytes = _bytes[f.path] ?? await f.readAsBytes();
+        final ct = _LV.contentType(f);
+        final path = 'products/local_${const Uuid().v4()}.${_LV.extFromContentType(ct)}';
+        await _db.storage
+            .from(_kBucket)
+            .uploadBinary(path, bytes,
+                fileOptions: FileOptions(contentType: ct, cacheControl: '31536000', upsert: false))
+            .timeout(_kUploadTimeout);
+        urls.add(_db.storage.from(_kBucket).getPublicUrl(path));
+        if (mounted) setState(() => _progress = i + 1);
+      }
+    } catch (e) {
+      throw _LocalUploadFailure(e);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _progress = 0;
+          _total = 0;
+        });
+      }
+    }
+    return urls;
+  }
+
+  Future<void> _pickExpiry() async {
+    final now = DateTime.now();
+    final d = await showDatePicker(
+      context: context,
+      initialDate: _expiry ?? now.add(const Duration(days: 7)),
+      firstDate: now,
+      lastDate: now.add(const Duration(days: 3650)),
+    );
+    if (d != null) setState(() => _expiry = d);
+  }
+
+  // ─────────── SAUVEGARDE ───────────
+  Future<void> _save() async {
+    if (_saving) return;
+    if (!_formKey.currentState!.validate()) {
+      HapticFeedback.lightImpact();
+      return;
+    }
+    if (_shopId == null) {
+      _err(_t('Boutique requise : créez d\'abord une boutique', 'Shop required: create a shop first'));
+      return;
+    }
+    if (_sector == null) {
+      _err(_t('Choisissez un secteur', 'Choose a sector'));
+      return;
+    }
+    final price = _LV.parseDouble(_price.text);
+    if (price == null || price <= 0) {
+      _err('Prix invalide');
+      return;
+    }
+    double? promo;
+    if (_hasPromo) {
+      promo = _LV.parseDouble(_promoPrice.text);
+      if (promo == null || promo <= 0) {
+        _err('Prix promo invalide');
+        return;
+      }
+      if (promo >= price) {
+        _err('Le prix promo doit être inférieur au prix normal');
+        return;
+      }
+    }
+    final stock = _LV.parseInt(_stock.text);
+    if (stock == null) {
+      _err('Quantité invalide');
+      return;
+    }
+    final barcode = _barcode.text.trim();
+    if (barcode.isNotEmpty && !_LV.isValidBarcode(barcode)) {
+      _err('Code-barres invalide (8 à 14 chiffres)');
+      return;
+    }
+    if (_perishable && _expiry == null) {
+      _err('Choisissez la date d\'expiration');
+      return;
+    }
+    if (_existingUrls.isEmpty && _newImages.isEmpty) {
+      _err('Ajoutez au moins une photo');
       return;
     }
 
-    final created = await context.push<bool>('/market/local/create', extra: shopId);
-    if (created == true && mounted) invalidateLocalProviders(ref);
-  }
+    HapticFeedback.mediumImpact();
+    setState(() => _saving = true);
+    List<String> newUrls = [];
+    bool saved = false;
 
-  Future<String?> _fetchMyShopIdDirect() async {
     try {
-      final db = Supabase.instance.client;
-      final uid = db.auth.currentUser?.id;
-      if (uid == null) return null;
-      final res = await db
-          .from('shops')
-          .select('id,type')
-          .eq('owner_id', uid)
-          .order('created_at', ascending: true)
-          .limit(5)
-          .timeout(const Duration(seconds: 10));
-      final list = List<Map<String, dynamic>>.from(res as List);
-      if (list.isEmpty) return null;
-      final pick = list.firstWhere(
-        (s) => s['type']?.toString() != 'supermarket',
-        orElse: () => list.first,
-      );
-      return pick['id']?.toString();
+      // 1. Barcode unique par boutique (logique existante)
+      if (barcode.isNotEmpty) {
+        try {
+          final dup = await _db
+              .from('products')
+              .select('id,title')
+              .eq('shop_id', _shopId!)
+              .eq('barcode', barcode)
+              .limit(1)
+              .timeout(_kDbTimeout);
+          if ((dup as List).isNotEmpty) {
+            _err('Ce code-barres existe déjà dans votre boutique');
+            return;
+          }
+        } catch (e) {
+          debugPrint('[LocalForm] ⚠️ barcode check skipped: $e');
+        }
+      }
+
+      // 2. Upload photos
+      newUrls = await _uploadImages();
+      final allUrls = [..._existingUrls, ...newUrls];
+
+      // 3. Payload — colonnes existantes + colonnes locales
+      final payload = <String, dynamic>{
+        'shop_id': _shopId!,
+        'title': _LV.sanitize(_name.text, maxLength: _kMaxNameLength),
+        'description': _LV.sanitize(_description.text, maxLength: _kMaxDescLength),
+        'price': price,
+        'discount_price': _hasPromo ? promo : null,
+        'stock': stock,
+        'currency': _currency,
+        'unit': _unit,
+        'images': allUrls,
+        'image_url': allUrls.first,
+        'barcode': barcode.isEmpty ? null : barcode,
+        'is_perishable': _perishable,
+        'expiry_date': (_perishable && _expiry != null) ? DateFormat('yyyy-MM-dd').format(_expiry!) : null,
+        // ── CHAMPS LOCAUX ──
+        'is_local': true,
+        'local_sector': _sector,
+        'producer_name': _LV.sanitize(_producer.text, maxLength: 80).isEmpty
+            ? null
+            : _LV.sanitize(_producer.text, maxLength: 80),
+        'terroir': _LV.sanitize(_terroir.text, maxLength: 80).isEmpty
+            ? null
+            : _LV.sanitize(_terroir.text, maxLength: 80),
+        'certifications': _certs.toList(),
+        // ── Champs requis par la table products (comme l'existant) ──
+        'category': 'local',
+        'condition': 'new',
+        'status': 'active',
+        'is_service': false,
+        'free_shipping': false,
+        'shipping_type': 'both',
+        'created_at': DateTime.now().toIso8601String(),
+      };
+
+      // Ville / pays hérités de la boutique (comme l'existant)
+      try {
+        final shop = await _db.from('shops').select('city,country').eq('id', _shopId!).maybeSingle().timeout(_kDbTimeout);
+        final city = _LV.sanitize(shop?['city']?.toString(), maxLength: 60);
+        final country = shop?['country']?.toString().trim() ?? '';
+        if (city.isNotEmpty) payload['city'] = city;
+        if (country.length == 2) payload['country'] = country.toUpperCase();
+      } catch (_) {}
+
+      await _db.from('products').insert(payload).select('id').single().timeout(_kDbTimeout);
+      saved = true;
+
+      if (mounted) {
+        invalidateLocalProviders(ref);
+        Navigator.pop(context, true);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(_t('Produit local publié dans l\'espace dédié ✅', 'Local product published in the dedicated space ✅')),
+            backgroundColor: kLocalGreen,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } on _LocalUploadFailure catch (e) {
+      debugPrint('[LocalForm] ❌ upload: ${e.cause}');
+      _err(_LV.friendlyError(e.cause));
     } catch (e) {
-      debugPrint('[LocalMarket] ⚠️ direct shop resolve: $e');
-      return null;
+      debugPrint('[LocalForm] ❌ save: $e');
+      _err('${_LV.friendlyError(e)}\n$e'.split('\n').take(2).join('\n'));
+    } finally {
+      if (mounted) setState(() => _saving = false);
     }
   }
 
+  // ═══════════════════ UI ═══════════════════
   @override
   Widget build(BuildContext context) {
-    final lang = Localizations.localeOf(context).languageCode;
-    final productsAsync = ref.watch(localProductsProvider);
-    final filtered = ref.watch(filteredLocalProductsProvider);
-    final producersAsync = ref.watch(localProducersProvider);
-    final selectedSector = ref.watch(localSectorFilterProvider);
-    final hasMore = ref.read(localProductsProvider.notifier).hasMore;
-    ref.watch(currencyProvider);
-
-    final newest = (productsAsync.valueOrNull ?? const <Map<String, dynamic>>[])
-        .take(_kMaxHeroItems)
-        .toList();
-
-    productsAsync.whenData((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _startHeroAuto(newest.length);
-      });
-    });
-
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9F7),
-      body: RefreshIndicator(
-        color: kLocalGreen,
-        onRefresh: () async {
-          HapticFeedback.mediumImpact();
-          invalidateLocalProviders(ref);
-          await ref.read(localProductsProvider.notifier).refresh();
-        },
-        child: CustomScrollView(
-          controller: _scroll,
-          physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-          slivers: [
-            SliverToBoxAdapter(child: _buildHeader()),
-            SliverToBoxAdapter(child: _buildHero(newest)),
-            SliverToBoxAdapter(child: _buildCategories(lang, selectedSector)),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverToBoxAdapter(child: _buildPromoBanner()),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverToBoxAdapter(child: _buildProducers(producersAsync)),
-            const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverToBoxAdapter(child: _buildProductsHeader(selectedSector, filtered.length, lang)),
-            const SliverToBoxAdapter(child: SizedBox(height: 14)),
-            _buildProductsGrid(productsAsync, filtered, hasMore),
-            const SliverToBoxAdapter(child: SizedBox(height: 60)),
+      backgroundColor: ThixPolicy.surfaceSoft,
+      appBar: AppBar(
+        backgroundColor: kLocalGreen,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_t('Produit local', 'Local product', 'Bidhaa ya ndani'),
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+            Text(_t('Espace dédié — tous secteurs', 'Dedicated space — all sectors', 'Eneo maalum — sekta zote'),
+                style: TextStyle(fontSize: 10, color: Colors.white.withOpacity(0.8))),
           ],
         ),
       ),
-    );
-  }
-
-  // ═══════════════════ HEADER VERT ARRONDI ═══════════════════
-  Widget _buildHeader() {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [kLocalGreen, kLocalGreenDeep],
-        ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(32)),
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 22),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _headerCircle(Icons.arrow_back_rounded, () => context.pop()),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Text('THIX ',
-                                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 17, letterSpacing: -0.4)),
-                            const Text('LOCAL',
-                                style: TextStyle(color: Color(0xFFB9F0C8), fontWeight: FontWeight.w900, fontSize: 17, letterSpacing: -0.4)),
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.18),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(_t('100% LOCAL', '100% LOCAL', '100% NDANI'),
-                                  style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
-                            ),
-                          ],
-                        ),
-                        Text(
-                          _t('L\'espace des produits de chez nous', 'Home-grown products space', 'Eneo la bidhaa za ndani'),
-                          style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 10.5),
-                        ),
-                      ],
-                    ),
-                  ),
-                  // ✅ Bouton PUBLIER discret (remplace le FAB)
-                  _headerCircle(Icons.add_rounded, _openSellForm,
-                      tooltip: _t('Publier un produit local', 'Publish a local product')),
-                  const SizedBox(width: 8),
-                  _headerCircle(Icons.shopping_cart_rounded, () => context.push('/market/cart')),
-                ],
-              ),
-              const SizedBox(height: 16),
-              // Search pill
-              Container(
-                height: 50,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(18),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 12, offset: const Offset(0, 4))],
-                ),
-                child: Row(
-                  children: [
-                    const SizedBox(width: 14),
-                    const Icon(Icons.search_rounded, color: kLocalGreen, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: TextField(
-                        controller: _searchCtrl,
-                        style: const TextStyle(fontSize: 13.5, color: ThixPolicy.textMain, fontWeight: FontWeight.w600),
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: _t('Rechercher un produit, un producteur...', 'Search product, producer...', 'Tafuta bidhaa...'),
-                          hintStyle: TextStyle(color: ThixPolicy.textMuted.withOpacity(0.7), fontSize: 12.5),
-                        ),
-                        onChanged: (v) => ref.read(localSearchQueryProvider.notifier).state = v,
-                      ),
-                    ),
-                    if (_searchCtrl.text.isNotEmpty)
-                      IconButton(
-                        icon: const Icon(Icons.clear_rounded, size: 16, color: ThixPolicy.textSecondary),
-                        onPressed: () {
-                          _searchCtrl.clear();
-                          ref.read(localSearchQueryProvider.notifier).state = '';
-                        },
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _headerCircle(IconData icon, VoidCallback onTap, {String? tooltip}) {
-    return Semantics(
-      button: true,
-      label: tooltip ?? 'action',
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 40,
-          height: 40,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.16),
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white.withOpacity(0.25)),
-          ),
-          child: Icon(icon, color: Colors.white, size: 20),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ HERO BANNER AUTO-SCROLL (10 derniers) ═══════════════════
-  Widget _buildHero(List<Map<String, dynamic>> newest) {
-    if (newest.isEmpty) {
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
-        child: Container(
-          height: _kHeroHeight,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [kLocalGreen, kLocalGreenDeep]),
-            borderRadius: BorderRadius.circular(24),
-          ),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.agriculture_rounded, color: Colors.white.withOpacity(0.7), size: 44),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 32),
-                  child: Text(
-                    _t('Les nouveautés locales apparaîtront ici', 'Local novelties will appear here', 'Bidhaa mpya zitaonekana hapa'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 12.5, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    }
-
-    return Column(
-      children: [
-        SizedBox(
-          height: _kHeroHeight,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (n) {
-              if (n is ScrollStartNotification) {
-                _heroTimer?.cancel();
-                _heroReady = false;
-              } else if (n is ScrollEndNotification) {
-                Future.delayed(const Duration(seconds: 2), () {
-                  if (mounted) _startHeroAuto(newest.length);
-                });
-              }
-              return false;
-            },
-            child: PageView.builder(
-              controller: _heroCtrl,
-              itemCount: newest.length,
-              onPageChanged: (i) => setState(() => _heroIndex = i),
-              itemBuilder: (_, i) => _heroItem(newest[i]),
-            ),
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: List.generate(newest.length, (i) {
-            final active = i == _heroIndex;
-            return AnimatedContainer(
-              duration: const Duration(milliseconds: 250),
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              height: 6,
-              width: active ? 20 : 6,
-              decoration: BoxDecoration(
-                color: active ? kLocalGreen : kLocalGreen.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(10),
-              ),
-            );
-          }),
-        ),
-      ],
-    );
-  }
-
-  Widget _heroItem(Map<String, dynamic> p) {
-    final lang = Localizations.localeOf(context).languageCode;
-    final id = p['id']?.toString() ?? '';
-    final title = (p['title'] ?? '').toString();
-    final sector = localSectorById(p['local_sector']?.toString());
-    final producer = (p['producer_name'] ?? '').toString();
-
-    String? img;
-    final u = p['image_url']?.toString();
-    if (u != null && u.startsWith('http')) {
-      img = u;
-    } else if (p['images'] is List && (p['images'] as List).isNotEmpty) {
-      final f = (p['images'] as List).first.toString();
-      if (f.startsWith('http')) img = f;
-    }
-
-    // Prix converti
-    final displayCur = ref.watch(currencyProvider);
-    final sellerCur = (p['currency'] ?? 'CDF').toString().toUpperCase();
-    final svc = CurrencyService.instance;
-    final orig = (p['price'] as num?)?.toDouble() ?? 0;
-    final disc = (p['discount_price'] as num?)?.toDouble();
-    final base = (disc != null && disc > 0 && disc < orig) ? disc : orig;
-    final priceLabel = svc.formatPrice(
-      svc.convert(base, from: sellerCur, to: displayCur),
-      currencyCode: displayCur,
-      lang: lang,
-    );
-    final unit = p['unit']?.toString() ?? '';
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
-      child: Semantics(
-        button: true,
-        label: title,
-        child: GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            if (id.isNotEmpty) context.push('/market/product/$id');
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(24),
-              color: kLocalGreenSoft,
-              boxShadow: [BoxShadow(color: kLocalGreen.withOpacity(0.25), blurRadius: 14, offset: const Offset(0, 6))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (img != null)
-                  CachedNetworkImage(
-                    imageUrl: img,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
-                  ),
-                // Dégradé de lisibilité
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.black.withOpacity(0.10), Colors.black.withOpacity(0.62)],
-                    ),
-                  ),
-                ),
-                // Chip secteur
-                Positioned(
-                  top: 12,
-                  left: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: (sector?.color ?? kLocalGreen).withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(sector?.icon ?? Icons.eco_rounded, size: 10, color: Colors.white),
-                        const SizedBox(width: 4),
-                        Text(sector?.label(lang) ?? _t('Local', 'Local'),
-                            style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w800)),
-                      ],
-                    ),
-                  ),
-                ),
-                // Chip NOUVEAU
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.gold,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(_t('NOUVEAU', 'NEW', 'MPYA'),
-                        style: const TextStyle(color: Color(0xFF78350F), fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
-                  ),
-                ),
-                // Infos bas
-                Positioned(
-                  left: 14,
-                  right: 14,
-                  bottom: 14,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
+      body: !_shopResolved
+          ? const Center(child: CircularProgressIndicator(color: kLocalGreen))
+          : _shopId == null
+              ? _buildNoShop()
+              : Form(
+                  key: _formKey,
+                  child: ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     children: [
-                      Text(
-                        title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900, height: 1.15),
+                      _buildPhotos(),
+                      const SizedBox(height: 14),
+                      _field(
+                        controller: _name,
+                        hint: '${_t('Nom du produit', 'Product name', 'Jina la bidhaa')} *',
+                        validator: (v) => (v == null || v.trim().length < 2) ? 'Nom trop court' : null,
                       ),
-                      if (producer.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Row(
-                          children: [
-                            const Icon(Icons.handshake_rounded, size: 10, color: Color(0xFFB9F0C8)),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(producer,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 10, fontWeight: FontWeight.w600)),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 12),
                       Row(
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(10),
+                          Expanded(
+                            child: _field(
+                              controller: _price,
+                              hint: '${_t('Prix', 'Price', 'Bei')} *',
+                              keyboard: const TextInputType.numberWithOptions(decimal: true),
+                              validator: (v) => (_LV.parseDouble(v) ?? 0) <= 0 ? 'Prix invalide' : null,
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(priceLabel,
-                                    style: const TextStyle(color: kLocalGreenDeep, fontSize: 12.5, fontWeight: FontWeight.w900)),
-                                if (unit.isNotEmpty)
-                                  Text(' / ${kLocalUnitLabel(unit)}',
-                                      style: TextStyle(color: kLocalGreenDeep.withOpacity(0.7), fontSize: 9.5, fontWeight: FontWeight.w700)),
-                              ],
-                            ),
-                          ),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.all(7),
-                            decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                            child: const Icon(Icons.arrow_forward_rounded, size: 13, color: kLocalGreenDeep),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ CATÉGORIES CIRCULAIRES (style Groceria) ═══════════════════
-  Widget _buildCategories(String lang, String? selected) {
-    final counts = ref.watch(localSectorCountsProvider);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 22, 20, 0),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _t('Catégories', 'Categories', 'Kategoria'),
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17, color: ThixPolicy.textMain, letterSpacing: -0.4),
-              ),
-              if (selected != null)
-                GestureDetector(
-                  onTap: () => ref.read(localSectorFilterProvider.notifier).state = null,
-                  child: Text(_t('Tout voir', 'See all', 'Ona zote'),
-                      style: const TextStyle(color: kLocalGreen, fontSize: 12, fontWeight: FontWeight.w800)),
-                ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-        SizedBox(
-          height: 92,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            physics: const BouncingScrollPhysics(),
-            itemCount: kLocalSectors.length + 1,
-            separatorBuilder: (_, __) => const SizedBox(width: 14),
-            itemBuilder: (_, i) {
-              if (i == 0) {
-                return _categoryTile(
-                  label: _t('Tout', 'All', 'Zote'),
-                  icon: Icons.grid_view_rounded,
-                  color: ThixPolicy.primaryDeep,
-                  selected: selected == null,
-                  count: counts.values.fold<int>(0, (a, b) => a + b),
-                  onTap: () {
-                    HapticFeedback.selectionClick();
-                    ref.read(localSectorFilterProvider.notifier).state = null;
-                  },
-                );
-              }
-              final s = kLocalSectors[i - 1];
-              return _categoryTile(
-                label: s.label(lang),
-                icon: s.icon,
-                color: s.color,
-                selected: selected == s.id,
-                count: counts[s.id] ?? 0,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(localSectorFilterProvider.notifier).state = (selected == s.id) ? null : s.id;
-                },
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _categoryTile({
-    required String label,
-    required IconData icon,
-    required Color color,
-    required bool selected,
-    required int count,
-    required VoidCallback onTap,
-  }) {
-    return Semantics(
-      button: true,
-      label: '$label, $count',
-      child: GestureDetector(
-        onTap: onTap,
-        child: SizedBox(
-          width: 68,
-          child: Column(
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  color: selected ? color : color.withOpacity(0.10),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: selected ? color : color.withOpacity(0.25),
-                    width: selected ? 2 : 1,
-                  ),
-                  boxShadow: selected ? [BoxShadow(color: color.withOpacity(0.35), blurRadius: 8, offset: const Offset(0, 3))] : null,
-                ),
-                child: Icon(icon, color: selected ? Colors.white : color, size: 24),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 9.5,
-                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                  color: selected ? color : ThixPolicy.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ BANNIÈRE PROMO ═══════════════════
-  Widget _buildPromoBanner() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.centerLeft,
-            end: Alignment.centerRight,
-            colors: [kLocalGreenDeep, kLocalGreen],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: kLocalGreen.withOpacity(0.30), blurRadius: 14, offset: const Offset(0, 6))],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          children: [
-            Positioned(
-              top: -30,
-              right: -20,
-              child: Container(width: 110, height: 110, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.08))),
-            ),
-            Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(color: ThixPolicy.gold, borderRadius: BorderRadius.circular(6)),
-                        child: Text(_t('Circuit court', 'Short supply chain', 'Biashara moja kwa moja'),
-                            style: const TextStyle(color: Color(0xFF78350F), fontSize: 8.5, fontWeight: FontWeight.w900)),
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        _t('100% Local\n& Authentique', '100% Local\n& Authentic', '100% Ndani\n& Halisi'),
-                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w900, height: 1.15),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        _t('Directement des producteurs & coopératives', 'Directly from producers & cooperatives', 'Moja kwa moja kutoka wakulima'),
-                        style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 10.5),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle),
-                  child: const Icon(Icons.agriculture_rounded, color: Colors.white, size: 32),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ PRODUCTEURS ═══════════════════
-  Widget _buildProducers(AsyncValue<List<Map<String, dynamic>>> async) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _t('Producteurs & coopératives', 'Producers & cooperatives', 'Wakulima na ushirika'),
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17, color: ThixPolicy.textMain, letterSpacing: -0.4),
-              ),
-              GestureDetector(
-                onTap: () => context.push('/market/shops'),
-                child: Text(_t('Voir tout', 'See all', 'Ona zote'),
-                    style: const TextStyle(color: kLocalGreen, fontSize: 12, fontWeight: FontWeight.w800)),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          async.when(
-            loading: () => const SizedBox(height: 60, child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kLocalGreen)))),
-            error: (_, __) => const SizedBox.shrink(),
-            data: (producers) {
-              if (producers.isEmpty) {
-                return Text(
-                  _t('Aucun producteur pour le moment. Soyez le premier !', 'No producer yet. Be the first!', 'Hakuna mkulima bado!'),
-                  style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 12),
-                );
-              }
-              return ListView.separated(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                itemCount: producers.length > 3 ? 3 : producers.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) {
-                  final p = producers[i];
-                  final id = p['id']?.toString() ?? '';
-                  final logo = p['logo_url']?.toString();
-                  final name = (p['name'] ?? '').toString();
-                  final city = AfricanCountries.locationLine(city: (p['city'] ?? '').toString(), code: p['country']?.toString());
-                  final count = p['local_count'] ?? 0;
-                  return GestureDetector(
-                    onTap: () {
-                      HapticFeedback.selectionClick();
-                      if (id.isNotEmpty) context.push('/market/shop/$id');
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(18),
-                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))],
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 46,
-                            height: 46,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: kLocalGreenSoft,
-                              image: (logo != null && logo.startsWith('http'))
-                                  ? DecorationImage(image: CachedNetworkImageProvider(logo), fit: BoxFit.cover)
-                                  : null,
-                            ),
-                            child: (logo == null || !logo.startsWith('http'))
-                                ? const Icon(Icons.agriculture_rounded, color: kLocalGreen, size: 20)
-                                : null,
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: _dropdownCard(
+                              label: _t('Devise', 'Currency', 'Sarafu'),
+                              value: _currency,
+                              items: const ['CDF', 'USD'],
+                              onChanged: (v) => setState(() => _currency = v ?? 'CDF'),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      _dropdownCard(
+                        label: '${_t('Secteur', 'Sector', 'Sekta')} *',
+                        value: _sector,
+                        hint: _t('Choisir un secteur', 'Choose a sector', 'Chagua sekta'),
+                        items: kLocalSectors.map((s) => s.id).toList(),
+                        labelOf: (id) {
+                          final lang = Localizations.localeOf(context).languageCode;
+                          final s = localSectorById(id);
+                          return s?.label(lang) ?? id;
+                        },
+                        iconOf: (id) => localSectorById(id)?.icon,
+                        onChanged: (v) {
+                          setState(() {
+                            _sector = v;
+                            final s = localSectorById(v);
+                            if (s != null) _unit = s.defaultUnit;
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _dropdownCard(
+                              label: '${_t('Unité de mesure', 'Unit', 'Kipimo')} *',
+                              value: _unit,
+                              items: kLocalUnits.map((u) => u['value']!).toList(),
+                              labelOf: (v) => kLocalUnitLabel(v),
+                              onChanged: (v) => setState(() => _unit = v ?? 'pcs'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _field(
+                              controller: _stock,
+                              hint: '${_t('Quantité', 'Quantity', 'Kiasi')} *',
+                              keyboard: TextInputType.number,
+                              validator: (v) => _LV.parseInt(v) == null ? 'Quantité invalide' : null,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        _t('Le prix affiché sera par ${kLocalUnitLabel(_unit)}',
+                            'Displayed price will be per ${kLocalUnitLabel(_unit)}'),
+                        style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary, fontStyle: FontStyle.italic),
+                      ),
+                      const SizedBox(height: 14),
+                      _field(
+                        controller: _producer,
+                        hint: _t('Producteur / coopérative', 'Producer / cooperative', 'Mkulima / ushirika'),
+                        prefixIcon: Icons.handshake_rounded,
+                      ),
+                      const SizedBox(height: 12),
+                      _field(
+                        controller: _terroir,
+                        hint: _t('Terroir / région d\'origine (ex : Kivu, RDC)', 'Origin region (e.g. Kivu, DRC)', 'Eneo asili (mf: Kivu, DRC)'),
+                        prefixIcon: Icons.place_rounded,
+                      ),
+                      const SizedBox(height: 14),
+                      _buildCerts(),
+                      const SizedBox(height: 14),
+                      _field(
+                        controller: _barcode,
+                        hint: _t('Code-barres', 'Barcode', 'Msimbo wa bidhaa'),
+                        keyboard: TextInputType.number,
+                        prefixIcon: Icons.qr_code_rounded,
+                      ),
+                      const SizedBox(height: 14),
+                      _toggleCard(
+                        icon: Icons.event_busy_rounded,
+                        title: _t('Produit périssable', 'Perishable product', 'Bidhaa yenye mwisho'),
+                        subtitle: _t('Définir une date d\'expiration', 'Set an expiry date', 'Weka tarehe ya mwisho'),
+                        value: _perishable,
+                        onChanged: (v) => setState(() {
+                          _perishable = v;
+                          if (!v) _expiry = null;
+                        }),
+                      ),
+                      if (_perishable) ...[
+                        const SizedBox(height: 8),
+                        GestureDetector(
+                          onTap: _pickExpiry,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                            decoration: BoxDecoration(
+                              color: ThixPolicy.card,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(color: ThixPolicy.border),
+                            ),
+                            child: Row(
                               children: [
-                                Text(name, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain)),
-                                const SizedBox(height: 2),
-                                Text(city, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(fontSize: 10, color: ThixPolicy.textSecondary)),
-                                const SizedBox(height: 5),
-                                Row(
-                                  children: [
-                                    _tag(_t('Vérifié', 'Verified', 'Imethibitishwa'), kLocalGreen),
-                                    const SizedBox(width: 6),
-                                    _tag('$count ${_t('locaux', 'local', 'ndani')}', ThixPolicy.primaryDeep),
-                                  ],
+                                const Icon(Icons.calendar_today_rounded, size: 16, color: kLocalGreen),
+                                const SizedBox(width: 10),
+                                Text(
+                                  _expiry != null
+                                      ? DateFormat('dd/MM/yyyy').format(_expiry!)
+                                      : _t('Choisir la date d\'expiration *', 'Pick expiry date *'),
+                                  style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: _expiry != null ? ThixPolicy.textMain : ThixPolicy.textMuted),
                                 ),
                               ],
                             ),
                           ),
-                          const Icon(Icons.chevron_right_rounded, color: ThixPolicy.textMuted, size: 20),
-                        ],
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      _toggleCard(
+                        icon: Icons.local_offer_rounded,
+                        title: _t('Promotion', 'Promotion', 'Promosheni'),
+                        subtitle: _t('Afficher un prix réduit', 'Show a reduced price', 'Onyesha bei punguzwa'),
+                        value: _hasPromo,
+                        onChanged: (v) => setState(() => _hasPromo = v),
+                      ),
+                      if (_hasPromo) ...[
+                        const SizedBox(height: 8),
+                        _field(
+                          controller: _promoPrice,
+                          hint: '${_t('Prix promo', 'Promo price', 'Bei ya promosheni')} *',
+                          keyboard: const TextInputType.numberWithOptions(decimal: true),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
+                      _field(
+                        controller: _description,
+                        hint: _t('Description', 'Description', 'Maelezo'),
+                        maxLines: 4,
+                      ),
+                      const SizedBox(height: 22),
+                      SizedBox(
+                        height: 54,
+                        child: ElevatedButton(
+                          onPressed: (_saving || _uploading) ? null : _save,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: kLocalGreen,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          child: _saving || _uploading
+                              ? Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                                    const SizedBox(width: 12),
+                                    Text(_uploading ? 'Photos $_progress/$_total' : 'Enregistrement...'),
+                                  ],
+                                )
+                              : Text(
+                                  _t('Créer le produit local', 'Create local product', 'Unda bidhaa ya ndani'),
+                                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+    );
+  }
+
+  Widget _buildNoShop() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.storefront_rounded, size: 56, color: kLocalGreen.withOpacity(0.5)),
+            const SizedBox(height: 14),
+            Text(_t('Une boutique est requise', 'A shop is required', 'Duka linahitajika'),
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: ThixPolicy.textMain)),
+            const SizedBox(height: 8),
+            Text(_t('Créez votre boutique pour publier des produits locaux.',
+                    'Create your shop to publish local products.', 'Fungua duka lako kuuza bidhaa za ndani.'),
+                textAlign: TextAlign.center, style: TextStyle(fontSize: 13, color: ThixPolicy.textSecondary)),
+            const SizedBox(height: 18),
+            ElevatedButton(
+              onPressed: () => context.push('/market/shop/create'),
+              style: ElevatedButton.styleFrom(backgroundColor: kLocalGreen, foregroundColor: Colors.white),
+              child: Text(_t('Créer ma boutique', 'Create my shop', 'Fungua duka')),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPhotos() {
+    final total = _existingUrls.length + _newImages.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('${_t('Photos', 'Photos', 'Picha')} ($total/$_kMaxImages) *',
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain)),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 92,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: total + 1,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (_, i) {
+              if (i == total) {
+                return GestureDetector(
+                  onTap: _pickImages,
+                  child: Container(
+                    width: 92,
+                    decoration: BoxDecoration(
+                      color: kLocalGreen.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: kLocalGreen.withOpacity(0.4), width: 1.2),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        const Icon(Icons.add_photo_alternate_rounded, color: kLocalGreen, size: 24),
+                        const SizedBox(height: 4),
+                        Text(_t('Ajouter', 'Add', 'Ongeza'),
+                            style: const TextStyle(color: kLocalGreen, fontSize: 10.5, fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                );
+              }
+              final isNew = i >= _existingUrls.length;
+              return Stack(
+                children: [
+                  Container(
+                    width: 92,
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(14),
+                      color: ThixPolicy.card,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: isNew
+                          ? Image.memory(_bytes[_newImages[i - _existingUrls.length].path]!, fit: BoxFit.cover)
+                          : Image.network(_existingUrls[i], fit: BoxFit.cover),
+                    ),
+                  ),
+                  Positioned(
+                    top: 4,
+                    right: 4,
+                    child: GestureDetector(
+                      onTap: () => setState(() {
+                        if (isNew) {
+                          _newImages.removeAt(i - _existingUrls.length);
+                        } else {
+                          _existingUrls.removeAt(i);
+                        }
+                      }),
+                      child: Container(
+                        padding: const EdgeInsets.all(3),
+                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                        child: const Icon(Icons.close_rounded, size: 12, color: ThixPolicy.danger),
                       ),
                     ),
-                  );
-                },
+                  ),
+                ],
               );
             },
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tag(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(5)),
-      child: Text(label, style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: color)),
-    );
-  }
-
-  // ═══════════════════ GRILLE PRODUITS ═══════════════════
-  Widget _buildProductsHeader(String? sector, int count, String lang) {
-    final s = localSectorById(sector);
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Row(
-        children: [
-          if (s != null) ...[
-            Container(
-              padding: const EdgeInsets.all(7),
-              decoration: BoxDecoration(color: s.color.withOpacity(0.12), borderRadius: BorderRadius.circular(9)),
-              child: Icon(s.icon, size: 15, color: s.color),
-            ),
-            const SizedBox(width: 8),
-          ],
-          Expanded(
-            child: Text(
-              s != null ? s.label(lang) : _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 17, color: ThixPolicy.textMain, letterSpacing: -0.4),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-            decoration: BoxDecoration(color: kLocalGreen.withOpacity(0.10), borderRadius: BorderRadius.circular(12)),
-            child: Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: kLocalGreenDeep)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildProductsGrid(
-    AsyncValue<List<Map<String, dynamic>>> async,
-    List<Map<String, dynamic>> filtered,
-    bool hasMore,
-  ) {
-    return async.when(
-      skipLoadingOnReload: true,
-      skipLoadingOnRefresh: true,
-      loading: () => const SliverToBoxAdapter(
-        child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: kLocalGreen))),
-      ),
-      error: (e, _) => SliverToBoxAdapter(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Text(_t('Erreur de chargement', 'Loading error'), textAlign: TextAlign.center,
-              style: const TextStyle(color: ThixPolicy.danger, fontSize: 12.5)),
         ),
-      ),
-      data: (_) {
-        if (filtered.isEmpty) {
-          return SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
-              child: Column(
+      ],
+    );
+  }
+
+  Widget _buildCerts() {
+    final lang = Localizations.localeOf(context).languageCode;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(_t('Labels & certifications', 'Labels & certifications', 'Vyeti'),
+            style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: ThixPolicy.textMain)),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: kLocalCertifications.map((c) {
+            final on = _certs.contains(c.id);
+            return FilterChip(
+              selected: on,
+              onSelected: (v) => setState(() => v ? _certs.add(c.id) : _certs.remove(c.id)),
+              selectedColor: kLocalGreen.withOpacity(0.15),
+              backgroundColor: ThixPolicy.card,
+              side: BorderSide(color: on ? kLocalGreen : ThixPolicy.border),
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(Icons.agriculture_rounded, size: 52, color: kLocalGreen.withOpacity(0.30)),
-                  const SizedBox(height: 12),
-                  Text(
-                    _t('Aucun produit local dans cette sélection', 'No local product in this selection', 'Hakuna bidhaa hapa'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: ThixPolicy.textMain),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _t('Tirez pour actualiser', 'Pull to refresh', 'Vuta kuburudisha'),
-                    textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary),
-                  ),
+                  Icon(c.icon, size: 12, color: on ? kLocalGreen : ThixPolicy.textSecondary),
+                  const SizedBox(width: 4),
+                  Text(c.label(lang), style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: on ? kLocalGreenDeep : ThixPolicy.textMain)),
                 ],
               ),
-            ),
-          );
-        }
-        return SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverGrid(
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 2,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
-              mainAxisExtent: 268,
-            ),
-            delegate: SliverChildBuilderDelegate(
-              (_, i) {
-                if (i >= filtered.length) {
-                  return const Center(child: CircularProgressIndicator(color: kLocalGreen, strokeWidth: 2));
-                }
-                final p = filtered[i];
-                return LocalProductCard(key: ValueKey('local_${p['id']}'), product: p);
-              },
-              childCount: filtered.length + (hasMore ? 1 : 0),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String hint,
+    TextInputType? keyboard,
+    String? Function(String?)? validator,
+    int maxLines = 1,
+    IconData? prefixIcon,
+  }) {
+    return TextFormField(
+      controller: controller,
+      keyboardType: keyboard,
+      maxLines: maxLines,
+      validator: validator,
+      style: const TextStyle(fontSize: 13.5, color: ThixPolicy.textMain, fontWeight: FontWeight.w600),
+      decoration: InputDecoration(
+        hintText: hint,
+        hintStyle: TextStyle(color: ThixPolicy.textMuted.withOpacity(0.85), fontSize: 13),
+        prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 18, color: ThixPolicy.textSecondary) : null,
+        filled: true,
+        fillColor: ThixPolicy.card,
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ThixPolicy.border)),
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide(color: ThixPolicy.border)),
+        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: kLocalGreen, width: 1.5)),
+        errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: ThixPolicy.danger)),
+      ),
+    );
+  }
+
+  Widget _dropdownCard({
+    required String label,
+    required String? value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+    String Function(String)? labelOf,
+    IconData? Function(String)? iconOf,
+    String? hint,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ThixPolicy.border),
+      ),
+      child: DropdownButtonFormField<String>(
+        initialValue: value,
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
+          border: InputBorder.none,
+          isDense: true,
+        ),
+        hint: hint != null ? Text(hint, style: TextStyle(fontSize: 12.5, color: ThixPolicy.textMuted)) : null,
+        items: items
+            .map((id) => DropdownMenuItem(
+                  value: id,
+                  child: Row(
+                    children: [
+                      if (iconOf?.call(id) != null) ...[
+                        Icon(iconOf!(id), size: 14, color: kLocalGreen),
+                        const SizedBox(width: 6),
+                      ],
+                      Expanded(
+                        child: Text(labelOf?.call(id) ?? id,
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
+                      ),
+                    ],
+                  ),
+                ))
+            .toList(),
+        onChanged: onChanged,
+      ),
+    );
+  }
+
+  Widget _toggleCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: ThixPolicy.card,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: ThixPolicy.border),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: kLocalGreen, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: ThixPolicy.textMain)),
+                Text(subtitle, style: TextStyle(fontSize: 11, color: ThixPolicy.textSecondary)),
+              ],
             ),
           ),
-        );
-      },
+          Switch.adaptive(value: value, onChanged: onChanged, activeColor: kLocalGreen),
+        ],
+      ),
     );
   }
 }
