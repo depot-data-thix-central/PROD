@@ -407,7 +407,18 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
 
   /// ✅ NOUVEAU : navigation vers le formulaire produit local
   Future<void> _openCreateLocalProduct() async {
-    final shopId = ref.read(myShopIdProvider).valueOrNull;
+    HapticFeedback.mediumImpact();
+
+    String? shopId = ref.read(myShopIdProvider).valueOrNull;
+    if (shopId == null) {
+      try {
+        shopId = await ref.read(myShopIdProvider.future);
+      } catch (_) {}
+    }
+    if (shopId == null) {
+      shopId = await _resolveShopIdDirect(); // ✅ filet de sécurité
+    }
+
     if (shopId == null) {
       _showInfo(context.vdT(
         'Créez d\'abord une boutique pour vendre un produit local',
@@ -415,19 +426,38 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ));
       return;
     }
-    HapticFeedback.mediumImpact();
-    final created = await context.push<bool>(
-      '/market/local/create',
-      extra: shopId,
-    );
+
+    final created = await context.push<bool>('/market/local/create', extra: shopId);
     if (created == true && mounted) {
-      // Invalider pour refléter le nouveau produit
       ref.invalidate(vendorProductsProvider);
       ref.invalidate(vendorLocalProductsCountProvider);
-      _showSuccess(context.vdT(
-        'Produit local publié ✅',
-        'Local product published ✅',
-      ));
+      _showSuccess(context.vdT('Produit local publié ✅', 'Local product published ✅'));
+    }
+  }
+
+  /// ✅ Résolution directe multi-boutiques (priorité boutique)
+  Future<String?> _resolveShopIdDirect() async {
+    try {
+      final db = ref.read(supabaseClientProvider);
+      final uid = db.auth.currentUser?.id;
+      if (uid == null) return null;
+      final res = await db
+          .from('shops')
+          .select('id,type')
+          .eq('owner_id', uid)
+          .order('created_at', ascending: true)
+          .limit(5)
+          .timeout(_kRequestTimeout);
+      final list = List<Map<String, dynamic>>.from(res as List);
+      if (list.isEmpty) return null;
+      final pick = list.firstWhere(
+        (s) => s['type']?.toString() != 'supermarket',
+        orElse: () => list.first,
+      );
+      return pick['id']?.toString();
+    } catch (e) {
+      debugPrint('[VendorDashboard] ⚠️ direct shop resolve: $e');
+      return null;
     }
   }
 
