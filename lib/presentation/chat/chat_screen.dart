@@ -2446,19 +2446,26 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     );
   }
 
-  // ==========================================================================
+// ==========================================================================
 // BULLE UNIQUE
 // ==========================================================================
 Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
+  // Récupère le message de réponse complet (pas juste le texte)
+  final replyMsg = _replyToId.isEmpty
+      ? null
+      : (idIndex.containsKey(_replyToId) ? visible[idIndex[_replyToId]!] : null);
+
   return ChatMessageBubble(
     key: _keyFor(msg.id),
     message: msg,
     isOwn: isOwn,
-    replyPreview: _replyToId.isEmpty ? '' : _replyPreview(visible, idIndex),
-    onReplyTap: _replyToId.isEmpty ? null : () => setState(() => _replyToId = ''),
-    onMore: () => _showMessageMenu(msg, AppLocalizations.of(context)),
+    replyToMessage: replyMsg,
     onViewOnceOpened: () => _onViewOnceOpened(msg),
-    onOpenGallery: (imgs, idx) => _showPhotoPager(imgs, idx),
+    showSender: !isOwn,
+    senderName: msg.senderName,
+    senderAvatarUrl: _groupById[msg.senderId]?.avatarUrl ?? msg.senderAvatarUrl,
+    // Le swipe (reply/more) est géré par _SwipeActions dans _buildListItem
+    // La galerie est gérée par ImageGroupBubble pour les groupes d'images
   );
 }
 
