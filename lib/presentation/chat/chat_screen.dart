@@ -2445,7 +2445,6 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
       child: content,
     );
   }
-
 // ==========================================================================
 // BULLE UNIQUE
 // ==========================================================================
@@ -2455,6 +2454,23 @@ Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible
       ? null
       : (idIndex.containsKey(_replyToId) ? visible[idIndex[_replyToId]!] : null);
 
+  // Résolution de l'avatar de l'expéditeur
+  String? avatarUrl;
+  if (!isOwn) {
+    if (widget.conversation.isGroup) {
+      // En groupe : on cherche dans la liste des membres
+      avatarUrl = _groupById[msg.senderId]?.avatarUrl;
+    } else {
+      // En 1:1 : on prend l'avatar de l'autre participant
+      avatarUrl = _otherParticipant?.avatarUrl;
+      // Fallback via le provider de profil si UserStatus n'a pas l'avatar
+      if (avatarUrl == null && _otherId.isNotEmpty) {
+        final p = ref.read(userProfileProvider(_otherId)).valueOrNull;
+        avatarUrl = p?['avatar_url'] as String?;
+      }
+    }
+  }
+
   return ChatMessageBubble(
     key: _keyFor(msg.id),
     message: msg,
@@ -2463,9 +2479,7 @@ Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible
     onViewOnceOpened: () => _onViewOnceOpened(msg),
     showSender: !isOwn,
     senderName: msg.senderName,
-    senderAvatarUrl: _groupById[msg.senderId]?.avatarUrl ?? msg.senderAvatarUrl,
-    // Le swipe (reply/more) est géré par _SwipeActions dans _buildListItem
-    // La galerie est gérée par ImageGroupBubble pour les groupes d'images
+    senderAvatarUrl: avatarUrl,
   );
 }
 
