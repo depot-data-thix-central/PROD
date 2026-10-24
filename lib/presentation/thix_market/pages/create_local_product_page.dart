@@ -155,9 +155,25 @@ class _CreateLocalProductPageState extends ConsumerState<CreateLocalProductPage>
       return;
     }
     try {
-      final me = await _db.from('shops').select('id').eq('owner_id', _db.auth.currentUser?.id ?? '').limit(1);
-      final list = List<Map<String, dynamic>>.from(me as List);
-      if (list.isNotEmpty) _shopId = list.first['id']?.toString();
+      final uid = _db.auth.currentUser?.id;
+      if (uid != null) {
+        // ✅ FIX : liste + priorité boutique (fonctionne avec plusieurs shops)
+        final me = await _db
+            .from('shops')
+            .select('id,type')
+            .eq('owner_id', uid)
+            .order('created_at', ascending: true)
+            .limit(5)
+            .timeout(_kDbTimeout);
+        final list = List<Map<String, dynamic>>.from(me as List);
+        if (list.isNotEmpty) {
+          final pick = list.firstWhere(
+            (s) => s['type']?.toString() != 'supermarket',
+            orElse: () => list.first,
+          );
+          _shopId = pick['id']?.toString();
+        }
+      }
     } catch (e) {
       debugPrint('[LocalForm] ⚠️ shop resolve: $e');
     }
