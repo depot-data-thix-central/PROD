@@ -2447,21 +2447,20 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
   }
 
   // ==========================================================================
-  // BULLE UNIQUE
-  // ==========================================================================
-  Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
-    return ChatMessageBubble(
-      key: _keyFor(msg.id),
-      message: msg,
-      isOwn: isOwn,
-      showAvatar: !isOwn,
-      replyPreview: _replyToId.isEmpty ? '' : _replyPreview(visible, idIndex),
-      onReplyTap: _replyToId.isEmpty ? null : () => setState(() => _replyToId = ''),
-      onMore: () => _showMessageMenu(msg, AppLocalizations.of(context)),
-      onViewOnceOpened: () => _onViewOnceOpened(msg),
-      onOpenGallery: (imgs, idx) => _showPhotoPager(imgs, idx),
-    );
-  }
+// BULLE UNIQUE
+// ==========================================================================
+Widget _buildSingleBubble(ChatMessage msg, bool isOwn, List<ChatMessage> visible, Map<String, int> idIndex) {
+  return ChatMessageBubble(
+    key: _keyFor(msg.id),
+    message: msg,
+    isOwn: isOwn,
+    replyPreview: _replyToId.isEmpty ? '' : _replyPreview(visible, idIndex),
+    onReplyTap: _replyToId.isEmpty ? null : () => setState(() => _replyToId = ''),
+    onMore: () => _showMessageMenu(msg, AppLocalizations.of(context)),
+    onViewOnceOpened: () => _onViewOnceOpened(msg),
+    onOpenGallery: (imgs, idx) => _showPhotoPager(imgs, idx),
+  );
+}
 
   // ==========================================================================
   // MENU CONTEXTUEL D'UN MESSAGE
