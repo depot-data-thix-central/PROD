@@ -75,7 +75,7 @@ bool _isJumboEmoji(String s) {
 const String _kEncPrefix = 'ENCv1:';
 bool _isEncryptedText(String s) => s.trimLeft().startsWith(_kEncPrefix);
 
-/// ✅ Ouverture de lien : compatible Web (nouvel onglet) + fallback clipboard
+/// ✅ Ouverture de lien : compatible Web (url_launcher 6.3.x) + fallback clipboard
 Future<void> _openExternal(BuildContext context, String? raw) async {
   final u = ChatValidators.sanitizeUrl(raw);
   if (u == null) {
@@ -84,7 +84,8 @@ Future<void> _openExternal(BuildContext context, String? raw) async {
   }
   try {
     if (kIsWeb) {
-      await launchUrl(Uri.parse(u), webOnlyWindowMode: WebOnlyWindowMode.blank);
+      // url_launcher 6.3.x : webOnlyWindowName est un String ("_blank" = nouvel onglet)
+      await launchUrl(Uri.parse(u), webOnlyWindowName: '_blank');
     } else {
       await launchUrl(Uri.parse(u), mode: LaunchMode.externalApplication);
     }
@@ -398,7 +399,7 @@ class ChatMessageBubble extends StatelessWidget {
     final muted = ThixPolicy.textMuted;
     return Row(mainAxisSize: MainAxisSize.min, children: [
       if (m.isPinned) Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.push_pin_rounded, size: 11, color: muted)),
-      if (m.isStarred) const Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.star_rounded, size: 11, color: ThixPolicy.gold)),
+      if (m.isStarred) const Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.star_rounded, size: 11, color: ThixPolicy.gold)),
       if (isEphemeralActive) Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.timer_outlined, size: 11, color: muted)),
       if (edited) Padding(padding: const EdgeInsets.only(right: 4), child: Text('modifié', style: TextStyle(fontSize: 10, color: muted, fontStyle: FontStyle.italic))),
       Text(DateFormat('HH:mm').format(m.createdAt.toLocal()), style: TextStyle(fontSize: 10, color: muted)),
@@ -918,6 +919,7 @@ class TypingPill extends StatelessWidget {
         const _Dot(),
         const SizedBox(width: 3),
         const _Dot(delay: 120),
+        const SizedBox(width: 3),
         const _Dot(delay: 240),
         const SizedBox(width: 8),
         Text(chatTr(l10n, 'chat_typing', 'écrit…'), style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary, fontStyle: FontStyle.italic, fontWeight: FontWeight.w500)),
