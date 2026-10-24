@@ -11,7 +11,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:url_launcher/url_launcher.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import '../providers/shop_provider.dart';
+import '../providers/shop_provider.dart' hide myShopIdProvider;
 import '../providers/market_providers.dart';
 import '../core/local_sectors.dart'; // ✅ AJOUT : pour invalider local après création
 
