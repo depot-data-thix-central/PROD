@@ -13,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart';
 import '../providers/market_providers.dart';
+import '../core/local_sectors.dart'; // ✅ AJOUT : pour invalider local après création
 
 // ============================================================================
 // CONSTANTES
@@ -99,6 +100,44 @@ final vendorProductsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   } catch (e) {
     debugPrint('[VendorDashboard] ❌ Products load error: $e');
     return [];
+  }
+});
+
+// ✅ NOUVEAU : compteur de produits locaux du vendeur (pour KPI)
+final vendorLocalProductsCountProvider = FutureProvider<int>((ref) async {
+  final db = ref.read(supabaseClientProvider);
+  final uid = db.auth.currentUser?.id;
+  if (!_VdValidators.isValidId(uid)) return 0;
+
+  try {
+    final shopsRes = await _vdRetry(
+      () => db.from('shops').select('id').eq('owner_id', uid!),
+      label: 'fetchVendorShops[local]',
+    );
+    final shopIds = (shopsRes as List)
+        .map((s) => (s as Map)['id']?.toString())
+        .whereType<String>()
+        .where(_VdValidators.isValidId)
+        .toList();
+
+    if (shopIds.isEmpty) return 0;
+
+    final res = await _vdRetry(
+      () => db
+          .from('products')
+          .select('id')
+          .inFilter('shop_id', shopIds)
+          .eq('is_local', true)
+          .eq('status', 'active'),
+      label: 'countLocalProducts',
+    );
+
+    final count = (res as List).length;
+    debugPrint('[VendorDashboard] 🌱 Local products count: $count');
+    return count;
+  } catch (e) {
+    debugPrint('[VendorDashboard] ⚠️ Local count error: $e');
+    return 0;
   }
 });
 
@@ -331,6 +370,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ref.invalidate(myShopsProvider);
       ref.invalidate(vendorOrdersProvider);
       ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider); // ✅ AJOUT
     });
   }
 
@@ -350,16 +390,44 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ref.invalidate(myShopsProvider);
       ref.invalidate(vendorOrdersProvider);
       ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider); // ✅ AJOUT
 
       await Future.wait([
         ref.read(myShopsProvider.future),
         ref.read(vendorOrdersProvider.future),
         ref.read(vendorProductsProvider.future),
+        ref.read(vendorLocalProductsCountProvider.future), // ✅ AJOUT
       ]);
     } catch (e) {
       debugPrint('[VendorDashboard] ❌ Refresh error: $e');
     } finally {
       if (mounted) setState(() => _isRefreshing = false);
+    }
+  }
+
+  /// ✅ NOUVEAU : navigation vers le formulaire produit local
+  Future<void> _openCreateLocalProduct() async {
+    final shopId = ref.read(myShopIdProvider).valueOrNull;
+    if (shopId == null) {
+      _showInfo(context.vdT(
+        'Créez d\'abord une boutique pour vendre un produit local',
+        'Create a shop first to sell a local product',
+      ));
+      return;
+    }
+    HapticFeedback.mediumImpact();
+    final created = await context.push<bool>(
+      '/market/local/create',
+      extra: shopId,
+    );
+    if (created == true && mounted) {
+      // Invalider pour refléter le nouveau produit
+      ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider);
+      _showSuccess(context.vdT(
+        'Produit local publié ✅',
+        'Local product published ✅',
+      ));
     }
   }
 
@@ -587,6 +655,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     final shopsAsync = ref.watch(myShopsProvider);
     final ordersAsync = ref.watch(vendorOrdersProvider);
     final productsAsync = ref.watch(vendorProductsProvider);
+    final localCountAsync = ref.watch(vendorLocalProductsCountProvider); // ✅ AJOUT
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -644,6 +713,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
               final pending = orders.where((o) => o['status'] == 'pending').length;
               final processing = orders.where((o) => o['status'] == 'processing').length;
               final rating = _VdValidators.safeDouble(shop?['rating']);
+              final localCount = localCountAsync.valueOrNull ?? 0; // ✅ AJOUT
 
               return RefreshIndicator(
                 color: ThixPolicy.primary,
@@ -696,6 +766,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                           pending: pending,
                           processing: processing,
                           productsCount: products.length,
+                          localProductsCount: localCount, // ✅ AJOUT
                           rating: rating,
                         ),
                         const SizedBox(height: 24),
@@ -706,6 +777,11 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                         onNeedShop: () => _showInfo(
                           context.vdT('Créez d\'abord une boutique', 'Create a shop first'),
                         ),
+                        onCreateLocalProduct: _openCreateLocalProduct, // ✅ AJOUT
+                        onOpenLocalSpace: () {
+                          HapticFeedback.selectionClick();
+                          context.push('/market/local');
+                        },
                       ),
                       const SizedBox(height: 24),
                       if (hasShop)
@@ -936,11 +1012,13 @@ class _DualShopHeader extends StatelessWidget {
   }
 }
 
+// ✅ AJOUT : nouveau paramètre localProductsCount
 class _KpiGrid extends StatelessWidget {
   final int ordersCount;
   final int pending;
   final int processing;
   final int productsCount;
+  final int localProductsCount; // ✅ NOUVEAU
   final double rating;
 
   const _KpiGrid({
@@ -948,6 +1026,7 @@ class _KpiGrid extends StatelessWidget {
     required this.pending,
     required this.processing,
     required this.productsCount,
+    required this.localProductsCount, // ✅ NOUVEAU
     required this.rating,
   });
 
@@ -971,6 +1050,13 @@ class _KpiGrid extends StatelessWidget {
         'value': '$productsCount',
         'icon': Icons.inventory_2_outlined,
         'color': ThixPolicy.success,
+      },
+      // ✅ NOUVEAU KPI : produits locaux (couleur verte de l'espace local)
+      {
+        'label': context.vdT('Locaux', 'Local'),
+        'value': '$localProductsCount',
+        'icon': Icons.agriculture_rounded,
+        'color': kLocalGreen,
       },
       {
         'label': context.vdT('Note', 'Rating'),
@@ -1042,23 +1128,41 @@ class _ActionGrid extends StatelessWidget {
   final bool hasShop;
   final Map<String, dynamic>? shop;
   final VoidCallback onNeedShop;
+  final VoidCallback onCreateLocalProduct; // ✅ AJOUT
+  final VoidCallback onOpenLocalSpace; // ✅ AJOUT
 
-  const _ActionGrid({required this.hasShop, required this.shop, required this.onNeedShop});
+  const _ActionGrid({
+    required this.hasShop,
+    required this.shop,
+    required this.onNeedShop,
+    required this.onCreateLocalProduct, // ✅ AJOUT
+    required this.onOpenLocalSpace, // ✅ AJOUT
+  });
 
   @override
   Widget build(BuildContext context) {
     final shopId = shop?['id']?.toString();
 
     final actions = <Map<String, dynamic>>[
+      // ✅ NOUVELLE ACTION : Produits locaux (en première position pour visibilité)
+      {
+        'icon': Icons.agriculture_rounded,
+        'label': context.vdT('Produit local', 'Local product'),
+        'color': kLocalGreen, // ✅ Vert de l'espace local
+        'onTap': onCreateLocalProduct,
+        'needShop': true,
+      },
       {
         'icon': Icons.inventory_2_outlined,
         'label': context.vdT('Produits', 'Products'),
+        'color': ThixPolicy.primary,
         'onTap': () => context.pushNamed('marketSell'),
         'needShop': true,
       },
       {
         'icon': Icons.shopping_bag_outlined,
         'label': context.vdT('Commandes', 'Orders'),
+        'color': ThixPolicy.primary,
         'onTap': () {
           try {
             context.push('/market/vendor/orders');
@@ -1071,18 +1175,21 @@ class _ActionGrid extends StatelessWidget {
       {
         'icon': Icons.add_box_outlined,
         'label': context.vdT('Annonce', 'Listing'),
+        'color': ThixPolicy.primary,
         'onTap': () => context.pushNamed('marketPublishAnnouncement'),
         'needShop': true,
       },
       {
         'icon': Icons.live_tv_outlined,
         'label': context.vdT('Live', 'Live'),
+        'color': ThixPolicy.primary,
         'onTap': () => context.pushNamed('marketCreateLive'),
         'needShop': true,
       },
       {
         'icon': Icons.bar_chart_rounded,
         'label': context.vdT('Stats', 'Stats'),
+        'color': ThixPolicy.primary,
         'onTap': () {
           if (shopId != null && _VdValidators.isValidId(shopId)) {
             context.push('/market/shop/$shopId/stats');
@@ -1093,12 +1200,14 @@ class _ActionGrid extends StatelessWidget {
       {
         'icon': Icons.local_shipping_outlined,
         'label': context.vdT('Livraisons', 'Deliveries'),
+        'color': ThixPolicy.primary,
         'onTap': () => context.pushNamed('deliveryManagement'),
         'needShop': true,
       },
       {
         'icon': Icons.storefront_outlined,
         'label': context.vdT('Boutique', 'Shop'),
+        'color': ThixPolicy.primary,
         'onTap': () {
           if (shopId != null && _VdValidators.isValidId(shopId)) {
             context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
@@ -1111,12 +1220,21 @@ class _ActionGrid extends StatelessWidget {
       {
         'icon': Icons.settings_outlined,
         'label': context.vdT('Réglages', 'Settings'),
+        'color': ThixPolicy.primary,
         'onTap': () {
           if (shopId != null && _VdValidators.isValidId(shopId)) {
             context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
           }
         },
         'needShop': true,
+      },
+      // ✅ NOUVELLE ACTION : Accéder à l'espace local (pour voir ses produits)
+      {
+        'icon': Icons.eco_rounded,
+        'label': context.vdT('Espace local', 'Local space'),
+        'color': kLocalGreen,
+        'onTap': onOpenLocalSpace,
+        'needShop': false,
       },
     ];
 
@@ -1142,6 +1260,7 @@ class _ActionGrid extends StatelessWidget {
           children: actions.map((a) {
             final needShop = a['needShop'] == true;
             final enabled = !needShop || hasShop;
+            final color = (a['color'] as Color?) ?? ThixPolicy.primary;
             return Semantics(
               button: true,
               label: a['label'] as String,
@@ -1163,12 +1282,17 @@ class _ActionGrid extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: ThixPolicy.card,
                       borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
+                      border: Border.all(
+                        // ✅ Bordure verte pour les actions locales
+                        color: color == kLocalGreen
+                            ? kLocalGreen.withOpacity(0.5)
+                            : ThixPolicy.border.withOpacity(0.6),
+                      ),
                     ),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(a['icon'] as IconData, size: 26, color: ThixPolicy.primary),
+                        Icon(a['icon'] as IconData, size: 26, color: color),
                         const SizedBox(height: 6),
                         Text(
                           a['label'] as String,
@@ -1488,7 +1612,6 @@ class _DashboardOrderDetailsSheet extends ConsumerStatefulWidget {
   ConsumerState<_DashboardOrderDetailsSheet> createState() => _DashboardOrderDetailsSheetState();
 }
 
-// ✅ Chargements INDÉPENDANTS + fallback 3 niveaux pour les articles
 class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDetailsSheet> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _items = [];
@@ -1623,7 +1746,6 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
 
     final notProvided = context.vdT('Non renseigné', 'Not provided');
 
-    // ── Résolution défensive : ordre → adresse → profil ──
     final clientName = _VdValidators.sanitize(
       _pick(o, ['customer_name']).isNotEmpty
           ? _pick(o, ['customer_name'])
