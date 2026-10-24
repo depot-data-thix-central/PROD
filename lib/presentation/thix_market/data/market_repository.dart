@@ -287,12 +287,21 @@ class MarketRepository {
     try {
       return await _withRetry(() async {
         debugPrint('[MarketRepo] 🛍️ Fetching my shop ID');
+        // ✅ FIX : liste (pas maybeSingle) → fonctionne avec 1 OU plusieurs boutiques
         final res = await _db
             .from('shops')
-            .select('id')
+            .select('id,type')
             .eq('owner_id', _uid!)
-            .maybeSingle();
-        final id = res?['id']?.toString();
+            .order('created_at', ascending: true)
+            .limit(5);
+        final list = List<Map<String, dynamic>>.from(res as List);
+        if (list.isEmpty) return null;
+        // ✅ Priorité à la boutique (non-supermarché)
+        final pick = list.firstWhere(
+          (s) => s['type']?.toString() != 'supermarket',
+          orElse: () => list.first,
+        );
+        final id = pick['id']?.toString();
         debugPrint('[MarketRepo] ✓ My shop ID: ${id ?? "none"}');
         return id;
       }, label: 'fetchMyShopId');
