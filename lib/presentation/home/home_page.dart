@@ -665,7 +665,6 @@ class _HomeContent extends StatelessWidget {
             badgeCountsStream: badgeCountsStream,
             onProfileTap: onProfileTap,
             onAccountRequest: onAccountRequest,
-            // ✅ Recherche rétractable dans le header
             searchController: searchController,
             isSearching: searching,
             onVerify: onSearchVerify,
@@ -707,40 +706,24 @@ class _HomeContent extends StatelessWidget {
             ),
           ),
         ),
-        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-        // Constellation dans un panneau verre clair
+        const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
+        // ✅ Constellation directement sur le fond (plus de Container/support)
         SliverToBoxAdapter(
-          child: Padding(
-            padding: hPad,
-            child: Container(
-              padding: const EdgeInsets.fromLTRB(8, 10, 8, 14),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(32),
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Colors.white.withOpacity(0.92), HomeTheme.skyMist.withOpacity(0.85)],
-                ),
-                border: Border.all(color: Colors.white, width: 1.4),
-                boxShadow: HomeTheme.softShadow(0.09),
-              ),
-              child: StreamBuilder<SectionBadgeCounts>(
-                stream: badgeCountsStream,
-                builder: (context, snap) {
-                  final counts = snap.data ?? SectionBadgeCounts.zero;
-                  return HomeServicesConstellation(
-                    counts: counts,
-                    avatarUrl: photoUrl,
-                    onServiceTap: onServiceTap,
-                    onHomeTap: onProfileTap,
-                    onMiniAppsTap: onMiniAppsTap,
-                    onDocumentsTap: onDocumentTap,
-                    onProfileTap: onProfileTap,
-                    onScanTap: onScanQrTap,
-                  );
-                },
-              ),
-            ),
+          child: StreamBuilder<SectionBadgeCounts>(
+            stream: badgeCountsStream,
+            builder: (context, snap) {
+              final counts = snap.data ?? SectionBadgeCounts.zero;
+              return HomeServicesConstellation(
+                counts: counts,
+                avatarUrl: photoUrl,
+                onServiceTap: onServiceTap,
+                onHomeTap: onProfileTap,
+                onMiniAppsTap: onMiniAppsTap,
+                onDocumentsTap: onDocumentTap,
+                onProfileTap: onProfileTap,
+                onScanTap: onScanQrTap,
+              );
+            },
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
