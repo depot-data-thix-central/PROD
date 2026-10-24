@@ -2418,6 +2418,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> with WidgetsBindingObse
     Widget content;
     if (item.messages.length > 1) {
       content = ImageGroupBubble(images: item.messages, isOwn: isOwn, onOpenGallery: (list, idx) => _showPhotoPager(list, idx));
+    } else if (isProductRefMessage(firstMsg)) {
+      // ✅ Carte produit au lieu du base64 brut
+      final parsed = chatParseRef(firstMsg);
+      content = ProductRefBubble(
+        product: parsed.product!,
+        isOwn: isOwn,
+        time: firstMsg.createdAt.toLocal(),
+        isRead: firstMsg.isRead || firstMsg.isDelivered,
+        onLongPress: () => _showMessageMenu(firstMsg, l10n),
+      );
     } else if (type == 'call_audio' || type == 'call_video') {
       content = CallBubble(message: firstMsg, isOwn: isOwn, onCallback: () => _startCall(type == 'call_video' ? CallType.video : CallType.audio));
     } else if (type == 'system_screenshot') {
