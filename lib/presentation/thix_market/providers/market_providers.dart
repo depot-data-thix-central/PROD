@@ -1,6 +1,8 @@
 // lib/presentation/thix_market/providers/market_providers.dart
 // ============================================================================
-// MARKET PROVIDERS — Production Enterprise v3
+// MARKET PROVIDERS — Production Enterprise v4
+// ============================================================================
+// ✅ Exclusion des produits locaux du fil principal (is_local = true)
 // ============================================================================
 
 import 'dart:async';
@@ -156,7 +158,7 @@ final unreadProvider = FutureProvider.autoDispose<int>((ref) async {
 });
 
 // ============================================================================
-// PROVIDER "POUR VOUS"
+// PROVIDER "POUR VOUS" — FEED PRINCIPAL (SANS PRODUITS LOCAUX)
 // ============================================================================
 class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   int _page = 0;
@@ -169,12 +171,14 @@ class ForYouNotifier extends AsyncNotifier<List<Map<String, dynamic>>> {
   Future<List<Map<String, dynamic>>> _fetchPage(int page) async {
     final db = ref.read(supabaseClientProvider);
     final res = await db
-    .from('products')
-    .select('*, shop:shops!inner(id, name, type)')
-    .eq('status', 'active')
-    .neq('shop.type', 'supermarket')
-    .order('created_at', ascending: false)
-    .range(page * _kDefaultPageSize, (page + 1) * _kDefaultPageSize - 1);
+        .from('products')
+        .select('*, shop:shops!inner(id, name, logo_url, city, type)')
+        .eq('status', 'active')
+        .neq('shop.type', 'supermarket')
+        .not('is_local', 'is', true) // ✅ AJOUT : exclut les produits locaux
+        .order('created_at', ascending: false)
+        .range(page * _kDefaultPageSize, (page + 1) * _kDefaultPageSize - 1)
+        .timeout(_kRequestTimeout);
     return List<Map<String, dynamic>>.from(res as List);
   }
 
@@ -250,7 +254,7 @@ final forYouProvider =
 );
 
 // ============================================================================
-// PROVIDER AGRÉGÉ (flash + forYou, dedup)
+// PROVIDER AGRÉGÉ (flash + forYou + featured, dedup)
 // ============================================================================
 final allMarketProductsProvider = Provider<List<Map<String, dynamic>>>((ref) {
   final flash = ref.watch(flashSalesProvider).valueOrNull ?? const <Map<String, dynamic>>[];
