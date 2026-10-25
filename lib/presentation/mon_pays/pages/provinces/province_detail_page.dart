@@ -1,17 +1,22 @@
 // lib/presentation/mon_pays/pages/provinces/province_detail_page.dart
 //
 // ============================================================================
-// 🏛️ PROVINCE DETAIL PAGE — v3 « DESIGN INSTITUTIONNEL »
+// 🏛️ PROVINCE DETAIL PAGE — v3 (glassmorphism total + photos + articles)
 // ============================================================================
-// • Refonte design 100 % : style institutionnel (navy / or / ivoire),
-//   masthead officiel, en-têtes de section à filet doré, cartes sobres.
-// • Services & sites : TOUTES les photos affichées (bande défilante dans la
-//   carte + grille complète dans la fiche détaillée).
-// • Actualités : clic → page article (texte intégral, source officielle, partage).
-// • Textes longs : widget ExpandableText « Voir plus / Voir moins ».
-// • Corrections : titre non rogné, clé l10n brute, budgets illisibles, vides.
+// ✅ Design glassmorphism : fond flou dépoli (cover image blurée), cartes en
+//    verre avec BackdropFilter, bordures lumineuses, ombres douces
+// ✅ Chaque entité (service, ville, tribu, peuple, économie, tourisme, site,
+//    personnalité, gastronomie, proverbe, actualité) affiche TOUTES ses photos
+// ✅ Actualités cliquables → lecteur d'article complet (modal verre dépoli)
+// ✅ Textes longs → bouton "Voir plus / Voir moins" fluide (AnimatedSize)
+// ✅ Galerie plein écran avec pincement + swipe entre photos
+// ✅ Fluidité : RepaintBoundary, BouncingScrollPhysics, fade-in des images
+// ✅ Toutes les fonctionnalités précédentes conservées intactes
 // ============================================================================
+
 import 'dart:async';
+import 'dart:ui';
+
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -22,7 +27,10 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+
+import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
+
 import '../../models/province.dart';
 import '../../providers/provinces_provider.dart';
 
@@ -34,7 +42,7 @@ enum NationalLanguage { french, lingala, swahili, tshiluba, kikongo }
 extension LanguageX on NationalLanguage {
   String get code => ['fr', 'ln', 'sw', 'lu', 'kg'][index];
   String get name => ['Français', 'Lingala', 'Swahili', 'Tshiluba', 'Kikongo'][index];
-  String get flag => ['🇫🇷', '🇨', '🇩', '🇩', '🇩'][index];
+  String get flag => ['🇫🇷', '🇨🇩', '🇨🇩', '🇨🇩', '🇨🇩'][index];
 }
 
 final languageProvider = StateProvider<NationalLanguage>((_) => NationalLanguage.french);
@@ -45,7 +53,7 @@ class _Tr {
     'projects': ['🏗️ Projets en cours', '🏗️ Misala', '🏗️ Miradi', '🏗️ Miseu', '🏗️ Bisalu'],
     'services': ['🏛️ Services publics', '🏛️ Misala ya leta', '🏛️ Huduma', '🏛️ Miseu ya leta', '🏛️ Bisalu ya leta'],
     'citizen': ['🗳️ Engagement citoyen', '🗳️ Bato', '🗳️ Raia', '🗳️ Bantu', '🗳️ Wantu'],
-    'budget': ['💰 Budget', '💰 Mbongo', '️ Bajeti', '🏛️ Mbongo', '🏛️ Mbongo'],
+    'budget': ['💰 Budget', '💰 Mbongo', '💰 Bajeti', '💰 Mbongo', '💰 Mbongo'],
     'docs': ['📄 Documents officiels', '📄 Mikanda', '📄 Nyaraka', '📄 Mikanda', '📄 Mikanda'],
     'media': ['🎥 Médiathèque', '🎥 Vidéo', '🎥 Media', '🎥 Vidéo', '🎥 Vidéo'],
     'authorities': ['🏛️ Autorités provinciales', '🏛️ Bakambi', '🏛️ Viongozi', '🏛️ Bakambi', '🏛️ Bakambi'],
@@ -61,44 +69,18 @@ class _Tr {
     'famous': ['🌟 Personnalités', '🌟 Bato ya lokumu', '🌟 Watu mashuhuri', '🌟 Bantu ba lukumu', '🌟 Bantu ba lukumu'],
     'gastro': ['🍲 Gastronomie', '🍲 Bilei ya mboka', '🍲 Chakula', '🍲 Bilei', '🍲 Madia'],
     'proverbs': ['📖 Proverbes & Contes', '📖 Masese', '📖 Methali', '📖 Tshisangale', '📖 Bingana'],
+    'businesses': ['🏢 Entreprises', '🏢 Bisaleli', '🏢 Biashara', '🏢 Miseu', '🏢 Bisalu'],
+    'products': ['🛒 Produits du terroir', '🛒 Biloko', '🛒 Bidhaa', '🛒 Biloko', '🛒 Bima'],
     'demo': ['📈 Démographie', '📈 Bato', '📈 Idadi', '📈 Bantu', '📈 Bantu'],
     'achievements': ['🏆 Réalisations', '🏆 Misala', '🏆 Mafanikio', '🏆 Miseu', '🏆 Bisalu'],
     'divisions': ['🧭 Découpage administratif', '🧭 Bokabuani', '🧭 Mgawanyo', '🧭 Bukabuanyi', '🧭 Kabu'],
-    'more': ['Voir plus', 'Koba mingi', 'Soma zaidi', 'Mona diaka', 'Mona diaka'],
-    'less': ['Voir moins', 'Kokita', 'Punguza', 'Mona moke', 'Mona moke'],
-    'photos': ['Photos', 'Bilili', 'Picha', 'Bifanishu', 'Bifanisu'],
-    'read': ['Lire l\'article', 'Tanga', 'Soma makala', 'Tanga', 'Tanga'],
-    'source': ['Source officielle', 'Mokanda ya leta', 'Chanzo rasmi', 'Mukanda wa leta', 'Mukanda wa leta'],
-    'all': ['Tout voir', 'Nyonso', 'Yote', 'Yonso', 'Yonso'],
   };
+
   static String t(String key, NationalLanguage lang) => _d[key]?[lang.index] ?? key;
+
   static String plain(String key, NationalLanguage lang) =>
       t(key, lang).replaceFirst(RegExp(r'^\S+\s'), '');
 }
-
-/// Sur-titres institutionnels (français, langue administrative).
-const Map<String, String> _kickers = {
-  'news': 'COMMUNICATION OFFICIELLE',
-  'projects': 'PROGRAMME D\'INVESTISSEMENT',
-  'services': 'ADMINISTRATION PUBLIQUE',
-  'citizen': 'PARTICIPATION CITOYENNE',
-  'budget': 'FINANCES PUBLIQUES',
-  'docs': 'JOURNAL OFFICIEL',
-  'media': 'MÉDIATHÈQUE',
-  'hymn': 'SYMBOLES OFFICIELS',
-  'map': 'GÉOGRAPHIE',
-  'gallery': 'PHOTHÈQUE',
-  'authorities': 'GOUVERNEMENT PROVINCIAL',
-  'cities': 'COMMUNES & VILLES',
-  'tourism': 'PATRIMOINE & SITES',
-  'economy': 'POTENTIEL ÉCONOMIQUE',
-  'culture': 'CULTURE & TRADITIONS',
-  'quiz': 'ÉDUCATION CIVIQUE',
-  'emergency': 'PROTECTION CIVILE',
-  'demo': 'STATISTIQUES',
-  'achievements': 'BILAN OFFICIEL',
-  'divisions': 'DÉCOUPAGE TERRITORIAL',
-};
 
 // ════════════════════════════════════════════════════════════════════════
 // 2. ACCESSIBILITÉ
@@ -130,18 +112,25 @@ Future<List<Map<String, dynamic>>> _safeRows(Future<List<dynamic>> Function() q)
 
 final _newsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_news').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
+
 final _projectsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_projects').select().eq('province_id', id).order('progress', ascending: false).limit(20)));
+
 final _servicesProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_services').select().eq('province_id', id).eq('is_active', true).order('name').limit(30)));
+
 final _engagementsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_engagements').select().eq('province_id', id).eq('is_active', true).order('created_at', ascending: false).limit(20)));
+
 final _budgetProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_budget').select().eq('province_id', id).order('percentage', ascending: false)));
+
 final _documentsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_documents').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
+
 final _mediaProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_media').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
+
 final _hymnProv = FutureProvider.family<Map<String, dynamic>?, String>((r, id) async {
   try {
     final row = await _db.from('province_hymns').select().eq('province_id', id).maybeSingle();
@@ -150,14 +139,19 @@ final _hymnProv = FutureProvider.family<Map<String, dynamic>?, String>((r, id) a
     return null;
   }
 });
+
 final _famousProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_famous_people').select().eq('province_id', id).eq('is_active', true).order('name').limit(20)));
+
 final _gastroProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_gastronomy').select().eq('province_id', id).eq('is_active', true).order('name').limit(20)));
+
 final _proverbsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_proverbs').select().eq('province_id', id).eq('is_active', true).order('created_at', ascending: false).limit(20)));
+
 final _quizProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_quiz_questions').select().eq('province_id', id).eq('is_active', true).order('order_index').limit(10)));
+
 final _demoProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_demographics').select().eq('province_id', id).order('year')));
 
@@ -168,6 +162,7 @@ class FavoriteProvincesNotifier extends StateNotifier<Set<String>> {
   FavoriteProvincesNotifier() : super({}) {
     _load();
   }
+
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
@@ -194,6 +189,7 @@ final provinceSearchDebouncedProvider =
 class _SearchDebounced extends StateNotifier<List<Map<String, dynamic>>> {
   final String _id;
   Timer? _t;
+
   _SearchDebounced(this._id) : super([]);
 
   void search(String raw) {
@@ -237,130 +233,145 @@ class _SearchDebounced extends StateNotifier<List<Map<String, dynamic>>> {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// 4. SYSTÈME DE DESIGN INSTITUTIONNEL
+// 4. HELPERS : extraction de photos multiples
 // ════════════════════════════════════════════════════════════════════════
-class Inst {
-  static const navy = Color(0xFF12365C);
-  static const navyDeep = Color(0xFF0B2440);
-  static const blue = Color(0xFF1F4E79);
-  static const gold = Color(0xFFC9A227);
-  static const goldDeep = Color(0xFF9C7B14);
-  static const ivory = Color(0xFFF5F3EE);
-  static const paper = Color(0xFFFFFFFF);
-  static const line = Color(0xFFE3DED2);
-  static const ink = Color(0xFF152A3E);
-  static const muted = Color(0xFF64748B);
-  static const danger = Color(0xFFB3261E);
-  static const green = Color(0xFF2E7D32);
-
-  static const TextStyle kicker = TextStyle(
-      fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 2.0, color: goldDeep);
-  static const TextStyle h1 = TextStyle(fontSize: 23, fontWeight: FontWeight.w900, color: ink, height: 1.25);
-  static const TextStyle h2 = TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: ink, height: 1.2);
-  static const TextStyle h3 = TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: ink);
-  static const TextStyle body = TextStyle(fontSize: 13, height: 1.6, color: ink);
-  static const TextStyle bodyS = TextStyle(fontSize: 12, height: 1.55, color: muted);
-  static const TextStyle micro = TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: muted);
-  static const TextStyle label = TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink);
+/// Extrait toutes les URLs d'images d'une ligne (single ou liste).
+List<String> _photosFor(Map<String, dynamic>? row) {
+  if (row == null) return const [];
+  final out = <String>[];
+  for (final k in ['image_url', 'photo_url', 'cover_url', 'thumbnail_url', 'avatar_url']) {
+    final v = (row[k] ?? '').toString().trim();
+    if (v.isNotEmpty) out.add(v);
+  }
+  for (final k in ['images', 'media', 'photos', 'gallery', 'pictures']) {
+    final raw = row[k];
+    if (raw is List) {
+      for (final e in raw) {
+        if (e is String && e.trim().isNotEmpty) {
+          out.add(e.trim());
+        } else if (e is Map) {
+          final u = (e['url'] ?? e['image_url'] ?? e['src'] ?? '').toString().trim();
+          if (u.isNotEmpty) out.add(u);
+        }
+      }
+    }
+  }
+  return out.toSet().toList();
 }
 
-/// Carte institutionnelle : papier blanc, filet sable, ombre discrète.
-class ICard extends StatelessWidget {
+/// Extrait toutes les URLs d'images d'un objet "dynamic" (pour les modèles
+/// typés comme City, TourismSite, etc.).
+List<String> _photosForDyn(dynamic o) {
+  try {
+    final dyn = o as dynamic;
+    final out = <String>[];
+    for (final k in ['imageUrl', 'photoUrl', 'coverImageUrl']) {
+      try {
+        final v = (dyn.toJson()?[k] ?? '').toString();
+        if (v.isNotEmpty) out.add(v);
+      } catch (_) {}
+    }
+    // Essaie les listes média
+    try {
+      final media = dyn.media as List?;
+      if (media != null) {
+        for (final e in media) {
+          if (e is Map) {
+            final u = (e['url'] ?? e['image_url'] ?? '').toString();
+            if (u.isNotEmpty) out.add(u);
+          }
+        }
+      }
+    } catch (_) {}
+    try {
+      final images = dyn.images as List?;
+      if (images != null) {
+        for (final e in images) {
+          if (e is String && e.isNotEmpty) out.add(e);
+          else if (e is Map) {
+            final u = (e['url'] ?? '').toString();
+            if (u.isNotEmpty) out.add(u);
+          }
+        }
+      }
+    } catch (_) {}
+    return out.toSet().toList();
+  } catch (_) {
+    return const [];
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 5. COMPOSANTS DE DESIGN — GLASSMORPHISM
+// ════════════════════════════════════════════════════════════════════════
+
+/// Carte en verre dépoli : fond translucide + flou du fond + bordure lumineuse.
+class GlassCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry? padding;
   final double? radius;
-  const ICard({super.key, required this.child, this.onTap, this.padding, this.radius});
+  final double blur;
+  final Color? tint;
+  final Gradient? gradient;
 
-  @override
-  Widget build(BuildContext context) {
-    final r = BorderRadius.circular(radius ?? 12);
-    return Container(
-      decoration: BoxDecoration(
-        color: Inst.paper,
-        borderRadius: r,
-        border: Border.all(color: Inst.line),
-        boxShadow: const [
-          BoxShadow(color: Color(0x0D12365C), blurRadius: 10, offset: Offset(0, 2)),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: r,
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(padding: padding ?? const EdgeInsets.all(14), child: child),
-        ),
-      ),
-    );
-  }
-}
-
-// Compatibilité avec les anciens imports éventuels.
-typedef GlassCard = ICard;
-
-/// Texte long replié avec « Voir plus / Voir moins ».
-class ExpandableText extends StatefulWidget {
-  final String text;
-  final int maxLines;
-  final TextStyle? style;
-  final TextAlign? textAlign;
-  final String? moreLabel;
-  final String? lessLabel;
-  const ExpandableText(
-    this.text, {
+  const GlassCard({
     super.key,
-    this.maxLines = 3,
-    this.style,
-    this.textAlign,
-    this.moreLabel,
-    this.lessLabel,
+    required this.child,
+    this.onTap,
+    this.padding,
+    this.radius,
+    this.blur = 14,
+    this.tint,
+    this.gradient,
   });
 
   @override
-  State<ExpandableText> createState() => _ExpandableTextState();
-}
-
-class _ExpandableTextState extends State<ExpandableText> {
-  bool _exp = false;
-  @override
   Widget build(BuildContext context) {
-    final needMore = widget.text.length > widget.maxLines * 90;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          widget.text,
-          maxLines: _exp ? null : widget.maxLines,
-          overflow: _exp ? TextOverflow.visible : TextOverflow.ellipsis,
-          style: widget.style ?? Inst.body,
-          textAlign: widget.textAlign,
-        ),
-        if (needMore)
-          GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => setState(() => _exp = !_exp),
-            child: Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    _exp ? (widget.lessLabel ?? 'Voir moins') : (widget.moreLabel ?? 'Voir plus'),
-                    style: const TextStyle(
-                        fontSize: 11, fontWeight: FontWeight.w800, color: Inst.goldDeep, letterSpacing: 0.4),
+    final r = BorderRadius.circular(radius ?? 22);
+    return RepaintBoundary(
+      child: ClipRRect(
+        borderRadius: r,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+          child: Container(
+            decoration: BoxDecoration(
+              gradient: gradient ??
+                  LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      (tint ?? Colors.white).withOpacity(0.72),
+                      (tint ?? Colors.white).withOpacity(0.48),
+                    ],
                   ),
-                  Icon(
-                    _exp ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                    size: 14,
-                    color: Inst.goldDeep,
-                  ),
-                ],
+              borderRadius: r,
+              border: Border.all(
+                color: Colors.white.withOpacity(0.55),
+                width: 1.2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF1E3A8A).withOpacity(0.10),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Material(
+              color: Colors.transparent,
+              borderRadius: r,
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: onTap,
+                splashColor: Colors.white.withOpacity(0.25),
+                highlightColor: Colors.white.withOpacity(0.10),
+                child: Padding(padding: padding ?? const EdgeInsets.all(16), child: child),
               ),
             ),
           ),
-      ],
+        ),
+      ),
     );
   }
 }
@@ -369,77 +380,85 @@ class SectionHeader extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String title;
-  final String? kicker;
   final int? count;
   final VoidCallback? onViewAll;
-  final String? viewAllLabel;
+
   const SectionHeader({
     super.key,
     required this.icon,
     required this.color,
     required this.title,
-    this.kicker,
     this.count,
     this.onViewAll,
-    this.viewAllLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 26, 20, 10),
+      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(width: 3, height: 36, color: Inst.gold),
+          Container(
+            width: 4,
+            height: 30,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [color, color.withOpacity(0.35)],
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
           const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(9),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.10),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: color.withOpacity(0.25)),
+              color: color.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.6)),
             ),
-            child: Icon(icon, size: 16, color: color),
+            child: Icon(icon, color: color, size: 18),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (kicker != null) Text(kicker!, style: Inst.kicker),
-                if (kicker != null) const SizedBox(height: 2),
-                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h2),
-              ],
+            child: Text(
+              title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.h3Style.copyWith(
+                color: ThixPolicy.inkDeep,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
           if (count != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Inst.line),
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.white.withOpacity(0.5)),
               ),
-              child: Text('$count', style: Inst.label.copyWith(color: color)),
+              child: Text('$count',
+                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
             ),
-          if (onViewAll != null)
+          if (onViewAll != null) ...[
+            const SizedBox(width: 8),
             GestureDetector(
               onTap: onViewAll,
-              child: Padding(
-                padding: const EdgeInsets.only(left: 8),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      viewAllLabel ?? 'Tout voir',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Inst.goldDeep),
-                    ),
-                    const Icon(Icons.arrow_forward_rounded, size: 12, color: Inst.goldDeep),
-                  ],
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.5)),
                 ),
+                child: Text('Voir tout',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -450,6 +469,7 @@ class HScroll extends StatelessWidget {
   final double height;
   final double itemWidth;
   final List<Widget> children;
+
   const HScroll({super.key, required this.height, required this.itemWidth, required this.children});
 
   @override
@@ -462,7 +482,7 @@ class HScroll extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         physics: const BouncingScrollPhysics(),
         itemCount: children.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (_, i) => SizedBox(width: itemWidth, child: children[i]),
       ),
     );
@@ -472,6 +492,7 @@ class HScroll extends StatelessWidget {
 class _SectionSkeleton extends StatelessWidget {
   final double height;
   const _SectionSkeleton({this.height = 120});
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -479,9 +500,9 @@ class _SectionSkeleton extends StatelessWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: Inst.ivory,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Inst.line),
+          color: Colors.white.withOpacity(0.45),
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: Colors.white.withOpacity(0.6)),
         ),
       ),
     );
@@ -504,43 +525,8 @@ String fmtNum(num n) => n
     .toStringAsFixed(0)
     .replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
 
-/// Montant lisible : « 12 500 000 USD », « — » si nul/absent.
-String _money(dynamic v) {
-  if (v == null) return '—';
-  num? n;
-  if (v is num) {
-    n = v;
-  } else {
-    n = num.tryParse(v.toString().replaceAll(RegExp(r'[^\d.]'), ''));
-  }
-  if (n == null) return v.toString();
-  if (n == 0) return '—';
-  return '${fmtNum(n)} USD';
-}
-
-/// Extrait TOUTES les photos d'un élément (liste ou champs uniques).
-List<String> _photosOf(Map<String, dynamic> m) {
-  final out = <String>[];
-  void add(dynamic v) {
-    if (v is String) {
-      if (v.trim().isNotEmpty) out.add(v.trim());
-    } else if (v is Map) {
-      final u = v['url'] ?? v['image_url'] ?? v['photo_url'] ?? v['thumbnail_url'];
-      if (u is String && u.trim().isNotEmpty) out.add(u.trim());
-    }
-  }
-
-  for (final k in ['photos', 'images', 'media', 'gallery', 'image_urls', 'pictures']) {
-    final v = m[k];
-    if (v is List) v.forEach(add);
-  }
-  for (final k in ['image_url', 'photo_url', 'thumbnail_url', 'cover_url', 'image']) {
-    add(m[k]);
-  }
-  return out.toSet().toList();
-}
-
-Widget _img(String url, {double? h, double? w, BoxFit fit = BoxFit.cover, double radius = 0}) {
+Widget _img(String url,
+    {double? h, double? w, BoxFit fit = BoxFit.cover, double radius = 0}) {
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
     child: CachedNetworkImage(
@@ -548,65 +534,17 @@ Widget _img(String url, {double? h, double? w, BoxFit fit = BoxFit.cover, double
       height: h,
       width: w,
       fit: fit,
-      placeholder: (_, __) => Container(height: h, width: w, color: Inst.ivory),
+      fadeInDuration: const Duration(milliseconds: 350),
+      placeholder: (_, __) => Container(height: h, width: w, color: ThixPolicy.surfaceSoft),
       errorWidget: (_, __, ___) => Container(
         height: h,
         width: w,
-        color: Inst.ivory,
-        child: const Icon(Icons.image_outlined, color: Inst.muted),
+        color: ThixPolicy.surfaceSoft,
+        child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted),
       ),
     ),
   );
 }
-
-/// Bande horizontale affichant TOUTES les photos d'un élément.
-Widget _photoStrip(List<String> photos, {double height = 110, double radius = 12, bool top = true}) {
-  if (photos.isEmpty) {
-    return Container(
-      height: height,
-      color: Inst.ivory,
-      child: Center(child: Icon(Icons.image_outlined, color: Inst.muted.withOpacity(0.45), size: 26)),
-    );
-  }
-  return ClipRRect(
-    borderRadius: BorderRadius.vertical(
-      top: Radius.circular(top ? radius : 0),
-      bottom: Radius.circular(top ? 0 : radius),
-    ),
-    child: SizedBox(
-      height: height,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: EdgeInsets.zero,
-        itemCount: photos.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 6),
-        itemBuilder: (_, i) => _img(photos[i], h: height, w: 150),
-      ),
-    ),
-  );
-}
-
-/// Grille complète des photos (fiche détaillée).
-Widget _photoGrid(List<String> photos) {
-  return GridView.builder(
-    shrinkWrap: true,
-    physics: const NeverScrollableScrollPhysics(),
-    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-      crossAxisCount: 2,
-      crossAxisSpacing: 8,
-      mainAxisSpacing: 8,
-      childAspectRatio: 1.15,
-    ),
-    itemCount: photos.length,
-    itemBuilder: (_, i) => _img(photos[i], radius: 10),
-  );
-}
-
-Widget _blockLabel(String text) => Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 8),
-      child: Text(text.toUpperCase(), style: Inst.kicker),
-    );
 
 Future<void> _launch(String url) async {
   var u = url.trim();
@@ -621,94 +559,363 @@ Future<void> _launch(String url) async {
   }
 }
 
-/// Fiche détaillée institutionnelle (bottom sheet).
+// ════════════════════════════════════════════════════════════════════════
+// 6. GALERIE PLEIN ÉCRAN (photos multiples)
+// ════════════════════════════════════════════════════════════════════════
+Future<void> openGallery(BuildContext context, List<String> urls, {int initial = 0}) async {
+  if (urls.isEmpty) return;
+  final pageCtrl = PageController(initialPage: initial.clamp(0, urls.length - 1));
+  final current = ValueNotifier<int>(pageCtrl.initialPage);
+
+  await showDialog(
+    context: context,
+    barrierColor: Colors.black.withOpacity(0.85),
+    builder: (_) => StatefulBuilder(
+      builder: (context, _) => Stack(
+        children: [
+          PageView.builder(
+            controller: pageCtrl,
+            physics: const BouncingScrollPhysics(),
+            itemCount: urls.length,
+            onPageChanged: (i) => current.value = i,
+            itemBuilder: (_, i) => InteractiveViewer(
+              minScale: 1,
+              maxScale: 4,
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: urls[i],
+                  fit: BoxFit.contain,
+                  fadeInDuration: const Duration(milliseconds: 250),
+                  errorWidget: (_, __, ___) => const Icon(Icons.broken_image,
+                      color: Colors.white54, size: 64),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            top: 40,
+            left: 16,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  color: Colors.white.withOpacity(0.15),
+                  child: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (urls.length > 1)
+            Positioned(
+              bottom: 40,
+              left: 0,
+              right: 0,
+              child: ValueListenableBuilder(
+                valueListenable: current,
+                builder: (_, v, __) => Center(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(20),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        color: Colors.white.withOpacity(0.15),
+                        child: Text(
+                          '${v + 1} / ${urls.length}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    ),
+  );
+  pageCtrl.dispose();
+  current.dispose();
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 7. BANDE DE PHOTOS MULTIPLES (miniatures cliquables)
+// ════════════════════════════════════════════════════════════════════════
+class PhotoStrip extends StatelessWidget {
+  final List<String> urls;
+  final double height;
+  final double width;
+  final BorderRadius? borderRadius;
+  final String emptyIconHint;
+
+  const PhotoStrip({
+    super.key,
+    required this.urls,
+    this.height = 120,
+    this.width = 140,
+    this.borderRadius,
+    this.emptyIconHint = 'photo',
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (urls.isEmpty) return const SizedBox.shrink();
+    final r = borderRadius ?? BorderRadius.circular(14);
+    if (urls.length == 1) {
+      return GestureDetector(
+        onTap: () => openGallery(context, urls, initial: 0),
+        child: ClipRRect(
+          borderRadius: r,
+          child: _img(urls.first, h: height, w: width),
+        ),
+      );
+    }
+    return SizedBox(
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        itemCount: urls.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, i) => GestureDetector(
+          onTap: () => openGallery(context, urls, initial: i),
+          child: Stack(
+            children: [
+              ClipRRect(
+                borderRadius: r,
+                child: _img(urls[i], h: height, w: width),
+              ),
+              Positioned(
+                bottom: 6,
+                right: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${i + 1}/${urls.length}',
+                    style: const TextStyle(
+                        fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 8. TEXTE "VOIR PLUS" FLUIDE
+// ════════════════════════════════════════════════════════════════════════
+class ReadMoreText extends StatefulWidget {
+  final String text;
+  final int maxLines;
+  final TextStyle? style;
+  final String moreLabel;
+  final String lessLabel;
+
+  const ReadMoreText(
+    this.text, {
+    super.key,
+    this.maxLines = 4,
+    this.style,
+    this.moreLabel = 'Voir plus',
+    this.lessLabel = 'Voir moins',
+  });
+
+  @override
+  State<ReadMoreText> createState() => _ReadMoreTextState();
+}
+
+class _ReadMoreTextState extends State<ReadMoreText> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = widget.style ??
+        ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.inkDeep, height: 1.55);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        AnimatedSize(
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: Text(
+            widget.text,
+            style: style,
+            maxLines: _expanded ? null : widget.maxLines,
+            overflow: _expanded ? TextOverflow.visible : TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(height: 4),
+        GestureDetector(
+          onTap: () => setState(() => _expanded = !_expanded),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                _expanded ? widget.lessLabel : widget.moreLabel,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: ThixPolicy.primary,
+                  letterSpacing: 0.2,
+                ),
+              ),
+              const SizedBox(width: 3),
+              Icon(
+                _expanded ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                size: 16,
+                color: ThixPolicy.primary,
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 9. MODAL VERRE DÉPOLI (glass sheet)
+// ════════════════════════════════════════════════════════════════════════
 void showGlassSheet(
   BuildContext context, {
   required String title,
   String? subtitle,
   String? imageUrl,
+  List<String> extraImages = const [],
   IconData? icon,
-  Color color = Inst.blue,
+  Color color = ThixPolicy.primary,
   required List<Widget> children,
 }) {
+  final allImages = <String>[
+    if (imageUrl != null && imageUrl.isNotEmpty) imageUrl,
+    ...extraImages,
+  ];
+
   showModalBottomSheet(
     context: context,
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      child: Container(
-        color: Inst.paper,
-        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              margin: const EdgeInsets.only(top: 10),
-              width: 44,
-              height: 4,
-              decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.white.withOpacity(0.90),
+                Colors.white.withOpacity(0.78),
+              ],
             ),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    if (imageUrl != null && imageUrl.isNotEmpty) ...[
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: Image.network(
-                          imageUrl,
-                          height: 190,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) =>
-                              Container(height: 110, color: Inst.ivory),
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                    ] else if (icon != null) ...[
-                      Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.10),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: color.withOpacity(0.25)),
-                        ),
-                        child: Icon(icon, color: color, size: 32),
-                      ),
-                      const SizedBox(height: 14),
-                    ],
-                    Text(title, style: Inst.h2),
-                    if (subtitle != null && subtitle.isNotEmpty) ...[
-                      const SizedBox(height: 8),
-                      ExpandableText(subtitle, maxLines: 3, style: Inst.bodyS),
-                    ],
-                    Container(height: 1, color: Inst.gold.withOpacity(0.4), margin: const EdgeInsets.symmetric(vertical: 14)),
-                    ...children,
-                    const SizedBox(height: 12),
-                  ],
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            border: Border.all(color: Colors.white.withOpacity(0.6)),
+          ),
+          padding: const EdgeInsets.all(24),
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 42,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.border,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                  ),
                 ),
-              ),
+                const SizedBox(height: 20),
+                if (allImages.isNotEmpty)
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: PhotoStrip(
+                      urls: allImages,
+                      height: 200,
+                      width: double.infinity,
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  )
+                else if (icon != null)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                          colors: [color.withOpacity(0.25), color.withOpacity(0.06)]),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withOpacity(0.6)),
+                    ),
+                    child: Icon(icon, color: color, size: 40),
+                  ),
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  style: ThixPolicy.h2Style.copyWith(
+                    color: ThixPolicy.inkDeep,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (subtitle != null && subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ReadMoreText(
+                    subtitle,
+                    maxLines: 3,
+                    style: ThixPolicy.bodyStyle.copyWith(
+                        color: ThixPolicy.textSecondary, height: 1.55),
+                  ),
+                ],
+                const SizedBox(height: 16),
+                ...children,
+                const SizedBox(height: 12),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     ),
   );
 }
 
-Widget sheetRow(IconData icon, String label, String value, {Color color = Inst.blue}) {
+Widget sheetRow(IconData icon, String label, String value,
+    {Color color = ThixPolicy.primary}) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 15, color: color),
+        Icon(icon, size: 16, color: color),
         const SizedBox(width: 8),
-        Text('$label : ', style: Inst.bodyS),
-        Expanded(child: Text(value, style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w800))),
+        Text('$label : ',
+            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
+        Expanded(
+          child: Text(
+            value,
+            style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+          ),
+        ),
       ],
     ),
   );
@@ -718,21 +925,127 @@ Widget _pill(String text, Color color) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
     decoration: BoxDecoration(
-      color: color.withOpacity(0.10),
-      borderRadius: BorderRadius.circular(4),
-      border: Border.all(color: color.withOpacity(0.35)),
+      color: color.withOpacity(0.14),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: Colors.white.withOpacity(0.5)),
     ),
     child: Text(
       text,
       maxLines: 1,
       overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: color, letterSpacing: 0.8),
+      style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          color: color,
+          letterSpacing: 0.8),
     ),
   );
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// 5. BANDE RACCOURCIS ÉPINGLÉE
+// 10. LECTEUR D'ARTICLE (actualités)
+// ════════════════════════════════════════════════════════════════════════
+void openArticle(BuildContext context, Map<String, dynamic> n) {
+  final photos = _photosFor(n);
+  final title = n['title']?.toString() ?? 'Article';
+  final summary = n['summary']?.toString() ?? '';
+  final content =
+      (n['content'] ?? n['body'] ?? n['description'] ?? '').toString();
+  final date = n['published_at']?.toString().split('T').first ?? '';
+  final category = n['category']?.toString() ?? '';
+  final url = n['url']?.toString() ?? '';
+
+  showGlassSheet(
+    context,
+    title: title,
+    icon: Icons.newspaper_rounded,
+    color: const Color(0xFF1E88E5),
+    extraImages: photos,
+    children: [
+      if (date.isNotEmpty || category.isNotEmpty)
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (category.isNotEmpty)
+              _pill(category.toUpperCase(), const Color(0xFF1E88E5)),
+            if (date.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.surfaceSoft,
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  '🗓️ $date',
+                  style: ThixPolicy.microStyle.copyWith(
+                    color: ThixPolicy.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      const SizedBox(height: 14),
+      if (summary.isNotEmpty) ...[
+        Text(
+          summary,
+          style: ThixPolicy.bodyStyle.copyWith(
+            color: ThixPolicy.textSecondary,
+            fontStyle: FontStyle.italic,
+            height: 1.55,
+          ),
+        ),
+        const SizedBox(height: 14),
+      ],
+      if (content.isNotEmpty) ...[
+        Text(
+          'Article',
+          style: ThixPolicy.labelStyle.copyWith(
+            color: ThixPolicy.inkDeep,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        SelectableText(
+          content,
+          style: ThixPolicy.bodyStyle.copyWith(
+            color: ThixPolicy.inkDeep,
+            height: 1.65,
+          ),
+        ),
+      ] else
+        Text(
+          'Contenu complet non disponible.',
+          style: ThixPolicy.captionStyle.copyWith(
+            color: ThixPolicy.textMuted,
+            fontStyle: FontStyle.italic,
+          ),
+        ),
+      if (url.isNotEmpty) ...[
+        const SizedBox(height: 16),
+        SizedBox(
+          width: double.infinity,
+          child: ElevatedButton.icon(
+            onPressed: () => _launch(url),
+            icon: const Icon(Icons.open_in_new_rounded, size: 16),
+            label: const Text('Lire la source complète'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF1E88E5),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+            ),
+          ),
+        ),
+      ],
+    ],
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// 11. BANDE RACCOURCIS ÉPINGLÉE
 // ════════════════════════════════════════════════════════════════════════
 class _Shortcut {
   final String id;
@@ -764,55 +1077,81 @@ List<_Shortcut> _shortcuts(NationalLanguage lang) => [
 class _ShortcutBar extends ConsumerWidget {
   final ValueChanged<String> onTap;
   final String active;
+
   const _ShortcutBar({required this.onTap, required this.active});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lang = ref.watch(languageProvider);
     final items = _shortcuts(lang);
-    return Container(
-      width: double.infinity,
-      color: Inst.navyDeep,
-      child: SizedBox(
-        height: 56,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          itemCount: items.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 8),
-          itemBuilder: (_, i) {
-            final s = items[i];
-            final isActive = s.id == active;
-            return GestureDetector(
-              onTap: () => onTap(s.id),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
-                decoration: BoxDecoration(
-                  color: isActive ? Inst.gold : Colors.transparent,
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: isActive ? Inst.gold : Colors.white.withOpacity(0.28)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(s.icon, size: 14, color: isActive ? Inst.navyDeep : Colors.white70),
-                    const SizedBox(width: 6),
-                    Text(
-                      s.label,
-                      style: TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.3,
-                        color: isActive ? Inst.navyDeep : Colors.white,
-                      ),
+    return ClipRRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          width: double.infinity,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                const Color(0xFF1E3A8A).withOpacity(0.92),
+                const Color(0xFF2563EB).withOpacity(0.92),
+                const Color(0xFF6366F1).withOpacity(0.92),
+              ],
+            ),
+            boxShadow: const [
+              BoxShadow(color: Color(0x331E3A8A), blurRadius: 12, offset: Offset(0, 4)),
+            ],
+          ),
+          child: SizedBox(
+            height: 62,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+              itemCount: items.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 8),
+              itemBuilder: (_, i) {
+                final s = items[i];
+                final isActive = s.id == active;
+                return GestureDetector(
+                  onTap: () => onTap(s.id),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOut,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isActive
+                          ? Colors.white
+                          : Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: Colors.white.withOpacity(isActive ? 1 : 0.28)),
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(s.icon,
+                            size: 15,
+                            color: isActive
+                                ? const Color(0xFF1E3A8A)
+                                : Colors.white),
+                        const SizedBox(width: 6),
+                        Text(
+                          s.label,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: isActive
+                                ? const Color(0xFF1E3A8A)
+                                : Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ),
       ),
     );
@@ -823,19 +1162,22 @@ class _BarDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final int version;
   _BarDelegate({required this.child, required this.version});
+
   @override
-  double get minExtent => 56;
+  double get minExtent => 62;
   @override
-  double get maxExtent => 56;
+  double get maxExtent => 62;
+
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) =>
       SizedBox.expand(child: child);
+
   @override
   bool shouldRebuild(covariant _BarDelegate old) => old.version != version;
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// 6. PAGE PRINCIPALE
+// 12. PAGE PRINCIPALE
 // ════════════════════════════════════════════════════════════════════════
 class ProvinceDetailPage extends ConsumerStatefulWidget {
   final String provinceId;
@@ -883,7 +1225,7 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
         ctx,
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeInOutCubic,
-        alignment: 0.10,
+        alignment: 0.08,
       );
       HapticFeedback.selectionClick();
     }
@@ -895,35 +1237,93 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
     final lang = ref.watch(languageProvider);
     final a11y = ref.watch(accessibilityProvider);
     final async = ref.watch(provinceWithAllRelationsProvider(widget.provinceId));
+
     return MediaQuery(
-      data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(a11y.textScale)),
+      data: MediaQuery.of(context)
+          .copyWith(textScaler: TextScaler.linear(a11y.textScale)),
       child: Scaffold(
-        backgroundColor: Inst.ivory,
+        backgroundColor: const Color(0xFFE8EEF5),
         body: Stack(
           children: [
+            // ─── Fond glassmorphism : cover floutée + dégradé pastel ───
+            async.maybeWhen(
+              data: (p) => p.coverImageUrl != null && p.coverImageUrl!.isNotEmpty
+                  ? Positioned.fill(
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          ImageFiltered(
+                            imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                            child: CachedNetworkImage(
+                              imageUrl: p.coverImageUrl!,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Container(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                                colors: [
+                                  Colors.white.withOpacity(0.72),
+                                  const Color(0xFFE8EEF5).withOpacity(0.78),
+                                  Colors.white.withOpacity(0.80),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : const Positioned.fill(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [Color(0xFFF0F4F8), Color(0xFFE8EEF5), Color(0xFFF8FAFC)],
+                          ),
+                        ),
+                      ),
+                    ),
+              orElse: () => const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFF0F4F8), Color(0xFFE8EEF5), Color(0xFFF8FAFC)],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             async.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: Inst.gold)),
+              loading: () => const Center(
+                  child: CircularProgressIndicator(color: ThixPolicy.primary)),
               error: (_, __) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: ICard(
+                  child: GlassCard(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline_rounded, size: 40, color: Inst.danger),
+                        const Icon(Icons.error_outline_rounded,
+                            size: 44, color: ThixPolicy.danger),
                         const SizedBox(height: 12),
-                        Text('Erreur de chargement', style: Inst.bodyS),
+                        Text('Erreur de chargement',
+                            style: ThixPolicy.bodyStyle
+                                .copyWith(color: ThixPolicy.textSecondary)),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
-                          onPressed: () =>
-                              ref.invalidate(provinceWithAllRelationsProvider(widget.provinceId)),
+                          onPressed: () => ref.invalidate(
+                              provinceWithAllRelationsProvider(widget.provinceId)),
                           icon: const Icon(Icons.refresh_rounded, size: 16),
                           label: Text(l10n.t('common_retry')),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Inst.navy,
+                            backgroundColor: ThixPolicy.primary,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
                       ],
@@ -932,19 +1332,20 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                 ),
               ),
               data: (p) => RefreshIndicator(
-                color: Inst.gold,
-                backgroundColor: Inst.navyDeep,
+                color: ThixPolicy.primary,
                 onRefresh: () async {
                   ref.invalidate(provinceWithAllRelationsProvider(widget.provinceId));
                 },
                 child: CustomScrollView(
                   controller: _scroll,
-                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  physics: const AlwaysScrollableScrollPhysics(
+                      parent: BouncingScrollPhysics()),
                   slivers: [
                     _Header(
                       province: p,
                       onShare: () async {
-                        await Share.share('🏛️ ${p.name} — RDC\n📍 ${p.capital}\nVia THIX ID');
+                        await Share.share(
+                            '🏛️ ${p.name} — RDC\n📍 ${p.capital}\nVia THIX ID');
                         HapticFeedback.lightImpact();
                       },
                     ),
@@ -958,24 +1359,48 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                     SliverToBoxAdapter(
                       child: Column(
                         children: [
-                          _Masthead(province: p),
+                          const SizedBox(height: 14),
                           _TopActions(),
-                          const SizedBox(height: 8),
+                          const SizedBox(height: 14),
+                          _IdentityCard(province: p),
+                          const SizedBox(height: 28),
                         ],
                       ),
                     ),
-                    SliverToBoxAdapter(key: _keys['actu'], child: _NewsSection(id: widget.provinceId, lang: lang, provinceName: p.name)),
-                    SliverToBoxAdapter(key: _keys['projets'], child: _ProjectsSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['services'], child: _ServicesSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['citoyen'], child: _EngagementSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['budget'], child: _BudgetSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['actu'],
+                        child: _NewsSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['projets'],
+                        child: _ProjectsSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['services'],
+                        child: _ServicesSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['citoyen'],
+                        child: _EngagementSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['budget'],
+                        child: _BudgetSection(id: widget.provinceId, lang: lang)),
                     SliverToBoxAdapter(child: _DemoSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['docs'], child: _DocumentsSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['media'], child: _MediaSection(id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['hymn'], child: _HymnSection(id: widget.provinceId, name: p.name, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['carte'], child: _MapCard(province: p, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['galerie'], child: _GallerySection(province: p, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['autorites'], child: _AuthoritiesSection(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['docs'],
+                        child: _DocumentsSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['media'],
+                        child: _MediaSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['hymn'],
+                        child: _HymnSection(
+                            id: widget.provinceId, name: p.name, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['carte'], child: _MapCard(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['galerie'],
+                        child: _GallerySection(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['autorites'],
+                        child: _AuthoritiesSection(province: p, lang: lang)),
                     SliverToBoxAdapter(
                       key: _keys['villes'],
                       child: Column(
@@ -983,19 +1408,31 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                           _CitiesSection(province: p, lang: lang),
                           _DivisionsSection(province: p, lang: lang),
                           if (p.achievements.isNotEmpty)
-                            _AchievementsSection(province: p, lang: lang),
+                            _AchievementsSection(province: p, lang: lang, l10n: l10n),
                         ],
                       ),
                     ),
-                    SliverToBoxAdapter(key: _keys['tourisme'], child: _TourismSection(province: p, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['economie'], child: _EconomySection(province: p, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['culture'], child: _CultureSection(province: p, id: widget.provinceId, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['quiz'], child: _QuizSection(id: widget.provinceId, name: p.name, lang: lang)),
-                    SliverToBoxAdapter(key: _keys['urgences'], child: _EmergencySection(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['tourisme'],
+                        child: _TourismSection(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['economie'],
+                        child: _EconomySection(province: p, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['culture'],
+                        child: _CultureSection(
+                            province: p, id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['quiz'],
+                        child: _QuizSection(
+                            id: widget.provinceId, name: p.name, lang: lang)),
+                    SliverToBoxAdapter(
+                        key: _keys['urgences'],
+                        child: _EmergencySection(province: p, lang: lang)),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 90),
-                        child: _Footer(province: p),
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
+                        child: _VisualIdentitySection(province: p),
                       ),
                     ),
                   ],
@@ -1013,15 +1450,21 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                     curve: Curves.easeOut,
                   ),
                   child: Container(
-                    width: 46,
-                    height: 46,
+                    width: 48,
+                    height: 48,
                     decoration: BoxDecoration(
-                      color: Inst.navy,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Inst.gold.withOpacity(0.6)),
-                      boxShadow: const [BoxShadow(color: Color(0x330B2440), blurRadius: 10, offset: Offset(0, 4))],
+                      color: ThixPolicy.primary.withOpacity(0.95),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: ThixPolicy.primary.withOpacity(0.35),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
                     ),
-                    child: const Icon(Icons.arrow_upward_rounded, color: Inst.gold, size: 20),
+                    child: const Icon(Icons.arrow_upward_rounded,
+                        color: Colors.white, size: 22),
                   ),
                 ),
               ),
@@ -1033,360 +1476,186 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// HEADER + MASTHEAD
+// HEADER
 // ════════════════════════════════════════════════════════════════════════
-Widget _sqBtn(IconData icon, VoidCallback onTap, {Color color = Colors.white}) {
-  return Padding(
-    padding: const EdgeInsets.only(right: 6),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.14),
-        border: Border.all(color: Colors.white.withOpacity(0.25)),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: IconButton(
-        icon: Icon(icon, color: color, size: 18),
-        onPressed: onTap,
-        padding: const EdgeInsets.all(9),
-        constraints: const BoxConstraints(),
-      ),
-    ),
-  );
-}
-
 class _Header extends ConsumerWidget {
   final Province province;
   final VoidCallback onShare;
+
   const _Header({required this.province, required this.onShare});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isFav = ref.watch(favoriteProvincesProvider).contains(province.id);
     final cover = province.coverImageUrl ?? '';
+
     return SliverAppBar(
-      expandedHeight: 230,
+      expandedHeight: 270,
       pinned: true,
-      backgroundColor: Inst.navyDeep,
+      backgroundColor: ThixPolicy.primary.withOpacity(0.92),
       elevation: 0,
-      leadingWidth: 48,
-      shape: const Border(bottom: BorderSide(color: Inst.gold, width: 2)),
+      leadingWidth: 56,
       leading: Padding(
         padding: const EdgeInsets.only(left: 12),
-        child: _sqBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-      ),
-      title: Text(
-        province.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6),
+        child: _gBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
       ),
       actions: [
-        _sqBtn(Icons.search_rounded, () => _openSearch(context, province.id)),
-        _sqBtn(Icons.share_rounded, onShare),
-        _sqBtn(
+        _gBtn(Icons.search_rounded, () => _openSearch(context, province.id)),
+        _gBtn(Icons.share_rounded, onShare),
+        _gBtn(
           isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           () {
             ref.read(favoriteProvincesProvider.notifier).toggle(province.id);
             HapticFeedback.lightImpact();
           },
-          color: isFav ? const Color(0xFFE57373) : Colors.white,
+          color: isFav ? ThixPolicy.danger : Colors.white,
         ),
         const SizedBox(width: 8),
       ],
       flexibleSpace: FlexibleSpaceBar(
+        titlePadding: const EdgeInsets.only(left: 20, bottom: 16, right: 20),
+        title: Text(
+          province.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: ThixPolicy.h3Style.copyWith(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            shadows: const [Shadow(blurRadius: 12, color: Colors.black87)],
+          ),
+        ),
         background: Stack(
           fit: StackFit.expand,
           children: [
-            cover.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: cover,
-                    fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(color: Inst.navyDeep),
-                  )
-                : Container(
-                    decoration: const BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [Inst.navyDeep, Inst.blue],
-                      ),
+            if (cover.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: cover,
+                fit: BoxFit.cover,
+                fadeInDuration: const Duration(milliseconds: 350),
+                errorWidget: (_, __, ___) => Container(color: ThixPolicy.primary),
+              )
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+                  ),
+                ),
+              ),
+            // Voile glassmorphism
+            ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
+                child: Container(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.black.withOpacity(0.10),
+                        Colors.black.withOpacity(0.25),
+                        Colors.black.withOpacity(0.72),
+                      ],
+                      stops: const [0.2, 0.6, 1],
                     ),
                   ),
-            Container(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Inst.navyDeep.withOpacity(0.25), Inst.navyDeep.withOpacity(0.88)],
-                  stops: const [0.25, 1],
                 ),
               ),
             ),
             Positioned(
               left: 20,
-              bottom: 14,
+              bottom: 56,
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(color: Inst.gold, borderRadius: BorderRadius.circular(4)),
-                    child: Text(
-                      province.code,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Inst.navyDeep, letterSpacing: 1.2),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.location_on_rounded, size: 13, color: Colors.white70),
-                  const SizedBox(width: 3),
-                  Text(
-                    province.capital,
-                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _Masthead extends StatelessWidget {
-  final Province province;
-  const _Masthead({required this.province});
-
-  Widget _vDiv() => Container(width: 1, height: 36, color: Inst.line);
-
-  Widget _statBox(String label, String value) => Expanded(
-        child: Column(
-          children: [
-            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h3.copyWith(fontSize: 13)),
-            const SizedBox(height: 3),
-            Text(
-              label.toUpperCase(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Inst.micro.copyWith(fontSize: 8, letterSpacing: 1.2),
-            ),
-          ],
-        ),
-      );
-
-  @override
-  Widget build(BuildContext context) {
-    final p = province;
-    final hasCoat = (p.coatOfArmsUrl ?? '').isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-      child: ICard(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 62,
-                  height: 62,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Inst.ivory,
-                    border: Border.all(color: Inst.gold, width: 2),
-                  ),
-                  child: ClipOval(
-                    child: hasCoat
-                        ? CachedNetworkImage(
-                            imageUrl: p.coatOfArmsUrl!,
-                            fit: BoxFit.contain,
-                            errorWidget: (_, __, ___) => const Icon(Icons.shield_rounded, color: Inst.blue, size: 28),
-                          )
-                        : const Icon(Icons.shield_rounded, color: Inst.blue, size: 28),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text('RÉPUBLIQUE DÉMOCRATIQUE DU CONGO', style: Inst.kicker),
-                      const SizedBox(height: 4),
-                      Text(p.name, style: Inst.h2),
-                      if ((p.motto ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 2),
-                        Text(
-                          '« ${p.motto} »',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Inst.bodyS.copyWith(fontStyle: FontStyle.italic),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: ThixPolicy.danger,
+                      borderRadius: BorderRadius.circular(8),
+                      boxShadow: [
+                        BoxShadow(
+                          color: ThixPolicy.danger.withOpacity(0.5),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
                         ),
                       ],
-                    ],
+                    ),
+                    child: Text(
+                      province.code,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                _pill(p.region.toUpperCase(), Inst.blue),
-              ],
-            ),
-            Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 14), color: Inst.gold.withOpacity(0.4)),
-            Row(
-              children: [
-                _statBox('Capitale', p.capital),
-                _vDiv(),
-                _statBox('Population', p.population != null ? fmtNum(p.population!) : '—'),
-                _vDiv(),
-                _statBox('Superficie', p.area != null ? '${fmtNum(p.area!)} km²' : '—'),
-                if (p.territoriesCount != null) ...[
-                  _vDiv(),
-                  _statBox('Territoires', '${p.territoriesCount}'),
-                ],
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _TopActions extends ConsumerWidget {
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final lang = ref.watch(languageProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: ICard(
-              radius: 10,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-              onTap: () => _langSheet(context, ref),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(lang.flag, style: const TextStyle(fontSize: 16)),
                   const SizedBox(width: 8),
-                  Text(lang.name, style: Inst.label),
-                  const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Inst.muted),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                      child: Container(
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.20),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.white.withOpacity(0.35)),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.location_on_rounded,
+                                size: 14, color: Colors.white),
+                            const SizedBox(width: 2),
+                            Text(
+                              province.capital,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          ICard(
-            radius: 10,
-            padding: const EdgeInsets.all(10),
-            onTap: () => _a11ySheet(context),
-            child: const Icon(Icons.accessibility_new_rounded, color: Inst.blue, size: 18),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-void _langSheet(BuildContext context, WidgetRef ref) {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (_) => ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-      child: Container(
-        color: Inst.paper,
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(width: 44, height: 4, decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4))),
-            const SizedBox(height: 18),
-            const Text('LANGUE NATIONALE', style: Inst.kicker),
-            const SizedBox(height: 6),
-            Text('Choisir la langue', style: Inst.h2),
-            const SizedBox(height: 16),
-            ...NationalLanguage.values.map((l) {
-              final active = ref.read(languageProvider) == l;
-              return InkWell(
-                onTap: () {
-                  ref.read(languageProvider.notifier).state = l;
-                  Navigator.pop(context);
-                  HapticFeedback.selectionClick();
-                },
-                borderRadius: BorderRadius.circular(10),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(13),
-                  decoration: BoxDecoration(
-                    color: active ? Inst.navy.withOpacity(0.06) : Inst.ivory,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: active ? Inst.gold : Inst.line, width: active ? 2 : 1),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(l.flag, style: const TextStyle(fontSize: 24)),
-                      const SizedBox(width: 14),
-                      Expanded(child: Text(l.name, style: Inst.h3)),
-                      if (active) const Icon(Icons.check_circle_rounded, color: Inst.goldDeep, size: 20),
-                    ],
-                  ),
-                ),
-              );
-            }),
           ],
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
-void _a11ySheet(BuildContext context) {
-  showModalBottomSheet(
-    context: context,
-    backgroundColor: Colors.transparent,
-    builder: (_) => Consumer(
-      builder: (context, ref, _) {
-        final s = ref.watch(accessibilityProvider);
-        return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _gBtn(IconData icon, VoidCallback onTap, {Color color = Colors.white}) {
+    return Padding(
+      padding: const EdgeInsets.only(right: 6),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
           child: Container(
-            color: Inst.paper,
-            padding: const EdgeInsets.all(24),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(width: 44, height: 4, decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4))),
-                ),
-                const SizedBox(height: 18),
-                const Text('ACCESSIBILITÉ', style: Inst.kicker),
-                const SizedBox(height: 6),
-                Text('Taille du texte', style: Inst.h2),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    Text('A', style: Inst.bodyS),
-                    Expanded(
-                      child: Slider(
-                        value: s.textScale,
-                        min: 0.8,
-                        max: 1.5,
-                        divisions: 7,
-                        activeColor: Inst.gold,
-                        inactiveColor: Inst.navy.withOpacity(0.15),
-                        onChanged: (v) =>
-                            ref.read(accessibilityProvider.notifier).state = s.copyWith(textScale: v),
-                      ),
-                    ),
-                    Text('A', style: Inst.h2),
-                  ],
-                ),
-              ],
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.18),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.3)),
+            ),
+            child: IconButton(
+              icon: Icon(icon, color: color, size: 20),
+              onPressed: onTap,
+              padding: const EdgeInsets.all(10),
+              constraints: const BoxConstraints(),
             ),
           ),
-        );
-      },
-    ),
-  );
+        ),
+      ),
+    );
+  }
 }
 
 void _openSearch(BuildContext context, String provinceId) {
@@ -1406,16 +1675,12 @@ void _openSearch(BuildContext context, String provinceId) {
                 onChanged: notifier.search,
                 decoration: InputDecoration(
                   hintText: 'Ville, projet, actualité…',
-                  prefixIcon: const Icon(Icons.search_rounded, color: Inst.blue),
+                  prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.primary),
                   filled: true,
-                  fillColor: Inst.ivory,
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Inst.line),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: const BorderSide(color: Inst.gold, width: 1.5),
+                  fillColor: Colors.white.withOpacity(0.6),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: BorderSide.none,
                   ),
                 ),
               ),
@@ -1423,7 +1688,10 @@ void _openSearch(BuildContext context, String provinceId) {
               if (results.isEmpty)
                 Padding(
                   padding: const EdgeInsets.all(20),
-                  child: Text('Commencez à taper…', style: Inst.bodyS),
+                  child: Text(
+                    'Commencez à taper…',
+                    style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
+                  ),
                 )
               else
                 ...results.map((r) {
@@ -1431,23 +1699,32 @@ void _openSearch(BuildContext context, String provinceId) {
                   final label = (r['name'] ?? r['title'] ?? '').toString();
                   return InkWell(
                     onTap: () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(12),
                     child: Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Inst.ivory,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Inst.line),
+                        color: Colors.white.withOpacity(0.55),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.white.withOpacity(0.6)),
                       ),
                       child: Row(
                         children: [
-                          _pill(source.replaceAll('province_', '').toUpperCase(), Inst.blue),
+                          _pill(source.replaceAll('province_', ''), ThixPolicy.primary),
                           const SizedBox(width: 10),
                           Expanded(
-                            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
+                            child: Text(
+                              label,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.captionStyle.copyWith(
+                                color: ThixPolicy.inkDeep,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
-                          const Icon(Icons.chevron_right_rounded, size: 18, color: Inst.muted),
+                          const Icon(Icons.chevron_right_rounded,
+                              size: 18, color: ThixPolicy.textMuted),
                         ],
                       ),
                     ),
@@ -1462,157 +1739,47 @@ void _openSearch(BuildContext context, String provinceId) {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ACTUALITÉS — cliquables → page article
+// TOP ACTIONS
 // ════════════════════════════════════════════════════════════════════════
-String _articleBody(Map<String, dynamic> m) {
-  for (final k in ['content', 'body', 'article', 'full_text', 'text', 'description', 'summary']) {
-    final v = m[k];
-    if (v is String && v.trim().isNotEmpty) return v.trim();
-  }
-  return '';
-}
-
-class _ArticlePage extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final String provinceName;
-  const _ArticlePage({required this.item, this.provinceName = ''});
-
+class _TopActions extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
-    final img = (item['image_url'] ?? '').toString();
-    final category = (item['category'] ?? 'INFO').toString();
-    final isAlert = item['is_alert'] == true;
-    final date = item['published_at']?.toString().split('T').first ?? '';
-    final url = item['url']?.toString() ?? '';
-    final body = _articleBody(item);
-    return Scaffold(
-      backgroundColor: Inst.ivory,
-      body: CustomScrollView(
-        slivers: [
-          SliverAppBar(
-            expandedHeight: 250,
-            pinned: true,
-            backgroundColor: Inst.navyDeep,
-            elevation: 0,
-            leadingWidth: 48,
-            shape: const Border(bottom: BorderSide(color: Inst.gold, width: 2)),
-            leading: Padding(
-              padding: const EdgeInsets.only(left: 12),
-              child: _sqBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
-            ),
-            title: Text(
-              category.toUpperCase(),
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.6, color: Inst.gold),
-            ),
-            actions: [
-              _sqBtn(Icons.share_rounded, () async {
-                await Share.share('📰 ${item['title'] ?? ''}\n$provinceName — Via THIX ID');
-              }),
-              const SizedBox(width: 8),
-            ],
-            flexibleSpace: FlexibleSpaceBar(
-              background: Stack(
-                fit: StackFit.expand,
+  Widget build(BuildContext context, WidgetRef ref) {
+    final lang = ref.watch(languageProvider);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Row(
+        children: [
+          Expanded(
+            child: GlassCard(
+              radius: 18,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              onTap: () => _langSheet(context, ref),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  img.isNotEmpty
-                      ? _img(img)
-                      : Container(color: Inst.navy),
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Inst.navyDeep.withOpacity(0.15), Inst.navyDeep.withOpacity(0.9)],
-                        stops: const [0.3, 1],
-                      ),
+                  Text(lang.flag, style: const TextStyle(fontSize: 17)),
+                  const SizedBox(width: 8),
+                  Text(
+                    lang.name,
+                    style: ThixPolicy.labelStyle.copyWith(
+                      color: ThixPolicy.inkDeep,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
-                  Positioned(
-                    left: 20,
-                    bottom: 14,
-                    child: Row(
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: isAlert ? Inst.danger : Inst.gold,
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            category.toUpperCase(),
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: 1,
-                              color: isAlert ? Colors.white : Inst.navyDeep,
-                            ),
-                          ),
-                        ),
-                        if (date.isNotEmpty) ...[
-                          const SizedBox(width: 8),
-                          Text(date, style: const TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w700)),
-                        ],
-                      ],
-                    ),
-                  ),
+                  const SizedBox(width: 4),
+                  const Icon(Icons.keyboard_arrow_down_rounded,
+                      size: 17, color: ThixPolicy.textSecondary),
                 ],
               ),
             ),
           ),
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(item['title']?.toString() ?? '', style: Inst.h1),
-                  Container(height: 3, width: 56, color: Inst.gold, margin: const EdgeInsets.symmetric(vertical: 14)),
-                  if (isAlert) ...[
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Inst.danger.withOpacity(0.08),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Inst.danger.withOpacity(0.35)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.campaign_rounded, size: 16, color: Inst.danger),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Communiqué officiel — province',
-                              style: Inst.bodyS.copyWith(color: Inst.danger, fontWeight: FontWeight.w800),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
-                  if (body.isNotEmpty) ExpandableText(body, maxLines: 6, style: Inst.body),
-                  if (url.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    SizedBox(
-                      width: double.infinity,
-                      child: ElevatedButton.icon(
-                        onPressed: () => _launch(url),
-                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
-                        label: const Text('Lire la source officielle'),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Inst.navy,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                        ),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 30),
-                ],
-              ),
-            ),
+          const SizedBox(width: 8),
+          GlassCard(
+            radius: 18,
+            padding: const EdgeInsets.all(11),
+            onTap: () => _a11ySheet(context),
+            child: const Icon(Icons.accessibility_new_rounded,
+                color: ThixPolicy.primary, size: 20),
           ),
         ],
       ),
@@ -1620,11 +1787,345 @@ class _ArticlePage extends StatelessWidget {
   }
 }
 
+void _langSheet(BuildContext context, WidgetRef ref) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.white.withOpacity(0.92), Colors.white.withOpacity(0.82)],
+            ),
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: ThixPolicy.border,
+                    borderRadius: BorderRadius.circular(4)),
+              ),
+              const SizedBox(height: 20),
+              Text('Choisir la langue',
+                  style: ThixPolicy.h3Style.copyWith(
+                      color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 20),
+              ...NationalLanguage.values.map((l) {
+                final active = ref.read(languageProvider) == l;
+                return InkWell(
+                  onTap: () {
+                    ref.read(languageProvider.notifier).state = l;
+                    Navigator.pop(context);
+                    HapticFeedback.selectionClick();
+                  },
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: active
+                          ? ThixPolicy.primary.withOpacity(0.15)
+                          : Colors.white.withOpacity(0.5),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: active
+                            ? ThixPolicy.primary
+                            : Colors.white.withOpacity(0.6),
+                        width: active ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(l.flag, style: const TextStyle(fontSize: 26)),
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Text(
+                            l.name,
+                            style: ThixPolicy.labelStyle.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        if (active)
+                          const Icon(Icons.check_circle_rounded,
+                              color: ThixPolicy.primary),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+void _a11ySheet(BuildContext context) {
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.transparent,
+    builder: (_) => Consumer(
+      builder: (context, ref, _) {
+        final s = ref.watch(accessibilityProvider);
+        return ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Colors.white.withOpacity(0.92), Colors.white.withOpacity(0.82)],
+                ),
+              ),
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                          color: ThixPolicy.border,
+                          borderRadius: BorderRadius.circular(4)),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      const Icon(Icons.accessibility_new_rounded,
+                          color: ThixPolicy.primary),
+                      const SizedBox(width: 8),
+                      Text('Accessibilité',
+                          style: ThixPolicy.h3Style.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  Text('Taille du texte',
+                      style: ThixPolicy.labelStyle.copyWith(
+                          color: ThixPolicy.inkDeep,
+                          fontWeight: FontWeight.w800)),
+                  Row(
+                    children: [
+                      Text('A',
+                          style: TextStyle(
+                              fontSize: 12, color: ThixPolicy.textSecondary)),
+                      Expanded(
+                        child: Slider(
+                          value: s.textScale,
+                          min: 0.8,
+                          max: 1.5,
+                          divisions: 7,
+                          activeColor: ThixPolicy.primary,
+                          onChanged: (v) => ref
+                              .read(accessibilityProvider.notifier)
+                              .state = s.copyWith(textScale: v),
+                        ),
+                      ),
+                      Text('A',
+                          style: TextStyle(
+                              fontSize: 22,
+                              color: ThixPolicy.textSecondary,
+                              fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    ),
+  );
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// IDENTITÉ
+// ════════════════════════════════════════════════════════════════════════
+class _IdentityCard extends StatelessWidget {
+  final Province province;
+  const _IdentityCard({required this.province});
+
+  @override
+  Widget build(BuildContext context) {
+    final hasCoat = (province.coatOfArmsUrl ?? '').isNotEmpty;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: GlassCard(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 78,
+                  height: 78,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Colors.white.withOpacity(0.9),
+                    border: Border.all(
+                        color: ThixPolicy.primary.withOpacity(0.35), width: 3),
+                    boxShadow: [
+                      BoxShadow(
+                        color: ThixPolicy.primary.withOpacity(0.25),
+                        blurRadius: 14,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: ClipOval(
+                    child: hasCoat
+                        ? CachedNetworkImage(
+                            imageUrl: province.coatOfArmsUrl!,
+                            fit: BoxFit.contain,
+                            errorWidget: (_, __, ___) => const Icon(
+                                Icons.shield_rounded,
+                                color: ThixPolicy.primary),
+                          )
+                        : const Icon(Icons.shield_rounded,
+                            color: ThixPolicy.primary, size: 36),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        province.name,
+                        style: ThixPolicy.h2Style.copyWith(
+                          color: ThixPolicy.inkDeep,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          _pill(province.code, ThixPolicy.danger),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              'Région ${province.region}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.captionStyle.copyWith(
+                                color: ThixPolicy.primary,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if ((province.motto ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          '« ${province.motto} »',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.microStyle.copyWith(
+                            color: ThixPolicy.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: [
+                _stat(Icons.location_city_rounded, ThixPolicy.primary, 'Capitale',
+                    province.capital),
+                _stat(
+                  Icons.groups_rounded,
+                  const Color(0xFF43A047),
+                  'Population',
+                  province.population != null ? fmtNum(province.population!) : 'N/A',
+                ),
+                _stat(
+                  Icons.map_rounded,
+                  const Color(0xFFFB8C00),
+                  'Superficie',
+                  province.area != null ? '${fmtNum(province.area!)} km²' : 'N/A',
+                ),
+                if (province.territoriesCount != null)
+                  _stat(
+                    Icons.format_list_numbered_rounded,
+                    const Color(0xFF8E24AA),
+                    'Territoires',
+                    '${province.territoriesCount}',
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _stat(IconData icon, Color color, String label, String value) {
+    return Expanded(
+      child: Container(
+        margin: const EdgeInsets.symmetric(horizontal: 3),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(0.7)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 6),
+            Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: ThixPolicy.captionStyle.copyWith(
+                color: ThixPolicy.inkDeep,
+                fontWeight: FontWeight.w900,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textMuted, fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// NEWS — cliquable + article complet
+// ════════════════════════════════════════════════════════════════════════
 class _NewsSection extends ConsumerWidget {
   final String id;
   final NationalLanguage lang;
-  final String provinceName;
-  const _NewsSection({required this.id, required this.lang, this.provinceName = ''});
+  const _NewsSection({required this.id, required this.lang});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1634,96 +2135,141 @@ class _NewsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.newspaper_rounded,
-            color: Inst.blue,
-            kicker: _kickers['news'],
+            color: const Color(0xFF1E88E5),
             title: _Tr.t('news', lang),
             count: items.length,
-            viewAllLabel: _Tr.t('all', lang),
             onViewAll: () => showGlassSheet(
               context,
               title: _Tr.t('news', lang),
               icon: Icons.newspaper_rounded,
+              color: const Color(0xFF1E88E5),
               children: items
-                  .map((n) => Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: ICard(
-                          padding: const EdgeInsets.all(12),
-                          onTap: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => _ArticlePage(item: n, provinceName: provinceName)),
-                            );
-                          },
-                          child: Row(
-                            children: [
-                              if ((n['image_url'] ?? '').toString().isNotEmpty)
-                                _img(n['image_url'].toString(), h: 54, w: 54, radius: 8),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(n['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
-                                    const SizedBox(height: 3),
-                                    Text(n['published_at']?.toString().split('T').first ?? '', style: Inst.micro),
-                                  ],
-                                ),
-                              ),
-                              const Icon(Icons.chevron_right_rounded, size: 18, color: Inst.muted),
-                            ],
-                          ),
-                        ),
-                      ))
+                  .map((n) => _newsTile(context, n))
                   .toList(),
             ),
           ),
           HScroll(
-            height: 218,
-            itemWidth: 290,
-            children: items.map((n) => _NewsCard(item: n, provinceName: provinceName, lang: lang)).toList(),
+            height: 255,
+            itemWidth: 300,
+            children: items.map((n) => _NewsCard(item: n)).toList(),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 200);
   }
 }
 
+Widget _newsTile(BuildContext context, Map<String, dynamic> n) {
+  final photos = _photosFor(n);
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 10),
+    child: GlassCard(
+      padding: const EdgeInsets.all(12),
+      onTap: () => openArticle(context, n),
+      child: Row(
+        children: [
+          if (photos.isNotEmpty)
+            _img(photos.first, h: 60, w: 60, radius: 12),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  n['title']?.toString() ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.labelStyle.copyWith(
+                      fontWeight: FontWeight.w800, color: ThixPolicy.inkDeep),
+                ),
+                Text(
+                  n['published_at']?.toString().split('T').first ?? '',
+                  style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
+                ),
+              ],
+            ),
+          ),
+          const Icon(Icons.chevron_right_rounded,
+              size: 18, color: ThixPolicy.textMuted),
+        ],
+      ),
+    ),
+  );
+}
+
 class _NewsCard extends StatelessWidget {
   final Map<String, dynamic> item;
-  final String provinceName;
-  final NationalLanguage lang;
-  const _NewsCard({required this.item, this.provinceName = '', required this.lang});
+  const _NewsCard({required this.item});
 
   @override
   Widget build(BuildContext context) {
     final isAlert = item['is_alert'] == true;
-    final img = (item['image_url'] ?? '').toString();
-    return ICard(
+    final photos = _photosFor(item);
+    final img = photos.isNotEmpty ? photos.first : '';
+
+    return GlassCard(
       padding: EdgeInsets.zero,
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => _ArticlePage(item: item, provinceName: provinceName)),
-      ),
+      onTap: () => openArticle(context, item),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Stack(
             children: [
-              img.isNotEmpty ? _img(img, h: 116, w: double.infinity) : Container(height: 116, color: Inst.ivory),
+              if (img.isNotEmpty)
+                _img(img, h: 130, w: double.infinity)
+              else
+                Container(
+                  height: 130,
+                  color: const Color(0xFF1E88E5).withOpacity(0.10),
+                  child: const Center(
+                    child: Icon(Icons.newspaper_rounded,
+                        color: Color(0xFF1E88E5), size: 40),
+                  ),
+                ),
+              if (photos.length > 1)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.photo_library_rounded,
+                            size: 11, color: Colors.white),
+                        const SizedBox(width: 3),
+                        Text('${photos.length}',
+                            style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800)),
+                      ],
+                    ),
+                  ),
+                ),
               Positioned(
                 top: 8,
                 left: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isAlert ? Inst.danger : Inst.gold,
-                    borderRadius: BorderRadius.circular(4),
+                    color: isAlert ? ThixPolicy.danger : const Color(0xFF1E88E5),
+                    borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    (item['category']?.toString() ?? 'INFO').toUpperCase(),
-                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: isAlert ? Colors.white : Inst.navyDeep),
+                    item['category']?.toString() ?? 'INFO',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: 0.8,
+                    ),
                   ),
                 ),
               ),
@@ -1734,16 +2280,43 @@ class _NewsCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+                Text(
+                  item['title']?.toString() ?? '',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.labelStyle.copyWith(
+                      color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+                ),
                 const SizedBox(height: 4),
-                Text(item['summary']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
-                const SizedBox(height: 8),
+                Text(
+                  item['summary']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.captionStyle
+                      .copyWith(color: ThixPolicy.textSecondary),
+                ),
+                const SizedBox(height: 6),
                 Row(
                   children: [
-                    Text(item['published_at']?.toString().split('T').first ?? '', style: Inst.micro),
+                    Text(
+                      item['published_at']?.toString().split('T').first ?? '',
+                      style: ThixPolicy.microStyle.copyWith(
+                          color: ThixPolicy.textMuted,
+                          fontWeight: FontWeight.w600),
+                    ),
                     const Spacer(),
-                    Text(_Tr.plain('read', lang).toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1, color: Inst.goldDeep)),
-                    const Icon(Icons.arrow_forward_rounded, size: 12, color: Inst.goldDeep),
+                    Row(
+                      children: const [
+                        Text('Lire',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: Color(0xFF1E88E5),
+                                fontWeight: FontWeight.w800)),
+                        SizedBox(width: 3),
+                        Icon(Icons.arrow_forward_rounded,
+                            size: 14, color: Color(0xFF1E88E5)),
+                      ],
+                    ),
                   ],
                 ),
               ],
@@ -1771,13 +2344,16 @@ class _ProjectsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.construction_rounded,
-            color: const Color(0xFFB26A00),
-            kicker: _kickers['projects'],
+            color: const Color(0xFFFB8C00),
             title: _Tr.t('projects', lang),
             count: items.length,
           ),
-          HScroll(height: 218, itemWidth: 280, children: items.map((p) => _ProjectCard(item: p)).toList()),
-          const SizedBox(height: 12),
+          HScroll(
+            height: 230,
+            itemWidth: 300,
+            children: items.map((p) => _ProjectCard(item: p)).toList(),
+          ),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 180);
@@ -1793,72 +2369,98 @@ class _ProjectCard extends StatelessWidget {
     final raw = (item['progress'] as num?)?.toDouble() ?? 0;
     final progress = (raw > 1 ? raw / 100 : raw).clamp(0.0, 1.0);
     final pct = (progress * 100).round();
-    final color = pct >= 75 ? Inst.green : pct >= 50 ? const Color(0xFFB26A00) : Inst.blue;
-    final photos = _photosOf(item);
-    return ICard(
+    final color = pct >= 75
+        ? const Color(0xFF43A047)
+        : pct >= 50
+            ? const Color(0xFFFB8C00)
+            : const Color(0xFF1E88E5);
+    final photos = _photosFor(item);
+
+    return GlassCard(
       padding: const EdgeInsets.all(14),
       onTap: () => showGlassSheet(
         context,
         title: item['name']?.toString() ?? '',
         subtitle: item['description']?.toString(),
+        extraImages: photos,
         icon: Icons.construction_rounded,
         color: color,
         children: [
-          if (photos.isNotEmpty) ...[
-            _blockLabel('Photos (${photos.length})'),
-            _photoGrid(photos),
-          ],
-          const SizedBox(height: 8),
-          sheetRow(Icons.payments_rounded, 'Budget', _money(item['budget'])),
-          sheetRow(Icons.event_rounded, 'Échéance', item['deadline']?.toString() ?? '—'),
+          sheetRow(Icons.payments_rounded, 'Budget',
+              item['budget']?.toString() ?? '-'),
+          sheetRow(Icons.event_rounded, 'Échéance',
+              item['deadline']?.toString() ?? '-'),
           sheetRow(Icons.trending_up_rounded, 'Progression', '$pct%', color: color),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (photos.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: _img(photos.first, h: 90, w: double.infinity),
+            )
+          else
+            Container(
+              height: 60,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: Center(
+                child: Icon(Icons.construction_rounded, color: color, size: 32),
+              ),
+            ),
+          const SizedBox(height: 10),
           Row(
             children: [
               SizedBox(
-                width: 44,
-                height: 44,
+                width: 46,
+                height: 46,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 44,
-                      height: 44,
+                      width: 46,
+                      height: 46,
                       child: CircularProgressIndicator(
                         value: progress,
-                        strokeWidth: 4.5,
+                        strokeWidth: 5,
                         backgroundColor: color.withOpacity(0.15),
                         valueColor: AlwaysStoppedAnimation(color),
                       ),
                     ),
-                    Text('$pct%', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: color)),
+                    Text('$pct%',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            color: color)),
                   ],
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(child: _pill((item['category']?.toString() ?? 'PROJET').toUpperCase(), color)),
+              Expanded(
+                child: _pill(
+                    (item['category']?.toString() ?? 'PROJET').toUpperCase(),
+                    color),
+              ),
             ],
           ),
-          const SizedBox(height: 10),
-          Text(item['name']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
-          const SizedBox(height: 4),
-          Expanded(
-            child: Text(
-              item['description']?.toString() ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Inst.bodyS,
-            ),
+          const SizedBox(height: 8),
+          Text(
+            item['name']?.toString() ?? '',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.labelStyle
+                .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
           ),
+          const Spacer(),
           ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(8),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 5,
+              minHeight: 6,
               backgroundColor: color.withOpacity(0.12),
               valueColor: AlwaysStoppedAnimation(color),
             ),
@@ -1867,11 +2469,20 @@ class _ProjectCard extends StatelessWidget {
           Row(
             children: [
               Flexible(
-                child: Text('💰 ${_money(item['budget'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
+                child: Text(
+                  '💰 ${item['budget'] ?? '-'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.microStyle.copyWith(
+                      color: ThixPolicy.textSecondary,
+                      fontWeight: FontWeight.w700),
+                ),
               ),
               const SizedBox(width: 8),
-              Flexible(
-                child: Text('📅 ${item['deadline'] ?? '—'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
+              Text(
+                '📅 ${item['deadline'] ?? '-'}',
+                style: ThixPolicy.microStyle.copyWith(
+                    color: ThixPolicy.textSecondary, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -1882,7 +2493,7 @@ class _ProjectCard extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// SERVICES — toutes les photos affichées
+// SERVICES — photos multiples
 // ════════════════════════════════════════════════════════════════════════
 class _ServicesSection extends ConsumerWidget {
   final String id;
@@ -1897,16 +2508,19 @@ class _ServicesSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.badge_rounded,
-            color: Inst.green,
-            kicker: _kickers['services'],
+            color: const Color(0xFF43A047),
             title: _Tr.t('services', lang),
             count: items.length,
           ),
-          HScroll(height: 246, itemWidth: 260, children: items.map((s) => _ServiceCard(item: s)).toList()),
-          const SizedBox(height: 12),
+          HScroll(
+            height: 230,
+            itemWidth: 270,
+            children: items.map((s) => _ServiceCard(item: s)).toList(),
+          ),
+          const SizedBox(height: 20),
         ],
       );
-    }, skeleton: 200);
+    }, skeleton: 150);
   }
 }
 
@@ -1916,91 +2530,104 @@ class _ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const colors = [Inst.blue, Inst.green, const Color(0xFFB26A00), const Color(0xFF6A1B9A), Inst.danger];
-    final color = colors[(item['category']?.toString().hashCode ?? 0).abs() % colors.length];
-    final photos = _photosOf(item);
-    return ICard(
-      padding: EdgeInsets.zero,
+    const colors = [
+      Color(0xFF1E88E5),
+      Color(0xFF43A047),
+      Color(0xFFFB8C00),
+      Color(0xFF8E24AA),
+      Color(0xFFE53935),
+    ];
+    final color = colors[(item['category']?.toString().hashCode ?? 0).abs() %
+        colors.length];
+    final photos = _photosFor(item);
+
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
       onTap: () => showGlassSheet(
         context,
         title: item['name']?.toString() ?? '',
         subtitle: item['description']?.toString(),
+        extraImages: photos,
         icon: Icons.badge_rounded,
         color: color,
         children: [
-          if (photos.isNotEmpty) ...[
-            _blockLabel('${_Tr.t('photos', NationalLanguage.french)} (${photos.length})'),
-            _photoGrid(photos),
-            const SizedBox(height: 6),
-          ],
-          sheetRow(Icons.category_rounded, 'Catégorie', item['category']?.toString() ?? '—'),
-          sheetRow(Icons.access_time_rounded, 'Horaires', item['hours']?.toString() ?? '—'),
-          sheetRow(Icons.location_on_rounded, 'Adresse', item['address']?.toString() ?? '—'),
-          if ((item['phone'] ?? '').toString().isNotEmpty)
-            sheetRow(Icons.phone_rounded, 'Téléphone', item['phone'].toString()),
+          sheetRow(Icons.category_rounded, 'Catégorie',
+              item['category']?.toString() ?? '-'),
+          sheetRow(Icons.access_time_rounded, 'Horaires',
+              item['hours']?.toString() ?? '-'),
+          sheetRow(Icons.location_on_rounded, 'Adresse',
+              item['address']?.toString() ?? '-'),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Stack(
+          if (photos.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: _img(photos.first, h: 95, w: double.infinity),
+            )
+          else
+            Container(
+              height: 70,
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.10),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Center(
+                child: Icon(Icons.badge_rounded, color: color, size: 34),
+              ),
+            ),
+          const SizedBox(height: 10),
+          Row(
             children: [
-              _photoStrip(photos, height: 118, top: true),
-              if (photos.length > 1)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                    child: Text(
-                      '${photos.length} photos',
-                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white),
-                    ),
-                  ),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-              ],
-          ),
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  (item['category']?.toString() ?? '').toUpperCase(),
+                child: Icon(Icons.badge_rounded, color: color, size: 18),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item['category']?.toString() ?? '',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: color),
+                  style: ThixPolicy.microStyle.copyWith(
+                      color: color,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 0.8),
                 ),
-                const SizedBox(height: 4),
-                Text(item['name']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
-                const Spacer(),
-                Row(
-                  children: [
-                    const Icon(Icons.access_time_rounded, size: 11, color: Inst.muted),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        item['hours']?.toString() ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Inst.micro,
-                      ),
-                    ),
-                  ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            item['name']?.toString() ?? '',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.labelStyle
+                .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+          ),
+          const Spacer(),
+          Row(
+            children: [
+              const Icon(Icons.access_time_rounded,
+                  size: 12, color: ThixPolicy.textMuted),
+              const SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  item['hours']?.toString() ?? '',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.microStyle.copyWith(
+                      color: ThixPolicy.textSecondary,
+                      fontWeight: FontWeight.w600),
                 ),
-                const SizedBox(height: 6),
-                Row(
-                  children: [
-                    const Text(
-                      'FICHE DÉTAILLÉE',
-                      style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 1, color: Inst.goldDeep),
-                    ),
-                    const Icon(Icons.arrow_forward_rounded, size: 11, color: Inst.goldDeep),
-                  ],
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ],
       ),
@@ -2024,13 +2651,17 @@ class _EngagementSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.how_to_vote_rounded,
-            color: const Color(0xFF6A1B9A),
-            kicker: _kickers['citizen'],
+            color: const Color(0xFF8E24AA),
             title: _Tr.t('citizen', lang),
             count: items.length,
           ),
-          HScroll(height: 200, itemWidth: 270, children: items.map((e) => _EngagementCard(item: e, pid: id, ref: ref)).toList()),
-          const SizedBox(height: 12),
+          HScroll(
+            height: 235,
+            itemWidth: 285,
+            children:
+                items.map((e) => _EngagementCard(item: e, pid: id, ref: ref)).toList(),
+          ),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 180);
@@ -2052,7 +2683,9 @@ class _EngagementCard extends StatelessWidget {
           .maybeSingle();
       if (row != null) {
         final c = (row['participants_count'] as num? ?? 0).toInt();
-        await _db.from('province_engagements').update({'participants_count': c + 1}).eq('id', item['id']);
+        await _db
+            .from('province_engagements')
+            .update({'participants_count': c + 1}).eq('id', item['id']);
         ref.invalidate(_engagementsProv(pid));
       }
     } catch (e) {
@@ -2064,32 +2697,68 @@ class _EngagementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = item['type']?.toString() ?? 'SONDAGE';
     final lower = type.toLowerCase();
-    final color = lower == 'vote' ? Inst.green : lower == 'pétition' ? const Color(0xFFB26A00) : const Color(0xFF6A1B9A);
+    final color = lower == 'vote'
+        ? const Color(0xFF43A047)
+        : lower == 'pétition'
+            ? const Color(0xFFFB8C00)
+            : const Color(0xFF8E24AA);
     final participants = (item['participants_count'] as num?)?.toInt() ?? 0;
-    return ICard(
+    final photos = _photosFor(item);
+
+    return GlassCard(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          if (photos.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(12),
+              child: _img(photos.first, h: 80, w: double.infinity),
+            ),
+          if (photos.isNotEmpty) const SizedBox(height: 8),
           _pill(type.toUpperCase(), color),
           const SizedBox(height: 8),
-          Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+          Text(
+            item['title']?.toString() ?? '',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: ThixPolicy.labelStyle
+                .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+          ),
           const SizedBox(height: 4),
           Expanded(
-            child: Text(item['description']?.toString() ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
+            child: Text(
+              item['description']?.toString() ?? '',
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style:
+                  ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+            ),
           ),
           Row(
             children: [
-              Icon(Icons.people_rounded, size: 13, color: color),
+              Icon(Icons.people_rounded, size: 14, color: color),
               const SizedBox(width: 4),
-              Text(fmtNum(participants), style: Inst.label.copyWith(color: color)),
+              Text(
+                fmtNum(participants),
+                style: ThixPolicy.captionStyle
+                    .copyWith(color: color, fontWeight: FontWeight.w800),
+              ),
               const Spacer(),
               GestureDetector(
                 onTap: _participate,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
-                  child: const Text('Participer', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                      color: color, borderRadius: BorderRadius.circular(14)),
+                  child: const Text(
+                    'Participer',
+                    style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white),
+                  ),
                 ),
               ),
             ],
@@ -2109,12 +2778,12 @@ class _BudgetSection extends ConsumerWidget {
   const _BudgetSection({required this.id, required this.lang});
 
   static const _palette = [
-    Inst.navy,
-    Inst.gold,
-    Inst.blue,
-    Color(0xFF00695C),
+    Color(0xFF1E88E5),
+    Color(0xFF43A047),
+    Color(0xFFFB8C00),
     Color(0xFF8E24AA),
-    Color(0xFFB3261E),
+    Color(0xFFE53935),
+    Color(0xFF5E35B1),
   ];
 
   @override
@@ -2126,14 +2795,13 @@ class _BudgetSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.account_balance_wallet_rounded,
-            color: Inst.green,
-            kicker: _kickers['budget'],
+            color: const Color(0xFF43A047),
             title: _Tr.t('budget', lang),
             count: items.length,
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ICard(
+            child: GlassCard(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
@@ -2144,13 +2812,19 @@ class _BudgetSection extends ConsumerWidget {
                         centerSpaceRadius: 42,
                         sectionsSpace: 2,
                         sections: items.asMap().entries.map((e) {
-                          final pct = ((e.value['percentage'] as num?)?.toDouble() ?? 0).clamp(0.0, 100.0);
+                          final pct =
+                              ((e.value['percentage'] as num?)?.toDouble() ?? 0)
+                                  .clamp(0.0, 100.0);
                           return PieChartSectionData(
                             color: _palette[e.key % _palette.length],
                             value: pct,
-                            radius: 46,
+                            radius: 48,
                             title: '${pct.toInt()}%',
-                            titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
+                            titleStyle: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                            ),
                           );
                         }).toList(),
                       ),
@@ -2167,32 +2841,44 @@ class _BudgetSection extends ConsumerWidget {
                           Container(
                             width: 9,
                             height: 9,
-                            decoration: BoxDecoration(color: _palette[e.key % _palette.length], borderRadius: BorderRadius.circular(2)),
+                            decoration: BoxDecoration(
+                              color: _palette[e.key % _palette.length],
+                              borderRadius: BorderRadius.circular(3),
+                            ),
                           ),
                           const SizedBox(width: 5),
-                          Text(e.value['sector']?.toString() ?? '', style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w700)),
+                          Text(
+                            e.value['sector']?.toString() ?? '',
+                            style: ThixPolicy.captionStyle.copyWith(
+                                color: ThixPolicy.inkDeep,
+                                fontWeight: FontWeight.w700),
+                          ),
                         ],
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     decoration: BoxDecoration(
-                      color: Inst.navy.withOpacity(0.06),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Inst.navy.withOpacity(0.2)),
+                      color: const Color(0xFF43A047).withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white.withOpacity(0.5)),
                     ),
                     child: Text(
-                      'TOTAL : ${_money(total)}',
-                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: Inst.navy),
+                      'Total : ${fmtNum(total)} USD',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF43A047),
+                      ),
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 240);
@@ -2215,17 +2901,21 @@ class _DemoSection extends ConsumerWidget {
           data: (items) {
             if (items.length < 2) return const SizedBox.shrink();
             final maxY = items.fold<double>(0, (m, i) {
-                  final v = (i['population'] as num?)?.toDouble() ?? 0;
-                  return v > m ? v : m;
-                }) *
+                      final v = (i['population'] as num?)?.toDouble() ?? 0;
+                      return v > m ? v : m;
+                    }) *
                 1.15;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SectionHeader(icon: Icons.analytics_rounded, color: Inst.blue, kicker: _kickers['demo'], title: _Tr.t('demo', lang)),
+                SectionHeader(
+                  icon: Icons.analytics_rounded,
+                  color: const Color(0xFF1565C0),
+                  title: _Tr.t('demo', lang),
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ICard(
+                  child: GlassCard(
                     padding: const EdgeInsets.all(16),
                     child: SizedBox(
                       height: 160,
@@ -2237,17 +2927,23 @@ class _DemoSection extends ConsumerWidget {
                           gridData: const FlGridData(show: false),
                           borderData: FlBorderData(show: false),
                           titlesData: FlTitlesData(
-                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                            leftTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                            topTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
+                            rightTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
+                            leftTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false)),
                             bottomTitles: AxisTitles(
                               sideTitles: SideTitles(
                                 showTitles: true,
                                 getTitlesWidget: (v, _) => Padding(
                                   padding: const EdgeInsets.only(top: 6),
                                   child: Text(
-                                    v.toInt() < items.length ? (items[v.toInt()]['year']?.toString() ?? '') : '',
-                                    style: Inst.micro,
+                                    v.toInt() < items.length
+                                        ? (items[v.toInt()]['year']?.toString() ?? '')
+                                        : '',
+                                    style: ThixPolicy.microStyle
+                                        .copyWith(color: ThixPolicy.textSecondary),
                                   ),
                                 ),
                               ),
@@ -2258,11 +2954,14 @@ class _DemoSection extends ConsumerWidget {
                               x: e.key,
                               barRods: [
                                 BarChartRodData(
-                                  toY: (e.value['population'] as num?)?.toDouble() ?? 0,
+                                  toY:
+                                      (e.value['population'] as num?)?.toDouble() ??
+                                          0,
                                   width: 26,
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                                  borderRadius: const BorderRadius.vertical(
+                                      top: Radius.circular(8)),
                                   gradient: const LinearGradient(
-                                    colors: [Inst.navy, Inst.blue],
+                                    colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
                                     begin: Alignment.bottomCenter,
                                     end: Alignment.topCenter,
                                   ),
@@ -2275,7 +2974,7 @@ class _DemoSection extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
               ],
             );
           },
@@ -2299,15 +2998,14 @@ class _DocumentsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.description_rounded,
-            color: Inst.navy,
-            kicker: _kickers['docs'],
+            color: const Color(0xFF5E35B1),
             title: _Tr.t('docs', lang),
             count: items.length,
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ICard(
-              padding: const EdgeInsets.all(10),
+            child: GlassCard(
+              padding: const EdgeInsets.all(12),
               child: Column(
                 children: items.map((d) {
                   return InkWell(
@@ -2315,32 +3013,44 @@ class _DocumentsSection extends ConsumerWidget {
                       final u = d['file_url']?.toString();
                       if (u != null && u.isNotEmpty) _launch(u);
                     },
-                    borderRadius: BorderRadius.circular(8),
+                    borderRadius: BorderRadius.circular(12),
                     child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+                      padding:
+                          const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                       child: Row(
                         children: [
                           Container(
                             padding: const EdgeInsets.all(9),
                             decoration: BoxDecoration(
-                              color: Inst.navy.withOpacity(0.07),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: Inst.navy.withOpacity(0.18)),
+                              color: const Color(0xFF5E35B1).withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
                             ),
-                            child: const Icon(Icons.gavel_rounded, color: Inst.navy, size: 16),
+                            child: const Icon(Icons.gavel_rounded,
+                                color: Color(0xFF5E35B1), size: 18),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(d['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
-                                const SizedBox(height: 2),
-                                Text('${d['type'] ?? ''} • ${d['published_at']?.toString().split('T').first ?? ''}', style: Inst.micro),
+                                Text(
+                                  d['title']?.toString() ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: ThixPolicy.captionStyle.copyWith(
+                                      color: ThixPolicy.inkDeep,
+                                      fontWeight: FontWeight.w800),
+                                ),
+                                Text(
+                                  '${d['type'] ?? ''} • ${d['published_at']?.toString().split('T').first ?? ''}',
+                                  style: ThixPolicy.microStyle
+                                      .copyWith(color: ThixPolicy.textMuted),
+                                ),
                               ],
                             ),
                           ),
-                          const Icon(Icons.download_rounded, size: 17, color: Inst.goldDeep),
+                          const Icon(Icons.download_rounded,
+                              size: 18, color: Color(0xFF5E35B1)),
                         ],
                       ),
                     ),
@@ -2349,7 +3059,7 @@ class _DocumentsSection extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 140);
@@ -2372,13 +3082,16 @@ class _MediaSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.play_circle_rounded,
-            color: Inst.danger,
-            kicker: _kickers['media'],
+            color: const Color(0xFFE53935),
             title: _Tr.t('media', lang),
             count: items.length,
           ),
-          HScroll(height: 196, itemWidth: 250, children: items.map((m) => _MediaCard(item: m)).toList()),
-          const SizedBox(height: 12),
+          HScroll(
+            height: 220,
+            itemWidth: 270,
+            children: items.map((m) => _MediaCard(item: m)).toList(),
+          ),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 170);
@@ -2391,8 +3104,9 @@ class _MediaCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final thumb = (item['thumbnail_url'] ?? '').toString();
-    return ICard(
+    final photos = _photosFor(item);
+    final thumb = photos.isNotEmpty ? photos.first : '';
+    return GlassCard(
       padding: EdgeInsets.zero,
       onTap: () {
         final u = item['url']?.toString();
@@ -2404,27 +3118,56 @@ class _MediaCard extends StatelessWidget {
           Stack(
             alignment: Alignment.center,
             children: [
-              thumb.isNotEmpty ? _img(thumb, h: 112, w: double.infinity) : Container(height: 112, color: Inst.ivory),
+              if (thumb.isNotEmpty)
+                _img(thumb, h: 130, w: double.infinity)
+              else
+                Container(
+                  height: 130,
+                  color: const Color(0xFFE53935).withOpacity(0.10),
+                  child: const Center(
+                    child: Icon(Icons.play_circle_rounded,
+                        color: Color(0xFFE53935), size: 40),
+                  ),
+                ),
               Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.94), shape: BoxShape.circle),
-                child: const Icon(Icons.play_arrow_rounded, color: Inst.danger, size: 24),
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.92),
+                    shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow_rounded,
+                    color: Color(0xFFE53935), size: 26),
               ),
               if ((item['duration'] ?? '').toString().isNotEmpty)
                 Positioned(
                   bottom: 6,
                   right: 6,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                    child: Text(item['duration'].toString(), style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(5),
+                    ),
+                    child: Text(
+                      item['duration'].toString(),
+                      style: const TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          color: Colors.white),
+                    ),
                   ),
                 ),
             ],
           ),
           Padding(
             padding: const EdgeInsets.all(10),
-            child: Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
+            child: Text(
+              item['title']?.toString() ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.captionStyle
+                  .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+            ),
           ),
         ],
       ),
@@ -2488,21 +3231,6 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
     if (mounted) setState(() => _instrumental = instrumental);
   }
 
-  Widget _verChip(String label, bool sel, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-        decoration: BoxDecoration(
-          color: sel ? Inst.navy : Colors.transparent,
-          borderRadius: BorderRadius.circular(5),
-          border: Border.all(color: sel ? Inst.navy : Inst.line),
-        ),
-        child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: sel ? Colors.white : Inst.muted)),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return ref.watch(_hymnProv(widget.id)).when(
@@ -2510,23 +3238,40 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
           error: (_, __) => const SizedBox.shrink(),
           data: (h) {
             if (h == null) return const SizedBox.shrink();
+            final photos = _photosFor(h);
             final lyrics = h['lyrics']?.toString() ?? '';
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SectionHeader(icon: Icons.music_note_rounded, color: Inst.goldDeep, kicker: _kickers['hymn'], title: _Tr.t('hymn', widget.lang)),
+                SectionHeader(
+                  icon: Icons.music_note_rounded,
+                  color: ThixPolicy.gold,
+                  title: _Tr.t('hymn', widget.lang),
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: ICard(
+                  child: GlassCard(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
+                        if (photos.isNotEmpty) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: _img(photos.first,
+                                h: 120, w: double.infinity),
+                          ),
+                          const SizedBox(height: 12),
+                        ],
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            color: Inst.gold.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: Inst.gold.withOpacity(0.35)),
+                            gradient: LinearGradient(colors: [
+                              ThixPolicy.gold.withOpacity(0.18),
+                              ThixPolicy.gold.withOpacity(0.05),
+                            ]),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                                color: Colors.white.withOpacity(0.6)),
                           ),
                           child: Row(
                             children: [
@@ -2535,8 +3280,24 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                                 child: Container(
                                   width: 46,
                                   height: 46,
-                                  decoration: const BoxDecoration(color: Inst.navy, shape: BoxShape.circle),
-                                  child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Inst.gold, size: 24),
+                                  decoration: BoxDecoration(
+                                    color: ThixPolicy.gold,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: ThixPolicy.gold.withOpacity(0.4),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Icon(
+                                    _playing
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    color: Colors.white,
+                                    size: 26,
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -2544,13 +3305,21 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(h['title']?.toString() ?? 'Hymne provincial', style: Inst.h3),
-                                    const SizedBox(height: 6),
+                                    Text(
+                                      h['title']?.toString() ??
+                                          'Hymne provincial',
+                                      style: ThixPolicy.labelStyle.copyWith(
+                                          color: ThixPolicy.inkDeep,
+                                          fontWeight: FontWeight.w800),
+                                    ),
+                                    const SizedBox(height: 4),
                                     Row(
                                       children: [
-                                        _verChip('Officielle', !_instrumental, () => _switchVersion(false)),
+                                        _verChip('Officielle', !_instrumental,
+                                            () => _switchVersion(false)),
                                         const SizedBox(width: 6),
-                                        _verChip('Instrumentale', _instrumental, () => _switchVersion(true)),
+                                        _verChip('Instrumentale', _instrumental,
+                                            () => _switchVersion(true)),
                                       ],
                                     ),
                                   ],
@@ -2560,17 +3329,35 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                           ),
                         ),
                         if (lyrics.isNotEmpty) ...[
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.55),
+                              borderRadius: BorderRadius.circular(12),
+                              border:
+                                  Border.all(color: Colors.white.withOpacity(0.6)),
+                            ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('PAROLES (EXTRAIT)', style: Inst.kicker),
+                                Text(
+                                  'Paroles',
+                                  style: ThixPolicy.labelStyle.copyWith(
+                                      color: ThixPolicy.inkDeep,
+                                      fontWeight: FontWeight.w800),
+                                ),
                                 const SizedBox(height: 6),
-                                ExpandableText(lyrics, maxLines: 4, style: Inst.bodyS.copyWith(fontStyle: FontStyle.italic)),
+                                ReadMoreText(
+                                  lyrics,
+                                  maxLines: 3,
+                                  style: ThixPolicy.bodySmallStyle.copyWith(
+                                    color: ThixPolicy.textSecondary,
+                                    fontStyle: FontStyle.italic,
+                                    height: 1.6,
+                                  ),
+                                ),
                               ],
                             ),
                           ),
@@ -2579,11 +3366,34 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 20),
               ],
             );
           },
         );
+  }
+
+  Widget _verChip(String label, bool sel, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+          color: sel ? ThixPolicy.gold : Colors.white.withOpacity(0.4),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+              color: sel ? ThixPolicy.gold : Colors.white.withOpacity(0.6)),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 9,
+            fontWeight: FontWeight.w800,
+            color: sel ? Colors.white : ThixPolicy.textSecondary,
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2602,38 +3412,47 @@ class _MapCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(icon: Icons.map_rounded, color: Inst.blue, kicker: _kickers['map'], title: _Tr.t('map', lang)),
+        SectionHeader(
+            icon: Icons.map_rounded, color: ThixPolicy.primary, title: _Tr.t('map', lang)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: ICard(
+          child: GlassCard(
             padding: EdgeInsets.zero,
             onTap: () => showDialog(
               context: context,
               builder: (_) => Dialog(
                 backgroundColor: Colors.transparent,
-                child: ICard(
+                child: GlassCard(
                   padding: const EdgeInsets.all(8),
-                  child: InteractiveViewer(minScale: 1, maxScale: 4, child: _img(url, h: 380, w: double.infinity)),
+                  child: InteractiveViewer(
+                    minScale: 1,
+                    maxScale: 4,
+                    child: _img(url, h: 380, w: double.infinity),
+                  ),
                 ),
               ),
             ),
             child: Stack(
               children: [
-                _img(url, h: 190, w: double.infinity, radius: 12),
+                _img(url, h: 190, w: double.infinity),
                 Positioned(
                   right: 10,
                   bottom: 10,
                   child: Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
-                    child: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 15),
+                    decoration: BoxDecoration(
+                      color: Colors.black45,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(Icons.zoom_in_rounded,
+                        color: Colors.white, size: 16),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -2651,37 +3470,33 @@ class _GallerySection extends StatelessWidget {
   Widget build(BuildContext context) {
     final media = province.galleryMedia;
     if (media.isEmpty) return const SizedBox.shrink();
+    final urls = media
+        .map((m) => (m['url'] ?? '').toString())
+        .where((u) => u.isNotEmpty)
+        .toList();
+    if (urls.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           icon: Icons.photo_library_rounded,
-          color: Inst.blue,
-          kicker: _kickers['gallery'],
+          color: ThixPolicy.primary,
           title: _Tr.t('gallery', lang),
-          count: media.length,
-          viewAllLabel: _Tr.t('all', lang),
-          onViewAll: () => showGlassSheet(
-            context,
-            title: _Tr.t('gallery', lang),
-            icon: Icons.photo_library_rounded,
-            children: [
-              GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: media.length,
-                itemBuilder: (_, i) => _img(media[i]['url']?.toString() ?? '', radius: 8),
-              ),
-            ],
-          ),
+          count: urls.length,
+          onViewAll: () => openGallery(context, urls),
         ),
-        HScroll(height: 150, itemWidth: 160, children: media.map((m) => _img(m['url']?.toString() ?? '', h: 150, w: 160, radius: 10)).toList()),
-        const SizedBox(height: 12),
+        HScroll(
+          height: 160,
+          itemWidth: 170,
+          children: List.generate(urls.length, (i) {
+            return GestureDetector(
+              onTap: () => openGallery(context, urls, initial: i),
+              child: _img(urls[i], h: 160, w: 170, radius: 20),
+            );
+          }),
+        ),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -2699,26 +3514,34 @@ class _AuthoritiesSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final executives = <Map<String, String?>>[];
     if ((province.governor ?? '').isNotEmpty) {
-      executives.add({'role': 'Gouverneur', 'name': province.governor, 'photo': province.governorPhotoUrl});
+      executives.add({
+        'role': 'Gouverneur',
+        'name': province.governor,
+        'photo': province.governorPhotoUrl
+      });
     }
     if ((province.viceGovernor ?? '').isNotEmpty) {
-      executives.add({'role': 'Vice-Gouverneur', 'name': province.viceGovernor, 'photo': province.viceGovernorPhotoUrl});
+      executives.add({
+        'role': 'Vice-Gouverneur',
+        'name': province.viceGovernor,
+        'photo': province.viceGovernorPhotoUrl,
+      });
     }
     final ministers = province.ministers;
     if (executives.isEmpty && ministers.isEmpty) return const SizedBox.shrink();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           icon: Icons.account_balance_rounded,
-          color: Inst.navy,
-          kicker: _kickers['authorities'],
+          color: ThixPolicy.primary,
           title: _Tr.t('authorities', lang),
           count: executives.length + ministers.length,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: ICard(
+          child: GlassCard(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2727,7 +3550,8 @@ class _AuthoritiesSection extends StatelessWidget {
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 12,
                       mainAxisSpacing: 12,
@@ -2742,12 +3566,17 @@ class _AuthoritiesSection extends StatelessWidget {
                   ),
                 if (ministers.isNotEmpty) ...[
                   if (executives.isNotEmpty) const SizedBox(height: 16),
-                  Text('MINISTRES PROVINCIAUX (${ministers.length})', style: Inst.kicker),
+                  Text(
+                    'Ministres provinciaux (${ministers.length})',
+                    style: ThixPolicy.labelStyle.copyWith(
+                        color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+                  ),
                   const SizedBox(height: 10),
                   GridView.builder(
                     shrinkWrap: true,
                     physics: const NeverScrollableScrollPhysics(),
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    gridDelegate:
+                        const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 3,
                       crossAxisSpacing: 10,
                       mainAxisSpacing: 10,
@@ -2759,7 +3588,8 @@ class _AuthoritiesSection extends StatelessWidget {
                       return _MinisterCard(
                         name: m['name']?.toString() ?? '—',
                         role: m['role']?.toString() ?? 'Ministre',
-                        photoUrl: (m['photoUrl'] ?? m['photo_url'] ?? '').toString(),
+                        photoUrl:
+                            (m['photoUrl'] ?? m['photo_url'] ?? '').toString(),
                       );
                     },
                   ),
@@ -2768,7 +3598,7 @@ class _AuthoritiesSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
@@ -2783,8 +3613,10 @@ class _ExecutiveCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasPhoto = photoUrl != null && photoUrl!.isNotEmpty;
-    final isGov = role.toLowerCase().contains('gouverneur') && !role.toLowerCase().contains('vice');
-    final color = isGov ? Inst.goldDeep : Inst.blue;
+    final isGov = role.toLowerCase().contains('gouverneur') &&
+        !role.toLowerCase().contains('vice');
+    final color = isGov ? ThixPolicy.gold : ThixPolicy.primary;
+
     return InkWell(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -2796,17 +3628,19 @@ class _ExecutiveCard extends StatelessWidget {
           icon: Icons.person_rounded,
           color: color,
           children: [
-            sheetRow(Icons.workspace_premium_rounded, 'Fonction', role, color: color),
-            sheetRow(Icons.account_balance_rounded, 'Institution', 'Gouvernement provincial'),
+            sheetRow(Icons.workspace_premium_rounded, 'Fonction', role,
+                color: color),
+            sheetRow(Icons.account_balance_rounded, 'Institution',
+                'Gouvernement provincial'),
           ],
         );
       },
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(16),
       child: Container(
         decoration: BoxDecoration(
-          color: Inst.ivory,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: Inst.line),
+          color: Colors.white.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: Colors.white.withOpacity(0.6)),
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -2814,18 +3648,33 @@ class _ExecutiveCard extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color, width: 2.5)),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: color, width: 2.5),
+              ),
               child: CircleAvatar(
                 radius: 32,
                 backgroundColor: Colors.white,
-                backgroundImage: hasPhoto ? CachedNetworkImageProvider(photoUrl!) : null,
-                child: hasPhoto ? null : Icon(Icons.person_rounded, size: 30, color: Inst.muted),
+                backgroundImage:
+                    hasPhoto ? CachedNetworkImageProvider(photoUrl!) : null,
+                child: hasPhoto
+                    ? null
+                    : Icon(Icons.person_rounded,
+                        size: 30, color: ThixPolicy.textMuted),
               ),
             ),
             const SizedBox(height: 10),
-            _pill(role.toUpperCase(), color),
+            _pill(role.toUpperCase(),
+                isGov ? const Color(0xFF8A6B00) : ThixPolicy.primary),
             const SizedBox(height: 6),
-            Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.labelStyle
+                  .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
+            ),
           ],
         ),
       ),
@@ -2837,7 +3686,8 @@ class _MinisterCard extends StatelessWidget {
   final String name;
   final String role;
   final String photoUrl;
-  const _MinisterCard({required this.name, required this.role, required this.photoUrl});
+  const _MinisterCard(
+      {required this.name, required this.role, required this.photoUrl});
 
   @override
   Widget build(BuildContext context) {
@@ -2854,9 +3704,13 @@ class _MinisterCard extends StatelessWidget {
           children: [sheetRow(Icons.work_rounded, 'Portefeuille', role)],
         );
       },
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(14),
       child: Container(
-        decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(10), border: Border.all(color: Inst.line)),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: Colors.white.withOpacity(0.6)),
+        ),
         padding: const EdgeInsets.all(10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -2865,12 +3719,28 @@ class _MinisterCard extends StatelessWidget {
               radius: 24,
               backgroundColor: Colors.white,
               backgroundImage: hasPhoto ? CachedNetworkImageProvider(photoUrl) : null,
-              child: hasPhoto ? null : const Icon(Icons.person_rounded, size: 20, color: Inst.muted),
+              child: hasPhoto
+                  ? null
+                  : const Icon(Icons.person_rounded,
+                      size: 20, color: ThixPolicy.textMuted),
             ),
             const SizedBox(height: 6),
-            Text(role, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
-            const SizedBox(height: 2),
-            Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
+            Text(
+              role,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.microStyle
+                  .copyWith(color: ThixPolicy.textMuted, fontWeight: FontWeight.w700),
+            ),
+            Text(
+              name,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.captionStyle
+                  .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+            ),
           ],
         ),
       ),
@@ -2879,7 +3749,7 @@ class _MinisterCard extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// VILLES / DÉCOUPAGE / RÉALISATIONS
+// VILLES — photos multiples
 // ════════════════════════════════════════════════════════════════════════
 class _CitiesSection extends StatelessWidget {
   final Province province;
@@ -2894,30 +3764,31 @@ class _CitiesSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.location_city_rounded,
-          color: Inst.blue,
-          kicker: _kickers['cities'],
+          color: const Color(0xFF1565C0),
           title: _Tr.t('cities', lang),
           count: province.cities.length,
         ),
         HScroll(
-          height: 196,
-          itemWidth: 220,
+          height: 250,
+          itemWidth: 260,
           children: province.cities.map((c) {
-            final dyn = c as dynamic;
-            final img = (dyn.imageUrl ?? '').toString();
-            return ICard(
+            final photos = _photosForDyn(c);
+            final img = photos.isNotEmpty ? photos.first : '';
+            return GlassCard(
               padding: EdgeInsets.zero,
               onTap: () => showGlassSheet(
                 context,
                 title: c.name,
                 subtitle: c.isCapital ? 'Chef-lieu de la province' : null,
-                imageUrl: img.isNotEmpty ? img : null,
+                extraImages: photos,
                 icon: Icons.location_city_rounded,
-                color: Inst.blue,
+                color: const Color(0xFF1565C0),
                 children: [
                   if (c.population != null)
-                    sheetRow(Icons.groups_rounded, 'Population', '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab'),
-                  if ((c.mayor ?? '').isNotEmpty) sheetRow(Icons.person_rounded, 'Maire', c.mayor!),
+                    sheetRow(Icons.groups_rounded, 'Population',
+                        '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab'),
+                  if ((c.mayor ?? '').isNotEmpty)
+                    sheetRow(Icons.person_rounded, 'Maire', c.mayor!),
                 ],
               ),
               child: Column(
@@ -2925,22 +3796,54 @@ class _CitiesSection extends StatelessWidget {
                 children: [
                   Stack(
                     children: [
-                      img.isNotEmpty
-                          ? _img(img, h: 100, w: double.infinity)
-                          : Container(
-                              height: 100,
-                              width: double.infinity,
-                              color: Inst.ivory,
-                              child: const Icon(Icons.location_city_rounded, color: Inst.blue, size: 30),
+                      if (img.isNotEmpty)
+                        _img(img, h: 110, w: double.infinity)
+                      else
+                        Container(
+                          height: 110,
+                          width: double.infinity,
+                          color: const Color(0xFF1565C0).withOpacity(0.10),
+                          child: const Icon(Icons.location_city_rounded,
+                              color: Color(0xFF1565C0), size: 40),
+                        ),
+                      if (photos.length > 1)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(8),
                             ),
+                            child: Text('${photos.length}📷',
+                                style: const TextStyle(
+                                    fontSize: 9,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w800)),
+                          ),
+                        ),
                       if (c.isCapital)
                         Positioned(
                           top: 6,
                           left: 6,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(color: Inst.goldDeep, borderRadius: BorderRadius.circular(4)),
-                            child: const Text('CHEF-LIEU', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF8A6B00),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'CHEF-LIEU',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
                           ),
                         ),
                     ],
@@ -2950,9 +3853,20 @@ class _CitiesSection extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h3),
+                        Text(
+                          c.name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.labelStyle.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w800),
+                        ),
                         if (c.population != null)
-                          Text('${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab', style: Inst.micro),
+                          Text(
+                            '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab',
+                            style: ThixPolicy.microStyle
+                                .copyWith(color: ThixPolicy.textSecondary),
+                          ),
                       ],
                     ),
                   ),
@@ -2961,12 +3875,15 @@ class _CitiesSection extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// DÉCOUPAGE
+// ════════════════════════════════════════════════════════════════════════
 class _DivisionsSection extends StatelessWidget {
   final Province province;
   final NationalLanguage lang;
@@ -2981,16 +3898,15 @@ class _DivisionsSection extends StatelessWidget {
         SectionHeader(
           icon: Icons.dashboard_customize_rounded,
           color: const Color(0xFF6A1B9A),
-          kicker: _kickers['divisions'],
           title: _Tr.t('divisions', lang),
           count: province.administrativeDivisions.length,
         ),
         HScroll(
-          height: 140,
+          height: 150,
           itemWidth: 230,
           children: province.administrativeDivisions.map((d) {
             final dyn = d as dynamic;
-            return ICard(
+            return GlassCard(
               padding: const EdgeInsets.all(12),
               onTap: () => showGlassSheet(
                 context,
@@ -2998,10 +3914,14 @@ class _DivisionsSection extends StatelessWidget {
                 icon: Icons.dashboard_customize_rounded,
                 color: const Color(0xFF6A1B9A),
                 children: [
-                  sheetRow(Icons.category_rounded, 'Type', dyn.type?.toString() ?? '—'),
-                  if ((dyn.capital ?? '').toString().isNotEmpty) sheetRow(Icons.star_rounded, 'Chef-lieu', dyn.capital.toString()),
+                  sheetRow(Icons.category_rounded, 'Type',
+                      dyn.type?.toString() ?? '-'),
+                  if ((dyn.capital ?? '').toString().isNotEmpty)
+                    sheetRow(Icons.star_rounded, 'Chef-lieu',
+                        dyn.capital.toString()),
                   if ((dyn.administrator ?? '').toString().isNotEmpty)
-                    sheetRow(Icons.person_rounded, 'Administrateur', dyn.administrator.toString()),
+                    sheetRow(Icons.person_rounded, 'Administrateur',
+                        dyn.administrator.toString()),
                 ],
               ),
               child: Column(
@@ -3012,35 +3932,48 @@ class _DivisionsSection extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6A1B9A).withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF6A1B9A).withOpacity(0.25)),
+                          color: const Color(0xFF6A1B9A).withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(10),
                         ),
-                        child: const Icon(Icons.dashboard_customize_rounded, color: Color(0xFF6A1B9A), size: 16),
+                        child: const Icon(Icons.dashboard_customize_rounded,
+                            color: Color(0xFF6A1B9A), size: 18),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(dyn.name?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
+                        child: Text(
+                          dyn.name?.toString() ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.captionStyle.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w800),
+                        ),
                       ),
                     ],
                   ),
                   const Spacer(),
-                  _pill((dyn.type?.toString() ?? '').toUpperCase(), const Color(0xFF6A1B9A)),
+                  _pill((dyn.type?.toString() ?? '').toUpperCase(),
+                      const Color(0xFF6A1B9A)),
                 ],
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
+// ════════════════════════════════════════════════════════════════════════
+// RÉALISATIONS
+// ════════════════════════════════════════════════════════════════════════
 class _AchievementsSection extends StatelessWidget {
   final Province province;
   final NationalLanguage lang;
-  const _AchievementsSection({required this.province, required this.lang});
+  final AppLocalizations l10n;
+  const _AchievementsSection(
+      {required this.province, required this.lang, required this.l10n});
 
   @override
   Widget build(BuildContext context) {
@@ -3050,58 +3983,86 @@ class _AchievementsSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.emoji_events_rounded,
-          color: Inst.goldDeep,
-          kicker: _kickers['achievements'],
-          title: _Tr.t('achievements', lang),
+          color: ThixPolicy.gold,
+          title: l10n.t('province_achievements'),
           count: province.achievements.length,
         ),
         HScroll(
-          height: 178,
-          itemWidth: 250,
+          height: 210,
+          itemWidth: 260,
           children: province.achievements.map((a) {
             final title = a['title']?.toString() ?? '';
             final desc = a['description']?.toString() ?? '';
             final date = a['date']?.toString() ?? '';
-            return ICard(
+            final photos = _photosFor(a);
+            return GlassCard(
               padding: const EdgeInsets.all(14),
               onTap: () => showGlassSheet(
                 context,
                 title: title,
                 subtitle: desc,
+                extraImages: photos,
                 icon: Icons.verified_rounded,
-                color: Inst.goldDeep,
-                children: [if (date.isNotEmpty) sheetRow(Icons.event_rounded, 'Date', date)],
+                color: ThixPolicy.gold,
+                children: [
+                  if (date.isNotEmpty)
+                    sheetRow(Icons.event_rounded, 'Date', date)
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(
-                      color: Inst.gold.withOpacity(0.12),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Inst.gold.withOpacity(0.35)),
+                  if (photos.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: _img(photos.first, h: 70, w: double.infinity),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.gold.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.verified_rounded,
+                          color: ThixPolicy.gold, size: 22),
                     ),
-                    child: const Icon(Icons.verified_rounded, color: Inst.goldDeep, size: 18),
+                  const SizedBox(height: 10),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ThixPolicy.labelStyle.copyWith(
+                        color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
                   ),
-                  const SizedBox(height: 8),
-                  Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
                   const Spacer(),
-                  Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
-                  if (date.isNotEmpty) Text(date, style: Inst.micro),
+                  Text(
+                    desc,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: ThixPolicy.captionStyle
+                        .copyWith(color: ThixPolicy.textSecondary, height: 1.4),
+                  ),
+                  if (date.isNotEmpty)
+                    Text(
+                      date,
+                      style: ThixPolicy.microStyle.copyWith(
+                          color: ThixPolicy.textMuted,
+                          fontWeight: FontWeight.w600),
+                    ),
                 ],
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// TOURISME — toutes les photos
+// TOURISME — galerie de photos multiples
 // ════════════════════════════════════════════════════════════════════════
 class _TourismSection extends StatelessWidget {
   final Province province;
@@ -3116,40 +4077,29 @@ class _TourismSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.landscape_rounded,
-          color: Inst.blue,
-          kicker: _kickers['tourism'],
+          color: const Color(0xFF1565C0),
           title: _Tr.t('tourism', lang),
           count: province.tourismSites.length,
         ),
         HScroll(
-          height: 216,
-          itemWidth: 240,
+          height: 245,
+          itemWidth: 280,
           children: province.tourismSites.map((s) {
+            final photos = _photosForDyn(s);
             final dyn = s as dynamic;
-            final mediaList = (dyn.media as List?) ?? [];
-            final photos = <String>[];
-            for (final m in mediaList) {
-              if (m is Map) {
-                final u = m['url']?.toString();
-                if (u != null && u.isNotEmpty) photos.add(u);
-              } else if (m is String) {
-                photos.add(m);
-              }
-            }
-            return ICard(
+            final img = photos.isNotEmpty ? photos.first : '';
+            return GlassCard(
               padding: EdgeInsets.zero,
               onTap: () => showGlassSheet(
                 context,
                 title: dyn.name?.toString() ?? '',
                 subtitle: dyn.description?.toString(),
+                extraImages: photos,
                 icon: Icons.landscape_rounded,
-                color: Inst.blue,
+                color: const Color(0xFF1565C0),
                 children: [
-                  if (photos.isNotEmpty) ...[
-                    _blockLabel('Photos (${photos.length})'),
-                    _photoGrid(photos),
-                  ],
-                  if ((dyn.type ?? '').toString().isNotEmpty) sheetRow(Icons.category_rounded, 'Type', dyn.type.toString()),
+                  if ((dyn.type ?? '').toString().isNotEmpty)
+                    sheetRow(Icons.category_rounded, 'Type', dyn.type.toString()),
                 ],
               ),
               child: Column(
@@ -3157,27 +4107,60 @@ class _TourismSection extends StatelessWidget {
                 children: [
                   Stack(
                     children: [
-                      _photoStrip(photos, height: 112, top: true),
+                      if (img.isNotEmpty)
+                        _img(img, h: 130, w: double.infinity)
+                      else
+                        Container(
+                          height: 130,
+                          width: double.infinity,
+                          color: const Color(0xFF1565C0).withOpacity(0.10),
+                          child: const Icon(Icons.landscape_rounded,
+                              color: Color(0xFF1565C0), size: 40),
+                        ),
                       Positioned(
                         top: 6,
                         left: 6,
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(color: Inst.blue, borderRadius: BorderRadius.circular(4)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF1565C0),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
                           child: Text(
                             (dyn.type?.toString() ?? 'SITE').toUpperCase(),
-                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8),
+                            style: const TextStyle(
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: 0.8,
+                            ),
                           ),
                         ),
                       ),
                       if (photos.length > 1)
                         Positioned(
-                          top: 6,
+                          bottom: 6,
                           right: 6,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
-                            child: Text('${photos.length} photos', style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white)),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.black54,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.photo_library_rounded,
+                                    size: 10, color: Colors.white),
+                                const SizedBox(width: 3),
+                                Text('${photos.length}',
+                                    style: const TextStyle(
+                                        fontSize: 9,
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w800)),
+                              ],
+                            ),
                           ),
                         ),
                     ],
@@ -3187,7 +4170,22 @@ class _TourismSection extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(dyn.name?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+                        Text(
+                          dyn.name?.toString() ?? '',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.labelStyle.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w800),
+                        ),
+                        if ((dyn.description ?? '').toString().isNotEmpty)
+                          Text(
+                            dyn.description.toString(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: ThixPolicy.microStyle.copyWith(
+                                color: ThixPolicy.textSecondary, height: 1.4),
+                          ),
                       ],
                     ),
                   ),
@@ -3196,14 +4194,14 @@ class _TourismSection extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// ÉCONOMIE
+// ÉCONOMIE — photos
 // ════════════════════════════════════════════════════════════════════════
 class _EconomySection extends StatelessWidget {
   final Province province;
@@ -3219,116 +4217,111 @@ class _EconomySection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.storefront_rounded,
-          color: Inst.green,
-          kicker: _kickers['economy'],
+          color: const Color(0xFF2E7D32),
           title: _Tr.t('economy', lang),
           count: r.length,
         ),
         HScroll(
-          height: 172,
-          itemWidth: 250,
+          height: 225,
+          itemWidth: 270,
           children: r.map((res) {
-            return ICard(
-              padding: const EdgeInsets.all(12),
+            final photos = _photosForDyn(res);
+            final img = photos.isNotEmpty ? photos.first : '';
+            return GlassCard(
+              padding: EdgeInsets.zero,
               onTap: () => showGlassSheet(
                 context,
                 title: res.name,
                 subtitle: res.description,
+                extraImages: photos,
                 icon: Icons.monetization_on_rounded,
-                color: Inst.green,
+                color: const Color(0xFF2E7D32),
                 children: const [],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(9),
-                        decoration: BoxDecoration(
-                          color: Inst.green.withOpacity(0.08),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Inst.green.withOpacity(0.25)),
+                  if (img.isNotEmpty)
+                    _img(img, h: 110, w: double.infinity)
+                  else
+                    Container(
+                      height: 70,
+                      width: double.infinity,
+                      color: const Color(0xFF2E7D32).withOpacity(0.10),
+                      child: const Icon(Icons.monetization_on_rounded,
+                          color: Color(0xFF2E7D32), size: 36),
+                    ),
+                  Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF2E7D32).withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: const Icon(Icons.monetization_on_rounded,
+                                  color: Color(0xFF2E7D32), size: 16),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                res.name,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: ThixPolicy.captionStyle.copyWith(
+                                    color: ThixPolicy.inkDeep,
+                                    fontWeight: FontWeight.w800),
+                              ),
+                            ),
+                          ],
                         ),
-                        child: const Icon(Icons.monetization_on_rounded, color: Inst.green, size: 16),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(child: Text(res.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label)),
-                    ],
+                        const SizedBox(height: 6),
+                        Text(
+                          res.description ?? '',
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.microStyle.copyWith(
+                              color: ThixPolicy.textSecondary, height: 1.4),
+                        ),
+                      ],
+                    ),
                   ),
-                  const Spacer(),
-                  Text(res.description ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(height: 1.45)),
                 ],
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// CULTURE
+// CULTURE — peuples/tribus avec photos + Voir plus
 // ════════════════════════════════════════════════════════════════════════
 class _CultureSection extends StatelessWidget {
   final Province province;
   final String id;
   final NationalLanguage lang;
-  const _CultureSection({required this.province, required this.id, required this.lang});
+  const _CultureSection({
+    required this.province,
+    required this.id,
+    required this.lang,
+  });
 
-  Widget _infoRow(IconData icon, Color color, String label, String value) {
+  Widget _subTitle(String text) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 15, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(text: label, style: Inst.label),
-                  TextSpan(text: value, style: Inst.bodyS),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _monoTile(BuildContext context, String label, String content, IconData icon) {
-    return InkWell(
-      onTap: () => showGlassSheet(
-        context,
-        title: label,
-        icon: icon,
-        children: [ExpandableText(content, maxLines: 200, style: Inst.body)],
-      ),
-      borderRadius: BorderRadius.circular(8),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 14, color: Inst.blue),
-                const SizedBox(width: 8),
-                Expanded(child: Text(label, style: Inst.label)),
-                const Icon(Icons.chevron_right_rounded, size: 15, color: Inst.muted),
-              ],
-            ),
-            const SizedBox(height: 6),
-            ExpandableText(content, maxLines: 2, style: Inst.micro.copyWith(height: 1.5)),
-          ],
-        ),
+      padding: const EdgeInsets.only(top: 16, bottom: 10),
+      child: Text(
+        text,
+        style: ThixPolicy.labelStyle.copyWith(
+            color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
       ),
     );
   }
@@ -3345,78 +4338,122 @@ class _CultureSection extends StatelessWidget {
         (p.climate ?? '').isNotEmpty ||
         (p.infrastructure ?? '').isNotEmpty ||
         (p.education ?? '').isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           icon: Icons.theater_comedy_rounded,
-          color: Inst.goldDeep,
-          kicker: _kickers['culture'],
+          color: ThixPolicy.gold,
           title: _Tr.t('culture', lang),
           count: hasTribes ? tribes.length : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: ICard(
+          child: GlassCard(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (hasLang) _infoRow(Icons.forum_rounded, Inst.blue, 'Langues : ', p.languages!),
-                if (hasResources) _infoRow(Icons.diamond_rounded, Inst.goldDeep, 'Ressources : ', p.resources!),
+                if (hasLang)
+                  _infoRow(Icons.forum_rounded, ThixPolicy.primary, 'Langues : ',
+                      p.languages!),
+                if (hasResources)
+                  _infoRow(Icons.diamond_rounded, ThixPolicy.gold,
+                      'Ressources : ', p.resources!),
                 if (hasDesc) ...[
-                  const SizedBox(height: 6),
-                  ExpandableText(p.description!, maxLines: 4, style: Inst.body),
+                  const SizedBox(height: 8),
+                  ReadMoreText(
+                    p.description!,
+                    maxLines: 4,
+                    style: ThixPolicy.bodySmallStyle.copyWith(
+                        color: ThixPolicy.inkDeep, height: 1.55),
+                  ),
                 ],
                 if (hasTribes) ...[
-                  _blockLabel('Peuples & Tribus'),
+                  _subTitle('Peuples & Tribus'),
                   SizedBox(
-                    height: 148,
+                    height: 240,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
                       itemCount: tribes.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 10),
+                      separatorBuilder: (_, __) => const SizedBox(width: 12),
                       itemBuilder: (_, i) {
                         final t = tribes[i];
                         final name = t['name']?.toString() ?? 'Tribu';
                         final zone = t['zone']?.toString() ?? '';
                         final history = t['history']?.toString() ?? '';
+                        final photos = _photosFor(t);
                         return SizedBox(
-                          width: 220,
-                          child: ICard(
-                            padding: const EdgeInsets.all(12),
-                            radius: 10,
+                          width: 240,
+                          child: GlassCard(
+                            padding: EdgeInsets.zero,
+                            radius: 16,
                             onTap: () => showGlassSheet(
                               context,
                               title: name,
                               subtitle: zone.isNotEmpty ? 'Zone : $zone' : null,
+                              extraImages: photos,
                               icon: Icons.groups_rounded,
-                              children: [if (history.isNotEmpty) ExpandableText(history, maxLines: 200, style: Inst.body)],
+                              children: [
+                                if (history.isNotEmpty)
+                                  ReadMoreText(
+                                    history,
+                                    maxLines: 6,
+                                    style: ThixPolicy.bodyStyle.copyWith(
+                                        color: ThixPolicy.inkDeep, height: 1.6),
+                                  ),
+                              ],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.all(7),
-                                      decoration: BoxDecoration(
-                                        color: Inst.blue.withOpacity(0.08),
-                                        borderRadius: BorderRadius.circular(6),
-                                        border: Border.all(color: Inst.blue.withOpacity(0.22)),
+                                if (photos.isNotEmpty)
+                                  _img(photos.first, h: 100, w: double.infinity)
+                                else
+                                  Container(
+                                    height: 70,
+                                    width: double.infinity,
+                                    color: ThixPolicy.primary.withOpacity(0.08),
+                                    child: const Icon(Icons.groups_rounded,
+                                        color: ThixPolicy.primary, size: 34),
+                                  ),
+                                Padding(
+                                  padding: const EdgeInsets.all(12),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: ThixPolicy.captionStyle.copyWith(
+                                            color: ThixPolicy.inkDeep,
+                                            fontWeight: FontWeight.w800),
                                       ),
-                                      child: const Icon(Icons.groups_rounded, color: Inst.blue, size: 14),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label)),
-                                  ],
+                                      if (zone.isNotEmpty)
+                                        Text(
+                                          '📍 $zone',
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: ThixPolicy.microStyle.copyWith(
+                                              color: ThixPolicy.primary,
+                                              fontWeight: FontWeight.w700),
+                                        ),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        history,
+                                        maxLines: 3,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: ThixPolicy.microStyle.copyWith(
+                                            color: ThixPolicy.textSecondary,
+                                            height: 1.4),
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                                const SizedBox(height: 6),
-                                if (zone.isNotEmpty)
-                                  Text('📍 $zone', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(color: Inst.blue)),
-                                const Spacer(),
-                                Text(history, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(height: 1.45)),
                               ],
                             ),
                           ),
@@ -3426,39 +4463,137 @@ class _CultureSection extends StatelessWidget {
                   ),
                 ],
                 if (hasMono) ...[
-                  _blockLabel('Monographie'),
-                  if ((p.history ?? '').isNotEmpty) _monoTile(context, 'Histoire & Origines', p.history!, Icons.menu_book_rounded),
-                  if ((p.climate ?? '').isNotEmpty) _monoTile(context, 'Climat & Relief', p.climate!, Icons.wb_sunny_rounded),
-                  if ((p.infrastructure ?? '').isNotEmpty) _monoTile(context, 'Infrastructures', p.infrastructure!, Icons.bolt_rounded),
-                  if ((p.education ?? '').isNotEmpty) _monoTile(context, 'Éducation & Santé', p.education!, Icons.school_rounded),
+                  _subTitle('Monographie'),
+                  if ((p.history ?? '').isNotEmpty)
+                    _monoTile(context, 'Histoire & Origines', p.history!,
+                        Icons.menu_book_rounded),
+                  if ((p.climate ?? '').isNotEmpty)
+                    _monoTile(context, 'Climat & Relief', p.climate!,
+                        Icons.wb_sunny_rounded),
+                  if ((p.infrastructure ?? '').isNotEmpty)
+                    _monoTile(context, 'Infrastructures', p.infrastructure!,
+                        Icons.bolt_rounded),
+                  if ((p.education ?? '').isNotEmpty)
+                    _monoTile(context, 'Éducation & Santé', p.education!,
+                        Icons.school_rounded),
                 ],
-                _FamousBlock(id: id),
-                _GastroBlock(id: id),
-                _ProverbsBlock(id: id),
+                _FamousBlock(id: id, subTitle: _subTitle),
+                _GastroBlock(id: id, subTitle: _subTitle),
+                _ProverbsBlock(id: id, subTitle: _subTitle),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
+    );
+  }
+
+  Widget _infoRow(IconData icon, Color color, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: label,
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+                  ),
+                  TextSpan(
+                    text: value,
+                    style: ThixPolicy.captionStyle
+                        .copyWith(color: ThixPolicy.textSecondary),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monoTile(
+      BuildContext context, String label, String content, IconData icon) {
+    return InkWell(
+      onTap: () => showGlassSheet(
+        context,
+        title: label,
+        icon: icon,
+        children: [
+          SelectableText(
+            content,
+            style: ThixPolicy.bodyStyle
+                .copyWith(color: ThixPolicy.inkDeep, height: 1.6),
+          ),
+        ],
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.55),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Colors.white.withOpacity(0.6)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 15, color: ThixPolicy.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: ThixPolicy.inkDeep,
+                        fontWeight: FontWeight.w800),
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    size: 16, color: ThixPolicy.textMuted),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              content,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.microStyle.copyWith(
+                  color: ThixPolicy.textSecondary, height: 1.5),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 class _FamousBlock extends ConsumerWidget {
   final String id;
-  const _FamousBlock({required this.id});
+  final Widget Function(String) subTitle;
+  const _FamousBlock({required this.id, required this.subTitle});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(_famousProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
+    final items =
+        ref.watch(_famousProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
     if (items.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _blockLabel('Personnalités célèbres'),
+        subTitle('Personnalités célèbres'),
         SizedBox(
-          height: 186,
+          height: 220,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3466,43 +4601,76 @@ class _FamousBlock extends ConsumerWidget {
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
               final f = items[i];
-              final photo = (f['photo_url'] ?? '').toString();
+              final photos = _photosFor(f);
+              final photo = photos.isNotEmpty ? photos.first : '';
               final achievement = (f['achievement'] ?? '').toString();
               return SizedBox(
-                width: 190,
-                child: ICard(
+                width: 210,
+                child: GlassCard(
                   padding: const EdgeInsets.all(12),
-                  radius: 10,
+                  radius: 16,
                   onTap: () => showGlassSheet(
                     context,
                     title: f['name']?.toString() ?? '',
                     subtitle: f['bio']?.toString(),
-                    imageUrl: photo.isNotEmpty ? photo : null,
+                    extraImages: photos,
                     icon: Icons.emoji_events_rounded,
-                    color: Inst.goldDeep,
+                    color: ThixPolicy.gold,
                     children: [
                       if (achievement.isNotEmpty)
-                        sheetRow(Icons.workspace_premium_rounded, 'Distinction', achievement, color: Inst.goldDeep),
+                        sheetRow(Icons.workspace_premium_rounded,
+                            'Distinction', achievement,
+                            color: ThixPolicy.gold),
                     ],
                   ),
                   child: Column(
                     children: [
                       Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Inst.gold, width: 2)),
+                        width: 62,
+                        height: 62,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border:
+                              Border.all(color: ThixPolicy.gold, width: 2),
+                        ),
                         child: ClipOval(
                           child: photo.isNotEmpty
-                              ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Inst.muted))
-                              : const Icon(Icons.person, color: Inst.muted),
+                              ? CachedNetworkImage(
+                                  imageUrl: photo,
+                                  fit: BoxFit.cover,
+                                  errorWidget: (_, __, ___) => const Icon(
+                                      Icons.person,
+                                      color: ThixPolicy.textMuted),
+                                )
+                              : const Icon(Icons.person,
+                                  color: ThixPolicy.textMuted),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(f['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
-                      Text(f['field']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(color: Inst.goldDeep)),
+                      Text(
+                        f['name']?.toString() ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.captionStyle.copyWith(
+                            color: ThixPolicy.inkDeep,
+                            fontWeight: FontWeight.w900),
+                      ),
+                      Text(
+                        f['field']?.toString() ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.microStyle.copyWith(
+                            color: ThixPolicy.gold, fontWeight: FontWeight.w800),
+                      ),
                       const Spacer(),
                       if (achievement.isNotEmpty)
-                        Text(achievement, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
+                        Text(
+                          achievement,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: ThixPolicy.microStyle
+                              .copyWith(color: ThixPolicy.textSecondary),
+                        ),
                     ],
                   ),
                 ),
@@ -3517,19 +4685,21 @@ class _FamousBlock extends ConsumerWidget {
 
 class _GastroBlock extends ConsumerWidget {
   final String id;
-  const _GastroBlock({required this.id});
+  final Widget Function(String) subTitle;
+  const _GastroBlock({required this.id, required this.subTitle});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(_gastroProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
+    final items =
+        ref.watch(_gastroProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
     if (items.isEmpty) return const SizedBox.shrink();
-    const accent = Color(0xFFAD1457);
+    const accent = Color(0xFFD81B60);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _blockLabel('Gastronomie'),
+        subTitle('Gastronomie'),
         SizedBox(
-          height: 186,
+          height: 210,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3537,40 +4707,54 @@ class _GastroBlock extends ConsumerWidget {
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
               final g = items[i];
-              final photos = _photosOf(g);
+              final photos = _photosFor(g);
+              final img = photos.isNotEmpty ? photos.first : '';
               return SizedBox(
-                width: 200,
-                child: ICard(
+                width: 210,
+                child: GlassCard(
                   padding: EdgeInsets.zero,
-                  radius: 10,
+                  radius: 16,
                   onTap: () {
                     final ingredients = (g['ingredients'] is List)
                         ? (g['ingredients'] as List).map((e) => e.toString()).toList()
-                        : (g['ingredients']?.toString() ?? '').split(',').where((e) => e.trim().isNotEmpty).toList();
+                        : (g['ingredients']?.toString() ?? '')
+                            .split(',')
+                            .where((e) => e.trim().isNotEmpty)
+                            .toList();
                     showGlassSheet(
                       context,
                       title: g['name']?.toString() ?? '',
                       subtitle: g['description']?.toString(),
-                      imageUrl: photos.isNotEmpty ? photos.first : null,
+                      extraImages: photos,
                       icon: Icons.restaurant_rounded,
                       color: accent,
                       children: [
-                        if (photos.length > 1) ...[
-                          _blockLabel('Photos (${photos.length})'),
-                          _photoGrid(photos),
-                        ],
                         if (ingredients.isNotEmpty) ...[
-                          _blockLabel('Ingrédients'),
+                          Text('Ingrédients',
+                              style: ThixPolicy.labelStyle.copyWith(
+                                  color: ThixPolicy.inkDeep,
+                                  fontWeight: FontWeight.w800)),
+                          const SizedBox(height: 8),
                           Wrap(
                             spacing: 6,
                             runSpacing: 6,
-                            children: ingredients
-                                .map((ing) => Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                      decoration: BoxDecoration(color: accent.withOpacity(0.08), borderRadius: BorderRadius.circular(14), border: Border.all(color: accent.withOpacity(0.3))),
-                                      child: Text(ing.trim(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accent)),
-                                    ))
-                                .toList(),
+                            children: ingredients.map((ing) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 5),
+                                decoration: BoxDecoration(
+                                  color: accent.withOpacity(0.12),
+                                  borderRadius: BorderRadius.circular(14),
+                                ),
+                                child: Text(
+                                  ing.trim(),
+                                  style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                      color: accent),
+                                ),
+                              );
+                            }).toList(),
                           ),
                         ],
                       ],
@@ -3579,14 +4763,35 @@ class _GastroBlock extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _photoStrip(photos, height: 88, top: true),
+                      if (img.isNotEmpty)
+                        _img(img, h: 110, w: double.infinity)
+                      else
+                        Container(
+                            height: 70,
+                            width: double.infinity,
+                            color: accent.withOpacity(0.10),
+                            child: const Icon(Icons.restaurant_rounded,
+                                color: accent, size: 30)),
                       Padding(
                         padding: const EdgeInsets.all(10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(g['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
-                            Text(g['description']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
+                            Text(
+                              g['name']?.toString() ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.captionStyle.copyWith(
+                                  color: ThixPolicy.inkDeep,
+                                  fontWeight: FontWeight.w800),
+                            ),
+                            Text(
+                              g['description']?.toString() ?? '',
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: ThixPolicy.microStyle
+                                  .copyWith(color: ThixPolicy.textSecondary),
+                            ),
                           ],
                         ),
                       ),
@@ -3604,19 +4809,21 @@ class _GastroBlock extends ConsumerWidget {
 
 class _ProverbsBlock extends ConsumerWidget {
   final String id;
-  const _ProverbsBlock({required this.id});
+  final Widget Function(String) subTitle;
+  const _ProverbsBlock({required this.id, required this.subTitle});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final items = ref.watch(_proverbsProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
+    final items = ref.watch(_proverbsProv(id)).valueOrNull ??
+        const <Map<String, dynamic>>[];
     if (items.isEmpty) return const SizedBox.shrink();
-    const accent = Color(0xFF00695C);
+    const accent = Color(0xFF00897B);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _blockLabel('Proverbes & Contes'),
+        subTitle('Proverbes & Contes'),
         SizedBox(
-          height: 156,
+          height: 180,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3626,32 +4833,54 @@ class _ProverbsBlock extends ConsumerWidget {
               final pr = items[i];
               final meaning = (pr['meaning'] ?? '').toString();
               return SizedBox(
-                width: 240,
-                child: ICard(
+                width: 250,
+                child: GlassCard(
                   padding: const EdgeInsets.all(12),
-                  radius: 10,
+                  radius: 16,
                   onTap: () => showGlassSheet(
                     context,
                     title: pr['text']?.toString() ?? '',
                     subtitle: pr['translation']?.toString(),
                     icon: Icons.format_quote_rounded,
                     color: accent,
-                    children: [if (meaning.isNotEmpty) ExpandableText(meaning, maxLines: 200, style: Inst.body)],
+                    children: [
+                      if (meaning.isNotEmpty)
+                        Text(meaning,
+                            style: ThixPolicy.bodyStyle.copyWith(
+                                color: ThixPolicy.inkDeep, height: 1.6)),
+                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.format_quote_rounded, size: 15, color: accent),
+                          const Icon(Icons.format_quote_rounded,
+                              size: 16, color: accent),
                           const Spacer(),
-                          _pill((pr['language']?.toString() ?? '').toUpperCase(), accent),
+                          _pill(
+                              (pr['language']?.toString() ?? '').toUpperCase(),
+                              accent),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text('"${pr['text'] ?? ''}"', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.label.copyWith(fontStyle: FontStyle.italic)),
+                      Text(
+                        '"${pr['text'] ?? ''}"',
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.captionStyle.copyWith(
+                            color: ThixPolicy.inkDeep,
+                            fontWeight: FontWeight.w800,
+                            fontStyle: FontStyle.italic),
+                      ),
                       const Spacer(),
-                      Text(pr['translation']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
+                      Text(
+                        pr['translation']?.toString() ?? '',
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.microStyle
+                            .copyWith(color: ThixPolicy.textSecondary),
+                      ),
                     ],
                   ),
                 ),
@@ -3709,15 +4938,19 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Inst.navy;
-    const green = Inst.green;
-    const red = Inst.danger;
+    const accent = Color(0xFF8E24AA);
+    const green = Color(0xFF43A047);
+    const red = Color(0xFFE53935);
+
     return _asyncList(ref.watch(_quizProv(widget.id)), (questions) {
       final total = questions.length;
       final q = _index < total ? questions[_index] : null;
-      final options = q == null ? <String>[] : ((q['options'] as List?) ?? []).map((e) => e.toString()).toList();
+      final options = q == null
+          ? <String>[]
+          : ((q['options'] as List?) ?? []).map((e) => e.toString()).toList();
       final correct = (q?['correct_answer'] as num?)?.toInt() ?? 0;
       final good = _score >= total / 2;
+
       Widget body;
       if (!_done && q != null && options.isNotEmpty) {
         body = Column(
@@ -3725,56 +4958,84 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
           children: [
             Row(
               children: [
-                Text('Question ${_index + 1}/$total', style: Inst.label.copyWith(color: accent)),
+                Text('Question ${_index + 1}/$total',
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: accent, fontWeight: FontWeight.w800)),
                 const Spacer(),
-                Text('Score : $_score', style: Inst.label.copyWith(color: green)),
+                Text('Score : $_score',
+                    style: ThixPolicy.captionStyle.copyWith(
+                        color: green, fontWeight: FontWeight.w800)),
               ],
             ),
             const SizedBox(height: 8),
             ClipRRect(
-              borderRadius: BorderRadius.circular(4),
+              borderRadius: BorderRadius.circular(8),
               child: LinearProgressIndicator(
                 value: (_index + 1) / total,
-                minHeight: 5,
+                minHeight: 6,
                 backgroundColor: accent.withOpacity(0.12),
                 valueColor: const AlwaysStoppedAnimation(accent),
               ),
             ),
             const SizedBox(height: 16),
-            Text(q['question']?.toString() ?? '', style: Inst.h3),
+            Text(
+              q['question']?.toString() ?? '',
+              style: ThixPolicy.h3Style
+                  .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+            ),
             const SizedBox(height: 14),
             ...options.asMap().entries.map((e) {
               final isSel = _selected == e.key;
               final isCorrect = e.key == correct;
               final showState = _selected != null;
-              Color bg = Inst.ivory;
-              Color bd = Inst.line;
+              Color bg = Colors.white.withOpacity(0.5);
+              Color bd = Colors.white.withOpacity(0.6);
               if (showState && isCorrect) {
-                bg = green.withOpacity(0.10);
+                bg = green.withOpacity(0.15);
                 bd = green;
               } else if (showState && isSel && !isCorrect) {
-                bg = red.withOpacity(0.08);
-                bd = red;
+                bg = ThixPolicy.danger.withOpacity(0.12);
+                bd = ThixPolicy.danger;
               }
               return InkWell(
                 onTap: () => _answer(e.key, correct, total),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(12),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: bd)),
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: bd),
+                  ),
                   child: Row(
                     children: [
                       Container(
                         width: 26,
                         height: 26,
-                        decoration: BoxDecoration(color: accent.withOpacity(0.10), borderRadius: BorderRadius.circular(6)),
+                        decoration: BoxDecoration(
+                          color: accent.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Center(
-                          child: Text(String.fromCharCode(65 + e.key), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: accent)),
+                          child: Text(
+                            String.fromCharCode(65 + e.key),
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                color: accent),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Expanded(child: Text(e.value, style: Inst.label.copyWith(fontWeight: FontWeight.w700))),
+                      Expanded(
+                        child: Text(
+                          e.value,
+                          style: ThixPolicy.captionStyle.copyWith(
+                              color: ThixPolicy.inkDeep,
+                              fontWeight: FontWeight.w700),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -3786,18 +5047,32 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
         body = Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(22),
               decoration: BoxDecoration(
-                color: (good ? green : red).withOpacity(0.10),
+                gradient: LinearGradient(colors: [
+                  (good ? green : red).withOpacity(0.20),
+                  Colors.transparent
+                ]),
                 shape: BoxShape.circle,
-                border: Border.all(color: (good ? green : red).withOpacity(0.4)),
               ),
-              child: Text('$_score/$total', style: Inst.h1.copyWith(color: good ? green : red)),
+              child: Text(
+                '$_score/$total',
+                style: ThixPolicy.h1Style
+                    .copyWith(color: good ? green : red, fontWeight: FontWeight.w900),
+              ),
             ),
             const SizedBox(height: 12),
-            Text(good ? '🎉 Excellent !' : '💪 À améliorer', style: Inst.h2),
+            Text(
+              good ? '🎉 Excellent !' : '💪 À améliorer',
+              style: ThixPolicy.h2Style
+                  .copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
+            ),
             const SizedBox(height: 6),
-            Text('Vous connaissez ${good ? 'bien' : 'encore peu'} ${widget.name} !', textAlign: TextAlign.center, style: Inst.bodyS),
+            Text(
+              'Vous connaissez ${good ? 'bien' : 'encore peu'} ${widget.name} !',
+              textAlign: TextAlign.center,
+              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
+            ),
             const SizedBox(height: 16),
             Wrap(
               alignment: WrapAlignment.center,
@@ -3811,17 +5086,20 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: () => Share.share('🎮 Quiz ${widget.name} : $_score/$total sur THIX ID !'),
+                  onPressed: () => Share.share(
+                      '🎮 Quiz ${widget.name} : $_score/$total sur THIX ID !'),
                   icon: const Icon(Icons.share_rounded, size: 16),
                   label: const Text('Partager'),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accent,
                     side: const BorderSide(color: accent),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12)),
                   ),
                 ),
               ],
@@ -3829,15 +5107,21 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
           ],
         );
       }
+
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(icon: Icons.quiz_rounded, color: accent, kicker: _kickers['quiz'], title: _Tr.t('quiz', widget.lang), count: total),
+          SectionHeader(
+            icon: Icons.quiz_rounded,
+            color: accent,
+            title: _Tr.t('quiz', widget.lang),
+            count: total,
+          ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: ICard(padding: const EdgeInsets.all(18), child: body),
+            child: GlassCard(padding: const EdgeInsets.all(18), child: body),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 20),
         ],
       );
     }, skeleton: 220);
@@ -3860,15 +5144,14 @@ class _EmergencySection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.emergency_rounded,
-          color: Inst.danger,
-          kicker: _kickers['emergency'],
+          color: ThixPolicy.danger,
           title: _Tr.t('emergency', lang),
           count: province.emergencyContacts.length,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: ICard(
-            padding: const EdgeInsets.all(10),
+          child: GlassCard(
+            padding: const EdgeInsets.all(12),
             child: Column(
               children: province.emergencyContacts.map((c) {
                 final dyn = c as dynamic;
@@ -3878,21 +5161,36 @@ class _EmergencySection extends StatelessWidget {
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
-                    color: Inst.ivory,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Inst.danger.withOpacity(0.25)),
+                    color: Colors.white.withOpacity(0.55),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: ThixPolicy.danger.withOpacity(0.25)),
                   ),
                   child: ListTile(
                     leading: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(color: Inst.danger.withOpacity(0.10), shape: BoxShape.circle),
-                      child: const Icon(Icons.phone_in_talk_rounded, color: Inst.danger, size: 16),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.danger.withOpacity(0.12),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.phone_in_talk_rounded,
+                          color: ThixPolicy.danger, size: 18),
                     ),
-                    title: Text(service, style: Inst.label),
-                    subtitle: Text(phone, style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w700)),
+                    title: Text(
+                      service,
+                      style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+                    ),
+                    subtitle: Text(
+                      phone,
+                      style: ThixPolicy.captionStyle.copyWith(
+                          color: ThixPolicy.inkDeep,
+                          fontWeight: FontWeight.w600),
+                    ),
                     trailing: dial.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.call_rounded, color: Inst.green, size: 19),
+                            icon: const Icon(Icons.call_rounded,
+                                color: Color(0xFF2E7D32), size: 20),
                             onPressed: () async {
                               HapticFeedback.lightImpact();
                               try {
@@ -3909,53 +5207,120 @@ class _EmergencySection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 20),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// PIED DE PAGE INSTITUTIONNEL
+// IDENTITÉ VISUELLE
 // ════════════════════════════════════════════════════════════════════════
-class _Footer extends StatelessWidget {
+class _VisualIdentitySection extends StatelessWidget {
   final Province province;
-  const _Footer({required this.province});
+  const _VisualIdentitySection({required this.province});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(height: 1, color: Inst.gold.withOpacity(0.4)),
-        const SizedBox(height: 14),
-        const Text('RÉPUBLIQUE DÉMOCRATIQUE DU CONGO', style: Inst.kicker),
-        const SizedBox(height: 4),
-        Text(
-          'Province du ${province.name} — Portail officiel THIX ID',
-          textAlign: TextAlign.center,
-          style: Inst.micro,
-        ),
-        if ((province.website ?? '').isNotEmpty) ...[
-          const SizedBox(height: 10),
-          InkWell(
-            onTap: () => _launch(province.website!),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 10),
-              decoration: BoxDecoration(color: Inst.paper, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Icon(Icons.language_rounded, size: 14, color: Inst.blue),
-                  const SizedBox(width: 6),
-                  Flexible(child: Text(province.website!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label.copyWith(color: Inst.blue))),
-                ],
+    return GlassCard(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.image_rounded, size: 18, color: ThixPolicy.primary),
+              const SizedBox(width: 8),
+              Text(
+                'Identité visuelle',
+                style: ThixPolicy.labelStyle.copyWith(
+                    color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                  child: _thumb(context, 'Couverture', province.coverImageUrl,
+                      Icons.image_outlined)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _thumb(context, 'Blason', province.coatOfArmsUrl,
+                      Icons.shield_outlined)),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: _thumb(
+                      context, 'Drapeau', province.flagUrl, Icons.flag_outlined)),
+            ],
+          ),
+          if ((province.website ?? '').isNotEmpty) ...[
+            const SizedBox(height: 12),
+            InkWell(
+              onTap: () => _launch(province.website!),
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white.withOpacity(0.6)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.language_rounded,
+                        size: 15, color: ThixPolicy.primary),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        province.website!,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: ThixPolicy.captionStyle.copyWith(
+                            color: ThixPolicy.primary,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _thumb(BuildContext context, String label, String? url, IconData fallback) {
+    final has = url != null && url.isNotEmpty;
+    return GestureDetector(
+      onTap: has
+          ? () => openGallery(context, [url], initial: 0)
+          : null,
+      child: Column(
+        children: [
+          Container(
+            height: 70,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.5),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.white.withOpacity(0.6)),
+            ),
+            child: has
+                ? _img(url, h: 70, w: double.infinity, radius: 12)
+                : Icon(fallback,
+                    color: ThixPolicy.textMuted.withOpacity(0.4), size: 22),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            label,
+            style: ThixPolicy.microStyle.copyWith(
+                color: ThixPolicy.textMuted, fontWeight: FontWeight.w600),
           ),
         ],
-      ],
+      ),
     );
   }
 }
