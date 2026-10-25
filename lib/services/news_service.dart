@@ -22,26 +22,190 @@ class NewsService {
   Future<NewsArticle?> getArticleById(String id) async {
     try{ final r=await _supabase.from('news_articles').select('*').eq('id',id).maybeSingle(); if(r==null) return null; return NewsArticle.fromJson(r); }catch(e){return null;}
   }
-  Future<List<NewsArticle>> getBreakingNews() async { try{ final r=await _supabase.from('news_articles').select('*').eq('is_breaking',true).eq('is_published',true).order('published_at',ascending:false).limit(20); return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); }catch(e){return [];} }
-  Future<List<NewsArticle>> getVideos() async { try{ final r=await _supabase.from('news_articles').select('*').eq('is_published',true).not('video_url','is',null).order('published_at',ascending:false).limit(20); return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); }catch(e){return [];} }
-  Future<List<NewsArticle>> searchArticles(String q) async { try{ final r=await _supabase.from('news_articles').select('*').eq('is_published',true).or('title.ilike.%$q%,content.ilike.%$q%').limit(50); return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); }catch(e){return [];} }
 
-  Future<void> incrementViews(String id) async { try{ final a=await _supabase.from('news_articles').select('views_count').eq('id',id).maybeSingle(); if(a==null) return; await _supabase.from('news_articles').update({'views_count':(a['views_count']??0)+1}).eq('id',id);}catch(_){} }
-  Future<bool> _isLiked(String id) async { if(currentUserId.isEmpty) return false; try{ final r=await _supabase.from('news_likes').select('id').eq('article_id',id).eq('user_id',currentUserId).maybeSingle(); return r!=null;}catch(_){return false;}}
-  Future<void> likeArticle(String id) async { if(currentUserId.isEmpty) return; if(!await _isLiked(id)){ await _supabase.from('news_likes').insert({'article_id':id,'user_id':currentUserId}); } }
-  Future<void> unlikeArticle(String id) async { await _supabase.from('news_likes').delete().eq('article_id',id).eq('user_id',currentUserId); }
-  Future<bool> _isSaved(String id) async { if(currentUserId.isEmpty) return false; try{ final r=await _supabase.from('news_saved').select('id').eq('article_id',id).eq('user_id',currentUserId).maybeSingle(); return r!=null;}catch(_){return false;}}
-  Future<void> saveArticle(String id) async { if(currentUserId.isEmpty) return; if(!await _isSaved(id)){ await _supabase.from('news_saved').insert({'article_id':id,'user_id':currentUserId,'saved_at':DateTime.now().toIso8601String()}); } }
-  Future<void> unsaveArticle(String id) async { await _supabase.from('news_saved').delete().eq('article_id',id).eq('user_id',currentUserId); }
-  Future<List<NewsArticle>> getSavedArticles() async { if(currentUserId.isEmpty) return []; try{ final r=await _supabase.from('news_saved').select('article:article_id(*)').eq('user_id',currentUserId); return (r as List).map((e)=>NewsArticle.fromJson({...e['article'],'is_saved':true})).toList(); }catch(e){return [];} }
+  Future<List<NewsArticle>> getBreakingNews() async { 
+    try{ 
+      final r=await _supabase.from('news_articles')
+          .select('*')
+          .eq('is_breaking',true)
+          .eq('is_published',true)
+          .order('published_at',ascending:false)
+          .limit(20); 
+      return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); 
+    }catch(e){return [];} 
+  }
 
-  Future<NewsArticle> createArticle({required String title,String? summary,required String content,required String category,String? imageUrl,String? videoUrl,bool isFeatured=false,bool isBreaking=false,DateTime? publishedAt}) async {
+  Future<List<NewsArticle>> getVideos() async { 
+    try{ 
+      final r=await _supabase.from('news_articles')
+          .select('*')
+          .eq('is_published',true)
+          .not('video_url','is',null)
+          .order('published_at',ascending:false)
+          .limit(20); 
+      return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); 
+    }catch(e){return [];} 
+  }
+
+  // 🎧 NOUVEAU : Récupère tous les podcasts (audio ET vidéo)
+  Future<List<NewsArticle>> getPodcasts() async {
+    try {
+      final r = await _supabase.from('news_articles')
+          .select('*')
+          .eq('is_published', true)
+          .eq('category', 'Podcast')
+          .or('audio_url.not.is.null,video_url.not.is.null')
+          .order('published_at', ascending: false)
+          .limit(30);
+      return (r as List).map((e) => NewsArticle.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('❌ getPodcasts $e');
+      return [];
+    }
+  }
+
+  // 🎧 NOUVEAU : Récupère uniquement les podcasts audio
+  Future<List<NewsArticle>> getAudioPodcasts() async {
+    try {
+      final r = await _supabase.from('news_articles')
+          .select('*')
+          .eq('is_published', true)
+          .eq('category', 'Podcast')
+          .not('audio_url', 'is', null)
+          .eq('video_url', null)
+          .order('published_at', ascending: false)
+          .limit(30);
+      return (r as List).map((e) => NewsArticle.fromJson(e)).toList();
+    } catch (e) {
+      debugPrint('❌ getAudioPodcasts $e');
+      return [];
+    }
+  }
+
+  Future<List<NewsArticle>> searchArticles(String q) async { 
+    try{ 
+      final r=await _supabase.from('news_articles')
+          .select('*')
+          .eq('is_published',true)
+          .or('title.ilike.%$q%,content.ilike.%$q%,summary.ilike.%$q%')
+          .limit(50); 
+      return (r as List).map((e)=>NewsArticle.fromJson(e)).toList(); 
+    }catch(e){return [];} 
+  }
+
+  Future<void> incrementViews(String id) async { 
+    try{ 
+      final a=await _supabase.from('news_articles').select('views_count').eq('id',id).maybeSingle(); 
+      if(a==null) return; 
+      await _supabase.from('news_articles')
+          .update({'views_count':(a['views_count']??0)+1})
+          .eq('id',id);
+    }catch(_){} 
+  }
+
+  Future<bool> _isLiked(String id) async { 
+    if(currentUserId.isEmpty) return false; 
+    try{ 
+      final r=await _supabase.from('news_likes')
+          .select('id')
+          .eq('article_id',id)
+          .eq('user_id',currentUserId)
+          .maybeSingle(); 
+      return r!=null;
+    }catch(_){return false;}
+  }
+
+  Future<void> likeArticle(String id) async { 
+    if(currentUserId.isEmpty) return; 
+    if(!await _isLiked(id)){ 
+      await _supabase.from('news_likes').insert({'article_id':id,'user_id':currentUserId}); 
+    } 
+  }
+
+  Future<void> unlikeArticle(String id) async { 
+    await _supabase.from('news_likes').delete().eq('article_id',id).eq('user_id',currentUserId); 
+  }
+
+  Future<bool> _isSaved(String id) async { 
+    if(currentUserId.isEmpty) return false; 
+    try{ 
+      final r=await _supabase.from('news_saved')
+          .select('id')
+          .eq('article_id',id)
+          .eq('user_id',currentUserId)
+          .maybeSingle(); 
+      return r!=null;
+    }catch(_){return false;}
+  }
+
+  Future<void> saveArticle(String id) async { 
+    if(currentUserId.isEmpty) return; 
+    if(!await _isSaved(id)){ 
+      await _supabase.from('news_saved').insert({
+        'article_id':id,
+        'user_id':currentUserId,
+        'saved_at':DateTime.now().toIso8601String()
+      }); 
+    } 
+  }
+
+  Future<void> unsaveArticle(String id) async { 
+    await _supabase.from('news_saved').delete().eq('article_id',id).eq('user_id',currentUserId); 
+  }
+
+  Future<List<NewsArticle>> getSavedArticles() async { 
+    if(currentUserId.isEmpty) return []; 
+    try{ 
+      final r=await _supabase.from('news_saved')
+          .select('article:article_id(*)')
+          .eq('user_id',currentUserId); 
+      return (r as List).map((e)=>NewsArticle.fromJson({...e['article'],'is_saved':true})).toList(); 
+    }catch(e){return [];} 
+  }
+
+  // ✨ MISE À JOUR : Support audio_url dans la création
+  Future<NewsArticle> createArticle({
+    required String title,
+    String? summary,
+    required String content,
+    required String category,
+    String? imageUrl,
+    String? audioUrl,    // 🎧 NOUVEAU
+    String? videoUrl,
+    bool isFeatured=false,
+    bool isBreaking=false,
+    DateTime? publishedAt
+  }) async {
     final now=DateTime.now().toIso8601String();
-    final res=await _supabase.from('news_articles').insert({'title':title,'summary':summary,'content':content,'category':category,'image_url':imageUrl,'video_url':videoUrl,'is_featured':isFeatured,'is_breaking':isBreaking,'is_published':true,'published_at':(publishedAt??DateTime.now()).toIso8601String(),'created_at':now,'updated_at':now,'created_by':currentUserId.isEmpty?null:currentUserId,'views_count':0}).select().single();
+    final res=await _supabase.from('news_articles').insert({
+      'title':title,
+      'summary':summary,
+      'content':content,
+      'category':category,
+      'image_url':imageUrl,
+      'audio_url':audioUrl,      // 🎧 NOUVEAU
+      'video_url':videoUrl,
+      'is_featured':isFeatured,
+      'is_breaking':isBreaking,
+      'is_published':true,
+      'published_at':(publishedAt??DateTime.now()).toIso8601String(),
+      'created_at':now,
+      'updated_at':now,
+      'created_by':currentUserId.isEmpty?null:currentUserId,
+      'views_count':0
+    }).select().single();
     return NewsArticle.fromJson(res);
   }
-  Future<void> updateArticle(String id, Map<String,dynamic> d) async { await _supabase.from('news_articles').update({...d,'updated_at':DateTime.now().toIso8601String()}).eq('id',id); }
-  Future<void> deleteArticle(String id) async { await _supabase.from('news_articles').delete().eq('id',id); }
+
+  Future<void> updateArticle(String id, Map<String,dynamic> d) async { 
+    await _supabase.from('news_articles')
+        .update({...d,'updated_at':DateTime.now().toIso8601String()})
+        .eq('id',id); 
+  }
+
+  Future<void> deleteArticle(String id) async { 
+    await _supabase.from('news_articles').delete().eq('id',id); 
+  }
 
   // ===== FIX WEB: UPLOAD EN BYTES =====
   Future<String?> uploadImageBytes(Uint8List bytes, String fileName) async {
@@ -51,6 +215,24 @@ class NewsService {
       return _supabase.storage.from('news').getPublicUrl(path);
     }catch(e){ debugPrint('uploadImageBytes $e'); return null; }
   }
+
+  // 🎧 NOUVEAU : Upload audio (mp3, m4a, wav, etc.)
+  Future<String?> uploadAudioBytes(Uint8List bytes, String fileName) async {
+    try{
+      final path='audio/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      final contentType = _getAudioContentType(fileName);
+      await _supabase.storage.from('news').uploadBinary(
+          path, 
+          bytes, 
+          fileOptions: FileOptions(upsert:true, contentType:contentType)
+      );
+      return _supabase.storage.from('news').getPublicUrl(path);
+    }catch(e){ 
+      debugPrint('uploadAudioBytes $e'); 
+      return null; 
+    }
+  }
+
   Future<String?> uploadVideoBytes(Uint8List bytes, String fileName) async {
     try{
       final path='videos/${DateTime.now().millisecondsSinceEpoch}_$fileName';
@@ -58,7 +240,22 @@ class NewsService {
       return _supabase.storage.from('news').getPublicUrl(path);
     }catch(e){ debugPrint('uploadVideoBytes $e'); return null; }
   }
+
+  // 🎧 Helper pour détecter le type MIME audio
+  String _getAudioContentType(String fileName) {
+    final ext = fileName.toLowerCase().split('.').last;
+    switch (ext) {
+      case 'mp3': return 'audio/mpeg';
+      case 'm4a': return 'audio/mp4';
+      case 'wav': return 'audio/wav';
+      case 'ogg': return 'audio/ogg';
+      case 'aac': return 'audio/aac';
+      default: return 'audio/mpeg';
+    }
+  }
+
   // Anciennes méthodes gardées pour compat mobile mais ne plus utiliser sur web
   Future<String?> uploadImage(String p) async => null;
   Future<String?> uploadVideo(String p) async => null;
+  Future<String?> uploadAudio(String p) async => null;
 }
