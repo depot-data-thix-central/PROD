@@ -1,6 +1,7 @@
 // lib/presentation/opportunities/opportunities_page.dart
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui'; // Requis pour BackdropFilter (effet glassmorphism)
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,21 +17,20 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/opportunity_service.dart';
 
 // ============================================================================
-// PALETTE PREMIUM
+// PALETTE PROFESSIONNELLE (BLEU, BLANC, GLASS)
 // ============================================================================
-class _Opp {
-  static const navy = Color(0xFF0A1F44);
-  static const navy2 = Color(0xFF123B7A);
-  static const gold = Color(0xFFE3B23C);
-  static const bg = Color(0xFFF5F7FB);
-  static const card = Color(0xFFFFFFFF);
-  static const line = Color(0xFFE6EBF2);
-  static const txt = Color(0xFF0F172A);
-  static const sub = Color(0xFF5B6B82);
-  static const mut = Color(0xFF93A1B5);
-  static const green = Color(0xFF059669);
-  static const red = Color(0xFFDC2626);
-  static const amber = Color(0xFFD97706);
+class _Palette {
+  static const primary = Color(0xFF1E3A8A); // Bleu profond
+  static const primaryLight = Color(0xFF3B82F6); // Bleu vif
+  static const bg = Color(0xFFF8FAFC); // Fond très clair
+  static const surface = Color(0xFFFFFFFF);
+  static const textDark = Color(0xFF0F172A);
+  static const textMuted = Color(0xFF64748B);
+  static const border = Color(0xFFE2E8F0);
+  
+  // Glassmorphism
+  static const glassBg = Color(0x33FFFFFF); // Blanc transparent
+  static const glassBorder = Color(0x4DFFFFFF); // Bordure blanche semi-transparente
 }
 
 class OpportunitiesPage extends ConsumerStatefulWidget {
@@ -54,7 +54,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   int _sortMode = 0;
 
   static const List<_Cat> _cats = [
-    _Cat('Toutes', Icons.auto_awesome_rounded),
+    _Cat('Toutes', Icons.grid_view_rounded),
     _Cat('Bourses', Icons.school_rounded),
     _Cat('Emplois', Icons.work_rounded),
     _Cat('Subventions', Icons.payments_rounded),
@@ -88,15 +88,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   String _tr(AppLocalizations l10n, String key, String fb) {
     final v = l10n.t(key);
     return (v.isEmpty || v == key) ? fb : v;
-  }
-
-  Color _catColor(String c) {
-    final l = c.toLowerCase();
-    if (l.contains('bourse') || l.contains('formation')) return const Color(0xFF2563EB);
-    if (l.contains('emploi')) return _Opp.green;
-    if (l.contains('subvention')) return _Opp.amber;
-    if (l.contains('concours')) return const Color(0xFFDB2777);
-    return _Opp.navy2;
   }
 
   int _daysLeft(OpportunityItem o) => o.deadline.difference(DateTime.now()).inDays;
@@ -163,21 +154,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     final isAdmin = user?.appMetadata?['role'] == 'admin' || user?.userMetadata?['is_admin'] == true;
 
     return Scaffold(
-      backgroundColor: _Opp.bg,
-      floatingActionButton: isAdmin
-          ? FloatingActionButton.extended(
-              onPressed: () => context.push('/opportunities/admin'),
-              backgroundColor: _Opp.gold,
-              foregroundColor: _Opp.navy,
-              elevation: 4,
-              icon: const Icon(Icons.add_rounded, size: 20),
-              label: Text(_tr(l10n, 'opp_publish', 'Publier'),
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-            )
-          : null,
+      backgroundColor: _Palette.bg,
       body: RefreshIndicator(
-        color: _Opp.gold,
-        backgroundColor: _Opp.navy,
+        color: _Palette.primary,
+        backgroundColor: _Palette.surface,
         onRefresh: () async {
           setState(() => _future = _service.listOpportunities());
           await _future;
@@ -189,7 +169,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _skeletonAll(l10n)),
+                  SliverToBoxAdapter(child: _skeletonAll(l10n, isAdmin)),
                 ],
               );
             }
@@ -197,7 +177,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _hero(const [], l10n)),
+                  SliverToBoxAdapter(child: _hero(const [], l10n, isAdmin)),
                   SliverToBoxAdapter(child: _errorState(l10n)),
                 ],
               );
@@ -208,7 +188,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _hero(const [], l10n)),
+                  SliverToBoxAdapter(child: _hero(const [], l10n, isAdmin)),
                   SliverToBoxAdapter(child: _emptyState(l10n)),
                 ],
               );
@@ -223,7 +203,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _hero(all, l10n),
+                      _hero(all, l10n, isAdmin),
                       _catsRail(l10n),
                       _featuredSection(all, l10n),
                       _closingSection(all, l10n),
@@ -252,20 +232,18 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ HERO NAVY GLASS ═══════════════════
-  Widget _hero(List<OpportunityItem> all, AppLocalizations l10n) {
+  // ═══════════════════ HERO BLEU PROFOND & GLASS ═══════════════════
+  Widget _hero(List<OpportunityItem> all, AppLocalizations l10n, bool isAdmin) {
     final top = MediaQuery.of(context).padding.top;
     final open = all.where((o) => _daysLeft(o) >= 0).length;
     final closing = all.where((o) { final d = _daysLeft(o); return d >= 0 && d <= 7; }).length;
-    final funded = all.where((o) { final r = _rewardOf(o); return r.isNotEmpty && r != '—'; }).length;
 
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [_Opp.navy, _Opp.navy2, Color(0xFF1E4FA0)],
-          stops: [0.0, 0.55, 1.0],
+          colors: [_Palette.primary, Color(0xFF152C6B)],
         ),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
@@ -284,10 +262,32 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     Text(_tr(l10n, 'opp_title', 'Opportunités'),
                         style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.4)),
                     Text(_tr(l10n, 'opp_subtitle', 'Bourses • Emplois • Subventions'),
-                        style: TextStyle(color: Colors.white.withOpacity(0.65), fontSize: 11, fontWeight: FontWeight.w600)),
+                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11, fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
+              // 👉 BOUTON ADMIN
+              if (isAdmin) ...[
+                GestureDetector(
+                  onTap: () => context.push('/opportunities/admin'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: _Palette.glassBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _Palette.glassBorder),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.admin_panel_settings_rounded, size: 16, color: Colors.white),
+                        SizedBox(width: 4),
+                        Text('Admin', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               _glassBtn(
                 _savedOnly ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
                 () => setState(() => _savedOnly = !_savedOnly),
@@ -300,32 +300,36 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           const SizedBox(height: 18),
           Row(
             children: [
-              _statGlass('$open', _tr(l10n, 'opp_stat_open', 'Ouvertes'), Icons.rocket_launch_rounded, _Opp.gold),
+              _statGlass('$open', _tr(l10n, 'opp_stat_open', 'Ouvertes'), Icons.rocket_launch_rounded),
               const SizedBox(width: 8),
-              _statGlass('$closing', _tr(l10n, 'opp_stat_closing', '≤ 7 jours'), Icons.timer_rounded, const Color(0xFFFB7185)),
-              const SizedBox(width: 8),
-              _statGlass('$funded', _tr(l10n, 'opp_stat_funded', 'Financées'), Icons.payments_rounded, const Color(0xFF34D399)),
+              _statGlass('$closing', _tr(l10n, 'opp_stat_closing', '≤ 7 jours'), Icons.timer_rounded),
             ],
           ),
           const SizedBox(height: 14),
-          Container(
-            height: 46,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: Colors.white.withOpacity(0.22)),
-            ),
-            child: TextField(
-              controller: _searchCtrl,
-              onChanged: (_) => setState(() {}),
-              style: const TextStyle(color: Colors.white, fontSize: 13.5),
-              cursorColor: _Opp.gold,
-              decoration: InputDecoration(
-                hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
-                hintStyle: TextStyle(color: Colors.white.withOpacity(0.55), fontSize: 13),
-                prefixIcon: Icon(Icons.search_rounded, size: 19, color: Colors.white.withOpacity(0.7)),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 13),
+          // Barre de recherche Glassmorphism
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(
+                height: 46,
+                decoration: BoxDecoration(
+                  color: _Palette.glassBg,
+                  border: Border.all(color: _Palette.glassBorder),
+                ),
+                child: TextField(
+                  controller: _searchCtrl,
+                  onChanged: (_) => setState(() {}),
+                  style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                  cursorColor: Colors.white,
+                  decoration: InputDecoration(
+                    hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
+                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
+                    prefixIcon: Icon(Icons.search_rounded, size: 19, color: Colors.white.withOpacity(0.8)),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                  ),
+                ),
               ),
             ),
           ),
@@ -341,30 +345,30 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         width: 38,
         height: 38,
         decoration: BoxDecoration(
-          color: active ? _Opp.gold : Colors.white.withOpacity(0.12),
+          color: active ? Colors.white : _Palette.glassBg,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: active ? _Opp.gold : Colors.white.withOpacity(0.22)),
+          border: Border.all(color: active ? Colors.white : _Palette.glassBorder),
         ),
-        child: Icon(icon, size: 17, color: active ? _Opp.navy : Colors.white),
+        child: Icon(icon, size: 17, color: active ? _Palette.primary : Colors.white),
       ),
     );
   }
 
-  Widget _statGlass(String value, String label, IconData icon, Color accent) {
+  Widget _statGlass(String value, String label, IconData icon) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.10),
+          color: _Palette.glassBg,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: Colors.white.withOpacity(0.16)),
+          border: Border.all(color: _Palette.glassBorder),
         ),
         child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: accent.withOpacity(0.22), borderRadius: BorderRadius.circular(9)),
-              child: Icon(icon, size: 13, color: accent),
+              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(9)),
+              child: Icon(icon, size: 13, color: Colors.white),
             ),
             const SizedBox(width: 8),
             Expanded(
@@ -373,7 +377,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 children: [
                   Text(value, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, height: 1.1)),
                   Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.w700)),
+                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -406,21 +410,18 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      gradient: sel
-                          ? const LinearGradient(colors: [_Opp.gold, Color(0xFFC98A12)])
-                          : null,
-                      color: sel ? null : _Opp.card,
+                      color: sel ? _Palette.primary : _Palette.surface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: sel ? _Opp.gold : _Opp.line, width: sel ? 2 : 1),
+                      border: Border.all(color: sel ? _Palette.primary : _Palette.border, width: 1),
                       boxShadow: [
-                        BoxShadow(color: (sel ? _Opp.gold : Colors.black).withOpacity(sel ? 0.35 : 0.05), blurRadius: sel ? 10 : 6, offset: const Offset(0, 3)),
+                        BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 3)),
                       ],
                     ),
-                    child: Icon(c.icon, size: 20, color: sel ? _Opp.navy : _Opp.sub),
+                    child: Icon(c.icon, size: 20, color: sel ? Colors.white : _Palette.textMuted),
                   ),
                   const SizedBox(height: 5),
                   Text(c.label,
-                      style: TextStyle(fontSize: 10, fontWeight: sel ? FontWeight.w900 : FontWeight.w600, color: sel ? _Opp.navy : _Opp.mut)),
+                      style: TextStyle(fontSize: 10, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: sel ? _Palette.primary : _Palette.textMuted)),
                 ],
               ),
             );
@@ -430,7 +431,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ À LA UNE (carrousel magazine) ═══════════════════
+  // ═══════════════════ À LA UNE ═══════════════════
   Widget _featuredSection(List<OpportunityItem> all, AppLocalizations l10n) {
     final feat = _featured(all);
     if (feat.isEmpty || _savedOnly) return const SizedBox.shrink();
@@ -441,12 +442,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
           child: Row(
             children: [
-              Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.gold, borderRadius: BorderRadius.circular(2))),
+              Container(width: 4, height: 16, decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(2))),
               const SizedBox(width: 8),
               Text(_tr(l10n, 'opp_featured', 'À la une'),
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Opp.txt, letterSpacing: -0.2)),
+                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
               const Spacer(),
-              Text('${feat.length}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Opp.mut)),
+              Text('${feat.length}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
             ],
           ),
         ),
@@ -469,7 +470,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: sel ? 18 : 6,
               height: 6,
-              decoration: BoxDecoration(color: sel ? _Opp.gold : _Opp.line, borderRadius: BorderRadius.circular(3)),
+              decoration: BoxDecoration(color: sel ? _Palette.primary : _Palette.border, borderRadius: BorderRadius.circular(3)),
             );
           }),
         ),
@@ -479,7 +480,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   Widget _featuredCard(OpportunityItem o, AppLocalizations l10n) {
-    final color = _catColor(o.category);
     final d = _daysLeft(o);
     final url = ThixInputGuard.url(o.imageAssetPath);
     final reward = _rewardOf(o);
@@ -492,7 +492,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            boxShadow: [BoxShadow(color: _Opp.navy.withOpacity(0.18), blurRadius: 16, offset: const Offset(0, 8))],
+            boxShadow: [BoxShadow(color: _Palette.primary.withOpacity(0.15), blurRadius: 16, offset: const Offset(0, 8))],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
@@ -509,7 +509,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.black.withOpacity(0.15), Colors.transparent, _Opp.navy.withOpacity(0.92)],
+                      colors: [Colors.black.withOpacity(0.15), Colors.transparent, _Palette.primary.withOpacity(0.95)],
                       stops: const [0.0, 0.42, 1.0],
                     ),
                   ),
@@ -520,23 +520,16 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     children: [
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.16), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withOpacity(0.25))),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
-                            const SizedBox(width: 5),
-                            Text(o.category, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
-                          ],
-                        ),
+                        decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
+                        child: Text(o.category, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
                       ),
                       const Spacer(),
                       GestureDetector(
                         onTap: () => _toggleSave(o.id),
                         child: Container(
                           padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.16), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withOpacity(0.25))),
-                          child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 14, color: isSaved ? _Opp.gold : Colors.white),
+                          decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
+                          child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 14, color: isSaved ? Colors.white : Colors.white.withOpacity(0.7)),
                         ),
                       ),
                     ],
@@ -558,7 +551,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                           Expanded(
                             child: Text(ThixInputGuard.text(o.organizer, maxLength: 40),
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 10.5, fontWeight: FontWeight.w600)),
+                                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 10.5, fontWeight: FontWeight.w500)),
                           ),
                         ],
                       ),
@@ -569,12 +562,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                             d <= 0
                                 ? _tr(l10n, 'opp_closed', 'Clôturé')
                                 : (d == 1 ? _tr(l10n, 'opp_last_day', 'Dernier jour') : '$d ${_tr(l10n, 'opp_days', 'j restants')}'),
-                            d <= 3 ? const Color(0xFFFB7185) : _Opp.gold,
                             Icons.timer_rounded,
                           ),
                           if (reward.isNotEmpty && reward != '—') ...[
                             const SizedBox(width: 6),
-                            _pillGlass(reward, const Color(0xFF34D399), Icons.payments_rounded),
+                            _pillGlass(reward, Icons.payments_rounded),
                           ],
                           const Spacer(),
                           const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 18),
@@ -592,13 +584,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   Widget _featFallback(OpportunityItem o) {
-    final color = _catColor(o.category);
     return Container(
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [color.withOpacity(0.85), _Opp.navy],
+          colors: [_Palette.primaryLight, _Palette.primary],
         ),
       ),
       child: Center(
@@ -610,15 +601,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  Widget _pillGlass(String label, Color accent, IconData icon) {
+  Widget _pillGlass(String label, IconData icon) {
     return Flexible(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.14), borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.white.withOpacity(0.22))),
+        decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 11, color: accent),
+            Icon(icon, size: 11, color: Colors.white),
             const SizedBox(width: 4),
             Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800))),
           ],
@@ -629,28 +620,27 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 
   Widget _miniLogo(OpportunityItem o, double size) {
     final url = ThixInputGuard.url(o.imageAssetPath);
-    final color = _catColor(o.category);
     return ClipRRect(
       borderRadius: BorderRadius.circular(6),
       child: SizedBox(
         width: size, height: size,
         child: url != null
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, color, size))
-            : _letter(o, color, size),
+            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
+            : _letter(o, size),
       ),
     );
   }
 
-  Widget _letter(OpportunityItem o, Color color, double size) {
+  Widget _letter(OpportunityItem o, double size) {
     return Container(
-      color: color.withOpacity(0.15),
+      color: Colors.white.withOpacity(0.2),
       alignment: Alignment.center,
       child: Text(ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(),
-          style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.w900, color: color)),
+          style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.w900, color: Colors.white)),
     );
   }
 
-  // ═══════════════════ CLÔTURE IMMINENTE (anneaux) ═══════════════════
+  // ═══════════════════ CLÔTURE IMMINENTE ═══════════════════
   Widget _closingSection(List<OpportunityItem> all, AppLocalizations l10n) {
     final closing = _closing(all);
     if (closing.isEmpty || _savedOnly) return const SizedBox.shrink();
@@ -661,14 +651,14 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
           child: Row(
             children: [
-              const Icon(Icons.local_fire_department_rounded, size: 17, color: _Opp.red),
+              const Icon(Icons.access_time_filled_rounded, size: 17, color: _Palette.primary),
               const SizedBox(width: 6),
               Text(_tr(l10n, 'opp_closing', 'Clôture imminente'),
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Opp.txt, letterSpacing: -0.2)),
+                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
               const Spacer(),
               GestureDetector(
                 onTap: () => setState(() { _deadlineFilter = 1; _sortMode = 0; }),
-                child: Text(_tr(l10n, 'opp_see_all', 'Voir tout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Opp.navy2)),
+                child: Text(_tr(l10n, 'opp_see_all', 'Voir tout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Palette.primaryLight)),
               ),
             ],
           ),
@@ -683,24 +673,23 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             itemBuilder: (context, i) {
               final o = closing[i];
               final d = _daysLeft(o);
-              final color = d <= 3 ? _Opp.red : _Opp.amber;
               return GestureDetector(
                 onTap: () => context.push('/opportunities/${o.id}'),
                 child: Container(
                   width: 148,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _Opp.card,
+                    color: _Palette.surface,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _Opp.line),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))],
+                    border: Border.all(color: _Palette.border),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          _Ring(days: d, progress: _ratio(o), color: color),
+                          _Ring(days: d, progress: _ratio(o)),
                           const Spacer(),
                           _miniLogo(o, 26),
                         ],
@@ -708,11 +697,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       const SizedBox(height: 8),
                       Text(ThixInputGuard.text(o.title, maxLength: 46),
                           maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.25)),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _Palette.textDark, height: 1.25)),
                       const Spacer(),
                       Text(ThixInputGuard.text(o.organizer, maxLength: 22),
                           maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 9.5, color: _Opp.mut, fontWeight: FontWeight.w600)),
+                          style: const TextStyle(fontSize: 9.5, color: _Palette.textMuted, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
@@ -731,136 +720,122 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Row(
         children: [
-          Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.navy2, borderRadius: BorderRadius.circular(2))),
+          Container(width: 4, height: 16, decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 8),
           Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
-              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Opp.txt, letterSpacing: -0.2)),
+              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
           const Spacer(),
-          Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Opp.mut)),
+          Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
         ],
       ),
     );
   }
 
   Widget _editorialCard(OpportunityItem o, AppLocalizations l10n) {
-    final color = _catColor(o.category);
     final d = _daysLeft(o);
     final isSaved = _saved.contains(o.id);
     final reward = _rewardOf(o);
-    final statusColor = d <= 0 ? _Opp.mut : (d <= 7 ? _Opp.red : _Opp.green);
-    final statusLabel = d <= 0
-        ? _tr(l10n, 'opp_closed', 'Clôturé')
-        : (d <= 7 ? _tr(l10n, 'opp_closing_soon', 'Clôture proche') : _tr(l10n, 'opp_open', 'Ouvert'));
+    final statusLabel = d <= 0 ? _tr(l10n, 'opp_closed', 'Clôturé') : (d <= 7 ? _tr(l10n, 'opp_closing_soon', 'Clôture proche') : _tr(l10n, 'opp_open', 'Ouvert'));
 
     return GestureDetector(
       onTap: () => context.push('/opportunities/${o.id}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
-          color: _Opp.card,
+          color: _Palette.surface,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _Opp.line),
-          boxShadow: [BoxShadow(color: _Opp.navy.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+          border: Border.all(color: _Palette.border),
+          boxShadow: [BoxShadow(color: _Palette.primary.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         clipBehavior: Clip.antiAlias,
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+        child: Padding(
+          padding: const EdgeInsets.all(13),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Container(width: 4, color: color),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(13),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _logo(o, 44),
-                          const SizedBox(width: 11),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(ThixInputGuard.text(o.title, maxLength: 110),
-                                    maxLines: 2, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.28, letterSpacing: -0.1)),
-                                const SizedBox(height: 3),
-                                Text(ThixInputGuard.text(o.organizer, maxLength: 60),
-                                    maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 11.5, color: _Opp.sub, fontWeight: FontWeight.w600)),
-                              ],
-                            ),
-                          ),
-                          GestureDetector(
-                            onTap: () => _toggleSave(o.id),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: isSaved ? _Opp.navy2.withOpacity(0.08) : Colors.transparent,
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                                  size: 17, color: isSaved ? _Opp.navy2 : _Opp.mut),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Wrap(
-                        spacing: 6, runSpacing: 6,
-                        children: [
-                          _tag(o.category, color),
-                          _tag(statusLabel, statusColor),
-                        ],
-                      ),
-                      if (reward.isNotEmpty && reward != '—') ...[
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                          decoration: BoxDecoration(
-                            color: _Opp.green.withOpacity(0.07),
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: _Opp.green.withOpacity(0.22)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.volunteer_activism_rounded, size: 14, color: _Opp.green),
-                              const SizedBox(width: 7),
-                              Expanded(
-                                child: Text(reward, maxLines: 1, overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Opp.green)),
-                              ),
-                            ],
-                          ),
-                        ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _logo(o, 44),
+                  const SizedBox(width: 11),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(ThixInputGuard.text(o.title, maxLength: 110),
+                            maxLines: 2, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: _Palette.textDark, height: 1.28, letterSpacing: -0.1)),
+                        const SizedBox(height: 3),
+                        Text(ThixInputGuard.text(o.organizer, maxLength: 60),
+                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 11.5, color: _Palette.textMuted, fontWeight: FontWeight.w500)),
                       ],
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          const Icon(Icons.event_rounded, size: 13, color: _Opp.mut),
-                          const SizedBox(width: 5),
-                          Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 30),
-                              style: const TextStyle(fontSize: 11, color: _Opp.sub, fontWeight: FontWeight.w700)),
-                          const Spacer(),
-                          Text(d <= 0 ? '—' : '$d j',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: d <= 3 ? _Opp.red : _Opp.sub)),
-                        ],
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: () => _toggleSave(o.id),
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(
+                        color: isSaved ? _Palette.primaryLight.withOpacity(0.1) : Colors.transparent,
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      const SizedBox(height: 7),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(3),
-                        child: LinearProgressIndicator(
-                          value: d <= 0 ? 1.0 : _ratio(o),
-                          minHeight: 4,
-                          backgroundColor: _Opp.line,
-                          valueColor: AlwaysStoppedAnimation(d <= 0 ? _Opp.mut : color),
-                        ),
+                      child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                          size: 17, color: isSaved ? _Palette.primaryLight : _Palette.textMuted),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6, runSpacing: 6,
+                children: [
+                  _tag(o.category, _Palette.primary),
+                  _tag(statusLabel, d <= 0 ? _Palette.textMuted : (d <= 7 ? _Palette.primaryLight : _Palette.primary)),
+                ],
+              ),
+              if (reward.isNotEmpty && reward != '—') ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: _Palette.primary.withOpacity(0.05),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: _Palette.primary.withOpacity(0.15)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.volunteer_activism_rounded, size: 14, color: _Palette.primary),
+                      const SizedBox(width: 7),
+                      Expanded(
+                        child: Text(reward, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Palette.primary)),
                       ),
                     ],
                   ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  const Icon(Icons.event_rounded, size: 13, color: _Palette.textMuted),
+                  const SizedBox(width: 5),
+                  Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 30),
+                      style: const TextStyle(fontSize: 11, color: _Palette.textMuted, fontWeight: FontWeight.w600)),
+                  const Spacer(),
+                  Text(d <= 0 ? '—' : '$d j',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: _Palette.primary)),
+                ],
+              ),
+              const SizedBox(height: 7),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(3),
+                child: LinearProgressIndicator(
+                  value: d <= 0 ? 1.0 : _ratio(o),
+                  minHeight: 4,
+                  backgroundColor: _Palette.border,
+                  valueColor: AlwaysStoppedAnimation(d <= 0 ? _Palette.textMuted : _Palette.primary),
                 ),
               ),
             ],
@@ -873,7 +848,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   Widget _tag(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(7)),
+      decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(7)),
       child: Text(ThixInputGuard.text(label, maxLength: 24),
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
     );
@@ -881,14 +856,13 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 
   Widget _logo(OpportunityItem o, double size) {
     final url = ThixInputGuard.url(o.imageAssetPath);
-    final color = _catColor(o.category);
     return ClipRRect(
       borderRadius: BorderRadius.circular(11),
       child: SizedBox(
         width: size, height: size,
         child: url != null
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, color, size))
-            : _letter(o, color, size),
+            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
+            : _letter(o, size),
       ),
     );
   }
@@ -903,23 +877,23 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => Container(
           margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(24)),
+          decoration: BoxDecoration(color: _Palette.surface, borderRadius: BorderRadius.circular(24)),
           padding: const EdgeInsets.all(20),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Center(child: Container(width: 38, height: 4, decoration: BoxDecoration(color: _Opp.line, borderRadius: BorderRadius.circular(2)))),
+              Center(child: Container(width: 38, height: 4, decoration: BoxDecoration(color: _Palette.border, borderRadius: BorderRadius.circular(2)))),
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _Opp.navy, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.tune_rounded, size: 15, color: _Opp.gold)),
+                  Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.tune_rounded, size: 15, color: Colors.white)),
                   const SizedBox(width: 10),
-                  Text(_tr(l10n, 'opp_filters', 'Filtres & tri'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: _Opp.txt)),
+                  Text(_tr(l10n, 'opp_filters', 'Filtres & tri'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: _Palette.textDark)),
                 ],
               ),
               const SizedBox(height: 18),
-              Text(_tr(l10n, 'opp_deadline', 'Échéance'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Opp.sub)),
+              Text(_tr(l10n, 'opp_deadline', 'Échéance'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -929,15 +903,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       selected: _deadlineFilter == i,
                       onSelected: (_) => setSt(() => _deadlineFilter = i),
                       label: Text([_tr(l10n, 'opp_f_all', 'Toutes'), '< 7 j', '< 30 j'][i]),
-                      selectedColor: _Opp.gold,
-                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _deadlineFilter == i ? _Opp.navy : _Opp.sub),
-                      side: BorderSide(color: _deadlineFilter == i ? _Opp.gold : _Opp.line),
+                      selectedColor: _Palette.primary,
+                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _deadlineFilter == i ? Colors.white : _Palette.textMuted),
+                      side: BorderSide(color: _deadlineFilter == i ? _Palette.primary : _Palette.border),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                 ],
               ),
               const SizedBox(height: 16),
-              Text(_tr(l10n, 'opp_sort', 'Trier par'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Opp.sub)),
+              Text(_tr(l10n, 'opp_sort', 'Trier par'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
               const SizedBox(height: 8),
               Wrap(
                 spacing: 8,
@@ -947,9 +921,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       selected: _sortMode == i,
                       onSelected: (_) => setSt(() => _sortMode = i),
                       label: Text([_tr(l10n, 'opp_sort_deadline', 'Échéance'), _tr(l10n, 'opp_sort_recent', 'Récentes'), 'A → Z'][i]),
-                      selectedColor: _Opp.navy2,
-                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sortMode == i ? Colors.white : _Opp.sub),
-                      side: BorderSide(color: _sortMode == i ? _Opp.navy2 : _Opp.line),
+                      selectedColor: _Palette.primaryLight,
+                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sortMode == i ? Colors.white : _Palette.textMuted),
+                      side: BorderSide(color: _sortMode == i ? _Palette.primaryLight : _Palette.border),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
                 ],
@@ -958,9 +932,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 value: _withReward,
-                activeColor: _Opp.gold,
+                activeColor: _Palette.primary,
                 onChanged: (v) => setSt(() => _withReward = v),
-                title: Text(_tr(l10n, 'opp_with_reward', 'Avec récompense / financement'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _Opp.txt)),
+                title: Text(_tr(l10n, 'opp_with_reward', 'Avec récompense / financement'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _Palette.textDark)),
               ),
               const SizedBox(height: 10),
               SizedBox(
@@ -968,8 +942,8 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 height: 48,
                 child: ElevatedButton(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _Opp.gold,
-                    foregroundColor: _Opp.navy,
+                    backgroundColor: _Palette.primary,
+                    foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                   ),
@@ -988,10 +962,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   // ═══════════════════ ÉTATS ═══════════════════
-  Widget _skeletonAll(AppLocalizations l10n) {
+  Widget _skeletonAll(AppLocalizations l10n, bool isAdmin) {
     return Column(
       children: [
-        _hero(const [], l10n),
+        _hero(const [], l10n, isAdmin),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -1000,9 +974,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 Container(
                   height: 118,
                   decoration: BoxDecoration(
-                    color: _Opp.card,
+                    color: _Palette.surface,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _Opp.line),
+                    border: Border.all(color: _Palette.border),
                   ),
                   padding: const EdgeInsets.all(13),
                   child: Column(
@@ -1014,7 +988,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                             width: 44,
                             height: 44,
                             decoration: BoxDecoration(
-                              color: _Opp.bg,
+                              color: _Palette.bg,
                               borderRadius: BorderRadius.circular(11),
                             ),
                           ),
@@ -1026,7 +1000,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                                 Container(
                                   height: 12,
                                   decoration: BoxDecoration(
-                                    color: _Opp.bg,
+                                    color: _Palette.bg,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -1035,7 +1009,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                                   height: 9,
                                   width: 130,
                                   decoration: BoxDecoration(
-                                    color: _Opp.bg,
+                                    color: _Palette.bg,
                                     borderRadius: BorderRadius.circular(4),
                                   ),
                                 ),
@@ -1049,7 +1023,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                         height: 8,
                         width: 170,
                         decoration: BoxDecoration(
-                          color: _Opp.bg,
+                          color: _Palette.bg,
                           borderRadius: BorderRadius.circular(4),
                         ),
                       ),
@@ -1071,11 +1045,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _Opp.navy.withOpacity(0.06), shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 34, color: _Opp.navy2)),
+            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _Palette.primary.withOpacity(0.05), shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 34, color: _Palette.primary)),
             const SizedBox(height: 14),
-            Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: _Opp.txt)),
+            Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: _Palette.textDark)),
             const SizedBox(height: 6),
-            Text(_tr(l10n, 'opp_empty_sub', 'De nouvelles bourses, emplois et subventions arrivent bientôt.'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _Opp.sub)),
+            Text(_tr(l10n, 'opp_empty_sub', 'De nouvelles bourses, emplois et subventions arrivent bientôt.'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _Palette.textMuted)),
           ],
         ),
       ),
@@ -1088,15 +1062,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            const Icon(Icons.search_off_rounded, size: 32, color: _Opp.mut),
+            const Icon(Icons.search_off_rounded, size: 32, color: _Palette.textMuted),
             const SizedBox(height: 10),
-            Text(_tr(l10n, 'opp_no_result', 'Aucun résultat'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Opp.txt)),
+            Text(_tr(l10n, 'opp_no_result', 'Aucun résultat'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Palette.textDark)),
             TextButton(
               onPressed: () {
                 _searchCtrl.clear();
                 setState(() { _catIndex = 0; _savedOnly = false; _deadlineFilter = 0; _withReward = false; });
               },
-              child: Text(_tr(l10n, 'opp_reset', 'Réinitialiser')),
+              child: Text(_tr(l10n, 'opp_reset', 'Réinitialiser'), style: const TextStyle(color: _Palette.primary)),
             ),
           ],
         ),
@@ -1110,12 +1084,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            const Icon(Icons.wifi_off_rounded, size: 34, color: _Opp.mut),
+            const Icon(Icons.wifi_off_rounded, size: 34, color: _Palette.textMuted),
             const SizedBox(height: 10),
-            Text(_tr(l10n, 'opp_error', 'Connexion interrompue'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Opp.txt)),
+            Text(_tr(l10n, 'opp_error', 'Connexion interrompue'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Palette.textDark)),
             const SizedBox(height: 12),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: _Opp.navy2, foregroundColor: Colors.white, elevation: 0),
+              style: ElevatedButton.styleFrom(backgroundColor: _Palette.primary, foregroundColor: Colors.white, elevation: 0),
               onPressed: () => setState(() => _future = _service.listOpportunities()),
               child: Text(_tr(l10n, 'opp_retry', 'Réessayer')),
             ),
@@ -1132,8 +1106,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 class _Ring extends StatelessWidget {
   final int days;
   final double progress;
-  final Color color;
-  const _Ring({required this.days, required this.progress, required this.color});
+  const _Ring({required this.days, required this.progress});
 
   @override
   Widget build(BuildContext context) {
@@ -1141,9 +1114,9 @@ class _Ring extends StatelessWidget {
       width: 46,
       height: 46,
       child: CustomPaint(
-        painter: _RingPainter(progress: progress, color: color),
+        painter: _RingPainter(progress: progress),
         child: Center(
-          child: Text('$days', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: color)),
+          child: Text('$days', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _Palette.primary)),
         ),
       ),
     );
@@ -1152,8 +1125,7 @@ class _Ring extends StatelessWidget {
 
 class _RingPainter extends CustomPainter {
   final double progress;
-  final Color color;
-  const _RingPainter({required this.progress, required this.color});
+  const _RingPainter({required this.progress});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1162,18 +1134,18 @@ class _RingPainter extends CustomPainter {
     final track = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4.5
-      ..color = const Color(0xFFEDF1F6);
+      ..color = _Palette.border;
     canvas.drawCircle(center, radius, track);
     final arc = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4.5
       ..strokeCap = StrokeCap.round
-      ..color = color;
+      ..color = _Palette.primary;
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2, 2 * math.pi * progress.clamp(0.0, 1.0), false, arc);
   }
 
   @override
-  bool shouldRepaint(covariant _RingPainter old) => old.progress != progress || old.color != color;
+  bool shouldRepaint(covariant _RingPainter old) => old.progress != progress;
 }
 
 class _Cat {
@@ -1216,15 +1188,15 @@ class _CountdownTimerWidgetState extends State<CountdownTimerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_left == Duration.zero) return _pill('Clôturé', const Color(0xFF93A1B5));
+    if (_left == Duration.zero) return _pill('Clôturé', _Palette.textMuted);
     final s = '${_left.inDays}j ${(_left.inHours % 24).toString().padLeft(2, '0')}:${(_left.inMinutes % 60).toString().padLeft(2, '0')}:${(_left.inSeconds % 60).toString().padLeft(2, '0')}';
-    return _pill(s, _left.inDays <= 3 ? _Opp.red : _Opp.amber);
+    return _pill(s, _Palette.primary);
   }
 
   Widget _pill(String t, Color c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
       child: Text(t, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c)),
     );
   }
@@ -1252,9 +1224,9 @@ class FeaturedCountdownCarousel extends StatelessWidget {
             child: Container(
               width: 230,
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: _Opp.line)),
+              decoration: BoxDecoration(color: _Palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _Palette.border)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(ThixInputGuard.text(o.title, maxLength: 60), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: _Opp.txt)),
+                Text(ThixInputGuard.text(o.title, maxLength: 60), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: _Palette.textDark)),
                 const Spacer(),
                 CountdownTimerWidget(targetDate: ThixInputGuard.safeDate(o.deadline)),
               ]),
