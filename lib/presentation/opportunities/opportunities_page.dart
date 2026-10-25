@@ -1,11 +1,11 @@
 // lib/presentation/opportunities/opportunities_page.dart
 // ============================================================================
-// OPPORTUNITÉS — v3 PROFESSIONAL (Bleu + Blanc + Glassmorphism)
-//  • ✅ Palette restreinte : bleu profond, blanc, gris neutres
-//  • ✅ Glassmorphism : blur + translucide sur header, search, chips, hero
-//  • ✅ Bouton ADMIN dans le header (visible si role admin)
-//  • ✅ Hero banner AUTO-SCROLL (PageView + timer 4s)
-//  • ✅ Nouvelles cartes professionnelles épurées
+// OPPORTUNITÉS — v4 PROFESSIONAL
+//  • ✅ Grille 2 colonnes, grandes photos (style carte produit local) + barre
+//  • ✅ Nouveautés en haut (tri created_at DESC + badge NOUVEAU)
+//  • ✅ Bouton ADMIN (détection repo : RBAC + profiles + metadata + email)
+//  • ✅ Recherche lisible : fond blanc, texte sombre, icône bleue
+//  • ✅ Hero auto-scroll + glassmorphism bleu/blanc
 // ============================================================================
 
 import 'dart:async';
@@ -25,9 +25,10 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/opportunity_item.dart';
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/opportunity_service.dart';
+import 'package:thix_id/services/admin_rbac_service.dart';
 
 // ============================================================================
-// PALETTE PROFESSIONAL (bleu + blanc uniquement)
+// PALETTE PROFESSIONAL (bleu + blanc)
 // ============================================================================
 class _Opp {
   static const blue = Color(0xFF1259C3);
@@ -42,10 +43,10 @@ class _Opp {
   static const mut = Color(0xFF93A1B5);
   static const green = Color(0xFF0F8A5F);
   static const red = Color(0xFFD64545);
-  static const amber = Color(0xFFC77E1A);
 }
 
 const Duration _kHeroAutoPlay = Duration(seconds: 4);
+const double _kGridCardHeight = 312;
 
 class OpportunitiesPage extends ConsumerStatefulWidget {
   const OpportunitiesPage({super.key});
@@ -67,7 +68,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   bool _savedOnly = false;
   int _deadlineFilter = 0;
   bool _withReward = false;
-  int _sortMode = 0;
+  int _sortMode = 0; // 0 = Nouveautés (created_at desc)
+
+  bool _isAdmin = false;
+  bool _adminChecked = false;
 
   static const List<_Cat> _cats = [
     _Cat('Toutes', Icons.auto_awesome_rounded),
@@ -82,6 +86,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   void initState() {
     super.initState();
     _future = _service.listOpportunities();
+    _resolveIsAdmin();
   }
 
   @override
@@ -90,6 +95,50 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     _searchCtrl.dispose();
     _heroCtrl.dispose();
     super.dispose();
+  }
+
+  // ═══════════════════ DÉTECTION ADMIN (logique du repo) ═══════════════════
+  Future<void> _resolveIsAdmin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _adminChecked = true);
+      return;
+    }
+    bool admin = false;
+    try {
+      // 1) Metadata JWT (instantané)
+      if (user.appMetadata?['role'] == 'admin' ||
+          user.userMetadata?['role'] == 'admin' ||
+          user.userMetadata?['is_admin'] == true) {
+        admin = true;
+      }
+      // 2) RBAC officiel : table thix_admin_memberships
+      if (!admin) {
+        final role = await AdminRbacService().fetchMyRole();
+        if (AdminRbacService.canAccess(role: role, minLevel: 5)) admin = true;
+      }
+      // 3) profiles.role (AdminService)
+      if (!admin) {
+        final res = await Supabase.instance.client
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (res?['role'] == 'admin') admin = true;
+      }
+      // 4) Fallback dev (AdminService)
+      if (!admin) {
+        admin = user.email?.endsWith('@thix.info') ?? false;
+      }
+    } catch (e) {
+      debugPrint('[Opportunities] ⚠️ admin check: $e');
+    }
+    if (mounted) {
+      setState(() {
+        _isAdmin = admin;
+        _adminChecked = true;
+      });
+    }
   }
 
   String _tr(AppLocalizations l10n, String key, String fb) {
@@ -101,10 +150,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 
   double _ratio(OpportunityItem o) => (_daysLeft(o).clamp(0, 30)) / 30.0;
 
+  bool _isNew(OpportunityItem o) =>
+      DateTime.now().difference(o.createdAt).inDays <= 7;
+
   String _rewardOf(OpportunityItem o) =>
       ThixInputGuard.text(o.rewardLabel, maxLength: 60, fallback: '');
 
-  // ─── Hero auto-scroll ───
   void _startHeroAuto(int count) {
     if (_heroReady || count <= 1) return;
     _heroReady = true;
@@ -112,15 +163,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     _heroTimer = Timer.periodic(_kHeroAutoPlay, (_) {
       if (!mounted || !_heroCtrl.hasClients) return;
       _heroIndex = (_heroIndex + 1) % count;
-      _heroCtrl.animateToPage(
-        _heroIndex,
-        duration: const Duration(milliseconds: 650),
-        curve: Curves.easeOutCubic,
-      );
+      _heroCtrl.animateToPage(_heroIndex,
+          duration: const Duration(milliseconds: 650), curve: Curves.easeOutCubic);
     });
   }
 
-  // ─── Filtres ───
+  // ─── Filtres + tri (défaut : NOUVEAUTÉS en premier) ───
   List<OpportunityItem> _filter(List<OpportunityItem> all) {
     var list = List<OpportunityItem>.from(all);
     if (_savedOnly) list = list.where((o) => _saved.contains(o.id)).toList();
@@ -145,20 +193,24 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       list = list.where((o) { final r = _rewardOf(o); return r.isNotEmpty && r != '—'; }).toList();
     }
     switch (_sortMode) {
-      case 1: list.sort((a, b) => b.deadline.compareTo(a.deadline)); break;
-      case 2: list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase())); break;
-      default: list.sort((a, b) => a.deadline.compareTo(b.deadline));
+      case 1:
+        list.sort((a, b) => a.deadline.compareTo(b.deadline));
+        break;
+      case 2:
+        list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
+        break;
+      default:
+        // ✅ NOUVEAUTÉS EN HAUT
+        list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
     return list;
   }
 
+  /// Hero = 6 plus récentes
   List<OpportunityItem> _featured(List<OpportunityItem> all) {
-    final withReward = all.where((o) { final r = _rewardOf(o); return r.isNotEmpty && r != '—'; }).toList()
-      ..sort((a, b) => a.deadline.compareTo(b.deadline));
-    final base = withReward.isNotEmpty
-        ? withReward
-        : (List<OpportunityItem>.from(all)..sort((a, b) => a.deadline.compareTo(b.deadline)));
-    return base.take(6).toList();
+    final sorted = List<OpportunityItem>.from(all)
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return sorted.take(6).toList();
   }
 
   List<OpportunityItem> _closing(List<OpportunityItem> all) =>
@@ -172,12 +224,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     setState(() => _saved.contains(id) ? _saved.remove(id) : _saved.add(id));
   }
 
-  bool _isAdmin() {
-    final user = Supabase.instance.client.auth.currentUser;
-    return user?.appMetadata?['role'] == 'admin' || user?.userMetadata?['is_admin'] == true;
-  }
-
-  // ─── Glass helper ───
   Widget _glassBox({
     required Widget child,
     double radius = 14,
@@ -269,11 +315,20 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 if (filteredList.isEmpty)
                   SliverToBoxAdapter(child: _noResult(l10n))
                 else
+                  // ✅ GRILLE 2 COLONNES (grandes photos, style produit local)
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
-                    sliver: SliverList.builder(
-                      itemCount: filteredList.length,
-                      itemBuilder: (context, index) => _proCard(filteredList[index], l10n),
+                    sliver: SliverGrid(
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
+                        mainAxisExtent: _kGridCardHeight,
+                      ),
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => _gridCard(filteredList[i], l10n),
+                        childCount: filteredList.length,
+                      ),
                     ),
                   ),
                 const SliverToBoxAdapter(child: SizedBox(height: 90)),
@@ -285,10 +340,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ HEADER GLASS (bleu dégradé) ═══════════════════
+  // ═══════════════════ HEADER GLASS + BOUTON ADMIN ═══════════════════
   Widget _header(AppLocalizations l10n) {
     final top = MediaQuery.of(context).padding.top;
-    final isAdmin = _isAdmin();
 
     return Container(
       decoration: const BoxDecoration(
@@ -306,7 +360,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         children: [
           Row(
             children: [
-              // Retour
               GestureDetector(
                 onTap: () => context.go(AppRoutes.home),
                 child: _glassBox(
@@ -330,8 +383,8 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   ],
                 ),
               ),
-              // ✅ BOUTON ADMIN (visible si role admin)
-              if (isAdmin) ...[
+              // ✅ BOUTON ADMIN (visible uniquement si compte admin du repo)
+              if (_isAdmin) ...[
                 GestureDetector(
                   onTap: () {
                     HapticFeedback.selectionClick();
@@ -339,7 +392,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   },
                   child: _glassBox(
                     radius: 12,
-                    tint: const Color(0x2EFFFFFF),
+                    tint: const Color(0x33FFFFFF),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
                       child: Row(
@@ -356,7 +409,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 ),
                 const SizedBox(width: 8),
               ],
-              // Favoris
               GestureDetector(
                 onTap: () => setState(() => _savedOnly = !_savedOnly),
                 child: _glassBox(
@@ -374,7 +426,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 ),
               ),
               const SizedBox(width: 8),
-              // Filtres
               GestureDetector(
                 onTap: _openFilters,
                 child: _glassBox(
@@ -389,25 +440,35 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             ],
           ),
           const SizedBox(height: 16),
-          // Search glass
-          _glassBox(
-            radius: 14,
-            tint: const Color(0x24FFFFFF),
-            blur: 16,
-            child: SizedBox(
-              height: 46,
-              child: TextField(
-                controller: _searchCtrl,
-                onChanged: (_) => setState(() {}),
-                style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                cursorColor: Colors.white,
-                decoration: InputDecoration(
-                  hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
-                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
-                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: Colors.white.withOpacity(0.7)),
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
-                ),
+          // ✅ RECHERCHE LISIBLE : fond blanc + texte sombre + icône bleue
+          Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: Colors.white.withOpacity(0.9)),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 12, offset: const Offset(0, 4))],
+            ),
+            child: TextField(
+              controller: _searchCtrl,
+              onChanged: (_) => setState(() {}),
+              style: const TextStyle(color: _Opp.txt, fontSize: 13.5, fontWeight: FontWeight.w600),
+              cursorColor: _Opp.blue,
+              decoration: InputDecoration(
+                hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
+                hintStyle: const TextStyle(color: _Opp.mut, fontSize: 13),
+                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: _Opp.blue),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 16, color: _Opp.mut),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {});
+                        },
+                      )
+                    : null,
+                border: InputBorder.none,
+                contentPadding: const EdgeInsets.symmetric(vertical: 13),
               ),
             ),
           ),
@@ -416,7 +477,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ HERO BANNER AUTO-SCROLL ═══════════════════
+  // ═══════════════════ HERO AUTO-SCROLL ═══════════════════
   Widget _heroBanner(List<OpportunityItem> feat, AppLocalizations l10n) {
     if (feat.isEmpty || _savedOnly) return const SizedBox.shrink();
 
@@ -455,10 +516,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: sel ? 18 : 6,
               height: 6,
-              decoration: BoxDecoration(
-                color: sel ? _Opp.blue : _Opp.line,
-                borderRadius: BorderRadius.circular(3),
-              ),
+              decoration: BoxDecoration(color: sel ? _Opp.blue : _Opp.line, borderRadius: BorderRadius.circular(3)),
             );
           }),
         ),
@@ -487,8 +545,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               fit: StackFit.expand,
               children: [
                 if (url != null)
-                  CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _heroFallback(o))
+                  CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _heroFallback(o))
                 else
                   _heroFallback(o),
                 DecoratedBox(
@@ -505,100 +562,81 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     ),
                   ),
                 ),
-                // Chip catégorie (glass)
                 Positioned(
                   top: 12,
                   left: 12,
                   right: 12,
                   child: Row(
                     children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(8),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.16),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Colors.white.withOpacity(0.25)),
-                            ),
-                            child: Text(o.category,
-                                style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700)),
-                          ),
+                      _glassBox(
+                        radius: 8,
+                        tint: const Color(0x29FFFFFF),
+                        blur: 10,
+                        borderColor: const Color(0x40FFFFFF),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                          child: Text(o.category, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700)),
                         ),
                       ),
                       const Spacer(),
                       GestureDetector(
                         onTap: () => _toggleSave(o.id),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              padding: const EdgeInsets.all(6),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.16),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: Colors.white.withOpacity(0.25)),
-                              ),
-                              child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                                  size: 13, color: Colors.white),
-                            ),
+                        child: _glassBox(
+                          radius: 8,
+                          tint: const Color(0x29FFFFFF),
+                          blur: 10,
+                          borderColor: const Color(0x40FFFFFF),
+                          child: Padding(
+                            padding: const EdgeInsets.all(6),
+                            child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 13, color: Colors.white),
                           ),
                         ),
                       ),
                     ],
                   ),
                 ),
-                // Panneau info glass (bas)
                 Positioned(
                   left: 12,
                   right: 12,
                   bottom: 12,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(14),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.14),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: Colors.white.withOpacity(0.22)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(ThixInputGuard.text(o.title, maxLength: 80),
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800, height: 1.25)),
-                            const SizedBox(height: 4),
-                            Text(ThixInputGuard.text(o.organizer, maxLength: 45),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10.5, fontWeight: FontWeight.w500)),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: [
-                                _heroPill(
-                                  d <= 0
-                                      ? _tr(l10n, 'opp_closed', 'Clôturé')
-                                      : (d == 1 ? _tr(l10n, 'opp_last_day', 'Dernier jour') : '$d ${_tr(l10n, 'opp_days', 'j restants')}'),
-                                  d <= 3 ? _Opp.red : null,
-                                ),
-                                if (reward.isNotEmpty && reward != '—') ...[
-                                  const SizedBox(width: 6),
-                                  _heroPill(reward, _Opp.green),
-                                ],
-                                const Spacer(),
-                                const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 15),
+                  child: _glassBox(
+                    radius: 14,
+                    tint: const Color(0x24FFFFFF),
+                    blur: 14,
+                    borderColor: const Color(0x38FFFFFF),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(ThixInputGuard.text(o.title, maxLength: 80),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800, height: 1.25)),
+                          const SizedBox(height: 4),
+                          Text(ThixInputGuard.text(o.organizer, maxLength: 45),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10.5, fontWeight: FontWeight.w500)),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              _heroPill(
+                                d <= 0
+                                    ? _tr(l10n, 'opp_closed', 'Clôturé')
+                                    : (d == 1 ? _tr(l10n, 'opp_last_day', 'Dernier jour') : 'J-$d'),
+                                d <= 3 ? _Opp.red : null,
+                              ),
+                              if (reward.isNotEmpty && reward != '—') ...[
+                                const SizedBox(width: 6),
+                                _heroPill(reward, _Opp.green),
                               ],
-                            ),
-                          ],
-                        ),
+                              const Spacer(),
+                              const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 15),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -620,9 +658,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           borderRadius: BorderRadius.circular(7),
           border: Border.all(color: Colors.white.withOpacity(0.25)),
         ),
-        child: Text(label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
       ),
     );
@@ -631,11 +667,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   Widget _heroFallback(OpportunityItem o) {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_Opp.blueDeep, _Opp.blue],
-        ),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_Opp.blueDeep, _Opp.blue]),
       ),
       child: Center(
         child: Text(
@@ -646,50 +678,47 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ RAIL CATÉGORIES (pills glass) ═══════════════════
+  // ═══════════════════ CATÉGORIES (pills) ═══════════════════
   Widget _catsRail(AppLocalizations l10n) {
-    return Transform.translate(
-      offset: const Offset(0, -0),
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
-        child: SizedBox(
-          height: 42,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            itemCount: _cats.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 8),
-            itemBuilder: (context, i) {
-              final sel = _catIndex == i;
-              final c = _cats[i];
-              return GestureDetector(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  setState(() => _catIndex = i);
-                },
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  padding: const EdgeInsets.symmetric(horizontal: 14),
-                  decoration: BoxDecoration(
-                    color: sel ? _Opp.blue : _Opp.card,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: sel ? _Opp.blue : _Opp.line),
-                    boxShadow: sel
-                        ? [BoxShadow(color: _Opp.blue.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 4))]
-                        : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(c.icon, size: 14, color: sel ? Colors.white : _Opp.sub),
-                      const SizedBox(width: 6),
-                      Text(c.label,
-                          style: TextStyle(fontSize: 12, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: sel ? Colors.white : _Opp.sub)),
-                    ],
-                  ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+      child: SizedBox(
+        height: 42,
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          itemCount: _cats.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
+          itemBuilder: (context, i) {
+            final sel = _catIndex == i;
+            final c = _cats[i];
+            return GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                setState(() => _catIndex = i);
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                decoration: BoxDecoration(
+                  color: sel ? _Opp.blue : _Opp.card,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: sel ? _Opp.blue : _Opp.line),
+                  boxShadow: sel
+                      ? [BoxShadow(color: _Opp.blue.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 4))]
+                      : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
                 ),
-              );
-            },
-          ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(c.icon, size: 14, color: sel ? Colors.white : _Opp.sub),
+                    const SizedBox(width: 6),
+                    Text(c.label,
+                        style: TextStyle(fontSize: 12, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: sel ? Colors.white : _Opp.sub)),
+                  ],
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -712,7 +741,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt, letterSpacing: -0.2)),
               const Spacer(),
               GestureDetector(
-                onTap: () => setState(() { _deadlineFilter = 1; _sortMode = 0; }),
+                onTap: () => setState(() { _deadlineFilter = 1; _sortMode = 1; }),
                 child: Text(_tr(l10n, 'opp_see_all', 'Voir tout'),
                     style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _Opp.blue)),
               ),
@@ -729,7 +758,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             itemBuilder: (context, i) {
               final o = closing[i];
               final d = _daysLeft(o);
-              final urgent = d <= 3;
               return GestureDetector(
                 onTap: () => context.push('/opportunities/${o.id}'),
                 child: Container(
@@ -746,7 +774,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     children: [
                       Row(
                         children: [
-                          _Ring(days: d, progress: _ratio(o), color: urgent ? _Opp.red : _Opp.blue),
+                          _Ring(days: d, progress: _ratio(o), color: d <= 3 ? _Opp.red : _Opp.blue),
                           const Spacer(),
                           _miniLogo(o, 26),
                         ],
@@ -772,7 +800,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ LISTE PROFESSIONAL ═══════════════════
+  // ═══════════════════ GRILLE 2 COLONNES (style carte produit local) ═══════════════════
   Widget _listSectionHeader(int count, AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
@@ -780,9 +808,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         children: [
           Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.blue, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 8),
-          Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt, letterSpacing: -0.2)),
-          const Spacer(),
+          Expanded(
+            child: Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
+                maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt, letterSpacing: -0.2)),
+          ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
             decoration: BoxDecoration(color: _Opp.blueSoft, borderRadius: BorderRadius.circular(10)),
@@ -793,152 +823,170 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  Widget _proCard(OpportunityItem o, AppLocalizations l10n) {
+  Widget _gridCard(OpportunityItem o, AppLocalizations l10n) {
     final d = _daysLeft(o);
     final isSaved = _saved.contains(o.id);
     final reward = _rewardOf(o);
-    final statusColor = d <= 0 ? _Opp.mut : (d <= 7 ? _Opp.red : _Opp.green);
-    final statusLabel = d <= 0
-        ? _tr(l10n, 'opp_closed', 'Clôturé')
-        : (d <= 7 ? _tr(l10n, 'opp_closing_soon', 'Clôture proche') : _tr(l10n, 'opp_open', 'Ouvert'));
+    final url = ThixInputGuard.url(o.imageAssetPath);
+    final closed = d <= 0;
 
     return GestureDetector(
       onTap: () => context.push('/opportunities/${o.id}'),
       child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           color: _Opp.card,
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: _Opp.line),
-          boxShadow: [BoxShadow(color: _Opp.blueDeep.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
+          boxShadow: [BoxShadow(color: _Opp.blueDeep.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
         ),
+        clipBehavior: Clip.antiAlias,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _logo(o, 44),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(ThixInputGuard.text(o.title, maxLength: 110),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.3, letterSpacing: -0.1)),
-                      const SizedBox(height: 3),
-                      Row(
-                        children: [
-                          const Icon(Icons.domain_rounded, size: 11, color: _Opp.mut),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(ThixInputGuard.text(o.organizer, maxLength: 60),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11, color: _Opp.sub, fontWeight: FontWeight.w500)),
-                          ),
-                        ],
+            // ── GRANDE PHOTO ──
+            SizedBox(
+              height: 138,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (url != null)
+                    CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
+                        placeholder: (_, __) => Container(color: _Opp.blueSoft),
+                        errorWidget: (_, __, ___) => _letter(o, 138))
+                  else
+                    _letter(o, 138),
+                  if (closed)
+                    Container(color: Colors.black.withOpacity(0.35)),
+                  // Chip catégorie (glass)
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: _glassBox(
+                      radius: 8,
+                      tint: const Color(0x29FFFFFF),
+                      blur: 10,
+                      borderColor: const Color(0x40FFFFFF),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+                        child: Text(o.category, maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ),
+                  // Bookmark
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () => _toggleSave(o.id),
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: isSaved ? _Opp.blue : Colors.white.withOpacity(0.92),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                            size: 13, color: isSaved ? Colors.white : _Opp.sub),
+                      ),
+                    ),
+                  ),
+                  // Badge NOUVEAU (≤ 7 jours)
+                  if (_isNew(o) && !closed)
+                    Positioned(
+                      bottom: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        decoration: BoxDecoration(color: _Opp.blue, borderRadius: BorderRadius.circular(6)),
+                        child: Text(_tr(l10n, 'opp_new', 'NOUVEAU'),
+                            style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w900, letterSpacing: 0.4)),
+                      ),
+                    ),
+                  // Statut J-x / Clôturé
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: closed ? _Opp.mut : (d <= 3 ? _Opp.red : Colors.white),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        closed ? _tr(l10n, 'opp_closed', 'Clôturé') : 'J-$d',
+                        style: TextStyle(color: closed ? Colors.white : (d <= 3 ? Colors.white : _Opp.blueDeep), fontSize: 8.5, fontWeight: FontWeight.w900),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ── INFOS ──
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(ThixInputGuard.text(o.title, maxLength: 90),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.25)),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(Icons.domain_rounded, size: 10, color: _Opp.mut),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(ThixInputGuard.text(o.organizer, maxLength: 40),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9.5, color: _Opp.mut, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
+                    ),
+                    if (reward.isNotEmpty && reward != '—') ...[
+                      const SizedBox(height: 6),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+                        decoration: BoxDecoration(color: _Opp.blueSoft, borderRadius: BorderRadius.circular(8)),
+                        child: Text(reward,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: _Opp.blueDeep)),
                       ),
                     ],
-                  ),
-                ),
-                GestureDetector(
-                  onTap: () => _toggleSave(o.id),
-                  child: Container(
-                    padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: isSaved ? _Opp.blueSoft : Colors.transparent,
-                      borderRadius: BorderRadius.circular(9),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        const Icon(Icons.event_rounded, size: 10, color: _Opp.mut),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 20),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 9, color: _Opp.sub, fontWeight: FontWeight.w600)),
+                        ),
+                      ],
                     ),
-                    child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                        size: 16, color: isSaved ? _Opp.blue : _Opp.mut),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                _tag(o.category, _Opp.blue),
-                const SizedBox(width: 6),
-                _tag(statusLabel, statusColor),
-                const Spacer(),
-                Text(d <= 0 ? '—' : '$d j',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: d <= 3 ? _Opp.red : _Opp.sub)),
-              ],
-            ),
-            if (reward.isNotEmpty && reward != '—') ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _Opp.blueSoft,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.volunteer_activism_rounded, size: 13, color: _Opp.blue),
-                    const SizedBox(width: 7),
-                    Expanded(
-                      child: Text(reward,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _Opp.blueDeep)),
+                    const SizedBox(height: 6),
+                    // ── BARRE DE PROGRESSION ──
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(3),
+                      child: LinearProgressIndicator(
+                        value: closed ? 1.0 : _ratio(o),
+                        minHeight: 4,
+                        backgroundColor: _Opp.line,
+                        valueColor: AlwaysStoppedAnimation(closed ? _Opp.mut : _Opp.blue),
+                      ),
                     ),
                   ],
                 ),
               ),
-            ],
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.event_rounded, size: 12, color: _Opp.mut),
-                const SizedBox(width: 5),
-                Expanded(
-                  child: Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 30),
-                      style: const TextStyle(fontSize: 10.5, color: _Opp.sub, fontWeight: FontWeight.w600)),
-                ),
-              ],
-            ),
-            const SizedBox(height: 7),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: d <= 0 ? 1.0 : _ratio(o),
-                minHeight: 4,
-                backgroundColor: _Opp.line,
-                valueColor: AlwaysStoppedAnimation(d <= 0 ? _Opp.mut : _Opp.blue),
-              ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _tag(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(7)),
-      child: Text(ThixInputGuard.text(label, maxLength: 24),
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
-    );
-  }
-
-  Widget _logo(OpportunityItem o, double size) {
-    final url = ThixInputGuard.url(o.imageAssetPath);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(12),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: url != null
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
-            : _letter(o, size),
       ),
     );
   }
@@ -962,11 +1010,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       color: _Opp.blueSoft,
       alignment: Alignment.center,
       child: Text(ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(),
-          style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w800, color: _Opp.blue)),
+          style: TextStyle(fontSize: size * 0.35, fontWeight: FontWeight.w800, color: _Opp.blue)),
     );
   }
 
-  // ═══════════════════ FILTRES (sheet glass) ═══════════════════
+  // ═══════════════════ FILTRES ═══════════════════
   void _openFilters() {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
@@ -979,7 +1027,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
           child: BackdropFilter(
             filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
-              color: Colors.white.withOpacity(0.92),
+              color: Colors.white.withOpacity(0.94),
               padding: const EdgeInsets.all(20),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
@@ -1022,7 +1070,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                         ChoiceChip(
                           selected: _sortMode == i,
                           onSelected: (_) => setSt(() => _sortMode = i),
-                          label: Text([_tr(l10n, 'opp_sort_deadline', 'Échéance'), _tr(l10n, 'opp_sort_recent', 'Récentes'), 'A → Z'][i]),
+                          label: Text([
+                            _tr(l10n, 'opp_sort_new', 'Nouveautés'),
+                            _tr(l10n, 'opp_sort_deadline', 'Échéance'),
+                            'A → Z',
+                          ][i]),
                           selectedColor: _Opp.blueDeep,
                           labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sortMode == i ? Colors.white : _Opp.sub),
                           side: BorderSide(color: _sortMode == i ? _Opp.blueDeep : _Opp.line),
@@ -1072,44 +1124,19 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         _header(l10n),
         Padding(
           padding: const EdgeInsets.all(16),
-          child: Column(
-            children: [
-              for (int i = 0; i < 4; i++) ...[
-                Container(
-                  height: 118,
-                  decoration: BoxDecoration(
-                    color: _Opp.card,
-                    borderRadius: BorderRadius.circular(18),
-                    border: Border.all(color: _Opp.line),
-                  ),
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(width: 44, height: 44, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(12))),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(height: 12, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
-                                const SizedBox(height: 7),
-                                Container(height: 9, width: 130, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const Spacer(),
-                      Container(height: 8, width: 170, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-              ],
-            ],
+          child: GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+              mainAxisExtent: _kGridCardHeight,
+            ),
+            itemCount: 4,
+            itemBuilder: (_, __) => Container(
+              decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(18), border: Border.all(color: _Opp.line)),
+            ),
           ),
         ),
       ],
@@ -1122,7 +1149,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _Opp.blueSoft, shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 32, color: _Opp.blue)),
+            Container(padding: const EdgeInsets.all(18), decoration: const BoxDecoration(color: _Opp.blueSoft, shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 32, color: _Opp.blue)),
             const SizedBox(height: 14),
             Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: _Opp.txt)),
             const SizedBox(height: 6),
@@ -1145,7 +1172,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             TextButton(
               onPressed: () {
                 _searchCtrl.clear();
-                setState(() { _catIndex = 0; _savedOnly = false; _deadlineFilter = 0; _withReward = false; });
+                setState(() { _catIndex = 0; _savedOnly = false; _deadlineFilter = 0; _withReward = false; _sortMode = 0; });
               },
               child: Text(_tr(l10n, 'opp_reset', 'Réinitialiser')),
             ),
@@ -1178,7 +1205,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 }
 
 // ============================================================================
-// ANNEAU DE COUNTDOWN (bleu)
+// ANNEAU COUNTDOWN
 // ============================================================================
 class _Ring extends StatelessWidget {
   final int days;
@@ -1193,9 +1220,7 @@ class _Ring extends StatelessWidget {
       height: 44,
       child: CustomPaint(
         painter: _RingPainter(progress: progress, color: color),
-        child: Center(
-          child: Text('$days', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
-        ),
+        child: Center(child: Text('$days', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color))),
       ),
     );
   }
