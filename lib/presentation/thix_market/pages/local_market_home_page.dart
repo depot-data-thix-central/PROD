@@ -4,6 +4,7 @@
 //  • ✅ Les 4 piliers fixes → CARTES AUTO-DÉFILENTES gérées par modérateur/admin
 //  • ✅ Bandeau « Produit de la semaine » (choisi par le modérateur)
 //  • ✅ Producteurs & coopératives = COOPÉRATIVES UNIQUEMENT
+//  • ✅ Nos Partenaires (DrcPartnersBand) avec logique complète conservée
 //  • ✅ Design RDC strictement conservé
 // ============================================================================
 
@@ -80,9 +81,9 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     final filtered = ref.watch(filteredLocalProductsProvider);
     final counts = ref.watch(localSectorCountsProvider);
     final covers = ref.watch(localSectorCoverProvider);
-    final cooperativesAsync = ref.watch(localCooperativesProvider); // ✅ coopératives seulement
-    final highlightsAsync = ref.watch(drcPortalHighlightsProvider); // ✅ cartes modérables
-    final weeklyAsync = ref.watch(weeklyProductProvider); // ✅ produit de la semaine
+    final cooperativesAsync = ref.watch(localCooperativesProvider);
+    final highlightsAsync = ref.watch(drcPortalHighlightsProvider);
+    final weeklyAsync = ref.watch(weeklyProductProvider);
     final selectedSector = ref.watch(localSectorFilterProvider);
     final hasMore = ref.read(localProductsProvider.notifier).hasMore;
 
@@ -97,6 +98,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         onRefresh: () async {
           HapticFeedback.mediumImpact();
           invalidateLocalProviders(ref);
+          // ✅ Invalidation complète de la logique partenaires & médias
           ref.invalidate(drcPortalMediaProvider(kDrcKindLogo));
           ref.invalidate(drcPortalMediaProvider(kDrcKindPartner));
           ref.invalidate(drcPortalEditorProvider);
@@ -113,7 +115,12 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             const SliverToBoxAdapter(child: SizedBox(height: 18)),
             SliverToBoxAdapter(child: _buildSectors(lang, counts, covers, selectedSector)),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            
+            // ✅ NOS PARTENAIRES — Logique complète (widget externe DrcPartnersBand)
+            // Ce widget gère internement : affichage logos, défilement auto, 
+            // bouton ajout admin/modérateur, et liaison avec drcPortalMediaProvider
             SliverToBoxAdapter(child: DrcPartnersBand(lang: lang)),
+            
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             // ✅ CARTES AUTO-DÉFILENTES (remplacent les 4 piliers fixes)
             SliverToBoxAdapter(child: _buildHighlights(highlightsAsync, lang)),
@@ -249,6 +256,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ),
         ),
         const SizedBox(width: 12),
+        // ✅ LOGO OFFICIEL (géré par DrcPortalLogo + drcPortalMediaProvider)
         const Expanded(child: Align(alignment: Alignment.centerLeft, child: DrcPortalLogo())),
         const SizedBox(width: 12),
         GestureDetector(
@@ -623,7 +631,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         _sectionTitle(
           _t('Producteurs & coopératives', 'Producers & cooperatives', 'Wakulima na ushirika'),
           action: _t('Voir tout', 'Show all', 'Ona zote'),
-          onAction: () => context.push('/market/local/producers'), // ✅ page dédiée coopératives
+          onAction: () => context.push('/market/local/producers'),
         ),
         const SizedBox(height: 12),
         async.when(
