@@ -671,7 +671,11 @@ class AppRouter {
         GoRoute(path: '/opportunities/:opportunityId/apply', name: 'opportunityApply', pageBuilder: (_, state) => NoTransitionPage(child: OpportunityApplyPage(opportunityId: state.pathParameters['opportunityId'] ?? ''))),
         GoRoute(path: '/jobs/:jobId', name: 'jobDetails', pageBuilder: (_, state) => NoTransitionPage(child: JobDetailsPage(jobId: state.pathParameters['jobId'] ?? '', applied: (state.uri.queryParameters['applied'] ?? '') == '1'))),
         GoRoute(path: '/jobs/:jobId/apply', name: 'jobApply', pageBuilder: (_, state) => NoTransitionPage(child: JobApplyPage(jobId: state.pathParameters['jobId'] ?? ''))),
-
+GoRoute(
+  path: 'admin',
+  name: 'thixInfoAdmin',
+  pageBuilder: (_, __) => const NoTransitionPage(child: ThixInfoAdminPage()),
+),
         // === THIX SOS + RETROUVE ===
         GoRoute(path: '/home-swipe', name: 'homeSwipe', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 0)),
         GoRoute(path: '/thix-sos', name: 'thixSos', builder: (context, state) => const ThixHomeSwipeScreen(initialPage: 0), routes: [
