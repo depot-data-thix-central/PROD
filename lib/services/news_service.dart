@@ -65,22 +65,23 @@ class NewsService {
   }
 
   // 🎧 NOUVEAU : Récupère uniquement les podcasts audio
-  Future<List<NewsArticle>> getAudioPodcasts() async {
-    try {
-      final r = await _supabase.from('news_articles')
-          .select('*')
-          .eq('is_published', true)
-          .eq('category', 'Podcast')
-          .not('audio_url', 'is', null)
-          .eq('video_url', null)
-          .order('published_at', ascending: false)
-          .limit(30);
-      return (r as List).map((e) => NewsArticle.fromJson(e)).toList();
-    } catch (e) {
-      debugPrint('❌ getAudioPodcasts $e');
-      return [];
-    }
+  
+Future<List<NewsArticle>> getAudioPodcasts() async {
+  try {
+    final r = await _supabase.from('news_articles')
+        .select('*')
+        .eq('is_published', true)
+        .eq('category', 'Podcast')
+        .not('audio_url', 'is', null)
+        .is('video_url', null)  // ✅ Utiliser .is() pour null
+        .order('published_at', ascending: false)
+        .limit(30);
+    return (r as List).map((e) => NewsArticle.fromJson(e)).toList();
+  } catch (e) {
+    debugPrint('❌ getAudioPodcasts $e');
+    return [];
   }
+}
 
   Future<List<NewsArticle>> searchArticles(String q) async { 
     try{ 
