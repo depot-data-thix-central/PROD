@@ -1,5 +1,6 @@
 // lib/presentation/thix_info/thix_info_home.dart
 import 'dart:async';
+import 'dart:math';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
 import '../../providers/downloads_provider.dart';
+import '../../providers/podcast_player_provider.dart';
 import '../../services/thix_downloader.dart';
 import '../../services/admin_rbac_service.dart';
 import '../../models/news_article.dart';
@@ -59,6 +61,69 @@ class GlassBox extends StatelessWidget {
 }
 
 // ============================================================================
+// 🎚️ ÉGALISEUR ANIMÉ (indicateur "en cours de lecture")
+// ============================================================================
+class _EqualizerBars extends StatefulWidget {
+  final double size;
+  final Color color;
+  const _EqualizerBars({this.size = 14, this.color = Colors.white});
+
+  @override
+  State<_EqualizerBars> createState() => _EqualizerBarsState();
+}
+
+class _EqualizerBarsState extends State<_EqualizerBars>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+      vsync: this, duration: const Duration(milliseconds: 800))
+    ..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        final t = _ctrl.value * 2 * pi;
+        double h(int i) =>
+            widget.size * (0.30 + 0.70 * ((sin(t + i * 1.35) + 1) / 2));
+        return SizedBox(
+          height: widget.size,
+          width: widget.size,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [0, 1, 2]
+                .map((i) => Container(
+                      width: 3,
+                      height: h(i),
+                      decoration: BoxDecoration(
+                        color: widget.color,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ))
+                .toList(),
+          ),
+        );
+      },
+    );
+  }
+}
+
+String _fmtDur(Duration d) {
+  String two(int n) => n.toString().padLeft(2, '0');
+  final h = d.inHours;
+  final m = d.inMinutes % 60;
+  final s = d.inSeconds % 60;
+  return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+}
+
+// ============================================================================
 // DÉFINITION DES ESPACES
 // ============================================================================
 class _SpaceDef {
@@ -103,11 +168,12 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   bool _isAdmin = false;
   bool _adminChecked = false;
 
-  // 🎧 ÉTAT DU LECTEUR PODCAST LOCAL (Audio & Vidéo)
-  NewsArticle? _activePodcast;
-  bool _isPlaying = false;
-  double _podcastProgress = 0.0;
-  Timer? _podcastMockTimer;
+  // 🚫 Catégories "espaces" exclues du fil d'actualité
+  static const Set<String> _spaceCategories = {
+    'Magazine',
+    'Podcast',
+    'Découverte'
+  };
 
   static const List<_SpaceDef> _spaces = [
     _SpaceDef(
@@ -240,7 +306,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   void dispose() {
     _timer?.cancel();
     _breakingTimer?.cancel();
-    _podcastMockTimer?.cancel();
     _pageCtrl.dispose();
     _breakingCtrl.dispose();
     _mainScrollCtrl.dispose();
@@ -271,56 +336,14 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     }
   }
 
-  // 🎥 DÉTERMINER SI C'EST UNE VIDÉO OU UN AUDIO
-  // (Simulation basée sur le titre/ID pour l'UI, à remplacer par votre logique DB)
-  bool _isVideoPodcast(NewsArticle a) {
-    return a.title.toLowerCase().contains('vidéo') ||
-        a.title.toLowerCase().contains('interview') ||
-        (a.id.hashCode % 2 == 0); // Alterne pour la démo
-  }
-
-  // ═══════════════════ LOGIQUE LECTEUR PODCAST ═══════════════════
-  void _togglePodcast(NewsArticle article) {
-    HapticFeedback.mediumImpact();
-    setState(() {
-      if (_activePodcast?.id == article.id) {
-        _isPlaying = !_isPlaying;
-      } else {
-        _activePodcast = article;
-        _isPlaying = true;
-        _podcastProgress = 0.0;
-      }
-    });
-
-    if (_isPlaying) {
-      _startPodcastMockTimer();
-    } else {
-      _podcastMockTimer?.cancel();
-    }
-  }
-
-  void _startPodcastMockTimer() {
-    _podcastMockTimer?.cancel();
-    _podcastMockTimer = Timer.periodic(const Duration(milliseconds: 500), (_) {
-      if (!mounted || !_isPlaying) return;
-      setState(() {
-        _podcastProgress += 0.005;
-        if (_podcastProgress >= 1.0) {
-          _podcastProgress = 0.0;
-          _isPlaying = false;
-          _podcastMockTimer?.cancel();
-        }
-      });
-    });
-  }
-
   void _openFullPodcastPlayer() {
-    if (_activePodcast == null) return;
+    final article = ref.read(podcastPlayerProvider).article;
+    if (article == null) return;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) => _buildPodcastBottomSheet(),
+      builder: (_) => const _PodcastPlayerSheet(),
     );
   }
 
@@ -329,7 +352,15 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     final prov = ref.watch(newsProvider);
     final featured = prov.articles.where((e) => e.isFeatured).toList();
     final breaking = prov.articles.where((e) => e.isBreaking).toList();
-    final recents = prov.articles;
+
+    // ✅ FIL D'ACTUALITÉ : on exclut Magazine / Podcast / Découverte
+    final recents = prov.articles
+        .where((a) => !_spaceCategories.contains(a.category))
+        .toList();
+
+    // 🎧 État du lecteur global (sélectifs → rebuilds minimaux)
+    final playerArticle =
+        ref.watch(podcastPlayerProvider.select((s) => s.article));
 
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
@@ -417,14 +448,28 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
             ),
           ),
 
-          // 🎧 MINI-PLAYER PODCAST EN BAS
-          if (_activePodcast != null)
-            Positioned(
-              bottom: 16,
-              left: 16,
-              right: 16,
-              child: _buildMiniPlayer(),
+          // 🎧 MINI-PLAYER PODCAST EN BAS (animation d'apparition)
+          Positioned(
+            bottom: 16,
+            left: 16,
+            right: 16,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 350),
+              reverseDuration: const Duration(milliseconds: 250),
+              transitionBuilder: (child, anim) => SlideTransition(
+                position: Tween(begin: const Offset(0, 1), end: Offset.zero)
+                    .animate(
+                        CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                child: FadeTransition(opacity: anim, child: child),
+              ),
+              child: playerArticle != null
+                  ? KeyedSubtree(
+                      key: const ValueKey('miniplayer'),
+                      child: _buildMiniPlayer(),
+                    )
+                  : const SizedBox.shrink(key: ValueKey('noplayer')),
             ),
+          ),
         ],
       ),
     );
@@ -1016,14 +1061,16 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: ThixPolicy.bodySmallStyle.copyWith(
-                    color: Colors.white60, height: 1.4, fontStyle: FontStyle.italic)),
+                    color: Colors.white60,
+                    height: 1.4,
+                    fontStyle: FontStyle.italic)),
           ],
         ),
       ),
     );
   }
 
-  // ─── PODCASTS (AUDIO & VIDÉO) ───
+  // ─── PODCASTS (AUDIO & VIDÉO) — LECTURE RÉELLE ───
   Widget _buildPodcastSection(List<NewsArticle> list) {
     if (list.isEmpty) return const SizedBox.shrink();
     return Column(
@@ -1033,7 +1080,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
         _spaceHeader(_spaces[1]),
         const SizedBox(height: ThixPolicy.s16),
         SizedBox(
-          height: 230,
+          height: 250,
           child: ListView.separated(
             padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
             scrollDirection: Axis.horizontal,
@@ -1051,93 +1098,129 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
     final downloading = dl.isDownloading(a.id);
     final downloaded = dl.isDownloaded(a.id);
     final currentItem = dl.findById(a.id);
-    final isCurrent = _activePodcast?.id == a.id;
-    final isVideo = _isVideoPodcast(a);
+
+    final isCurrent =
+        ref.watch(podcastPlayerProvider.select((s) => s.article?.id == a.id));
+    final isPlaying = isCurrent &&
+        ref.watch(podcastPlayerProvider.select((s) => s.isPlaying));
+    final isVideo = isVideoPodcast(a);
 
     return GestureDetector(
-      onTap: () => _togglePodcast(a),
+      onTap: () {
+        HapticFeedback.selectionClick();
+        ref.read(podcastPlayerProvider.notifier).playArticle(a);
+      },
       child: SizedBox(
         width: 160,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            ClipRRect(
-              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              child: SizedBox(
-                height: 150,
-                width: 150,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    a.imageUrl != null
-                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
-                        : Container(
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                                colors: [
-                                  const Color(0xFF6366F1).withOpacity(0.6),
-                                  const Color(0xFF4338CA).withOpacity(0.8),
-                                ],
+            // ✨ Glow animé autour de l'épisode en cours
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                border: Border.all(
+                    color: isCurrent
+                        ? const Color(0xFF6366F1)
+                        : Colors.transparent,
+                    width: 2),
+                boxShadow: isCurrent
+                    ? [
+                        BoxShadow(
+                            color: const Color(0xFF6366F1).withOpacity(0.45),
+                            blurRadius: 18,
+                            spreadRadius: 2)
+                      ]
+                    : null,
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                child: SizedBox(
+                  height: 150,
+                  width: 150,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      a.imageUrl != null
+                          ? Image.network(a.imageUrl!, fit: BoxFit.cover)
+                          : Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    const Color(0xFF6366F1).withOpacity(0.6),
+                                    const Color(0xFF4338CA).withOpacity(0.8),
+                                  ],
+                                ),
                               ),
+                              child: const Center(
+                                  child: Icon(Icons.graphic_eq_rounded,
+                                      size: 40, color: Colors.white70)),
                             ),
-                            child: const Center(
-                                child: Icon(Icons.graphic_eq_rounded,
-                                    size: 40, color: Colors.white70)),
-                          ),
-                    
-                    // 🎥 BADGE AUDIO / VIDÉO
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: isVideo ? Colors.redAccent.withOpacity(0.9) : const Color(0xFF6366F1).withOpacity(0.9),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              isVideo ? Icons.videocam_rounded : Icons.headphones_rounded,
-                              size: 10, color: Colors.white,
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              isVideo ? 'VIDÉO' : 'AUDIO',
-                              style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
 
-                    // Overlay Play/Pause
-                    Center(
-                      child: GlassBox(
-                        padding: const EdgeInsets.all(ThixPolicy.s10),
-                        borderRadius: ThixPolicy.rFull,
-                        blur: 20,
-                        color: isCurrent && _isPlaying
-                            ? ThixPolicy.primary.withOpacity(0.8)
-                            : Colors.white.withOpacity(0.15),
-                        child: Icon(
-                            isCurrent && _isPlaying
-                                ? Icons.pause_rounded
-                                : Icons.play_arrow_rounded,
-                            color: Colors.white,
-                            size: 24),
+                      // 🎥 BADGE AUDIO / VIDÉO
+                      Positioned(
+                        top: 8,
+                        left: 8,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: isVideo
+                                ? Colors.redAccent.withOpacity(0.9)
+                                : const Color(0xFF6366F1).withOpacity(0.9),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isVideo
+                                    ? Icons.videocam_rounded
+                                    : Icons.headphones_rounded,
+                                size: 10,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isVideo ? 'VIDÉO' : 'AUDIO',
+                                style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
-                    ),
-                    Positioned(
-                      bottom: ThixPolicy.s8,
-                      right: ThixPolicy.s8,
-                      child: _downloadButton(
-                          a, downloading, downloaded, currentItem),
-                    ),
-                  ],
+
+                      // Overlay Play/Pause
+                      Center(
+                        child: GlassBox(
+                          padding: const EdgeInsets.all(ThixPolicy.s10),
+                          borderRadius: ThixPolicy.rFull,
+                          blur: 20,
+                          color: isCurrent && isPlaying
+                              ? ThixPolicy.primary.withOpacity(0.8)
+                              : Colors.white.withOpacity(0.15),
+                          child: Icon(
+                              isCurrent && isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 24),
+                        ),
+                      ),
+                      Positioned(
+                        bottom: ThixPolicy.s8,
+                        right: ThixPolicy.s8,
+                        child: _downloadButton(
+                            a, downloading, downloaded, currentItem),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1147,6 +1230,23 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                 overflow: TextOverflow.ellipsis,
                 style: ThixPolicy.bodySmallStyle.copyWith(
                     fontWeight: ThixPolicy.bold, color: Colors.white70)),
+            // 🎚️ Indicateur "En cours"
+            if (isCurrent) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  isPlaying
+                      ? const _EqualizerBars(size: 12, color: Color(0xFF6366F1))
+                      : const Icon(Icons.pause_rounded,
+                          size: 12, color: Color(0xFF6366F1)),
+                  const SizedBox(width: 6),
+                  Text(isPlaying ? 'En cours' : 'En pause',
+                      style: ThixPolicy.microStyle.copyWith(
+                          color: const Color(0xFF6366F1),
+                          fontWeight: ThixPolicy.bold)),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -1338,7 +1438,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // FIL D'ACTUALITÉ
+  // FIL D'ACTUALITÉ (sans Magazine / Podcast / Découverte)
   // ─────────────────────────────────────────────────────────────
   Widget _buildNewsFeed(List<NewsArticle> list, NewsProvider prov) {
     if (list.isEmpty) {
@@ -1379,7 +1479,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                               maxLines: 3,
                               overflow: TextOverflow.ellipsis,
                               style: ThixPolicy.titleStyle
-                                  .copyWith(color: Colors.white)),
+                                      .copyWith(color: Colors.white)),
                           const SizedBox(height: ThixPolicy.s12),
                           Row(
                             children: [
@@ -1449,13 +1549,14 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           child: CircularProgressIndicator(color: Colors.white)));
 
   // ═══════════════════════════════════════════════════════════════
-  // 🎧 LECTEUR LOCAL (MINI-PLAYER & BOTTOM SHEET) - ADAPTATIF AUDIO/VIDÉO
+  // 🎧 MINI-PLAYER (lié au lecteur global)
   // ═══════════════════════════════════════════════════════════════
-
   Widget _buildMiniPlayer() {
-    if (_activePodcast == null) return const SizedBox.shrink();
-    final isVideo = _isVideoPodcast(_activePodcast!);
-    
+    final player = ref.watch(podcastPlayerProvider);
+    final a = player.article;
+    if (a == null) return const SizedBox.shrink();
+    final isVideo = isVideoPodcast(a);
+
     return GestureDetector(
       onTap: _openFullPodcastPlayer,
       child: GlassBox(
@@ -1473,15 +1574,25 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                 child: Stack(
                   fit: StackFit.expand,
                   children: [
-                    _activePodcast!.imageUrl != null
-                        ? Image.network(_activePodcast!.imageUrl!, fit: BoxFit.cover)
-                        : Container(color: Colors.white12, child: const Icon(Icons.headphones, color: Colors.white54)),
-                    // Petite icône overlay pour le mini-player
+                    a.imageUrl != null
+                        ? Image.network(a.imageUrl!, fit: BoxFit.cover)
+                        : Container(
+                            color: Colors.white12,
+                            child: const Icon(Icons.headphones,
+                                color: Colors.white54)),
                     Center(
                       child: Container(
                         padding: const EdgeInsets.all(4),
-                        decoration: BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-                        child: Icon(isVideo ? Icons.videocam_rounded : Icons.graphic_eq_rounded, size: 14, color: Colors.white),
+                        decoration: const BoxDecoration(
+                            color: Colors.black54, shape: BoxShape.circle),
+                        child: player.isPlaying
+                            ? const _EqualizerBars(size: 14)
+                            : Icon(
+                                isVideo
+                                    ? Icons.videocam_rounded
+                                    : Icons.graphic_eq_rounded,
+                                size: 14,
+                                color: Colors.white),
                       ),
                     )
                   ],
@@ -1495,7 +1606,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    _activePodcast!.title,
+                    a.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: ThixPolicy.bodySmallStyle.copyWith(
@@ -1505,48 +1616,72 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    isVideo ? 'Vidéo • En cours' : 'Audio • En cours',
-                    style: ThixPolicy.microStyle.copyWith(color: Colors.white54),
+                    '${isVideo ? 'Vidéo' : 'Audio'} • ${player.isPlaying ? 'En cours' : 'En pause'}',
+                    style:
+                        ThixPolicy.microStyle.copyWith(color: Colors.white54),
                   ),
                 ],
               ),
             ),
             IconButton(
-              icon: Icon(
-                _isPlaying ? Icons.pause_circle_filled_rounded : Icons.play_circle_fill_rounded,
-                color: const Color(0xFF6366F1),
-                size: 36,
-              ),
-              onPressed: () => _togglePodcast(_activePodcast!),
+              icon: player.isLoading
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2.5, color: Color(0xFF6366F1)),
+                    )
+                  : Icon(
+                      player.isPlaying
+                          ? Icons.pause_circle_filled_rounded
+                          : Icons.play_circle_fill_rounded,
+                      color: const Color(0xFF6366F1),
+                      size: 36,
+                    ),
+              onPressed: () =>
+                  ref.read(podcastPlayerProvider.notifier).toggle(),
             ),
             IconButton(
-              icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
-              onPressed: () {
-                _podcastMockTimer?.cancel();
-                setState(() {
-                  _activePodcast = null;
-                  _isPlaying = false;
-                });
-              },
+              icon: const Icon(Icons.close_rounded,
+                  color: Colors.white54, size: 20),
+              onPressed: () => ref.read(podcastPlayerProvider.notifier).stop(),
             ),
           ],
         ),
       ),
     );
   }
+}
 
-  Widget _buildPodcastBottomSheet() {
-    final isVideo = _isVideoPodcast(_activePodcast!);
+// ============================================================================
+//  LECTEUR COMPLET (BOTTOM SHEET) — ConsumerWidget : se met à jour tout seul
+// ============================================================================
+class _PodcastPlayerSheet extends ConsumerWidget {
+  const _PodcastPlayerSheet();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final player = ref.watch(podcastPlayerProvider);
+    final notifier = ref.read(podcastPlayerProvider.notifier);
+    final a = player.article;
+    if (a == null) return const SizedBox.shrink();
+
+    final isVideo = isVideoPodcast(a);
+    final dur = player.duration;
+    final pos = player.position;
+    final maxSec = dur.inSeconds > 0 ? dur.inSeconds.toDouble() : 1.0;
 
     return ClipRRect(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
         child: Container(
-          padding: const EdgeInsets.all(24),
+          padding: EdgeInsets.fromLTRB(
+              24, 24, 24, 24 + MediaQuery.of(context).padding.bottom),
           decoration: BoxDecoration(
             color: ThixPolicy.inkDeep.withOpacity(0.95),
-            border: Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
+            border:
+                Border(top: BorderSide(color: Colors.white.withOpacity(0.1))),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1560,10 +1695,9 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                 ),
               ),
               const SizedBox(height: 30),
-              
+
               // ═══ COVER / LECTEUR VIDÉO ═══
               if (isVideo)
-                // Mode Vidéo (Format 16:9)
                 AspectRatio(
                   aspectRatio: 16 / 9,
                   child: Container(
@@ -1577,36 +1711,66 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                           spreadRadius: 10,
                         )
                       ],
-                      image: _activePodcast?.imageUrl != null
+                      image: a.imageUrl != null
                           ? DecorationImage(
-                              image: NetworkImage(_activePodcast!.imageUrl!),
+                              image: NetworkImage(a.imageUrl!),
                               fit: BoxFit.cover,
-                              colorFilter: ColorFilter.mode(Colors.black.withOpacity(0.4), BlendMode.darken),
+                              colorFilter: ColorFilter.mode(
+                                  Colors.black.withOpacity(0.4),
+                                  BlendMode.darken),
                             )
                           : null,
                     ),
-                    child: Center(
-                      child: GestureDetector(
-                        onTap: () => _togglePodcast(_activePodcast!),
-                        child: Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: Colors.black54,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white24),
-                          ),
-                          child: Icon(
-                            _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                            size: 40,
-                            color: Colors.white,
+                    child: Stack(
+                      children: [
+                        Center(
+                          child: GestureDetector(
+                            onTap: () => notifier.toggle(),
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.white24),
+                              ),
+                              child: player.isLoading
+                                  ? const SizedBox(
+                                      width: 28,
+                                      height: 28,
+                                      child: CircularProgressIndicator(
+                                          color: Colors.white,
+                                          strokeWidth: 2.5),
+                                    )
+                                  : Icon(
+                                      player.isPlaying
+                                          ? Icons.pause_rounded
+                                          : Icons.play_arrow_rounded,
+                                      size: 40,
+                                      color: Colors.white,
+                                    ),
+                            ),
                           ),
                         ),
-                      ),
+                        if (player.isPlaying)
+                          Positioned(
+                            bottom: 10,
+                            left: 12,
+                            child: Row(
+                              children: [
+                                const _EqualizerBars(size: 14),
+                                const SizedBox(width: 6),
+                                Text('PISTE AUDIO EN DIRECT',
+                                    style: ThixPolicy.microStyle.copyWith(
+                                        color: Colors.white70,
+                                        letterSpacing: 1.2)),
+                              ],
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 )
               else
-                // Mode Audio (Format Carré)
                 Container(
                   width: 200,
                   height: 200,
@@ -1619,24 +1783,45 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                         spreadRadius: 10,
                       )
                     ],
-                    image: _activePodcast?.imageUrl != null
+                    image: a.imageUrl != null
                         ? DecorationImage(
-                            image: NetworkImage(_activePodcast!.imageUrl!),
+                            image: NetworkImage(a.imageUrl!),
                             fit: BoxFit.cover,
                           )
                         : null,
                     color: Colors.white10,
                   ),
-                  child: _activePodcast?.imageUrl == null
-                      ? const Icon(Icons.graphic_eq_rounded, size: 80, color: Colors.white54)
-                      : null,
+                  child: Stack(
+                    children: [
+                      if (a.imageUrl == null)
+                        const Center(
+                            child: Icon(Icons.graphic_eq_rounded,
+                                size: 80, color: Colors.white54)),
+                      if (player.isLoading)
+                        const Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.white)),
+                      if (player.isPlaying)
+                        Positioned(
+                          bottom: 10,
+                          right: 12,
+                          child: Container(
+                            padding: const EdgeInsets.all(6),
+                            decoration: const BoxDecoration(
+                                color: Colors.black54,
+                                shape: BoxShape.circle),
+                            child: const _EqualizerBars(size: 14),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
 
               const SizedBox(height: 30),
-              
+
               // Titre
               Text(
-                _activePodcast?.title ?? '',
+                a.title,
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
@@ -1646,33 +1831,41 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(isVideo ? Icons.videocam_rounded : Icons.headphones_rounded, size: 14, color: const Color(0xFF6366F1)),
+                  Icon(
+                      isVideo
+                          ? Icons.videocam_rounded
+                          : Icons.headphones_rounded,
+                      size: 14,
+                      color: const Color(0xFF6366F1)),
                   const SizedBox(width: 6),
                   Text(
                     isVideo ? 'THIX Podcast Vidéo' : 'THIX Podcast Audio',
-                    style: ThixPolicy.bodyStyle.copyWith(color: const Color(0xFF6366F1)),
+                    style: ThixPolicy.bodyStyle
+                        .copyWith(color: const Color(0xFF6366F1)),
                   ),
                 ],
               ),
-              const SizedBox(height: 30),
-              
-              // Progress
+              const SizedBox(height: 24),
+
+              // Progression RÉELLE
               Column(
                 children: [
                   SliderTheme(
                     data: SliderTheme.of(context).copyWith(
                       trackHeight: 4,
-                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
-                      overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+                      thumbShape: const RoundSliderThumbShape(
+                          enabledThumbRadius: 6),
+                      overlayShape:
+                          const RoundSliderOverlayShape(overlayRadius: 14),
                       activeTrackColor: const Color(0xFF6366F1),
                       inactiveTrackColor: Colors.white24,
                       thumbColor: Colors.white,
                     ),
                     child: Slider(
-                      value: _podcastProgress.clamp(0.0, 1.0),
-                      onChanged: (val) {
-                        setState(() => _podcastProgress = val);
-                      },
+                      value: pos.inSeconds.toDouble().clamp(0.0, maxSec),
+                      max: maxSec,
+                      onChanged: (val) => notifier
+                          .seek(Duration(seconds: val.toInt())),
                     ),
                   ),
                   Padding(
@@ -1680,51 +1873,80 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Text(
-                          '${(_podcastProgress * 45).toInt()}:00',
-                          style: ThixPolicy.microStyle.copyWith(color: Colors.white54),
-                        ),
-                        Text(
-                          '45:00',
-                          style: ThixPolicy.microStyle.copyWith(color: Colors.white54),
-                        ),
+                        Text(_fmtDur(pos),
+                            style: ThixPolicy.microStyle
+                                .copyWith(color: Colors.white54)),
+                        Text(_fmtDur(dur),
+                            style: ThixPolicy.microStyle
+                                .copyWith(color: Colors.white54)),
                       ],
                     ),
                   )
                 ],
               ),
-              const SizedBox(height: 20),
-              
+              const SizedBox(height: 12),
+
               // Controls
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                 children: [
                   IconButton(
-                    icon: const Icon(Icons.replay_10_rounded, color: Colors.white70, size: 32),
-                    onPressed: () {},
+                    icon: const Icon(Icons.replay_10_rounded,
+                        color: Colors.white70, size: 32),
+                    onPressed: () => notifier.skipBy(-10),
                   ),
                   GestureDetector(
-                    onTap: () => _togglePodcast(_activePodcast!),
+                    onTap: () => notifier.toggle(),
                     child: Container(
                       padding: const EdgeInsets.all(16),
                       decoration: const BoxDecoration(
                         color: Color(0xFF6366F1),
                         shape: BoxShape.circle,
                       ),
-                      child: Icon(
-                        _isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                        color: Colors.white,
-                        size: 40,
-                      ),
+                      child: player.isLoading
+                          ? const SizedBox(
+                              width: 32,
+                              height: 32,
+                              child: CircularProgressIndicator(
+                                  color: Colors.white, strokeWidth: 3),
+                            )
+                          : Icon(
+                              player.isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              color: Colors.white,
+                              size: 40,
+                            ),
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.forward_30_rounded, color: Colors.white70, size: 32),
-                    onPressed: () {},
+                    icon: const Icon(Icons.forward_30_rounded,
+                        color: Colors.white70, size: 32),
+                    onPressed: () => notifier.skipBy(30),
                   ),
                 ],
               ),
-              const SizedBox(height: 20),
+
+              if (player.error != null) ...[
+                const SizedBox(height: 12),
+                Text(player.error!,
+                    textAlign: TextAlign.center,
+                    style: ThixPolicy.microStyle
+                        .copyWith(color: Colors.redAccent)),
+              ],
+
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock_open_rounded,
+                      size: 12, color: Colors.white38),
+                  const SizedBox(width: 6),
+                  Text('Lecture maintenue hors application',
+                      style: ThixPolicy.microStyle
+                          .copyWith(color: Colors.white38)),
+                ],
+              ),
             ],
           ),
         ),
