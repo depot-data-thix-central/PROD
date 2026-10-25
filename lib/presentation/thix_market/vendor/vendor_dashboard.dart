@@ -1503,3 +1503,65 @@ class _ItemsSkeleton extends StatelessWidget {
     );
   }
 }
+
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: ThixPolicy.danger.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              context.vdT('Erreur de chargement', 'Loading error'),
+              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              button: true,
+              label: context.vdT('Réessayer', 'Retry'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  onRetry();
+                },
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                label: Text(
+                  context.vdT('Réessayer', 'Retry'),
+                  style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
