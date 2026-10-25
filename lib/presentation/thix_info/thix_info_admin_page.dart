@@ -1,16 +1,15 @@
-// lib/presentation/thix_info/thix_info_admin_page.dart
 // ============================================================================
-// ADMIN THIX INFO — Gestion des articles (CORRIGÉ + UPLOAD AUDIO/VIDEO + MAGAZINE)
-//  • ✅ Upload réel des photos vers Supabase Storage (news_images)
-//  • ✅ Upload réel des vidéos vers Supabase Storage (news_videos)
-//  • ✅ Upload réel des audios vers Supabase Storage (news_audios)
-//  • ✅ Champs Magazine complets (tags, citation, points clés, durée, légende, fonction)
-//  • ✅ Sélecteur de date de publication
-//  • ✅ Lisibilité : Champs de saisie BLANCS avec texte SOMBRE
+// ADMIN THIX INFO — Gestion des articles (CORRIGÉ v2)
+//  • ✅ Buckets alignés : news/images/, news/videos/, news/audios/
+//  • ✅ Image en bytes (pas de base64 en RAM)
+//  • ✅ Preview audio (lecteur just_audio)
+//  • ✅ is_published automatique basé sur status
+//  • ✅ Validation taille fichiers (50Mo audio / 200Mo vidéo)
+//  • ✅ PopScope pour confirmer sortie avec modifs non sauvegardées
+//  • ✅ Nettoyage auto des anciens médias au remplacement
 // ============================================================================
 
 import 'dart:async';
-import 'dart:convert';
 import 'dart:typed_data';
 import 'dart:ui';
 
@@ -19,7 +18,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:file_picker/file_picker.dart'; // ⚠️ AJOUTER CE PACKAGE DANS PUBSPEC
+import 'package:file_picker/file_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -28,7 +28,14 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/news_article.dart';
 
 // ============================================================================
-// COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE (Pour le fond sombre)
+// CONSTANTES DE LIMITES D'UPLOAD
+// ============================================================================
+const int _kMaxAudioBytes = 50 * 1024 * 1024; // 50 Mo
+const int _kMaxVideoBytes = 200 * 1024 * 1024; // 200 Mo
+const int _kMaxImageBytes = 10 * 1024 * 1024;  // 10 Mo
+
+// ============================================================================
+// COMPOSANT RÉUTILISABLE : BOÎTE EN VERRE (GLASSMORPHISM)
 // ============================================================================
 class GlassBox extends StatelessWidget {
   final Widget child;
@@ -67,7 +74,7 @@ class GlassBox extends StatelessWidget {
 }
 
 // ============================================================================
-// COMPOSANT : CHAMP DE SAISIE CLAIR (Fond blanc, texte sombre)
+// CHAMP DE SAISIE CLAIR (Fond blanc, texte sombre)
 // ============================================================================
 class ClearInputBox extends StatelessWidget {
   final Widget child;
@@ -135,38 +142,23 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 15));
 
-      final list = (res as List).map((e) {
-        return NewsArticle(
-          id: e['id']?.toString() ?? '',
-          title: e['title']?.toString() ?? '',
-          summary: e['summary']?.toString(),
-          content: e['content']?.toString() ?? '',
-          category: e['category']?.toString() ?? '',
-          imageUrl: e['image_url']?.toString(),
-          videoUrl: e['video_url']?.toString(),
-          audioUrl: e['audio_url']?.toString(), // ✅ AJOUT AUDIO
-          viewsCount: (e['views_count'] as num?)?.toInt() ?? 0,
-          isFeatured: e['is_featured'] == true,
-          isBreaking: e['is_breaking'] == true,
-          status: e['status']?.toString() ?? 'published',
-          publishedAt: e['published_at'] != null
-              ? DateTime.tryParse(e['published_at'].toString()) ?? DateTime.now()
-              : DateTime.now(),
-          createdAt: e['created_at'] != null
-              ? DateTime.tryParse(e['created_at'].toString()) ?? DateTime.now()
-              : DateTime.now(),
-          createdBy: e['created_by']?.toString(),
-        );
-      }).toList();
+      // ✅ Utilisation de NewsArticle.fromJson (source unique)
+      final list = (res as List)
+          .map((e) => NewsArticle.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
 
-      setState(() {
-        _articles = list;
-        _loading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _articles = list;
+          _loading = false;
+        });
+      }
     } catch (e) {
       debugPrint('[ThixInfoAdmin] ❌ Load error: $e');
-      setState(() => _loading = false);
-      _showError('Erreur lors du chargement');
+      if (mounted) {
+        setState(() => _loading = false);
+        _showError('Erreur lors du chargement');
+      }
     }
   }
 
@@ -203,7 +195,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
             borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
         title: const Text('Supprimer ?',
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-        content: Text('"${article.title}"\n\nAction irréversible.',
+        content: Text('"${article.title}"\n\nAction irréversible. Les médias liés seront aussi supprimés.',
             style: const TextStyle(color: Colors.white70)),
         actions: [
           TextButton(
@@ -220,52 +212,101 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     if (confirmed != true) return;
 
     try {
+      // 🗑️ Supprimer l'article
       await _supabase
           .from('news_articles')
           .delete()
           .eq('id', article.id)
           .timeout(const Duration(seconds: 10));
-      setState(() => _articles.removeWhere((a) => a.id == article.id));
-      _showSuccess('Article supprimé');
+
+      // 🗑️ Nettoyer les médias dans Storage
+      await _cleanupMedia(article);
+
+      if (mounted) {
+        setState(() => _articles.removeWhere((a) => a.id == article.id));
+        _showSuccess('Article et médias supprimés');
+      }
     } catch (e) {
-      _showError('Erreur suppression');
+      _showError('Erreur suppression : $e');
     }
   }
 
-  Future<void> _toggleFlag(
-      NewsArticle article, String field, bool value) async {
+  /// Supprime les fichiers médias liés à un article dans Storage
+  Future<void> _cleanupMedia(NewsArticle article) async {
+    final paths = <String>[];
+    if (article.imageUrl != null) paths.add(_extractPath(article.imageUrl!, 'images'));
+    if (article.videoUrl != null) paths.add(_extractPath(article.videoUrl!, 'videos'));
+    if (article.audioUrl != null) paths.add(_extractPath(article.audioUrl!, 'audios'));
+
+    for (final path in paths) {
+      if (path.isEmpty) continue;
+      try {
+        final bucket = path.startsWith('images/')
+            ? 'images'
+            : path.startsWith('videos/')
+                ? 'videos'
+                : path.startsWith('audios/')
+                    ? 'audios'
+                    : '';
+        if (bucket.isEmpty) continue;
+        final file = path.substring(bucket.length + 1);
+        await _supabase.storage.from('news').remove([file]);
+      } catch (_) {
+        // Ignorer si fichier inexistant
+      }
+    }
+  }
+
+  String _extractPath(String url, String folder) {
     try {
+      final uri = Uri.parse(url);
+      final segments = uri.pathSegments;
+      // URL type: /storage/v1/object/public/news/images/xxx.jpg
+      final idx = segments.indexOf(folder);
+      if (idx >= 0 && idx + 1 < segments.length) {
+        return '$folder/${segments.sublist(idx + 1).join('/')}';
+      }
+    } catch (_) {}
+    return '';
+  }
+
+  Future<void> _toggleFlag(NewsArticle article, String field, bool value) async {
+    try {
+      final idx = _articles.indexWhere((a) => a.id == article.id);
+      if (idx == -1) return;
+
       await _supabase
           .from('news_articles')
           .update({field: value})
           .eq('id', article.id)
           .timeout(const Duration(seconds: 10));
-      setState(() {
-        final idx = _articles.indexWhere((a) => a.id == article.id);
-        if (idx != -1) {
-          final u = _articles[idx];
-          _articles[idx] = NewsArticle(
-            id: u.id,
-            title: u.title,
-            summary: u.summary,
-            content: u.content,
-            category: u.category,
-            imageUrl: u.imageUrl,
-            videoUrl: u.videoUrl,
-            audioUrl: u.audioUrl, // ✅ AJOUT AUDIO
-            viewsCount: u.viewsCount,
-            isFeatured: field == 'is_featured' ? value : u.isFeatured,
-            isBreaking: field == 'is_breaking' ? value : u.isBreaking,
-            status: u.status,
-            publishedAt: u.publishedAt,
-            createdAt: u.createdAt,
-            createdBy: u.createdBy,
-          );
-        }
+
+      // ✅ Reconstruction via fromJson (source unique)
+      final old = _articles[idx];
+      final updated = NewsArticle.fromJson({
+        'id': old.id,
+        'title': old.title,
+        'summary': old.summary,
+        'content': old.content,
+        'category': old.category,
+        'image_url': old.imageUrl,
+        'video_url': old.videoUrl,
+        'audio_url': old.audioUrl,
+        'views_count': old.viewsCount,
+        'is_featured': field == 'is_featured' ? value : old.isFeatured,
+        'is_breaking': field == 'is_breaking' ? value : old.isBreaking,
+        'status': old.status,
+        'published_at': old.publishedAt.toIso8601String(),
+        'created_at': old.createdAt.toIso8601String(),
+        'created_by': old.createdBy,
       });
-      _showSuccess('Mis à jour');
+
+      if (mounted) {
+        setState(() => _articles[idx] = updated);
+        _showSuccess('Mis à jour');
+      }
     } catch (e) {
-      _showError('Erreur mise à jour');
+      _showError('Erreur mise à jour : $e');
     }
   }
 
@@ -578,9 +619,8 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
                     : ThixPolicy.warning),
             if (article.isFeatured) _badge('À la une', ThixPolicy.primary),
             if (article.isBreaking) _badge('Flash', ThixPolicy.danger),
-            // Petits indicateurs de médias attachés
-            if (article.audioUrl != null) _badge('AUDIO', const Color(0xFF6366F1)),
-            if (article.videoUrl != null) _badge('VIDÉO', Colors.redAccent),
+            if (article.audioUrl != null) _badge('🎧 AUDIO', const Color(0xFF6366F1)),
+            if (article.videoUrl != null) _badge('🎥 VIDÉO', Colors.redAccent),
             _badge('${article.viewsCount} vues', Colors.white24),
           ]),
           const SizedBox(height: 12),
@@ -700,16 +740,26 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   bool _isBreaking = false;
   bool _saving = false;
   DateTime _publishedAt = DateTime.now();
+  bool _hasUnsavedChanges = false;
 
   // ── Upload états ──
-  String? _imageBase64;
+  Uint8List? _imageBytes;        // ✅ Plus de base64, bytes direct
   String? _imageUrl;
   String? _videoUrl;
-  String? _audioUrl; // ✅ AJOUT AUDIO
-  
+  String? _audioUrl;
+
+  // Anciens URLs (pour suppression si remplacés)
+  String? _oldImageUrl;
+  String? _oldVideoUrl;
+  String? _oldAudioUrl;
+
   bool _isUploadingImage = false;
   bool _isUploadingVideo = false;
-  bool _isUploadingAudio = false; // ✅ AJOUT AUDIO
+  bool _isUploadingAudio = false;
+
+  // 🎧 Lecteur audio pour preview
+  final AudioPlayer _audioPreview = AudioPlayer();
+  bool _audioPreviewPlaying = false;
 
   bool get _isEditing => widget.article != null;
   bool get _isMagazine => _category == 'Magazine';
@@ -725,16 +775,30 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       _category = a.category;
       _imageUrl = a.imageUrl;
       _videoUrl = a.videoUrl;
-      _audioUrl = a.audioUrl; // ✅ AJOUT AUDIO
+      _audioUrl = a.audioUrl;
       _status = a.status;
       _isFeatured = a.isFeatured;
       _isBreaking = a.isBreaking;
       _publishedAt = a.publishedAt ?? DateTime.now();
+
+      _oldImageUrl = a.imageUrl;
+      _oldVideoUrl = a.videoUrl;
+      _oldAudioUrl = a.audioUrl;
     }
+
+    // Suivi des modifications
+    _titleCtrl.addListener(_markDirty);
+    _summaryCtrl.addListener(_markDirty);
+    _contentCtrl.addListener(_markDirty);
+  }
+
+  void _markDirty() {
+    if (!_hasUnsavedChanges) setState(() => _hasUnsavedChanges = true);
   }
 
   @override
   void dispose() {
+    _audioPreview.dispose();
     _titleCtrl.dispose();
     _summaryCtrl.dispose();
     _contentCtrl.dispose();
@@ -747,7 +811,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     super.dispose();
   }
 
-  // ─── PICK IMAGE ───
+  // ─── PICK IMAGE (bytes direct, pas de base64) ───
   Future<void> _pickImage() async {
     try {
       final file = await _picker.pickImage(
@@ -758,10 +822,15 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       if (file == null) return;
 
       final bytes = await file.readAsBytes();
-      final base64Str = base64Encode(bytes);
+      if (bytes.length > _kMaxImageBytes) {
+        _showSnack('Image trop volumineuse (max 10 Mo)', ThixPolicy.danger);
+        return;
+      }
+
       setState(() {
-        _imageBase64 = 'data:image/jpeg;base64,$base64Str';
+        _imageBytes = bytes;
         _imageUrl = null;
+        _hasUnsavedChanges = true;
       });
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Pick image error: $e');
@@ -769,22 +838,18 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── UPLOAD IMAGE ───
+  // ─── UPLOAD IMAGE (bucket unifié : news) ───
   Future<String?> _uploadImageToStorage() async {
-    if (_imageBase64 == null) return _imageUrl;
+    if (_imageBytes == null) return _imageUrl;
 
     setState(() => _isUploadingImage = true);
     try {
-      final dataUri = _imageBase64!;
-      final base64Data = dataUri.split(',').last;
-      final Uint8List bytes = base64Decode(base64Data);
-
       final fileName =
-          '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+          'images/${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.jpg';
 
-      await _supabase.storage.from('news_images').uploadBinary(
+      await _supabase.storage.from('news').uploadBinary(
             fileName,
-            bytes,
+            _imageBytes!,
             fileOptions: const FileOptions(
               cacheControl: '3600',
               upsert: false,
@@ -792,7 +857,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             ),
           );
 
-      return _supabase.storage.from('news_images').getPublicUrl(fileName);
+      return _supabase.storage.from('news').getPublicUrl(fileName);
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Upload image error: $e');
       rethrow;
@@ -807,32 +872,41 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       final file = await _picker.pickVideo(source: ImageSource.gallery);
       if (file == null) return;
 
+      final bytes = await file.readAsBytes();
+      if (bytes.length > _kMaxVideoBytes) {
+        _showSnack('Vidéo trop volumineuse (max 200 Mo)', ThixPolicy.danger);
+        return;
+      }
+
       setState(() => _isUploadingVideo = true);
 
-      final bytes = await file.readAsBytes();
       final fileName =
-          '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+          'videos/${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
 
-      await _supabase.storage.from('news_videos').uploadBinary(
+      await _supabase.storage.from('news').uploadBinary(
             fileName,
             bytes,
             fileOptions: const FileOptions(
               cacheControl: '3600',
               upsert: false,
+              contentType: 'video/mp4',
             ),
           );
 
-      final publicUrl = _supabase.storage.from('news_videos').getPublicUrl(fileName);
+      final publicUrl = _supabase.storage.from('news').getPublicUrl(fileName);
 
-      setState(() {
-        _videoUrl = publicUrl;
-        _isUploadingVideo = false;
-      });
-      _showSnack('✅ Vidéo uploadée avec succès', ThixPolicy.success);
-    } catch (e) {
-      debugPrint('[ArticleForm] ❌ Pick/Upload video error: $e');
       if (mounted) {
-        _showSnack('Erreur upload vidéo : ${e.toString().split('\n').first}', ThixPolicy.danger);
+        setState(() {
+          _videoUrl = publicUrl;
+          _isUploadingVideo = false;
+          _hasUnsavedChanges = true;
+        });
+        _showSnack('✅ Vidéo uploadée (${_formatSize(bytes.length)})', ThixPolicy.success);
+      }
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Video error: $e');
+      if (mounted) {
+        _showSnack('Erreur vidéo : ${e.toString().split('\n').first}', ThixPolicy.danger);
         setState(() => _isUploadingVideo = false);
       }
     }
@@ -841,43 +915,72 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   // ─── PICK + UPLOAD AUDIO (PODCAST) ───
   Future<void> _pickAndUploadAudio() async {
     try {
-      // Utilisation de FilePicker pour l'audio
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.audio,
-        withData: true, // Important pour récupérer les bytes
+        withData: true,
       );
-      
-      if (result == null || result.files.single.bytes == null) return;
 
-      setState(() => _isUploadingAudio = true);
+      if (result == null || result.files.single.bytes == null) return;
 
       final file = result.files.single;
       final bytes = file.bytes!;
-      final fileName = '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+      if (bytes.length > _kMaxAudioBytes) {
+        _showSnack('Audio trop volumineux (max 50 Mo)', ThixPolicy.danger);
+        return;
+      }
 
-      await _supabase.storage.from('news_audios').uploadBinary(
+      setState(() => _isUploadingAudio = true);
+
+      final ext = file.name.toLowerCase().split('.').last;
+      final contentType = _getAudioMime(ext);
+      final fileName =
+          'audios/${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      await _supabase.storage.from('news').uploadBinary(
             fileName,
             bytes,
-            fileOptions: const FileOptions(
+            fileOptions: FileOptions(
               cacheControl: '3600',
               upsert: false,
+              contentType: contentType,
             ),
           );
 
-      final publicUrl = _supabase.storage.from('news_audios').getPublicUrl(fileName);
+      final publicUrl = _supabase.storage.from('news').getPublicUrl(fileName);
 
-      setState(() {
-        _audioUrl = publicUrl;
-        _isUploadingAudio = false;
-      });
-      _showSnack('✅ Audio uploadé avec succès', ThixPolicy.success);
-    } catch (e) {
-      debugPrint('[ArticleForm] ❌ Pick/Upload audio error: $e');
       if (mounted) {
-        _showSnack('Erreur upload audio : ${e.toString().split('\n').first}', ThixPolicy.danger);
+        setState(() {
+          _audioUrl = publicUrl;
+          _isUploadingAudio = false;
+          _hasUnsavedChanges = true;
+        });
+        _showSnack('✅ Audio uploadé (${_formatSize(bytes.length)})', ThixPolicy.success);
+      }
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Audio error: $e');
+      if (mounted) {
+        _showSnack('Erreur audio : ${e.toString().split('\n').first}', ThixPolicy.danger);
         setState(() => _isUploadingAudio = false);
       }
     }
+  }
+
+  String _getAudioMime(String ext) {
+    switch (ext) {
+      case 'mp3': return 'audio/mpeg';
+      case 'm4a': return 'audio/mp4';
+      case 'wav': return 'audio/wav';
+      case 'ogg': return 'audio/ogg';
+      case 'aac': return 'audio/aac';
+      case 'flac': return 'audio/flac';
+      default: return 'audio/mpeg';
+    }
+  }
+
+  String _formatSize(int bytes) {
+    if (bytes < 1024) return '$bytes o';
+    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} Ko';
+    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} Mo';
   }
 
   // ─── PICK DATE ───
@@ -899,7 +1002,25 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     setState(() {
       _publishedAt = DateTime(
           date.year, date.month, date.day, time.hour, time.minute);
+      _hasUnsavedChanges = true;
     });
+  }
+
+  // ─── PREVIEW AUDIO ───
+  Future<void> _toggleAudioPreview() async {
+    if (_audioUrl == null) return;
+    try {
+      if (_audioPreviewPlaying) {
+        await _audioPreview.pause();
+        setState(() => _audioPreviewPlaying = false);
+      } else {
+        await _audioPreview.setUrl(_audioUrl!);
+        await _audioPreview.play();
+        setState(() => _audioPreviewPlaying = true);
+      }
+    } catch (e) {
+      _showSnack('Impossible de prévisualiser : $e', ThixPolicy.danger);
+    }
   }
 
   // ─── SAUVEGARDE ───
@@ -915,6 +1036,9 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
       final String? finalImageUrl = await _uploadImageToStorage();
 
+      // ✅ is_published basé sur le statut
+      final isPublished = _status == 'published';
+
       Map<String, dynamic> magazineExtras = const {};
       if (_isMagazine) {
         magazineExtras = {
@@ -927,7 +1051,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
         };
       }
 
-      // 3. Payload
       final payload = {
         'title': _titleCtrl.text.trim(),
         'summary': _summaryCtrl.text.trim().isEmpty ? null : _summaryCtrl.text.trim(),
@@ -935,12 +1058,14 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
         'category': _category,
         'image_url': finalImageUrl,
         'video_url': _videoUrl,
-        'audio_url': _audioUrl, // ✅ AJOUT AUDIO DANS LE PAYLOAD
+        'audio_url': _audioUrl,
         'status': _status,
+        'is_published': isPublished,        // ✅ IMPORTANT
         'is_featured': _isFeatured,
         'is_breaking': _isBreaking,
         'published_at': _publishedAt.toIso8601String(),
         'magazine_extras': magazineExtras,
+        'updated_at': DateTime.now().toIso8601String(),
       };
 
       if (_isEditing) {
@@ -949,6 +1074,9 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             .update(payload)
             .eq('id', widget.article!.id)
             .timeout(const Duration(seconds: 30));
+
+        // 🗑️ Nettoyer anciens médias remplacés
+        await _cleanupReplacedMedia(finalImageUrl);
       } else {
         payload['id'] = const Uuid().v4();
         payload['created_by'] = uid;
@@ -977,6 +1105,31 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
+  Future<void> _cleanupReplacedMedia(String? newImageUrl) async {
+    final toDelete = <String>[];
+    if (_oldImageUrl != null && _oldImageUrl != newImageUrl) {
+      toDelete.add(_oldImageUrl!);
+    }
+    if (_oldVideoUrl != null && _oldVideoUrl != _videoUrl) {
+      toDelete.add(_oldVideoUrl!);
+    }
+    if (_oldAudioUrl != null && _oldAudioUrl != _audioUrl) {
+      toDelete.add(_oldAudioUrl!);
+    }
+
+    for (final url in toDelete) {
+      try {
+        final uri = Uri.parse(url);
+        final segments = uri.pathSegments;
+        final publicIdx = segments.indexOf('public');
+        if (publicIdx >= 0 && publicIdx + 2 < segments.length) {
+          final path = segments.sublist(publicIdx + 2).join('/');
+          await _supabase.storage.from('news').remove([path]);
+        }
+      } catch (_) {}
+    }
+  }
+
   void _showSnack(String msg, Color bg) {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -987,110 +1140,165 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
+  Future<bool> _onWillPop() async {
+    if (!_hasUnsavedChanges) return true;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: ThixPolicy.inkDeep,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: const Text('Modifications non sauvegardées',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: const Text('Voulez-vous quitter sans enregistrer ?',
+            style: TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Rester',
+                  style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
+              child: const Text('Quitter')),
+        ],
+      ),
+    );
+    return result == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isBusy = _saving || _isUploadingVideo || _isUploadingImage || _isUploadingAudio;
-    return Scaffold(
-      backgroundColor: ThixPolicy.inkDeep,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_hasUnsavedChanges,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final shouldPop = await _onWillPop();
+        if (shouldPop && context.mounted) {
+          Navigator.of(context).pop(false);
+        }
+      },
+      child: Scaffold(
         backgroundColor: ThixPolicy.inkDeep,
-        elevation: 0,
-        leading: IconButton(
-            icon: const Icon(Icons.close_rounded, color: Colors.white),
-            onPressed: () => Navigator.pop(context, false)),
-        title: Text(
-            _isEditing ? 'Modifier l\'article' : 'Nouvel article',
-            style: ThixPolicy.h3Style.copyWith(
-                color: Colors.white, fontWeight: FontWeight.w900)),
-        actions: [
-          TextButton(
-              onPressed: isBusy ? null : _save,
-              child: Text(isBusy ? 'Enregistrement...' : 'Enregistrer',
-                  style: TextStyle(
-                      color: isBusy ? Colors.white38 : ThixPolicy.primary,
-                      fontWeight: FontWeight.w800))),
-        ],
-      ),
-      body: Form(
-        key: _formKey,
-        child: ListView(padding: const EdgeInsets.all(ThixPolicy.s16), children: [
-          _buildImageSection(),
-          const SizedBox(height: 16),
-          _buildVideoSection(),
-          const SizedBox(height: 16),
-          _buildAudioSection(), // ✅ AJOUT SECTION AUDIO
-          const SizedBox(height: 20),
-          _buildField(
-              controller: _titleCtrl,
-              label: 'Titre *',
-              hint: 'Titre de l\'article',
-              maxLines: 2,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Titre requis' : null),
-          const SizedBox(height: 16),
-          _buildField(
-              controller: _summaryCtrl,
-              label: 'Résumé',
-              hint: 'Résumé court (optionnel)',
-              maxLines: 3),
-          const SizedBox(height: 16),
-          _buildDropdown(
-              label: 'Catégorie *',
-              value: _category,
-              items: const [
-                'politique',
-                'economie',
-                'societe',
-                'tech',
-                'sport',
-                'culture',
-                'international',
-                'Magazine',
-                'Podcast',
-                'Découverte'
-              ],
-              onChanged: (v) => setState(() => _category = v ?? 'politique')),
-          const SizedBox(height: 16),
-          _buildField(
-              controller: _contentCtrl,
-              label: 'Contenu *',
-              hint: 'Contenu complet de l\'article',
-              maxLines: _isMagazine ? 20 : 12,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Contenu requis' : null),
-          const SizedBox(height: 16),
+        appBar: AppBar(
+          backgroundColor: ThixPolicy.inkDeep,
+          elevation: 0,
+          leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: Colors.white),
+              onPressed: () async {
+                final should = await _onWillPop();
+                if (should && context.mounted) Navigator.pop(context, false);
+              }),
+          title: Text(
+              _isEditing ? 'Modifier l\'article' : 'Nouvel article',
+              style: ThixPolicy.h3Style.copyWith(
+                  color: Colors.white, fontWeight: FontWeight.w900)),
+          actions: [
+            TextButton(
+                onPressed: isBusy ? null : _save,
+                child: Text(isBusy ? 'Enregistrement...' : 'Enregistrer',
+                    style: TextStyle(
+                        color: isBusy ? Colors.white38 : ThixPolicy.primary,
+                        fontWeight: FontWeight.w800))),
+          ],
+        ),
+        body: Form(
+          key: _formKey,
+          child: ListView(padding: const EdgeInsets.all(ThixPolicy.s16), children: [
+            _buildImageSection(),
+            const SizedBox(height: 16),
+            _buildVideoSection(),
+            const SizedBox(height: 16),
+            _buildAudioSection(),
+            const SizedBox(height: 20),
+            _buildField(
+                controller: _titleCtrl,
+                label: 'Titre *',
+                hint: 'Titre de l\'article',
+                maxLines: 2,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Titre requis' : null),
+            const SizedBox(height: 16),
+            _buildField(
+                controller: _summaryCtrl,
+                label: 'Résumé',
+                hint: 'Résumé court (optionnel)',
+                maxLines: 3),
+            const SizedBox(height: 16),
+            _buildDropdown(
+                label: 'Catégorie *',
+                value: _category,
+                items: const [
+                  'politique',
+                  'economie',
+                  'societe',
+                  'tech',
+                  'sport',
+                  'culture',
+                  'international',
+                  'Magazine',
+                  'Podcast',
+                  'Découverte'
+                ],
+                onChanged: (v) {
+                  setState(() {
+                    _category = v ?? 'politique';
+                    _hasUnsavedChanges = true;
+                  });
+                }),
+            const SizedBox(height: 16),
+            _buildField(
+                controller: _contentCtrl,
+                label: 'Contenu *',
+                hint: 'Contenu complet de l\'article',
+                maxLines: _isMagazine ? 20 : 12,
+                validator: (v) =>
+                    (v == null || v.trim().isEmpty) ? 'Contenu requis' : null),
+            const SizedBox(height: 16),
 
-          if (_isMagazine) _buildMagazineSection(),
-          if (_isMagazine) const SizedBox(height: 16),
+            if (_isMagazine) _buildMagazineSection(),
+            if (_isMagazine) const SizedBox(height: 16),
 
-          _buildDropdown(
-              label: 'Statut',
-              value: _status,
-              items: const ['published', 'draft', 'scheduled'],
-              onChanged: (v) => setState(() => _status = v ?? 'published')),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(
-                child: _buildToggle(
-                    label: 'À la une',
-                    value: _isFeatured,
-                    onChanged: (v) => setState(() => _isFeatured = v))),
-            const SizedBox(width: 12),
-            Expanded(
-                child: _buildToggle(
-                    label: 'Flash info',
-                    value: _isBreaking,
-                    onChanged: (v) => setState(() => _isBreaking = v))),
+            _buildDropdown(
+                label: 'Statut',
+                value: _status,
+                items: const ['published', 'draft', 'scheduled'],
+                onChanged: (v) {
+                  setState(() {
+                    _status = v ?? 'published';
+                    _hasUnsavedChanges = true;
+                  });
+                }),
+            const SizedBox(height: 16),
+            Row(children: [
+              Expanded(
+                  child: _buildToggle(
+                      label: 'À la une',
+                      value: _isFeatured,
+                      onChanged: (v) => setState(() {
+                        _isFeatured = v;
+                        _hasUnsavedChanges = true;
+                      }))),
+              const SizedBox(width: 12),
+              Expanded(
+                  child: _buildToggle(
+                      label: 'Flash info',
+                      value: _isBreaking,
+                      onChanged: (v) => setState(() {
+                        _isBreaking = v;
+                        _hasUnsavedChanges = true;
+                      }))),
+            ]),
+            const SizedBox(height: 16),
+            _buildDateSection(),
+            const SizedBox(height: 32),
           ]),
-          const SizedBox(height: 16),
-          _buildDateSection(),
-          const SizedBox(height: 32),
-        ]),
+        ),
       ),
     );
   }
 
-  // ─── SECTION MAGAZINE ───
   Widget _buildMagazineSection() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -1166,7 +1374,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  // ─── IMAGE SECTION ───
   Widget _buildImageSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1202,12 +1409,10 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                       ],
                     ),
                   )
-                : _imageBase64 != null
+                : _imageBytes != null
                     ? ClipRRect(
                         borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-                        child: Image.memory(
-                            base64Decode(_imageBase64!.split(',').last),
-                            fit: BoxFit.cover),
+                        child: Image.memory(_imageBytes!, fit: BoxFit.cover),
                       )
                     : _imageUrl != null
                         ? ClipRRect(
@@ -1231,12 +1436,16 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                           ),
           ),
         ),
-        if (_imageUrl != null && _imageBase64 == null) ...[
+        if ((_imageUrl != null && _imageBytes == null) || _imageBytes != null) ...[
           const SizedBox(height: 6),
           Align(
             alignment: Alignment.centerRight,
             child: TextButton.icon(
-              onPressed: () => setState(() => _imageUrl = null),
+              onPressed: () => setState(() {
+                _imageUrl = null;
+                _imageBytes = null;
+                _hasUnsavedChanges = true;
+              }),
               icon: const Icon(Icons.delete_outline,
                   size: 16, color: Colors.redAccent),
               label: const Text('Retirer l\'image',
@@ -1251,7 +1460,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  // ─── VIDEO SECTION ───
   Widget _buildVideoSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1306,7 +1514,10 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                               icon: const Icon(Icons.close_rounded,
                                   color: Colors.white54, size: 20),
                               onPressed: () =>
-                                  setState(() => _videoUrl = null),
+                                  setState(() {
+                                    _videoUrl = null;
+                                    _hasUnsavedChanges = true;
+                                  }),
                             ),
                           ],
                         ),
@@ -1317,7 +1528,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                           Icon(Icons.video_call_rounded,
                               color: Colors.white38, size: 24),
                           SizedBox(width: 8),
-                          Text('Choisir une vidéo (Galerie)',
+                          Text('Choisir une vidéo (max 200 Mo)',
                               style: TextStyle(
                                   color: Colors.white38, fontSize: 13)),
                         ],
@@ -1328,14 +1539,37 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  // ─── AUDIO SECTION (PODCAST) ───
   Widget _buildAudioSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Audio du Podcast (optionnel)',
-            style: ThixPolicy.labelStyle.copyWith(
-                color: Colors.white70, fontWeight: FontWeight.w700)),
+        Row(
+          children: [
+            Text('Audio du Podcast (optionnel)',
+                style: ThixPolicy.labelStyle.copyWith(
+                    color: Colors.white70, fontWeight: FontWeight.w700)),
+            const Spacer(),
+            if (_audioUrl != null && !_isUploadingAudio)
+              GestureDetector(
+                onTap: _toggleAudioPreview,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_audioPreviewPlaying
+                        ? Icons.pause_rounded
+                        : Icons.play_arrow_rounded,
+                        size: 16, color: const Color(0xFF6366F1)),
+                    const SizedBox(width: 4),
+                    Text(_audioPreviewPlaying ? 'Pause' : 'Écouter',
+                        style: const TextStyle(
+                            color: Color(0xFF6366F1),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700)),
+                  ],
+                ),
+              ),
+          ],
+        ),
         const SizedBox(height: 8),
         GestureDetector(
           onTap: _isUploadingAudio ? null : _pickAndUploadAudio,
@@ -1370,7 +1604,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                         child: Row(
                           children: [
                             const Icon(Icons.check_circle_rounded,
-                                color: Color(0xFF6366F1)), // Couleur podcast
+                                color: Color(0xFF6366F1)),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text('Fichier audio prêt',
@@ -1382,8 +1616,14 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                             IconButton(
                               icon: const Icon(Icons.close_rounded,
                                   color: Colors.white54, size: 20),
-                              onPressed: () =>
-                                  setState(() => _audioUrl = null),
+                              onPressed: () {
+                                _audioPreview.stop();
+                                setState(() {
+                                  _audioUrl = null;
+                                  _audioPreviewPlaying = false;
+                                  _hasUnsavedChanges = true;
+                                });
+                              },
                             ),
                           ],
                         ),
@@ -1394,7 +1634,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                           Icon(Icons.headphones_rounded,
                               color: Colors.white38, size: 24),
                           SizedBox(width: 8),
-                          Text('Choisir un fichier audio (MP3/WAV)',
+                          Text('Choisir un audio (max 50 Mo)',
                               style: TextStyle(
                                   color: Colors.white38, fontSize: 13)),
                         ],
@@ -1405,7 +1645,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  // ─── DATE SECTION ───
   Widget _buildDateSection() {
     return GestureDetector(
       onTap: _pickDate,
