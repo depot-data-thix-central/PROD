@@ -1,11 +1,13 @@
 // lib/presentation/thix_market/widgets/products/local_hero_banner.dart
 // ============================================================================
-// HERO BANNER THIX LOCAL — les 10 nouveaux produits, défilement automatique
+// HERO BANNER « MADE IN CONGO » — les 10 nouveaux produits, défilement auto
+//  • même taille / même style que le hero de market_home_page
+//    (hauteur 46 % de l'écran, clamp 300–420, viewport 0.92, Ken Burns)
 //  • boucle infinie, pause au toucher / en arrière-plan
-//  • carte centrale mise en avant (échelle), badge NOUVEAU, compteur n/10
-//  • prix converti dans la devise choisie
+//  • badge NEW (rouge), puce MADE IN CONGO, prix converti, bouton Découvrir
 // ============================================================================
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -15,13 +17,11 @@ import 'package:go_router/go_router.dart';
 
 import '../../core/african_currencies.dart';
 import '../../core/currency_service.dart';
-import '../../core/local_sectors.dart';
+import '../../core/drc_portal_theme.dart';
 import '../../providers/currency_provider.dart';
 
-const double _kHeroHeight = 214;
-const int _kLoopFactor = 400; // nombre de « tours » simulés (boucle infinie)
-const Duration _kAutoDelay = Duration(seconds: 4);
-const Color _kMint = Color(0xFFB9F0C8);
+const int _kLoopFactor = 400; // boucle infinie simulée
+const Duration _kAutoDelay = Duration(seconds: 5);
 
 // ── Extraction tolérante des champs produit ─────────────────────────────────
 String? _okUrl(dynamic v) {
@@ -49,6 +49,11 @@ String? _heroImage(Map<String, dynamic> p) {
 String _heroTitle(Map<String, dynamic> p) {
   final t = (p['title'] ?? p['name'] ?? p['product_name'] ?? '').toString().trim();
   return t.isEmpty ? '—' : t;
+}
+
+String _plain(dynamic v, {int max = 200}) {
+  final s = (v ?? '').toString().replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'\s+'), ' ').trim();
+  return s.length > max ? s.substring(0, max) : s;
 }
 
 String _normCurrency(String raw) {
@@ -87,7 +92,7 @@ class _LocalHeroBannerState extends ConsumerState<LocalHeroBanner> with WidgetsB
   PageController _makeCtrl(int n) {
     final start = n > 0 ? n * (_kLoopFactor ~/ 2) : 0;
     _page = start;
-    return PageController(viewportFraction: 0.9, initialPage: start);
+    return PageController(viewportFraction: 0.92, initialPage: start);
   }
 
   @override
@@ -127,26 +132,27 @@ class _LocalHeroBannerState extends ConsumerState<LocalHeroBanner> with WidgetsB
     if (_n < 2) return;
     _timer = Timer.periodic(_kAutoDelay, (_) {
       if (!mounted || _dragging || _paused || !_ctrl.hasClients || _n < 2) return;
-      _ctrl.nextPage(duration: const Duration(milliseconds: 650), curve: Curves.easeInOutCubic);
+      _ctrl.nextPage(duration: const Duration(milliseconds: 750), curve: Curves.easeOutCubic);
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final n = _n;
+    final heroH = (MediaQuery.sizeOf(context).height * 0.46).clamp(300.0, 420.0);
 
     if (n == 0) {
       if (!widget.loading) return const SizedBox.shrink();
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Container(
-          height: _kHeroHeight - 14,
+          height: heroH - 14,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.9),
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [BoxShadow(color: kLocalGreenDeep.withOpacity(0.18), blurRadius: 22, offset: const Offset(0, 10))],
+            color: Colors.white.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [BoxShadow(color: kDrcNavy.withOpacity(0.18), blurRadius: 22, offset: const Offset(0, 10))],
           ),
-          child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.4, color: kLocalGreen))),
+          child: const Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2.4, color: kDrcBlue))),
         ),
       );
     }
@@ -158,14 +164,14 @@ class _LocalHeroBannerState extends ConsumerState<LocalHeroBanner> with WidgetsB
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: _kHeroHeight,
+          height: heroH,
           child: NotificationListener<ScrollNotification>(
             onNotification: (nt) {
               if (nt is ScrollStartNotification && nt.dragDetails != null) {
                 _dragging = true;
               } else if (nt is ScrollEndNotification && _dragging) {
                 _dragging = false;
-                _startTimer(); // relance un délai complet après l'interaction
+                _startTimer();
               }
               return false;
             },
@@ -175,17 +181,10 @@ class _LocalHeroBannerState extends ConsumerState<LocalHeroBanner> with WidgetsB
               onPageChanged: (i) => setState(() => _page = i),
               itemBuilder: (context, i) {
                 final idx = i % n;
-                return AnimatedBuilder(
-                  animation: _ctrl,
-                  builder: (context, child) {
-                    final cur = (_ctrl.hasClients && _ctrl.position.haveDimensions) ? (_ctrl.page ?? _page.toDouble()) : _page.toDouble();
-                    final d = (cur - i).abs().clamp(0.0, 1.0);
-                    return Transform.scale(scale: 1 - d * 0.07, child: child);
-                  },
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: _HeroCard(
                     product: widget.products[idx],
-                    index: idx,
-                    total: n,
                     displayCode: displayCode,
                     lang: widget.lang,
                   ),
@@ -194,43 +193,40 @@ class _LocalHeroBannerState extends ConsumerState<LocalHeroBanner> with WidgetsB
             ),
           ),
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 12),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             for (int i = 0; i < n; i++)
               AnimatedContainer(
-                duration: const Duration(milliseconds: 260),
-                curve: Curves.easeOut,
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
                 margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                width: i == current ? 20 : 6,
-                height: 6,
+                height: 3.5,
+                width: i == current ? 20 : 8,
                 decoration: BoxDecoration(
-                  color: i == current ? kLocalGreen : kLocalGreen.withOpacity(0.22),
-                  borderRadius: BorderRadius.circular(3),
+                  color: i == current ? kDrcBlue : const Color(0xFFD8DEE7),
+                  borderRadius: BorderRadius.circular(4),
                 ),
               ),
           ],
         ),
+        const SizedBox(height: 6),
       ],
     );
   }
 }
 
 // ============================================================================
-// CARTE
+// CARTE (style market_home_page)
 // ============================================================================
 class _HeroCard extends StatelessWidget {
   final Map<String, dynamic> product;
-  final int index;
-  final int total;
   final String displayCode;
   final String lang;
 
   const _HeroCard({
     required this.product,
-    required this.index,
-    required this.total,
     required this.displayCode,
     required this.lang,
   });
@@ -253,9 +249,11 @@ class _HeroCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final img = _heroImage(product);
     final title = _heroTitle(product);
+    final subtitle = _plain(product['description']);
     final price = _price(context);
     final id = product['id']?.toString() ?? '';
     final newLabel = lang == 'fr' ? 'NOUVEAU' : (lang == 'sw' ? 'MPYA' : 'NEW');
+    final cta = lang == 'fr' ? 'Découvrir' : (lang == 'sw' ? 'Gundua' : 'Discover');
 
     return GestureDetector(
       onTap: id.isEmpty
@@ -264,105 +262,157 @@ class _HeroCard extends StatelessWidget {
               HapticFeedback.selectionClick();
               context.push('/market/product/$id');
             },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 6),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [BoxShadow(color: kLocalGreenDeep.withOpacity(0.28), blurRadius: 22, offset: const Offset(0, 10))],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (img != null)
-                  CachedNetworkImage(
-                    imageUrl: img,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => const _HeroFallback(),
-                    errorWidget: (_, __, ___) => const _HeroFallback(),
-                  )
-                else
-                  const _HeroFallback(),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(22),
+          color: const Color(0xFFE5E7EB),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 18, offset: const Offset(0, 8))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (img != null)
+              _KenBurns(url: img)
+            else
+              const _HeroFallback(),
 
-                // Voile vert pour la lisibilité
-                DecoratedBox(
+            // Dégradé de lisibilité
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, kLocalGreenDeep.withOpacity(0.25), kLocalGreenDeep.withOpacity(0.94)],
-                      stops: const [0.30, 0.62, 1.0],
+                      colors: [Colors.black.withOpacity(0.10), Colors.transparent, Colors.black.withOpacity(0.62)],
+                      stops: const [0.0, 0.45, 1.0],
                     ),
                   ),
                 ),
+              ),
+            ),
 
-                // Badge NOUVEAU
-                Positioned(
-                  top: 12,
-                  left: 12,
+            // Puce MADE IN CONGO
+            Positioned(
+              top: 12,
+              left: 12,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(30),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.96), borderRadius: BorderRadius.circular(20)),
-                    child: Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.bolt_rounded, size: 13, color: kLocalGreen),
-                      const SizedBox(width: 3),
-                      Text(newLabel, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w900, color: kLocalGreenDeep, letterSpacing: 0.6)),
-                    ]),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(30),
+                      border: Border.all(color: Colors.white.withOpacity(0.45)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        DecoratedBox(
+                          decoration: BoxDecoration(color: kDrcYellow, shape: BoxShape.circle),
+                          child: SizedBox(width: 6, height: 6),
+                        ),
+                        SizedBox(width: 6),
+                        Text('MADE IN CONGO',
+                            style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+                      ],
+                    ),
                   ),
                 ),
+              ),
+            ),
 
-                // Compteur
-                Positioned(
-                  top: 12,
-                  right: 12,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.28), borderRadius: BorderRadius.circular(20)),
-                    child: Text('${index + 1}/$total', style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white)),
-                  ),
+            // Badge NEW
+            Positioned(
+              top: 12,
+              right: 12,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+                decoration: BoxDecoration(
+                  color: kDrcRed,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: [BoxShadow(color: kDrcRed.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3))],
                 ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const _PulseDot(),
+                    const SizedBox(width: 6),
+                    Text(newLabel, style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
+                  ],
+                ),
+              ),
+            ),
 
-                // Texte + flèche
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: 14,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w900, height: 1.15, letterSpacing: -0.3),
-                            ),
-                            if (price.isNotEmpty) ...[
-                              const SizedBox(height: 4),
-                              Text(price, style: const TextStyle(color: _kMint, fontSize: 15, fontWeight: FontWeight.w900)),
-                            ],
-                          ],
+            // Contenu bas
+            Positioned(
+              left: 16,
+              right: 16,
+              bottom: 16,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (price.isNotEmpty)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.16),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Colors.white.withOpacity(0.45)),
+                          ),
+                          child: Text(price, style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      Container(
-                        width: 38,
-                        height: 38,
-                        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                        child: const Icon(Icons.arrow_outward_rounded, size: 20, color: kLocalGreenDeep),
-                      ),
-                    ],
+                    ),
+                  const SizedBox(height: 8),
+                  Text(
+                    title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.15),
                   ),
-                ),
-              ],
+                  if (subtitle.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 11.5, fontWeight: FontWeight.w500),
+                    ),
+                  ],
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.16), blurRadius: 10, offset: const Offset(0, 4))],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.shopping_bag_rounded, size: 14, color: kDrcInk),
+                        const SizedBox(width: 8),
+                        Text(cta, style: const TextStyle(color: kDrcInk, fontWeight: FontWeight.w800, fontSize: 12)),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.arrow_forward_rounded, size: 13, color: kDrcInk),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+
+            // Filet tricolore
+            const Positioned(left: 0, right: 0, bottom: 0, child: DrcTricolorStripe(height: 3)),
+          ],
         ),
       ),
     );
@@ -375,9 +425,71 @@ class _HeroFallback extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: const BoxDecoration(
-        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kLocalGreen, kLocalGreenDeep]),
+        gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kDrcNavy, kDrcBlueDeep, kDrcBlue]),
       ),
-      child: Center(child: Icon(Icons.agriculture_rounded, size: 64, color: Colors.white.withOpacity(0.22))),
+      child: Center(child: Icon(Icons.public_rounded, size: 64, color: Colors.white.withOpacity(0.22))),
+    );
+  }
+}
+
+class _KenBurns extends StatefulWidget {
+  final String url;
+  const _KenBurns({required this.url});
+
+  @override
+  State<_KenBurns> createState() => _KenBurnsState();
+}
+
+class _KenBurnsState extends State<_KenBurns> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 7))..repeat(reverse: true);
+  late final Animation<double> _scale = Tween<double>(begin: 1.0, end: 1.1).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _scale,
+      builder: (_, __) => Transform.scale(
+        scale: _scale.value,
+        child: CachedNetworkImage(
+          imageUrl: widget.url,
+          fit: BoxFit.cover,
+          width: double.infinity,
+          height: double.infinity,
+          placeholder: (_, __) => const _HeroFallback(),
+          errorWidget: (_, __, ___) => const _HeroFallback(),
+        ),
+      ),
+    );
+  }
+}
+
+class _PulseDot extends StatefulWidget {
+  const _PulseDot();
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+  late final Animation<double> _scale = Tween<double>(begin: 0.7, end: 1.25).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scale,
+      child: Container(width: 5, height: 5, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle)),
     );
   }
 }
