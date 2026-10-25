@@ -1,15 +1,20 @@
 // lib/presentation/thix_info/thix_info_admin_page.dart
 // ============================================================================
-// ADMIN THIX INFO — Gestion des articles (CORRIGÉ)
+// ADMIN THIX INFO — Gestion des articles (CORRIGÉ + UPLOAD + MAGAZINE)
+//  • ✅ Upload réel des photos vers Supabase Storage (news_images)
+//  • ✅ Upload réel des vidéos vers Supabase Storage (news_videos)
+//  • ✅ Champs Magazine complets (tags, citation, points clés, durée, légende, fonction)
+//  • ✅ Sélecteur de date de publication
 //  • ✅ Lisibilité : Champs de saisie BLANCS avec texte SOMBRE
-//  • ✅ Vidéo : Support complet par URL (affichage miniature + sauvegarde)
 //  • ✅ Création / Édition / Suppression d'articles
 //  • ✅ Gestion des flags : featured, breaking, statut (draft/published)
 // ============================================================================
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,7 +86,7 @@ class ClearInputBox extends StatelessWidget {
     return Container(
       padding: padding,
       decoration: BoxDecoration(
-        color: Colors.white, // ✅ FOND BLANC OPAQUE
+        color: Colors.white,
         borderRadius: BorderRadius.circular(borderRadius),
         border: Border.all(color: Colors.grey.shade300, width: 1),
       ),
@@ -166,15 +171,24 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
 
   List<NewsArticle> get _filteredArticles {
     var list = _articles;
-    if (_filterStatus != 'all') list = list.where((a) => a.status == _filterStatus).toList();
-    if (_filterCategory != 'all') list = list.where((a) => a.category.toLowerCase() == _filterCategory.toLowerCase()).toList();
-    
+    if (_filterStatus != 'all') {
+      list = list.where((a) => a.status == _filterStatus).toList();
+    }
+    if (_filterCategory != 'all') {
+      list = list
+          .where((a) =>
+              a.category.toLowerCase() == _filterCategory.toLowerCase())
+          .toList();
+    }
+
     final q = _searchCtrl.text.toLowerCase().trim();
     if (q.isNotEmpty) {
-      list = list.where((a) =>
-          a.title.toLowerCase().contains(q) ||
-          a.summary?.toLowerCase().contains(q) == true ||
-          a.category.toLowerCase().contains(q)).toList();
+      list = list
+          .where((a) =>
+              a.title.toLowerCase().contains(q) ||
+              a.summary?.toLowerCase().contains(q) == true ||
+              a.category.toLowerCase().contains(q))
+          .toList();
     }
     return list;
   }
@@ -184,19 +198,32 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: ThixPolicy.inkDeep,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-        title: const Text('Supprimer ?', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
-        content: Text('"${article.title}"\n\nAction irréversible.', style: const TextStyle(color: Colors.white70)),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: const Text('Supprimer ?',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900)),
+        content: Text('"${article.title}"\n\nAction irréversible.',
+            style: const TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler', style: TextStyle(color: Colors.white54))),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger), child: const Text('Supprimer')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler',
+                  style: TextStyle(color: Colors.white54))),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.danger),
+              child: const Text('Supprimer')),
         ],
       ),
     );
     if (confirmed != true) return;
 
     try {
-      await _supabase.from('news_articles').delete().eq('id', article.id).timeout(const Duration(seconds: 10));
+      await _supabase
+          .from('news_articles')
+          .delete()
+          .eq('id', article.id)
+          .timeout(const Duration(seconds: 10));
       setState(() => _articles.removeWhere((a) => a.id == article.id));
       _showSuccess('Article supprimé');
     } catch (e) {
@@ -204,19 +231,33 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     }
   }
 
-  Future<void> _toggleFlag(NewsArticle article, String field, bool value) async {
+  Future<void> _toggleFlag(
+      NewsArticle article, String field, bool value) async {
     try {
-      await _supabase.from('news_articles').update({field: value}).eq('id', article.id).timeout(const Duration(seconds: 10));
+      await _supabase
+          .from('news_articles')
+          .update({field: value})
+          .eq('id', article.id)
+          .timeout(const Duration(seconds: 10));
       setState(() {
         final idx = _articles.indexWhere((a) => a.id == article.id);
         if (idx != -1) {
           final u = _articles[idx];
           _articles[idx] = NewsArticle(
-            id: u.id, title: u.title, summary: u.summary, content: u.content, category: u.category,
-            imageUrl: u.imageUrl, videoUrl: u.videoUrl, viewsCount: u.viewsCount,
+            id: u.id,
+            title: u.title,
+            summary: u.summary,
+            content: u.content,
+            category: u.category,
+            imageUrl: u.imageUrl,
+            videoUrl: u.videoUrl,
+            viewsCount: u.viewsCount,
             isFeatured: field == 'is_featured' ? value : u.isFeatured,
             isBreaking: field == 'is_breaking' ? value : u.isBreaking,
-            status: u.status, publishedAt: u.publishedAt, createdAt: u.createdAt, createdBy: u.createdBy,
+            status: u.status,
+            publishedAt: u.publishedAt,
+            createdAt: u.createdAt,
+            createdBy: u.createdBy,
           );
         }
       });
@@ -227,14 +268,31 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
   }
 
   void _showSuccess(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(msg))]), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.check_circle_rounded,
+              color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg))
+        ]),
+        backgroundColor: ThixPolicy.success,
+        behavior: SnackBarBehavior.floating));
   }
 
   void _showError(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(msg))]), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Row(children: [
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg))
+        ]),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating));
   }
 
-  String _formatDate(DateTime dt) => DateFormat('dd MMM yyyy, HH:mm', 'fr_FR').format(dt);
+  String _formatDate(DateTime dt) =>
+      DateFormat('dd MMM yyyy, HH:mm', 'fr_FR').format(dt);
 
   @override
   Widget build(BuildContext context) {
@@ -243,30 +301,65 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
       backgroundColor: ThixPolicy.inkDeep,
       body: Stack(
         children: [
-          Positioned(top: -100, right: -100, child: Container(width: 300, height: 300, decoration: BoxDecoration(shape: BoxShape.circle, color: ThixPolicy.danger.withOpacity(0.1), boxShadow: [BoxShadow(color: ThixPolicy.danger.withOpacity(0.15), blurRadius: 100, spreadRadius: 100)]))),
+          Positioned(
+              top: -100,
+              right: -100,
+              child: Container(
+                  width: 300,
+                  height: 300,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: ThixPolicy.danger.withOpacity(0.1),
+                      boxShadow: [
+                        BoxShadow(
+                            color: ThixPolicy.danger.withOpacity(0.15),
+                            blurRadius: 100,
+                            spreadRadius: 100)
+                      ]))),
           CustomScrollView(
-            physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+            physics: const BouncingScrollPhysics(
+                parent: AlwaysScrollableScrollPhysics()),
             slivers: [
               _buildAppBar(),
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
               SliverToBoxAdapter(child: _buildFilters()),
               const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
-              if (_loading) const SliverToBoxAdapter(child: Padding(padding: EdgeInsets.all(40), child: Center(child: CircularProgressIndicator(color: Colors.white))))
-              else if (filtered.isEmpty) SliverToBoxAdapter(child: _buildEmpty())
-              else SliverPadding(padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16), sliver: SliverList(delegate: SliverChildBuilderDelegate((_, i) => _buildArticleCard(filtered[i]), childCount: filtered.length))),
+              if (_loading)
+                const SliverToBoxAdapter(
+                    child: Padding(
+                        padding: EdgeInsets.all(40),
+                        child: Center(
+                            child: CircularProgressIndicator(
+                                color: Colors.white))))
+              else if (filtered.isEmpty)
+                SliverToBoxAdapter(child: _buildEmpty())
+              else
+                SliverPadding(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                    sliver: SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                            (_, i) => _buildArticleCard(filtered[i]),
+                            childCount: filtered.length))),
               const SliverToBoxAdapter(child: SizedBox(height: 100)),
             ],
           ),
           Positioned(
-            bottom: ThixPolicy.s24, right: ThixPolicy.s24,
+            bottom: ThixPolicy.s24,
+            right: ThixPolicy.s24,
             child: FloatingActionButton.extended(
               onPressed: () async {
-                final created = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => const _ArticleFormPage()));
+                final created = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const _ArticleFormPage()));
                 if (created == true) _loadArticles();
               },
-              backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white,
+              backgroundColor: ThixPolicy.primary,
+              foregroundColor: Colors.white,
               icon: const Icon(Icons.add_rounded),
-              label: const Text('Nouvel article', style: TextStyle(fontWeight: FontWeight.w900)),
+              label: const Text('Nouvel article',
+                  style: TextStyle(fontWeight: FontWeight.w900)),
             ),
           ),
         ],
@@ -276,15 +369,38 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
 
   Widget _buildAppBar() {
     return SliverAppBar(
-      backgroundColor: ThixPolicy.inkDeep.withOpacity(0.8), elevation: 0, pinned: true,
-      leading: IconButton(icon: const Icon(Icons.arrow_back_rounded, color: Colors.white), onPressed: () => context.pop()),
+      backgroundColor: ThixPolicy.inkDeep.withOpacity(0.8),
+      elevation: 0,
+      pinned: true,
+      leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: Colors.white),
+          onPressed: () => context.pop()),
       title: Row(mainAxisSize: MainAxisSize.min, children: [
-        Container(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3), decoration: BoxDecoration(color: ThixPolicy.danger, borderRadius: BorderRadius.circular(6)), child: const Text('ADMIN', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 1))),
+        Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: BoxDecoration(
+                color: ThixPolicy.danger,
+                borderRadius: BorderRadius.circular(6)),
+            child: const Text('ADMIN',
+                style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1))),
         const SizedBox(width: 8),
-        Text('THIX INFO', style: ThixPolicy.h3Style.copyWith(color: Colors.white, fontWeight: FontWeight.w900)),
+        Text('THIX INFO',
+            style: ThixPolicy.h3Style.copyWith(
+                color: Colors.white, fontWeight: FontWeight.w900)),
       ]),
-      actions: [IconButton(icon: const Icon(Icons.refresh_rounded, color: Colors.white), onPressed: _loadArticles)],
-      flexibleSpace: ClipRRect(child: BackdropFilter(filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10), child: Container(color: Colors.transparent))),
+      actions: [
+        IconButton(
+            icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+            onPressed: _loadArticles)
+      ],
+      flexibleSpace: ClipRRect(
+          child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+              child: Container(color: Colors.transparent))),
     );
   }
 
@@ -293,27 +409,68 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Column(
         children: [
-          // Recherche : Fond blanc, texte sombre
           ClearInputBox(
             child: TextField(
               controller: _searchCtrl,
               onChanged: (_) => setState(() {}),
-              style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600), // ✅ TEXTE SOMBRE
+              style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 hintText: 'Rechercher un article...',
                 hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
-                prefixIcon: const Icon(Icons.search_rounded, size: 18, color: ThixPolicy.primary),
-                suffixIcon: _searchCtrl.text.isNotEmpty ? IconButton(icon: const Icon(Icons.clear_rounded, size: 16, color: Colors.grey), onPressed: () { _searchCtrl.clear(); setState(() {}); }) : null,
-                border: InputBorder.none, isDense: true, contentPadding: EdgeInsets.zero,
+                prefixIcon: const Icon(Icons.search_rounded,
+                    size: 18, color: ThixPolicy.primary),
+                suffixIcon: _searchCtrl.text.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded,
+                            size: 16, color: Colors.grey),
+                        onPressed: () {
+                          _searchCtrl.clear();
+                          setState(() {});
+                        })
+                    : null,
+                border: InputBorder.none,
+                isDense: true,
+                contentPadding: EdgeInsets.zero,
               ),
             ),
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _filterDropdown(label: 'Statut', value: _filterStatus, items: const [{'value': 'all', 'label': 'Tous'}, {'value': 'published', 'label': 'Publiés'}, {'value': 'draft', 'label': 'Brouillons'}], onChanged: (v) => setState(() => _filterStatus = v ?? 'all'))),
+              Expanded(
+                  child: _filterDropdown(
+                      label: 'Statut',
+                      value: _filterStatus,
+                      items: const [
+                        {'value': 'all', 'label': 'Tous'},
+                        {'value': 'published', 'label': 'Publiés'},
+                        {'value': 'draft', 'label': 'Brouillons'}
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _filterStatus = v ?? 'all'))),
               const SizedBox(width: 8),
-              Expanded(child: _filterDropdown(label: 'Catégorie', value: _filterCategory, items: const [{'value': 'all', 'label': 'Toutes'}, {'value': 'politique', 'label': 'Politique'}, {'value': 'economie', 'label': 'Économie'}, {'value': 'societe', 'label': 'Société'}, {'value': 'tech', 'label': 'Tech'}, {'value': 'sport', 'label': 'Sport'}, {'value': 'culture', 'label': 'Culture'}, {'value': 'international', 'label': 'International'}, {'value': 'Magazine', 'label': 'Magazine'}, {'value': 'Podcast', 'label': 'Podcast'}, {'value': 'Découverte', 'label': 'Découverte'}], onChanged: (v) => setState(() => _filterCategory = v ?? 'all'))),
+              Expanded(
+                  child: _filterDropdown(
+                      label: 'Catégorie',
+                      value: _filterCategory,
+                      items: const [
+                        {'value': 'all', 'label': 'Toutes'},
+                        {'value': 'politique', 'label': 'Politique'},
+                        {'value': 'economie', 'label': 'Économie'},
+                        {'value': 'societe', 'label': 'Société'},
+                        {'value': 'tech', 'label': 'Tech'},
+                        {'value': 'sport', 'label': 'Sport'},
+                        {'value': 'culture', 'label': 'Culture'},
+                        {'value': 'international', 'label': 'International'},
+                        {'value': 'Magazine', 'label': 'Magazine'},
+                        {'value': 'Podcast', 'label': 'Podcast'},
+                        {'value': 'Découverte', 'label': 'Découverte'}
+                      ],
+                      onChanged: (v) =>
+                          setState(() => _filterCategory = v ?? 'all'))),
             ],
           ),
         ],
@@ -321,16 +478,31 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     );
   }
 
-  Widget _filterDropdown({required String label, required String value, required List<Map<String, String>> items, required ValueChanged<String?> onChanged}) {
+  Widget _filterDropdown({
+    required String label,
+    required String value,
+    required List<Map<String, String>> items,
+    required ValueChanged<String?> onChanged,
+  }) {
     return GlassBox(
-      padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s12, vertical: 8),
+      padding: const EdgeInsets.symmetric(
+          horizontal: ThixPolicy.s12, vertical: 8),
       borderRadius: ThixPolicy.rMd,
       child: DropdownButtonHideUnderline(
         child: DropdownButton<String>(
-          value: value, isExpanded: true, dropdownColor: ThixPolicy.inkDeep,
+          value: value,
+          isExpanded: true,
+          dropdownColor: ThixPolicy.inkDeep,
           style: const TextStyle(color: Colors.white, fontSize: 12),
-          icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54, size: 20),
-          items: items.map((item) => DropdownMenuItem(value: item['value'], child: Text(item['label']!, style: const TextStyle(color: Colors.white, fontSize: 12)))).toList(),
+          icon: const Icon(Icons.keyboard_arrow_down_rounded,
+              color: Colors.white54, size: 20),
+          items: items
+              .map((item) => DropdownMenuItem(
+                  value: item['value'],
+                  child: Text(item['label']!,
+                      style: const TextStyle(
+                          color: Colors.white, fontSize: 12))))
+              .toList(),
           onChanged: onChanged,
         ),
       ),
@@ -338,41 +510,113 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
   }
 
   Widget _buildEmpty() {
-    return Padding(padding: const EdgeInsets.all(40), child: Center(child: Column(children: [Icon(Icons.article_rounded, size: 56, color: Colors.white.withOpacity(0.3)), const SizedBox(height: 16), Text('Aucun article trouvé', style: ThixPolicy.h3Style.copyWith(color: Colors.white70)), const SizedBox(height: 8), Text('Créez votre premier article avec le bouton +', style: ThixPolicy.bodySmallStyle.copyWith(color: Colors.white38))])));
+    return Padding(
+        padding: const EdgeInsets.all(40),
+        child: Center(
+            child: Column(children: [
+          Icon(Icons.article_rounded,
+              size: 56, color: Colors.white.withOpacity(0.3)),
+          const SizedBox(height: 16),
+          Text('Aucun article trouvé',
+              style: ThixPolicy.h3Style.copyWith(color: Colors.white70)),
+          const SizedBox(height: 8),
+          Text('Créez votre premier article avec le bouton +',
+              style: ThixPolicy.bodySmallStyle
+                  .copyWith(color: Colors.white38))
+        ])));
   }
 
   Widget _buildArticleCard(NewsArticle article) {
     return Padding(
       padding: const EdgeInsets.only(bottom: ThixPolicy.s16),
       child: GlassBox(
-        padding: const EdgeInsets.all(ThixPolicy.s12), borderRadius: ThixPolicy.rMd,
+        padding: const EdgeInsets.all(ThixPolicy.s12),
+        borderRadius: ThixPolicy.rMd,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rSm), child: SizedBox(width: 80, height: 80, child: article.imageUrl != null ? Image.network(article.imageUrl!, fit: BoxFit.cover) : Container(color: Colors.white.withOpacity(0.08), child: const Icon(Icons.article_rounded, color: Colors.white24, size: 32)))),
+            ClipRRect(
+                borderRadius: BorderRadius.circular(ThixPolicy.rSm),
+                child: SizedBox(
+                    width: 80,
+                    height: 80,
+                    child: article.imageUrl != null
+                        ? Image.network(article.imageUrl!, fit: BoxFit.cover)
+                        : Container(
+                            color: Colors.white.withOpacity(0.08),
+                            child: const Icon(Icons.article_rounded,
+                                color: Colors.white24, size: 32)))),
             const SizedBox(width: 12),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(article.title, maxLines: 2, overflow: TextOverflow.ellipsis, style: ThixPolicy.titleStyle.copyWith(color: Colors.white, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 4),
-              Text(article.category.toUpperCase(), style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.gold, fontWeight: FontWeight.w700, letterSpacing: 1)),
-              const SizedBox(height: 4),
-              Text(_formatDate(article.createdAt), style: ThixPolicy.microStyle.copyWith(color: Colors.white38)),
-            ])),
+            Expanded(
+                child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                  Text(article.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: ThixPolicy.titleStyle.copyWith(
+                          color: Colors.white, fontWeight: FontWeight.w800)),
+                  const SizedBox(height: 4),
+                  Text(article.category.toUpperCase(),
+                      style: ThixPolicy.microStyle.copyWith(
+                          color: ThixPolicy.gold,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1)),
+                  const SizedBox(height: 4),
+                  Text(_formatDate(article.createdAt),
+                      style: ThixPolicy.microStyle
+                          .copyWith(color: Colors.white38)),
+                ])),
           ]),
           const SizedBox(height: 12),
           Wrap(spacing: 6, runSpacing: 6, children: [
-            _badge(article.status == 'published' ? 'Publié' : 'Brouillon', article.status == 'published' ? ThixPolicy.success : ThixPolicy.warning),
+            _badge(
+                article.status == 'published' ? 'Publié' : 'Brouillon',
+                article.status == 'published'
+                    ? ThixPolicy.success
+                    : ThixPolicy.warning),
             if (article.isFeatured) _badge('À la une', ThixPolicy.primary),
             if (article.isBreaking) _badge('Flash', ThixPolicy.danger),
             _badge('${article.viewsCount} vues', Colors.white24),
           ]),
           const SizedBox(height: 12),
           Row(children: [
-            _actionChip(icon: article.isFeatured ? Icons.star_rounded : Icons.star_border_rounded, label: 'À la une', color: article.isFeatured ? ThixPolicy.primary : Colors.white24, onTap: () => _toggleFlag(article, 'is_featured', !article.isFeatured)),
+            _actionChip(
+                icon: article.isFeatured
+                    ? Icons.star_rounded
+                    : Icons.star_border_rounded,
+                label: 'À la une',
+                color: article.isFeatured
+                    ? ThixPolicy.primary
+                    : Colors.white24,
+                onTap: () =>
+                    _toggleFlag(article, 'is_featured', !article.isFeatured)),
             const SizedBox(width: 8),
-            _actionChip(icon: article.isBreaking ? Icons.flash_on_rounded : Icons.flash_off_rounded, label: 'Flash', color: article.isBreaking ? ThixPolicy.danger : Colors.white24, onTap: () => _toggleFlag(article, 'is_breaking', !article.isBreaking)),
+            _actionChip(
+                icon: article.isBreaking
+                    ? Icons.flash_on_rounded
+                    : Icons.flash_off_rounded,
+                label: 'Flash',
+                color: article.isBreaking
+                    ? ThixPolicy.danger
+                    : Colors.white24,
+                onTap: () =>
+                    _toggleFlag(article, 'is_breaking', !article.isBreaking)),
             const Spacer(),
-            IconButton(icon: const Icon(Icons.edit_rounded, color: ThixPolicy.primary, size: 20), onPressed: () async { final updated = await Navigator.push<bool>(context, MaterialPageRoute(builder: (_) => _ArticleFormPage(article: article))); if (updated == true) _loadArticles(); }),
-            IconButton(icon: const Icon(Icons.delete_outline_rounded, color: ThixPolicy.danger, size: 20), onPressed: () => _deleteArticle(article)),
+            IconButton(
+                icon: const Icon(Icons.edit_rounded,
+                    color: ThixPolicy.primary, size: 20),
+                onPressed: () async {
+                  final updated = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(
+                          builder: (_) =>
+                              _ArticleFormPage(article: article)));
+                  if (updated == true) _loadArticles();
+                }),
+            IconButton(
+                icon: const Icon(Icons.delete_outline_rounded,
+                    color: ThixPolicy.danger, size: 20),
+                onPressed: () => _deleteArticle(article)),
           ]),
         ]),
       ),
@@ -380,16 +624,44 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
   }
 
   Widget _badge(String label, Color color) {
-    return Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: color.withOpacity(0.2), borderRadius: BorderRadius.circular(6)), child: Text(label, style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.w700)));
+    return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(6)),
+        child: Text(label,
+            style: TextStyle(
+                color: color, fontSize: 9, fontWeight: FontWeight.w700)));
   }
 
-  Widget _actionChip({required IconData icon, required String label, required Color color, required VoidCallback onTap}) {
-    return GestureDetector(onTap: onTap, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8), border: Border.all(color: color.withOpacity(0.3))), child: Row(mainAxisSize: MainAxisSize.min, children: [Icon(icon, size: 14, color: color), const SizedBox(width: 4), Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700))])));
+  Widget _actionChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+        onTap: onTap,
+        child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: color.withOpacity(0.3))),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 4),
+              Text(label,
+                  style: TextStyle(
+                      color: color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700))
+            ])));
   }
 }
 
 // ============================================================================
-// FORMULAIRE CRÉATION / ÉDITION (CORRIGÉ : LISIBILITÉ + VIDÉO)
+// FORMULAIRE CRÉATION / ÉDITION (UPLOAD RÉEL + MAGAZINE + DATE)
 // ============================================================================
 class _ArticleFormPage extends ConsumerStatefulWidget {
   final NewsArticle? article;
@@ -404,20 +676,35 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   final SupabaseClient _supabase = Supabase.instance.client;
   final ImagePicker _picker = ImagePicker();
 
+  // ── Contrôleurs de base ──
   final _titleCtrl = TextEditingController();
   final _summaryCtrl = TextEditingController();
   final _contentCtrl = TextEditingController();
-  final _imageUrlCtrl = TextEditingController();
-  final _videoUrlCtrl = TextEditingController();
+
+  // ── Contrôleurs MAGAZINE ──
+  final _tagsCtrl = TextEditingController();
+  final _quoteCtrl = TextEditingController();
+  final _keyPointsCtrl = TextEditingController();
+  final _videoDurationCtrl = TextEditingController();
+  final _imageCaptionCtrl = TextEditingController();
+  final _authorRoleCtrl = TextEditingController();
 
   String _category = 'politique';
   String _status = 'published';
   bool _isFeatured = false;
   bool _isBreaking = false;
   bool _saving = false;
-  String? _imageBase64;
+  DateTime _publishedAt = DateTime.now();
+
+  // ── Upload états ──
+  String? _imageBase64; // Prévisualisation de la nouvelle image choisie
+  String? _imageUrl; // URL finale de l'image (uploadée)
+  String? _videoUrl; // URL finale de la vidéo
+  bool _isUploadingImage = false;
+  bool _isUploadingVideo = false;
 
   bool get _isEditing => widget.article != null;
+  bool get _isMagazine => _category == 'Magazine';
 
   @override
   void initState() {
@@ -428,216 +715,654 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       _summaryCtrl.text = a.summary ?? '';
       _contentCtrl.text = a.content;
       _category = a.category;
-      _imageUrlCtrl.text = a.imageUrl ?? '';
-      _videoUrlCtrl.text = a.videoUrl ?? ''; // ✅ Chargement URL vidéo existante
+      _imageUrl = a.imageUrl;
+      _videoUrl = a.videoUrl;
       _status = a.status;
       _isFeatured = a.isFeatured;
       _isBreaking = a.isBreaking;
+      _publishedAt = a.publishedAt ?? DateTime.now();
+
+      // Charger les extras magazine si la catégorie est Magazine
+      // Note : adapte ces lignes selon ton modèle NewsArticle
+      // Si tu as magazineExtras dans ton modèle :
+      // final extras = a.magazineExtras ?? const <String, dynamic>{};
+      // _tagsCtrl.text = ((extras['tags'] as List?) ?? []).join(', ');
+      // _quoteCtrl.text = extras['pull_quote']?.toString() ?? '';
+      // _keyPointsCtrl.text = ((extras['key_points'] as List?) ?? []).join('\n');
+      // _videoDurationCtrl.text = extras['video_duration']?.toString() ?? '';
+      // _imageCaptionCtrl.text = extras['image_caption']?.toString() ?? '';
+      // _authorRoleCtrl.text = extras['author_role']?.toString() ?? '';
     }
   }
 
   @override
   void dispose() {
-    _titleCtrl.dispose(); _summaryCtrl.dispose(); _contentCtrl.dispose(); _imageUrlCtrl.dispose(); _videoUrlCtrl.dispose();
+    _titleCtrl.dispose();
+    _summaryCtrl.dispose();
+    _contentCtrl.dispose();
+    _tagsCtrl.dispose();
+    _quoteCtrl.dispose();
+    _keyPointsCtrl.dispose();
+    _videoDurationCtrl.dispose();
+    _imageCaptionCtrl.dispose();
+    _authorRoleCtrl.dispose();
     super.dispose();
   }
 
+  // ─── PICK IMAGE (prévisualisation) ───
   Future<void> _pickImage() async {
     try {
-      final file = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 1920, maxHeight: 1080, imageQuality: 85);
+      final file = await _picker.pickImage(
+          source: ImageSource.gallery,
+          maxWidth: 1920,
+          maxHeight: 1080,
+          imageQuality: 85);
       if (file == null) return;
+
       final bytes = await file.readAsBytes();
-      setState(() => _imageBase64 = 'data:image/jpeg;base64,${base64Encode(bytes)}');
-    } catch (e) { debugPrint('[ArticleForm] ❌ Pick image error: $e'); }
+      final base64Str = base64Encode(bytes);
+      setState(() {
+        _imageBase64 = 'data:image/jpeg;base64,$base64Str';
+        _imageUrl = null; // Ancienne URL effacée, sera remplacée à la sauvegarde
+      });
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Pick image error: $e');
+      _showSnack('Erreur de sélection : $e', ThixPolicy.danger);
+    }
   }
 
+  // ─── UPLOAD IMAGE VERS SUPABASE STORAGE ───
+  Future<String?> _uploadImageToStorage() async {
+    if (_imageBase64 == null) return _imageUrl; // Pas de nouvelle image
+
+    setState(() => _isUploadingImage = true);
+    try {
+      final dataUri = _imageBase64!;
+      final base64Data = dataUri.split(',').last;
+      final Uint8List bytes = base64Decode(base64Data);
+
+      final fileName =
+          '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}.jpg';
+
+      await _supabase.storage.from('news_images').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600',
+              upsert: false,
+              contentType: 'image/jpeg',
+            ),
+          );
+
+      final publicUrl =
+          _supabase.storage.from('news_images').getPublicUrl(fileName);
+
+      return publicUrl;
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Upload image error: $e');
+      rethrow;
+    } finally {
+      if (mounted) setState(() => _isUploadingImage = false);
+    }
+  }
+
+  // ─── PICK + UPLOAD VIDEO VERS SUPABASE STORAGE ───
+  Future<void> _pickAndUploadVideo() async {
+    try {
+      final file = await _picker.pickVideo(source: ImageSource.gallery);
+      if (file == null) return;
+
+      setState(() => _isUploadingVideo = true);
+
+      final bytes = await file.readAsBytes();
+      final fileName =
+          '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+
+      await _supabase.storage.from('news_videos').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600',
+              upsert: false,
+            ),
+          );
+
+      final publicUrl =
+          _supabase.storage.from('news_videos').getPublicUrl(fileName);
+
+      setState(() {
+        _videoUrl = publicUrl;
+        _isUploadingVideo = false;
+      });
+      _showSnack('✅ Vidéo uploadée avec succès', ThixPolicy.success);
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Pick/Upload video error: $e');
+      if (mounted) {
+        _showSnack(
+          'Erreur upload vidéo : ${e.toString().split('\n').first}',
+          ThixPolicy.danger,
+        );
+        setState(() => _isUploadingVideo = false);
+      }
+    }
+  }
+
+  // ─── PICK DATE ───
+  Future<void> _pickDate() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _publishedAt,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+    );
+    if (date == null || !mounted) return;
+
+    final time = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_publishedAt),
+    );
+    if (time == null) return;
+
+    setState(() {
+      _publishedAt = DateTime(
+          date.year, date.month, date.day, time.hour, time.minute);
+    });
+  }
+
+  // ─── SAUVEGARDE ───
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_saving) return;
+    if (_saving || _isUploadingVideo || _isUploadingImage) return;
+
     setState(() => _saving = true);
 
     try {
       final uid = _supabase.auth.currentUser?.id;
       if (uid == null) throw Exception('Non authentifié');
 
+      // 1. Upload de l'image si nouvelle sélection
+      final String? finalImageUrl = await _uploadImageToStorage();
+
+      // 2. Construction des extras magazine
+      Map<String, dynamic> magazineExtras = const {};
+      if (_isMagazine) {
+        magazineExtras = {
+          'tags': _tagsCtrl.text
+              .split(',')
+              .map((t) => t.trim())
+              .where((t) => t.isNotEmpty)
+              .toList(),
+          'pull_quote': _quoteCtrl.text.trim(),
+          'key_points': _keyPointsCtrl.text
+              .split('\n')
+              .map((t) => t.trim())
+              .where((t) => t.isNotEmpty)
+              .toList(),
+          'video_duration': _videoDurationCtrl.text.trim(),
+          'image_caption': _imageCaptionCtrl.text.trim(),
+          'author_role': _authorRoleCtrl.text.trim(),
+        };
+      }
+
+      // 3. Payload
       final payload = {
         'title': _titleCtrl.text.trim(),
-        'summary': _summaryCtrl.text.trim().isEmpty ? null : _summaryCtrl.text.trim(),
+        'summary':
+            _summaryCtrl.text.trim().isEmpty ? null : _summaryCtrl.text.trim(),
         'content': _contentCtrl.text.trim(),
         'category': _category,
-        'image_url': _imageUrlCtrl.text.trim().isEmpty ? null : _imageUrlCtrl.text.trim(),
-        'video_url': _videoUrlCtrl.text.trim().isEmpty ? null : _videoUrlCtrl.text.trim(), // ✅ Sauvegarde URL vidéo
+        'image_url': finalImageUrl,
+        'video_url': _videoUrl,
         'status': _status,
         'is_featured': _isFeatured,
         'is_breaking': _isBreaking,
-        'published_at': _status == 'published' ? DateTime.now().toIso8601String() : null,
+        'published_at': _publishedAt.toIso8601String(),
+        'magazine_extras': magazineExtras,
       };
 
       if (_isEditing) {
-        await _supabase.from('news_articles').update(payload).eq('id', widget.article!.id).timeout(const Duration(seconds: 20));
+        await _supabase
+            .from('news_articles')
+            .update(payload)
+            .eq('id', widget.article!.id)
+            .timeout(const Duration(seconds: 30));
       } else {
         payload['id'] = const Uuid().v4();
         payload['created_by'] = uid;
         payload['created_at'] = DateTime.now().toIso8601String();
         payload['views_count'] = 0;
-        await _supabase.from('news_articles').insert(payload).timeout(const Duration(seconds: 20));
+        await _supabase
+            .from('news_articles')
+            .insert(payload)
+            .timeout(const Duration(seconds: 30));
       }
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_isEditing ? 'Article mis à jour ✅' : 'Article créé ✅'), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
+        _showSnack(
+          _isEditing ? 'Article mis à jour ✅' : 'Article créé ✅',
+          ThixPolicy.success,
+        );
         Navigator.pop(context, true);
       }
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Save error: $e');
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur : ${e.toString().split('\n').first}'), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating));
-    } finally { if (mounted) setState(() => _saving = false); }
+      if (mounted) {
+        _showSnack(
+          'Erreur : ${e.toString().split('\n').first}',
+          ThixPolicy.danger,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  void _showSnack(String msg, Color bg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: bg,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final bool isBusy = _saving || _isUploadingVideo || _isUploadingImage;
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
       appBar: AppBar(
-        backgroundColor: ThixPolicy.inkDeep, elevation: 0,
-        leading: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => Navigator.pop(context, false)),
-        title: Text(_isEditing ? 'Modifier l\'article' : 'Nouvel article', style: ThixPolicy.h3Style.copyWith(color: Colors.white, fontWeight: FontWeight.w900)),
-        actions: [TextButton(onPressed: _saving ? null : _save, child: Text(_saving ? 'Enregistrement...' : 'Enregistrer', style: TextStyle(color: _saving ? Colors.white38 : ThixPolicy.primary, fontWeight: FontWeight.w800)))],
+        backgroundColor: ThixPolicy.inkDeep,
+        elevation: 0,
+        leading: IconButton(
+            icon: const Icon(Icons.close_rounded, color: Colors.white),
+            onPressed: () => Navigator.pop(context, false)),
+        title: Text(
+            _isEditing ? 'Modifier l\'article' : 'Nouvel article',
+            style: ThixPolicy.h3Style.copyWith(
+                color: Colors.white, fontWeight: FontWeight.w900)),
+        actions: [
+          TextButton(
+              onPressed: isBusy ? null : _save,
+              child: Text(isBusy ? 'Enregistrement...' : 'Enregistrer',
+                  style: TextStyle(
+                      color: isBusy ? Colors.white38 : ThixPolicy.primary,
+                      fontWeight: FontWeight.w800))),
+        ],
       ),
       body: Form(
         key: _formKey,
         child: ListView(padding: const EdgeInsets.all(ThixPolicy.s16), children: [
-          _buildMediaSection(), // ✅ Section combinée Image + Vidéo
+          _buildImageSection(),
+          const SizedBox(height: 16),
+          _buildVideoSection(),
           const SizedBox(height: 20),
-          _buildField(controller: _titleCtrl, label: 'Titre *', hint: 'Titre de l\'article', maxLines: 2, validator: (v) => (v == null || v.trim().isEmpty) ? 'Titre requis' : null),
+          _buildField(
+              controller: _titleCtrl,
+              label: 'Titre *',
+              hint: 'Titre de l\'article',
+              maxLines: 2,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Titre requis' : null),
           const SizedBox(height: 16),
-          _buildField(controller: _summaryCtrl, label: 'Résumé', hint: 'Résumé court (optionnel)', maxLines: 3),
+          _buildField(
+              controller: _summaryCtrl,
+              label: 'Résumé',
+              hint: 'Résumé court (optionnel)',
+              maxLines: 3),
           const SizedBox(height: 16),
-          _buildField(controller: _contentCtrl, label: 'Contenu *', hint: 'Contenu complet de l\'article', maxLines: 12, validator: (v) => (v == null || v.trim().isEmpty) ? 'Contenu requis' : null),
+          _buildDropdown(
+              label: 'Catégorie *',
+              value: _category,
+              items: const [
+                'politique',
+                'economie',
+                'societe',
+                'tech',
+                'sport',
+                'culture',
+                'international',
+                'Magazine',
+                'Podcast',
+                'Découverte'
+              ],
+              onChanged: (v) => setState(() => _category = v ?? 'politique')),
           const SizedBox(height: 16),
-          _buildDropdown(label: 'Catégorie *', value: _category, items: const ['politique', 'economie', 'societe', 'tech', 'sport', 'culture', 'international', 'Magazine', 'Podcast', 'Découverte'], onChanged: (v) => setState(() => _category = v ?? 'politique')),
+          _buildField(
+              controller: _contentCtrl,
+              label: 'Contenu *',
+              hint: 'Contenu complet de l\'article',
+              maxLines: _isMagazine ? 20 : 12,
+              validator: (v) =>
+                  (v == null || v.trim().isEmpty) ? 'Contenu requis' : null),
           const SizedBox(height: 16),
-          // Les champs URL sont désormais gérés dans _buildMediaSection pour plus de clarté, 
-          // mais on garde les contrôleurs synchronisés si besoin d'édition directe.
-          // Ici on affiche juste un indicateur ou on laisse l'utilisateur éditer dans la section média.
-          // Pour simplifier, on retire les champs texte URL bruts ici et on les met dans la section visuelle.
-          
-          const SizedBox(height: 16),
-          _buildDropdown(label: 'Statut', value: _status, items: const ['published', 'draft'], onChanged: (v) => setState(() => _status = v ?? 'published')),
+
+          // ═══ SECTION MAGAZINE PREMIUM ═══
+          if (_isMagazine) _buildMagazineSection(),
+          if (_isMagazine) const SizedBox(height: 16),
+
+          _buildDropdown(
+              label: 'Statut',
+              value: _status,
+              items: const ['published', 'draft', 'scheduled'],
+              onChanged: (v) => setState(() => _status = v ?? 'published')),
           const SizedBox(height: 16),
           Row(children: [
-            Expanded(child: _buildToggle(label: 'À la une', value: _isFeatured, onChanged: (v) => setState(() => _isFeatured = v))),
+            Expanded(
+                child: _buildToggle(
+                    label: 'À la une',
+                    value: _isFeatured,
+                    onChanged: (v) => setState(() => _isFeatured = v))),
             const SizedBox(width: 12),
-            Expanded(child: _buildToggle(label: 'Flash info', value: _isBreaking, onChanged: (v) => setState(() => _isBreaking = v))),
+            Expanded(
+                child: _buildToggle(
+                    label: 'Flash info',
+                    value: _isBreaking,
+                    onChanged: (v) => setState(() => _isBreaking = v))),
           ]),
+          const SizedBox(height: 16),
+          _buildDateSection(),
           const SizedBox(height: 32),
         ]),
       ),
     );
   }
 
-  // ✅ SECTION MÉDIA UNIFIÉE (IMAGE + VIDÉO URL)
-  Widget _buildMediaSection() {
-    final hasImage = _imageBase64 != null || (_isEditing && widget.article!.imageUrl != null);
-    final hasVideo = _videoUrlCtrl.text.trim().isNotEmpty;
+  // ─── SECTION MAGAZINE ───
+  Widget _buildMagazineSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4AF37).withOpacity(0.08),
+        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+        border: Border.all(
+            color: const Color(0xFFD4AF37).withOpacity(0.35), width: 1),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.auto_stories_rounded,
+                  size: 18, color: Color(0xFFD4AF37)),
+              const SizedBox(width: 8),
+              Text('Magazine — options premium',
+                  style: ThixPolicy.labelStyle.copyWith(
+                      color: const Color(0xFFD4AF37),
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13)),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildField(
+            controller: _tagsCtrl,
+            label: 'Tags (séparés par des virgules)',
+            hint: 'Innovation, Afrique, Business',
+          ),
+          const SizedBox(height: 14),
+          _buildField(
+            controller: _quoteCtrl,
+            label: 'Citation mise en avant',
+            hint: 'Une phrase choc qui résume l\'article…',
+            maxLines: 3,
+          ),
+          const SizedBox(height: 14),
+          _buildField(
+            controller: _keyPointsCtrl,
+            label: 'Points clés « À retenir » (1 par ligne)',
+            hint: 'Point 1\nPoint 2\nPoint 3',
+            maxLines: 4,
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              Expanded(
+                child: _buildField(
+                  controller: _videoDurationCtrl,
+                  label: 'Durée vidéo',
+                  hint: '02:34',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _buildField(
+                  controller: _imageCaptionCtrl,
+                  label: 'Légende image',
+                  hint: 'Kinshasa, RDC',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          _buildField(
+            controller: _authorRoleCtrl,
+            label: 'Fonction de l\'auteur',
+            hint: 'Entrepreneur • Analyste',
+          ),
+        ],
+      ),
+    );
+  }
 
+  // ─── IMAGE SECTION ───
+  Widget _buildImageSection() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Médias (Image & Vidéo)', style: ThixPolicy.labelStyle.copyWith(color: Colors.white70, fontWeight: FontWeight.w700)),
+        Text('Image de couverture',
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        
-        // Zone principale : Affiche l'image ou la vidéo
         GestureDetector(
-          onTap: _pickImage, // Tap pour changer l'image
+          onTap: _isUploadingImage ? null : _pickImage,
           child: Container(
-            height: 200,
+            height: 180,
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Colors.white, // ✅ Fond blanc pour la zone média aussi
+              color: Colors.white.withOpacity(0.08),
               borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-              border: Border.all(color: Colors.grey.shade300),
+              border: Border.all(color: Colors.white.withOpacity(0.15)),
             ),
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (_imageBase64 != null)
-                  ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: Image.memory(base64Decode(_imageBase64!.split(',').last), fit: BoxFit.cover))
-                else if (_isEditing && widget.article!.imageUrl != null && _imageBase64 == null)
-                  ClipRRect(borderRadius: BorderRadius.circular(ThixPolicy.rMd), child: Image.network(widget.article!.imageUrl!, fit: BoxFit.cover))
-                else if (hasVideo)
-                  // ✅ Affichage miniature vidéo si URL présente
-                  Container(
-                    color: Colors.black12,
-                    child: Center(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.play_circle_outline_rounded, size: 48, color: ThixPolicy.primary),
-                          const SizedBox(height: 8),
-                          Text('Vidéo chargée', style: TextStyle(color: Colors.black87, fontWeight: FontWeight.w600)),
-                          const SizedBox(height: 4),
-                          Text(_videoUrlCtrl.text, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Colors.black54)),
-                        ],
-                      ),
+            child: _isUploadingImage
+                ? const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2)),
+                        SizedBox(height: 12),
+                        Text('Upload image en cours...',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 13)),
+                      ],
                     ),
                   )
-                else
-                  const Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.add_photo_alternate_rounded, color: Colors.grey, size: 40), SizedBox(height: 8), Text('Toucher pour ajouter une image', style: TextStyle(color: Colors.grey, fontSize: 12))])),
-                
-                // Badge type
-                Positioned(
-                  top: 8, left: 8,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: hasVideo ? Colors.orange : Colors.blue, borderRadius: BorderRadius.circular(6)),
-                    child: Text(hasVideo ? 'VIDÉO' : 'IMAGE', style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900)),
-                  ),
-                ),
-              ],
-            ),
+                : _imageBase64 != null
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+                        child: Image.memory(
+                            base64Decode(_imageBase64!.split(',').last),
+                            fit: BoxFit.cover),
+                      )
+                    : _imageUrl != null
+                        ? ClipRRect(
+                            borderRadius:
+                                BorderRadius.circular(ThixPolicy.rMd),
+                            child: Image.network(_imageUrl!,
+                                fit: BoxFit.cover),
+                          )
+                        : const Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.add_photo_alternate_rounded,
+                                    color: Colors.white38, size: 40),
+                                SizedBox(height: 8),
+                                Text('Toucher pour choisir une image',
+                                    style: TextStyle(
+                                        color: Colors.white38, fontSize: 12)),
+                              ],
+                            ),
+                          ),
           ),
         ),
-        
-        const SizedBox(height: 12),
-        
-        // Champ URL Vidéo dédié
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('URL de la vidéo (YouTube, Vimeo, MP4...)', style: ThixPolicy.captionStyle.copyWith(color: Colors.white70)),
-            const SizedBox(height: 6),
-            ClearInputBox( // ✅ Fond blanc, texte sombre
-              child: TextField(
-                controller: _videoUrlCtrl,
-                style: const TextStyle(color: Colors.black87, fontSize: 13.5),
-                decoration: InputDecoration(
-                  hintText: 'https://...',
-                  hintStyle: const TextStyle(color: Colors.grey),
-                  prefixIcon: const Icon(Icons.video_library_rounded, size: 18, color: ThixPolicy.primary),
-                  border: InputBorder.none,
-                  isDense: true,
-                ),
-                onChanged: (_) => setState(() {}), // Rafraîchir l'aperçu
-              ),
+        if (_imageUrl != null && _imageBase64 == null) ...[
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => setState(() => _imageUrl = null),
+              icon: const Icon(Icons.delete_outline,
+                  size: 16, color: Colors.redAccent),
+              label: const Text('Retirer l\'image',
+                  style: TextStyle(
+                      color: Colors.redAccent,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
             ),
-          ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ─── VIDEO SECTION ───
+  Widget _buildVideoSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Vidéo de l\'article (optionnel)',
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _isUploadingVideo ? null : _pickAndUploadVideo,
+          child: Container(
+            height: 60,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+              border: Border.all(color: Colors.white.withOpacity(0.15)),
+            ),
+            child: _isUploadingVideo
+                ? const Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2)),
+                        SizedBox(width: 12),
+                        Text('Upload en cours...',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 13)),
+                      ],
+                    ),
+                  )
+                : _videoUrl != null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                color: ThixPolicy.success),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text('Vidéo prête à être publiée',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded,
+                                  color: Colors.white54, size: 20),
+                              onPressed: () =>
+                                  setState(() => _videoUrl = null),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.video_call_rounded,
+                              color: Colors.white38, size: 24),
+                          SizedBox(width: 8),
+                          Text('Choisir une vidéo (Galerie)',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 13)),
+                        ],
+                      ),
+          ),
         ),
       ],
     );
   }
 
-  Widget _buildField({required TextEditingController controller, required String label, required String hint, int maxLines = 1, String? Function(String?)? validator}) {
+  // ─── DATE SECTION ───
+  Widget _buildDateSection() {
+    return GestureDetector(
+      onTap: _pickDate,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+          border: Border.all(color: Colors.white.withOpacity(0.15)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.event_rounded,
+                size: 18, color: ThixPolicy.primary),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Publication : ${_publishedAt.day.toString().padLeft(2, '0')}/${_publishedAt.month.toString().padLeft(2, '0')}/${_publishedAt.year} à ${_publishedAt.hour.toString().padLeft(2, '0')}:${_publishedAt.minute.toString().padLeft(2, '0')}',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            const Icon(Icons.edit_calendar_outlined,
+                size: 16, color: Colors.white54),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildField({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    int maxLines = 1,
+    String? Function(String?)? validator,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: ThixPolicy.labelStyle.copyWith(color: Colors.white70, fontWeight: FontWeight.w700)),
+        Text(label,
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
-        ClearInputBox( // ✅ Fond blanc, texte sombre
+        ClearInputBox(
           child: TextFormField(
             controller: controller,
             maxLines: maxLines,
             validator: validator,
-            style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.w600), // ✅ TEXTE SOMBRE
+            style: const TextStyle(
+                color: Colors.black87,
+                fontSize: 14,
+                fontWeight: FontWeight.w600),
             decoration: InputDecoration(
               hintText: hint,
               hintStyle: const TextStyle(color: Colors.grey, fontSize: 13),
@@ -651,21 +1376,36 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  Widget _buildDropdown({required String label, required String value, required List<String> items, required ValueChanged<String?> onChanged}) {
+  Widget _buildDropdown({
+    required String label,
+    required String value,
+    required List<String> items,
+    required ValueChanged<String?> onChanged,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: ThixPolicy.labelStyle.copyWith(color: Colors.white70, fontWeight: FontWeight.w700)),
+        Text(label,
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
         const SizedBox(height: 8),
         GlassBox(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           borderRadius: ThixPolicy.rMd,
           child: DropdownButtonHideUnderline(
             child: DropdownButton<String>(
-              value: value, isExpanded: true, dropdownColor: ThixPolicy.inkDeep,
+              value: value,
+              isExpanded: true,
+              dropdownColor: ThixPolicy.inkDeep,
               style: const TextStyle(color: Colors.white, fontSize: 13),
-              icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.white54),
-              items: items.map((item) => DropdownMenuItem(value: item, child: Text(item, style: const TextStyle(color: Colors.white)))).toList(),
+              icon: const Icon(Icons.keyboard_arrow_down_rounded,
+                  color: Colors.white54),
+              items: items
+                  .map((item) => DropdownMenuItem(
+                      value: item,
+                      child: Text(item,
+                          style: const TextStyle(color: Colors.white))))
+                  .toList(),
               onChanged: onChanged,
             ),
           ),
@@ -674,20 +1414,38 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     );
   }
 
-  Widget _buildToggle({required String label, required bool value, required ValueChanged<bool> onChanged}) {
+  Widget _buildToggle({
+    required String label,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
     return GestureDetector(
       onTap: () => onChanged(!value),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         decoration: BoxDecoration(
-          color: value ? ThixPolicy.primary.withOpacity(0.2) : Colors.white.withOpacity(0.08),
+          color: value
+              ? ThixPolicy.primary.withOpacity(0.2)
+              : Colors.white.withOpacity(0.08),
           borderRadius: BorderRadius.circular(ThixPolicy.rMd),
-          border: Border.all(color: value ? ThixPolicy.primary : Colors.white.withOpacity(0.15)),
+          border: Border.all(
+            color:
+                value ? ThixPolicy.primary : Colors.white.withOpacity(0.15),
+          ),
         ),
         child: Row(children: [
-          Icon(value ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded, color: value ? ThixPolicy.primary : Colors.white38, size: 20),
+          Icon(
+              value
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: value ? ThixPolicy.primary : Colors.white38,
+              size: 20),
           const SizedBox(width: 8),
-          Expanded(child: Text(label, style: TextStyle(color: value ? Colors.white : Colors.white54, fontWeight: FontWeight.w700))),
+          Expanded(
+              child: Text(label,
+                  style: TextStyle(
+                      color: value ? Colors.white : Colors.white54,
+                      fontWeight: FontWeight.w700))),
         ]),
       ),
     );
