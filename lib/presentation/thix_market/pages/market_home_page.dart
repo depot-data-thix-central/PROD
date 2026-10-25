@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v8 "Ultra Modern"
+// MARKET HOME PAGE — Production Enterprise v8 "Ultra Modern" (FIXED)
 // ----------------------------------------------------------------------------
 //  • ✅ Design ultra-moderne, clean, magazine-like
 //  • ✅ Hero Banner immersif (10 produits) auto-scroll avec Ken Burns effect
@@ -699,7 +699,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 
   // ============================================================================
   // ⭐ HERO BANNER IMMERSIF — 10 derniers produits auto-scroll
-  // Design magazine premium avec Ken Burns + overlay typographique
   // ============================================================================
   Widget _buildImmersiveHero(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
     return async.when(
@@ -1510,7 +1509,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 }
 
 // ============================================================================
-// ⭐ IMMERSIVE HERO CAROUSEL — Design magazine premium
+// ⭐ IMMERSIVE HERO CAROUSEL — Design magazine premium (FIXED)
 // ============================================================================
 class _ImmersiveHeroCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> products;
@@ -1540,6 +1539,9 @@ class _ImmersiveHeroCarousel extends StatefulWidget {
 class _ImmersiveHeroCarouselState extends State<_ImmersiveHeroCarousel> {
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX: capturer la langue ici pour la passer à _ImmersiveHeroCard
+    final lang = Localizations.localeOf(context).languageCode;
+
     return Column(
       children: [
         Padding(
@@ -1612,6 +1614,7 @@ class _ImmersiveHeroCarouselState extends State<_ImmersiveHeroCarousel> {
                   total: widget.products.length,
                   isActive: widget.currentIndex == index,
                   l10n: widget.l10n,
+                  lang: lang, // ✅ FIX: passage de la langue
                 );
               },
             ),
@@ -1633,6 +1636,7 @@ class _ImmersiveHeroCard extends StatelessWidget {
   final int total;
   final bool isActive;
   final AppLocalizations l10n;
+  final String lang; // ✅ FIX: ajout du paramètre lang
 
   const _ImmersiveHeroCard({
     required this.product,
@@ -1640,7 +1644,14 @@ class _ImmersiveHeroCard extends StatelessWidget {
     required this.total,
     required this.isActive,
     required this.l10n,
+    required this.lang, // ✅ FIX: obligatoire
   });
+
+  // ✅ FIX: helper local de traduction pour la classe
+  String _tr(String fr, String en, String sw) {
+    if (lang == 'sw') return sw;
+    return lang == 'fr' ? fr : en;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1730,7 +1741,8 @@ class _ImmersiveHeroCard extends StatelessWidget {
                         fontSize: 11,
                         fontWeight: FontWeight.w900,
                         letterSpacing: 0.5,
-                        fontFeatureSettings: [FontFeature.tabularFigures()],
+                        // ✅ FIX: fontFeatureSettings retiré, remplacé par fontFamily
+                        fontFamily: 'monospace',
                       ),
                     ),
                   ),
@@ -1793,7 +1805,8 @@ class _ImmersiveHeroCard extends StatelessWidget {
                               fontSize: 14,
                               fontWeight: FontWeight.w900,
                               letterSpacing: -0.2,
-                              fontFeatureSettings: [FontFeature.tabularFigures()],
+                              // ✅ FIX: fontFeatureSettings retiré, remplacé par fontFamily
+                              fontFamily: 'monospace',
                             ),
                           ),
                         ),
@@ -1842,7 +1855,8 @@ class _ImmersiveHeroCard extends StatelessWidget {
                             const Icon(Icons.shopping_bag_rounded, size: 16, color: _kInkPrimary),
                             const SizedBox(width: 8),
                             Text(
-                              _t('Découvrir', 'Discover', 'Gundua'),
+                              // ✅ FIX: utilisation du helper local _tr()
+                              _tr('Découvrir', 'Discover', 'Gundua'),
                               style: const TextStyle(
                                 color: _kInkPrimary,
                                 fontWeight: FontWeight.w900,
