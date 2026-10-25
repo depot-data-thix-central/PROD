@@ -1,13 +1,12 @@
 // lib/presentation/thix_info/thix_info_admin_page.dart
 // ============================================================================
-// ADMIN THIX INFO — Gestion des articles (CORRIGÉ + UPLOAD + MAGAZINE)
+// ADMIN THIX INFO — Gestion des articles (CORRIGÉ + UPLOAD AUDIO/VIDEO + MAGAZINE)
 //  • ✅ Upload réel des photos vers Supabase Storage (news_images)
 //  • ✅ Upload réel des vidéos vers Supabase Storage (news_videos)
+//  • ✅ Upload réel des audios vers Supabase Storage (news_audios)
 //  • ✅ Champs Magazine complets (tags, citation, points clés, durée, légende, fonction)
 //  • ✅ Sélecteur de date de publication
 //  • ✅ Lisibilité : Champs de saisie BLANCS avec texte SOMBRE
-//  • ✅ Création / Édition / Suppression d'articles
-//  • ✅ Gestion des flags : featured, breaking, statut (draft/published)
 // ============================================================================
 
 import 'dart:async';
@@ -20,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:file_picker/file_picker.dart'; // ⚠️ AJOUTER CE PACKAGE DANS PUBSPEC
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -144,6 +144,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
           category: e['category']?.toString() ?? '',
           imageUrl: e['image_url']?.toString(),
           videoUrl: e['video_url']?.toString(),
+          audioUrl: e['audio_url']?.toString(), // ✅ AJOUT AUDIO
           viewsCount: (e['views_count'] as num?)?.toInt() ?? 0,
           isFeatured: e['is_featured'] == true,
           isBreaking: e['is_breaking'] == true,
@@ -251,6 +252,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
             category: u.category,
             imageUrl: u.imageUrl,
             videoUrl: u.videoUrl,
+            audioUrl: u.audioUrl, // ✅ AJOUT AUDIO
             viewsCount: u.viewsCount,
             isFeatured: field == 'is_featured' ? value : u.isFeatured,
             isBreaking: field == 'is_breaking' ? value : u.isBreaking,
@@ -576,6 +578,9 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
                     : ThixPolicy.warning),
             if (article.isFeatured) _badge('À la une', ThixPolicy.primary),
             if (article.isBreaking) _badge('Flash', ThixPolicy.danger),
+            // Petits indicateurs de médias attachés
+            if (article.audioUrl != null) _badge('AUDIO', const Color(0xFF6366F1)),
+            if (article.videoUrl != null) _badge('VIDÉO', Colors.redAccent),
             _badge('${article.viewsCount} vues', Colors.white24),
           ]),
           const SizedBox(height: 12),
@@ -661,7 +666,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
 }
 
 // ============================================================================
-// FORMULAIRE CRÉATION / ÉDITION (UPLOAD RÉEL + MAGAZINE + DATE)
+// FORMULAIRE CRÉATION / ÉDITION (UPLOAD RÉEL + MAGAZINE + DATE + AUDIO)
 // ============================================================================
 class _ArticleFormPage extends ConsumerStatefulWidget {
   final NewsArticle? article;
@@ -697,11 +702,14 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   DateTime _publishedAt = DateTime.now();
 
   // ── Upload états ──
-  String? _imageBase64; // Prévisualisation de la nouvelle image choisie
-  String? _imageUrl; // URL finale de l'image (uploadée)
-  String? _videoUrl; // URL finale de la vidéo
+  String? _imageBase64;
+  String? _imageUrl;
+  String? _videoUrl;
+  String? _audioUrl; // ✅ AJOUT AUDIO
+  
   bool _isUploadingImage = false;
   bool _isUploadingVideo = false;
+  bool _isUploadingAudio = false; // ✅ AJOUT AUDIO
 
   bool get _isEditing => widget.article != null;
   bool get _isMagazine => _category == 'Magazine';
@@ -717,21 +725,11 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       _category = a.category;
       _imageUrl = a.imageUrl;
       _videoUrl = a.videoUrl;
+      _audioUrl = a.audioUrl; // ✅ AJOUT AUDIO
       _status = a.status;
       _isFeatured = a.isFeatured;
       _isBreaking = a.isBreaking;
       _publishedAt = a.publishedAt ?? DateTime.now();
-
-      // Charger les extras magazine si la catégorie est Magazine
-      // Note : adapte ces lignes selon ton modèle NewsArticle
-      // Si tu as magazineExtras dans ton modèle :
-      // final extras = a.magazineExtras ?? const <String, dynamic>{};
-      // _tagsCtrl.text = ((extras['tags'] as List?) ?? []).join(', ');
-      // _quoteCtrl.text = extras['pull_quote']?.toString() ?? '';
-      // _keyPointsCtrl.text = ((extras['key_points'] as List?) ?? []).join('\n');
-      // _videoDurationCtrl.text = extras['video_duration']?.toString() ?? '';
-      // _imageCaptionCtrl.text = extras['image_caption']?.toString() ?? '';
-      // _authorRoleCtrl.text = extras['author_role']?.toString() ?? '';
     }
   }
 
@@ -749,7 +747,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     super.dispose();
   }
 
-  // ─── PICK IMAGE (prévisualisation) ───
+  // ─── PICK IMAGE ───
   Future<void> _pickImage() async {
     try {
       final file = await _picker.pickImage(
@@ -763,7 +761,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       final base64Str = base64Encode(bytes);
       setState(() {
         _imageBase64 = 'data:image/jpeg;base64,$base64Str';
-        _imageUrl = null; // Ancienne URL effacée, sera remplacée à la sauvegarde
+        _imageUrl = null;
       });
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Pick image error: $e');
@@ -771,9 +769,9 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── UPLOAD IMAGE VERS SUPABASE STORAGE ───
+  // ─── UPLOAD IMAGE ───
   Future<String?> _uploadImageToStorage() async {
-    if (_imageBase64 == null) return _imageUrl; // Pas de nouvelle image
+    if (_imageBase64 == null) return _imageUrl;
 
     setState(() => _isUploadingImage = true);
     try {
@@ -794,10 +792,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             ),
           );
 
-      final publicUrl =
-          _supabase.storage.from('news_images').getPublicUrl(fileName);
-
-      return publicUrl;
+      return _supabase.storage.from('news_images').getPublicUrl(fileName);
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Upload image error: $e');
       rethrow;
@@ -806,7 +801,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── PICK + UPLOAD VIDEO VERS SUPABASE STORAGE ───
+  // ─── PICK + UPLOAD VIDEO ───
   Future<void> _pickAndUploadVideo() async {
     try {
       final file = await _picker.pickVideo(source: ImageSource.gallery);
@@ -827,8 +822,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             ),
           );
 
-      final publicUrl =
-          _supabase.storage.from('news_videos').getPublicUrl(fileName);
+      final publicUrl = _supabase.storage.from('news_videos').getPublicUrl(fileName);
 
       setState(() {
         _videoUrl = publicUrl;
@@ -838,11 +832,50 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Pick/Upload video error: $e');
       if (mounted) {
-        _showSnack(
-          'Erreur upload vidéo : ${e.toString().split('\n').first}',
-          ThixPolicy.danger,
-        );
+        _showSnack('Erreur upload vidéo : ${e.toString().split('\n').first}', ThixPolicy.danger);
         setState(() => _isUploadingVideo = false);
+      }
+    }
+  }
+
+  // ─── PICK + UPLOAD AUDIO (PODCAST) ───
+  Future<void> _pickAndUploadAudio() async {
+    try {
+      // Utilisation de FilePicker pour l'audio
+      FilePickerResult? result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        withData: true, // Important pour récupérer les bytes
+      );
+      
+      if (result == null || result.files.single.bytes == null) return;
+
+      setState(() => _isUploadingAudio = true);
+
+      final file = result.files.single;
+      final bytes = file.bytes!;
+      final fileName = '${const Uuid().v4()}_${DateTime.now().millisecondsSinceEpoch}_${file.name}';
+
+      await _supabase.storage.from('news_audios').uploadBinary(
+            fileName,
+            bytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600',
+              upsert: false,
+            ),
+          );
+
+      final publicUrl = _supabase.storage.from('news_audios').getPublicUrl(fileName);
+
+      setState(() {
+        _audioUrl = publicUrl;
+        _isUploadingAudio = false;
+      });
+      _showSnack('✅ Audio uploadé avec succès', ThixPolicy.success);
+    } catch (e) {
+      debugPrint('[ArticleForm] ❌ Pick/Upload audio error: $e');
+      if (mounted) {
+        _showSnack('Erreur upload audio : ${e.toString().split('\n').first}', ThixPolicy.danger);
+        setState(() => _isUploadingAudio = false);
       }
     }
   }
@@ -872,7 +905,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   // ─── SAUVEGARDE ───
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_saving || _isUploadingVideo || _isUploadingImage) return;
+    if (_saving || _isUploadingVideo || _isUploadingImage || _isUploadingAudio) return;
 
     setState(() => _saving = true);
 
@@ -880,24 +913,14 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       final uid = _supabase.auth.currentUser?.id;
       if (uid == null) throw Exception('Non authentifié');
 
-      // 1. Upload de l'image si nouvelle sélection
       final String? finalImageUrl = await _uploadImageToStorage();
 
-      // 2. Construction des extras magazine
       Map<String, dynamic> magazineExtras = const {};
       if (_isMagazine) {
         magazineExtras = {
-          'tags': _tagsCtrl.text
-              .split(',')
-              .map((t) => t.trim())
-              .where((t) => t.isNotEmpty)
-              .toList(),
+          'tags': _tagsCtrl.text.split(',').map((t) => t.trim()).where((t) => t.isNotEmpty).toList(),
           'pull_quote': _quoteCtrl.text.trim(),
-          'key_points': _keyPointsCtrl.text
-              .split('\n')
-              .map((t) => t.trim())
-              .where((t) => t.isNotEmpty)
-              .toList(),
+          'key_points': _keyPointsCtrl.text.split('\n').map((t) => t.trim()).where((t) => t.isNotEmpty).toList(),
           'video_duration': _videoDurationCtrl.text.trim(),
           'image_caption': _imageCaptionCtrl.text.trim(),
           'author_role': _authorRoleCtrl.text.trim(),
@@ -907,12 +930,12 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       // 3. Payload
       final payload = {
         'title': _titleCtrl.text.trim(),
-        'summary':
-            _summaryCtrl.text.trim().isEmpty ? null : _summaryCtrl.text.trim(),
+        'summary': _summaryCtrl.text.trim().isEmpty ? null : _summaryCtrl.text.trim(),
         'content': _contentCtrl.text.trim(),
         'category': _category,
         'image_url': finalImageUrl,
         'video_url': _videoUrl,
+        'audio_url': _audioUrl, // ✅ AJOUT AUDIO DANS LE PAYLOAD
         'status': _status,
         'is_featured': _isFeatured,
         'is_breaking': _isBreaking,
@@ -947,10 +970,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     } catch (e) {
       debugPrint('[ArticleForm] ❌ Save error: $e');
       if (mounted) {
-        _showSnack(
-          'Erreur : ${e.toString().split('\n').first}',
-          ThixPolicy.danger,
-        );
+        _showSnack('Erreur : ${e.toString().split('\n').first}', ThixPolicy.danger);
       }
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -969,7 +989,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
   @override
   Widget build(BuildContext context) {
-    final bool isBusy = _saving || _isUploadingVideo || _isUploadingImage;
+    final bool isBusy = _saving || _isUploadingVideo || _isUploadingImage || _isUploadingAudio;
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
       appBar: AppBar(
@@ -997,6 +1017,8 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
           _buildImageSection(),
           const SizedBox(height: 16),
           _buildVideoSection(),
+          const SizedBox(height: 16),
+          _buildAudioSection(), // ✅ AJOUT SECTION AUDIO
           const SizedBox(height: 20),
           _buildField(
               controller: _titleCtrl,
@@ -1038,7 +1060,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                   (v == null || v.trim().isEmpty) ? 'Contenu requis' : null),
           const SizedBox(height: 16),
 
-          // ═══ SECTION MAGAZINE PREMIUM ═══
           if (_isMagazine) _buildMagazineSection(),
           if (_isMagazine) const SizedBox(height: 16),
 
@@ -1260,7 +1281,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                             child: CircularProgressIndicator(
                                 color: Colors.white, strokeWidth: 2)),
                         SizedBox(width: 12),
-                        Text('Upload en cours...',
+                        Text('Upload vidéo en cours...',
                             style: TextStyle(
                                 color: Colors.white70, fontSize: 13)),
                       ],
@@ -1297,6 +1318,83 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                               color: Colors.white38, size: 24),
                           SizedBox(width: 8),
                           Text('Choisir une vidéo (Galerie)',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 13)),
+                        ],
+                      ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── AUDIO SECTION (PODCAST) ───
+  Widget _buildAudioSection() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Audio du Podcast (optionnel)',
+            style: ThixPolicy.labelStyle.copyWith(
+                color: Colors.white70, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _isUploadingAudio ? null : _pickAndUploadAudio,
+          child: Container(
+            height: 60,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(ThixPolicy.rMd),
+              border: Border.all(color: Colors.white.withOpacity(0.15)),
+            ),
+            child: _isUploadingAudio
+                ? const Center(
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                color: Colors.white, strokeWidth: 2)),
+                        SizedBox(width: 12),
+                        Text('Upload audio en cours...',
+                            style: TextStyle(
+                                color: Colors.white70, fontSize: 13)),
+                      ],
+                    ),
+                  )
+                : _audioUrl != null
+                    ? Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                color: Color(0xFF6366F1)), // Couleur podcast
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text('Fichier audio prêt',
+                                  style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close_rounded,
+                                  color: Colors.white54, size: 20),
+                              onPressed: () =>
+                                  setState(() => _audioUrl = null),
+                            ),
+                          ],
+                        ),
+                      )
+                    : const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.headphones_rounded,
+                              color: Colors.white38, size: 24),
+                          SizedBox(width: 8),
+                          Text('Choisir un fichier audio (MP3/WAV)',
                               style: TextStyle(
                                   color: Colors.white38, fontSize: 13)),
                         ],
