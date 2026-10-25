@@ -1,4 +1,3 @@
-// lib/presentation/thix_market/vendor/vendor_dashboard.dart
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -13,7 +12,8 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../providers/shop_provider.dart' hide myShopIdProvider;
 import '../providers/market_providers.dart';
-import '../core/local_sectors.dart'; // ✅ AJOUT : pour invalider local après création
+import '../providers/local_moderation_providers.dart';
+import '../core/local_sectors.dart';
 
 // ============================================================================
 // CONSTANTES
@@ -54,7 +54,7 @@ final vendorOrdersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) as
             'id, total, status, payment_status, payout_status, payment_method, '
             'currency, created_at, user_id, address_id, receipt_code, refund_requested, '
             'refund_reason, received_at, shipping_method, shipping_address, '
-            'customer_name, customer_phone, customer_email',
+            'customer_name, customer_phone, customer_email, handled_by_role',
           )
           .inFilter('shop_id', shopIds)
           .order('created_at', ascending: false)
@@ -103,7 +103,6 @@ final vendorProductsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   }
 });
 
-// ✅ NOUVEAU : compteur de produits locaux du vendeur (pour KPI)
 final vendorLocalProductsCountProvider = FutureProvider<int>((ref) async {
   final db = ref.read(supabaseClientProvider);
   final uid = db.auth.currentUser?.id;
@@ -132,9 +131,7 @@ final vendorLocalProductsCountProvider = FutureProvider<int>((ref) async {
       label: 'countLocalProducts',
     );
 
-    final count = (res as List).length;
-    debugPrint('[VendorDashboard] 🌱 Local products count: $count');
-    return count;
+    return (res as List).length;
   } catch (e) {
     debugPrint('[VendorDashboard] ⚠️ Local count error: $e');
     return 0;
@@ -266,7 +263,6 @@ Future<T> _vdRetry<T>(
   }
 }
 
-/// Premier champ non-vide parmi [keys] dans [m]
 String _pick(Map<String, dynamic>? m, List<String> keys) {
   if (m == null) return '';
   for (final k in keys) {
@@ -298,53 +294,17 @@ class _OrderStatus {
 }
 
 const List<_OrderStatus> _kOrderStatuses = [
-  _OrderStatus(
-    key: 'pending',
-    labelFr: 'En attente',
-    labelEn: 'Pending',
-    icon: Icons.hourglass_top_rounded,
-    color: ThixPolicy.gold,
-  ),
-  _OrderStatus(
-    key: 'processing',
-    labelFr: 'En préparation',
-    labelEn: 'Processing',
-    icon: Icons.kitchen_rounded,
-    color: ThixPolicy.primary,
-  ),
-  _OrderStatus(
-    key: 'shipped',
-    labelFr: 'Expédiée',
-    labelEn: 'Shipped',
-    icon: Icons.local_shipping_rounded,
-    color: ThixPolicy.primary,
-  ),
-  _OrderStatus(
-    key: 'delivered',
-    labelFr: 'Livrée',
-    labelEn: 'Delivered',
-    icon: Icons.check_circle_rounded,
-    color: ThixPolicy.success,
-  ),
-  _OrderStatus(
-    key: 'cancelled',
-    labelFr: 'Annulée',
-    labelEn: 'Cancelled',
-    icon: Icons.cancel_rounded,
-    color: ThixPolicy.danger,
-  ),
+  _OrderStatus(key: 'pending', labelFr: 'En attente', labelEn: 'Pending', icon: Icons.hourglass_top_rounded, color: ThixPolicy.gold),
+  _OrderStatus(key: 'processing', labelFr: 'En préparation', labelEn: 'Processing', icon: Icons.kitchen_rounded, color: ThixPolicy.primary),
+  _OrderStatus(key: 'shipped', labelFr: 'Expédiée', labelEn: 'Shipped', icon: Icons.local_shipping_rounded, color: ThixPolicy.primary),
+  _OrderStatus(key: 'delivered', labelFr: 'Livrée', labelEn: 'Delivered', icon: Icons.check_circle_rounded, color: ThixPolicy.success),
+  _OrderStatus(key: 'cancelled', labelFr: 'Annulée', labelEn: 'Cancelled', icon: Icons.cancel_rounded, color: ThixPolicy.danger),
 ];
 
 _OrderStatus _getOrderStatus(String key) {
   return _kOrderStatuses.firstWhere(
     (s) => s.key == key,
-    orElse: () => const _OrderStatus(
-      key: 'unknown',
-      labelFr: 'Inconnu',
-      labelEn: 'Unknown',
-      icon: Icons.help_outline_rounded,
-      color: ThixPolicy.textMuted,
-    ),
+    orElse: () => const _OrderStatus(key: 'unknown', labelFr: 'Inconnu', labelEn: 'Unknown', icon: Icons.help_outline_rounded, color: ThixPolicy.textMuted),
   );
 }
 
@@ -370,7 +330,9 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ref.invalidate(myShopsProvider);
       ref.invalidate(vendorOrdersProvider);
       ref.invalidate(vendorProductsProvider);
-      ref.invalidate(vendorLocalProductsCountProvider); // ✅ AJOUT
+      ref.invalidate(vendorLocalProductsCountProvider);
+      ref.invalidate(localIsModeratorProvider);
+      ref.invalidate(moderationStatsProvider);
     });
   }
 
@@ -390,13 +352,17 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       ref.invalidate(myShopsProvider);
       ref.invalidate(vendorOrdersProvider);
       ref.invalidate(vendorProductsProvider);
-      ref.invalidate(vendorLocalProductsCountProvider); // ✅ AJOUT
+      ref.invalidate(vendorLocalProductsCountProvider);
+      ref.invalidate(localIsModeratorProvider);
+      ref.invalidate(moderationStatsProvider);
 
       await Future.wait([
         ref.read(myShopsProvider.future),
         ref.read(vendorOrdersProvider.future),
         ref.read(vendorProductsProvider.future),
-        ref.read(vendorLocalProductsCountProvider.future), // ✅ AJOUT
+        ref.read(vendorLocalProductsCountProvider.future),
+        ref.read(localIsModeratorProvider.future),
+        ref.read(moderationStatsProvider.future),
       ]);
     } catch (e) {
       debugPrint('[VendorDashboard] ❌ Refresh error: $e');
@@ -405,9 +371,15 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     }
   }
 
-  /// ✅ NOUVEAU : navigation vers le formulaire produit local
   Future<void> _openCreateLocalProduct() async {
     HapticFeedback.mediumImpact();
+
+    // ✅ Si modérateur/admin : redirige vers l'espace de modération complet
+    final isMod = ref.read(localIsModeratorProvider).valueOrNull ?? false;
+    if (isMod) {
+      context.push('/market/local/vendor-space');
+      return;
+    }
 
     String? shopId = ref.read(myShopIdProvider).valueOrNull;
     if (shopId == null) {
@@ -416,7 +388,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       } catch (_) {}
     }
     if (shopId == null) {
-      shopId = await _resolveShopIdDirect(); // ✅ filet de sécurité
+      shopId = await _resolveShopIdDirect();
     }
 
     if (shopId == null) {
@@ -431,11 +403,11 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     if (created == true && mounted) {
       ref.invalidate(vendorProductsProvider);
       ref.invalidate(vendorLocalProductsCountProvider);
-      _showSuccess(context.vdT('Produit local publié ✅', 'Local product published ✅'));
+      ref.invalidate(moderationStatsProvider);
+      _showSuccess(context.vdT('Produit local soumis pour validation ✅', 'Local product submitted for validation ✅'));
     }
   }
 
-  /// ✅ Résolution directe multi-boutiques (priorité boutique)
   Future<String?> _resolveShopIdDirect() async {
     try {
       final db = ref.read(supabaseClientProvider);
@@ -467,14 +439,10 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       return;
     }
 
-    if (_updatingOrders.contains(orderId)) {
-      debugPrint('[VendorDashboard] ⚠️ Update already in progress for ${_VdValidators.shortId(orderId)}');
-      return;
-    }
+    if (_updatingOrders.contains(orderId)) return;
 
     setState(() => _updatingOrders.add(orderId));
     HapticFeedback.mediumImpact();
-    debugPrint('[VendorDashboard] 🔄 Update ${_VdValidators.shortId(orderId)} → $newStatus');
 
     try {
       final db = ref.read(supabaseClientProvider);
@@ -507,7 +475,6 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
         final status = _getOrderStatus(newStatus);
         _showSuccess('${context.vdT('Statut', 'Status')} → ${status.label(context)}');
       }
-      debugPrint('[VendorDashboard] ✓ Status updated to $newStatus');
     } catch (e) {
       debugPrint('[VendorDashboard] ❌ Update status error: $e');
       if (mounted) _showError(_VdValidators.friendlyError(e));
@@ -527,9 +494,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       context: context,
       isScrollControlled: true,
       backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => _QrCodeSheet(
         code: code,
         shortOrderId: short,
@@ -546,12 +511,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     );
   }
 
-  Future<bool> _confirmAction({
-    required String title,
-    required String content,
-    required Color actionColor,
-    required String actionLabel,
-  }) async {
+  Future<bool> _confirmAction({required String title, required String content, required Color actionColor, required String actionLabel}) async {
     HapticFeedback.mediumImpact();
     final result = await showDialog<bool>(
       context: context,
@@ -560,10 +520,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
         title: Text(title, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold)),
         content: Text(content, style: ThixPolicy.bodyStyle),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(context.vdT('Annuler', 'Cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary)),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.vdT('Annuler', 'Cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(backgroundColor: actionColor, foregroundColor: Colors.white),
@@ -578,30 +535,20 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
   Future<void> _confirmStatusChange(String orderId, String newStatus) async {
     final status = _getOrderStatus(newStatus);
     final short = _VdValidators.shortId(orderId);
-
     final confirmed = await _confirmAction(
       title: context.vdT('Confirmer le changement', 'Confirm change'),
-      content: context.vdT(
-        'Passer la commande #$short en "${status.label(context)}" ?',
-        'Change order #$short to "${status.label(context)}"?',
-      ),
+      content: context.vdT('Passer la commande #$short en "${status.label(context)}" ?', 'Change order #$short to "${status.label(context)}"?'),
       actionColor: status.color,
       actionLabel: context.vdT('Confirmer', 'Confirm'),
     );
-
-    if (confirmed && mounted) {
-      await _updateStatus(orderId, newStatus);
-    }
+    if (confirmed && mounted) await _updateStatus(orderId, newStatus);
   }
 
   Future<void> _confirmCancel(String orderId) async {
     final short = _VdValidators.shortId(orderId);
     final ok = await _confirmAction(
       title: context.vdT('Annuler la commande ?', 'Cancel order?'),
-      content: context.vdT(
-        'Le client sera notifié et le paiement ne sera pas versé. Commande #$short',
-        'Customer will be notified and payment will not be released. Order #$short',
-      ),
+      content: context.vdT('Le client sera notifié et le paiement ne sera pas versé. Commande #$short', 'Customer will be notified and payment will not be released. Order #$short'),
       actionColor: ThixPolicy.danger,
       actionLabel: context.vdT('Oui, annuler', 'Yes, cancel'),
     );
@@ -614,9 +561,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
       context: context,
       isScrollControlled: true,
       backgroundColor: ThixPolicy.card,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       builder: (ctx) => DraggableScrollableSheet(
         initialChildSize: 0.85,
         minChildSize: 0.5,
@@ -636,48 +581,30 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.danger,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   void _showSuccess(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.success,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   void _showInfo(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Expanded(child: Text(message)),
-        ]),
-        backgroundColor: ThixPolicy.warning,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.warning,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   @override
@@ -685,19 +612,14 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
     final shopsAsync = ref.watch(myShopsProvider);
     final ordersAsync = ref.watch(vendorOrdersProvider);
     final productsAsync = ref.watch(vendorProductsProvider);
-    final localCountAsync = ref.watch(vendorLocalProductsCountProvider); // ✅ AJOUT
+    final localCountAsync = ref.watch(vendorLocalProductsCountProvider);
+    final isModeratorAsync = ref.watch(localIsModeratorProvider);
+    final modStatsAsync = ref.watch(moderationStatsProvider);
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
       appBar: AppBar(
-        title: Text(
-          context.vdT('Espace vendeur', 'Vendor Dashboard'),
-          style: ThixPolicy.h3Style.copyWith(
-            fontWeight: ThixPolicy.bold,
-            fontSize: 18,
-            color: ThixPolicy.textMain,
-          ),
-        ),
+        title: Text(context.vdT('Espace vendeur', 'Vendor Dashboard'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain)),
         backgroundColor: ThixPolicy.card,
         elevation: 0,
         scrolledUnderElevation: 0,
@@ -706,44 +628,46 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
           Semantics(
             button: true,
             label: context.vdT('Actualiser', 'Refresh'),
-            child: IconButton(
-              icon: const Icon(Icons.refresh_rounded),
-              tooltip: context.vdT('Actualiser', 'Refresh'),
-              onPressed: _isRefreshing ? null : _refresh,
-            ),
+            child: IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: context.vdT('Actualiser', 'Refresh'), onPressed: _isRefreshing ? null : _refresh),
           ),
         ],
       ),
       body: shopsAsync.when(
         loading: () => const _SkeletonDashboard(),
-        error: (e, _) => _ErrorState(
-          message: _VdValidators.friendlyError(e),
-          onRetry: _refresh,
-        ),
+        error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
         data: (shops) {
           final hasShop = shops.isNotEmpty;
-          final boutiqueList = shops
-              .where((s) => s['type']?.toString() != 'supermarket')
-              .toList();
-          final superList = shops
-              .where((s) => s['type']?.toString() == 'supermarket')
-              .toList();
+          final boutiqueList = shops.where((s) => s['type']?.toString() != 'supermarket').toList();
+          final superList = shops.where((s) => s['type']?.toString() == 'supermarket').toList();
           final b = boutiqueList.isEmpty ? null : boutiqueList.first;
           final sm = superList.isEmpty ? null : superList.first;
           final shop = b ?? sm;
 
           return ordersAsync.when(
             loading: () => const _SkeletonDashboard(),
-            error: (e, _) => _ErrorState(
-              message: _VdValidators.friendlyError(e),
-              onRetry: _refresh,
-            ),
+            error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
             data: (orders) {
               final products = productsAsync.valueOrNull ?? [];
-              final pending = orders.where((o) => o['status'] == 'pending').length;
-              final processing = orders.where((o) => o['status'] == 'processing').length;
               final rating = _VdValidators.safeDouble(shop?['rating']);
-              final localCount = localCountAsync.valueOrNull ?? 0; // ✅ AJOUT
+              final isModerator = isModeratorAsync.valueOrNull ?? false;
+              final modStats = modStatsAsync.valueOrNull ?? {};
+
+              // ✅ FILTRAGE DES COMMANDES PAR RÔLE
+              final filteredOrders = isModerator
+                  ? orders
+                  : orders.where((o) => o['handled_by_role'] != 'moderator').toList();
+
+              final pending = filteredOrders.where((o) => o['status'] == 'pending').length;
+              final processing = filteredOrders.where((o) => o['status'] == 'processing').length;
+
+              // ✅ KPI LOCAL DYNAMIQUE SELON RÔLE
+              final localActive = modStats['active'] ?? (localCountAsync.valueOrNull ?? 0);
+              final localPending = modStats['pending'] ?? 0;
+              final localRejected = modStats['rejected'] ?? 0;
+              final localDisplayCount = isModerator ? localActive + localPending + localRejected : localActive;
+              final localLabel = isModerator && localPending > 0
+                  ? '$localDisplayCount • $localPending en attente'
+                  : '$localDisplayCount';
 
               return RefreshIndicator(
                 color: ThixPolicy.primary,
@@ -757,46 +681,20 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                       _DualShopHeader(
                         boutique: b,
                         supermarket: sm,
-                        onCreateShop: () {
-                          HapticFeedback.mediumImpact();
-                          context.pushNamed('marketCreateShop');
-                        },
-                        onCreateSupermarket: () {
-                          HapticFeedback.mediumImpact();
-                          context.push('/market/supermarket/create');
-                        },
-                        onOpenShop: b != null
-                            ? () {
-                                HapticFeedback.selectionClick();
-                                context.pushNamed('marketManageShop',
-                                    pathParameters: {
-                                      'shopId': b['id'].toString()
-                                    });
-                              }
-                            : null,
-                        onOpenSupermarket: sm != null
-                            ? () {
-                                HapticFeedback.selectionClick();
-                                context.push(
-                                    '/market/supermarket/${sm['id']}');
-                              }
-                            : null,
-                        onManageSupermarket: sm != null
-                            ? () {
-                                HapticFeedback.selectionClick();
-                                context.push(
-                                    '/market/supermarket/${sm['id']}/manage');
-                              }
-                            : null,
+                        onCreateShop: () { HapticFeedback.mediumImpact(); context.pushNamed('marketCreateShop'); },
+                        onCreateSupermarket: () { HapticFeedback.mediumImpact(); context.push('/market/supermarket/create'); },
+                        onOpenShop: b != null ? () { HapticFeedback.selectionClick(); context.pushNamed('marketManageShop', pathParameters: {'shopId': b['id'].toString()}); } : null,
+                        onOpenSupermarket: sm != null ? () { HapticFeedback.selectionClick(); context.push('/market/supermarket/${sm['id']}'); } : null,
+                        onManageSupermarket: sm != null ? () { HapticFeedback.selectionClick(); context.push('/market/supermarket/${sm['id']}/manage'); } : null,
                       ),
                       const SizedBox(height: 20),
                       if (hasShop) ...[
                         _KpiGrid(
-                          ordersCount: orders.length,
+                          ordersCount: filteredOrders.length,
                           pending: pending,
                           processing: processing,
                           productsCount: products.length,
-                          localProductsCount: localCount, // ✅ AJOUT
+                          localProductsLabel: localLabel,
                           rating: rating,
                         ),
                         const SizedBox(height: 24),
@@ -804,27 +702,19 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                       _ActionGrid(
                         hasShop: hasShop,
                         shop: shop,
-                        onNeedShop: () => _showInfo(
-                          context.vdT('Créez d\'abord une boutique', 'Create a shop first'),
-                        ),
-                        onCreateLocalProduct: _openCreateLocalProduct, // ✅ AJOUT
-                        onOpenLocalSpace: () {
-                          HapticFeedback.selectionClick();
-                          context.push('/market/local');
-                        },
+                        isModerator: isModerator,
+                        onNeedShop: () => _showInfo(context.vdT('Créez d\'abord une boutique', 'Create a shop first')),
+                        onCreateLocalProduct: _openCreateLocalProduct,
+                        onOpenLocalSpace: () { HapticFeedback.selectionClick(); context.push('/market/local'); },
                       ),
                       const SizedBox(height: 24),
                       if (hasShop)
                         _RecentOrders(
-                          orders: orders,
+                          orders: filteredOrders,
                           onOrderTap: _showOrderDetails,
                           onViewAll: () {
                             HapticFeedback.selectionClick();
-                            try {
-                              context.push('/market/vendor/orders');
-                            } catch (_) {
-                              context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
-                            }
+                            try { context.push('/market/vendor/orders'); } catch (_) { context.pushNamed('marketSell', queryParameters: {'tab': 'orders'}); }
                           },
                         ),
                       const SizedBox(height: 80),
@@ -841,7 +731,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
 }
 
 // ============================================================================
-// HEADER DOUBLE : BOUTIQUE (gauche) + SUPERMARCHÉ (droite)
+// HEADER DOUBLE
 // ============================================================================
 class _DualShopHeader extends StatelessWidget {
   final Map<String, dynamic>? boutique;
@@ -852,15 +742,7 @@ class _DualShopHeader extends StatelessWidget {
   final VoidCallback? onOpenSupermarket;
   final VoidCallback? onManageSupermarket;
 
-  const _DualShopHeader({
-    required this.boutique,
-    required this.supermarket,
-    required this.onCreateShop,
-    required this.onCreateSupermarket,
-    this.onOpenShop,
-    this.onOpenSupermarket,
-    this.onManageSupermarket,
-  });
+  const _DualShopHeader({required this.boutique, required this.supermarket, required this.onCreateShop, required this.onCreateSupermarket, this.onOpenShop, this.onOpenSupermarket, this.onManageSupermarket});
 
   @override
   Widget build(BuildContext context) {
@@ -871,229 +753,77 @@ class _DualShopHeader extends StatelessWidget {
         children: [
           Expanded(
             child: boutique != null
-                ? _entityCard(
-                    context,
-                    icon: Icons.storefront_rounded,
-                    name: _VdValidators.sanitize(
-                        boutique!['name']?.toString(),
-                        maxLength: 40),
-                    sub: _VdValidators.sanitize(
-                        boutique!['city']?.toString(),
-                        maxLength: 20),
-                    colors: const [ThixPolicy.primary, ThixPolicy.inkDeep],
-                    actionLabel: context.vdT('Gérer', 'Manage'),
-                    onAction: onOpenShop,
-                  )
-                : _createCard(
-                    context,
-                    icon: Icons.add_business_rounded,
-                    label: context.vdT('Boutique', 'Shop'),
-                    onTap: onCreateShop,
-                  ),
+                ? _entityCard(context, icon: Icons.storefront_rounded, name: _VdValidators.sanitize(boutique!['name']?.toString(), maxLength: 40), sub: _VdValidators.sanitize(boutique!['city']?.toString(), maxLength: 20), colors: const [ThixPolicy.primary, ThixPolicy.inkDeep], actionLabel: context.vdT('Gérer', 'Manage'), onAction: onOpenShop)
+                : _createCard(context, icon: Icons.add_business_rounded, label: context.vdT('Boutique', 'Shop'), onTap: onCreateShop),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: supermarket != null
-                ? GestureDetector(
-                    onTap: onOpenSupermarket,
-                    child: _entityCard(
-                      context,
-                      icon: Icons.local_grocery_store_rounded,
-                      name: _VdValidators.sanitize(
-                          supermarket!['name']?.toString(),
-                          maxLength: 40),
-                      sub: _VdValidators.sanitize(
-                          supermarket!['city']?.toString(),
-                          maxLength: 20),
-                      colors: const [Color(0xFF065F46), Color(0xFF059669)],
-                      actionLabel: context.vdT('Gérer', 'Manage'),
-                      onAction: onManageSupermarket,
-                    ),
-                  )
-                : _createCard(
-                    context,
-                    icon: Icons.local_grocery_store_rounded,
-                    label: context.vdT('Supermarché', 'Supermarket'),
-                    onTap: onCreateSupermarket,
-                  ),
+                ? GestureDetector(onTap: onOpenSupermarket, child: _entityCard(context, icon: Icons.local_grocery_store_rounded, name: _VdValidators.sanitize(supermarket!['name']?.toString(), maxLength: 40), sub: _VdValidators.sanitize(supermarket!['city']?.toString(), maxLength: 20), colors: const [Color(0xFF065F46), Color(0xFF059669)], actionLabel: context.vdT('Gérer', 'Manage'), onAction: onManageSupermarket))
+                : _createCard(context, icon: Icons.local_grocery_store_rounded, label: context.vdT('Supermarché', 'Supermarket'), onTap: onCreateSupermarket),
           ),
         ],
       ),
     );
   }
 
-  Widget _entityCard(
-    BuildContext context, {
-    required IconData icon,
-    required String name,
-    required String sub,
-    required List<Color> colors,
-    required String actionLabel,
-    VoidCallback? onAction,
-  }) {
+  Widget _entityCard(BuildContext context, {required IconData icon, required String name, required String sub, required List<Color> colors, required String actionLabel, VoidCallback? onAction}) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-            begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: ThixPolicy.shadowSoft(opacity: 0.1),
-      ),
+      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors), borderRadius: BorderRadius.circular(16), boxShadow: ThixPolicy.shadowSoft(opacity: 0.1)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.18),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(icon, color: Colors.white, size: 18),
-          ),
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), shape: BoxShape.circle), child: Icon(icon, color: Colors.white, size: 18)),
           const SizedBox(height: 8),
-          Text(
-            name.isEmpty ? '—' : name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13.5,
-                fontWeight: FontWeight.w900),
-          ),
-          if (sub.isNotEmpty)
-            Text(
-              sub,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                  color: Colors.white.withOpacity(0.75), fontSize: 10.5),
-            ),
+          Text(name.isEmpty ? '—' : name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+          if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 10.5)),
           const Spacer(),
-          Align(
-            alignment: Alignment.centerRight,
-            child: ElevatedButton(
-              onPressed: onAction,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.white,
-                foregroundColor: colors.first,
-                elevation: 0,
-                minimumSize: const Size(0, 30),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(8)),
-              ),
-              child: Text(actionLabel,
-                  style: const TextStyle(
-                      fontSize: 11, fontWeight: FontWeight.w900)),
-            ),
-          ),
+          Align(alignment: Alignment.centerRight, child: ElevatedButton(onPressed: onAction, style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: colors.first, elevation: 0, minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: Text(actionLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)))),
         ],
       ),
     );
   }
 
-  Widget _createCard(
-    BuildContext context, {
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-  }) {
+  Widget _createCard(BuildContext context, {required IconData icon, required String label, required VoidCallback onTap}) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: ThixPolicy.border, width: 1.5),
-      ),
+      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border, width: 1.5)),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(icon, color: ThixPolicy.textMuted, size: 26),
           const SizedBox(height: 6),
-          Text(
-            label,
-            style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: ThixPolicy.textMain),
-          ),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
           const SizedBox(height: 8),
-          OutlinedButton(
-            onPressed: onTap,
-            style: OutlinedButton.styleFrom(
-              foregroundColor: ThixPolicy.primary,
-              side: const BorderSide(color: ThixPolicy.primary),
-              minimumSize: const Size(0, 30),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
-            ),
-            child: Text(
-              context.vdT('Créer', 'Create'),
-              style: const TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w900),
-            ),
-          ),
+          OutlinedButton(onPressed: onTap, style: OutlinedButton.styleFrom(foregroundColor: ThixPolicy.primary, side: const BorderSide(color: ThixPolicy.primary), minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: Text(context.vdT('Créer', 'Create'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
         ],
       ),
     );
   }
 }
 
-// ✅ AJOUT : nouveau paramètre localProductsCount
+// ============================================================================
+// KPI GRID — ✅ localProductsLabel dynamique selon rôle
+// ============================================================================
 class _KpiGrid extends StatelessWidget {
   final int ordersCount;
   final int pending;
   final int processing;
   final int productsCount;
-  final int localProductsCount; // ✅ NOUVEAU
+  final String localProductsLabel;
   final double rating;
 
-  const _KpiGrid({
-    required this.ordersCount,
-    required this.pending,
-    required this.processing,
-    required this.productsCount,
-    required this.localProductsCount, // ✅ NOUVEAU
-    required this.rating,
-  });
+  const _KpiGrid({required this.ordersCount, required this.pending, required this.processing, required this.productsCount, required this.localProductsLabel, required this.rating});
 
   @override
   Widget build(BuildContext context) {
     final kpis = [
-      {
-        'label': context.vdT('Commandes', 'Orders'),
-        'value': '$ordersCount',
-        'icon': Icons.shopping_bag_outlined,
-        'color': ThixPolicy.primary,
-      },
-      {
-        'label': context.vdT('En attente', 'Pending'),
-        'value': '$pending',
-        'icon': Icons.pending_actions_rounded,
-        'color': ThixPolicy.gold,
-      },
-      {
-        'label': context.vdT('Produits', 'Products'),
-        'value': '$productsCount',
-        'icon': Icons.inventory_2_outlined,
-        'color': ThixPolicy.success,
-      },
-      // ✅ NOUVEAU KPI : produits locaux (couleur verte de l'espace local)
-      {
-        'label': context.vdT('Locaux', 'Local'),
-        'value': '$localProductsCount',
-        'icon': Icons.agriculture_rounded,
-        'color': kLocalGreen,
-      },
-      {
-        'label': context.vdT('Note', 'Rating'),
-        'value': rating > 0 ? rating.toStringAsFixed(1) : '-',
-        'icon': Icons.star_rounded,
-        'color': ThixPolicy.gold,
-      },
+      {'label': context.vdT('Commandes', 'Orders'), 'value': '$ordersCount', 'icon': Icons.shopping_bag_outlined, 'color': ThixPolicy.primary},
+      {'label': context.vdT('En attente', 'Pending'), 'value': '$pending', 'icon': Icons.pending_actions_rounded, 'color': ThixPolicy.gold},
+      {'label': context.vdT('Produits', 'Products'), 'value': '$productsCount', 'icon': Icons.inventory_2_outlined, 'color': ThixPolicy.success},
+      {'label': context.vdT('Locaux', 'Local'), 'value': localProductsLabel, 'icon': Icons.agriculture_rounded, 'color': kLocalGreen},
+      {'label': context.vdT('Note', 'Rating'), 'value': rating > 0 ? rating.toStringAsFixed(1) : '-', 'icon': Icons.star_rounded, 'color': ThixPolicy.gold},
     ];
 
     return Semantics(
@@ -1109,39 +839,18 @@ class _KpiGrid extends StatelessWidget {
           final color = kpi['color'] as Color;
           return Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ThixPolicy.card,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
-            ),
+            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.04)),
             child: Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: color.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(kpi['icon'] as IconData, color: color, size: 22),
-                ),
+                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(kpi['icon'] as IconData, color: color, size: 22)),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Text(
-                        kpi['value'] as String,
-                        style: ThixPolicy.titleStyle.copyWith(
-                          fontSize: 18,
-                          fontWeight: ThixPolicy.bold,
-                          color: ThixPolicy.textMain,
-                        ),
-                      ),
-                      Text(
-                        kpi['label'] as String,
-                        style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
-                      ),
+                      Text(kpi['value'] as String, style: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+                      Text(kpi['label'] as String, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
                     ],
                   ),
                 ),
@@ -1154,131 +863,49 @@ class _KpiGrid extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// ACTION GRID — ✅ Filtrage par rôle modérateur
+// ============================================================================
 class _ActionGrid extends StatelessWidget {
   final bool hasShop;
   final Map<String, dynamic>? shop;
+  final bool isModerator;
   final VoidCallback onNeedShop;
-  final VoidCallback onCreateLocalProduct; // ✅ AJOUT
-  final VoidCallback onOpenLocalSpace; // ✅ AJOUT
+  final VoidCallback onCreateLocalProduct;
+  final VoidCallback onOpenLocalSpace;
 
-  const _ActionGrid({
-    required this.hasShop,
-    required this.shop,
-    required this.onNeedShop,
-    required this.onCreateLocalProduct, // ✅ AJOUT
-    required this.onOpenLocalSpace, // ✅ AJOUT
-  });
+  const _ActionGrid({required this.hasShop, required this.shop, required this.isModerator, required this.onNeedShop, required this.onCreateLocalProduct, required this.onOpenLocalSpace});
 
   @override
   Widget build(BuildContext context) {
     final shopId = shop?['id']?.toString();
 
     final actions = <Map<String, dynamic>>[
-      // ✅ NOUVELLE ACTION : Produits locaux (en première position pour visibilité)
-      {
-        'icon': Icons.agriculture_rounded,
-        'label': context.vdT('Produit local', 'Local product'),
-        'color': kLocalGreen, // ✅ Vert de l'espace local
-        'onTap': onCreateLocalProduct,
-        'needShop': true,
-      },
-      {
-        'icon': Icons.inventory_2_outlined,
-        'label': context.vdT('Produits', 'Products'),
-        'color': ThixPolicy.primary,
-        'onTap': () => context.pushNamed('marketSell'),
-        'needShop': true,
-      },
-      {
-        'icon': Icons.shopping_bag_outlined,
-        'label': context.vdT('Commandes', 'Orders'),
-        'color': ThixPolicy.primary,
-        'onTap': () {
-          try {
-            context.push('/market/vendor/orders');
-          } catch (_) {
-            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
-          }
-        },
-        'needShop': true,
-      },
-      {
-        'icon': Icons.add_box_outlined,
-        'label': context.vdT('Annonce', 'Listing'),
-        'color': ThixPolicy.primary,
-        'onTap': () => context.pushNamed('marketPublishAnnouncement'),
-        'needShop': true,
-      },
-      {
-        'icon': Icons.live_tv_outlined,
-        'label': context.vdT('Live', 'Live'),
-        'color': ThixPolicy.primary,
-        'onTap': () => context.pushNamed('marketCreateLive'),
-        'needShop': true,
-      },
-      {
-        'icon': Icons.bar_chart_rounded,
-        'label': context.vdT('Stats', 'Stats'),
-        'color': ThixPolicy.primary,
-        'onTap': () {
-          if (shopId != null && _VdValidators.isValidId(shopId)) {
-            context.push('/market/shop/$shopId/stats');
-          }
-        },
-        'needShop': true,
-      },
-      {
-        'icon': Icons.local_shipping_outlined,
-        'label': context.vdT('Livraisons', 'Deliveries'),
-        'color': ThixPolicy.primary,
-        'onTap': () => context.pushNamed('deliveryManagement'),
-        'needShop': true,
-      },
-      {
-        'icon': Icons.storefront_outlined,
-        'label': context.vdT('Boutique', 'Shop'),
-        'color': ThixPolicy.primary,
-        'onTap': () {
-          if (shopId != null && _VdValidators.isValidId(shopId)) {
-            context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
-          } else {
-            context.pushNamed('marketCreateShop');
-          }
-        },
-        'needShop': false,
-      },
-      {
-        'icon': Icons.settings_outlined,
-        'label': context.vdT('Réglages', 'Settings'),
-        'color': ThixPolicy.primary,
-        'onTap': () {
-          if (shopId != null && _VdValidators.isValidId(shopId)) {
-            context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId});
-          }
-        },
-        'needShop': true,
-      },
-      // ✅ NOUVELLE ACTION : Accéder à l'espace local (pour voir ses produits)
-      {
-        'icon': Icons.eco_rounded,
-        'label': context.vdT('Espace local', 'Local space'),
-        'color': kLocalGreen,
-        'onTap': onOpenLocalSpace,
-        'needShop': false,
-      },
+      {'icon': Icons.agriculture_rounded, 'label': context.vdT('Produit local', 'Local product'), 'color': kLocalGreen, 'onTap': onCreateLocalProduct, 'needShop': true},
+      {'icon': Icons.inventory_2_outlined, 'label': context.vdT('Produits', 'Products'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketSell'), 'needShop': true},
+      {'icon': Icons.shopping_bag_outlined, 'label': context.vdT('Commandes', 'Orders'), 'color': ThixPolicy.primary, 'onTap': () { try { context.push('/market/vendor/orders'); } catch (_) { context.pushNamed('marketSell', queryParameters: {'tab': 'orders'}); } }, 'needShop': true},
+      {'icon': Icons.add_box_outlined, 'label': context.vdT('Annonce', 'Listing'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketPublishAnnouncement'), 'needShop': true},
+      {'icon': Icons.live_tv_outlined, 'label': context.vdT('Live', 'Live'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketCreateLive'), 'needShop': true},
+      {'icon': Icons.bar_chart_rounded, 'label': context.vdT('Stats', 'Stats'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.push('/market/shop/$shopId/stats'); }, 'needShop': true},
+      {'icon': Icons.local_shipping_outlined, 'label': context.vdT('Livraisons', 'Deliveries'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('deliveryManagement'), 'needShop': true},
+      {'icon': Icons.storefront_outlined, 'label': context.vdT('Boutique', 'Shop'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) { context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); } else { context.pushNamed('marketCreateShop'); } }, 'needShop': false},
+      {'icon': Icons.settings_outlined, 'label': context.vdT('Réglages', 'Settings'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); }, 'needShop': true},
+      {'icon': Icons.eco_rounded, 'label': context.vdT('Espace local', 'Local space'), 'color': kLocalGreen, 'onTap': onOpenLocalSpace, 'needShop': false},
     ];
+
+    // ✅ ACTIONS EXCLUSIVES MODÉRATEUR / ADMIN
+    if (isModerator) {
+      actions.addAll([
+        {'icon': Icons.fact_check_rounded, 'label': context.vdT('Validation', 'Validation'), 'color': Colors.blueAccent, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+        {'icon': Icons.star_rounded, 'label': context.vdT('Semaine', 'Weekly pick'), 'color': Colors.amber, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+        {'icon': Icons.style_rounded, 'label': context.vdT('Cartes portail', 'Portal cards'), 'color': Colors.deepPurple, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+      ]);
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          context.vdT('Actions rapides', 'Quick actions'),
-          style: ThixPolicy.titleStyle.copyWith(
-            fontWeight: ThixPolicy.bold,
-            fontSize: 16,
-            color: ThixPolicy.textMain,
-          ),
-        ),
+        Text(context.vdT('Actions rapides', 'Quick actions'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
         const SizedBox(height: 12),
         GridView.count(
           shrinkWrap: true,
@@ -1296,43 +923,19 @@ class _ActionGrid extends StatelessWidget {
               label: a['label'] as String,
               enabled: enabled,
               child: InkWell(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  if (!enabled) {
-                    onNeedShop();
-                    return;
-                  }
-                  (a['onTap'] as VoidCallback)();
-                },
+                onTap: () { HapticFeedback.selectionClick(); if (!enabled) { onNeedShop(); return; } (a['onTap'] as VoidCallback)(); },
                 borderRadius: BorderRadius.circular(14),
                 child: AnimatedOpacity(
                   duration: const Duration(milliseconds: 200),
                   opacity: enabled ? 1.0 : 0.5,
                   child: Container(
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.card,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        // ✅ Bordure verte pour les actions locales
-                        color: color == kLocalGreen
-                            ? kLocalGreen.withOpacity(0.5)
-                            : ThixPolicy.border.withOpacity(0.6),
-                      ),
-                    ),
+                    decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: color == kLocalGreen ? kLocalGreen.withOpacity(0.5) : ThixPolicy.border.withOpacity(0.6))),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Icon(a['icon'] as IconData, size: 26, color: color),
                         const SizedBox(height: 6),
-                        Text(
-                          a['label'] as String,
-                          textAlign: TextAlign.center,
-                          style: ThixPolicy.captionStyle.copyWith(
-                            fontSize: 11,
-                            fontWeight: ThixPolicy.semiBold,
-                            color: ThixPolicy.textMain,
-                          ),
-                        ),
+                        Text(a['label'] as String, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain)),
                       ],
                     ),
                   ),
@@ -1346,16 +949,15 @@ class _ActionGrid extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// RECENT ORDERS
+// ============================================================================
 class _RecentOrders extends StatelessWidget {
   final List<Map<String, dynamic>> orders;
   final ValueChanged<Map<String, dynamic>> onOrderTap;
   final VoidCallback onViewAll;
 
-  const _RecentOrders({
-    required this.orders,
-    required this.onOrderTap,
-    required this.onViewAll,
-  });
+  const _RecentOrders({required this.orders, required this.onOrderTap, required this.onViewAll});
 
   @override
   Widget build(BuildContext context) {
@@ -1367,50 +969,16 @@ class _RecentOrders extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            Text(
-              context.vdT('Dernières commandes', 'Recent orders'),
-              style: ThixPolicy.titleStyle.copyWith(
-                fontWeight: ThixPolicy.bold,
-                fontSize: 16,
-                color: ThixPolicy.textMain,
-              ),
-            ),
-            Semantics(
-              button: true,
-              label: context.vdT('Voir toutes les commandes', 'View all orders'),
-              child: TextButton(
-                onPressed: onViewAll,
-                child: Text(
-                  context.vdT('Voir tout', 'View all'),
-                  style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold),
-                ),
-              ),
-            ),
+            Text(context.vdT('Dernières commandes', 'Recent orders'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
+            Semantics(button: true, label: context.vdT('Voir toutes les commandes', 'View all orders'), child: TextButton(onPressed: onViewAll, child: Text(context.vdT('Voir tout', 'View all'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold)))),
           ],
         ),
         const SizedBox(height: 8),
         if (recent.isEmpty)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              color: ThixPolicy.card,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Text(
-                context.vdT('Aucune commande pour le moment', 'No orders yet'),
-                style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted),
-              ),
-            ),
-          )
+          Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Center(child: Text(context.vdT('Aucune commande pour le moment', 'No orders yet'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted))))
         else
           Container(
-            decoration: BoxDecoration(
-              color: ThixPolicy.card,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-            ),
+            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
             child: ListView.separated(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -1432,38 +1000,10 @@ class _RecentOrders extends StatelessWidget {
                   label: '${context.vdT('Commande', 'Order')} #$shortId, ${statusConfig.label(context)}, $formattedTotal $symbol',
                   child: ListTile(
                     onTap: () => onOrderTap(o),
-                    leading: CircleAvatar(
-                      backgroundColor: statusConfig.color.withOpacity(0.15),
-                      radius: 18,
-                      child: Icon(statusConfig.icon, color: statusConfig.color, size: 18),
-                    ),
-                    title: Text(
-                      '${context.vdT('Commande', 'Order')} #$shortId',
-                      style: ThixPolicy.labelStyle.copyWith(
-                        fontSize: 13,
-                        fontWeight: ThixPolicy.bold,
-                        color: ThixPolicy.textMain,
-                      ),
-                    ),
-                    subtitle: Text(
-                      '$formattedTotal $symbol',
-                      style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
-                    ),
-                    trailing: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusConfig.color.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      child: Text(
-                        statusConfig.label(context),
-                        style: ThixPolicy.captionStyle.copyWith(
-                          fontSize: 11,
-                          fontWeight: ThixPolicy.bold,
-                          color: statusConfig.color,
-                        ),
-                      ),
-                    ),
+                    leading: CircleAvatar(backgroundColor: statusConfig.color.withOpacity(0.15), radius: 18, child: Icon(statusConfig.icon, color: statusConfig.color, size: 18)),
+                    title: Text('${context.vdT('Commande', 'Order')} #$shortId', style: ThixPolicy.labelStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+                    subtitle: Text('$formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
+                    trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: statusConfig.color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)), child: Text(statusConfig.label(context), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.bold, color: statusConfig.color))),
                   ),
                 );
               },
@@ -1487,31 +1027,12 @@ class _QrCodeSheet extends StatelessWidget {
   final String copiedLabel;
   final String closeLabel;
 
-  const _QrCodeSheet({
-    required this.code,
-    required this.shortOrderId,
-    required this.titleLabel,
-    required this.orderLabel,
-    required this.instructionLabel,
-    required this.copyLabel,
-    required this.copiedLabel,
-    required this.closeLabel,
-  });
+  const _QrCodeSheet({required this.code, required this.shortOrderId, required this.titleLabel, required this.orderLabel, required this.instructionLabel, required this.copyLabel, required this.copiedLabel, required this.closeLabel});
 
   void _copy(BuildContext context) {
     HapticFeedback.selectionClick();
     Clipboard.setData(ClipboardData(text: code));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(children: [
-          const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18),
-          const SizedBox(width: 8),
-          Text(copiedLabel),
-        ]),
-        backgroundColor: ThixPolicy.success,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Text(copiedLabel)]), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
   }
 
   @override
@@ -1521,97 +1042,23 @@ class _QrCodeSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-          ),
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
-          Text(
-            titleLabel,
-            style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18),
-          ),
+          Text(titleLabel, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18)),
           const SizedBox(height: 6),
-          Text(
-            '$orderLabel #$shortOrderId',
-            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
-          ),
+          Text('$orderLabel #$shortOrderId', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)),
           const SizedBox(height: 8),
-          Text(
-            instructionLabel,
-            textAlign: TextAlign.center,
-            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12, height: 1.4),
-          ),
+          Text(instructionLabel, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12, height: 1.4)),
           const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: ThixPolicy.surfaceSoft,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-            ),
-            child: BarcodeWidget(
-              barcode: Barcode.qrCode(),
-              data: code,
-              width: 200,
-              height: 200,
-              drawText: false,
-              color: ThixPolicy.textMain,
-            ),
-          ),
+          Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))), child: BarcodeWidget(barcode: Barcode.qrCode(), data: code, width: 200, height: 200, drawText: false, color: ThixPolicy.textMain)),
           const SizedBox(height: 12),
-          Semantics(
-            label: 'Code: $code',
-            child: SelectableText(
-              code,
-              style: ThixPolicy.labelStyle.copyWith(
-                fontWeight: ThixPolicy.bold,
-                fontSize: 12,
-                color: ThixPolicy.textMain,
-              ),
-            ),
-          ),
+          Semantics(label: 'Code: $code', child: SelectableText(code, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, color: ThixPolicy.textMain))),
           const SizedBox(height: 16),
           Row(
             children: [
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  label: copyLabel,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _copy(context),
-                    icon: const Icon(Icons.copy_rounded, size: 18),
-                    label: Text(copyLabel),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(0, 46),
-                      foregroundColor: ThixPolicy.textMain,
-                      side: BorderSide(color: ThixPolicy.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                  ),
-                ),
-              ),
+              Expanded(child: Semantics(button: true, label: copyLabel, child: OutlinedButton.icon(onPressed: () => _copy(context), icon: const Icon(Icons.copy_rounded, size: 18), label: Text(copyLabel), style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46), foregroundColor: ThixPolicy.textMain, side: BorderSide(color: ThixPolicy.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))))),
               const SizedBox(width: 12),
-              Expanded(
-                child: Semantics(
-                  button: true,
-                  label: closeLabel,
-                  child: ElevatedButton(
-                    onPressed: () {
-                      HapticFeedback.selectionClick();
-                      Navigator.pop(context);
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: ThixPolicy.primary,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size(0, 46),
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
-                    child: Text(closeLabel, style: const TextStyle(fontWeight: ThixPolicy.bold)),
-                  ),
-                ),
-              ),
+              Expanded(child: Semantics(button: true, label: closeLabel, child: ElevatedButton(onPressed: () { HapticFeedback.selectionClick(); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, minimumSize: const Size(0, 46), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(closeLabel, style: const TextStyle(fontWeight: ThixPolicy.bold))))),
             ],
           ),
         ],
@@ -1630,13 +1077,7 @@ class _DashboardOrderDetailsSheet extends ConsumerStatefulWidget {
   final void Function(Map<String, dynamic>) onShowQr;
   final Future<void> Function(String) onCancel;
 
-  const _DashboardOrderDetailsSheet({
-    required this.order,
-    required this.scrollController,
-    required this.onUpdateStatus,
-    required this.onShowQr,
-    required this.onCancel,
-  });
+  const _DashboardOrderDetailsSheet({required this.order, required this.scrollController, required this.onUpdateStatus, required this.onShowQr, required this.onCancel});
 
   @override
   ConsumerState<_DashboardOrderDetailsSheet> createState() => _DashboardOrderDetailsSheetState();
@@ -1660,92 +1101,56 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final userId = widget.order['user_id']?.toString();
     final addressId = widget.order['address_id']?.toString();
 
-    // ── 1. ARTICLES : embed → simple → RPC ──
     if (_VdValidators.isValidId(orderId)) {
       try {
-        final res = await _vdRetry(
-          () => db
-              .from('order_items')
-              .select('*, product:products(title, image_url, currency)')
-              .eq('order_id', orderId!),
-          label: 'loadOrderItems',
-        );
+        final res = await _vdRetry(() => db.from('order_items').select('*, product:products(title, image_url, currency)').eq('order_id', orderId!), label: 'loadOrderItems');
         _items = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-      } catch (e) {
-        debugPrint('[VendorDashboard] ⚠️ items+embed failed: $e');
-      }
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ items+embed failed: $e'); }
 
       if (_items.isEmpty) {
         try {
-          final res2 = await db
-              .from('order_items')
-              .select('*')
-              .eq('order_id', orderId!)
-              .timeout(_kRequestTimeout);
+          final res2 = await db.from('order_items').select('*').eq('order_id', orderId!).timeout(_kRequestTimeout);
           _items = (res2 as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
-          debugPrint('[VendorDashboard] ✓ items via plain select: ${_items.length}');
-        } catch (e2) {
-          debugPrint('[VendorDashboard] ⚠️ items plain failed: $e2');
-        }
+        } catch (e2) { debugPrint('[VendorDashboard] ⚠️ items plain failed: $e2'); }
       }
 
       if (_items.isEmpty) {
         try {
-          final rpcRes = await db
-              .rpc('get_order_items_secure', params: {'p_order_id': orderId})
-              .timeout(_kRequestTimeout);
-          if (rpcRes is List) {
-            _items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
-            debugPrint('[VendorDashboard] ✓ items via RPC secure: ${_items.length}');
-          }
-        } catch (e3) {
-          debugPrint('[VendorDashboard] ⚠️ RPC items failed: $e3');
-        }
+          final rpcRes = await db.rpc('get_order_items_secure', params: {'p_order_id': orderId}).timeout(_kRequestTimeout);
+          if (rpcRes is List) _items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } catch (e3) { debugPrint('[VendorDashboard] ⚠️ RPC items failed: $e3'); }
       }
     }
 
-    // ── 2. PROFIL CLIENT : users → profiles ──
     if (_VdValidators.isValidId(userId)) {
       try {
         final u = await db.from('users').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
         if (u != null) _profile = Map<String, dynamic>.from(u as Map);
-      } catch (e) {
-        debugPrint('[VendorDashboard] ⚠️ users fetch failed: $e');
-      }
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ users fetch failed: $e'); }
       if (_profile == null) {
         try {
           final p = await db.from('profiles').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
           if (p != null) _profile = Map<String, dynamic>.from(p as Map);
-        } catch (e) {
-          debugPrint('[VendorDashboard] ⚠️ profiles fetch failed: $e');
-        }
+        } catch (e) { debugPrint('[VendorDashboard] ⚠️ profiles fetch failed: $e'); }
       }
     }
 
-    // ── 3. ADRESSE ──
     if (_VdValidators.isValidId(addressId)) {
       try {
         final a = await db.from('addresses').select('*').eq('id', addressId!).maybeSingle().timeout(_kRequestTimeout);
         if (a != null) _address = Map<String, dynamic>.from(a as Map);
-      } catch (e) {
-        debugPrint('[VendorDashboard] ⚠️ address fetch failed: $e');
-      }
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ address fetch failed: $e'); }
     }
 
-    debugPrint('[VendorDashboard] ✓ details: items=${_items.length}, profile=${_profile != null}, address=${_address != null}');
     if (mounted) setState(() => _isLoading = false);
   }
 
   String _shippingLabel(String raw, BuildContext context) {
     switch (raw) {
-      case 'pickup':
-        return context.vdT('Retrait en boutique', 'Store pickup');
-      case 'home_delivery':
-        return context.vdT('Livraison à domicile', 'Home delivery');
-      case 'express':
-        return context.vdT('Livraison express', 'Express delivery');
-      default:
-        return raw.isEmpty ? context.vdT('Standard', 'Standard') : raw;
+      case 'pickup': return context.vdT('Retrait en boutique', 'Store pickup');
+      case 'home_delivery': return context.vdT('Livraison à domicile', 'Home delivery');
+      case 'express': return context.vdT('Livraison express', 'Express delivery');
+      default: return raw.isEmpty ? context.vdT('Standard', 'Standard') : raw;
     }
   }
 
@@ -1753,9 +1158,7 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
     if (clean.isEmpty) return;
     HapticFeedback.selectionClick();
-    try {
-      await launchUrl(Uri(scheme: 'tel', path: clean));
-    } catch (_) {}
+    try { await launchUrl(Uri(scheme: 'tel', path: clean)); } catch (_) {}
   }
 
   @override
@@ -1769,36 +1172,19 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
     final symbol = _VdValidators.currencySymbol(currency);
     final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
     final dateStr = o['created_at']?.toString();
-    final formattedDate = dateStr != null
-        ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now())
-        : '';
+    final formattedDate = dateStr != null ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now()) : '';
     final shippingMethod = _VdValidators.sanitize(o['shipping_method']?.toString(), maxLength: 60);
-
     final notProvided = context.vdT('Non renseigné', 'Not provided');
 
     final clientName = _VdValidators.sanitize(
-      _pick(o, ['customer_name']).isNotEmpty
-          ? _pick(o, ['customer_name'])
-          : _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']).isNotEmpty
-              ? _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name'])
-              : _pick(_profile, ['full_name', 'name', 'display_name']),
+      _pick(o, ['customer_name']).isNotEmpty ? _pick(o, ['customer_name']) : _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']).isNotEmpty ? _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']) : _pick(_profile, ['full_name', 'name', 'display_name']),
       maxLength: _kMaxNameLength,
     );
-    final clientPhone = _pick(o, ['customer_phone']).isNotEmpty
-        ? _pick(o, ['customer_phone'])
-        : _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']).isNotEmpty
-            ? _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone'])
-            : _pick(_profile, ['phone', 'phone_number', 'telephone']);
-    final clientEmail = _pick(o, ['customer_email']).isNotEmpty
-        ? _pick(o, ['customer_email'])
-        : _pick(_profile, ['email', 'email_address']);
+    final clientPhone = _pick(o, ['customer_phone']).isNotEmpty ? _pick(o, ['customer_phone']) : _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']).isNotEmpty ? _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']) : _pick(_profile, ['phone', 'phone_number', 'telephone']);
+    final clientEmail = _pick(o, ['customer_email']).isNotEmpty ? _pick(o, ['customer_email']) : _pick(_profile, ['email', 'email_address']);
 
     final addressFromOrder = _pick(o, ['shipping_address']);
-    final addressParts = <String>[
-      _pick(_address, ['address', 'line1', 'street', 'avenue', 'quartier', 'commune_name']),
-      _pick(_address, ['city', 'commune', 'province', 'region']),
-      _pick(_address, ['country']),
-    ]..removeWhere((s) => s.isEmpty);
+    final addressParts = <String>[_pick(_address, ['address', 'line1', 'street', 'avenue', 'quartier', 'commune_name']), _pick(_address, ['city', 'commune', 'province', 'region']), _pick(_address, ['country'])]..removeWhere((s) => s.isEmpty);
     final addressFull = addressFromOrder.isNotEmpty ? addressFromOrder : addressParts.join(', ');
 
     return Container(
@@ -1806,190 +1192,64 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
       child: ListView(
         controller: widget.scrollController,
         children: [
-          Center(
-            child: Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)),
-            ),
-          ),
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '${context.vdT('Détails Commande', 'Order Details')} #$short',
-                  style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain),
-                ),
-              ),
-              Semantics(
-                button: true,
-                label: context.vdT('Fermer', 'Close'),
-                child: IconButton(
-                  icon: const Icon(Icons.close_rounded, color: ThixPolicy.textMain),
-                  onPressed: () => Navigator.pop(context),
-                ),
-              ),
-            ],
-          ),
-          if (formattedDate.isNotEmpty)
-            Text(
-              '${context.vdT('Commandé le', 'Ordered on')} $formattedDate',
-              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12),
-            ),
+          Row(children: [Expanded(child: Text('${context.vdT('Détails Commande', 'Order Details')} #$short', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain))), Semantics(button: true, label: context.vdT('Fermer', 'Close'), child: IconButton(icon: const Icon(Icons.close_rounded, color: ThixPolicy.textMain), onPressed: () => Navigator.pop(context)))]),
+          if (formattedDate.isNotEmpty) Text('${context.vdT('Commandé le', 'Ordered on')} $formattedDate', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12)),
           const SizedBox(height: 20),
 
-          // 1. CLIENT & LIVRAISON
           _SectionTitle(title: context.vdT('Client & Livraison', 'Customer & Delivery')),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ThixPolicy.surfaceSoft,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-            ),
+            decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName.isEmpty ? notProvided : clientName),
                 const SizedBox(height: 6),
-                _InfoRow(
-                  icon: Icons.phone_outlined,
-                  label: context.vdT('Téléphone', 'Phone'),
-                  value: clientPhone.isEmpty ? notProvided : clientPhone,
-                  trailing: clientPhone.isNotEmpty
-                      ? IconButton(
-                          tooltip: context.vdT('Appeler', 'Call'),
-                          onPressed: () => _callPhone(clientPhone),
-                          icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success),
-                          padding: EdgeInsets.zero,
-                          constraints: const BoxConstraints(),
-                        )
-                      : null,
-                ),
+                _InfoRow(icon: Icons.phone_outlined, label: context.vdT('Téléphone', 'Phone'), value: clientPhone.isEmpty ? notProvided : clientPhone, trailing: clientPhone.isNotEmpty ? IconButton(tooltip: context.vdT('Appeler', 'Call'), onPressed: () => _callPhone(clientPhone), icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success), padding: EdgeInsets.zero, constraints: const BoxConstraints()) : null),
                 const SizedBox(height: 6),
                 _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail.isEmpty ? notProvided : clientEmail),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
-                ),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
                 _InfoRow(icon: Icons.local_shipping_outlined, label: context.vdT('Mode', 'Method'), value: _shippingLabel(shippingMethod, context)),
                 const SizedBox(height: 6),
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.location_on_outlined, size: 16, color: ThixPolicy.textMuted)),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        addressFull.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : addressFull,
-                        style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, height: 1.4),
-                      ),
-                    ),
-                  ],
-                ),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.location_on_outlined, size: 16, color: ThixPolicy.textMuted)), const SizedBox(width: 8), Expanded(child: Text(addressFull.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : addressFull, style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, height: 1.4)))]),
               ],
             ),
           ),
           const SizedBox(height: 20),
 
-          // 2. ARTICLES
           _SectionTitle(title: context.vdT('Articles commandés', 'Order items')),
           const SizedBox(height: 8),
           _isLoading
               ? const _ItemsSkeleton()
               : _items.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Text(
-                        context.vdT('Aucun article trouvé', 'No items found'),
-                        style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13),
-                      ),
-                    )
-                  : Column(
-                      children: _items.map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode)).toList(),
-                    ),
+                  ? Padding(padding: const EdgeInsets.all(12), child: Text(context.vdT('Aucun article trouvé', 'No items found'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)))
+                  : Column(children: _items.map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode)).toList()),
           const SizedBox(height: 20),
 
-          // 3. FACTURATION
           _SectionTitle(title: context.vdT('Facturation', 'Billing')),
           const SizedBox(height: 8),
           Container(
             padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: ThixPolicy.surfaceSoft,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-            ),
-            child: Column(
-              children: [
-                _BillingRow(label: context.vdT('Méthode de paiement', 'Payment method'), value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A')),
-                const SizedBox(height: 6),
-                _BillingRow(label: context.vdT('Statut paiement', 'Payment status'), value: o['payment_status']?.toString() ?? 'N/A', valueColor: ThixPolicy.success),
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
-                ),
-                _BillingRow(label: context.vdT('Total', 'Total'), value: '$formattedTotal $symbol', isBold: true, valueColor: ThixPolicy.primary),
-              ],
-            ),
+            decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
+            child: Column(children: [
+              _BillingRow(label: context.vdT('Méthode de paiement', 'Payment method'), value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A')),
+              const SizedBox(height: 6),
+              _BillingRow(label: context.vdT('Statut paiement', 'Payment status'), value: o['payment_status']?.toString() ?? 'N/A', valueColor: ThixPolicy.success),
+              Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
+              _BillingRow(label: context.vdT('Total', 'Total'), value: '$formattedTotal $symbol', isBold: true, valueColor: ThixPolicy.primary),
+            ]),
           ),
           const SizedBox(height: 24),
 
-          // 4. ACTIONS
           _SectionTitle(title: context.vdT('Actions', 'Actions')),
           const SizedBox(height: 10),
-          if (statusKey == 'pending')
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _ActionButton(
-                icon: Icons.kitchen_rounded,
-                label: context.vdT('Passer en préparation', 'Mark as processing'),
-                color: ThixPolicy.primary,
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onUpdateStatus(orderId, 'processing');
-                },
-              ),
-            ),
-          if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed')
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _ActionButton(
-                icon: Icons.local_shipping_rounded,
-                label: context.vdT('Marquer comme expédiée', 'Mark as shipped'),
-                color: ThixPolicy.primary,
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onUpdateStatus(orderId, 'shipped');
-                  widget.onShowQr({...o, 'status': 'shipped', 'receipt_code': orderId});
-                },
-              ),
-            ),
-          if (statusKey == 'shipped')
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: _ActionButton(
-                icon: Icons.qr_code_2_rounded,
-                label: context.vdT('Afficher le QR de livraison', 'Show delivery QR'),
-                color: ThixPolicy.primary,
-                onTap: () {
-                  Navigator.pop(context);
-                  widget.onShowQr(o);
-                },
-              ),
-            ),
-          if (statusKey != 'delivered' && statusKey != 'cancelled')
-            _ActionButton(
-              icon: Icons.cancel_outlined,
-              label: context.vdT('Annuler la commande', 'Cancel order'),
-              color: ThixPolicy.danger,
-              onTap: () {
-                Navigator.pop(context);
-                widget.onCancel(orderId);
-              },
-            ),
+          if (statusKey == 'pending') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.kitchen_rounded, label: context.vdT('Passer en préparation', 'Mark as processing'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'processing'); })),
+          if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.local_shipping_rounded, label: context.vdT('Marquer comme expédiée', 'Mark as shipped'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'shipped'); widget.onShowQr({...o, 'status': 'shipped', 'receipt_code': orderId}); })),
+          if (statusKey == 'shipped') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.qr_code_2_rounded, label: context.vdT('Afficher le QR de livraison', 'Show delivery QR'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onShowQr(o); })),
+          if (statusKey != 'delivered' && statusKey != 'cancelled') _ActionButton(icon: Icons.cancel_outlined, label: context.vdT('Annuler la commande', 'Cancel order'), color: ThixPolicy.danger, onTap: () { Navigator.pop(context); widget.onCancel(orderId); }),
         ],
       ),
     );
@@ -1999,18 +1259,8 @@ class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDeta
 class _SectionTitle extends StatelessWidget {
   final String title;
   const _SectionTitle({required this.title});
-
   @override
-  Widget build(BuildContext context) {
-    return Text(
-      title,
-      style: ThixPolicy.titleStyle.copyWith(
-        fontWeight: ThixPolicy.bold,
-        fontSize: 15,
-        color: ThixPolicy.textMain,
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Text(title, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15, color: ThixPolicy.textMain));
 }
 
 class _InfoRow extends StatelessWidget {
@@ -2018,27 +1268,9 @@ class _InfoRow extends StatelessWidget {
   final String label;
   final String value;
   final Widget? trailing;
-
   const _InfoRow({required this.icon, required this.label, required this.value, this.trailing});
-
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: ThixPolicy.textMuted),
-        const SizedBox(width: 8),
-        Text('$label : ', style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted)),
-        Expanded(
-          child: Text(
-            value,
-            style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (trailing != null) trailing!,
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Row(children: [Icon(icon, size: 16, color: ThixPolicy.textMuted), const SizedBox(width: 8), Text('$label : ', style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted)), Expanded(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain), overflow: TextOverflow.ellipsis)), if (trailing != null) trailing!]);
 }
 
 class _BillingRow extends StatelessWidget {
@@ -2046,67 +1278,27 @@ class _BillingRow extends StatelessWidget {
   final String value;
   final bool isBold;
   final Color? valueColor;
-
   const _BillingRow({required this.label, required this.value, this.isBold = false, this.valueColor});
-
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: ThixPolicy.captionStyle.copyWith(
-            color: ThixPolicy.textMuted,
-            fontSize: 13,
-            fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.regular,
-          ),
-        ),
-        Flexible(
-          child: Text(
-            value,
-            style: ThixPolicy.captionStyle.copyWith(
-              fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold,
-              fontSize: isBold ? 15 : 13,
-              color: valueColor ?? ThixPolicy.textMain,
-            ),
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13, fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.regular)), Flexible(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold, fontSize: isBold ? 15 : 13, color: valueColor ?? ThixPolicy.textMain), overflow: TextOverflow.ellipsis))]);
 }
 
 class _OrderItemTile extends StatelessWidget {
   final Map<String, dynamic> item;
   final String currency;
   final String locale;
-
   const _OrderItemTile({required this.item, required this.currency, required this.locale});
 
   @override
   Widget build(BuildContext context) {
     final product = (item['product'] is Map) ? (item['product'] as Map) : <String, dynamic>{};
-    final title = _VdValidators.sanitize(
-      (item['title_snapshot']?.toString() ??
-              item['product_name']?.toString() ??
-              product['title']?.toString() ??
-              item['title']?.toString() ??
-              context.vdT('Produit', 'Product')),
-      maxLength: _kMaxTitleLength,
-    );
+    final title = _VdValidators.sanitize((item['title_snapshot']?.toString() ?? item['product_name']?.toString() ?? product['title']?.toString() ?? item['title']?.toString() ?? context.vdT('Produit', 'Product')), maxLength: _kMaxTitleLength);
     final qty = _VdValidators.safeInt(item['quantity'] ?? item['qty'], fallback: 1);
     final price = _VdValidators.safeDouble(item['price'] ?? item['unit_price']);
     final variant = _VdValidators.sanitize(item['variant']?.toString(), maxLength: 30);
     final color = _VdValidators.sanitize(item['color']?.toString(), maxLength: 30);
-    final imageUrl = _VdValidators.sanitizeUrl(
-      item['product_image']?.toString() ?? product['image_url']?.toString(),
-    );
-
-    final itemCurrency = _VdValidators.normalizeCurrency(
-      item['currency']?.toString() ?? product['currency']?.toString() ?? currency,
-    );
+    final imageUrl = _VdValidators.sanitizeUrl(item['product_image']?.toString() ?? product['image_url']?.toString());
+    final itemCurrency = _VdValidators.normalizeCurrency(item['currency']?.toString() ?? product['currency']?.toString() ?? currency);
     final symbol = _VdValidators.currencySymbol(itemCurrency);
     final formattedPrice = _VdValidators.formatAmount(price, locale, isUSD: itemCurrency == 'USD');
     final formattedTotal = _VdValidators.formatAmount(price * qty, locale, isUSD: itemCurrency == 'USD');
@@ -2114,57 +1306,19 @@ class _OrderItemTile extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: ThixPolicy.card,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: ThixPolicy.border.withOpacity(0.6)),
-      ),
+      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
       child: Row(
         children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: imageUrl != null && imageUrl.isNotEmpty
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl,
-                    width: 50,
-                    height: 50,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) => Container(
-                      width: 50,
-                      height: 50,
-                      color: ThixPolicy.surfaceSoft,
-                      child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))),
-                    ),
-                    errorWidget: (_, __, ___) => Container(
-                      width: 50,
-                      height: 50,
-                      color: ThixPolicy.surfaceSoft,
-                      child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20),
-                    ),
-                  )
-                : Container(
-                    width: 50,
-                    height: 50,
-                    color: ThixPolicy.surfaceSoft,
-                    child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20),
-                  ),
-          ),
+          ClipRRect(borderRadius: BorderRadius.circular(8), child: imageUrl != null && imageUrl.isNotEmpty ? CachedNetworkImage(imageUrl: imageUrl, width: 50, height: 50, fit: BoxFit.cover, placeholder: (_, __) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))), errorWidget: (_, __, ___) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20))) : Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20))),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain), maxLines: 2, overflow: TextOverflow.ellipsis),
-                if (variant.isNotEmpty || color.isNotEmpty)
-                  Text(
-                    [if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '),
-                    style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted),
-                  ),
+                if (variant.isNotEmpty || color.isNotEmpty) Text([if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted)),
                 const SizedBox(height: 4),
-                Text(
-                  '${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol',
-                  style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.primary),
-                ),
+                Text('${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.primary)),
               ],
             ),
           ),
@@ -2179,35 +1333,9 @@ class _ActionButton extends StatelessWidget {
   final String label;
   final Color color;
   final VoidCallback onTap;
-
   const _ActionButton({required this.icon, required this.label, required this.color, required this.onTap});
-
   @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      label: label,
-      child: SizedBox(
-        width: double.infinity,
-        child: ElevatedButton.icon(
-          onPressed: () {
-            HapticFeedback.mediumImpact();
-            onTap();
-          },
-          icon: Icon(icon, size: 18, color: Colors.white),
-          label: Text(label, style: const TextStyle(color: Colors.white)),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: color,
-            foregroundColor: Colors.white,
-            minimumSize: const Size(0, 48),
-            elevation: 0,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            textStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: Colors.white),
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Semantics(button: true, label: label, child: SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () { HapticFeedback.mediumImpact(); onTap(); }, icon: Icon(icon, size: 18, color: Colors.white), label: Text(label, style: const TextStyle(color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, minimumSize: const Size(0, 48), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: Colors.white)))));
 }
 
 // ============================================================================
@@ -2215,193 +1343,20 @@ class _ActionButton extends StatelessWidget {
 // ============================================================================
 class _SkeletonDashboard extends StatelessWidget {
   const _SkeletonDashboard();
-
   @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      physics: const NeverScrollableScrollPhysics(),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            height: _kShopCardHeight,
-            child: Row(
-              children: List.generate(
-                2,
-                (i) => Expanded(
-                  child: Container(
-                    margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 2,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-            childAspectRatio: 1.55,
-            children: List.generate(
-              4,
-              (_) => Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.card,
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Row(
-                  children: [
-                    Container(width: 42, height: 42, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12))),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(height: 16, width: 40, color: Colors.grey.shade200),
-                          const SizedBox(height: 6),
-                          Container(height: 12, width: 70, color: Colors.grey.shade200),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
-          Container(height: 16, width: 120, color: Colors.grey.shade200),
-          const SizedBox(height: 12),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 4,
-            crossAxisSpacing: 8,
-            mainAxisSpacing: 8,
-            childAspectRatio: 0.95,
-            children: List.generate(
-              8,
-              (_) => Container(
-                decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(width: 26, height: 26, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)),
-                    const SizedBox(height: 6),
-                    Container(height: 10, width: 40, color: Colors.grey.shade200),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => SingleChildScrollView(padding: const EdgeInsets.all(16), physics: const NeverScrollableScrollPhysics(), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(height: _kShopCardHeight, child: Row(children: List.generate(2, (i) => Expanded(child: Container(margin: EdgeInsets.only(right: i == 0 ? 12 : 0), decoration: BoxDecoration(gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]), borderRadius: BorderRadius.circular(16)))))), const SizedBox(height: 20), GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.55, children: List.generate(4, (_) => Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Row(children: [Container(width: 42, height: 42, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Container(height: 16, width: 40, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 12, width: 70, color: Colors.grey.shade200)]))]))), const SizedBox(height: 24), Container(height: 16, width: 120, color: Colors.grey.shade200), const SizedBox(height: 12), GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.95, children: List.generate(8, (_) => Container(decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(width: 26, height: 26, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)), const SizedBox(height: 6), Container(height: 10, width: 40, color: Colors.grey.shade200)]))))]));
 }
 
 class _ItemsSkeleton extends StatelessWidget {
   const _ItemsSkeleton();
-
   @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: List.generate(
-        3,
-        (_) => Container(
-          margin: const EdgeInsets.only(bottom: 8),
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            color: ThixPolicy.card,
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: Row(
-            children: [
-              Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8))),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(height: 13, width: double.infinity, color: Colors.grey.shade200),
-                    const SizedBox(height: 6),
-                    Container(height: 10, width: 100, color: Colors.grey.shade200),
-                    const SizedBox(height: 6),
-                    Container(height: 10, width: 140, color: Colors.grey.shade200),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Column(children: List.generate(3, (_) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12)), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 13, width: double.infinity, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 100, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 140, color: Colors.grey.shade200)]))]))));
 }
 
 class _ErrorState extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
-
   const _ErrorState({required this.message, required this.onRetry});
-
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle),
-              child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              context.vdT('Erreur de chargement', 'Loading error'),
-              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 24),
-            Semantics(
-              button: true,
-              label: context.vdT('Réessayer', 'Retry'),
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  HapticFeedback.mediumImpact();
-                  onRetry();
-                },
-                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
-                label: Text(
-                  context.vdT('Réessayer', 'Retry'),
-                  style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: ThixPolicy.primary,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)),
-                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger)), const SizedBox(height: 20), Text(context.vdT('Erreur de chargement', 'Loading error'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)), const SizedBox(height: 8), Text(message, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary), textAlign: TextAlign.center), const SizedBox(height: 24), Semantics(button: true, label: context.vdT('Réessayer', 'Retry'), child: ElevatedButton.icon(onPressed: () { HapticFeedback.mediumImpact(); onRetry(); }, icon: const Icon(Icons.refresh_rounded, color: Colors.white), label: Text(context.vdT('Réessayer', 'Retry'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)))])));
 }
