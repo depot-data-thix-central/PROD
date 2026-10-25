@@ -5,12 +5,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ✅ POLICY THIX APPLIQUÉE
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../../providers/news_provider.dart';
 import '../../providers/downloads_provider.dart';
 import '../../services/thix_downloader.dart';
+import '../../services/admin_rbac_service.dart';
 import '../../models/news_article.dart';
 
 // ============================================================================
@@ -93,7 +96,9 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   Timer? _timer;
   Timer? _breakingTimer;
   int _page = 0;
-  int _navIndex = 0;
+
+  bool _isAdmin = false;
+  bool _adminChecked = false;
 
   static const List<_SpaceDef> _spaces = [
     _SpaceDef(
@@ -141,7 +146,52 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
       ref.read(newsProvider).loadSavedArticles();
       _startAuto();
       _startBreakingScroll();
+      _resolveIsAdmin();
     });
+  }
+
+  // ═══════════════════ DÉTECTION ADMIN ═══════════════════
+  Future<void> _resolveIsAdmin() async {
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      if (mounted) setState(() => _adminChecked = true);
+      return;
+    }
+    bool admin = false;
+    try {
+      // 1) Metadata JWT
+      if (user.appMetadata?['role'] == 'admin' ||
+          user.userMetadata?['role'] == 'admin' ||
+          user.userMetadata?['is_admin'] == true) {
+        admin = true;
+      }
+      // 2) RBAC : table thix_admin_memberships
+      if (!admin) {
+        final role = await AdminRbacService().fetchMyRole();
+        if (AdminRbacService.canAccess(role: role, minLevel: 5)) admin = true;
+      }
+      // 3) profiles.role
+      if (!admin) {
+        final res = await Supabase.instance.client
+            .from('profiles')
+            .select('role')
+            .eq('id', user.id)
+            .maybeSingle();
+        if (res?['role'] == 'admin') admin = true;
+      }
+      // 4) Fallback dev
+      if (!admin) {
+        admin = user.email?.endsWith('@thix.info') ?? false;
+      }
+    } catch (e) {
+      debugPrint('[ThixInfo] ⚠️ admin check: $e');
+    }
+    if (mounted) {
+      setState(() {
+        _isAdmin = admin;
+        _adminChecked = true;
+      });
+    }
   }
 
   void _startAuto() {
@@ -188,12 +238,36 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           .where((a) => a.category == dbCategory)
           .toList();
 
+  /// ✅ Formatage du temps exact (publié il y a X temps)
+  String _formatTimeAgo(DateTime publishedAt) {
+    final now = DateTime.now();
+    final diff = now.difference(publishedAt);
+
+    if (diff.inSeconds < 60) {
+      return 'À l\'instant';
+    } else if (diff.inMinutes < 60) {
+      final m = diff.inMinutes;
+      return 'Il y a $m min';
+    } else if (diff.inHours < 24) {
+      final h = diff.inHours;
+      return 'Il y a $h h';
+    } else if (diff.inDays < 7) {
+      final d = diff.inDays;
+      return 'Il y a $d j';
+    } else if (diff.inDays < 30) {
+      final weeks = (diff.inDays / 7).floor();
+      return 'Il y a $weeks sem';
+    } else {
+      return DateFormat('dd MMM yyyy', 'fr_FR').format(publishedAt);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final prov = ref.watch(newsProvider);
     final featured = prov.articles.where((e) => e.isFeatured).toList();
     final breaking = prov.articles.where((e) => e.isBreaking).toList();
-    final recents = prov.articles; // ⬅️ LOGIQUE ANCIENNE CONSERVÉE
+    final recents = prov.articles;
 
     return Scaffold(
       backgroundColor: ThixPolicy.inkDeep,
@@ -264,31 +338,25 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s32)),
 
-                // LE FIL D'INFO — DISPOSITION & LOGIQUE ANCIENNES INTACTES
+                // LE FIL D'INFO
                 SliverToBoxAdapter(
                     child:
                         _buildSectionTitle("Le fil de l'info", Icons.timeline_rounded)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
                 _buildNewsFeed(recents, prov),
 
-                const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                const SliverToBoxAdapter(child: SizedBox(height: 80)),
               ],
             ),
           ),
-
-          // BOTTOM NAV FLOTTANTE EN VERRE
-          Positioned(
-              bottom: ThixPolicy.s24,
-              left: ThixPolicy.s16,
-              right: ThixPolicy.s16,
-              child: _buildFloatingBottomNav()),
+          // ✅ BOTTOM NAV SUPPRIMÉE
         ],
       ),
     );
   }
 
   // ─────────────────────────────────────────────────────────────
-  // APP BAR PREMIUM
+  // APP BAR PREMIUM + BOUTON ADMIN
   // ─────────────────────────────────────────────────────────────
   Widget _buildAppBar() {
     return SliverAppBar(
@@ -323,6 +391,19 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
         ],
       ),
       actions: [
+        // ✅ BOUTON ADMIN (visible uniquement si compte admin)
+        if (_isAdmin)
+          IconButton(
+              icon: Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.danger,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.admin_panel_settings_rounded,
+                    color: Colors.white, size: 16),
+              ),
+              onPressed: () => context.push('/thix-info/admin')),
         IconButton(
             icon: const Icon(Icons.download_rounded, color: Colors.white),
             onPressed: () => context.push('/thix-info/downloads')),
@@ -620,7 +701,8 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                               const Icon(Icons.schedule_rounded,
                                   size: 14, color: Colors.white70),
                               const SizedBox(width: ThixPolicy.s6),
-                              Text('Il y a 2h',
+                              // ✅ TEMPS EXACT (publishedAt)
+                              Text(_formatTimeAgo(a.publishedAt),
                                   style: ThixPolicy.labelStyle.copyWith(
                                       color: Colors.white70,
                                       fontWeight: ThixPolicy.semiBold)),
@@ -641,7 +723,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
   // ═══════════════════════════════════════════════════════════════
   // ESPACES : MAGAZINE / PODCASTS / DÉCOUVERTE
-  // (widgets conservés — section masquée si aucun contenu)
   // ═══════════════════════════════════════════════════════════════
 
   Widget _spaceHeader(_SpaceDef s) {
@@ -703,7 +784,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
   // ─── MAGAZINE : cartes lecture pro ───
   Widget _buildMagazineSection(List<NewsArticle> list) {
-    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    if (list.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -823,7 +904,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
   // ─── PODCASTS : cover + play + téléchargement ───
   Widget _buildPodcastSection(List<NewsArticle> list) {
-    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    if (list.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -971,7 +1052,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
 
   // ─── DÉCOUVERTE : cartes immersives ───
   Widget _buildDecouverteSection(List<NewsArticle> list) {
-    if (list.isEmpty) return const SizedBox.shrink(); // masqué si vide
+    if (list.isEmpty) return const SizedBox.shrink();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1057,7 +1138,7 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // 4. FIL D'ACTUALITÉ — CODE ANCIEN CONSERVÉ À L'IDENTIQUE
+  // 4. FIL D'ACTUALITÉ — AVEC TEMPS EXACT
   // ─────────────────────────────────────────────────────────────
   Widget _buildNewsFeed(List<NewsArticle> list, NewsProvider prov) {
     if (list.isEmpty) {
@@ -1109,8 +1190,13 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
                                   style: ThixPolicy.labelStyle
                                       .copyWith(color: Colors.white54)),
                               const Spacer(),
-                              const Icon(Icons.bookmark_border_rounded,
-                                  size: 18, color: Colors.white54),
+                              const Icon(Icons.schedule_rounded,
+                                  size: 14, color: Colors.white54),
+                              const SizedBox(width: ThixPolicy.s4),
+                              // ✅ TEMPS EXACT (publishedAt)
+                              Text(_formatTimeAgo(a.publishedAt),
+                                  style: ThixPolicy.labelStyle
+                                      .copyWith(color: Colors.white54)),
                             ],
                           ),
                         ],
@@ -1162,76 +1248,6 @@ class _ThixInfoHomeState extends ConsumerState<ThixInfoHome> {
           borderRadius: BorderRadius.circular(ThixPolicy.rXl)),
       child: const Center(
           child: CircularProgressIndicator(color: Colors.white)));
-
-  // ─────────────────────────────────────────────────────────────
-  // BOTTOM NAV FLOTTANTE — DISPOSITION ANCIENNE
-  // ─────────────────────────────────────────────────────────────
-  Widget _buildFloatingBottomNav() {
-    return GlassBox(
-      padding: const EdgeInsets.symmetric(
-          vertical: ThixPolicy.s12, horizontal: ThixPolicy.s8),
-      borderRadius: 30,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: [
-          _navItem(Icons.public_rounded, 'À la une', 0),
-          _navItem(Icons.grid_view_rounded, 'Explorer', 1),
-          GestureDetector(
-            onTap: () => setState(() => _navIndex = 2),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              padding: const EdgeInsets.symmetric(
-                  horizontal: ThixPolicy.s20, vertical: ThixPolicy.s10),
-              decoration: BoxDecoration(
-                  color: _navIndex == 2 ? ThixPolicy.danger : Colors.white,
-                  borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
-              child: Row(
-                children: [
-                  Icon(Icons.sensors_rounded,
-                      color:
-                          _navIndex == 2 ? Colors.white : ThixPolicy.inkDeep,
-                      size: 20),
-                  const SizedBox(width: ThixPolicy.s6),
-                  Text('Direct',
-                      style: ThixPolicy.labelStyle.copyWith(
-                          fontWeight: ThixPolicy.bold,
-                          color: _navIndex == 2
-                              ? Colors.white
-                              : ThixPolicy.inkDeep)),
-                ],
-              ),
-            ),
-          ),
-          _navItem(Icons.bookmark_rounded, 'Sauvegardes', 3,
-              onTap: () => context.push('/thix-info/saved')),
-          _navItem(Icons.person_rounded, 'Profil', 4),
-        ],
-      ),
-    );
-  }
-
-  Widget _navItem(IconData icon, String label, int idx, {VoidCallback? onTap}) {
-    final sel = _navIndex == idx;
-    return GestureDetector(
-      onTap: onTap ??
-          () {
-            HapticFeedback.selectionClick();
-            setState(() => _navIndex = idx);
-          },
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: sel ? Colors.white : Colors.white54, size: 26),
-          const SizedBox(height: ThixPolicy.s4),
-          Text(label,
-              style: ThixPolicy.microStyle.copyWith(
-                  fontWeight: sel ? ThixPolicy.bold : ThixPolicy.semiBold,
-                  color: sel ? Colors.white : Colors.white54,
-                  fontSize: 9)),
-        ],
-      ),
-    );
-  }
 }
 
 class _CategoryHeaderDelegate extends SliverPersistentHeaderDelegate {
