@@ -63,14 +63,14 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
     <uses-permission android:name="android.permission.MANAGE_OWN_CALLS" />
     <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-    
+
     <!-- ✅ AJOUTÉ v2.1 : Permission runtime pour accepter les appels depuis CallKit -->
     <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
-    
+
     <!-- ✅ AJOUTÉ v2.1 : Alarmes exactes pour réveil fiable en Doze (Android 12+) -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-    
+
     <!-- ✅ AJOUTÉ v2.1 : Overlay système pour full-screen intent sur OEM agressifs -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
@@ -78,6 +78,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!-- ✅ AJOUTÉ : Lecture audio en arrière-plan (just_audio / audio_service) -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
 
     <!-- Système & Badges d'icônes (Samsung, LG, Huawei, Xiaomi, etc.) -->
     <uses-permission android:name="android.permission.VIBRATE" />
@@ -191,6 +194,26 @@
             android:foregroundServiceType="microphone|camera|phoneCall"
             android:exported="false"
             tools:replace="android:foregroundServiceType" />
+
+        <!-- ✅ AJOUTÉ : Service de lecture audio en arrière-plan (just_audio_background + audio_service) -->
+        <service
+            android:name="com.ryanheise.audioservice.AudioService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="true"
+            tools:ignore="Instantiatable">
+            <intent-filter>
+                <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+        </service>
+
+        <!-- ✅ AJOUTÉ : Receiver des boutons média (casque, Bluetooth, notification) -->
+        <receiver
+            android:name="com.ryanheise.audioservice.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
 
         <!-- Service FCM : NE PAS redéclarer ici.
              firebase_messaging déclare déjà son propre service (via manifest merge). -->
