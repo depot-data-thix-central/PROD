@@ -151,7 +151,8 @@ import 'package:thix_id/presentation/thix_market/pages/supermarket_space_page.da
 import 'package:thix_id/presentation/thix_market/pages/supermarket_manage_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/local_market_home_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/create_local_product_page.dart';
-
+import 'package:thix_id/presentation/thix_market/pages/local_producers_page.dart';
+import 'package:thix_id/presentation/thix_market/pages/local_vendor_space_page.dart';
 // === THIX SANTÉ ===
 import 'package:thix_id/presentation/thix_sante/patient/patient_dashboard_page.dart';
 import 'package:thix_id/presentation/thix_sante/patient/screens/mon_medecin_traitant_page.dart';
@@ -812,6 +813,17 @@ class AppRouter {
           name: 'thixMarket',
           pageBuilder: (_, __) => const NoTransitionPage(child: MarketHomePage()),
           routes: [
+            // ✅ NOUVELLES ROUTES — Modération locale & coopératives
+            GoRoute(
+              path: 'local/producers',
+              name: 'marketLocalProducers',
+              pageBuilder: (_, __) => const NoTransitionPage(child: LocalProducersPage()),
+            ),
+            GoRoute(
+              path: 'local/vendor-space',
+              name: 'marketLocalVendorSpace',
+              pageBuilder: (_, __) => const NoTransitionPage(child: LocalVendorSpacePage()),
+            ),
             GoRoute(path: 'home',                                 name: 'marketHome',                pageBuilder: (_, __)     => const NoTransitionPage(child: MarketHomePage())),
             GoRoute(path: 'local',                                name: 'marketLocalHome',           pageBuilder: (_, __)     => const NoTransitionPage(child: LocalMarketHomePage())),
             GoRoute(path: 'local/create',                         name: 'marketLocalCreate',         pageBuilder: (_, s)      => NoTransitionPage(child: CreateLocalProductPage(shopId: s.extra is String ? s.extra as String : null))),
