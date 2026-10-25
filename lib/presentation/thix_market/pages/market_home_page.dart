@@ -13,6 +13,7 @@
 //  • ✅ Hero : compteur de banner SUPPRIMÉ, textes réduits, Ken Burns
 //  • ✅ Hero = 10 nouveautés (hors produits locaux & supermarchés)
 //  • ✅ Animations : reveal, Ken Burns, tap-scale, FAB pulsant, shimmer, marquee
+//  • ✅ v12.1 : Cartes promo avec photo floutée + voiles renforcés + texte épuré
 // ============================================================================
 
 import 'dart:async';
@@ -31,7 +32,6 @@ import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../core/currency_service.dart';
-import '../core/local_sectors.dart';
 import '../providers/market_providers.dart';
 import '../providers/market_badges_provider.dart';
 import '../providers/currency_provider.dart';
@@ -1674,8 +1674,8 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 }
 
 // ============================================================================
-// ✅ COQUILLE COMMUNE DES CARTES PROMO
-//    dégradé + photos (carrousel auto) + voile de couleur + shimmer + bouton admin
+// ✅ COQUILLE COMMUNE DES CARTES PROMO (v2 — LISIBILITÉ MAX)
+//    Photo floutée + voile de couleur renforcé + assombrissement bas
 // ============================================================================
 class _PromoCardShell extends StatelessWidget {
   final List<Color> colors;
@@ -1720,8 +1720,17 @@ class _PromoCardShell extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (hasPhotos) ...[
-                Positioned.fill(child: _PromoPhotoCarousel(urls: photos)),
-                // Voile de couleur de la carte : garde l'identité visuelle + lisibilité
+                // ✅ PHOTO FLOUTÉE + zoomée (cache les bords du blur)
+                Positioned.fill(
+                  child: ImageFiltered(
+                    imageFilter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
+                    child: Transform.scale(
+                      scale: 1.08,
+                      child: _PromoPhotoCarousel(urls: photos),
+                    ),
+                  ),
+                ),
+                // ✅ VOILE RENFORCÉ : identité visuelle + lisibilité maximale
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -1729,12 +1738,16 @@ class _PromoCardShell extends StatelessWidget {
                         gradient: LinearGradient(
                           begin: Alignment.topLeft,
                           end: Alignment.bottomRight,
-                          colors: [colors.first.withOpacity(0.80), colors.last.withOpacity(0.50)],
+                          colors: [
+                            colors.first.withOpacity(0.88),
+                            colors.last.withOpacity(0.78),
+                          ],
                         ),
                       ),
                     ),
                   ),
                 ),
+                // Assombrissement léger en bas : détache titres & CTA
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -1742,7 +1755,7 @@ class _PromoCardShell extends StatelessWidget {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black.withOpacity(0.28)],
+                          colors: [Colors.transparent, Colors.black.withOpacity(0.22)],
                         ),
                       ),
                     ),
@@ -1921,7 +1934,7 @@ class _ShimmerSweepState extends State<_ShimmerSweep> with SingleTickerProviderS
 }
 
 // ============================================================================
-// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue)
+// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue) — textes ombrés = lisibles
 // ============================================================================
 class _ExclusivePromoCard extends StatelessWidget {
   final String tag, title, subtitle, cta;
@@ -1976,19 +1989,31 @@ class _ExclusivePromoCard extends StatelessWidget {
             title,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, height: 1.15, letterSpacing: -0.2),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 16,
+              height: 1.15,
+              letterSpacing: -0.2,
+              shadows: [Shadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 2))],
+            ),
           ),
           const SizedBox(height: 3),
           Text(
             subtitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.white.withOpacity(0.88), fontSize: 9, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              color: Colors.white.withOpacity(0.92),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+              shadows: [Shadow(color: Color(0x55000000), blurRadius: 6, offset: Offset(0, 1))],
+            ),
           ),
           const Expanded(child: SizedBox.shrink()),
           Row(
             children: [
-              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10)),
+              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10.5)),
               const SizedBox(width: 4),
               const Icon(Icons.arrow_forward_rounded, size: 11, color: kGold),
             ],
@@ -2000,7 +2025,8 @@ class _ExclusivePromoCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (seule carte VERTE)
+// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (verte) — ÉPURÉE :
+//    uniquement le titre + le bouton Découvrir (lisibilité maximale)
 // ============================================================================
 class _LocalPromoCard extends StatelessWidget {
   final List<String> photos;
@@ -2019,11 +2045,6 @@ class _LocalPromoCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final lang = Localizations.localeOf(context).languageCode;
     final title = lang == 'sw' ? 'BIDHAA ZA NDANI' : lang == 'en' ? 'LOCAL GOODS' : 'PRODUITS LOCAUX';
-    final subtitle = lang == 'sw'
-        ? 'Moja kwa moja kutoka kwa wakulima'
-        : lang == 'en'
-            ? 'Direct from local producers'
-            : 'Direct producteurs locaux';
     final ctaLabel = lang == 'sw' ? 'Gundua' : lang == 'en' ? 'Discover' : 'Découvrir';
 
     return _PromoCardShell(
@@ -2037,114 +2058,45 @@ class _LocalPromoCard extends StatelessWidget {
       dotSpacing: 13,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.end, // ✅ contenu ancré en bas
         children: [
-          Row(
-            children: [
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.18),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: kGold.withOpacity(0.55)),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(width: 4, height: 4, decoration: const BoxDecoration(color: kGold, shape: BoxShape.circle)),
-                      const SizedBox(width: 4),
-                      const Flexible(
-                        child: Text(
-                          '100% LOCAL',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 7.5, letterSpacing: 0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              if (isAdmin) const SizedBox(width: 24),
-            ],
-          ),
-          const SizedBox(height: 8),
+          // ✅ UNIQUEMENT le titre
           Text(
             title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 0.2),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(color: Colors.white.withOpacity(0.88), fontSize: 8.5, fontWeight: FontWeight.w500),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w900,
+              fontSize: 17,
+              letterSpacing: 0.2,
+              height: 1.1,
+              shadows: [Shadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 2))],
+            ),
           ),
-          const Expanded(child: SizedBox.shrink()),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // ✅ FIX overflow : icônes réduites + FittedBox
-              Flexible(
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _sectorIcon(Icons.eco_rounded),
-                      const SizedBox(width: 3),
-                      _sectorIcon(Icons.brush_rounded),
-                      const SizedBox(width: 4),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(8)),
-                        child: Text(
-                          '+${(kLocalSectors.length - 2).clamp(0, 99)}',
-                          style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w800),
-                        ),
-                      ),
-                    ],
-                  ),
+          const SizedBox(height: 10),
+          // ✅ UNIQUEMENT le bouton Découvrir
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 6, offset: const Offset(0, 2))],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  ctaLabel,
+                  style: const TextStyle(color: Color(0xFF0B6B31), fontWeight: FontWeight.w900, fontSize: 10.5),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(9),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 5, offset: const Offset(0, 2))],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(ctaLabel, style: const TextStyle(color: Color(0xFF0B6B31), fontWeight: FontWeight.w900, fontSize: 9)),
-                    const SizedBox(width: 3),
-                    const Icon(Icons.arrow_forward_rounded, size: 9, color: Color(0xFF0B6B31)),
-                  ],
-                ),
-              ),
-            ],
+                const SizedBox(width: 4),
+                const Icon(Icons.arrow_forward_rounded, size: 11, color: Color(0xFF0B6B31)),
+              ],
+            ),
           ),
         ],
       ),
-    );
-  }
-
-  Widget _sectorIcon(IconData icon) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.18),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withOpacity(0.25), width: 0.8),
-      ),
-      child: Icon(icon, size: 11, color: Colors.white),
     );
   }
 }
