@@ -29,7 +29,9 @@ class _ActionConfig {
   final List<ThixSection> sections;
   final bool pulseBadge;
   final bool isDanger;
-  /// Si true, marque les sections comme lues quand l'action est tapée
+
+  /// Si true : à l'ouverture, le badge repasse à ZÉRO (immédiatement en local
+  /// + sections marquées comme vues côté serveur).
   final bool autoMarkRead;
 
   const _ActionConfig({
@@ -52,22 +54,27 @@ class _ActionConfig {
   }
 }
 
+// Sona : pas de remise à zéro automatique
 const _kSonaAction = _ActionConfig(
   icon: Icons.auto_awesome_rounded,
   label: 'Sona',
   accent: ThixPolicy.primaryDeep,
   semanticsLabel: 'Sona — Assistant IA',
   sections: [ThixSection.info],
+  autoMarkRead: false,
 );
 
+// Thix doc : pas de remise à zéro (les badges Formations/Opportunités restent)
 const _kDocAction = _ActionConfig(
   icon: Icons.folder_shared_rounded,
   label: 'Thix doc',
   accent: ThixPolicy.domainLearning,
   semanticsLabel: 'Thix doc — Coffre-fort documents',
   sections: [ThixSection.formations, ThixSection.opportunities],
+  autoMarkRead: false,
 );
 
+// ✅ Thix chat : le compteur retombe à zéro à l'ouverture du chat
 const _kChatAction = _ActionConfig(
   icon: Icons.forum_rounded,
   label: 'Thix chat',
@@ -75,6 +82,7 @@ const _kChatAction = _ActionConfig(
   semanticsLabel: 'Thix chat — Messagerie',
   sections: [ThixSection.messages, ThixSection.network],
   pulseBadge: true,
+  autoMarkRead: true,
 );
 
 const _kSosAction = _ActionConfig(
@@ -98,13 +106,15 @@ const List<_ActionConfig> _kActions = [
 // ============================================================================
 // WIDGET PRINCIPAL
 // ============================================================================
-class HomeQuickActions extends StatelessWidget {
+class HomeQuickActions extends StatefulWidget {
   final VoidCallback onScanTap;
   final VoidCallback onDocumentTap;
   final VoidCallback onChatTap;
   final VoidCallback onSecurityTap;
 
   final Stream<SectionBadgeCounts>? badgeCountsStream;
+
+  /// Optionnel : si absent, un service est créé automatiquement.
   final NotificationCountersService? notificationService;
 
   const HomeQuickActions({
@@ -117,61 +127,82 @@ class HomeQuickActions extends StatelessWidget {
     this.notificationService,
   });
 
+  @override
+  State<HomeQuickActions> createState() => _HomeQuickActionsState();
+}
+
+class _HomeQuickActionsState extends State<HomeQuickActions> {
+  /// Compteur affiché = compteur réel − base. La base est fixée au moment où
+  /// l'utilisateur ouvre l'action (remise à zéro instantanée, sans attendre le serveur).
+  final Map<int, int> _baseline = <int, int>{};
+  SectionBadgeCounts _lastCounts = SectionBadgeCounts.zero;
+  NotificationCountersService? _svc;
+
+  NotificationCountersService get _service =>
+      _svc ??= (widget.notificationService ?? NotificationCountersService());
+
   void _dispatch(int index) {
     HapticFeedback.selectionClick();
     final config = _kActions[index];
 
-    if (config.autoMarkRead && notificationService != null) {
-      _markSectionsRead(config.sections);
+    if (config.autoMarkRead) {
+      _clearBadge(index, config);
     }
 
     switch (index) {
       case 0:
         debugPrint('[QuickActions] 🤖 Sona tap');
-        onScanTap();
+        widget.onScanTap();
         break;
       case 1:
         debugPrint('[QuickActions] 📁 Documents tap');
-        onDocumentTap();
+        widget.onDocumentTap();
         break;
       case 2:
-        debugPrint('[QuickActions] 💬 Chat tap → reset messages+network');
-        onChatTap();
+        debugPrint('[QuickActions] 💬 Chat tap → compteur remis à zéro');
+        widget.onChatTap();
         break;
       case 3:
         HapticFeedback.mediumImpact();
         debugPrint('[QuickActions] 🚨 SOS tap');
-        onSecurityTap();
+        widget.onSecurityTap();
         break;
     }
   }
 
-  void _markSectionsRead(List<ThixSection> sections) {
-  if (notificationService == null) return;
-  final userId = Supabase.instance.client.auth.currentUser?.id;
-  if (userId == null) return;
+  /// Remise à zéro : locale (instantanée) + serveur (persistante).
+  void _clearBadge(int index, _ActionConfig config) {
+    final current = config.count(_lastCounts);
+    if (mounted) setState(() => _baseline[index] = current);
+    _markSectionsSeen(config.sections);
+  }
 
-  for (final section in sections) {
-    try {
-      notificationService!.markSectionRead(
-        uid: userId,          // ✅ paramètre nommé
-        section: section,     // ✅ paramètre nommé
+  void _markSectionsSeen(List<ThixSection> sections) {
+    final userId = Supabase.instance.client.auth.currentUser?.id;
+    if (userId == null) return;
+    final svc = _service;
+
+    for (final section in sections) {
+      Future.sync(() => svc.markSectionSeen(uid: userId, section: section)).then(
+        (_) {},
+        onError: (Object e) => debugPrint('[QuickActions] ⚠️ markSectionSeen(${section.name}): $e'),
+      );
+      Future.sync(() => svc.markSectionRead(uid: userId, section: section)).then(
+        (_) {},
+        onError: (Object e) => debugPrint('[QuickActions] ⚠️ markSectionRead(${section.name}): $e'),
       );
       debugPrint('[QuickActions] ✓ Section marquée comme lue: ${section.name}');
-    } catch (e) {
-      debugPrint('[QuickActions] ⚠️ Erreur markSectionRead($section): $e');
     }
   }
-}
 
   @override
   Widget build(BuildContext context) {
-    if (badgeCountsStream == null) {
+    if (widget.badgeCountsStream == null) {
       return _buildRow(counts: SectionBadgeCounts.zero);
     }
 
     return StreamBuilder<SectionBadgeCounts>(
-      stream: badgeCountsStream,
+      stream: widget.badgeCountsStream,
       initialData: SectionBadgeCounts.zero,
       builder: (context, snap) {
         final c = snap.data ?? SectionBadgeCounts.zero;
@@ -180,7 +211,19 @@ class HomeQuickActions extends StatelessWidget {
     );
   }
 
+  /// Badge affiché pour l'action [i] (réel − base ; la base suit les baisses).
+  int _displayBadge(int i, SectionBadgeCounts counts) {
+    final raw = _safeBadge(_kActions[i].count(counts));
+    var base = _baseline[i] ?? 0;
+    if (raw < base) {
+      base = raw; // le serveur a baissé : les prochains arrivages s'affichent
+      _baseline[i] = raw;
+    }
+    return raw - base;
+  }
+
   Widget _buildRow({required SectionBadgeCounts counts}) {
+    _lastCounts = counts;
     return RepaintBoundary(
       child: Row(
         children: [
@@ -188,7 +231,7 @@ class HomeQuickActions extends StatelessWidget {
             Expanded(
               child: _QuickActionItem(
                 config: _kActions[i],
-                badge: _safeBadge(_kActions[i].count(counts)),
+                badge: _displayBadge(i, counts),
                 onTap: () => _dispatch(i),
               ),
             ),
@@ -198,7 +241,6 @@ class HomeQuickActions extends StatelessWidget {
   }
 
   int _safeBadge(int value) {
-    if (value.isNaN || value.isInfinite) return 0;
     return value < 0 ? 0 : value;
   }
 }
@@ -326,34 +368,35 @@ class _BadgeWidget extends StatefulWidget {
 
 class _BadgeWidgetState extends State<_BadgeWidget>
     with SingleTickerProviderStateMixin {
-  late AnimationController? _pulseCtrl;
-  late Animation<double>? _pulseAnim;
+  late final AnimationController _pulseCtrl =
+      AnimationController(vsync: this, duration: _kPulseDuration);
 
   @override
   void initState() {
     super.initState();
-    if (widget.pulse) {
-      _pulseCtrl = AnimationController(
-        vsync: this,
-        duration: _kPulseDuration,
-      )..repeat(reverse: true);
-      _pulseAnim = Tween<double>(begin: 1.0, end: 1.18)
-          .animate(CurvedAnimation(parent: _pulseCtrl!, curve: _kPulseCurve));
-    } else {
-      _pulseCtrl = null;
-      _pulseAnim = null;
+    if (widget.pulse) _pulseCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _BadgeWidget old) {
+    super.didUpdateWidget(old);
+    if (widget.pulse && !_pulseCtrl.isAnimating) {
+      _pulseCtrl.repeat(reverse: true);
+    } else if (!widget.pulse && _pulseCtrl.isAnimating) {
+      _pulseCtrl.stop();
+      _pulseCtrl.value = 0;
     }
   }
 
   @override
   void dispose() {
-    _pulseCtrl?.dispose();
+    _pulseCtrl.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    Widget badge = Container(
+    final badge = Container(
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
       constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
       decoration: BoxDecoration(
@@ -379,17 +422,16 @@ class _BadgeWidgetState extends State<_BadgeWidget>
       ),
     );
 
-    if (widget.pulse && _pulseAnim != null) {
-      return AnimatedBuilder(
-        animation: _pulseAnim!,
-        builder: (_, __) => Transform.scale(
-          scale: _pulseAnim!.value,
-          child: badge,
-        ),
-      );
-    }
+    if (!widget.pulse) return badge;
 
-    return badge;
+    return AnimatedBuilder(
+      animation: _pulseCtrl,
+      builder: (_, child) => Transform.scale(
+        scale: 1.0 + 0.18 * _kPulseCurve.transform(_pulseCtrl.value),
+        child: child,
+      ),
+      child: badge,
+    );
   }
 }
 
