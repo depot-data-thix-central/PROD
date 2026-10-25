@@ -11,6 +11,10 @@
 //   ✅ Import de call_permission_helper ajouté
 //   ✅ Nettoyage : plus aucune référence à VoipCallService (supprimé)
 //
+// CHANGELOG v2.10 :
+//   ✅ JustAudioBackground.init() : lecture audio arrière-plan + contrôles
+//      sur écran verrouillé (just_audio + audio_service)
+//
 // Conserve tous les correctifs v2.8 : actions notif Supabase, pending nav,
 // route normalization, zone error handling, offline-safe auth.
 // ============================================================================
@@ -25,6 +29,7 @@ import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:just_audio_background/just_audio_background.dart'; // ✅ v2.10
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -245,6 +250,22 @@ Future<void> main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+
+      // ✅ v2.10 : Lecture audio en arrière-plan + notification média
+      // (écran verrouillé, boutons play/pause/next via audio_service).
+      // Doit être appelé AVANT toute création de AudioPlayer just_audio.
+      // Non-bloquant : si l'init échoue, l'app démarre quand même.
+      try {
+        await JustAudioBackground.init(
+          androidNotificationChannelId: 'com.thix.info.channel.audio',
+          androidNotificationChannelName: 'THIX Info Lecture',
+          androidNotificationIcon: 'mipmap/ic_launcher',
+          androidNotificationOngoing: true,
+        ).timeout(_kInitTimeout);
+        _log('✓ JustAudioBackground OK');
+      } catch (e) {
+        _log('⚠️ JustAudioBackground: $e');
+      }
 
       try {
         await Hive.initFlutter().timeout(_kInitTimeout);
