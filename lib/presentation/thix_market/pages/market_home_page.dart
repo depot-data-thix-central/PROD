@@ -5,15 +5,11 @@
 //  • ✅ Fond BLANC PUR, typographies RÉDUITES pour lisibilité maximale
 //  • ✅ Accent ORANGE standard marketplace (vert UNIQUEMENT carte locale)
 //  • ✅ Topbar compacte : recherche = icône seule, icon COMPTE SUPPRIMÉE
-//  • ✅ NOUVEAU : cartes promo (bleue + verte) avec PHOTOS de fond multiples
-//       + défilement automatique (4 s) — table promo_card_banners + bucket
-//  • ✅ NOUVEAU : bouton d'ajout de photos visible UNIQUEMENT pour les ADMIN
-//       (RPC is_thix_admin + RLS côté base)
-//  • ✅ FIX : overflow du bouton "Découvrir" (carte verte), shimmer plein-carte
-//  • ✅ Hero : compteur de banner SUPPRIMÉ, textes réduits, Ken Burns
-//  • ✅ Hero = 10 nouveautés (hors produits locaux & supermarchés)
-//  • ✅ Animations : reveal, Ken Burns, tap-scale, FAB pulsant, shimmer, marquee
-//  • ✅ v12.1 : Cartes promo avec photo floutée + voiles renforcés + texte épuré
+//  • ✅ Cartes promo avec PHOTOS de fond multiples + défilement auto (4 s)
+//  • ✅ v12.2 : IMAGES CLAIRES (sans voile coloré, sans flou) comme les cartes
+//       produits + scrim noir léger haut/bas pour la lisibilité du texte
+//  • ✅ Titre "PRODUITS LOCAUX" déplacé EN HAUT de la carte verte
+//  • ✅ Bouton d'ajout de photos visible UNIQUEMENT pour les ADMIN
 // ============================================================================
 
 import 'dart:async';
@@ -578,7 +574,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             ),
           ),
           const SizedBox(width: 6),
-          // ✅ Recherche = simple symbole
           Semantics(
             button: true,
             label: l10n.t('market_search_hint'),
@@ -783,7 +778,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                                 ),
                               ),
 
-                              // ✅ Badge NEW seul (compteur supprimé)
                               Positioned(
                                 top: 12,
                                 right: 12,
@@ -1170,7 +1164,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // ✅ LES 2 CARTES PROMO — photos de fond + bouton ADMIN
+  // ✅ LES 2 CARTES PROMO — photos CLAIRES + bouton ADMIN
   // ──────────────────────────────────────────────────────────────────────────
   Widget _buildPromoBannersRow(AppLocalizations l10n) {
     final isAdmin = ref.watch(marketIsAdminProvider).valueOrNull ?? false;
@@ -1674,8 +1668,10 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 }
 
 // ============================================================================
-// ✅ COQUILLE COMMUNE DES CARTES PROMO (v2 — LISIBILITÉ MAX)
-//    Photo floutée + voile de couleur renforcé + assombrissement bas
+// ✅ COQUILLE COMMUNE DES CARTES PROMO (v3 — IMAGES CLAIRES)
+//    • Photo NETTE (pas de flou, pas de voile coloré) comme les cartes produits
+//    • Scrim noir léger UNIQUEMENT en haut (titre) et en bas (CTA)
+//    • Sans photo : dégradé de couleur + points (fallback identité)
 // ============================================================================
 class _PromoCardShell extends StatelessWidget {
   final List<Color> colors;
@@ -1720,34 +1716,9 @@ class _PromoCardShell extends StatelessWidget {
             fit: StackFit.expand,
             children: [
               if (hasPhotos) ...[
-                // ✅ PHOTO FLOUTÉE + zoomée (cache les bords du blur)
-                Positioned.fill(
-                  child: ImageFiltered(
-                    imageFilter: ImageFilter.blur(sigmaX: 7, sigmaY: 7),
-                    child: Transform.scale(
-                      scale: 1.08,
-                      child: _PromoPhotoCarousel(urls: photos),
-                    ),
-                  ),
-                ),
-                // ✅ VOILE RENFORCÉ : identité visuelle + lisibilité maximale
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [
-                            colors.first.withOpacity(0.88),
-                            colors.last.withOpacity(0.78),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Assombrissement léger en bas : détache titres & CTA
+                // ✅ IMAGE CLAIRE & NETTE — aucun voile coloré, aucun flou
+                Positioned.fill(child: _PromoPhotoCarousel(urls: photos)),
+                // Scrim HAUT : lisibilité du titre (noir → transparent)
                 Positioned.fill(
                   child: IgnorePointer(
                     child: DecoratedBox(
@@ -1755,13 +1726,38 @@ class _PromoCardShell extends StatelessWidget {
                         gradient: LinearGradient(
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
-                          colors: [Colors.transparent, Colors.black.withOpacity(0.22)],
+                          colors: [
+                            Colors.black.withOpacity(0.55),
+                            Colors.black.withOpacity(0.28),
+                            Colors.transparent,
+                          ],
+                          stops: const [0.0, 0.22, 0.50],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Scrim BAS : lisibilité du CTA (transparent → noir)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.18),
+                            Colors.black.withOpacity(0.48),
+                          ],
+                          stops: const [0.55, 0.80, 1.0],
                         ),
                       ),
                     ),
                   ),
                 ),
               ] else
+                // Sans photo : identité couleur + motif de points
                 Positioned.fill(
                   child: CustomPaint(
                     painter: _DotsPatternPainter(color: Colors.white.withOpacity(0.06), spacing: dotSpacing, dotSize: 1.1),
@@ -1876,7 +1872,7 @@ class _PromoPhotoCarouselState extends State<_PromoPhotoCarousel> {
   }
 }
 
-/// Reflet lumineux qui balaie toute la carte (remplace l'ancien ShaderMask)
+/// Reflet lumineux qui balaie toute la carte
 class _ShimmerSweep extends StatefulWidget {
   const _ShimmerSweep();
 
@@ -1916,7 +1912,7 @@ class _ShimmerSweepState extends State<_ShimmerSweep> with SingleTickerProviderS
                         gradient: LinearGradient(
                           colors: [
                             Colors.white.withOpacity(0.0),
-                            Colors.white.withOpacity(0.13),
+                            Colors.white.withOpacity(0.10),
                             Colors.white.withOpacity(0.0),
                           ],
                         ),
@@ -1934,7 +1930,8 @@ class _ShimmerSweepState extends State<_ShimmerSweep> with SingleTickerProviderS
 }
 
 // ============================================================================
-// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue) — textes ombrés = lisibles
+// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue)
+//    Texte EN HAUT sur scrim noir + CTA en bas
 // ============================================================================
 class _ExclusivePromoCard extends StatelessWidget {
   final String tag, title, subtitle, cta;
@@ -1967,7 +1964,9 @@ class _ExclusivePromoCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // ✅ Bloc texte EN HAUT (leave la place au bouton admin si présent)
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Flexible(
                 child: Container(
@@ -1995,7 +1994,7 @@ class _ExclusivePromoCard extends StatelessWidget {
               fontSize: 16,
               height: 1.15,
               letterSpacing: -0.2,
-              shadows: [Shadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 2))],
+              shadows: [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
             ),
           ),
           const SizedBox(height: 3),
@@ -2003,17 +2002,17 @@ class _ExclusivePromoCard extends StatelessWidget {
             subtitle,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: Colors.white.withOpacity(0.92),
+            style: const TextStyle(
+              color: Colors.white,
               fontSize: 9.5,
               fontWeight: FontWeight.w600,
-              shadows: [Shadow(color: Color(0x55000000), blurRadius: 6, offset: Offset(0, 1))],
+              shadows: [Shadow(color: Color(0x99000000), blurRadius: 6, offset: Offset(0, 1))],
             ),
           ),
           const Expanded(child: SizedBox.shrink()),
           Row(
             children: [
-              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10.5)),
+              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10.5, shadows: [Shadow(color: Color(0x99000000), blurRadius: 6, offset: Offset(0, 1))])),
               const SizedBox(width: 4),
               const Icon(Icons.arrow_forward_rounded, size: 11, color: kGold),
             ],
@@ -2025,8 +2024,8 @@ class _ExclusivePromoCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (verte) — ÉPURÉE :
-//    uniquement le titre + le bouton Découvrir (lisibilité maximale)
+// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (verte)
+//    ✅ TITRE EN HAUT + bouton Découvrir en bas — image claire
 // ============================================================================
 class _LocalPromoCard extends StatelessWidget {
   final List<String> photos;
@@ -2058,30 +2057,32 @@ class _LocalPromoCard extends StatelessWidget {
       dotSpacing: 13,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.end, // ✅ contenu ancré en bas
         children: [
-          // ✅ UNIQUEMENT le titre
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 17,
-              letterSpacing: 0.2,
-              height: 1.1,
-              shadows: [Shadow(color: Color(0x66000000), blurRadius: 8, offset: Offset(0, 2))],
+          // ✅ TITRE EN HAUT (sur scrim noir → toujours lisible)
+          Padding(
+            padding: EdgeInsets.only(right: isAdmin ? 26 : 0),
+            child: Text(
+              title,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 17,
+                letterSpacing: 0.2,
+                height: 1.1,
+                shadows: [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
+              ),
             ),
           ),
-          const SizedBox(height: 10),
-          // ✅ UNIQUEMENT le bouton Découvrir
+          const Expanded(child: SizedBox.shrink()),
+          // ✅ CTA en bas
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(10),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 6, offset: const Offset(0, 2))],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 6, offset: const Offset(0, 2))],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
