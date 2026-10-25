@@ -1,18 +1,17 @@
 // lib/presentation/mon_pays/pages/provinces/province_detail_page.dart
 //
 // ============================================================================
-// 🏠 PROVINCE DETAIL PAGE — v2 (syntaxe corrigée + design amélioré)
+// 🏛️ PROVINCE DETAIL PAGE — v3 « DESIGN INSTITUTIONNEL »
 // ============================================================================
-// ✅ Erreur de build corrigée (parenthèse manquante dans _EngagementCard)
-// ✅ Design : cartes sans flou coûteux, en-têtes de section à barre d'accent,
-//    puces d'identité, bande de raccourcis avec état actif, squelettes de chargement
-// ✅ Recherche : l'ID de province est passé directement (plus de hack d'ancêtres)
-// ✅ Quiz protégé contre les questions sans options, liens/téléphones sécurisés
+// • Refonte design 100 % : style institutionnel (navy / or / ivoire),
+//   masthead officiel, en-têtes de section à filet doré, cartes sobres.
+// • Services & sites : TOUTES les photos affichées (bande défilante dans la
+//   carte + grille complète dans la fiche détaillée).
+// • Actualités : clic → page article (texte intégral, source officielle, partage).
+// • Textes longs : widget ExpandableText « Voir plus / Voir moins ».
+// • Corrections : titre non rogné, clé l10n brute, budgets illisibles, vides.
 // ============================================================================
-
 import 'dart:async';
-import 'dart:ui';
-
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -23,10 +22,7 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
-
 import '../../models/province.dart';
 import '../../providers/provinces_provider.dart';
 
@@ -38,7 +34,7 @@ enum NationalLanguage { french, lingala, swahili, tshiluba, kikongo }
 extension LanguageX on NationalLanguage {
   String get code => ['fr', 'ln', 'sw', 'lu', 'kg'][index];
   String get name => ['Français', 'Lingala', 'Swahili', 'Tshiluba', 'Kikongo'][index];
-  String get flag => ['🇫🇷', '🇨🇩', '🇨🇩', '🇨🇩', '🇨🇩'][index];
+  String get flag => ['🇫🇷', '🇨', '🇩', '🇩', '🇩'][index];
 }
 
 final languageProvider = StateProvider<NationalLanguage>((_) => NationalLanguage.french);
@@ -49,7 +45,7 @@ class _Tr {
     'projects': ['🏗️ Projets en cours', '🏗️ Misala', '🏗️ Miradi', '🏗️ Miseu', '🏗️ Bisalu'],
     'services': ['🏛️ Services publics', '🏛️ Misala ya leta', '🏛️ Huduma', '🏛️ Miseu ya leta', '🏛️ Bisalu ya leta'],
     'citizen': ['🗳️ Engagement citoyen', '🗳️ Bato', '🗳️ Raia', '🗳️ Bantu', '🗳️ Wantu'],
-    'budget': ['💰 Budget', '💰 Mbongo', '💰 Bajeti', '💰 Mbongo', '💰 Mbongo'],
+    'budget': ['💰 Budget', '💰 Mbongo', '️ Bajeti', '🏛️ Mbongo', '🏛️ Mbongo'],
     'docs': ['📄 Documents officiels', '📄 Mikanda', '📄 Nyaraka', '📄 Mikanda', '📄 Mikanda'],
     'media': ['🎥 Médiathèque', '🎥 Vidéo', '🎥 Media', '🎥 Vidéo', '🎥 Vidéo'],
     'authorities': ['🏛️ Autorités provinciales', '🏛️ Bakambi', '🏛️ Viongozi', '🏛️ Bakambi', '🏛️ Bakambi'],
@@ -65,19 +61,44 @@ class _Tr {
     'famous': ['🌟 Personnalités', '🌟 Bato ya lokumu', '🌟 Watu mashuhuri', '🌟 Bantu ba lukumu', '🌟 Bantu ba lukumu'],
     'gastro': ['🍲 Gastronomie', '🍲 Bilei ya mboka', '🍲 Chakula', '🍲 Bilei', '🍲 Madia'],
     'proverbs': ['📖 Proverbes & Contes', '📖 Masese', '📖 Methali', '📖 Tshisangale', '📖 Bingana'],
-    'businesses': ['🏢 Entreprises', '🏢 Bisaleli', '🏢 Biashara', '🏢 Miseu', '🏢 Bisalu'],
-    'products': ['🛒 Produits du terroir', '🛒 Biloko', '🛒 Bidhaa', '🛒 Biloko', '🛒 Bima'],
     'demo': ['📈 Démographie', '📈 Bato', '📈 Idadi', '📈 Bantu', '📈 Bantu'],
     'achievements': ['🏆 Réalisations', '🏆 Misala', '🏆 Mafanikio', '🏆 Miseu', '🏆 Bisalu'],
     'divisions': ['🧭 Découpage administratif', '🧭 Bokabuani', '🧭 Mgawanyo', '🧭 Bukabuanyi', '🧭 Kabu'],
+    'more': ['Voir plus', 'Koba mingi', 'Soma zaidi', 'Mona diaka', 'Mona diaka'],
+    'less': ['Voir moins', 'Kokita', 'Punguza', 'Mona moke', 'Mona moke'],
+    'photos': ['Photos', 'Bilili', 'Picha', 'Bifanishu', 'Bifanisu'],
+    'read': ['Lire l\'article', 'Tanga', 'Soma makala', 'Tanga', 'Tanga'],
+    'source': ['Source officielle', 'Mokanda ya leta', 'Chanzo rasmi', 'Mukanda wa leta', 'Mukanda wa leta'],
+    'all': ['Tout voir', 'Nyonso', 'Yote', 'Yonso', 'Yonso'],
   };
-
   static String t(String key, NationalLanguage lang) => _d[key]?[lang.index] ?? key;
-
-  /// Libellé sans l'emoji de tête (pour la bande de raccourcis).
   static String plain(String key, NationalLanguage lang) =>
       t(key, lang).replaceFirst(RegExp(r'^\S+\s'), '');
 }
+
+/// Sur-titres institutionnels (français, langue administrative).
+const Map<String, String> _kickers = {
+  'news': 'COMMUNICATION OFFICIELLE',
+  'projects': 'PROGRAMME D\'INVESTISSEMENT',
+  'services': 'ADMINISTRATION PUBLIQUE',
+  'citizen': 'PARTICIPATION CITOYENNE',
+  'budget': 'FINANCES PUBLIQUES',
+  'docs': 'JOURNAL OFFICIEL',
+  'media': 'MÉDIATHÈQUE',
+  'hymn': 'SYMBOLES OFFICIELS',
+  'map': 'GÉOGRAPHIE',
+  'gallery': 'PHOTHÈQUE',
+  'authorities': 'GOUVERNEMENT PROVINCIAL',
+  'cities': 'COMMUNES & VILLES',
+  'tourism': 'PATRIMOINE & SITES',
+  'economy': 'POTENTIEL ÉCONOMIQUE',
+  'culture': 'CULTURE & TRADITIONS',
+  'quiz': 'ÉDUCATION CIVIQUE',
+  'emergency': 'PROTECTION CIVILE',
+  'demo': 'STATISTIQUES',
+  'achievements': 'BILAN OFFICIEL',
+  'divisions': 'DÉCOUPAGE TERRITORIAL',
+};
 
 // ════════════════════════════════════════════════════════════════════════
 // 2. ACCESSIBILITÉ
@@ -109,25 +130,18 @@ Future<List<Map<String, dynamic>>> _safeRows(Future<List<dynamic>> Function() q)
 
 final _newsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_news').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
-
 final _projectsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_projects').select().eq('province_id', id).order('progress', ascending: false).limit(20)));
-
 final _servicesProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_services').select().eq('province_id', id).eq('is_active', true).order('name').limit(30)));
-
 final _engagementsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_engagements').select().eq('province_id', id).eq('is_active', true).order('created_at', ascending: false).limit(20)));
-
 final _budgetProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_budget').select().eq('province_id', id).order('percentage', ascending: false)));
-
 final _documentsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_documents').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
-
 final _mediaProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_media').select().eq('province_id', id).eq('is_published', true).order('published_at', ascending: false).limit(20)));
-
 final _hymnProv = FutureProvider.family<Map<String, dynamic>?, String>((r, id) async {
   try {
     final row = await _db.from('province_hymns').select().eq('province_id', id).maybeSingle();
@@ -136,19 +150,14 @@ final _hymnProv = FutureProvider.family<Map<String, dynamic>?, String>((r, id) a
     return null;
   }
 });
-
 final _famousProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_famous_people').select().eq('province_id', id).eq('is_active', true).order('name').limit(20)));
-
 final _gastroProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_gastronomy').select().eq('province_id', id).eq('is_active', true).order('name').limit(20)));
-
 final _proverbsProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_proverbs').select().eq('province_id', id).eq('is_active', true).order('created_at', ascending: false).limit(20)));
-
 final _quizProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_quiz_questions').select().eq('province_id', id).eq('is_active', true).order('order_index').limit(10)));
-
 final _demoProv = FutureProvider.family<List<Map<String, dynamic>>, String>((r, id) async =>
     await _safeRows(() => _db.from('province_demographics').select().eq('province_id', id).order('year')));
 
@@ -159,7 +168,6 @@ class FavoriteProvincesNotifier extends StateNotifier<Set<String>> {
   FavoriteProvincesNotifier() : super({}) {
     _load();
   }
-
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
@@ -179,7 +187,6 @@ class FavoriteProvincesNotifier extends StateNotifier<Set<String>> {
   }
 }
 
-// Recherche avec délai
 final provinceSearchDebouncedProvider =
     StateNotifierProvider.family<_SearchDebounced, List<Map<String, dynamic>>, String>(
         (r, id) => _SearchDebounced(id));
@@ -187,12 +194,10 @@ final provinceSearchDebouncedProvider =
 class _SearchDebounced extends StateNotifier<List<Map<String, dynamic>>> {
   final String _id;
   Timer? _t;
-
   _SearchDebounced(this._id) : super([]);
 
   void search(String raw) {
     _t?.cancel();
-    // Nettoyage : on retire les caractères qui casseraient le filtre PostgREST
     final q = raw.replaceAll(RegExp(r'[%,()*]'), ' ').trim();
     if (q.isEmpty) {
       state = [];
@@ -232,32 +237,51 @@ class _SearchDebounced extends StateNotifier<List<Map<String, dynamic>>> {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// 4. COMPOSANTS DE DESIGN
+// 4. SYSTÈME DE DESIGN INSTITUTIONNEL
 // ════════════════════════════════════════════════════════════════════════
+class Inst {
+  static const navy = Color(0xFF12365C);
+  static const navyDeep = Color(0xFF0B2440);
+  static const blue = Color(0xFF1F4E79);
+  static const gold = Color(0xFFC9A227);
+  static const goldDeep = Color(0xFF9C7B14);
+  static const ivory = Color(0xFFF5F3EE);
+  static const paper = Color(0xFFFFFFFF);
+  static const line = Color(0xFFE3DED2);
+  static const ink = Color(0xFF152A3E);
+  static const muted = Color(0xFF64748B);
+  static const danger = Color(0xFFB3261E);
+  static const green = Color(0xFF2E7D32);
 
-/// Carte claire (sans flou : bien plus fluide dans les listes horizontales).
-class GlassCard extends StatelessWidget {
+  static const TextStyle kicker = TextStyle(
+      fontSize: 9.5, fontWeight: FontWeight.w800, letterSpacing: 2.0, color: goldDeep);
+  static const TextStyle h1 = TextStyle(fontSize: 23, fontWeight: FontWeight.w900, color: ink, height: 1.25);
+  static const TextStyle h2 = TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: ink, height: 1.2);
+  static const TextStyle h3 = TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: ink);
+  static const TextStyle body = TextStyle(fontSize: 13, height: 1.6, color: ink);
+  static const TextStyle bodyS = TextStyle(fontSize: 12, height: 1.55, color: muted);
+  static const TextStyle micro = TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: muted);
+  static const TextStyle label = TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ink);
+}
+
+/// Carte institutionnelle : papier blanc, filet sable, ombre discrète.
+class ICard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
   final EdgeInsetsGeometry? padding;
   final double? radius;
-
-  const GlassCard({super.key, required this.child, this.onTap, this.padding, this.radius});
+  const ICard({super.key, required this.child, this.onTap, this.padding, this.radius});
 
   @override
   Widget build(BuildContext context) {
-    final r = BorderRadius.circular(radius ?? 22);
+    final r = BorderRadius.circular(radius ?? 12);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: Inst.paper,
         borderRadius: r,
-        border: Border.all(color: const Color(0xFFE6ECF4)),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFF1E3A8A).withOpacity(0.06),
-            blurRadius: 18,
-            offset: const Offset(0, 8),
-          ),
+        border: Border.all(color: Inst.line),
+        boxShadow: const [
+          BoxShadow(color: Color(0x0D12365C), blurRadius: 10, offset: Offset(0, 2)),
         ],
       ),
       child: Material(
@@ -266,9 +290,77 @@ class GlassCard extends StatelessWidget {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: onTap,
-          child: Padding(padding: padding ?? const EdgeInsets.all(16), child: child),
+          child: Padding(padding: padding ?? const EdgeInsets.all(14), child: child),
         ),
       ),
+    );
+  }
+}
+
+// Compatibilité avec les anciens imports éventuels.
+typedef GlassCard = ICard;
+
+/// Texte long replié avec « Voir plus / Voir moins ».
+class ExpandableText extends StatefulWidget {
+  final String text;
+  final int maxLines;
+  final TextStyle? style;
+  final TextAlign? textAlign;
+  final String? moreLabel;
+  final String? lessLabel;
+  const ExpandableText(
+    this.text, {
+    super.key,
+    this.maxLines = 3,
+    this.style,
+    this.textAlign,
+    this.moreLabel,
+    this.lessLabel,
+  });
+
+  @override
+  State<ExpandableText> createState() => _ExpandableTextState();
+}
+
+class _ExpandableTextState extends State<ExpandableText> {
+  bool _exp = false;
+  @override
+  Widget build(BuildContext context) {
+    final needMore = widget.text.length > widget.maxLines * 90;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          widget.text,
+          maxLines: _exp ? null : widget.maxLines,
+          overflow: _exp ? TextOverflow.visible : TextOverflow.ellipsis,
+          style: widget.style ?? Inst.body,
+          textAlign: widget.textAlign,
+        ),
+        if (needMore)
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => setState(() => _exp = !_exp),
+            child: Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    _exp ? (widget.lessLabel ?? 'Voir moins') : (widget.moreLabel ?? 'Voir plus'),
+                    style: const TextStyle(
+                        fontSize: 11, fontWeight: FontWeight.w800, color: Inst.goldDeep, letterSpacing: 0.4),
+                  ),
+                  Icon(
+                    _exp ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    size: 14,
+                    color: Inst.goldDeep,
+                  ),
+                ],
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -277,83 +369,77 @@ class SectionHeader extends StatelessWidget {
   final IconData icon;
   final Color color;
   final String title;
+  final String? kicker;
   final int? count;
   final VoidCallback? onViewAll;
-
+  final String? viewAllLabel;
   const SectionHeader({
     super.key,
     required this.icon,
     required this.color,
     required this.title,
+    this.kicker,
     this.count,
     this.onViewAll,
+    this.viewAllLabel,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+      padding: const EdgeInsets.fromLTRB(20, 26, 20, 10),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Container(
-            width: 4,
-            height: 30,
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [color, color.withOpacity(0.35)],
-              ),
-              borderRadius: BorderRadius.circular(4),
-            ),
-          ),
+          Container(width: 3, height: 36, color: Inst.gold),
           const SizedBox(width: 10),
           Container(
-            padding: const EdgeInsets.all(9),
+            padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: color.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(12),
+              color: color.withOpacity(0.10),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: color.withOpacity(0.25)),
             ),
-            child: Icon(icon, color: color, size: 18),
+            child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (kicker != null) Text(kicker!, style: Inst.kicker),
+                if (kicker != null) const SizedBox(height: 2),
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h2),
+              ],
             ),
           ),
           if (count != null)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.12),
-                borderRadius: BorderRadius.circular(12),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Inst.line),
               ),
-              child: Text(
-                '$count',
-                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color),
-              ),
+              child: Text('$count', style: Inst.label.copyWith(color: color)),
             ),
-          if (onViewAll != null) ...[
-            const SizedBox(width: 8),
+          if (onViewAll != null)
             GestureDetector(
               onTap: onViewAll,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Voir tout',
-                  style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: color),
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      viewAllLabel ?? 'Tout voir',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Inst.goldDeep),
+                    ),
+                    const Icon(Icons.arrow_forward_rounded, size: 12, color: Inst.goldDeep),
+                  ],
                 ),
               ),
             ),
-          ],
         ],
       ),
     );
@@ -364,7 +450,6 @@ class HScroll extends StatelessWidget {
   final double height;
   final double itemWidth;
   final List<Widget> children;
-
   const HScroll({super.key, required this.height, required this.itemWidth, required this.children});
 
   @override
@@ -377,18 +462,16 @@ class HScroll extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
         physics: const BouncingScrollPhysics(),
         itemCount: children.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        separatorBuilder: (_, __) => const SizedBox(width: 12),
         itemBuilder: (_, i) => SizedBox(width: itemWidth, child: children[i]),
       ),
     );
   }
 }
 
-/// Squelette affiché pendant le chargement d'une section.
 class _SectionSkeleton extends StatelessWidget {
   final double height;
   const _SectionSkeleton({this.height = 120});
-
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -396,15 +479,15 @@ class _SectionSkeleton extends StatelessWidget {
       child: Container(
         height: height,
         decoration: BoxDecoration(
-          color: const Color(0xFFE6ECF4).withOpacity(0.7),
-          borderRadius: BorderRadius.circular(22),
+          color: Inst.ivory,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: Inst.line),
         ),
       ),
     );
   }
 }
 
-/// Aide commune : chargement → squelette, erreur/vide → rien, sinon contenu.
 Widget _asyncList(
   AsyncValue<List<Map<String, dynamic>>> v,
   Widget Function(List<Map<String, dynamic>>) builder, {
@@ -421,6 +504,42 @@ String fmtNum(num n) => n
     .toStringAsFixed(0)
     .replaceAllMapped(RegExp(r'(\d{1,3})(?=(\d{3})+(?!\d))'), (m) => '${m[1]} ');
 
+/// Montant lisible : « 12 500 000 USD », « — » si nul/absent.
+String _money(dynamic v) {
+  if (v == null) return '—';
+  num? n;
+  if (v is num) {
+    n = v;
+  } else {
+    n = num.tryParse(v.toString().replaceAll(RegExp(r'[^\d.]'), ''));
+  }
+  if (n == null) return v.toString();
+  if (n == 0) return '—';
+  return '${fmtNum(n)} USD';
+}
+
+/// Extrait TOUTES les photos d'un élément (liste ou champs uniques).
+List<String> _photosOf(Map<String, dynamic> m) {
+  final out = <String>[];
+  void add(dynamic v) {
+    if (v is String) {
+      if (v.trim().isNotEmpty) out.add(v.trim());
+    } else if (v is Map) {
+      final u = v['url'] ?? v['image_url'] ?? v['photo_url'] ?? v['thumbnail_url'];
+      if (u is String && u.trim().isNotEmpty) out.add(u.trim());
+    }
+  }
+
+  for (final k in ['photos', 'images', 'media', 'gallery', 'image_urls', 'pictures']) {
+    final v = m[k];
+    if (v is List) v.forEach(add);
+  }
+  for (final k in ['image_url', 'photo_url', 'thumbnail_url', 'cover_url', 'image']) {
+    add(m[k]);
+  }
+  return out.toSet().toList();
+}
+
 Widget _img(String url, {double? h, double? w, BoxFit fit = BoxFit.cover, double radius = 0}) {
   return ClipRRect(
     borderRadius: BorderRadius.circular(radius),
@@ -429,18 +548,66 @@ Widget _img(String url, {double? h, double? w, BoxFit fit = BoxFit.cover, double
       height: h,
       width: w,
       fit: fit,
-      placeholder: (_, __) => Container(height: h, width: w, color: ThixPolicy.surfaceSoft),
+      placeholder: (_, __) => Container(height: h, width: w, color: Inst.ivory),
       errorWidget: (_, __, ___) => Container(
         height: h,
         width: w,
-        color: ThixPolicy.surfaceSoft,
-        child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted),
+        color: Inst.ivory,
+        child: const Icon(Icons.image_outlined, color: Inst.muted),
       ),
     ),
   );
 }
 
-/// Ouvre un lien http/https uniquement (jamais javascript:, file:, etc.).
+/// Bande horizontale affichant TOUTES les photos d'un élément.
+Widget _photoStrip(List<String> photos, {double height = 110, double radius = 12, bool top = true}) {
+  if (photos.isEmpty) {
+    return Container(
+      height: height,
+      color: Inst.ivory,
+      child: Center(child: Icon(Icons.image_outlined, color: Inst.muted.withOpacity(0.45), size: 26)),
+    );
+  }
+  return ClipRRect(
+    borderRadius: BorderRadius.vertical(
+      top: Radius.circular(top ? radius : 0),
+      bottom: Radius.circular(top ? 0 : radius),
+    ),
+    child: SizedBox(
+      height: height,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: EdgeInsets.zero,
+        itemCount: photos.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (_, i) => _img(photos[i], h: height, w: 150),
+      ),
+    ),
+  );
+}
+
+/// Grille complète des photos (fiche détaillée).
+Widget _photoGrid(List<String> photos) {
+  return GridView.builder(
+    shrinkWrap: true,
+    physics: const NeverScrollableScrollPhysics(),
+    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      crossAxisSpacing: 8,
+      mainAxisSpacing: 8,
+      childAspectRatio: 1.15,
+    ),
+    itemCount: photos.length,
+    itemBuilder: (_, i) => _img(photos[i], radius: 10),
+  );
+}
+
+Widget _blockLabel(String text) => Padding(
+      padding: const EdgeInsets.only(top: 16, bottom: 8),
+      child: Text(text.toUpperCase(), style: Inst.kicker),
+    );
+
 Future<void> _launch(String url) async {
   var u = url.trim();
   if (u.isEmpty) return;
@@ -454,13 +621,14 @@ Future<void> _launch(String url) async {
   }
 }
 
+/// Fiche détaillée institutionnelle (bottom sheet).
 void showGlassSheet(
   BuildContext context, {
   required String title,
   String? subtitle,
   String? imageUrl,
   IconData? icon,
-  Color color = ThixPolicy.primary,
+  Color color = Inst.blue,
   required List<Widget> children,
 }) {
   showModalBottomSheet(
@@ -468,91 +636,79 @@ void showGlassSheet(
     backgroundColor: Colors.transparent,
     isScrollControlled: true,
     builder: (_) => ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-        child: Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.98),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-          ),
-          padding: const EdgeInsets.all(24),
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.border,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                if (imageUrl != null && imageUrl.isNotEmpty)
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: Image.network(
-                      imageUrl,
-                      height: 180,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(height: 120, color: ThixPolicy.surfaceSoft),
-                    ),
-                  )
-                else if (icon != null)
-                  Container(
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(colors: [color.withOpacity(0.2), color.withOpacity(0.05)]),
-                      borderRadius: BorderRadius.circular(16),
-                    ),
-                    child: Icon(icon, color: color, size: 40),
-                  ),
-                const SizedBox(height: 16),
-                Text(
-                  title,
-                  style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
-                ),
-                if (subtitle != null && subtitle.isNotEmpty) ...[
-                  const SizedBox(height: 6),
-                  Text(
-                    subtitle,
-                    style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.5),
-                  ),
-                ],
-                const SizedBox(height: 16),
-                ...children,
-                const SizedBox(height: 12),
-              ],
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: Container(
+        color: Inst.paper,
+        constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.88),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 10),
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4)),
             ),
-          ),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: Image.network(
+                          imageUrl,
+                          height: 190,
+                          width: double.infinity,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) =>
+                              Container(height: 110, color: Inst.ivory),
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                    ] else if (icon != null) ...[
+                      Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.10),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: color.withOpacity(0.25)),
+                        ),
+                        child: Icon(icon, color: color, size: 32),
+                      ),
+                      const SizedBox(height: 14),
+                    ],
+                    Text(title, style: Inst.h2),
+                    if (subtitle != null && subtitle.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      ExpandableText(subtitle, maxLines: 3, style: Inst.bodyS),
+                    ],
+                    Container(height: 1, color: Inst.gold.withOpacity(0.4), margin: const EdgeInsets.symmetric(vertical: 14)),
+                    ...children,
+                    const SizedBox(height: 12),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     ),
   );
 }
 
-Widget sheetRow(IconData icon, String label, String value, {Color color = ThixPolicy.primary}) {
+Widget sheetRow(IconData icon, String label, String value, {Color color = Inst.blue}) {
   return Padding(
     padding: const EdgeInsets.only(bottom: 10),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 16, color: color),
+        Icon(icon, size: 15, color: color),
         const SizedBox(width: 8),
-        Text('$label : ', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
-        Expanded(
-          child: Text(
-            value,
-            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
-          ),
-        ),
+        Text('$label : ', style: Inst.bodyS),
+        Expanded(child: Text(value, style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w800))),
       ],
     ),
   );
@@ -561,7 +717,11 @@ Widget sheetRow(IconData icon, String label, String value, {Color color = ThixPo
 Widget _pill(String text, Color color) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-    decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+    decoration: BoxDecoration(
+      color: color.withOpacity(0.10),
+      borderRadius: BorderRadius.circular(4),
+      border: Border.all(color: color.withOpacity(0.35)),
+    ),
     child: Text(
       text,
       maxLines: 1,
@@ -604,7 +764,6 @@ List<_Shortcut> _shortcuts(NationalLanguage lang) => [
 class _ShortcutBar extends ConsumerWidget {
   final ValueChanged<String> onTap;
   final String active;
-
   const _ShortcutBar({required this.onTap, required this.active});
 
   @override
@@ -613,16 +772,13 @@ class _ShortcutBar extends ConsumerWidget {
     final items = _shortcuts(lang);
     return Container(
       width: double.infinity,
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(colors: [Color(0xFF1E3A8A), Color(0xFF2563EB), Color(0xFF6366F1)]),
-        boxShadow: [BoxShadow(color: Color(0x331E3A8A), blurRadius: 12, offset: Offset(0, 4))],
-      ),
+      color: Inst.navyDeep,
       child: SizedBox(
-        height: 62,
+        height: 56,
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
           itemCount: items.length,
           separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (_, i) {
@@ -632,23 +788,24 @@ class _ShortcutBar extends ConsumerWidget {
               onTap: () => onTap(s.id),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
                 decoration: BoxDecoration(
-                  color: isActive ? Colors.white : Colors.white.withOpacity(0.16),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: Colors.white.withOpacity(isActive ? 1 : 0.28)),
+                  color: isActive ? Inst.gold : Colors.transparent,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: isActive ? Inst.gold : Colors.white.withOpacity(0.28)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(s.icon, size: 15, color: isActive ? const Color(0xFF1E3A8A) : Colors.white),
+                    Icon(s.icon, size: 14, color: isActive ? Inst.navyDeep : Colors.white70),
                     const SizedBox(width: 6),
                     Text(
                       s.label,
                       style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: isActive ? const Color(0xFF1E3A8A) : Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.3,
+                        color: isActive ? Inst.navyDeep : Colors.white,
                       ),
                     ),
                   ],
@@ -666,16 +823,13 @@ class _BarDelegate extends SliverPersistentHeaderDelegate {
   final Widget child;
   final int version;
   _BarDelegate({required this.child, required this.version});
-
   @override
-  double get minExtent => 62;
+  double get minExtent => 56;
   @override
-  double get maxExtent => 62;
-
+  double get maxExtent => 56;
   @override
   Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) =>
       SizedBox.expand(child: child);
-
   @override
   bool shouldRebuild(covariant _BarDelegate old) => old.version != version;
 }
@@ -729,7 +883,7 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
         ctx,
         duration: const Duration(milliseconds: 450),
         curve: Curves.easeInOutCubic,
-        alignment: 0.08,
+        alignment: 0.10,
       );
       HapticFeedback.selectionClick();
     }
@@ -741,72 +895,25 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
     final lang = ref.watch(languageProvider);
     final a11y = ref.watch(accessibilityProvider);
     final async = ref.watch(provinceWithAllRelationsProvider(widget.provinceId));
-
     return MediaQuery(
       data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(a11y.textScale)),
       child: Scaffold(
-        backgroundColor: const Color(0xFFF0F4F8),
+        backgroundColor: Inst.ivory,
         body: Stack(
           children: [
-            Positioned.fill(
-              child: DecoratedBox(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [Color(0xFFF0F4F8), Color(0xFFE8EEF5), Color(0xFFF8FAFC)],
-                  ),
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: -90,
-                      right: -90,
-                      child: Container(
-                        width: 280,
-                        height: 280,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [ThixPolicy.primary.withOpacity(0.08), Colors.transparent],
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      bottom: -60,
-                      left: -60,
-                      child: Container(
-                        width: 200,
-                        height: 200,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: [ThixPolicy.gold.withOpacity(0.06), Colors.transparent],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
             async.when(
-              loading: () => const Center(child: CircularProgressIndicator(color: ThixPolicy.primary)),
+              loading: () => const Center(child: CircularProgressIndicator(color: Inst.gold)),
               error: (_, __) => Center(
                 child: Padding(
                   padding: const EdgeInsets.all(32),
-                  child: GlassCard(
+                  child: ICard(
                     padding: const EdgeInsets.all(24),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.error_outline_rounded, size: 44, color: ThixPolicy.danger),
+                        const Icon(Icons.error_outline_rounded, size: 40, color: Inst.danger),
                         const SizedBox(height: 12),
-                        Text(
-                          'Erreur de chargement',
-                          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
-                        ),
+                        Text('Erreur de chargement', style: Inst.bodyS),
                         const SizedBox(height: 16),
                         ElevatedButton.icon(
                           onPressed: () =>
@@ -814,8 +921,9 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                           icon: const Icon(Icons.refresh_rounded, size: 16),
                           label: Text(l10n.t('common_retry')),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: ThixPolicy.primary,
+                            backgroundColor: Inst.navy,
                             foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                           ),
                         ),
                       ],
@@ -824,7 +932,8 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                 ),
               ),
               data: (p) => RefreshIndicator(
-                color: ThixPolicy.primary,
+                color: Inst.gold,
+                backgroundColor: Inst.navyDeep,
                 onRefresh: () async {
                   ref.invalidate(provinceWithAllRelationsProvider(widget.provinceId));
                 },
@@ -849,15 +958,13 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                     SliverToBoxAdapter(
                       child: Column(
                         children: [
-                          const SizedBox(height: 14),
+                          _Masthead(province: p),
                           _TopActions(),
-                          const SizedBox(height: 14),
-                          _IdentityCard(province: p),
-                          const SizedBox(height: 28),
+                          const SizedBox(height: 8),
                         ],
                       ),
                     ),
-                    SliverToBoxAdapter(key: _keys['actu'], child: _NewsSection(id: widget.provinceId, lang: lang)),
+                    SliverToBoxAdapter(key: _keys['actu'], child: _NewsSection(id: widget.provinceId, lang: lang, provinceName: p.name)),
                     SliverToBoxAdapter(key: _keys['projets'], child: _ProjectsSection(id: widget.provinceId, lang: lang)),
                     SliverToBoxAdapter(key: _keys['services'], child: _ServicesSection(id: widget.provinceId, lang: lang)),
                     SliverToBoxAdapter(key: _keys['citoyen'], child: _EngagementSection(id: widget.provinceId, lang: lang)),
@@ -876,7 +983,7 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                           _CitiesSection(province: p, lang: lang),
                           _DivisionsSection(province: p, lang: lang),
                           if (p.achievements.isNotEmpty)
-                            _AchievementsSection(province: p, lang: lang, l10n: l10n),
+                            _AchievementsSection(province: p, lang: lang),
                         ],
                       ),
                     ),
@@ -887,8 +994,8 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                     SliverToBoxAdapter(key: _keys['urgences'], child: _EmergencySection(province: p, lang: lang)),
                     SliverToBoxAdapter(
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
-                        child: _VisualIdentitySection(province: p),
+                        padding: const EdgeInsets.fromLTRB(20, 10, 20, 90),
+                        child: _Footer(province: p),
                       ),
                     ),
                   ],
@@ -906,20 +1013,15 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
                     curve: Curves.easeOut,
                   ),
                   child: Container(
-                    width: 48,
-                    height: 48,
+                    width: 46,
+                    height: 46,
                     decoration: BoxDecoration(
-                      color: ThixPolicy.primary.withOpacity(0.92),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: ThixPolicy.primary.withOpacity(0.35),
-                          blurRadius: 12,
-                          offset: const Offset(0, 4),
-                        ),
-                      ],
+                      color: Inst.navy,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Inst.gold.withOpacity(0.6)),
+                      boxShadow: const [BoxShadow(color: Color(0x330B2440), blurRadius: 10, offset: Offset(0, 4))],
                     ),
-                    child: const Icon(Icons.arrow_upward_rounded, color: Colors.white, size: 22),
+                    child: const Icon(Icons.arrow_upward_rounded, color: Inst.gold, size: 20),
                   ),
                 ),
               ),
@@ -931,54 +1033,67 @@ class _ProvinceDetailPageState extends ConsumerState<ProvinceDetailPage> {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// HEADER
+// HEADER + MASTHEAD
 // ════════════════════════════════════════════════════════════════════════
+Widget _sqBtn(IconData icon, VoidCallback onTap, {Color color = Colors.white}) {
+  return Padding(
+    padding: const EdgeInsets.only(right: 6),
+    child: Container(
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: IconButton(
+        icon: Icon(icon, color: color, size: 18),
+        onPressed: onTap,
+        padding: const EdgeInsets.all(9),
+        constraints: const BoxConstraints(),
+      ),
+    ),
+  );
+}
+
 class _Header extends ConsumerWidget {
   final Province province;
   final VoidCallback onShare;
-
   const _Header({required this.province, required this.onShare});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isFav = ref.watch(favoriteProvincesProvider).contains(province.id);
     final cover = province.coverImageUrl ?? '';
-
     return SliverAppBar(
-      expandedHeight: 260,
+      expandedHeight: 230,
       pinned: true,
-      backgroundColor: ThixPolicy.primary,
+      backgroundColor: Inst.navyDeep,
       elevation: 0,
-      leadingWidth: 56,
+      leadingWidth: 48,
+      shape: const Border(bottom: BorderSide(color: Inst.gold, width: 2)),
       leading: Padding(
         padding: const EdgeInsets.only(left: 12),
-        child: _gBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
+        child: _sqBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
+      ),
+      title: Text(
+        province.name,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6),
       ),
       actions: [
-        _gBtn(Icons.search_rounded, () => _openSearch(context, province.id)),
-        _gBtn(Icons.share_rounded, onShare),
-        _gBtn(
+        _sqBtn(Icons.search_rounded, () => _openSearch(context, province.id)),
+        _sqBtn(Icons.share_rounded, onShare),
+        _sqBtn(
           isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
           () {
             ref.read(favoriteProvincesProvider.notifier).toggle(province.id);
             HapticFeedback.lightImpact();
           },
-          color: isFav ? ThixPolicy.danger : Colors.white,
+          color: isFav ? const Color(0xFFE57373) : Colors.white,
         ),
         const SizedBox(width: 8),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        titlePadding: const EdgeInsets.only(left: 20, bottom: 16, right: 20),
-        title: Text(
-          province.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: ThixPolicy.h3Style.copyWith(
-            color: Colors.white,
-            fontWeight: FontWeight.w900,
-            shadows: const [Shadow(blurRadius: 10, color: Colors.black54)],
-          ),
-        ),
         background: Stack(
           fit: StackFit.expand,
           children: [
@@ -986,14 +1101,14 @@ class _Header extends ConsumerWidget {
                 ? CachedNetworkImage(
                     imageUrl: cover,
                     fit: BoxFit.cover,
-                    errorWidget: (_, __, ___) => Container(color: ThixPolicy.primary),
+                    errorWidget: (_, __, ___) => Container(color: Inst.navyDeep),
                   )
                 : Container(
                     decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
-                        colors: [Color(0xFF1E3A8A), Color(0xFF2563EB)],
+                        colors: [Inst.navyDeep, Inst.blue],
                       ),
                     ),
                   ),
@@ -1002,42 +1117,30 @@ class _Header extends ConsumerWidget {
                 gradient: LinearGradient(
                   begin: Alignment.topCenter,
                   end: Alignment.bottomCenter,
-                  colors: [Colors.black.withOpacity(0.18), Colors.black.withOpacity(0.72)],
-                  stops: const [0.3, 1],
+                  colors: [Inst.navyDeep.withOpacity(0.25), Inst.navyDeep.withOpacity(0.88)],
+                  stops: const [0.25, 1],
                 ),
               ),
             ),
             Positioned(
               left: 20,
-              bottom: 56,
+              bottom: 14,
               child: Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.danger,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(color: Inst.gold, borderRadius: BorderRadius.circular(4)),
                     child: Text(
                       province.code,
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 1.2,
-                      ),
+                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Inst.navyDeep, letterSpacing: 1.2),
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(Icons.location_on_rounded, size: 14, color: Colors.white70),
-                  const SizedBox(width: 2),
+                  const Icon(Icons.location_on_rounded, size: 13, color: Colors.white70),
+                  const SizedBox(width: 3),
                   Text(
                     province.capital,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
+                    style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: Colors.white),
                   ),
                 ],
               ),
@@ -1047,150 +1150,134 @@ class _Header extends ConsumerWidget {
       ),
     );
   }
+}
 
-  Widget _gBtn(IconData icon, VoidCallback onTap, {Color color = Colors.white}) {
+class _Masthead extends StatelessWidget {
+  final Province province;
+  const _Masthead({required this.province});
+
+  Widget _vDiv() => Container(width: 1, height: 36, color: Inst.line);
+
+  Widget _statBox(String label, String value) => Expanded(
+        child: Column(
+          children: [
+            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h3.copyWith(fontSize: 13)),
+            const SizedBox(height: 3),
+            Text(
+              label.toUpperCase(),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Inst.micro.copyWith(fontSize: 8, letterSpacing: 1.2),
+            ),
+          ],
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final p = province;
+    final hasCoat = (p.coatOfArmsUrl ?? '').isNotEmpty;
     return Padding(
-      padding: const EdgeInsets.only(right: 6),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.black.withOpacity(0.28),
-              borderRadius: BorderRadius.circular(14),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: ICard(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Inst.ivory,
+                    border: Border.all(color: Inst.gold, width: 2),
+                  ),
+                  child: ClipOval(
+                    child: hasCoat
+                        ? CachedNetworkImage(
+                            imageUrl: p.coatOfArmsUrl!,
+                            fit: BoxFit.contain,
+                            errorWidget: (_, __, ___) => const Icon(Icons.shield_rounded, color: Inst.blue, size: 28),
+                          )
+                        : const Icon(Icons.shield_rounded, color: Inst.blue, size: 28),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('RÉPUBLIQUE DÉMOCRATIQUE DU CONGO', style: Inst.kicker),
+                      const SizedBox(height: 4),
+                      Text(p.name, style: Inst.h2),
+                      if ((p.motto ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          '« ${p.motto} »',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Inst.bodyS.copyWith(fontStyle: FontStyle.italic),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _pill(p.region.toUpperCase(), Inst.blue),
+              ],
             ),
-            child: IconButton(
-              icon: Icon(icon, color: color, size: 20),
-              onPressed: onTap,
-              padding: const EdgeInsets.all(10),
-              constraints: const BoxConstraints(),
+            Container(height: 1, margin: const EdgeInsets.symmetric(vertical: 14), color: Inst.gold.withOpacity(0.4)),
+            Row(
+              children: [
+                _statBox('Capitale', p.capital),
+                _vDiv(),
+                _statBox('Population', p.population != null ? fmtNum(p.population!) : '—'),
+                _vDiv(),
+                _statBox('Superficie', p.area != null ? '${fmtNum(p.area!)} km²' : '—'),
+                if (p.territoriesCount != null) ...[
+                  _vDiv(),
+                  _statBox('Territoires', '${p.territoriesCount}'),
+                ],
+              ],
             ),
-          ),
+          ],
         ),
       ),
     );
   }
 }
 
-void _openSearch(BuildContext context, String provinceId) {
-  showGlassSheet(
-    context,
-    title: 'Rechercher',
-    icon: Icons.search_rounded,
-    children: [
-      Consumer(
-        builder: (context, ref, _) {
-          final notifier = ref.read(provinceSearchDebouncedProvider(provinceId).notifier);
-          final results = ref.watch(provinceSearchDebouncedProvider(provinceId));
-          return Column(
-            children: [
-              TextField(
-                autofocus: true,
-                onChanged: notifier.search,
-                decoration: InputDecoration(
-                  hintText: 'Ville, projet, actualité…',
-                  prefixIcon: const Icon(Icons.search_rounded, color: ThixPolicy.primary),
-                  filled: true,
-                  fillColor: ThixPolicy.surfaceSoft,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (results.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Text(
-                    'Commencez à taper…',
-                    style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
-                  ),
-                )
-              else
-                ...results.map((r) {
-                  final source = r['_source']?.toString() ?? '';
-                  final label = (r['name'] ?? r['title'] ?? '').toString();
-                  return InkWell(
-                    onTap: () => Navigator.pop(context),
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.surfaceSoft,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        children: [
-                          _pill(source.replaceAll('province_', ''), ThixPolicy.primary),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              label,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: ThixPolicy.captionStyle.copyWith(
-                                color: ThixPolicy.inkDeep,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                          const Icon(Icons.chevron_right_rounded, size: 18, color: ThixPolicy.textMuted),
-                        ],
-                      ),
-                    ),
-                  );
-                }),
-            ],
-          );
-        },
-      ),
-    ],
-  );
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// TOP ACTIONS (langue + accessibilité)
-// ════════════════════════════════════════════════════════════════════════
 class _TopActions extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final lang = ref.watch(languageProvider);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
         children: [
           Expanded(
-            child: GlassCard(
-              radius: 18,
+            child: ICard(
+              radius: 10,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               onTap: () => _langSheet(context, ref),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text(lang.flag, style: const TextStyle(fontSize: 17)),
+                  Text(lang.flag, style: const TextStyle(fontSize: 16)),
                   const SizedBox(width: 8),
-                  Text(
-                    lang.name,
-                    style: ThixPolicy.labelStyle.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  const Icon(Icons.keyboard_arrow_down_rounded, size: 17, color: ThixPolicy.textSecondary),
+                  Text(lang.name, style: Inst.label),
+                  const Icon(Icons.keyboard_arrow_down_rounded, size: 16, color: Inst.muted),
                 ],
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          GlassCard(
-            radius: 18,
-            padding: const EdgeInsets.all(11),
+          const SizedBox(width: 10),
+          ICard(
+            radius: 10,
+            padding: const EdgeInsets.all(10),
             onTap: () => _a11ySheet(context),
-            child: const Icon(Icons.accessibility_new_rounded, color: ThixPolicy.primary, size: 20),
+            child: const Icon(Icons.accessibility_new_rounded, color: Inst.blue, size: 18),
           ),
         ],
       ),
@@ -1203,24 +1290,19 @@ void _langSheet(BuildContext context, WidgetRef ref) {
     context: context,
     backgroundColor: Colors.transparent,
     builder: (_) => ClipRRect(
-      borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       child: Container(
-        color: Colors.white,
+        color: Inst.paper,
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Container(
-              width: 42,
-              height: 4,
-              decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(4)),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Choisir la langue',
-              style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 20),
+            Container(width: 44, height: 4, decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4))),
+            const SizedBox(height: 18),
+            const Text('LANGUE NATIONALE', style: Inst.kicker),
+            const SizedBox(height: 6),
+            Text('Choisir la langue', style: Inst.h2),
+            const SizedBox(height: 16),
             ...NationalLanguage.values.map((l) {
               final active = ref.read(languageProvider) == l;
               return InkWell(
@@ -1229,32 +1311,21 @@ void _langSheet(BuildContext context, WidgetRef ref) {
                   Navigator.pop(context);
                   HapticFeedback.selectionClick();
                 },
-                borderRadius: BorderRadius.circular(14),
+                borderRadius: BorderRadius.circular(10),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(14),
+                  padding: const EdgeInsets.all(13),
                   decoration: BoxDecoration(
-                    color: active ? ThixPolicy.primary.withOpacity(0.1) : ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: active ? ThixPolicy.primary : ThixPolicy.border,
-                      width: active ? 2 : 1,
-                    ),
+                    color: active ? Inst.navy.withOpacity(0.06) : Inst.ivory,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: active ? Inst.gold : Inst.line, width: active ? 2 : 1),
                   ),
                   child: Row(
                     children: [
-                      Text(l.flag, style: const TextStyle(fontSize: 26)),
+                      Text(l.flag, style: const TextStyle(fontSize: 24)),
                       const SizedBox(width: 14),
-                      Expanded(
-                        child: Text(
-                          l.name,
-                          style: ThixPolicy.labelStyle.copyWith(
-                            color: ThixPolicy.inkDeep,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      if (active) const Icon(Icons.check_circle_rounded, color: ThixPolicy.primary),
+                      Expanded(child: Text(l.name, style: Inst.h3)),
+                      if (active) const Icon(Icons.check_circle_rounded, color: Inst.goldDeep, size: 20),
                     ],
                   ),
                 ),
@@ -1275,68 +1346,38 @@ void _a11ySheet(BuildContext context) {
       builder: (context, ref, _) {
         final s = ref.watch(accessibilityProvider);
         return ClipRRect(
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
           child: Container(
-            color: Colors.white,
+            color: Inst.paper,
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Center(
-                  child: Container(
-                    width: 42,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.border,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
+                  child: Container(width: 44, height: 4, decoration: BoxDecoration(color: Inst.line, borderRadius: BorderRadius.circular(4))),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 18),
+                const Text('ACCESSIBILITÉ', style: Inst.kicker),
+                const SizedBox(height: 6),
+                Text('Taille du texte', style: Inst.h2),
+                const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(Icons.accessibility_new_rounded, color: ThixPolicy.primary),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Accessibilité',
-                      style: ThixPolicy.h3Style.copyWith(
-                        color: ThixPolicy.inkDeep,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  'Taille du texte',
-                  style: ThixPolicy.labelStyle.copyWith(
-                    color: ThixPolicy.inkDeep,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Row(
-                  children: [
-                    Text('A', style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary)),
+                    Text('A', style: Inst.bodyS),
                     Expanded(
                       child: Slider(
                         value: s.textScale,
                         min: 0.8,
                         max: 1.5,
                         divisions: 7,
-                        activeColor: ThixPolicy.primary,
+                        activeColor: Inst.gold,
+                        inactiveColor: Inst.navy.withOpacity(0.15),
                         onChanged: (v) =>
                             ref.read(accessibilityProvider.notifier).state = s.copyWith(textScale: v),
                       ),
                     ),
-                    Text(
-                      'A',
-                      style: TextStyle(
-                        fontSize: 22,
-                        color: ThixPolicy.textSecondary,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+                    Text('A', style: Inst.h2),
                   ],
                 ),
               ],
@@ -1348,178 +1389,242 @@ void _a11ySheet(BuildContext context) {
   );
 }
 
+void _openSearch(BuildContext context, String provinceId) {
+  showGlassSheet(
+    context,
+    title: 'Rechercher',
+    icon: Icons.search_rounded,
+    children: [
+      Consumer(
+        builder: (context, ref, _) {
+          final notifier = ref.read(provinceSearchDebouncedProvider(provinceId).notifier);
+          final results = ref.watch(provinceSearchDebouncedProvider(provinceId));
+          return Column(
+            children: [
+              TextField(
+                autofocus: true,
+                onChanged: notifier.search,
+                decoration: InputDecoration(
+                  hintText: 'Ville, projet, actualité…',
+                  prefixIcon: const Icon(Icons.search_rounded, color: Inst.blue),
+                  filled: true,
+                  fillColor: Inst.ivory,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Inst.line),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: const BorderSide(color: Inst.gold, width: 1.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              if (results.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Text('Commencez à taper…', style: Inst.bodyS),
+                )
+              else
+                ...results.map((r) {
+                  final source = r['_source']?.toString() ?? '';
+                  final label = (r['name'] ?? r['title'] ?? '').toString();
+                  return InkWell(
+                    onTap: () => Navigator.pop(context),
+                    borderRadius: BorderRadius.circular(10),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 8),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Inst.ivory,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Inst.line),
+                      ),
+                      child: Row(
+                        children: [
+                          _pill(source.replaceAll('province_', '').toUpperCase(), Inst.blue),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
+                          ),
+                          const Icon(Icons.chevron_right_rounded, size: 18, color: Inst.muted),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
+          );
+        },
+      ),
+    ],
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════
-// IDENTITÉ
+// ACTUALITÉS — cliquables → page article
 // ════════════════════════════════════════════════════════════════════════
-class _IdentityCard extends StatelessWidget {
-  final Province province;
-  const _IdentityCard({required this.province});
+String _articleBody(Map<String, dynamic> m) {
+  for (final k in ['content', 'body', 'article', 'full_text', 'text', 'description', 'summary']) {
+    final v = m[k];
+    if (v is String && v.trim().isNotEmpty) return v.trim();
+  }
+  return '';
+}
+
+class _ArticlePage extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final String provinceName;
+  const _ArticlePage({required this.item, this.provinceName = ''});
 
   @override
   Widget build(BuildContext context) {
-    final hasCoat = (province.coatOfArmsUrl ?? '').isNotEmpty;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: GlassCard(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 78,
-                  height: 78,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: Colors.white,
-                    border: Border.all(color: ThixPolicy.primary.withOpacity(0.35), width: 3),
-                    boxShadow: [
-                      BoxShadow(
-                        color: ThixPolicy.primary.withOpacity(0.2),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+    final img = (item['image_url'] ?? '').toString();
+    final category = (item['category'] ?? 'INFO').toString();
+    final isAlert = item['is_alert'] == true;
+    final date = item['published_at']?.toString().split('T').first ?? '';
+    final url = item['url']?.toString() ?? '';
+    final body = _articleBody(item);
+    return Scaffold(
+      backgroundColor: Inst.ivory,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 250,
+            pinned: true,
+            backgroundColor: Inst.navyDeep,
+            elevation: 0,
+            leadingWidth: 48,
+            shape: const Border(bottom: BorderSide(color: Inst.gold, width: 2)),
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 12),
+              child: _sqBtn(Icons.arrow_back_rounded, () => Navigator.pop(context)),
+            ),
+            title: Text(
+              category.toUpperCase(),
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, letterSpacing: 1.6, color: Inst.gold),
+            ),
+            actions: [
+              _sqBtn(Icons.share_rounded, () async {
+                await Share.share('📰 ${item['title'] ?? ''}\n$provinceName — Via THIX ID');
+              }),
+              const SizedBox(width: 8),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: Stack(
+                fit: StackFit.expand,
+                children: [
+                  img.isNotEmpty
+                      ? _img(img)
+                      : Container(color: Inst.navy),
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [Inst.navyDeep.withOpacity(0.15), Inst.navyDeep.withOpacity(0.9)],
+                        stops: const [0.3, 1],
                       ),
-                    ],
+                    ),
                   ),
-                  child: ClipOval(
-                    child: hasCoat
-                        ? CachedNetworkImage(
-                            imageUrl: province.coatOfArmsUrl!,
-                            fit: BoxFit.contain,
-                            errorWidget: (_, __, ___) =>
-                                const Icon(Icons.shield_rounded, color: ThixPolicy.primary),
-                          )
-                        : const Icon(Icons.shield_rounded, color: ThixPolicy.primary, size: 36),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        province.name,
-                        style: ThixPolicy.h2Style.copyWith(
-                          color: ThixPolicy.inkDeep,
-                          fontWeight: FontWeight.w900,
+                  Positioned(
+                    left: 20,
+                    bottom: 14,
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: isAlert ? Inst.danger : Inst.gold,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            category.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 1,
+                              color: isAlert ? Colors.white : Inst.navyDeep,
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          _pill(province.code, ThixPolicy.danger),
+                        if (date.isNotEmpty) ...[
                           const SizedBox(width: 8),
-                          Flexible(
+                          Text(date, style: const TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w700)),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(item['title']?.toString() ?? '', style: Inst.h1),
+                  Container(height: 3, width: 56, color: Inst.gold, margin: const EdgeInsets.symmetric(vertical: 14)),
+                  if (isAlert) ...[
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Inst.danger.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Inst.danger.withOpacity(0.35)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.campaign_rounded, size: 16, color: Inst.danger),
+                          const SizedBox(width: 8),
+                          Expanded(
                             child: Text(
-                              'Région ${province.region}',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: ThixPolicy.captionStyle.copyWith(
-                                color: ThixPolicy.primary,
-                                fontWeight: FontWeight.w700,
-                              ),
+                              'Communiqué officiel — province',
+                              style: Inst.bodyS.copyWith(color: Inst.danger, fontWeight: FontWeight.w800),
                             ),
                           ),
                         ],
                       ),
-                      if ((province.motto ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 4),
-                        Text(
-                          '« ${province.motto} »',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.microStyle.copyWith(
-                            color: ThixPolicy.textSecondary,
-                            fontStyle: FontStyle.italic,
-                          ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  if (body.isNotEmpty) ExpandableText(body, maxLines: 6, style: Inst.body),
+                  if (url.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _launch(url),
+                        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                        label: const Text('Lire la source officielle'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Inst.navy,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 18),
-            Row(
-              children: [
-                _stat(Icons.location_city_rounded, ThixPolicy.primary, 'Capitale', province.capital),
-                _stat(
-                  Icons.groups_rounded,
-                  const Color(0xFF43A047),
-                  'Population',
-                  province.population != null ? fmtNum(province.population!) : 'N/A',
-                ),
-                _stat(
-                  Icons.map_rounded,
-                  const Color(0xFFFB8C00),
-                  'Superficie',
-                  province.area != null ? '${fmtNum(province.area!)} km²' : 'N/A',
-                ),
-                if (province.territoriesCount != null)
-                  _stat(
-                    Icons.format_list_numbered_rounded,
-                    const Color(0xFF8E24AA),
-                    'Territoires',
-                    '${province.territoriesCount}',
-                  ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _stat(IconData icon, Color color, String label, String value) {
-    return Expanded(
-      child: Container(
-        margin: const EdgeInsets.symmetric(horizontal: 3),
-        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.07),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.18)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 20, color: color),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.inkDeep,
-                fontWeight: FontWeight.w900,
-                fontSize: 12,
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 30),
+                ],
               ),
             ),
-            const SizedBox(height: 2),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.microStyle.copyWith(
-                color: ThixPolicy.textMuted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// NEWS
-// ════════════════════════════════════════════════════════════════════════
 class _NewsSection extends ConsumerWidget {
   final String id;
   final NationalLanguage lang;
-  const _NewsSection({required this.id, required this.lang});
+  final String provinceName;
+  const _NewsSection({required this.id, required this.lang, this.provinceName = ''});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1529,104 +1634,96 @@ class _NewsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.newspaper_rounded,
-            color: const Color(0xFF1E88E5),
+            color: Inst.blue,
+            kicker: _kickers['news'],
             title: _Tr.t('news', lang),
             count: items.length,
+            viewAllLabel: _Tr.t('all', lang),
             onViewAll: () => showGlassSheet(
               context,
               title: _Tr.t('news', lang),
               icon: Icons.newspaper_rounded,
-              color: const Color(0xFF1E88E5),
-              children: items.map((n) => _newsTile(context, n)).toList(),
+              children: items
+                  .map((n) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: ICard(
+                          padding: const EdgeInsets.all(12),
+                          onTap: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => _ArticlePage(item: n, provinceName: provinceName)),
+                            );
+                          },
+                          child: Row(
+                            children: [
+                              if ((n['image_url'] ?? '').toString().isNotEmpty)
+                                _img(n['image_url'].toString(), h: 54, w: 54, radius: 8),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(n['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
+                                    const SizedBox(height: 3),
+                                    Text(n['published_at']?.toString().split('T').first ?? '', style: Inst.micro),
+                                  ],
+                                ),
+                              ),
+                              const Icon(Icons.chevron_right_rounded, size: 18, color: Inst.muted),
+                            ],
+                          ),
+                        ),
+                      ))
+                  .toList(),
             ),
           ),
-          HScroll(height: 225, itemWidth: 290, children: items.map((n) => _NewsCard(item: n)).toList()),
-          const SizedBox(height: 20),
+          HScroll(
+            height: 218,
+            itemWidth: 290,
+            children: items.map((n) => _NewsCard(item: n, provinceName: provinceName, lang: lang)).toList(),
+          ),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 200);
   }
 }
 
-Widget _newsTile(BuildContext context, Map<String, dynamic> n) {
-  return Padding(
-    padding: const EdgeInsets.only(bottom: 10),
-    child: GlassCard(
-      padding: const EdgeInsets.all(12),
-      onTap: () {
-        final u = n['url']?.toString();
-        if (u != null && u.isNotEmpty) _launch(u);
-      },
-      child: Row(
-        children: [
-          if ((n['image_url'] ?? '').toString().isNotEmpty)
-            _img(n['image_url'].toString(), h: 56, w: 56, radius: 12),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  n['title']?.toString() ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.labelStyle.copyWith(
-                    fontWeight: FontWeight.w800,
-                    color: ThixPolicy.inkDeep,
-                  ),
-                ),
-                Text(
-                  n['published_at']?.toString().split('T').first ?? '',
-                  style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class _NewsCard extends StatelessWidget {
   final Map<String, dynamic> item;
-  const _NewsCard({required this.item});
+  final String provinceName;
+  final NationalLanguage lang;
+  const _NewsCard({required this.item, this.provinceName = '', required this.lang});
 
   @override
   Widget build(BuildContext context) {
     final isAlert = item['is_alert'] == true;
     final img = (item['image_url'] ?? '').toString();
-    return GlassCard(
+    return ICard(
       padding: EdgeInsets.zero,
-      onTap: () {
-        final u = item['url']?.toString();
-        if (u != null && u.isNotEmpty) _launch(u);
-      },
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => _ArticlePage(item: item, provinceName: provinceName)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Stack(
             children: [
-              img.isNotEmpty
-                  ? _img(img, h: 112, w: double.infinity)
-                  : Container(height: 112, color: ThixPolicy.surfaceSoft),
+              img.isNotEmpty ? _img(img, h: 116, w: double.infinity) : Container(height: 116, color: Inst.ivory),
               Positioned(
                 top: 8,
                 left: 8,
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: isAlert ? ThixPolicy.danger : const Color(0xFF1E88E5),
-                    borderRadius: BorderRadius.circular(6),
+                    color: isAlert ? Inst.danger : Inst.gold,
+                    borderRadius: BorderRadius.circular(4),
                   ),
                   child: Text(
-                    item['category']?.toString() ?? 'INFO',
-                    style: const TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 0.8,
-                    ),
+                    (item['category']?.toString() ?? 'INFO').toUpperCase(),
+                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: isAlert ? Colors.white : Inst.navyDeep),
                   ),
                 ),
               ),
@@ -1637,34 +1734,16 @@ class _NewsCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  item['title']?.toString() ?? '',
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.labelStyle.copyWith(
-                    color: ThixPolicy.inkDeep,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
+                Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
                 const SizedBox(height: 4),
-                Text(
-                  item['summary']?.toString() ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
-                ),
-                const SizedBox(height: 6),
+                Text(item['summary']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
+                const SizedBox(height: 8),
                 Row(
                   children: [
-                    Text(
-                      item['published_at']?.toString().split('T').first ?? '',
-                      style: ThixPolicy.microStyle.copyWith(
-                        color: ThixPolicy.textMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    Text(item['published_at']?.toString().split('T').first ?? '', style: Inst.micro),
                     const Spacer(),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: Color(0xFF1E88E5)),
+                    Text(_Tr.plain('read', lang).toUpperCase(), style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1, color: Inst.goldDeep)),
+                    const Icon(Icons.arrow_forward_rounded, size: 12, color: Inst.goldDeep),
                   ],
                 ),
               ],
@@ -1692,12 +1771,13 @@ class _ProjectsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.construction_rounded,
-            color: const Color(0xFFFB8C00),
+            color: const Color(0xFFB26A00),
+            kicker: _kickers['projects'],
             title: _Tr.t('projects', lang),
             count: items.length,
           ),
-          HScroll(height: 205, itemWidth: 280, children: items.map((p) => _ProjectCard(item: p)).toList()),
-          const SizedBox(height: 20),
+          HScroll(height: 218, itemWidth: 280, children: items.map((p) => _ProjectCard(item: p)).toList()),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 180);
@@ -1711,27 +1791,26 @@ class _ProjectCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final raw = (item['progress'] as num?)?.toDouble() ?? 0;
-    // La base peut stocker 0..1 ou 0..100
     final progress = (raw > 1 ? raw / 100 : raw).clamp(0.0, 1.0);
     final pct = (progress * 100).round();
-    final color = pct >= 75
-        ? const Color(0xFF43A047)
-        : pct >= 50
-            ? const Color(0xFFFB8C00)
-            : const Color(0xFF1E88E5);
-
-    return GlassCard(
+    final color = pct >= 75 ? Inst.green : pct >= 50 ? const Color(0xFFB26A00) : Inst.blue;
+    final photos = _photosOf(item);
+    return ICard(
       padding: const EdgeInsets.all(14),
       onTap: () => showGlassSheet(
         context,
         title: item['name']?.toString() ?? '',
         subtitle: item['description']?.toString(),
-        imageUrl: item['image_url']?.toString(),
         icon: Icons.construction_rounded,
         color: color,
         children: [
-          sheetRow(Icons.payments_rounded, 'Budget', item['budget']?.toString() ?? '-'),
-          sheetRow(Icons.event_rounded, 'Échéance', item['deadline']?.toString() ?? '-'),
+          if (photos.isNotEmpty) ...[
+            _blockLabel('Photos (${photos.length})'),
+            _photoGrid(photos),
+          ],
+          const SizedBox(height: 8),
+          sheetRow(Icons.payments_rounded, 'Budget', _money(item['budget'])),
+          sheetRow(Icons.event_rounded, 'Échéance', item['deadline']?.toString() ?? '—'),
           sheetRow(Icons.trending_up_rounded, 'Progression', '$pct%', color: color),
         ],
       ),
@@ -1741,25 +1820,22 @@ class _ProjectCard extends StatelessWidget {
           Row(
             children: [
               SizedBox(
-                width: 46,
-                height: 46,
+                width: 44,
+                height: 44,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
                     SizedBox(
-                      width: 46,
-                      height: 46,
+                      width: 44,
+                      height: 44,
                       child: CircularProgressIndicator(
                         value: progress,
-                        strokeWidth: 5,
+                        strokeWidth: 4.5,
                         backgroundColor: color.withOpacity(0.15),
                         valueColor: AlwaysStoppedAnimation(color),
                       ),
                     ),
-                    Text(
-                      '$pct%',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: color),
-                    ),
+                    Text('$pct%', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w900, color: color)),
                   ],
                 ),
               ),
@@ -1768,18 +1844,21 @@ class _ProjectCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          Text(
-            item['name']?.toString() ?? '',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+          Text(item['name']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+          const SizedBox(height: 4),
+          Expanded(
+            child: Text(
+              item['description']?.toString() ?? '',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: Inst.bodyS,
+            ),
           ),
-          const Spacer(),
           ClipRRect(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(4),
             child: LinearProgressIndicator(
               value: progress,
-              minHeight: 6,
+              minHeight: 5,
               backgroundColor: color.withOpacity(0.12),
               valueColor: AlwaysStoppedAnimation(color),
             ),
@@ -1788,23 +1867,11 @@ class _ProjectCard extends StatelessWidget {
           Row(
             children: [
               Flexible(
-                child: Text(
-                  '💰 ${item['budget'] ?? '-'}',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.microStyle.copyWith(
-                    color: ThixPolicy.textSecondary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+                child: Text('💰 ${_money(item['budget'])}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
               ),
               const SizedBox(width: 8),
-              Text(
-                '📅 ${item['deadline'] ?? '-'}',
-                style: ThixPolicy.microStyle.copyWith(
-                  color: ThixPolicy.textSecondary,
-                  fontWeight: FontWeight.w700,
-                ),
+              Flexible(
+                child: Text('📅 ${item['deadline'] ?? '—'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
               ),
             ],
           ),
@@ -1815,7 +1882,7 @@ class _ProjectCard extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// SERVICES
+// SERVICES — toutes les photos affichées
 // ════════════════════════════════════════════════════════════════════════
 class _ServicesSection extends ConsumerWidget {
   final String id;
@@ -1830,15 +1897,16 @@ class _ServicesSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.badge_rounded,
-            color: const Color(0xFF43A047),
+            color: Inst.green,
+            kicker: _kickers['services'],
             title: _Tr.t('services', lang),
             count: items.length,
           ),
-          HScroll(height: 170, itemWidth: 250, children: items.map((s) => _ServiceCard(item: s)).toList()),
-          const SizedBox(height: 20),
+          HScroll(height: 246, itemWidth: 260, children: items.map((s) => _ServiceCard(item: s)).toList()),
+          const SizedBox(height: 12),
         ],
       );
-    }, skeleton: 150);
+    }, skeleton: 200);
   }
 }
 
@@ -1848,17 +1916,11 @@ class _ServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const colors = [
-      Color(0xFF1E88E5),
-      Color(0xFF43A047),
-      Color(0xFFFB8C00),
-      Color(0xFF8E24AA),
-      Color(0xFFE53935),
-    ];
+    const colors = [Inst.blue, Inst.green, const Color(0xFFB26A00), const Color(0xFF6A1B9A), Inst.danger];
     final color = colors[(item['category']?.toString().hashCode ?? 0).abs() % colors.length];
-
-    return GlassCard(
-      padding: const EdgeInsets.all(14),
+    final photos = _photosOf(item);
+    return ICard(
+      padding: EdgeInsets.zero,
       onTap: () => showGlassSheet(
         context,
         title: item['name']?.toString() ?? '',
@@ -1866,63 +1928,79 @@ class _ServiceCard extends StatelessWidget {
         icon: Icons.badge_rounded,
         color: color,
         children: [
-          sheetRow(Icons.category_rounded, 'Catégorie', item['category']?.toString() ?? '-'),
-          sheetRow(Icons.access_time_rounded, 'Horaires', item['hours']?.toString() ?? '-'),
-          sheetRow(Icons.location_on_rounded, 'Adresse', item['address']?.toString() ?? '-'),
+          if (photos.isNotEmpty) ...[
+            _blockLabel('${_Tr.t('photos', NationalLanguage.french)} (${photos.length})'),
+            _photoGrid(photos),
+            const SizedBox(height: 6),
+          ],
+          sheetRow(Icons.category_rounded, 'Catégorie', item['category']?.toString() ?? '—'),
+          sheetRow(Icons.access_time_rounded, 'Horaires', item['hours']?.toString() ?? '—'),
+          sheetRow(Icons.location_on_rounded, 'Adresse', item['address']?.toString() ?? '—'),
+          if ((item['phone'] ?? '').toString().isNotEmpty)
+            sheetRow(Icons.phone_rounded, 'Téléphone', item['phone'].toString()),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
+          Stack(
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(Icons.badge_rounded, color: color, size: 22),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  item['category']?.toString() ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.microStyle.copyWith(
-                    color: color,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 0.8,
+              _photoStrip(photos, height: 118, top: true),
+              if (photos.length > 1)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                    child: Text(
+                      '${photos.length} photos',
+                      style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white),
+                    ),
                   ),
                 ),
-              ),
-            ],
+              ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            item['name']?.toString() ?? '',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
-          ),
-          const Spacer(),
-          Row(
-            children: [
-              const Icon(Icons.access_time_rounded, size: 12, color: ThixPolicy.textMuted),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  item['hours']?.toString() ?? '',
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  (item['category']?.toString() ?? '').toUpperCase(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.microStyle.copyWith(
-                    color: ThixPolicy.textSecondary,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  style: TextStyle(fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.2, color: color),
                 ),
-              ),
-            ],
+                const SizedBox(height: 4),
+                Text(item['name']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+                const Spacer(),
+                Row(
+                  children: [
+                    const Icon(Icons.access_time_rounded, size: 11, color: Inst.muted),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        item['hours']?.toString() ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Inst.micro,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Text(
+                      'FICHE DÉTAILLÉE',
+                      style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, letterSpacing: 1, color: Inst.goldDeep),
+                    ),
+                    const Icon(Icons.arrow_forward_rounded, size: 11, color: Inst.goldDeep),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -1946,16 +2024,13 @@ class _EngagementSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.how_to_vote_rounded,
-            color: const Color(0xFF8E24AA),
+            color: const Color(0xFF6A1B9A),
+            kicker: _kickers['citizen'],
             title: _Tr.t('citizen', lang),
             count: items.length,
           ),
-          HScroll(
-            height: 205,
-            itemWidth: 270,
-            children: items.map((e) => _EngagementCard(item: e, pid: id, ref: ref)).toList(),
-          ),
-          const SizedBox(height: 20),
+          HScroll(height: 200, itemWidth: 270, children: items.map((e) => _EngagementCard(item: e, pid: id, ref: ref)).toList()),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 180);
@@ -1977,9 +2052,7 @@ class _EngagementCard extends StatelessWidget {
           .maybeSingle();
       if (row != null) {
         final c = (row['participants_count'] as num? ?? 0).toInt();
-        await _db
-            .from('province_engagements')
-            .update({'participants_count': c + 1}).eq('id', item['id']);
+        await _db.from('province_engagements').update({'participants_count': c + 1}).eq('id', item['id']);
         ref.invalidate(_engagementsProv(pid));
       }
     } catch (e) {
@@ -1991,53 +2064,32 @@ class _EngagementCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final type = item['type']?.toString() ?? 'SONDAGE';
     final lower = type.toLowerCase();
-    final color = lower == 'vote'
-        ? const Color(0xFF43A047)
-        : lower == 'pétition'
-            ? const Color(0xFFFB8C00)
-            : const Color(0xFF8E24AA);
+    final color = lower == 'vote' ? Inst.green : lower == 'pétition' ? const Color(0xFFB26A00) : const Color(0xFF6A1B9A);
     final participants = (item['participants_count'] as num?)?.toInt() ?? 0;
-
-    return GlassCard(
+    return ICard(
       padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _pill(type.toUpperCase(), color),
           const SizedBox(height: 8),
-          Text(
-            item['title']?.toString() ?? '',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
-          ),
+          Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
           const SizedBox(height: 4),
           Expanded(
-            child: Text(
-              item['description']?.toString() ?? '',
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
-            ),
+            child: Text(item['description']?.toString() ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
           ),
           Row(
             children: [
-              Icon(Icons.people_rounded, size: 14, color: color),
+              Icon(Icons.people_rounded, size: 13, color: color),
               const SizedBox(width: 4),
-              Text(
-                fmtNum(participants),
-                style: ThixPolicy.captionStyle.copyWith(color: color, fontWeight: FontWeight.w800),
-              ),
+              Text(fmtNum(participants), style: Inst.label.copyWith(color: color)),
               const Spacer(),
               GestureDetector(
                 onTap: _participate,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(14)),
-                  child: const Text(
-                    'Participer',
-                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(6)),
+                  child: const Text('Participer', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Colors.white)),
                 ),
               ),
             ],
@@ -2049,7 +2101,7 @@ class _EngagementCard extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// BUDGET (camembert)
+// BUDGET
 // ════════════════════════════════════════════════════════════════════════
 class _BudgetSection extends ConsumerWidget {
   final String id;
@@ -2057,12 +2109,12 @@ class _BudgetSection extends ConsumerWidget {
   const _BudgetSection({required this.id, required this.lang});
 
   static const _palette = [
-    Color(0xFF1E88E5),
-    Color(0xFF43A047),
-    Color(0xFFFB8C00),
+    Inst.navy,
+    Inst.gold,
+    Inst.blue,
+    Color(0xFF00695C),
     Color(0xFF8E24AA),
-    Color(0xFFE53935),
-    Color(0xFF5E35B1),
+    Color(0xFFB3261E),
   ];
 
   @override
@@ -2074,13 +2126,14 @@ class _BudgetSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.account_balance_wallet_rounded,
-            color: const Color(0xFF43A047),
+            color: Inst.green,
+            kicker: _kickers['budget'],
             title: _Tr.t('budget', lang),
             count: items.length,
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: GlassCard(
+            child: ICard(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
@@ -2095,13 +2148,9 @@ class _BudgetSection extends ConsumerWidget {
                           return PieChartSectionData(
                             color: _palette[e.key % _palette.length],
                             value: pct,
-                            radius: 48,
+                            radius: 46,
                             title: '${pct.toInt()}%',
-                            titleStyle: const TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                            ),
+                            titleStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
                           );
                         }).toList(),
                       ),
@@ -2118,44 +2167,32 @@ class _BudgetSection extends ConsumerWidget {
                           Container(
                             width: 9,
                             height: 9,
-                            decoration: BoxDecoration(
-                              color: _palette[e.key % _palette.length],
-                              borderRadius: BorderRadius.circular(3),
-                            ),
+                            decoration: BoxDecoration(color: _palette[e.key % _palette.length], borderRadius: BorderRadius.circular(2)),
                           ),
                           const SizedBox(width: 5),
-                          Text(
-                            e.value['sector']?.toString() ?? '',
-                            style: ThixPolicy.captionStyle.copyWith(
-                              color: ThixPolicy.inkDeep,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                          Text(e.value['sector']?.toString() ?? '', style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w700)),
                         ],
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF43A047).withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
+                      color: Inst.navy.withOpacity(0.06),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Inst.navy.withOpacity(0.2)),
                     ),
                     child: Text(
-                      'Total : ${fmtNum(total)} USD',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w900,
-                        color: Color(0xFF43A047),
-                      ),
+                      'TOTAL : ${_money(total)}',
+                      style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, letterSpacing: 0.8, color: Inst.navy),
                     ),
                   ),
                 ],
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 240);
@@ -2163,7 +2200,7 @@ class _BudgetSection extends ConsumerWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// DÉMOGRAPHIE (histogramme)
+// DÉMOGRAPHIE
 // ════════════════════════════════════════════════════════════════════════
 class _DemoSection extends ConsumerWidget {
   final String id;
@@ -2185,14 +2222,10 @@ class _DemoSection extends ConsumerWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SectionHeader(
-                  icon: Icons.analytics_rounded,
-                  color: const Color(0xFF1565C0),
-                  title: _Tr.t('demo', lang),
-                ),
+                SectionHeader(icon: Icons.analytics_rounded, color: Inst.blue, kicker: _kickers['demo'], title: _Tr.t('demo', lang)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: GlassCard(
+                  child: ICard(
                     padding: const EdgeInsets.all(16),
                     child: SizedBox(
                       height: 160,
@@ -2214,7 +2247,7 @@ class _DemoSection extends ConsumerWidget {
                                   padding: const EdgeInsets.only(top: 6),
                                   child: Text(
                                     v.toInt() < items.length ? (items[v.toInt()]['year']?.toString() ?? '') : '',
-                                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
+                                    style: Inst.micro,
                                   ),
                                 ),
                               ),
@@ -2227,9 +2260,9 @@ class _DemoSection extends ConsumerWidget {
                                 BarChartRodData(
                                   toY: (e.value['population'] as num?)?.toDouble() ?? 0,
                                   width: 26,
-                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+                                  borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
                                   gradient: const LinearGradient(
-                                    colors: [Color(0xFF1565C0), Color(0xFF42A5F5)],
+                                    colors: [Inst.navy, Inst.blue],
                                     begin: Alignment.bottomCenter,
                                     end: Alignment.topCenter,
                                   ),
@@ -2242,7 +2275,7 @@ class _DemoSection extends ConsumerWidget {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
               ],
             );
           },
@@ -2266,14 +2299,15 @@ class _DocumentsSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.description_rounded,
-            color: const Color(0xFF5E35B1),
+            color: Inst.navy,
+            kicker: _kickers['docs'],
             title: _Tr.t('docs', lang),
             count: items.length,
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: GlassCard(
-              padding: const EdgeInsets.all(12),
+            child: ICard(
+              padding: const EdgeInsets.all(10),
               child: Column(
                 children: items.map((d) {
                   return InkWell(
@@ -2281,7 +2315,7 @@ class _DocumentsSection extends ConsumerWidget {
                       final u = d['file_url']?.toString();
                       if (u != null && u.isNotEmpty) _launch(u);
                     },
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(8),
                     child: Padding(
                       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
                       child: Row(
@@ -2289,33 +2323,24 @@ class _DocumentsSection extends ConsumerWidget {
                           Container(
                             padding: const EdgeInsets.all(9),
                             decoration: BoxDecoration(
-                              color: const Color(0xFF5E35B1).withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(10),
+                              color: Inst.navy.withOpacity(0.07),
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(color: Inst.navy.withOpacity(0.18)),
                             ),
-                            child: const Icon(Icons.gavel_rounded, color: Color(0xFF5E35B1), size: 18),
+                            child: const Icon(Icons.gavel_rounded, color: Inst.navy, size: 16),
                           ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  d['title']?.toString() ?? '',
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: ThixPolicy.captionStyle.copyWith(
-                                    color: ThixPolicy.inkDeep,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                Text(
-                                  '${d['type'] ?? ''} • ${d['published_at']?.toString().split('T').first ?? ''}',
-                                  style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted),
-                                ),
+                                Text(d['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
+                                const SizedBox(height: 2),
+                                Text('${d['type'] ?? ''} • ${d['published_at']?.toString().split('T').first ?? ''}', style: Inst.micro),
                               ],
                             ),
                           ),
-                          const Icon(Icons.download_rounded, size: 18, color: Color(0xFF5E35B1)),
+                          const Icon(Icons.download_rounded, size: 17, color: Inst.goldDeep),
                         ],
                       ),
                     ),
@@ -2324,7 +2349,7 @@ class _DocumentsSection extends ConsumerWidget {
               ),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 140);
@@ -2347,12 +2372,13 @@ class _MediaSection extends ConsumerWidget {
         children: [
           SectionHeader(
             icon: Icons.play_circle_rounded,
-            color: const Color(0xFFE53935),
+            color: Inst.danger,
+            kicker: _kickers['media'],
             title: _Tr.t('media', lang),
             count: items.length,
           ),
-          HScroll(height: 195, itemWidth: 250, children: items.map((m) => _MediaCard(item: m)).toList()),
-          const SizedBox(height: 20),
+          HScroll(height: 196, itemWidth: 250, children: items.map((m) => _MediaCard(item: m)).toList()),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 170);
@@ -2366,7 +2392,7 @@ class _MediaCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final thumb = (item['thumbnail_url'] ?? '').toString();
-    return GlassCard(
+    return ICard(
       padding: EdgeInsets.zero,
       onTap: () {
         final u = item['url']?.toString();
@@ -2378,13 +2404,11 @@ class _MediaCard extends StatelessWidget {
           Stack(
             alignment: Alignment.center,
             children: [
-              thumb.isNotEmpty
-                  ? _img(thumb, h: 110, w: double.infinity)
-                  : Container(height: 110, color: ThixPolicy.surfaceSoft),
+              thumb.isNotEmpty ? _img(thumb, h: 112, w: double.infinity) : Container(height: 112, color: Inst.ivory),
               Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.92), shape: BoxShape.circle),
-                child: const Icon(Icons.play_arrow_rounded, color: Color(0xFFE53935), size: 26),
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.94), shape: BoxShape.circle),
+                child: const Icon(Icons.play_arrow_rounded, color: Inst.danger, size: 24),
               ),
               if ((item['duration'] ?? '').toString().isNotEmpty)
                 Positioned(
@@ -2392,42 +2416,24 @@ class _MediaCard extends StatelessWidget {
                   right: 6,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.black54,
-                      borderRadius: BorderRadius.circular(5),
-                    ),
-                    child: Text(
-                      item['duration'].toString(),
-                      style: const TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                    child: Text(item['duration'].toString(), style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white)),
                   ),
                 ),
             ],
           ),
           Padding(
             padding: const EdgeInsets.all(10),
-            child: Text(
-              item['title']?.toString() ?? '',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.inkDeep,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            child: Text(item['title']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
           ),
         ],
-        
       ),
     );
   }
 }
+
 // ════════════════════════════════════════════════════════════════════════
-// HYMNE (lecteur audio)
+// HYMNE
 // ════════════════════════════════════════════════════════════════════════
 class _HymnSection extends ConsumerStatefulWidget {
   final String id;
@@ -2482,6 +2488,21 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
     if (mounted) setState(() => _instrumental = instrumental);
   }
 
+  Widget _verChip(String label, bool sel, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: sel ? Inst.navy : Colors.transparent,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: sel ? Inst.navy : Inst.line),
+        ),
+        child: Text(label, style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: sel ? Colors.white : Inst.muted)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return ref.watch(_hymnProv(widget.id)).when(
@@ -2490,29 +2511,22 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
           data: (h) {
             if (h == null) return const SizedBox.shrink();
             final lyrics = h['lyrics']?.toString() ?? '';
-            final excerpt = lyrics.length > 200 ? '${lyrics.substring(0, 200)}…' : lyrics;
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                SectionHeader(
-                  icon: Icons.music_note_rounded,
-                  color: ThixPolicy.gold,
-                  title: _Tr.t('hymn', widget.lang),
-                ),
+                SectionHeader(icon: Icons.music_note_rounded, color: Inst.goldDeep, kicker: _kickers['hymn'], title: _Tr.t('hymn', widget.lang)),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: GlassCard(
+                  child: ICard(
                     padding: const EdgeInsets.all(16),
                     child: Column(
                       children: [
                         Container(
                           padding: const EdgeInsets.all(14),
                           decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [ThixPolicy.gold.withOpacity(0.12), ThixPolicy.gold.withOpacity(0.03)],
-                            ),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(color: ThixPolicy.gold.withOpacity(0.25)),
+                            color: Inst.gold.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: Inst.gold.withOpacity(0.35)),
                           ),
                           child: Row(
                             children: [
@@ -2521,22 +2535,8 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                                 child: Container(
                                   width: 46,
                                   height: 46,
-                                  decoration: BoxDecoration(
-                                    color: ThixPolicy.gold,
-                                    shape: BoxShape.circle,
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: ThixPolicy.gold.withOpacity(0.35),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 3),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Icon(
-                                    _playing ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                                    color: Colors.white,
-                                    size: 26,
-                                  ),
+                                  decoration: const BoxDecoration(color: Inst.navy, shape: BoxShape.circle),
+                                  child: Icon(_playing ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Inst.gold, size: 24),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -2544,14 +2544,8 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                                 child: Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    Text(
-                                      h['title']?.toString() ?? 'Hymne provincial',
-                                      style: ThixPolicy.labelStyle.copyWith(
-                                        color: ThixPolicy.inkDeep,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 4),
+                                    Text(h['title']?.toString() ?? 'Hymne provincial', style: Inst.h3),
+                                    const SizedBox(height: 6),
                                     Row(
                                       children: [
                                         _verChip('Officielle', !_instrumental, () => _switchVersion(false)),
@@ -2566,33 +2560,17 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                           ),
                         ),
                         if (lyrics.isNotEmpty) ...[
-                          const SizedBox(height: 12),
+                          const SizedBox(height: 14),
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: ThixPolicy.surfaceSoft,
-                              borderRadius: BorderRadius.circular(12),
-                            ),
+                            decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'Paroles (extrait) :',
-                                  style: ThixPolicy.labelStyle.copyWith(
-                                    color: ThixPolicy.inkDeep,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
+                                const Text('PAROLES (EXTRAIT)', style: Inst.kicker),
                                 const SizedBox(height: 6),
-                                Text(
-                                  excerpt,
-                                  style: ThixPolicy.bodySmallStyle.copyWith(
-                                    color: ThixPolicy.textSecondary,
-                                    fontStyle: FontStyle.italic,
-                                    height: 1.6,
-                                  ),
-                                ),
+                                ExpandableText(lyrics, maxLines: 4, style: Inst.bodyS.copyWith(fontStyle: FontStyle.italic)),
                               ],
                             ),
                           ),
@@ -2601,33 +2579,11 @@ class _HymnSectionState extends ConsumerState<_HymnSection> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 12),
               ],
             );
           },
         );
-  }
-
-  Widget _verChip(String label, bool sel, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(
-          color: sel ? ThixPolicy.gold : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: sel ? ThixPolicy.gold : ThixPolicy.border),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            color: sel ? Colors.white : ThixPolicy.textSecondary,
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -2646,45 +2602,38 @@ class _MapCard extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionHeader(icon: Icons.map_rounded, color: ThixPolicy.primary, title: _Tr.t('map', lang)),
+        SectionHeader(icon: Icons.map_rounded, color: Inst.blue, kicker: _kickers['map'], title: _Tr.t('map', lang)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: GlassCard(
+          child: ICard(
             padding: EdgeInsets.zero,
             onTap: () => showDialog(
               context: context,
               builder: (_) => Dialog(
                 backgroundColor: Colors.transparent,
-                child: GlassCard(
+                child: ICard(
                   padding: const EdgeInsets.all(8),
-                  child: InteractiveViewer(
-                    minScale: 1,
-                    maxScale: 4,
-                    child: _img(url, h: 380, w: double.infinity),
-                  ),
+                  child: InteractiveViewer(minScale: 1, maxScale: 4, child: _img(url, h: 380, w: double.infinity)),
                 ),
               ),
             ),
             child: Stack(
               children: [
-                _img(url, h: 190, w: double.infinity),
+                _img(url, h: 190, w: double.infinity, radius: 12),
                 Positioned(
                   right: 10,
                   bottom: 10,
                   child: Container(
                     padding: const EdgeInsets.all(6),
-                    decoration: BoxDecoration(
-                      color: Colors.black45,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 16),
+                    decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(6)),
+                    child: const Icon(Icons.zoom_in_rounded, color: Colors.white, size: 15),
                   ),
                 ),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -2707,9 +2656,11 @@ class _GallerySection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.photo_library_rounded,
-          color: ThixPolicy.primary,
+          color: Inst.blue,
+          kicker: _kickers['gallery'],
           title: _Tr.t('gallery', lang),
           count: media.length,
+          viewAllLabel: _Tr.t('all', lang),
           onViewAll: () => showGlassSheet(
             context,
             title: _Tr.t('gallery', lang),
@@ -2724,24 +2675,20 @@ class _GallerySection extends StatelessWidget {
                   mainAxisSpacing: 8,
                 ),
                 itemCount: media.length,
-                itemBuilder: (_, i) => _img(media[i]['url']?.toString() ?? '', h: 100, radius: 12),
+                itemBuilder: (_, i) => _img(media[i]['url']?.toString() ?? '', radius: 8),
               ),
             ],
           ),
         ),
-        HScroll(
-          height: 150,
-          itemWidth: 160,
-          children: media.map((m) => _img(m['url']?.toString() ?? '', h: 150, w: 160, radius: 20)).toList(),
-        ),
-        const SizedBox(height: 20),
+        HScroll(height: 150, itemWidth: 160, children: media.map((m) => _img(m['url']?.toString() ?? '', h: 150, w: 160, radius: 10)).toList()),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// AUTORITÉS PROVINCIALES
+// AUTORITÉS
 // ════════════════════════════════════════════════════════════════════════
 class _AuthoritiesSection extends StatelessWidget {
   final Province province;
@@ -2755,27 +2702,23 @@ class _AuthoritiesSection extends StatelessWidget {
       executives.add({'role': 'Gouverneur', 'name': province.governor, 'photo': province.governorPhotoUrl});
     }
     if ((province.viceGovernor ?? '').isNotEmpty) {
-      executives.add({
-        'role': 'Vice-Gouverneur',
-        'name': province.viceGovernor,
-        'photo': province.viceGovernorPhotoUrl,
-      });
+      executives.add({'role': 'Vice-Gouverneur', 'name': province.viceGovernor, 'photo': province.viceGovernorPhotoUrl});
     }
     final ministers = province.ministers;
     if (executives.isEmpty && ministers.isEmpty) return const SizedBox.shrink();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           icon: Icons.account_balance_rounded,
-          color: ThixPolicy.primary,
+          color: Inst.navy,
+          kicker: _kickers['authorities'],
           title: _Tr.t('authorities', lang),
           count: executives.length + ministers.length,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: GlassCard(
+          child: ICard(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2799,13 +2742,7 @@ class _AuthoritiesSection extends StatelessWidget {
                   ),
                 if (ministers.isNotEmpty) ...[
                   if (executives.isNotEmpty) const SizedBox(height: 16),
-                  Text(
-                    'Ministres provinciaux (${ministers.length})',
-                    style: ThixPolicy.labelStyle.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text('MINISTRES PROVINCIAUX (${ministers.length})', style: Inst.kicker),
                   const SizedBox(height: 10),
                   GridView.builder(
                     shrinkWrap: true,
@@ -2831,7 +2768,7 @@ class _AuthoritiesSection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -2847,8 +2784,7 @@ class _ExecutiveCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final hasPhoto = photoUrl != null && photoUrl!.isNotEmpty;
     final isGov = role.toLowerCase().contains('gouverneur') && !role.toLowerCase().contains('vice');
-    final color = isGov ? ThixPolicy.gold : ThixPolicy.primary;
-
+    final color = isGov ? Inst.goldDeep : Inst.blue;
     return InkWell(
       onTap: () {
         HapticFeedback.lightImpact();
@@ -2865,12 +2801,12 @@ class _ExecutiveCard extends StatelessWidget {
           ],
         );
       },
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
         decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: ThixPolicy.border),
+          color: Inst.ivory,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: Inst.line),
         ),
         padding: const EdgeInsets.all(14),
         child: Column(
@@ -2878,27 +2814,18 @@ class _ExecutiveCard extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(3),
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                border: Border.all(color: color, width: 2.5),
-              ),
+              decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: color, width: 2.5)),
               child: CircleAvatar(
                 radius: 32,
-                backgroundColor: ThixPolicy.card,
+                backgroundColor: Colors.white,
                 backgroundImage: hasPhoto ? CachedNetworkImageProvider(photoUrl!) : null,
-                child: hasPhoto ? null : Icon(Icons.person_rounded, size: 30, color: ThixPolicy.textMuted),
+                child: hasPhoto ? null : Icon(Icons.person_rounded, size: 30, color: Inst.muted),
               ),
             ),
             const SizedBox(height: 10),
-            _pill(role.toUpperCase(), isGov ? const Color(0xFF8A6B00) : ThixPolicy.primary),
+            _pill(role.toUpperCase(), color),
             const SizedBox(height: 6),
-            Text(
-              name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
-            ),
+            Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
           ],
         ),
       ),
@@ -2927,46 +2854,23 @@ class _MinisterCard extends StatelessWidget {
           children: [sheetRow(Icons.work_rounded, 'Portefeuille', role)],
         );
       },
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(10),
       child: Container(
-        decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: ThixPolicy.border),
-        ),
+        decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(10), border: Border.all(color: Inst.line)),
         padding: const EdgeInsets.all(10),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             CircleAvatar(
               radius: 24,
-              backgroundColor: ThixPolicy.card,
+              backgroundColor: Colors.white,
               backgroundImage: hasPhoto ? CachedNetworkImageProvider(photoUrl) : null,
-              child: hasPhoto
-                  ? null
-                  : const Icon(Icons.person_rounded, size: 20, color: ThixPolicy.textMuted),
+              child: hasPhoto ? null : const Icon(Icons.person_rounded, size: 20, color: Inst.muted),
             ),
             const SizedBox(height: 6),
-            Text(
-              role,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.microStyle.copyWith(
-                color: ThixPolicy.textMuted,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            Text(
-              name,
-              textAlign: TextAlign.center,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.captionStyle.copyWith(
-                color: ThixPolicy.inkDeep,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+            Text(role, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
+            const SizedBox(height: 2),
+            Text(name, textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
           ],
         ),
       ),
@@ -2975,7 +2879,7 @@ class _MinisterCard extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// VILLES
+// VILLES / DÉCOUPAGE / RÉALISATIONS
 // ════════════════════════════════════════════════════════════════════════
 class _CitiesSection extends StatelessWidget {
   final Province province;
@@ -2990,17 +2894,18 @@ class _CitiesSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.location_city_rounded,
-          color: const Color(0xFF1565C0),
+          color: Inst.blue,
+          kicker: _kickers['cities'],
           title: _Tr.t('cities', lang),
           count: province.cities.length,
         ),
         HScroll(
-          height: 190,
+          height: 196,
           itemWidth: 220,
           children: province.cities.map((c) {
             final dyn = c as dynamic;
             final img = (dyn.imageUrl ?? '').toString();
-            return GlassCard(
+            return ICard(
               padding: EdgeInsets.zero,
               onTap: () => showGlassSheet(
                 context,
@@ -3008,11 +2913,10 @@ class _CitiesSection extends StatelessWidget {
                 subtitle: c.isCapital ? 'Chef-lieu de la province' : null,
                 imageUrl: img.isNotEmpty ? img : null,
                 icon: Icons.location_city_rounded,
-                color: const Color(0xFF1565C0),
+                color: Inst.blue,
                 children: [
                   if (c.population != null)
                     sheetRow(Icons.groups_rounded, 'Population', '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab'),
-
                   if ((c.mayor ?? '').isNotEmpty) sheetRow(Icons.person_rounded, 'Maire', c.mayor!),
                 ],
               ),
@@ -3022,16 +2926,12 @@ class _CitiesSection extends StatelessWidget {
                   Stack(
                     children: [
                       img.isNotEmpty
-                          ? _img(img, h: 90, w: double.infinity)
+                          ? _img(img, h: 100, w: double.infinity)
                           : Container(
-                              height: 90,
+                              height: 100,
                               width: double.infinity,
-                              color: const Color(0xFF1565C0).withOpacity(0.08),
-                              child: const Icon(
-                                Icons.location_city_rounded,
-                                color: Color(0xFF1565C0),
-                                size: 34,
-                              ),
+                              color: Inst.ivory,
+                              child: const Icon(Icons.location_city_rounded, color: Inst.blue, size: 30),
                             ),
                       if (c.isCapital)
                         Positioned(
@@ -3039,19 +2939,8 @@ class _CitiesSection extends StatelessWidget {
                           left: 6,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF8A6B00),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: const Text(
-                              'CHEF-LIEU',
-                              style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.8,
-                              ),
-                            ),
+                            decoration: BoxDecoration(color: Inst.goldDeep, borderRadius: BorderRadius.circular(4)),
+                            child: const Text('CHEF-LIEU', style: TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8)),
                           ),
                         ),
                     ],
@@ -3061,21 +2950,9 @@ class _CitiesSection extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          c.name,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.labelStyle.copyWith(
-                            color: ThixPolicy.inkDeep,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                        Text(c.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.h3),
                         if (c.population != null)
-                          Text(
-                            '${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab',
-
-                            style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
-                          ),
+                          Text('${fmtNum(int.tryParse(c.population ?? '0') ?? 0)} hab', style: Inst.micro),
                       ],
                     ),
                   ),
@@ -3084,15 +2961,12 @@ class _CitiesSection extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// DÉCOUPAGE
-// ════════════════════════════════════════════════════════════════════════
 class _DivisionsSection extends StatelessWidget {
   final Province province;
   final NationalLanguage lang;
@@ -3107,15 +2981,16 @@ class _DivisionsSection extends StatelessWidget {
         SectionHeader(
           icon: Icons.dashboard_customize_rounded,
           color: const Color(0xFF6A1B9A),
+          kicker: _kickers['divisions'],
           title: _Tr.t('divisions', lang),
           count: province.administrativeDivisions.length,
         ),
         HScroll(
-          height: 150,
+          height: 140,
           itemWidth: 230,
           children: province.administrativeDivisions.map((d) {
             final dyn = d as dynamic;
-            return GlassCard(
+            return ICard(
               padding: const EdgeInsets.all(12),
               onTap: () => showGlassSheet(
                 context,
@@ -3123,9 +2998,8 @@ class _DivisionsSection extends StatelessWidget {
                 icon: Icons.dashboard_customize_rounded,
                 color: const Color(0xFF6A1B9A),
                 children: [
-                  sheetRow(Icons.category_rounded, 'Type', dyn.type?.toString() ?? '-'),
-                  if ((dyn.capital ?? '').toString().isNotEmpty)
-                    sheetRow(Icons.star_rounded, 'Chef-lieu', dyn.capital.toString()),
+                  sheetRow(Icons.category_rounded, 'Type', dyn.type?.toString() ?? '—'),
+                  if ((dyn.capital ?? '').toString().isNotEmpty) sheetRow(Icons.star_rounded, 'Chef-lieu', dyn.capital.toString()),
                   if ((dyn.administrator ?? '').toString().isNotEmpty)
                     sheetRow(Icons.person_rounded, 'Administrateur', dyn.administrator.toString()),
                 ],
@@ -3138,26 +3012,15 @@ class _DivisionsSection extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(8),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF6A1B9A).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
+                          color: const Color(0xFF6A1B9A).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFF6A1B9A).withOpacity(0.25)),
                         ),
-                        child: const Icon(
-                          Icons.dashboard_customize_rounded,
-                          color: Color(0xFF6A1B9A),
-                          size: 18,
-                        ),
+                        child: const Icon(Icons.dashboard_customize_rounded, color: Color(0xFF6A1B9A), size: 16),
                       ),
                       const SizedBox(width: 8),
                       Expanded(
-                        child: Text(
-                          dyn.name?.toString() ?? '',
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.captionStyle.copyWith(
-                            color: ThixPolicy.inkDeep,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
+                        child: Text(dyn.name?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label),
                       ),
                     ],
                   ),
@@ -3168,20 +3031,16 @@ class _DivisionsSection extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// RÉALISATIONS
-// ════════════════════════════════════════════════════════════════════════
 class _AchievementsSection extends StatelessWidget {
   final Province province;
   final NationalLanguage lang;
-  final AppLocalizations l10n;
-  const _AchievementsSection({required this.province, required this.lang, required this.l10n});
+  const _AchievementsSection({required this.province, required this.lang});
 
   @override
   Widget build(BuildContext context) {
@@ -3191,76 +3050,58 @@ class _AchievementsSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.emoji_events_rounded,
-          color: ThixPolicy.gold,
-          title: l10n.t('province_achievements'),
+          color: Inst.goldDeep,
+          kicker: _kickers['achievements'],
+          title: _Tr.t('achievements', lang),
           count: province.achievements.length,
         ),
         HScroll(
-          height: 185,
+          height: 178,
           itemWidth: 250,
           children: province.achievements.map((a) {
             final title = a['title']?.toString() ?? '';
             final desc = a['description']?.toString() ?? '';
             final date = a['date']?.toString() ?? '';
-            return GlassCard(
+            return ICard(
               padding: const EdgeInsets.all(14),
               onTap: () => showGlassSheet(
                 context,
                 title: title,
                 subtitle: desc,
                 icon: Icons.verified_rounded,
-                color: ThixPolicy.gold,
+                color: Inst.goldDeep,
                 children: [if (date.isNotEmpty) sheetRow(Icons.event_rounded, 'Date', date)],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(10),
+                    padding: const EdgeInsets.all(9),
                     decoration: BoxDecoration(
-                      color: ThixPolicy.gold.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
+                      color: Inst.gold.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Inst.gold.withOpacity(0.35)),
                     ),
-                    child: const Icon(Icons.verified_rounded, color: ThixPolicy.gold, size: 22),
+                    child: const Icon(Icons.verified_rounded, color: Inst.goldDeep, size: 18),
                   ),
-                  const SizedBox(height: 10),
-                  Text(
-                    title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.labelStyle.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  const SizedBox(height: 8),
+                  Text(title, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
                   const Spacer(),
-                  Text(
-                    desc,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4),
-                  ),
-                  if (date.isNotEmpty)
-                    Text(
-                      date,
-                      style: ThixPolicy.microStyle.copyWith(
-                        color: ThixPolicy.textMuted,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                  Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.bodyS),
+                  if (date.isNotEmpty) Text(date, style: Inst.micro),
                 ],
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// TOURISME
+// TOURISME — toutes les photos
 // ════════════════════════════════════════════════════════════════════════
 class _TourismSection extends StatelessWidget {
   final Province province;
@@ -3275,29 +3116,40 @@ class _TourismSection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.landscape_rounded,
-          color: const Color(0xFF1565C0),
+          color: Inst.blue,
+          kicker: _kickers['tourism'],
           title: _Tr.t('tourism', lang),
           count: province.tourismSites.length,
         ),
         HScroll(
-          height: 205,
+          height: 216,
           itemWidth: 240,
           children: province.tourismSites.map((s) {
             final dyn = s as dynamic;
-            final media = (dyn.media as List?) ?? [];
-            final img = media.isNotEmpty ? (media.first['url']?.toString() ?? '') : '';
-            return GlassCard(
+            final mediaList = (dyn.media as List?) ?? [];
+            final photos = <String>[];
+            for (final m in mediaList) {
+              if (m is Map) {
+                final u = m['url']?.toString();
+                if (u != null && u.isNotEmpty) photos.add(u);
+              } else if (m is String) {
+                photos.add(m);
+              }
+            }
+            return ICard(
               padding: EdgeInsets.zero,
               onTap: () => showGlassSheet(
                 context,
                 title: dyn.name?.toString() ?? '',
                 subtitle: dyn.description?.toString(),
-                imageUrl: img.isNotEmpty ? img : null,
                 icon: Icons.landscape_rounded,
-                color: const Color(0xFF1565C0),
+                color: Inst.blue,
                 children: [
-                  if ((dyn.type ?? '').toString().isNotEmpty)
-                    sheetRow(Icons.category_rounded, 'Type', dyn.type.toString()),
+                  if (photos.isNotEmpty) ...[
+                    _blockLabel('Photos (${photos.length})'),
+                    _photoGrid(photos),
+                  ],
+                  if ((dyn.type ?? '').toString().isNotEmpty) sheetRow(Icons.category_rounded, 'Type', dyn.type.toString()),
                 ],
               ),
               child: Column(
@@ -3305,46 +3157,38 @@ class _TourismSection extends StatelessWidget {
                 children: [
                   Stack(
                     children: [
-                      img.isNotEmpty
-                          ? _img(img, h: 110, w: double.infinity)
-                          : Container(
-                              height: 110,
-                              width: double.infinity,
-                              color: const Color(0xFF1565C0).withOpacity(0.08),
-                              child: const Icon(Icons.landscape_rounded, color: Color(0xFF1565C0), size: 34),
-                            ),
+                      _photoStrip(photos, height: 112, top: true),
                       Positioned(
                         top: 6,
                         left: 6,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF1565C0),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                          decoration: BoxDecoration(color: Inst.blue, borderRadius: BorderRadius.circular(4)),
                           child: Text(
                             (dyn.type?.toString() ?? 'SITE').toUpperCase(),
-                            style: const TextStyle(
-                              fontSize: 8,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                              letterSpacing: 0.8,
-                            ),
+                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.8),
                           ),
                         ),
                       ),
+                      if (photos.length > 1)
+                        Positioned(
+                          top: 6,
+                          right: 6,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(4)),
+                            child: Text('${photos.length} photos', style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white)),
+                          ),
+                        ),
                     ],
                   ),
                   Padding(
                     padding: const EdgeInsets.all(10),
-                    child: Text(
-                      dyn.name?.toString() ?? '',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: ThixPolicy.labelStyle.copyWith(
-                        color: ThixPolicy.inkDeep,
-                        fontWeight: FontWeight.w800,
-                      ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(dyn.name?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.h3),
+                      ],
                     ),
                   ),
                 ],
@@ -3352,7 +3196,7 @@ class _TourismSection extends StatelessWidget {
             );
           }).toList(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
@@ -3375,22 +3219,23 @@ class _EconomySection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.storefront_rounded,
-          color: const Color(0xFF2E7D32),
+          color: Inst.green,
+          kicker: _kickers['economy'],
           title: _Tr.t('economy', lang),
           count: r.length,
         ),
         HScroll(
-          height: 170,
+          height: 172,
           itemWidth: 250,
           children: r.map((res) {
-            return GlassCard(
+            return ICard(
               padding: const EdgeInsets.all(12),
               onTap: () => showGlassSheet(
                 context,
                 title: res.name,
                 subtitle: res.description,
                 icon: Icons.monetization_on_rounded,
-                color: const Color(0xFF2E7D32),
+                color: Inst.green,
                 children: const [],
               ),
               child: Column(
@@ -3401,49 +3246,31 @@ class _EconomySection extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(9),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF2E7D32).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(10),
+                          color: Inst.green.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Inst.green.withOpacity(0.25)),
                         ),
-                        child: const Icon(
-                          Icons.monetization_on_rounded,
-                          color: Color(0xFF2E7D32),
-                          size: 18,
-                        ),
+                        child: const Icon(Icons.monetization_on_rounded, color: Inst.green, size: 16),
                       ),
                       const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          res.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.captionStyle.copyWith(
-                            color: ThixPolicy.inkDeep,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
+                      Expanded(child: Text(res.name, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.label)),
                     ],
                   ),
                   const Spacer(),
-                  Text(
-                    res.description ?? '',
-                    maxLines: 3,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.4),
-                  ),
+                  Text(res.description ?? '', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(height: 1.45)),
                 ],
               ),
             );
           }).toList(),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// CULTURE (tribus, langues, monographie, personnalités, gastronomie, proverbes)
+// CULTURE
 // ════════════════════════════════════════════════════════════════════════
 class _CultureSection extends StatelessWidget {
   final Province province;
@@ -3451,12 +3278,57 @@ class _CultureSection extends StatelessWidget {
   final NationalLanguage lang;
   const _CultureSection({required this.province, required this.id, required this.lang});
 
-  Widget _subTitle(String text) {
+  Widget _infoRow(IconData icon, Color color, String label, String value) {
     return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 10),
-      child: Text(
-        text,
-        style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text.rich(
+              TextSpan(
+                children: [
+                  TextSpan(text: label, style: Inst.label),
+                  TextSpan(text: value, style: Inst.bodyS),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _monoTile(BuildContext context, String label, String content, IconData icon) {
+    return InkWell(
+      onTap: () => showGlassSheet(
+        context,
+        title: label,
+        icon: icon,
+        children: [ExpandableText(content, maxLines: 200, style: Inst.body)],
+      ),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: Inst.ivory, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(icon, size: 14, color: Inst.blue),
+                const SizedBox(width: 8),
+                Expanded(child: Text(label, style: Inst.label)),
+                const Icon(Icons.chevron_right_rounded, size: 15, color: Inst.muted),
+              ],
+            ),
+            const SizedBox(height: 6),
+            ExpandableText(content, maxLines: 2, style: Inst.micro.copyWith(height: 1.5)),
+          ],
+        ),
       ),
     );
   }
@@ -3473,37 +3345,33 @@ class _CultureSection extends StatelessWidget {
         (p.climate ?? '').isNotEmpty ||
         (p.infrastructure ?? '').isNotEmpty ||
         (p.education ?? '').isNotEmpty;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         SectionHeader(
           icon: Icons.theater_comedy_rounded,
-          color: ThixPolicy.gold,
+          color: Inst.goldDeep,
+          kicker: _kickers['culture'],
           title: _Tr.t('culture', lang),
           count: hasTribes ? tribes.length : null,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: GlassCard(
+          child: ICard(
             padding: const EdgeInsets.all(16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (hasLang) _infoRow(Icons.forum_rounded, ThixPolicy.primary, 'Langues : ', p.languages!),
-                if (hasResources)
-                  _infoRow(Icons.diamond_rounded, ThixPolicy.gold, 'Ressources : ', p.resources!),
+                if (hasLang) _infoRow(Icons.forum_rounded, Inst.blue, 'Langues : ', p.languages!),
+                if (hasResources) _infoRow(Icons.diamond_rounded, Inst.goldDeep, 'Ressources : ', p.resources!),
                 if (hasDesc) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    p.description!,
-                    style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.inkDeep, height: 1.5),
-                  ),
+                  const SizedBox(height: 6),
+                  ExpandableText(p.description!, maxLines: 4, style: Inst.body),
                 ],
                 if (hasTribes) ...[
-                  _subTitle('Peuples & Tribus'),
+                  _blockLabel('Peuples & Tribus'),
                   SizedBox(
-                    height: 150,
+                    height: 148,
                     child: ListView.separated(
                       scrollDirection: Axis.horizontal,
                       physics: const BouncingScrollPhysics(),
@@ -3516,24 +3384,15 @@ class _CultureSection extends StatelessWidget {
                         final history = t['history']?.toString() ?? '';
                         return SizedBox(
                           width: 220,
-                          child: GlassCard(
+                          child: ICard(
                             padding: const EdgeInsets.all(12),
-                            radius: 16,
+                            radius: 10,
                             onTap: () => showGlassSheet(
                               context,
                               title: name,
                               subtitle: zone.isNotEmpty ? 'Zone : $zone' : null,
                               icon: Icons.groups_rounded,
-                              children: [
-                                if (history.isNotEmpty)
-                                  Text(
-                                    history,
-                                    style: ThixPolicy.bodyStyle.copyWith(
-                                      color: ThixPolicy.inkDeep,
-                                      height: 1.6,
-                                    ),
-                                  ),
-                              ],
+                              children: [if (history.isNotEmpty) ExpandableText(history, maxLines: 200, style: Inst.body)],
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -3541,48 +3400,23 @@ class _CultureSection extends StatelessWidget {
                                 Row(
                                   children: [
                                     Container(
-                                      padding: const EdgeInsets.all(8),
+                                      padding: const EdgeInsets.all(7),
                                       decoration: BoxDecoration(
-                                        color: ThixPolicy.primary.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(10),
+                                        color: Inst.blue.withOpacity(0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(color: Inst.blue.withOpacity(0.22)),
                                       ),
-                                      child: const Icon(Icons.groups_rounded, color: ThixPolicy.primary, size: 16),
+                                      child: const Icon(Icons.groups_rounded, color: Inst.blue, size: 14),
                                     ),
                                     const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        name,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: ThixPolicy.captionStyle.copyWith(
-                                          color: ThixPolicy.inkDeep,
-                                          fontWeight: FontWeight.w800,
-                                        ),
-                                      ),
-                                    ),
+                                    Expanded(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label)),
                                   ],
                                 ),
                                 const SizedBox(height: 6),
                                 if (zone.isNotEmpty)
-                                  Text(
-                                    '📍 $zone',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: ThixPolicy.microStyle.copyWith(
-                                      color: ThixPolicy.primary,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                                  Text('📍 $zone', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(color: Inst.blue)),
                                 const Spacer(),
-                                Text(
-                                  history,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: ThixPolicy.microStyle.copyWith(
-                                    color: ThixPolicy.textSecondary,
-                                    height: 1.4,
-                                  ),
-                                ),
+                                Text(history, maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(height: 1.45)),
                               ],
                             ),
                           ),
@@ -3592,116 +3426,28 @@ class _CultureSection extends StatelessWidget {
                   ),
                 ],
                 if (hasMono) ...[
-                  _subTitle('Monographie'),
-                  if ((p.history ?? '').isNotEmpty)
-                    _monoTile(context, 'Histoire & Origines', p.history!, Icons.menu_book_rounded),
-                  if ((p.climate ?? '').isNotEmpty)
-                    _monoTile(context, 'Climat & Relief', p.climate!, Icons.wb_sunny_rounded),
-                  if ((p.infrastructure ?? '').isNotEmpty)
-                    _monoTile(context, 'Infrastructures', p.infrastructure!, Icons.bolt_rounded),
-                  if ((p.education ?? '').isNotEmpty)
-                    _monoTile(context, 'Éducation & Santé', p.education!, Icons.school_rounded),
+                  _blockLabel('Monographie'),
+                  if ((p.history ?? '').isNotEmpty) _monoTile(context, 'Histoire & Origines', p.history!, Icons.menu_book_rounded),
+                  if ((p.climate ?? '').isNotEmpty) _monoTile(context, 'Climat & Relief', p.climate!, Icons.wb_sunny_rounded),
+                  if ((p.infrastructure ?? '').isNotEmpty) _monoTile(context, 'Infrastructures', p.infrastructure!, Icons.bolt_rounded),
+                  if ((p.education ?? '').isNotEmpty) _monoTile(context, 'Éducation & Santé', p.education!, Icons.school_rounded),
                 ],
-                _FamousBlock(id: id, subTitle: _subTitle),
-                _GastroBlock(id: id, subTitle: _subTitle),
-                _ProverbsBlock(id: id, subTitle: _subTitle),
+                _FamousBlock(id: id),
+                _GastroBlock(id: id),
+                _ProverbsBlock(id: id),
               ],
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
-    );
-  }
-
-  Widget _infoRow(IconData icon, Color color, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text.rich(
-              TextSpan(
-                children: [
-                  TextSpan(
-                    text: label,
-                    style: ThixPolicy.captionStyle.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  TextSpan(
-                    text: value,
-                    style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _monoTile(BuildContext context, String label, String content, IconData icon) {
-    return InkWell(
-      onTap: () => showGlassSheet(
-        context,
-        title: label,
-        icon: icon,
-        children: [
-          Text(content, style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.inkDeep, height: 1.6)),
-        ],
-      ),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: ThixPolicy.surfaceSoft,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: ThixPolicy.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(icon, size: 15, color: ThixPolicy.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: ThixPolicy.captionStyle.copyWith(
-                      color: ThixPolicy.inkDeep,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
-                const Icon(Icons.chevron_right_rounded, size: 16, color: ThixPolicy.textMuted),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              content,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary, height: 1.5),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
 
 class _FamousBlock extends ConsumerWidget {
   final String id;
-  final Widget Function(String) subTitle;
-  const _FamousBlock({required this.id, required this.subTitle});
+  const _FamousBlock({required this.id});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -3710,9 +3456,9 @@ class _FamousBlock extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        subTitle('Personnalités célèbres'),
+        _blockLabel('Personnalités célèbres'),
         SizedBox(
-          height: 190,
+          height: 186,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3723,70 +3469,40 @@ class _FamousBlock extends ConsumerWidget {
               final photo = (f['photo_url'] ?? '').toString();
               final achievement = (f['achievement'] ?? '').toString();
               return SizedBox(
-                width: 200,
-                child: GlassCard(
+                width: 190,
+                child: ICard(
                   padding: const EdgeInsets.all(12),
-                  radius: 16,
+                  radius: 10,
                   onTap: () => showGlassSheet(
                     context,
                     title: f['name']?.toString() ?? '',
                     subtitle: f['bio']?.toString(),
                     imageUrl: photo.isNotEmpty ? photo : null,
                     icon: Icons.emoji_events_rounded,
-                    color: ThixPolicy.gold,
+                    color: Inst.goldDeep,
                     children: [
                       if (achievement.isNotEmpty)
-                        sheetRow(Icons.workspace_premium_rounded, 'Distinction', achievement,
-                            color: ThixPolicy.gold),
+                        sheetRow(Icons.workspace_premium_rounded, 'Distinction', achievement, color: Inst.goldDeep),
                     ],
                   ),
                   child: Column(
                     children: [
                       Container(
-                        width: 62,
-                        height: 62,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(color: ThixPolicy.gold, width: 2),
-                        ),
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(shape: BoxShape.circle, border: Border.all(color: Inst.gold, width: 2)),
                         child: ClipOval(
                           child: photo.isNotEmpty
-                              ? CachedNetworkImage(
-                                  imageUrl: photo,
-                                  fit: BoxFit.cover,
-                                  errorWidget: (_, __, ___) =>
-                                      const Icon(Icons.person, color: ThixPolicy.textMuted),
-                                )
-                              : const Icon(Icons.person, color: ThixPolicy.textMuted),
+                              ? CachedNetworkImage(imageUrl: photo, fit: BoxFit.cover, errorWidget: (_, __, ___) => const Icon(Icons.person, color: Inst.muted))
+                              : const Icon(Icons.person, color: Inst.muted),
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        f['name']?.toString() ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.captionStyle.copyWith(
-                          color: ThixPolicy.inkDeep,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      Text(
-                        f['field']?.toString() ?? '',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.microStyle.copyWith(
-                          color: ThixPolicy.gold,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
+                      Text(f['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
+                      Text(f['field']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro.copyWith(color: Inst.goldDeep)),
                       const Spacer(),
                       if (achievement.isNotEmpty)
-                        Text(
-                          achievement,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
-                        ),
+                        Text(achievement, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.micro),
                     ],
                   ),
                 ),
@@ -3801,20 +3517,19 @@ class _FamousBlock extends ConsumerWidget {
 
 class _GastroBlock extends ConsumerWidget {
   final String id;
-  final Widget Function(String) subTitle;
-  const _GastroBlock({required this.id, required this.subTitle});
+  const _GastroBlock({required this.id});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(_gastroProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
     if (items.isEmpty) return const SizedBox.shrink();
-    const accent = Color(0xFFD81B60);
+    const accent = Color(0xFFAD1457);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        subTitle('Gastronomie'),
+        _blockLabel('Gastronomie'),
         SizedBox(
-          height: 190,
+          height: 186,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3822,56 +3537,40 @@ class _GastroBlock extends ConsumerWidget {
             separatorBuilder: (_, __) => const SizedBox(width: 10),
             itemBuilder: (_, i) {
               final g = items[i];
-              final img = (g['image_url'] ?? '').toString();
+              final photos = _photosOf(g);
               return SizedBox(
                 width: 200,
-                child: GlassCard(
+                child: ICard(
                   padding: EdgeInsets.zero,
-                  radius: 16,
+                  radius: 10,
                   onTap: () {
                     final ingredients = (g['ingredients'] is List)
                         ? (g['ingredients'] as List).map((e) => e.toString()).toList()
-                        : (g['ingredients']?.toString() ?? '')
-                            .split(',')
-                            .where((e) => e.trim().isNotEmpty)
-                            .toList();
+                        : (g['ingredients']?.toString() ?? '').split(',').where((e) => e.trim().isNotEmpty).toList();
                     showGlassSheet(
                       context,
                       title: g['name']?.toString() ?? '',
                       subtitle: g['description']?.toString(),
-                      imageUrl: img.isNotEmpty ? img : null,
+                      imageUrl: photos.isNotEmpty ? photos.first : null,
                       icon: Icons.restaurant_rounded,
                       color: accent,
                       children: [
+                        if (photos.length > 1) ...[
+                          _blockLabel('Photos (${photos.length})'),
+                          _photoGrid(photos),
+                        ],
                         if (ingredients.isNotEmpty) ...[
-                          Text(
-                            'Ingrédients',
-                            style: ThixPolicy.labelStyle.copyWith(
-                              color: ThixPolicy.inkDeep,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
+                          _blockLabel('Ingrédients'),
                           Wrap(
                             spacing: 6,
                             runSpacing: 6,
-                            children: ingredients.map((ing) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                decoration: BoxDecoration(
-                                  color: accent.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(14),
-                                ),
-                                child: Text(
-                                  ing.trim(),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: accent,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
+                            children: ingredients
+                                .map((ing) => Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                      decoration: BoxDecoration(color: accent.withOpacity(0.08), borderRadius: BorderRadius.circular(14), border: Border.all(color: accent.withOpacity(0.3))),
+                                      child: Text(ing.trim(), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: accent)),
+                                    ))
+                                .toList(),
                           ),
                         ],
                       ],
@@ -3880,29 +3579,14 @@ class _GastroBlock extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      img.isNotEmpty
-                          ? _img(img, h: 90, w: double.infinity)
-                          : Container(height: 90, width: double.infinity, color: ThixPolicy.surfaceSoft),
+                      _photoStrip(photos, height: 88, top: true),
                       Padding(
                         padding: const EdgeInsets.all(10),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              g['name']?.toString() ?? '',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: ThixPolicy.captionStyle.copyWith(
-                                color: ThixPolicy.inkDeep,
-                                fontWeight: FontWeight.w800,
-                              ),
-                            ),
-                            Text(
-                              g['description']?.toString() ?? '',
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
-                            ),
+                            Text(g['name']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label),
+                            Text(g['description']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
                           ],
                         ),
                       ),
@@ -3920,20 +3604,19 @@ class _GastroBlock extends ConsumerWidget {
 
 class _ProverbsBlock extends ConsumerWidget {
   final String id;
-  final Widget Function(String) subTitle;
-  const _ProverbsBlock({required this.id, required this.subTitle});
+  const _ProverbsBlock({required this.id});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final items = ref.watch(_proverbsProv(id)).valueOrNull ?? const <Map<String, dynamic>>[];
     if (items.isEmpty) return const SizedBox.shrink();
-    const accent = Color(0xFF00897B);
+    const accent = Color(0xFF00695C);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        subTitle('Proverbes & Contes'),
+        _blockLabel('Proverbes & Contes'),
         SizedBox(
-          height: 160,
+          height: 156,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             physics: const BouncingScrollPhysics(),
@@ -3944,51 +3627,31 @@ class _ProverbsBlock extends ConsumerWidget {
               final meaning = (pr['meaning'] ?? '').toString();
               return SizedBox(
                 width: 240,
-                child: GlassCard(
+                child: ICard(
                   padding: const EdgeInsets.all(12),
-                  radius: 16,
+                  radius: 10,
                   onTap: () => showGlassSheet(
                     context,
                     title: pr['text']?.toString() ?? '',
                     subtitle: pr['translation']?.toString(),
                     icon: Icons.format_quote_rounded,
                     color: accent,
-                    children: [
-                      if (meaning.isNotEmpty)
-                        Text(
-                          meaning,
-                          style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.inkDeep, height: 1.6),
-                        ),
-                    ],
+                    children: [if (meaning.isNotEmpty) ExpandableText(meaning, maxLines: 200, style: Inst.body)],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          const Icon(Icons.format_quote_rounded, size: 16, color: accent),
+                          const Icon(Icons.format_quote_rounded, size: 15, color: accent),
                           const Spacer(),
                           _pill((pr['language']?.toString() ?? '').toUpperCase(), accent),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        '"${pr['text'] ?? ''}"',
-                        maxLines: 3,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.captionStyle.copyWith(
-                          color: ThixPolicy.inkDeep,
-                          fontWeight: FontWeight.w800,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
+                      Text('"${pr['text'] ?? ''}"', maxLines: 3, overflow: TextOverflow.ellipsis, style: Inst.label.copyWith(fontStyle: FontStyle.italic)),
                       const Spacer(),
-                      Text(
-                        pr['translation']?.toString() ?? '',
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textSecondary),
-                      ),
+                      Text(pr['translation']?.toString() ?? '', maxLines: 2, overflow: TextOverflow.ellipsis, style: Inst.micro),
                     ],
                   ),
                 ),
@@ -4046,19 +3709,15 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
 
   @override
   Widget build(BuildContext context) {
-    const accent = Color(0xFF8E24AA);
-    const green = Color(0xFF43A047);
-    const red = Color(0xFFE53935);
-
+    const accent = Inst.navy;
+    const green = Inst.green;
+    const red = Inst.danger;
     return _asyncList(ref.watch(_quizProv(widget.id)), (questions) {
       final total = questions.length;
       final q = _index < total ? questions[_index] : null;
-      final options = q == null
-          ? <String>[]
-          : ((q['options'] as List?) ?? []).map((e) => e.toString()).toList();
+      final options = q == null ? <String>[] : ((q['options'] as List?) ?? []).map((e) => e.toString()).toList();
       final correct = (q?['correct_answer'] as num?)?.toInt() ?? 0;
       final good = _score >= total / 2;
-
       Widget body;
       if (!_done && q != null && options.isNotEmpty) {
         body = Column(
@@ -4066,87 +3725,56 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
           children: [
             Row(
               children: [
-                Text(
-                  'Question ${_index + 1}/$total',
-                  style: ThixPolicy.captionStyle.copyWith(color: accent, fontWeight: FontWeight.w800),
-                ),
+                Text('Question ${_index + 1}/$total', style: Inst.label.copyWith(color: accent)),
                 const Spacer(),
-                Text(
-                  'Score : $_score',
-                  style: ThixPolicy.captionStyle.copyWith(color: green, fontWeight: FontWeight.w800),
-                ),
+                Text('Score : $_score', style: Inst.label.copyWith(color: green)),
               ],
             ),
             const SizedBox(height: 8),
             ClipRRect(
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(4),
               child: LinearProgressIndicator(
                 value: (_index + 1) / total,
-                minHeight: 6,
+                minHeight: 5,
                 backgroundColor: accent.withOpacity(0.12),
                 valueColor: const AlwaysStoppedAnimation(accent),
               ),
             ),
             const SizedBox(height: 16),
-            Text(
-              q['question']?.toString() ?? '',
-              style: ThixPolicy.h3Style.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w800),
-            ),
+            Text(q['question']?.toString() ?? '', style: Inst.h3),
             const SizedBox(height: 14),
             ...options.asMap().entries.map((e) {
               final isSel = _selected == e.key;
               final isCorrect = e.key == correct;
               final showState = _selected != null;
-              Color bg = ThixPolicy.surfaceSoft;
-              Color bd = ThixPolicy.border;
+              Color bg = Inst.ivory;
+              Color bd = Inst.line;
               if (showState && isCorrect) {
-                bg = green.withOpacity(0.12);
+                bg = green.withOpacity(0.10);
                 bd = green;
               } else if (showState && isSel && !isCorrect) {
-                bg = ThixPolicy.danger.withOpacity(0.1);
-                bd = ThixPolicy.danger;
+                bg = red.withOpacity(0.08);
+                bd = red;
               }
               return InkWell(
                 onTap: () => _answer(e.key, correct, total),
-                borderRadius: BorderRadius.circular(12),
+                borderRadius: BorderRadius.circular(8),
                 child: Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: bd),
-                  ),
+                  decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(8), border: Border.all(color: bd)),
                   child: Row(
                     children: [
                       Container(
                         width: 26,
                         height: 26,
-                        decoration: BoxDecoration(
-                          color: accent.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        decoration: BoxDecoration(color: accent.withOpacity(0.10), borderRadius: BorderRadius.circular(6)),
                         child: Center(
-                          child: Text(
-                            String.fromCharCode(65 + e.key),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w900,
-                              color: accent,
-                            ),
-                          ),
+                          child: Text(String.fromCharCode(65 + e.key), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: accent)),
                         ),
                       ),
                       const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          e.value,
-                          style: ThixPolicy.captionStyle.copyWith(
-                            color: ThixPolicy.inkDeep,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
+                      Expanded(child: Text(e.value, style: Inst.label.copyWith(fontWeight: FontWeight.w700))),
                     ],
                   ),
                 ),
@@ -4158,27 +3786,18 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
         body = Column(
           children: [
             Container(
-              padding: const EdgeInsets.all(22),
+              padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [(good ? green : red).withOpacity(0.18), Colors.transparent]),
+                color: (good ? green : red).withOpacity(0.10),
                 shape: BoxShape.circle,
+                border: Border.all(color: (good ? green : red).withOpacity(0.4)),
               ),
-              child: Text(
-                '$_score/$total',
-                style: ThixPolicy.h1Style.copyWith(color: good ? green : red, fontWeight: FontWeight.w900),
-              ),
+              child: Text('$_score/$total', style: Inst.h1.copyWith(color: good ? green : red)),
             ),
             const SizedBox(height: 12),
-            Text(
-              good ? '🎉 Excellent !' : '💪 À améliorer',
-              style: ThixPolicy.h2Style.copyWith(color: ThixPolicy.inkDeep, fontWeight: FontWeight.w900),
-            ),
+            Text(good ? '🎉 Excellent !' : '💪 À améliorer', style: Inst.h2),
             const SizedBox(height: 6),
-            Text(
-              'Vous connaissez ${good ? 'bien' : 'encore peu'} ${widget.name} !',
-              textAlign: TextAlign.center,
-              style: ThixPolicy.bodyStyle.copyWith(color: ThixPolicy.textSecondary),
-            ),
+            Text('Vous connaissez ${good ? 'bien' : 'encore peu'} ${widget.name} !', textAlign: TextAlign.center, style: Inst.bodyS),
             const SizedBox(height: 16),
             Wrap(
               alignment: WrapAlignment.center,
@@ -4192,7 +3811,7 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
                 OutlinedButton.icon(
@@ -4202,7 +3821,7 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
                   style: OutlinedButton.styleFrom(
                     foregroundColor: accent,
                     side: const BorderSide(color: accent),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                 ),
               ],
@@ -4210,21 +3829,15 @@ class _QuizSectionState extends ConsumerState<_QuizSection> {
           ],
         );
       }
-
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SectionHeader(
-            icon: Icons.quiz_rounded,
-            color: accent,
-            title: _Tr.t('quiz', widget.lang),
-            count: total,
-          ),
+          SectionHeader(icon: Icons.quiz_rounded, color: accent, kicker: _kickers['quiz'], title: _Tr.t('quiz', widget.lang), count: total),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: GlassCard(padding: const EdgeInsets.all(18), child: body),
+            child: ICard(padding: const EdgeInsets.all(18), child: body),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 12),
         ],
       );
     }, skeleton: 220);
@@ -4247,54 +3860,39 @@ class _EmergencySection extends StatelessWidget {
       children: [
         SectionHeader(
           icon: Icons.emergency_rounded,
-          color: ThixPolicy.danger,
+          color: Inst.danger,
+          kicker: _kickers['emergency'],
           title: _Tr.t('emergency', lang),
           count: province.emergencyContacts.length,
         ),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),
-          child: GlassCard(
-            padding: const EdgeInsets.all(12),
+          child: ICard(
+            padding: const EdgeInsets.all(10),
             child: Column(
               children: province.emergencyContacts.map((c) {
                 final dyn = c as dynamic;
                 final service = dyn.service?.toString() ?? 'Service';
                 final phone = dyn.phone?.toString() ?? '';
-                // On ne garde que chiffres, +, * et # pour le lien tel:
                 final dial = phone.replaceAll(RegExp(r'[^0-9+*#]'), '');
                 return Container(
                   margin: const EdgeInsets.only(bottom: 8),
                   decoration: BoxDecoration(
-                    color: ThixPolicy.surfaceSoft,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: ThixPolicy.danger.withOpacity(0.25)),
+                    color: Inst.ivory,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: Inst.danger.withOpacity(0.25)),
                   ),
                   child: ListTile(
                     leading: Container(
                       padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.danger.withOpacity(0.1),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.phone_in_talk_rounded, color: ThixPolicy.danger, size: 18),
+                      decoration: BoxDecoration(color: Inst.danger.withOpacity(0.10), shape: BoxShape.circle),
+                      child: const Icon(Icons.phone_in_talk_rounded, color: Inst.danger, size: 16),
                     ),
-                    title: Text(
-                      service,
-                      style: ThixPolicy.captionStyle.copyWith(
-                        color: ThixPolicy.inkDeep,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                    subtitle: Text(
-                      phone,
-                      style: ThixPolicy.captionStyle.copyWith(
-                        color: ThixPolicy.inkDeep,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
+                    title: Text(service, style: Inst.label),
+                    subtitle: Text(phone, style: Inst.bodyS.copyWith(color: Inst.ink, fontWeight: FontWeight.w700)),
                     trailing: dial.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.call_rounded, color: Color(0xFF2E7D32), size: 20),
+                            icon: const Icon(Icons.call_rounded, color: Inst.green, size: 19),
                             onPressed: () async {
                               HapticFeedback.lightImpact();
                               try {
@@ -4311,116 +3909,53 @@ class _EmergencySection extends StatelessWidget {
             ),
           ),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 12),
       ],
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// IDENTITÉ VISUELLE (couverture + blason + drapeau + site)
+// PIED DE PAGE INSTITUTIONNEL
 // ════════════════════════════════════════════════════════════════════════
-class _VisualIdentitySection extends StatelessWidget {
+class _Footer extends StatelessWidget {
   final Province province;
-  const _VisualIdentitySection({required this.province});
+  const _Footer({required this.province});
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.image_rounded, size: 18, color: ThixPolicy.primary),
-              const SizedBox(width: 8),
-              Text(
-                'Identité visuelle',
-                style: ThixPolicy.labelStyle.copyWith(
-                  color: ThixPolicy.inkDeep,
-                  fontWeight: FontWeight.w800,
-                ),
+    return Column(
+      children: [
+        Container(height: 1, color: Inst.gold.withOpacity(0.4)),
+        const SizedBox(height: 14),
+        const Text('RÉPUBLIQUE DÉMOCRATIQUE DU CONGO', style: Inst.kicker),
+        const SizedBox(height: 4),
+        Text(
+          'Province du ${province.name} — Portail officiel THIX ID',
+          textAlign: TextAlign.center,
+          style: Inst.micro,
+        ),
+        if ((province.website ?? '').isNotEmpty) ...[
+          const SizedBox(height: 10),
+          InkWell(
+            onTap: () => _launch(province.website!),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 10),
+              decoration: BoxDecoration(color: Inst.paper, borderRadius: BorderRadius.circular(8), border: Border.all(color: Inst.line)),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.language_rounded, size: 14, color: Inst.blue),
+                  const SizedBox(width: 6),
+                  Flexible(child: Text(province.website!, maxLines: 1, overflow: TextOverflow.ellipsis, style: Inst.label.copyWith(color: Inst.blue))),
+                ],
               ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(child: _thumb(context, 'Couverture', province.coverImageUrl, Icons.image_outlined)),
-              const SizedBox(width: 10),
-              Expanded(child: _thumb(context, 'Blason', province.coatOfArmsUrl, Icons.shield_outlined)),
-              const SizedBox(width: 10),
-              Expanded(child: _thumb(context, 'Drapeau', province.flagUrl, Icons.flag_outlined)),
-            ],
-          ),
-          if ((province.website ?? '').isNotEmpty) ...[
-            const SizedBox(height: 12),
-            InkWell(
-              onTap: () => _launch(province.website!),
-              borderRadius: BorderRadius.circular(12),
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 10),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.surfaceSoft,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: ThixPolicy.border),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.language_rounded, size: 15, color: ThixPolicy.primary),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        province.website!,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: ThixPolicy.captionStyle.copyWith(
-                          color: ThixPolicy.primary,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _thumb(BuildContext context, String label, String? url, IconData fallback) {
-    final has = url != null && url.isNotEmpty;
-    return GestureDetector(
-      onTap: has ? () => showGlassSheet(context, title: label, imageUrl: url, children: const []) : null,
-      child: Column(
-        children: [
-          Container(
-            height: 70,
-            width: double.infinity,
-            decoration: BoxDecoration(
-              color: ThixPolicy.surfaceSoft,
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: ThixPolicy.border),
-            ),
-            child: has
-                ? _img(url, h: 70, w: double.infinity, radius: 12)
-                : Icon(fallback, color: ThixPolicy.textMuted.withOpacity(0.4), size: 22),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: ThixPolicy.microStyle.copyWith(
-              color: ThixPolicy.textMuted,
-              fontWeight: FontWeight.w600,
             ),
           ),
         ],
-      ),
+      ],
     );
   }
 }
-                              
