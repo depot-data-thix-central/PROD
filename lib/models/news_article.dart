@@ -8,6 +8,7 @@ class NewsArticle {
   final String category;
   final String? imageUrl;
   final String? videoUrl;
+  final String? audioUrl; // ✅ AJOUT AUDIO ICI
 
   final int viewsCount;
   final bool isFeatured;
@@ -125,6 +126,7 @@ class NewsArticle {
     required this.category,
     this.imageUrl,
     this.videoUrl,
+    this.audioUrl, // ✅ AJOUT AUDIO ICI
     this.viewsCount = 0,
     this.isFeatured = false,
     this.isBreaking = false,
@@ -156,6 +158,7 @@ class NewsArticle {
       ),
       imageUrl: _nullableString(json['image_url']),
       videoUrl: _nullableString(json['video_url']),
+      audioUrl: _nullableString(json['audio_url']), // ✅ LECTURE DEPUIS SUPABASE
       viewsCount: _intValue(json['views_count']),
       isFeatured: _boolValue(json['is_featured']),
       isBreaking: _boolValue(json['is_breaking']),
@@ -185,6 +188,7 @@ class NewsArticle {
       'category': category,
       'image_url': imageUrl,
       'video_url': videoUrl,
+      'audio_url': audioUrl, // ✅ AJOUT AUDIO ICI
       'views_count': viewsCount,
       'is_featured': isFeatured,
       'is_breaking': isBreaking,
@@ -210,6 +214,7 @@ class NewsArticle {
     String? category,
     String? imageUrl,
     String? videoUrl,
+    String? audioUrl, // ✅ AJOUT AUDIO ICI
     int? viewsCount,
     bool? isFeatured,
     bool? isBreaking,
@@ -229,6 +234,7 @@ class NewsArticle {
       category: category ?? this.category,
       imageUrl: imageUrl ?? this.imageUrl,
       videoUrl: videoUrl ?? this.videoUrl,
+      audioUrl: audioUrl ?? this.audioUrl, // ✅ AJOUT AUDIO ICI
       viewsCount: viewsCount ?? this.viewsCount,
       isFeatured: isFeatured ?? this.isFeatured,
       isBreaking: isBreaking ?? this.isBreaking,
