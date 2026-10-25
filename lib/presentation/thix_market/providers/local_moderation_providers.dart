@@ -1,6 +1,6 @@
 // ============================================================================
-// MODÉRATION LOCALE — rôles, file de validation, produit de la semaine,
-// cartes du portail, coopératives, commandes modérateur
+// MODÉRATION LOCALE — Rôles, validation, produit de la semaine,
+// cartes portail, coopératives, commandes modérateur, stats KPI
 // ============================================================================
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +9,17 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../core/drc_portal_theme.dart';
 import 'local_market_providers.dart';
+
+// ----------------------------------------------------------------------------
+// VALIDATEURS PARTAGÉS
+// ----------------------------------------------------------------------------
+class _ModValidators {
+  _ModValidators._();
+  static bool isValidId(String? id) {
+    if (id == null || id.trim().isEmpty) return false;
+    return RegExp(r'^[0-9a-fA-F-]{8,}$').hasMatch(id.trim());
+  }
+}
 
 // ----------------------------------------------------------------------------
 // RÔLES
@@ -43,7 +54,7 @@ final localMyShopProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((r
 });
 
 // ----------------------------------------------------------------------------
-// FILE DE VALIDATION (produits locaux en attente)
+// FILE DE VALIDATION
 // ----------------------------------------------------------------------------
 final pendingLocalProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
@@ -62,7 +73,6 @@ final pendingLocalProductsProvider = FutureProvider.autoDispose<List<Map<String,
   }
 });
 
-/// Produits locaux d'une shop (espace producteur)
 final myLocalProductsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, shopId) async {
   try {
     final res = await Supabase.instance.client
@@ -80,7 +90,6 @@ final myLocalProductsProvider = FutureProvider.autoDispose.family<List<Map<Strin
   }
 });
 
-/// Produits locaux ACTIFS (pour le choix du produit de la semaine)
 final activeLocalProductsForModProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
@@ -120,7 +129,7 @@ final weeklyProductProvider = FutureProvider.autoDispose<Map<String, dynamic>?>(
 });
 
 // ----------------------------------------------------------------------------
-// CARTES DU PORTAIL (remplacent les 4 piliers)
+// CARTES DU PORTAIL
 // ----------------------------------------------------------------------------
 class PortalHighlight {
   final String id;
@@ -168,20 +177,13 @@ class PortalHighlight {
 
 IconData portalHighlightIcon(String key) {
   switch (key) {
-    case 'verified':
-      return Icons.verified_rounded;
-    case 'handshake':
-      return Icons.handshake_rounded;
-    case 'truck':
-      return Icons.local_shipping_rounded;
-    case 'eco':
-      return Icons.eco_rounded;
-    case 'star':
-      return Icons.star_rounded;
-    case 'store':
-      return Icons.storefront_rounded;
-    default:
-      return Icons.flag_rounded;
+    case 'verified': return Icons.verified_rounded;
+    case 'handshake': return Icons.handshake_rounded;
+    case 'truck': return Icons.local_shipping_rounded;
+    case 'eco': return Icons.eco_rounded;
+    case 'star': return Icons.star_rounded;
+    case 'store': return Icons.storefront_rounded;
+    default: return Icons.flag_rounded;
   }
 }
 
@@ -218,7 +220,7 @@ final drcPortalHighlightsProvider = FutureProvider.autoDispose<List<PortalHighli
 });
 
 // ----------------------------------------------------------------------------
-// ✅ COOPÉRATIVES UNIQUEMENT (page Producteurs + home)
+// COOPÉRATIVES UNIQUEMENT
 // ----------------------------------------------------------------------------
 final localCooperativesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
@@ -265,7 +267,58 @@ final moderatorLocalOrdersProvider = FutureProvider.autoDispose<List<Map<String,
 });
 
 // ----------------------------------------------------------------------------
-// NOTIFIER — actions modération
+// ✅ STATS MODÉRATION (KPI vendor dashboard)
+// ----------------------------------------------------------------------------
+final moderationStatsProvider = FutureProvider.autoDispose<Map<String, int>>((ref) async {
+  final db = Supabase.instance.client;
+  final uid = db.auth.currentUser?.id;
+  if (!_ModValidators.isValidId(uid)) return {};
+
+  try {
+    final shopsRes = await db.from('shops').select('id').eq('owner_id', uid!).limit(50);
+    final shopIds = (shopsRes as List)
+        .map((s) => (s as Map)['id']?.toString())
+        .whereType<String>()
+        .where(_ModValidators.isValidId)
+        .toList();
+
+    if (shopIds.isEmpty) return {};
+
+    // Compte par statut pour les produits locaux du vendeur
+    final activeRes = await db.from('products')
+        .select('id')
+        .inFilter('shop_id', shopIds)
+        .eq('is_local', true)
+        .eq('status', 'active')
+        .timeout(const Duration(seconds: 8));
+
+    final pendingRes = await db.from('products')
+        .select('id')
+        .inFilter('shop_id', shopIds)
+        .eq('is_local', true)
+        .eq('status', 'pending')
+        .timeout(const Duration(seconds: 8));
+
+    final rejectedRes = await db.from('products')
+        .select('id')
+        .inFilter('shop_id', shopIds)
+        .eq('is_local', true)
+        .eq('status', 'rejected')
+        .timeout(const Duration(seconds: 8));
+
+    return {
+      'active': (activeRes as List).length,
+      'pending': (pendingRes as List).length,
+      'rejected': (rejectedRes as List).length,
+    };
+  } catch (e) {
+    debugPrint('[ModStats] ❌ $e');
+    return {};
+  }
+});
+
+// ----------------------------------------------------------------------------
+// NOTIFIER — Actions modération
 // ----------------------------------------------------------------------------
 class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
   final Ref _ref;
@@ -280,9 +333,10 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     _ref.invalidate(filteredLocalProductsProvider);
     _ref.invalidate(weeklyProductProvider);
     _ref.invalidate(activeLocalProductsForModProvider);
+    _ref.invalidate(moderationStatsProvider);
   }
 
-  Future<String?> _log(String productId, String action, {String? note}) async {
+  Future<void> _log(String productId, String action, {String? note}) async {
     try {
       await _client.from('product_moderation_logs').insert({
         'product_id': productId,
@@ -293,10 +347,8 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     } catch (e) {
       debugPrint('[LocalMod] ⚠️ log: $e');
     }
-    return null;
   }
 
-  // ── VALIDATION ──
   Future<String?> approve(String productId) async {
     state = const AsyncValue.loading();
     try {
@@ -331,7 +383,6 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  // ── PRODUIT DE LA SEMAINE ──
   Future<String?> setWeekly(String productId) async {
     state = const AsyncValue.loading();
     try {
@@ -361,7 +412,6 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  // ── CARTES PORTAIL ──
   Future<String?> saveHighlight({
     String? id,
     required String titleFr,
@@ -405,7 +455,6 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  // ── PRODUCTEUR : créer un produit (toujours PENDING) ──
   Future<String?> createLocalProduct({
     required String shopId,
     required String title,
@@ -427,13 +476,14 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
         'unit': unit,
         'category': sectorId,
         'is_local': true,
-        'status': 'pending', // ✅ visible seulement après approbation
+        'status': 'pending',
         'image_url': imageUrl,
         'created_at': DateTime.now().toIso8601String(),
       }).select('id').single();
       await _log(res['id'].toString(), 'submitted');
       _ref.invalidate(myLocalProductsProvider);
       _ref.invalidate(pendingLocalProductsProvider);
+      _ref.invalidate(moderationStatsProvider);
       state = const AsyncValue.data(null);
       return null;
     } catch (e) {
@@ -442,7 +492,6 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     }
   }
 
-  // ── CRÉER UNE COOPÉRATIVE ──
   Future<String?> createCooperative({
     required String name,
     required String city,
