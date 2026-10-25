@@ -1,7 +1,17 @@
 // lib/presentation/opportunities/opportunities_page.dart
+// ============================================================================
+// OPPORTUNITÉS — v3 PROFESSIONAL (Bleu + Blanc + Glassmorphism)
+//  • ✅ Palette restreinte : bleu profond, blanc, gris neutres
+//  • ✅ Glassmorphism : blur + translucide sur header, search, chips, hero
+//  • ✅ Bouton ADMIN dans le header (visible si role admin)
+//  • ✅ Hero banner AUTO-SCROLL (PageView + timer 4s)
+//  • ✅ Nouvelles cartes professionnelles épurées
+// ============================================================================
+
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:ui'; // Requis pour BackdropFilter (effet glassmorphism)
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,21 +27,25 @@ import 'package:thix_id/nav.dart';
 import 'package:thix_id/services/opportunity_service.dart';
 
 // ============================================================================
-// PALETTE PROFESSIONNELLE (BLEU, BLANC, GLASS)
+// PALETTE PROFESSIONAL (bleu + blanc uniquement)
 // ============================================================================
-class _Palette {
-  static const primary = Color(0xFF1E3A8A); // Bleu profond
-  static const primaryLight = Color(0xFF3B82F6); // Bleu vif
-  static const bg = Color(0xFFF8FAFC); // Fond très clair
-  static const surface = Color(0xFFFFFFFF);
-  static const textDark = Color(0xFF0F172A);
-  static const textMuted = Color(0xFF64748B);
-  static const border = Color(0xFFE2E8F0);
-  
-  // Glassmorphism
-  static const glassBg = Color(0x33FFFFFF); // Blanc transparent
-  static const glassBorder = Color(0x4DFFFFFF); // Bordure blanche semi-transparente
+class _Opp {
+  static const blue = Color(0xFF1259C3);
+  static const blueDeep = Color(0xFF0B3B8C);
+  static const blueDark = Color(0xFF082A66);
+  static const blueSoft = Color(0xFFE8F0FE);
+  static const bg = Color(0xFFF4F7FC);
+  static const card = Color(0xFFFFFFFF);
+  static const line = Color(0xFFE3E9F2);
+  static const txt = Color(0xFF0E1B2E);
+  static const sub = Color(0xFF5A6B84);
+  static const mut = Color(0xFF93A1B5);
+  static const green = Color(0xFF0F8A5F);
+  static const red = Color(0xFFD64545);
+  static const amber = Color(0xFFC77E1A);
 }
+
+const Duration _kHeroAutoPlay = Duration(seconds: 4);
 
 class OpportunitiesPage extends ConsumerStatefulWidget {
   const OpportunitiesPage({super.key});
@@ -43,18 +57,20 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   final OpportunityService _service = OpportunityService();
   late Future<List<OpportunityItem>> _future;
   final TextEditingController _searchCtrl = TextEditingController();
-  final PageController _featCtrl = PageController(viewportFraction: 0.88);
+  final PageController _heroCtrl = PageController(viewportFraction: 0.92);
   final Set<String> _saved = <String>{};
 
+  Timer? _heroTimer;
+  int _heroIndex = 0;
+  bool _heroReady = false;
   int _catIndex = 0;
-  int _featPage = 0;
   bool _savedOnly = false;
   int _deadlineFilter = 0;
   bool _withReward = false;
   int _sortMode = 0;
 
   static const List<_Cat> _cats = [
-    _Cat('Toutes', Icons.grid_view_rounded),
+    _Cat('Toutes', Icons.auto_awesome_rounded),
     _Cat('Bourses', Icons.school_rounded),
     _Cat('Emplois', Icons.work_rounded),
     _Cat('Subventions', Icons.payments_rounded),
@@ -66,22 +82,13 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   void initState() {
     super.initState();
     _future = _service.listOpportunities();
-    _featCtrl.addListener(_handlePageChange);
-  }
-
-  void _handlePageChange() {
-    if (!_featCtrl.hasClients || !_featCtrl.position.haveDimensions) return;
-    final p = (_featCtrl.page ?? 0).round();
-    if (p != _featPage && mounted) {
-      setState(() => _featPage = p);
-    }
   }
 
   @override
   void dispose() {
-    _featCtrl.removeListener(_handlePageChange);
+    _heroTimer?.cancel();
     _searchCtrl.dispose();
-    _featCtrl.dispose();
+    _heroCtrl.dispose();
     super.dispose();
   }
 
@@ -96,6 +103,22 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 
   String _rewardOf(OpportunityItem o) =>
       ThixInputGuard.text(o.rewardLabel, maxLength: 60, fallback: '');
+
+  // ─── Hero auto-scroll ───
+  void _startHeroAuto(int count) {
+    if (_heroReady || count <= 1) return;
+    _heroReady = true;
+    _heroTimer?.cancel();
+    _heroTimer = Timer.periodic(_kHeroAutoPlay, (_) {
+      if (!mounted || !_heroCtrl.hasClients) return;
+      _heroIndex = (_heroIndex + 1) % count;
+      _heroCtrl.animateToPage(
+        _heroIndex,
+        duration: const Duration(milliseconds: 650),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   // ─── Filtres ───
   List<OpportunityItem> _filter(List<OpportunityItem> all) {
@@ -132,7 +155,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   List<OpportunityItem> _featured(List<OpportunityItem> all) {
     final withReward = all.where((o) { final r = _rewardOf(o); return r.isNotEmpty && r != '—'; }).toList()
       ..sort((a, b) => a.deadline.compareTo(b.deadline));
-    final base = withReward.isNotEmpty ? withReward : (List<OpportunityItem>.from(all)..sort((a, b) => a.deadline.compareTo(b.deadline)));
+    final base = withReward.isNotEmpty
+        ? withReward
+        : (List<OpportunityItem>.from(all)..sort((a, b) => a.deadline.compareTo(b.deadline)));
     return base.take(6).toList();
   }
 
@@ -147,17 +172,44 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     setState(() => _saved.contains(id) ? _saved.remove(id) : _saved.add(id));
   }
 
+  bool _isAdmin() {
+    final user = Supabase.instance.client.auth.currentUser;
+    return user?.appMetadata?['role'] == 'admin' || user?.userMetadata?['is_admin'] == true;
+  }
+
+  // ─── Glass helper ───
+  Widget _glassBox({
+    required Widget child,
+    double radius = 14,
+    Color tint = const Color(0x1FFFFFFF),
+    double blur = 14,
+    Color borderColor = const Color(0x33FFFFFF),
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+        child: Container(
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: borderColor),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
-    final user = Supabase.instance.client.auth.currentUser;
-    final isAdmin = user?.appMetadata?['role'] == 'admin' || user?.userMetadata?['is_admin'] == true;
 
     return Scaffold(
-      backgroundColor: _Palette.bg,
+      backgroundColor: _Opp.bg,
       body: RefreshIndicator(
-        color: _Palette.primary,
-        backgroundColor: _Palette.surface,
+        color: _Opp.blue,
+        backgroundColor: _Opp.card,
         onRefresh: () async {
           setState(() => _future = _service.listOpportunities());
           await _future;
@@ -168,16 +220,14 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             if (snap.connectionState != ConnectionState.done) {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                slivers: [
-                  SliverToBoxAdapter(child: _skeletonAll(l10n, isAdmin)),
-                ],
+                slivers: [SliverToBoxAdapter(child: _skeletonAll(l10n))],
               );
             }
             if (snap.hasError) {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _hero(const [], l10n, isAdmin)),
+                  SliverToBoxAdapter(child: _header(l10n)),
                   SliverToBoxAdapter(child: _errorState(l10n)),
                 ],
               );
@@ -188,13 +238,18 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _hero(const [], l10n, isAdmin)),
+                  SliverToBoxAdapter(child: _header(l10n)),
                   SliverToBoxAdapter(child: _emptyState(l10n)),
                 ],
               );
             }
 
             final filteredList = _filter(all);
+            final feat = _featured(all);
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _startHeroAuto(feat.length);
+            });
 
             return CustomScrollView(
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
@@ -203,9 +258,9 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      _hero(all, l10n, isAdmin),
+                      _header(l10n),
+                      _heroBanner(feat, l10n),
                       _catsRail(l10n),
-                      _featuredSection(all, l10n),
                       _closingSection(all, l10n),
                       _listSectionHeader(filteredList.length, l10n),
                     ],
@@ -218,12 +273,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverList.builder(
                       itemCount: filteredList.length,
-                      itemBuilder: (context, index) {
-                        return _editorialCard(filteredList[index], l10n);
-                      },
+                      itemBuilder: (context, index) => _proCard(filteredList[index], l10n),
                     ),
                   ),
-                const SliverToBoxAdapter(child: SizedBox(height: 110)),
+                const SliverToBoxAdapter(child: SizedBox(height: 90)),
               ],
             );
           },
@@ -232,103 +285,128 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ HERO BLEU PROFOND & GLASS ═══════════════════
-  Widget _hero(List<OpportunityItem> all, AppLocalizations l10n, bool isAdmin) {
+  // ═══════════════════ HEADER GLASS (bleu dégradé) ═══════════════════
+  Widget _header(AppLocalizations l10n) {
     final top = MediaQuery.of(context).padding.top;
-    final open = all.where((o) => _daysLeft(o) >= 0).length;
-    final closing = all.where((o) { final d = _daysLeft(o); return d >= 0 && d <= 7; }).length;
+    final isAdmin = _isAdmin();
 
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [_Palette.primary, Color(0xFF152C6B)],
+          colors: [_Opp.blueDark, _Opp.blueDeep, _Opp.blue],
+          stops: [0.0, 0.5, 1.0],
         ),
         borderRadius: BorderRadius.vertical(bottom: Radius.circular(28)),
       ),
-      padding: EdgeInsets.fromLTRB(16, top + 10, 16, 26),
+      padding: EdgeInsets.fromLTRB(16, top + 10, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              _glassBtn(Icons.arrow_back_ios_new_rounded, () => context.go(AppRoutes.home)),
+              // Retour
+              GestureDetector(
+                onTap: () => context.go(AppRoutes.home),
+                child: _glassBox(
+                  radius: 12,
+                  child: const SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: Colors.white),
+                  ),
+                ),
+              ),
               const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(_tr(l10n, 'opp_title', 'Opportunités'),
-                        style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.4)),
+                        style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.w800, letterSpacing: -0.3)),
                     Text(_tr(l10n, 'opp_subtitle', 'Bourses • Emplois • Subventions'),
-                        style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 11, fontWeight: FontWeight.w500)),
+                        style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 10.5, fontWeight: FontWeight.w500)),
                   ],
                 ),
               ),
-              // 👉 BOUTON ADMIN
+              // ✅ BOUTON ADMIN (visible si role admin)
               if (isAdmin) ...[
                 GestureDetector(
-                  onTap: () => context.push('/opportunities/admin'),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: _Palette.glassBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: _Palette.glassBorder),
-                    ),
-                    child: const Row(
-                      children: [
-                        Icon(Icons.admin_panel_settings_rounded, size: 16, color: Colors.white),
-                        SizedBox(width: 4),
-                        Text('Admin', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold)),
-                      ],
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    context.push('/opportunities/admin');
+                  },
+                  child: _glassBox(
+                    radius: 12,
+                    tint: const Color(0x2EFFFFFF),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.admin_panel_settings_rounded, size: 14, color: Colors.white),
+                          const SizedBox(width: 5),
+                          Text(_tr(l10n, 'opp_admin', 'Admin'),
+                              style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                        ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(width: 8),
               ],
-              _glassBtn(
-                _savedOnly ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                () => setState(() => _savedOnly = !_savedOnly),
-                active: _savedOnly,
+              // Favoris
+              GestureDetector(
+                onTap: () => setState(() => _savedOnly = !_savedOnly),
+                child: _glassBox(
+                  radius: 12,
+                  tint: _savedOnly ? const Color(0x40FFFFFF) : const Color(0x1FFFFFFF),
+                  child: SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Icon(
+                      _savedOnly ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
               ),
               const SizedBox(width: 8),
-              _glassBtn(Icons.tune_rounded, _openFilters),
-            ],
-          ),
-          const SizedBox(height: 18),
-          Row(
-            children: [
-              _statGlass('$open', _tr(l10n, 'opp_stat_open', 'Ouvertes'), Icons.rocket_launch_rounded),
-              const SizedBox(width: 8),
-              _statGlass('$closing', _tr(l10n, 'opp_stat_closing', '≤ 7 jours'), Icons.timer_rounded),
-            ],
-          ),
-          const SizedBox(height: 14),
-          // Barre de recherche Glassmorphism
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-              child: Container(
-                height: 46,
-                decoration: BoxDecoration(
-                  color: _Palette.glassBg,
-                  border: Border.all(color: _Palette.glassBorder),
-                ),
-                child: TextField(
-                  controller: _searchCtrl,
-                  onChanged: (_) => setState(() {}),
-                  style: const TextStyle(color: Colors.white, fontSize: 13.5),
-                  cursorColor: Colors.white,
-                  decoration: InputDecoration(
-                    hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
-                    hintStyle: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 13),
-                    prefixIcon: Icon(Icons.search_rounded, size: 19, color: Colors.white.withOpacity(0.8)),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
+              // Filtres
+              GestureDetector(
+                onTap: _openFilters,
+                child: _glassBox(
+                  radius: 12,
+                  child: const SizedBox(
+                    width: 38,
+                    height: 38,
+                    child: Icon(Icons.tune_rounded, size: 16, color: Colors.white),
                   ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          // Search glass
+          _glassBox(
+            radius: 14,
+            tint: const Color(0x24FFFFFF),
+            blur: 16,
+            child: SizedBox(
+              height: 46,
+              child: TextField(
+                controller: _searchCtrl,
+                onChanged: (_) => setState(() {}),
+                style: const TextStyle(color: Colors.white, fontSize: 13.5),
+                cursorColor: Colors.white,
+                decoration: InputDecoration(
+                  hintText: _tr(l10n, 'opp_search', 'Rechercher une opportunité…'),
+                  hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
+                  prefixIcon: Icon(Icons.search_rounded, size: 18, color: Colors.white.withOpacity(0.7)),
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 13),
                 ),
               ),
             ),
@@ -338,161 +416,70 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  Widget _glassBtn(IconData icon, VoidCallback onTap, {bool active = false}) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(
-          color: active ? Colors.white : _Palette.glassBg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: active ? Colors.white : _Palette.glassBorder),
-        ),
-        child: Icon(icon, size: 17, color: active ? _Palette.primary : Colors.white),
-      ),
-    );
-  }
-
-  Widget _statGlass(String value, String label, IconData icon) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-        decoration: BoxDecoration(
-          color: _Palette.glassBg,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: _Palette.glassBorder),
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(9)),
-              child: Icon(icon, size: 13, color: Colors.white),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(value, style: const TextStyle(color: Colors.white, fontSize: 15, fontWeight: FontWeight.w900, height: 1.1)),
-                  Text(label, maxLines: 1, overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withOpacity(0.6), fontSize: 9, fontWeight: FontWeight.w600)),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ RAIL CATÉGORIES ═══════════════════
-  Widget _catsRail(AppLocalizations l10n) {
-    return Transform.translate(
-      offset: const Offset(0, -16),
-      child: SizedBox(
-        height: 78,
-        child: ListView.separated(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          itemCount: _cats.length,
-          separatorBuilder: (_, __) => const SizedBox(width: 12),
-          itemBuilder: (context, i) {
-            final sel = _catIndex == i;
-            final c = _cats[i];
-            return GestureDetector(
-              onTap: () { HapticFeedback.selectionClick(); setState(() => _catIndex = i); },
-              child: Column(
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 200),
-                    width: 52,
-                    height: 52,
-                    decoration: BoxDecoration(
-                      color: sel ? _Palette.primary : _Palette.surface,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: sel ? _Palette.primary : _Palette.border, width: 1),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 6, offset: const Offset(0, 3)),
-                      ],
-                    ),
-                    child: Icon(c.icon, size: 20, color: sel ? Colors.white : _Palette.textMuted),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(c.label,
-                      style: TextStyle(fontSize: 10, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: sel ? _Palette.primary : _Palette.textMuted)),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  // ═══════════════════ À LA UNE ═══════════════════
-  Widget _featuredSection(List<OpportunityItem> all, AppLocalizations l10n) {
-    final feat = _featured(all);
+  // ═══════════════════ HERO BANNER AUTO-SCROLL ═══════════════════
+  Widget _heroBanner(List<OpportunityItem> feat, AppLocalizations l10n) {
     if (feat.isEmpty || _savedOnly) return const SizedBox.shrink();
+
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
-          child: Row(
-            children: [
-              Container(width: 4, height: 16, decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(2))),
-              const SizedBox(width: 8),
-              Text(_tr(l10n, 'opp_featured', 'À la une'),
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
-              const Spacer(),
-              Text('${feat.length}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
-            ],
-          ),
-        ),
+        const SizedBox(height: 16),
         SizedBox(
-          height: 236,
-          child: PageView.builder(
-            controller: _featCtrl,
-            padEnds: true,
-            itemCount: feat.length,
-            itemBuilder: (context, i) => _featuredCard(feat[i], l10n),
+          height: 208,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (n) {
+              if (n is ScrollStartNotification) {
+                _heroTimer?.cancel();
+                _heroReady = false;
+              } else if (n is ScrollEndNotification) {
+                Future.delayed(const Duration(seconds: 2), () {
+                  if (mounted) _startHeroAuto(feat.length);
+                });
+              }
+              return false;
+            },
+            child: PageView.builder(
+              controller: _heroCtrl,
+              itemCount: feat.length,
+              onPageChanged: (i) => setState(() => _heroIndex = i),
+              itemBuilder: (_, i) => _heroItem(feat[i], l10n),
+            ),
           ),
         ),
         const SizedBox(height: 10),
         Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: List.generate(feat.length, (i) {
-            final sel = i == _featPage;
+            final sel = i == _heroIndex;
             return AnimatedContainer(
               duration: const Duration(milliseconds: 220),
               margin: const EdgeInsets.symmetric(horizontal: 3),
               width: sel ? 18 : 6,
               height: 6,
-              decoration: BoxDecoration(color: sel ? _Palette.primary : _Palette.border, borderRadius: BorderRadius.circular(3)),
+              decoration: BoxDecoration(
+                color: sel ? _Opp.blue : _Opp.line,
+                borderRadius: BorderRadius.circular(3),
+              ),
             );
           }),
         ),
-        const SizedBox(height: 8),
       ],
     );
   }
 
-  Widget _featuredCard(OpportunityItem o, AppLocalizations l10n) {
+  Widget _heroItem(OpportunityItem o, AppLocalizations l10n) {
     final d = _daysLeft(o);
     final url = ThixInputGuard.url(o.imageAssetPath);
     final reward = _rewardOf(o);
     final isSaved = _saved.contains(o.id);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: GestureDetector(
         onTap: () => context.push('/opportunities/${o.id}'),
         child: Container(
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(22),
-            boxShadow: [BoxShadow(color: _Palette.primary.withOpacity(0.15), blurRadius: 16, offset: const Offset(0, 8))],
+            boxShadow: [BoxShadow(color: _Opp.blueDeep.withOpacity(0.16), blurRadius: 16, offset: const Offset(0, 8))],
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(22),
@@ -501,78 +488,119 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
               children: [
                 if (url != null)
                   CachedNetworkImage(imageUrl: url, fit: BoxFit.cover,
-                      errorWidget: (_, __, ___) => _featFallback(o))
+                      errorWidget: (_, __, ___) => _heroFallback(o))
                 else
-                  _featFallback(o),
+                  _heroFallback(o),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [Colors.black.withOpacity(0.15), Colors.transparent, _Palette.primary.withOpacity(0.95)],
-                      stops: const [0.0, 0.42, 1.0],
+                      colors: [
+                        _Opp.blueDark.withOpacity(0.25),
+                        Colors.transparent,
+                        _Opp.blueDark.withOpacity(0.90),
+                      ],
+                      stops: const [0.0, 0.40, 1.0],
                     ),
                   ),
                 ),
+                // Chip catégorie (glass)
                 Positioned(
-                  top: 12, left: 12, right: 12,
+                  top: 12,
+                  left: 12,
+                  right: 12,
                   child: Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                        decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
-                        child: Text(o.category, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: BackdropFilter(
+                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.16),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Colors.white.withOpacity(0.25)),
+                            ),
+                            child: Text(o.category,
+                                style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w700)),
+                          ),
+                        ),
                       ),
                       const Spacer(),
                       GestureDetector(
                         onTap: () => _toggleSave(o.id),
-                        child: Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
-                          child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, size: 14, color: isSaved ? Colors.white : Colors.white.withOpacity(0.7)),
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: BackdropFilter(
+                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.16),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Colors.white.withOpacity(0.25)),
+                              ),
+                              child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                                  size: 13, color: Colors.white),
+                            ),
+                          ),
                         ),
                       ),
                     ],
                   ),
                 ),
+                // Panneau info glass (bas)
                 Positioned(
-                  left: 14, right: 14, bottom: 14,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(ThixInputGuard.text(o.title, maxLength: 90),
-                          maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white, fontSize: 16.5, fontWeight: FontWeight.w900, height: 1.22, letterSpacing: -0.2)),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          _miniLogo(o, 20),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(ThixInputGuard.text(o.organizer, maxLength: 40),
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 10.5, fontWeight: FontWeight.w500)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          _pillGlass(
-                            d <= 0
-                                ? _tr(l10n, 'opp_closed', 'Clôturé')
-                                : (d == 1 ? _tr(l10n, 'opp_last_day', 'Dernier jour') : '$d ${_tr(l10n, 'opp_days', 'j restants')}'),
-                            Icons.timer_rounded,
-                          ),
-                          if (reward.isNotEmpty && reward != '—') ...[
-                            const SizedBox(width: 6),
-                            _pillGlass(reward, Icons.payments_rounded),
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(14),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.white.withOpacity(0.22)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(ThixInputGuard.text(o.title, maxLength: 80),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(color: Colors.white, fontSize: 14.5, fontWeight: FontWeight.w800, height: 1.25)),
+                            const SizedBox(height: 4),
+                            Text(ThixInputGuard.text(o.organizer, maxLength: 45),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10.5, fontWeight: FontWeight.w500)),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                _heroPill(
+                                  d <= 0
+                                      ? _tr(l10n, 'opp_closed', 'Clôturé')
+                                      : (d == 1 ? _tr(l10n, 'opp_last_day', 'Dernier jour') : '$d ${_tr(l10n, 'opp_days', 'j restants')}'),
+                                  d <= 3 ? _Opp.red : null,
+                                ),
+                                if (reward.isNotEmpty && reward != '—') ...[
+                                  const SizedBox(width: 6),
+                                  _heroPill(reward, _Opp.green),
+                                ],
+                                const Spacer(),
+                                const Icon(Icons.arrow_forward_rounded, color: Colors.white70, size: 15),
+                              ],
+                            ),
                           ],
-                          const Spacer(),
-                          const Icon(Icons.chevron_right_rounded, color: Colors.white70, size: 18),
-                        ],
+                        ),
                       ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -583,60 +611,87 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  Widget _featFallback(OpportunityItem o) {
+  Widget _heroPill(String label, Color? accent) {
+    return Flexible(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: (accent ?? Colors.white).withOpacity(accent == null ? 0.16 : 0.22),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: Colors.white.withOpacity(0.25)),
+        ),
+        child: Text(label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w700)),
+      ),
+    );
+  }
+
+  Widget _heroFallback(OpportunityItem o) {
     return Container(
       decoration: const BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [_Palette.primaryLight, _Palette.primary],
+          colors: [_Opp.blueDeep, _Opp.blue],
         ),
       ),
       child: Center(
         child: Text(
           ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(),
-          style: TextStyle(fontSize: 64, fontWeight: FontWeight.w900, color: Colors.white.withOpacity(0.25)),
+          style: TextStyle(fontSize: 64, fontWeight: FontWeight.w900, color: Colors.white.withOpacity(0.18)),
         ),
       ),
     );
   }
 
-  Widget _pillGlass(String label, IconData icon) {
-    return Flexible(
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-        decoration: BoxDecoration(color: _Palette.glassBg, borderRadius: BorderRadius.circular(8), border: Border.all(color: _Palette.glassBorder)),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 11, color: Colors.white),
-            const SizedBox(width: 4),
-            Flexible(child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800))),
-          ],
+  // ═══════════════════ RAIL CATÉGORIES (pills glass) ═══════════════════
+  Widget _catsRail(AppLocalizations l10n) {
+    return Transform.translate(
+      offset: const Offset(0, -0),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+        child: SizedBox(
+          height: 42,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: _cats.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
+            itemBuilder: (context, i) {
+              final sel = _catIndex == i;
+              final c = _cats[i];
+              return GestureDetector(
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  setState(() => _catIndex = i);
+                },
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: sel ? _Opp.blue : _Opp.card,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: sel ? _Opp.blue : _Opp.line),
+                    boxShadow: sel
+                        ? [BoxShadow(color: _Opp.blue.withOpacity(0.25), blurRadius: 10, offset: const Offset(0, 4))]
+                        : [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 6, offset: const Offset(0, 2))],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(c.icon, size: 14, color: sel ? Colors.white : _Opp.sub),
+                      const SizedBox(width: 6),
+                      Text(c.label,
+                          style: TextStyle(fontSize: 12, fontWeight: sel ? FontWeight.w800 : FontWeight.w600, color: sel ? Colors.white : _Opp.sub)),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         ),
       ),
-    );
-  }
-
-  Widget _miniLogo(OpportunityItem o, double size) {
-    final url = ThixInputGuard.url(o.imageAssetPath);
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(6),
-      child: SizedBox(
-        width: size, height: size,
-        child: url != null
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
-            : _letter(o, size),
-      ),
-    );
-  }
-
-  Widget _letter(OpportunityItem o, double size) {
-    return Container(
-      color: Colors.white.withOpacity(0.2),
-      alignment: Alignment.center,
-      child: Text(ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(),
-          style: TextStyle(fontSize: size * 0.5, fontWeight: FontWeight.w900, color: Colors.white)),
     );
   }
 
@@ -648,23 +703,24 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 10),
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
           child: Row(
             children: [
-              const Icon(Icons.access_time_filled_rounded, size: 17, color: _Palette.primary),
-              const SizedBox(width: 6),
+              Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.blue, borderRadius: BorderRadius.circular(2))),
+              const SizedBox(width: 8),
               Text(_tr(l10n, 'opp_closing', 'Clôture imminente'),
-                  style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt, letterSpacing: -0.2)),
               const Spacer(),
               GestureDetector(
                 onTap: () => setState(() { _deadlineFilter = 1; _sortMode = 0; }),
-                child: Text(_tr(l10n, 'opp_see_all', 'Voir tout'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Palette.primaryLight)),
+                child: Text(_tr(l10n, 'opp_see_all', 'Voir tout'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _Opp.blue)),
               ),
             ],
           ),
         ),
         SizedBox(
-          height: 158,
+          height: 148,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -673,35 +729,38 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             itemBuilder: (context, i) {
               final o = closing[i];
               final d = _daysLeft(o);
+              final urgent = d <= 3;
               return GestureDetector(
                 onTap: () => context.push('/opportunities/${o.id}'),
                 child: Container(
-                  width: 148,
+                  width: 150,
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: _Palette.surface,
+                    color: _Opp.card,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _Palette.border),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))],
+                    border: Border.all(color: _Opp.line),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 3))],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          _Ring(days: d, progress: _ratio(o)),
+                          _Ring(days: d, progress: _ratio(o), color: urgent ? _Opp.red : _Opp.blue),
                           const Spacer(),
                           _miniLogo(o, 26),
                         ],
                       ),
                       const SizedBox(height: 8),
-                      Text(ThixInputGuard.text(o.title, maxLength: 46),
-                          maxLines: 2, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: _Palette.textDark, height: 1.25)),
+                      Text(ThixInputGuard.text(o.title, maxLength: 44),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _Opp.txt, height: 1.25)),
                       const Spacer(),
                       Text(ThixInputGuard.text(o.organizer, maxLength: 22),
-                          maxLines: 1, overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 9.5, color: _Palette.textMuted, fontWeight: FontWeight.w600)),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 9.5, color: _Opp.mut, fontWeight: FontWeight.w500)),
                     ],
                   ),
                 ),
@@ -709,137 +768,153 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             },
           ),
         ),
-        const SizedBox(height: 6),
       ],
     );
   }
 
-  // ═══════════════════ LISTE ÉDITORIALE ═══════════════════
+  // ═══════════════════ LISTE PROFESSIONAL ═══════════════════
   Widget _listSectionHeader(int count, AppLocalizations l10n) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 10),
       child: Row(
         children: [
-          Container(width: 4, height: 16, decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(2))),
+          Container(width: 4, height: 16, decoration: BoxDecoration(color: _Opp.blue, borderRadius: BorderRadius.circular(2))),
           const SizedBox(width: 8),
           Text(_savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
-              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w900, color: _Palette.textDark, letterSpacing: -0.2)),
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt, letterSpacing: -0.2)),
           const Spacer(),
-          Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+            decoration: BoxDecoration(color: _Opp.blueSoft, borderRadius: BorderRadius.circular(10)),
+            child: Text('$count', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _Opp.blue)),
+          ),
         ],
       ),
     );
   }
 
-  Widget _editorialCard(OpportunityItem o, AppLocalizations l10n) {
+  Widget _proCard(OpportunityItem o, AppLocalizations l10n) {
     final d = _daysLeft(o);
     final isSaved = _saved.contains(o.id);
     final reward = _rewardOf(o);
-    final statusLabel = d <= 0 ? _tr(l10n, 'opp_closed', 'Clôturé') : (d <= 7 ? _tr(l10n, 'opp_closing_soon', 'Clôture proche') : _tr(l10n, 'opp_open', 'Ouvert'));
+    final statusColor = d <= 0 ? _Opp.mut : (d <= 7 ? _Opp.red : _Opp.green);
+    final statusLabel = d <= 0
+        ? _tr(l10n, 'opp_closed', 'Clôturé')
+        : (d <= 7 ? _tr(l10n, 'opp_closing_soon', 'Clôture proche') : _tr(l10n, 'opp_open', 'Ouvert'));
 
     return GestureDetector(
       onTap: () => context.push('/opportunities/${o.id}'),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          color: _Palette.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _Palette.border),
-          boxShadow: [BoxShadow(color: _Palette.primary.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+          color: _Opp.card,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _Opp.line),
+          boxShadow: [BoxShadow(color: _Opp.blueDeep.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4))],
         ),
-        clipBehavior: Clip.antiAlias,
-        child: Padding(
-          padding: const EdgeInsets.all(13),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _logo(o, 44),
-                  const SizedBox(width: 11),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(ThixInputGuard.text(o.title, maxLength: 110),
-                            maxLines: 2, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w800, color: _Palette.textDark, height: 1.28, letterSpacing: -0.1)),
-                        const SizedBox(height: 3),
-                        Text(ThixInputGuard.text(o.organizer, maxLength: 60),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 11.5, color: _Palette.textMuted, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                  ),
-                  GestureDetector(
-                    onTap: () => _toggleSave(o.id),
-                    child: Container(
-                      padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: isSaved ? _Palette.primaryLight.withOpacity(0.1) : Colors.transparent,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
-                          size: 17, color: isSaved ? _Palette.primaryLight : _Palette.textMuted),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              Wrap(
-                spacing: 6, runSpacing: 6,
-                children: [
-                  _tag(o.category, _Palette.primary),
-                  _tag(statusLabel, d <= 0 ? _Palette.textMuted : (d <= 7 ? _Palette.primaryLight : _Palette.primary)),
-                ],
-              ),
-              if (reward.isNotEmpty && reward != '—') ...[
-                const SizedBox(height: 10),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: _Palette.primary.withOpacity(0.05),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _Palette.primary.withOpacity(0.15)),
-                  ),
-                  child: Row(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _logo(o, 44),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.volunteer_activism_rounded, size: 14, color: _Palette.primary),
-                      const SizedBox(width: 7),
-                      Expanded(
-                        child: Text(reward, maxLines: 1, overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _Palette.primary)),
+                      Text(ThixInputGuard.text(o.title, maxLength: 110),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _Opp.txt, height: 1.3, letterSpacing: -0.1)),
+                      const SizedBox(height: 3),
+                      Row(
+                        children: [
+                          const Icon(Icons.domain_rounded, size: 11, color: _Opp.mut),
+                          const SizedBox(width: 4),
+                          Expanded(
+                            child: Text(ThixInputGuard.text(o.organizer, maxLength: 60),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: _Opp.sub, fontWeight: FontWeight.w500)),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
+                GestureDetector(
+                  onTap: () => _toggleSave(o.id),
+                  child: Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: isSaved ? _Opp.blueSoft : Colors.transparent,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Icon(isSaved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded,
+                        size: 16, color: isSaved ? _Opp.blue : _Opp.mut),
+                  ),
+                ),
               ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                _tag(o.category, _Opp.blue),
+                const SizedBox(width: 6),
+                _tag(statusLabel, statusColor),
+                const Spacer(),
+                Text(d <= 0 ? '—' : '$d j',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: d <= 3 ? _Opp.red : _Opp.sub)),
+              ],
+            ),
+            if (reward.isNotEmpty && reward != '—') ...[
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Icon(Icons.event_rounded, size: 13, color: _Palette.textMuted),
-                  const SizedBox(width: 5),
-                  Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 30),
-                      style: const TextStyle(fontSize: 11, color: _Palette.textMuted, fontWeight: FontWeight.w600)),
-                  const Spacer(),
-                  Text(d <= 0 ? '—' : '$d j',
-                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: _Palette.primary)),
-                ],
-              ),
-              const SizedBox(height: 7),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(3),
-                child: LinearProgressIndicator(
-                  value: d <= 0 ? 1.0 : _ratio(o),
-                  minHeight: 4,
-                  backgroundColor: _Palette.border,
-                  valueColor: AlwaysStoppedAnimation(d <= 0 ? _Palette.textMuted : _Palette.primary),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _Opp.blueSoft,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.volunteer_activism_rounded, size: 13, color: _Opp.blue),
+                    const SizedBox(width: 7),
+                    Expanded(
+                      child: Text(reward,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, color: _Opp.blueDeep)),
+                    ),
+                  ],
                 ),
               ),
             ],
-          ),
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.event_rounded, size: 12, color: _Opp.mut),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Text(ThixInputGuard.text(o.deadlineLabel, maxLength: 30),
+                      style: const TextStyle(fontSize: 10.5, color: _Opp.sub, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 7),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: LinearProgressIndicator(
+                value: d <= 0 ? 1.0 : _ratio(o),
+                minHeight: 4,
+                backgroundColor: _Opp.line,
+                valueColor: AlwaysStoppedAnimation(d <= 0 ? _Opp.mut : _Opp.blue),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -848,18 +923,19 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   Widget _tag(String label, Color color) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.08), borderRadius: BorderRadius.circular(7)),
+      decoration: BoxDecoration(color: color.withOpacity(0.10), borderRadius: BorderRadius.circular(7)),
       child: Text(ThixInputGuard.text(label, maxLength: 24),
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: color)),
     );
   }
 
   Widget _logo(OpportunityItem o, double size) {
     final url = ThixInputGuard.url(o.imageAssetPath);
     return ClipRRect(
-      borderRadius: BorderRadius.circular(11),
+      borderRadius: BorderRadius.circular(12),
       child: SizedBox(
-        width: size, height: size,
+        width: size,
+        height: size,
         child: url != null
             ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
             : _letter(o, size),
@@ -867,7 +943,30 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ FILTRES ═══════════════════
+  Widget _miniLogo(OpportunityItem o, double size) {
+    final url = ThixInputGuard.url(o.imageAssetPath);
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: url != null
+            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover, errorWidget: (_, __, ___) => _letter(o, size))
+            : _letter(o, size),
+      ),
+    );
+  }
+
+  Widget _letter(OpportunityItem o, double size) {
+    return Container(
+      color: _Opp.blueSoft,
+      alignment: Alignment.center,
+      child: Text(ThixInputGuard.text(o.organizer, maxLength: 1, fallback: 'T').toUpperCase(),
+          style: TextStyle(fontSize: size * 0.45, fontWeight: FontWeight.w800, color: _Opp.blue)),
+    );
+  }
+
+  // ═══════════════════ FILTRES (sheet glass) ═══════════════════
   void _openFilters() {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet(
@@ -875,86 +974,91 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSt) => Container(
-          margin: const EdgeInsets.all(10),
-          decoration: BoxDecoration(color: _Palette.surface, borderRadius: BorderRadius.circular(24)),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(child: Container(width: 38, height: 4, decoration: BoxDecoration(color: _Palette.border, borderRadius: BorderRadius.circular(2)))),
-              const SizedBox(height: 16),
-              Row(
+        builder: (ctx, setSt) => ClipRRect(
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            child: Container(
+              color: Colors.white.withOpacity(0.92),
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _Palette.primary, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.tune_rounded, size: 15, color: Colors.white)),
-                  const SizedBox(width: 10),
-                  Text(_tr(l10n, 'opp_filters', 'Filtres & tri'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: _Palette.textDark)),
-                ],
-              ),
-              const SizedBox(height: 18),
-              Text(_tr(l10n, 'opp_deadline', 'Échéance'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (int i = 0; i < 3; i++)
-                    ChoiceChip(
-                      selected: _deadlineFilter == i,
-                      onSelected: (_) => setSt(() => _deadlineFilter = i),
-                      label: Text([_tr(l10n, 'opp_f_all', 'Toutes'), '< 7 j', '< 30 j'][i]),
-                      selectedColor: _Palette.primary,
-                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _deadlineFilter == i ? Colors.white : _Palette.textMuted),
-                      side: BorderSide(color: _deadlineFilter == i ? _Palette.primary : _Palette.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              Text(_tr(l10n, 'opp_sort', 'Trier par'), style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w800, color: _Palette.textMuted)),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (int i = 0; i < 3; i++)
-                    ChoiceChip(
-                      selected: _sortMode == i,
-                      onSelected: (_) => setSt(() => _sortMode = i),
-                      label: Text([_tr(l10n, 'opp_sort_deadline', 'Échéance'), _tr(l10n, 'opp_sort_recent', 'Récentes'), 'A → Z'][i]),
-                      selectedColor: _Palette.primaryLight,
-                      labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sortMode == i ? Colors.white : _Palette.textMuted),
-                      side: BorderSide(color: _sortMode == i ? _Palette.primaryLight : _Palette.border),
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _withReward,
-                activeColor: _Palette.primary,
-                onChanged: (v) => setSt(() => _withReward = v),
-                title: Text(_tr(l10n, 'opp_with_reward', 'Avec récompense / financement'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _Palette.textDark)),
-              ),
-              const SizedBox(height: 10),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _Palette.primary,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  Center(child: Container(width: 38, height: 4, decoration: BoxDecoration(color: _Opp.line, borderRadius: BorderRadius.circular(2)))),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(padding: const EdgeInsets.all(7), decoration: BoxDecoration(color: _Opp.blueSoft, borderRadius: BorderRadius.circular(10)), child: const Icon(Icons.tune_rounded, size: 14, color: _Opp.blue)),
+                      const SizedBox(width: 10),
+                      Text(_tr(l10n, 'opp_filters', 'Filtres & tri'), style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: _Opp.txt)),
+                    ],
                   ),
-                  onPressed: () {
-                    Navigator.pop(ctx);
-                    setState(() {});
-                  },
-                  child: Text(_tr(l10n, 'opp_apply', 'Appliquer'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14)),
-                ),
+                  const SizedBox(height: 18),
+                  Text(_tr(l10n, 'opp_deadline', 'Échéance'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _Opp.sub)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (int i = 0; i < 3; i++)
+                        ChoiceChip(
+                          selected: _deadlineFilter == i,
+                          onSelected: (_) => setSt(() => _deadlineFilter = i),
+                          label: Text([_tr(l10n, 'opp_f_all', 'Toutes'), '< 7 j', '< 30 j'][i]),
+                          selectedColor: _Opp.blue,
+                          labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _deadlineFilter == i ? Colors.white : _Opp.sub),
+                          side: BorderSide(color: _deadlineFilter == i ? _Opp.blue : _Opp.line),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Text(_tr(l10n, 'opp_sort', 'Trier par'), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _Opp.sub)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (int i = 0; i < 3; i++)
+                        ChoiceChip(
+                          selected: _sortMode == i,
+                          onSelected: (_) => setSt(() => _sortMode = i),
+                          label: Text([_tr(l10n, 'opp_sort_deadline', 'Échéance'), _tr(l10n, 'opp_sort_recent', 'Récentes'), 'A → Z'][i]),
+                          selectedColor: _Opp.blueDeep,
+                          labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _sortMode == i ? Colors.white : _Opp.sub),
+                          side: BorderSide(color: _sortMode == i ? _Opp.blueDeep : _Opp.line),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _withReward,
+                    activeColor: _Opp.blue,
+                    onChanged: (v) => setSt(() => _withReward = v),
+                    title: Text(_tr(l10n, 'opp_with_reward', 'Avec récompense / financement'), style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _Opp.txt)),
+                  ),
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _Opp.blue,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        setState(() {});
+                      },
+                      child: Text(_tr(l10n, 'opp_apply', 'Appliquer'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14)),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -962,10 +1066,10 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   // ═══════════════════ ÉTATS ═══════════════════
-  Widget _skeletonAll(AppLocalizations l10n, bool isAdmin) {
+  Widget _skeletonAll(AppLocalizations l10n) {
     return Column(
       children: [
-        _hero(const [], l10n, isAdmin),
+        _header(l10n),
         Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
@@ -974,59 +1078,32 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 Container(
                   height: 118,
                   decoration: BoxDecoration(
-                    color: _Palette.surface,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: _Palette.border),
+                    color: _Opp.card,
+                    borderRadius: BorderRadius.circular(18),
+                    border: Border.all(color: _Opp.line),
                   ),
-                  padding: const EdgeInsets.all(13),
+                  padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Row(
                         children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(
-                              color: _Palette.bg,
-                              borderRadius: BorderRadius.circular(11),
-                            ),
-                          ),
-                          const SizedBox(width: 11),
+                          Container(width: 44, height: 44, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(12))),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Container(
-                                  height: 12,
-                                  decoration: BoxDecoration(
-                                    color: _Palette.bg,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
+                                Container(height: 12, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
                                 const SizedBox(height: 7),
-                                Container(
-                                  height: 9,
-                                  width: 130,
-                                  decoration: BoxDecoration(
-                                    color: _Palette.bg,
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                ),
+                                Container(height: 9, width: 130, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
                               ],
                             ),
                           ),
                         ],
                       ),
                       const Spacer(),
-                      Container(
-                        height: 8,
-                        width: 170,
-                        decoration: BoxDecoration(
-                          color: _Palette.bg,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
+                      Container(height: 8, width: 170, decoration: BoxDecoration(color: _Opp.bg, borderRadius: BorderRadius.circular(4))),
                     ],
                   ),
                 ),
@@ -1045,11 +1122,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _Palette.primary.withOpacity(0.05), shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 34, color: _Palette.primary)),
+            Container(padding: const EdgeInsets.all(18), decoration: BoxDecoration(color: _Opp.blueSoft, shape: BoxShape.circle), child: const Icon(Icons.explore_rounded, size: 32, color: _Opp.blue)),
             const SizedBox(height: 14),
-            Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: _Palette.textDark)),
+            Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: _Opp.txt)),
             const SizedBox(height: 6),
-            Text(_tr(l10n, 'opp_empty_sub', 'De nouvelles bourses, emplois et subventions arrivent bientôt.'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _Palette.textMuted)),
+            Text(_tr(l10n, 'opp_empty_sub', 'De nouvelles bourses, emplois et subventions arrivent bientôt.'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _Opp.sub)),
           ],
         ),
       ),
@@ -1062,15 +1139,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            const Icon(Icons.search_off_rounded, size: 32, color: _Palette.textMuted),
+            const Icon(Icons.search_off_rounded, size: 30, color: _Opp.mut),
             const SizedBox(height: 10),
-            Text(_tr(l10n, 'opp_no_result', 'Aucun résultat'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Palette.textDark)),
+            Text(_tr(l10n, 'opp_no_result', 'Aucun résultat'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Opp.txt)),
             TextButton(
               onPressed: () {
                 _searchCtrl.clear();
                 setState(() { _catIndex = 0; _savedOnly = false; _deadlineFilter = 0; _withReward = false; });
               },
-              child: Text(_tr(l10n, 'opp_reset', 'Réinitialiser'), style: const TextStyle(color: _Palette.primary)),
+              child: Text(_tr(l10n, 'opp_reset', 'Réinitialiser')),
             ),
           ],
         ),
@@ -1084,12 +1161,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
       child: Center(
         child: Column(
           children: [
-            const Icon(Icons.wifi_off_rounded, size: 34, color: _Palette.textMuted),
+            const Icon(Icons.wifi_off_rounded, size: 32, color: _Opp.mut),
             const SizedBox(height: 10),
-            Text(_tr(l10n, 'opp_error', 'Connexion interrompue'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Palette.textDark)),
+            Text(_tr(l10n, 'opp_error', 'Connexion interrompue'), style: const TextStyle(fontWeight: FontWeight.w800, color: _Opp.txt)),
             const SizedBox(height: 12),
             ElevatedButton(
-              style: ElevatedButton.styleFrom(backgroundColor: _Palette.primary, foregroundColor: Colors.white, elevation: 0),
+              style: ElevatedButton.styleFrom(backgroundColor: _Opp.blue, foregroundColor: Colors.white, elevation: 0),
               onPressed: () => setState(() => _future = _service.listOpportunities()),
               child: Text(_tr(l10n, 'opp_retry', 'Réessayer')),
             ),
@@ -1101,22 +1178,23 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 }
 
 // ============================================================================
-// ANNEAU DE COUNTDOWN
+// ANNEAU DE COUNTDOWN (bleu)
 // ============================================================================
 class _Ring extends StatelessWidget {
   final int days;
   final double progress;
-  const _Ring({required this.days, required this.progress});
+  final Color color;
+  const _Ring({required this.days, required this.progress, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 46,
-      height: 46,
+      width: 44,
+      height: 44,
       child: CustomPaint(
-        painter: _RingPainter(progress: progress),
+        painter: _RingPainter(progress: progress, color: color),
         child: Center(
-          child: Text('$days', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: _Palette.primary)),
+          child: Text('$days', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
         ),
       ),
     );
@@ -1125,7 +1203,8 @@ class _Ring extends StatelessWidget {
 
 class _RingPainter extends CustomPainter {
   final double progress;
-  const _RingPainter({required this.progress});
+  final Color color;
+  const _RingPainter({required this.progress, required this.color});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1133,19 +1212,19 @@ class _RingPainter extends CustomPainter {
     final radius = (size.width - 5) / 2;
     final track = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
-      ..color = _Palette.border;
+      ..strokeWidth = 4
+      ..color = const Color(0xFFEDF1F6);
     canvas.drawCircle(center, radius, track);
     final arc = Paint()
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4.5
+      ..strokeWidth = 4
       ..strokeCap = StrokeCap.round
-      ..color = _Palette.primary;
+      ..color = color;
     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), -math.pi / 2, 2 * math.pi * progress.clamp(0.0, 1.0), false, arc);
   }
 
   @override
-  bool shouldRepaint(covariant _RingPainter old) => old.progress != progress;
+  bool shouldRepaint(covariant _RingPainter old) => old.progress != progress || old.color != color;
 }
 
 class _Cat {
@@ -1188,16 +1267,16 @@ class _CountdownTimerWidgetState extends State<CountdownTimerWidget> {
 
   @override
   Widget build(BuildContext context) {
-    if (_left == Duration.zero) return _pill('Clôturé', _Palette.textMuted);
+    if (_left == Duration.zero) return _pill('Clôturé', const Color(0xFF93A1B5));
     final s = '${_left.inDays}j ${(_left.inHours % 24).toString().padLeft(2, '0')}:${(_left.inMinutes % 60).toString().padLeft(2, '0')}:${(_left.inSeconds % 60).toString().padLeft(2, '0')}';
-    return _pill(s, _Palette.primary);
+    return _pill(s, _left.inDays <= 3 ? _Opp.red : _Opp.blue);
   }
 
   Widget _pill(String t, Color c) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: c.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
-      child: Text(t, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: c)),
+      decoration: BoxDecoration(color: c.withOpacity(0.12), borderRadius: BorderRadius.circular(6)),
+      child: Text(t, style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: c)),
     );
   }
 }
@@ -1224,9 +1303,9 @@ class FeaturedCountdownCarousel extends StatelessWidget {
             child: Container(
               width: 230,
               padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: _Palette.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _Palette.border)),
+              decoration: BoxDecoration(color: _Opp.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: _Opp.line)),
               child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(ThixInputGuard.text(o.title, maxLength: 60), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5, color: _Palette.textDark)),
+                Text(ThixInputGuard.text(o.title, maxLength: 60), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5, color: _Opp.txt)),
                 const Spacer(),
                 CountdownTimerWidget(targetDate: ThixInputGuard.safeDate(o.deadline)),
               ]),
