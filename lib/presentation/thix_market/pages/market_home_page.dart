@@ -1,14 +1,17 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v11 "FINAL"
+// MARKET HOME PAGE — Production Enterprise v12 "PROMO PHOTOS"
 // ----------------------------------------------------------------------------
 //  • ✅ Fond BLANC PUR, typographies RÉDUITES pour lisibilité maximale
 //  • ✅ Accent ORANGE standard marketplace (vert UNIQUEMENT carte locale)
 //  • ✅ Topbar compacte : recherche = icône seule, icon COMPTE SUPPRIMÉE
-//  • ✅ Cartes promo REMPLIES (fix ShaderMask srcIn : plus de fond blanc)
+//  • ✅ NOUVEAU : cartes promo (bleue + verte) avec PHOTOS de fond multiples
+//       + défilement automatique (4 s) — table promo_card_banners + bucket
+//  • ✅ NOUVEAU : bouton d'ajout de photos visible UNIQUEMENT pour les ADMIN
+//       (RPC is_thix_admin + RLS côté base)
+//  • ✅ FIX : overflow du bouton "Découvrir" (carte verte), shimmer plein-carte
 //  • ✅ Hero : compteur de banner SUPPRIMÉ, textes réduits, Ken Burns
 //  • ✅ Hero = 10 nouveautés (hors produits locaux & supermarchés)
-//  • ✅ Les 2 cartes promo conservées, B2B sans "vendre local", sans trust badges
 //  • ✅ Animations : reveal, Ken Burns, tap-scale, FAB pulsant, shimmer, marquee
 // ============================================================================
 
@@ -21,6 +24,7 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:image_picker/image_picker.dart';
 
 import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
@@ -71,7 +75,16 @@ const int _kMaxHeroSlides = 10;
 const int _kMaxFeaturedShops = 4;
 const int _kMaxLocalTeaser = 6;
 const double _kGridCardHeight = 250;
-const double _kPromoRowHeight = 176;
+const double _kPromoRowHeight = 184;
+
+// ✅ Photos de fond des cartes promo
+const String _kPromoBucket = 'promo-banners';
+const String _kPromoTable = 'promo_card_banners';
+const String _kCardExclusive = 'exclusive';
+const String _kCardLocal = 'local';
+const int _kMaxPromoPhotos = 8;
+const int _kMaxPromoFileBytes = 5 * 1024 * 1024;
+const Duration _kPromoSlide = Duration(seconds: 4);
 
 class _MarketValidators {
   _MarketValidators._();
@@ -183,6 +196,67 @@ final localTeaserProvider = FutureProvider.autoDispose<List<Map<String, dynamic>
   }
 });
 
+// ----------------------------------------------------------------------------
+// ✅ ADMIN : source unique = fonction SQL is_thix_admin() (même logique que RLS)
+// ----------------------------------------------------------------------------
+final marketIsAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final client = Supabase.instance.client;
+  if (client.auth.currentUser == null) return false;
+  try {
+    final res = await client.rpc('is_thix_admin').timeout(const Duration(seconds: 8));
+    return res == true;
+  } catch (e) {
+    debugPrint('[Market] ⚠️ is_thix_admin error: $e');
+    return false;
+  }
+});
+
+// ----------------------------------------------------------------------------
+// ✅ PHOTOS DES CARTES PROMO
+// ----------------------------------------------------------------------------
+class PromoBanner {
+  final String id;
+  final String imageUrl;
+  final String storagePath;
+  final int sortOrder;
+  const PromoBanner({
+    required this.id,
+    required this.imageUrl,
+    required this.storagePath,
+    required this.sortOrder,
+  });
+}
+
+final promoBannersProvider = FutureProvider.autoDispose.family<List<PromoBanner>, String>((ref, cardKey) async {
+  try {
+    final res = await Supabase.instance.client
+        .from(_kPromoTable)
+        .select('id, image_url, storage_path, sort_order')
+        .eq('card_key', cardKey)
+        .eq('is_active', true)
+        .order('sort_order', ascending: true)
+        .order('created_at', ascending: true)
+        .limit(_kMaxPromoPhotos)
+        .timeout(const Duration(seconds: 10));
+
+    final out = <PromoBanner>[];
+    for (final row in List<Map<String, dynamic>>.from(res as List)) {
+      final url = _MarketValidators.sanitizeUrl(row['image_url']?.toString());
+      if (url == null) continue;
+      out.add(PromoBanner(
+        id: row['id']?.toString() ?? '',
+        imageUrl: url,
+        storagePath: row['storage_path']?.toString() ?? '',
+        sortOrder: (row['sort_order'] as num?)?.toInt() ?? 0,
+      ));
+    }
+    return out;
+  } catch (e) {
+    debugPrint('[Market] ⚠️ Promo banners ($cardKey) error: $e');
+    return const <PromoBanner>[];
+  }
+});
+
 // ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
@@ -214,6 +288,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     }
   }
 
+  void _invalidatePromo() {
+    ref.invalidate(promoBannersProvider(_kCardExclusive));
+    ref.invalidate(promoBannersProvider(_kCardLocal));
+    ref.invalidate(marketIsAdminProvider);
+  }
+
   @override
   void didPopNext() {
     invalidateAllMarketProviders(ref);
@@ -221,6 +301,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     ref.read(marketBadgesProvider.notifier).refresh();
     ref.invalidate(localTeaserProvider);
     ref.invalidate(heroNewArrivalsProvider);
+    _invalidatePromo();
     _refreshCurrencyRates();
   }
 
@@ -373,6 +454,16 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     return t;
   }
 
+  void _openPromoManager(String cardKey, String title) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _PromoBannerManagerSheet(cardKey: cardKey, title: title),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -408,6 +499,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
               ref.read(marketBadgesProvider.notifier).refresh();
               ref.invalidate(localTeaserProvider);
               ref.invalidate(heroNewArrivalsProvider);
+              _invalidatePromo();
               await ref.read(forYouProvider.notifier).refresh();
               await _refreshCurrencyRates();
             },
@@ -1078,9 +1170,17 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   }
 
   // ──────────────────────────────────────────────────────────────────────────
-  // ✅ LES 2 CARTES PROMO — REMPLIES (fix ShaderMask srcIn) + textes réduits
+  // ✅ LES 2 CARTES PROMO — photos de fond + bouton ADMIN
   // ──────────────────────────────────────────────────────────────────────────
   Widget _buildPromoBannersRow(AppLocalizations l10n) {
+    final isAdmin = ref.watch(marketIsAdminProvider).valueOrNull ?? false;
+    final exclusivePhotos = (ref.watch(promoBannersProvider(_kCardExclusive)).valueOrNull ?? const <PromoBanner>[])
+        .map((b) => b.imageUrl)
+        .toList();
+    final localPhotos = (ref.watch(promoBannersProvider(_kCardLocal)).valueOrNull ?? const <PromoBanner>[])
+        .map((b) => b.imageUrl)
+        .toList();
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: SizedBox(
@@ -1094,11 +1194,27 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 title: _MarketValidators.sanitize(l10n.t('market_up_to_50'), maxLength: 50),
                 subtitle: _MarketValidators.sanitize(l10n.t('market_premium_selection'), maxLength: 60),
                 cta: _MarketValidators.sanitize(l10n.t('market_discover'), maxLength: 20),
+                photos: exclusivePhotos,
+                isAdmin: isAdmin,
+                onAdminTap: () => _openPromoManager(
+                  _kCardExclusive,
+                  _t('Offres exclusives', 'Exclusive offers', 'Ofa maalum'),
+                ),
                 onTap: () => _safeNavigate('marketFlashSales', '/market/flash-sales'),
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(child: _LocalPromoCard(onTap: () => _safeNavigate('marketLocalHome', '/market/local'))),
+            Expanded(
+              child: _LocalPromoCard(
+                photos: localPhotos,
+                isAdmin: isAdmin,
+                onAdminTap: () => _openPromoManager(
+                  _kCardLocal,
+                  _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
+                ),
+                onTap: () => _safeNavigate('marketLocalHome', '/market/local'),
+              ),
+            ),
           ],
         ),
       ),
@@ -1558,115 +1674,95 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 }
 
 // ============================================================================
-// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES : REMPLIE (srcIn) + textes réduits
+// ✅ COQUILLE COMMUNE DES CARTES PROMO
+//    dégradé + photos (carrousel auto) + voile de couleur + shimmer + bouton admin
 // ============================================================================
-class _ExclusivePromoCard extends StatefulWidget {
-  final String tag, title, subtitle, cta;
+class _PromoCardShell extends StatelessWidget {
+  final List<Color> colors;
+  final Color shadow;
+  final List<String> photos;
+  final bool isAdmin;
+  final VoidCallback onAdminTap;
   final VoidCallback onTap;
-  const _ExclusivePromoCard({
-    required this.tag,
-    required this.title,
-    required this.subtitle,
-    required this.cta,
+  final String semanticsLabel;
+  final double dotSpacing;
+  final Widget child;
+
+  const _PromoCardShell({
+    required this.colors,
+    required this.shadow,
+    required this.photos,
+    required this.isAdmin,
+    required this.onAdminTap,
     required this.onTap,
+    required this.semanticsLabel,
+    required this.child,
+    this.dotSpacing = 14,
   });
 
   @override
-  State<_ExclusivePromoCard> createState() => _ExclusivePromoCardState();
-}
-
-class _ExclusivePromoCardState extends State<_ExclusivePromoCard> with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmer = AnimationController(vsync: this, duration: const Duration(milliseconds: 3200))..repeat();
-
-  @override
-  void dispose() {
-    _shimmer.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final hasPhotos = photos.isNotEmpty;
     return Semantics(
       button: true,
-      label: widget.title,
+      label: semanticsLabel,
       child: _TapScale(
-        onTap: widget.onTap,
+        onTap: onTap,
         radius: BorderRadius.circular(18),
-        child: AnimatedBuilder(
-          animation: _shimmer,
-          builder: (_, __) => Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kPromoBlue1, kPromoBlue2]),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [BoxShadow(color: kPromoBlue2.withOpacity(0.28), blurRadius: 14, offset: const Offset(0, 7))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(painter: _DotsPatternPainter(color: Colors.white.withOpacity(0.06), spacing: 14, dotSize: 1.1)),
-                ),
-                // ✅ srcIn : le shimmer NE COUVRE PLUS le dégradé (fix fond blanc)
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: [BoxShadow(color: shadow, blurRadius: 14, offset: const Offset(0, 7))],
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (hasPhotos) ...[
+                Positioned.fill(child: _PromoPhotoCarousel(urls: photos)),
+                // Voile de couleur de la carte : garde l'identité visuelle + lisibilité
                 Positioned.fill(
                   child: IgnorePointer(
-                    child: ShaderMask(
-                      blendMode: BlendMode.srcIn,
-                      shaderCallback: (rect) {
-                        final p = _shimmer.value;
-                        return LinearGradient(
-                          begin: Alignment(-2 + p * 4, -0.5),
-                          end: Alignment(2 + p * 4, 0.5),
-                          colors: [
-                            Colors.white.withOpacity(0.0),
-                            Colors.white.withOpacity(0.16),
-                            Colors.white.withOpacity(0.0),
-                          ],
-                        ).createShader(rect);
-                      },
-                      child: Container(color: Colors.white),
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [colors.first.withOpacity(0.80), colors.last.withOpacity(0.50)],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(color: kGold, borderRadius: BorderRadius.circular(6)),
-                      child: Text(
-                        widget.tag,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Color(0xFF3B2F0B), fontWeight: FontWeight.w800, fontSize: 8.5),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [Colors.transparent, Colors.black.withOpacity(0.28)],
+                        ),
                       ),
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      widget.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, height: 1.15, letterSpacing: -0.2),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      widget.subtitle,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withOpacity(0.78), fontSize: 9, fontWeight: FontWeight.w500),
-                    ),
-                    const Expanded(child: SizedBox.shrink()),
-                    Row(
-                      children: [
-                        Text(widget.cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10)),
-                        const SizedBox(width: 4),
-                        const Icon(Icons.arrow_forward_rounded, size: 11, color: kGold),
-                      ],
-                    ),
-                  ],
+                  ),
                 ),
-              ],
-            ),
+              ] else
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: _DotsPatternPainter(color: Colors.white.withOpacity(0.06), spacing: dotSpacing, dotSize: 1.1),
+                  ),
+                ),
+              const Positioned.fill(child: _ShimmerSweep()),
+              Padding(padding: const EdgeInsets.all(13), child: child),
+              if (isAdmin)
+                Positioned(
+                  top: 6,
+                  right: 6,
+                  child: _AdminPhotoButton(onTap: onAdminTap),
+                ),
+            ],
           ),
         ),
       ),
@@ -1674,28 +1770,250 @@ class _ExclusivePromoCardState extends State<_ExclusivePromoCard> with SingleTic
   }
 }
 
-// ============================================================================
-// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (seule carte VERTE) : REMPLIE + compacte
-// ============================================================================
-class _LocalPromoCard extends StatefulWidget {
+/// Bouton d'ajout de photos — rendu UNIQUEMENT si isAdmin == true
+class _AdminPhotoButton extends StatelessWidget {
   final VoidCallback onTap;
-  const _LocalPromoCard({required this.onTap});
+  const _AdminPhotoButton({required this.onTap});
 
   @override
-  State<_LocalPromoCard> createState() => _LocalPromoCardState();
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Photos',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: Container(
+          width: 30,
+          height: 30,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.94),
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 6, offset: const Offset(0, 2))],
+          ),
+          child: const Icon(Icons.add_photo_alternate_rounded, size: 16, color: kInk),
+        ),
+      ),
+    );
+  }
 }
 
-class _LocalPromoCardState extends State<_LocalPromoCard> with SingleTickerProviderStateMixin {
-  late final AnimationController _shimmerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3500))..repeat();
-  late final Animation<double> _arrowSlide = Tween<double>(begin: 0, end: 3).animate(
-    CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut),
-  );
+/// Carrousel de photos : défilement automatique infini (glissement horizontal)
+class _PromoPhotoCarousel extends StatefulWidget {
+  final List<String> urls;
+  const _PromoPhotoCarousel({required this.urls});
+
+  @override
+  State<_PromoPhotoCarousel> createState() => _PromoPhotoCarouselState();
+}
+
+class _PromoPhotoCarouselState extends State<_PromoPhotoCarousel> {
+  final PageController _ctrl = PageController();
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _restartTimer();
+  }
+
+  @override
+  void didUpdateWidget(covariant _PromoPhotoCarousel old) {
+    super.didUpdateWidget(old);
+    if (old.urls.length != widget.urls.length) _restartTimer();
+  }
+
+  void _restartTimer() {
+    _timer?.cancel();
+    if (widget.urls.length <= 1) return;
+    _timer = Timer.periodic(_kPromoSlide, (_) {
+      if (!mounted || !_ctrl.hasClients) return;
+      _ctrl.nextPage(duration: const Duration(milliseconds: 700), curve: Curves.easeInOutCubic);
+    });
+  }
 
   @override
   void dispose() {
-    _shimmerCtrl.dispose();
+    _timer?.cancel();
+    _ctrl.dispose();
     super.dispose();
   }
+
+  Widget _img(String url) {
+    return CachedNetworkImage(
+      imageUrl: url,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      fadeInDuration: const Duration(milliseconds: 220),
+      placeholder: (_, __) => const SizedBox.shrink(),
+      errorWidget: (_, __, ___) => const SizedBox.shrink(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = widget.urls;
+    if (urls.isEmpty) return const SizedBox.shrink();
+    if (urls.length == 1) return _img(urls.first);
+    return PageView.builder(
+      controller: _ctrl,
+      physics: const NeverScrollableScrollPhysics(),
+      itemBuilder: (_, i) => _img(urls[i % urls.length]),
+    );
+  }
+}
+
+/// Reflet lumineux qui balaie toute la carte (remplace l'ancien ShaderMask)
+class _ShimmerSweep extends StatefulWidget {
+  const _ShimmerSweep();
+
+  @override
+  State<_ShimmerSweep> createState() => _ShimmerSweepState();
+}
+
+class _ShimmerSweepState extends State<_ShimmerSweep> with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3400))..repeat();
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: LayoutBuilder(
+        builder: (_, box) {
+          final w = box.maxWidth.isFinite ? box.maxWidth : 200.0;
+          final band = w * 0.55;
+          return AnimatedBuilder(
+            animation: _ctrl,
+            builder: (_, __) {
+              final x = -band + (w + band) * _ctrl.value;
+              return Stack(
+                children: [
+                  Positioned(
+                    left: x,
+                    top: 0,
+                    bottom: 0,
+                    width: band,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            Colors.white.withOpacity(0.0),
+                            Colors.white.withOpacity(0.13),
+                            Colors.white.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue)
+// ============================================================================
+class _ExclusivePromoCard extends StatelessWidget {
+  final String tag, title, subtitle, cta;
+  final List<String> photos;
+  final bool isAdmin;
+  final VoidCallback onAdminTap;
+  final VoidCallback onTap;
+
+  const _ExclusivePromoCard({
+    required this.tag,
+    required this.title,
+    required this.subtitle,
+    required this.cta,
+    required this.photos,
+    required this.isAdmin,
+    required this.onAdminTap,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return _PromoCardShell(
+      colors: const [kPromoBlue1, kPromoBlue2],
+      shadow: kPromoBlue2.withOpacity(0.28),
+      photos: photos,
+      isAdmin: isAdmin,
+      onAdminTap: onAdminTap,
+      onTap: onTap,
+      semanticsLabel: title,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: kGold, borderRadius: BorderRadius.circular(6)),
+                  child: Text(
+                    tag,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: Color(0xFF3B2F0B), fontWeight: FontWeight.w800, fontSize: 8.5),
+                  ),
+                ),
+              ),
+              if (isAdmin) const SizedBox(width: 24),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 15, height: 1.15, letterSpacing: -0.2),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.white.withOpacity(0.88), fontSize: 9, fontWeight: FontWeight.w500),
+          ),
+          const Expanded(child: SizedBox.shrink()),
+          Row(
+            children: [
+              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10)),
+              const SizedBox(width: 4),
+              const Icon(Icons.arrow_forward_rounded, size: 11, color: kGold),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (seule carte VERTE)
+// ============================================================================
+class _LocalPromoCard extends StatelessWidget {
+  final List<String> photos;
+  final bool isAdmin;
+  final VoidCallback onAdminTap;
+  final VoidCallback onTap;
+
+  const _LocalPromoCard({
+    required this.photos,
+    required this.isAdmin,
+    required this.onAdminTap,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1708,172 +2026,488 @@ class _LocalPromoCardState extends State<_LocalPromoCard> with SingleTickerProvi
             : 'Direct producteurs locaux';
     final ctaLabel = lang == 'sw' ? 'Gundua' : lang == 'en' ? 'Discover' : 'Découvrir';
 
-    return Semantics(
-      button: true,
-      label: 'Produits locaux, tous secteurs',
-      child: _TapScale(
-        onTap: widget.onTap,
-        radius: BorderRadius.circular(18),
-        child: AnimatedBuilder(
-          animation: _shimmerCtrl,
-          builder: (_, __) => Container(
-            padding: const EdgeInsets.all(13),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kLocalGreen1, kLocalGreen2, Color(0xFF0B6B31)]),
-              borderRadius: BorderRadius.circular(18),
-              boxShadow: [BoxShadow(color: kLocalGreen2.withOpacity(0.3), blurRadius: 14, offset: const Offset(0, 7))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Stack(
-              children: [
-                Positioned.fill(
-                  child: CustomPaint(painter: _DotsPatternPainter(color: Colors.white.withOpacity(0.06), spacing: 13, dotSize: 1.1)),
-                ),
-                // ✅ srcIn : shimmer transparent par-dessus le dégradé vert
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ShaderMask(
-                      blendMode: BlendMode.srcIn,
-                      shaderCallback: (rect) {
-                        final p = _shimmerCtrl.value;
-                        return LinearGradient(
-                          begin: Alignment(-2 + p * 4, -0.5),
-                          end: Alignment(2 + p * 4, 0.5),
-                          colors: [
-                            Colors.white.withOpacity(0.0),
-                            Colors.white.withOpacity(0.14),
-                            Colors.white.withOpacity(0.0),
-                          ],
-                        ).createShader(rect);
-                      },
-                      child: Container(color: Colors.white),
-                    ),
+    return _PromoCardShell(
+      colors: const [kLocalGreen1, kLocalGreen2],
+      shadow: kLocalGreen2.withOpacity(0.3),
+      photos: photos,
+      isAdmin: isAdmin,
+      onAdminTap: onAdminTap,
+      onTap: onTap,
+      semanticsLabel: 'Produits locaux, tous secteurs',
+      dotSpacing: 13,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Flexible(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.18),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: kGold.withOpacity(0.55)),
                   ),
-                ),
-                Positioned(
-                  top: -26,
-                  right: -26,
-                  child: Container(
-                    width: 92,
-                    height: 92,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: RadialGradient(colors: [Colors.white.withOpacity(0.10), Colors.white.withOpacity(0.0)]),
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  right: 0,
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.14),
-                      shape: BoxShape.circle,
-                      border: Border.all(color: Colors.white.withOpacity(0.25)),
-                    ),
-                    child: const Center(child: Text('🌱', style: TextStyle(fontSize: 16))),
-                  ),
-                ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.18),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: kGold.withOpacity(0.55)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(width: 4, height: 4, decoration: const BoxDecoration(color: kGold, shape: BoxShape.circle)),
-                          const SizedBox(width: 4),
-                          const Text('100% LOCAL', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 7.5, letterSpacing: 0.7)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    Text(
-                      title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 0.2),
-                    ),
-                    Text(
-                      subtitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 8.5, fontWeight: FontWeight.w500),
-                    ),
-                    const Expanded(child: SizedBox.shrink()),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _sectorIcon(Icons.eco_rounded, const Color(0xFFA7F3D0)),
-                            const SizedBox(width: 3),
-                            _sectorIcon(Icons.brush_rounded, const Color(0xFFFDE68A)),
-                            const SizedBox(width: 3),
-                            _sectorIcon(Icons.handshake_rounded, const Color(0xFFBFDBFE)),
-                            const SizedBox(width: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(8)),
-                              child: Text(
-                                '+${kLocalSectors.length - 3}',
-                                style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w800),
-                              ),
-                            ),
-                          ],
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(width: 4, height: 4, decoration: const BoxDecoration(color: kGold, shape: BoxShape.circle)),
+                      const SizedBox(width: 4),
+                      const Flexible(
+                        child: Text(
+                          '100% LOCAL',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 7.5, letterSpacing: 0.7),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(9),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 5, offset: const Offset(0, 2))],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              if (isAdmin) const SizedBox(width: 24),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 12.5, letterSpacing: 0.2),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: Colors.white.withOpacity(0.88), fontSize: 8.5, fontWeight: FontWeight.w500),
+          ),
+          const Expanded(child: SizedBox.shrink()),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // ✅ FIX overflow : icônes réduites + FittedBox
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _sectorIcon(Icons.eco_rounded),
+                      const SizedBox(width: 3),
+                      _sectorIcon(Icons.brush_rounded),
+                      const SizedBox(width: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                        decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), borderRadius: BorderRadius.circular(8)),
+                        child: Text(
+                          '+${(kLocalSectors.length - 2).clamp(0, 99)}',
+                          style: const TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w800),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(9),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 5, offset: const Offset(0, 2))],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(ctaLabel, style: const TextStyle(color: Color(0xFF0B6B31), fontWeight: FontWeight.w900, fontSize: 9)),
+                    const SizedBox(width: 3),
+                    const Icon(Icons.arrow_forward_rounded, size: 9, color: Color(0xFF0B6B31)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectorIcon(IconData icon) {
+    return Container(
+      width: 20,
+      height: 20,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: Colors.white.withOpacity(0.25), width: 0.8),
+      ),
+      child: Icon(icon, size: 11, color: Colors.white),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ FEUILLE DE GESTION DES PHOTOS (ADMIN) — ajout multiple / suppression
+// ============================================================================
+class _PromoBannerManagerSheet extends ConsumerStatefulWidget {
+  final String cardKey;
+  final String title;
+  const _PromoBannerManagerSheet({required this.cardKey, required this.title});
+
+  @override
+  ConsumerState<_PromoBannerManagerSheet> createState() => _PromoBannerManagerSheetState();
+}
+
+class _PromoBannerManagerSheetState extends ConsumerState<_PromoBannerManagerSheet> {
+  final ImagePicker _picker = ImagePicker();
+  bool _busy = false;
+  String _progress = '';
+
+  String _t(String fr, String en) {
+    final lang = Localizations.localeOf(context).languageCode;
+    return lang == 'fr' ? fr : en;
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: error ? kDanger : kInk,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  String _friendlyError(Object e) {
+    final m = e.toString().toLowerCase();
+    if (m.contains('row-level security') || m.contains('403') || m.contains('unauthorized') || m.contains('not authorized')) {
+      return _t('Accès refusé : réservé aux administrateurs.', 'Access denied: administrators only.');
+    }
+    if (m.contains('mime') || m.contains('not supported')) {
+      return _t('Format non supporté (JPG, PNG ou WebP).', 'Unsupported format (JPG, PNG or WebP).');
+    }
+    if (m.contains('too large') || m.contains('413') || m.contains('size')) {
+      return _t('Image trop lourde (5 Mo max).', 'Image too large (5 MB max).');
+    }
+    return _t('Échec de l\'envoi. Réessayez.', 'Upload failed. Please retry.');
+  }
+
+  Future<void> _addPhotos(List<PromoBanner> current) async {
+    if (_busy) return;
+    final remaining = _kMaxPromoPhotos - current.length;
+    if (remaining <= 0) {
+      _snack(_t('Maximum $_kMaxPromoPhotos photos par carte.', 'Maximum $_kMaxPromoPhotos photos per card.'), error: true);
+      return;
+    }
+
+    List<XFile> picked;
+    try {
+      picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
+    } catch (e) {
+      debugPrint('[Market] ⚠️ pickMultiImage error: $e');
+      _snack(_t('Impossible d\'ouvrir la galerie.', 'Unable to open the gallery.'), error: true);
+      return;
+    }
+    if (picked.isEmpty) return;
+
+    final files = picked.take(remaining).toList();
+    final client = Supabase.instance.client;
+    int ok = 0;
+    int failed = 0;
+    int nextOrder = current.fold<int>(-1, (m, b) => b.sortOrder > m ? b.sortOrder : m) + 1;
+    Object? lastError;
+
+    setState(() {
+      _busy = true;
+      _progress = '0/${files.length}';
+    });
+
+    for (int i = 0; i < files.length; i++) {
+      final f = files[i];
+      String? uploadedPath;
+      try {
+        final bytes = await f.readAsBytes();
+        if (bytes.length > _kMaxPromoFileBytes) {
+          failed++;
+          lastError = 'too large';
+          continue;
+        }
+        var ext = f.name.contains('.') ? f.name.split('.').last.toLowerCase() : 'jpg';
+        if (!const ['jpg', 'jpeg', 'png', 'webp'].contains(ext)) ext = 'jpg';
+        final mime = ext == 'png' ? 'image/png' : ext == 'webp' ? 'image/webp' : 'image/jpeg';
+        final path = '${widget.cardKey}/${DateTime.now().microsecondsSinceEpoch}_$i.$ext';
+
+        await client.storage.from(_kPromoBucket).uploadBinary(
+              path,
+              bytes,
+              fileOptions: FileOptions(contentType: mime, upsert: false),
+            );
+        uploadedPath = path;
+
+        final url = client.storage.from(_kPromoBucket).getPublicUrl(path);
+        await client.from(_kPromoTable).insert({
+          'card_key': widget.cardKey,
+          'image_url': url,
+          'storage_path': path,
+          'sort_order': nextOrder++,
+          'is_active': true,
+        });
+        ok++;
+      } catch (e) {
+        failed++;
+        lastError = e;
+        debugPrint('[Market] ❌ promo upload error: $e');
+        if (uploadedPath != null) {
+          try {
+            await client.storage.from(_kPromoBucket).remove([uploadedPath]);
+          } catch (_) {}
+        }
+      }
+      if (mounted) setState(() => _progress = '${i + 1}/${files.length}');
+    }
+
+    ref.invalidate(promoBannersProvider(widget.cardKey));
+    if (!mounted) return;
+    setState(() {
+      _busy = false;
+      _progress = '';
+    });
+
+    if (ok > 0 && failed == 0) {
+      _snack(_t('$ok photo(s) ajoutée(s).', '$ok photo(s) added.'));
+    } else if (ok > 0) {
+      _snack(_t('$ok ajoutée(s), $failed échec(s).', '$ok added, $failed failed.'), error: true);
+    } else {
+      _snack(_friendlyError(lastError ?? ''), error: true);
+    }
+  }
+
+  Future<void> _delete(PromoBanner b) async {
+    if (_busy) return;
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(_t('Supprimer cette photo ?', 'Delete this photo?'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
+        content: Text(_t('Elle disparaîtra de la carte.', 'It will be removed from the card.')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(_t('Annuler', 'Cancel'))),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: kDanger),
+            child: Text(_t('Supprimer', 'Delete')),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+
+    final client = Supabase.instance.client;
+    setState(() => _busy = true);
+    try {
+      await client.from(_kPromoTable).delete().eq('id', b.id);
+      if (b.storagePath.isNotEmpty) {
+        try {
+          await client.storage.from(_kPromoBucket).remove([b.storagePath]);
+        } catch (e) {
+          debugPrint('[Market] ⚠️ storage remove error: $e');
+        }
+      }
+      ref.invalidate(promoBannersProvider(widget.cardKey));
+      _snack(_t('Photo supprimée.', 'Photo deleted.'));
+    } catch (e) {
+      debugPrint('[Market] ❌ promo delete error: $e');
+      _snack(_friendlyError(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(promoBannersProvider(widget.cardKey));
+    final banners = async.valueOrNull ?? const <PromoBanner>[];
+    final maxH = MediaQuery.sizeOf(context).height * 0.85;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: maxH),
+      child: Container(
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + bottom),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(color: kBorder, borderRadius: BorderRadius.circular(2)),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(color: kAccentSoft, borderRadius: BorderRadius.circular(11)),
+                    child: const Icon(Icons.photo_library_rounded, size: 16, color: kAccentDark),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${_t('Photos', 'Photos')} — ${widget.title}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: kInk, letterSpacing: -0.3),
+                        ),
+                        Text(
+                          _t(
+                            '${banners.length}/$_kMaxPromoPhotos · défilement auto toutes les ${_kPromoSlide.inSeconds} s',
+                            '${banners.length}/$_kMaxPromoPhotos · auto-scroll every ${_kPromoSlide.inSeconds} s',
                           ),
-                          child: AnimatedBuilder(
-                            animation: _arrowSlide,
-                            builder: (_, child) => Transform.translate(offset: Offset(_arrowSlide.value, 0), child: child),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(ctaLabel, style: const TextStyle(color: Color(0xFF0B6B31), fontWeight: FontWeight.w900, fontSize: 9)),
-                                const SizedBox(width: 3),
-                                const Icon(Icons.arrow_forward_rounded, size: 9, color: Color(0xFF0B6B31)),
-                              ],
-                            ),
-                          ),
+                          style: const TextStyle(fontSize: 10.5, color: kInkMuted, fontWeight: FontWeight.w600),
                         ),
                       ],
                     ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (async.isLoading && banners.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 28),
+                  child: Center(child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5)),
+                )
+              else if (banners.isEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: kSurface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: kBorder),
+                  ),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.image_outlined, size: 30, color: kInkMuted),
+                      const SizedBox(height: 8),
+                      Text(
+                        _t('Aucune photo : la carte garde son dégradé.', 'No photo: the card keeps its gradient.'),
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, color: kInkSoft, fontWeight: FontWeight.w600),
+                      ),
+                    ],
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 10,
+                  runSpacing: 10,
+                  children: [
+                    for (int i = 0; i < banners.length; i++) _thumb(banners[i], i),
                   ],
                 ),
-              ],
-            ),
+              const SizedBox(height: 18),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: _busy ? null : () => _addPhotos(banners),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: kAccent,
+                    foregroundColor: Colors.white,
+                    disabledBackgroundColor: kAccent.withOpacity(0.5),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                  icon: _busy
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        )
+                      : const Icon(Icons.add_photo_alternate_rounded, size: 18),
+                  label: Text(
+                    _busy
+                        ? '${_t('Envoi', 'Uploading')} $_progress'
+                        : _t('Ajouter des photos', 'Add photos'),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _t('JPG, PNG ou WebP · 5 Mo max par photo · Réservé aux administrateurs.',
+                    'JPG, PNG or WebP · 5 MB max per photo · Administrators only.'),
+                style: const TextStyle(fontSize: 10, color: kInkMuted, fontWeight: FontWeight.w500),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _sectorIcon(IconData icon, Color bgColor) {
-    return Container(
-      width: 20,
-      height: 20,
-      decoration: BoxDecoration(
-        color: bgColor.withOpacity(0.18),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withOpacity(0.25), width: 0.8),
+  Widget _thumb(PromoBanner b, int index) {
+    return SizedBox(
+      width: 96,
+      height: 96,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: CachedNetworkImage(
+                imageUrl: b.imageUrl,
+                fit: BoxFit.cover,
+                placeholder: (_, __) => Container(color: kSurface),
+                errorWidget: (_, __, ___) => Container(
+                  color: kSurface,
+                  child: const Icon(Icons.broken_image_outlined, color: kInkMuted),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 6,
+            bottom: 6,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(6)),
+              child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: GestureDetector(
+              onTap: _busy ? null : () => _delete(b),
+              child: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: kDanger,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white, width: 1.5),
+                ),
+                child: const Icon(Icons.close_rounded, size: 13, color: Colors.white),
+              ),
+            ),
+          ),
+        ],
       ),
-      child: Icon(icon, size: 11, color: Colors.white),
     );
   }
 }
