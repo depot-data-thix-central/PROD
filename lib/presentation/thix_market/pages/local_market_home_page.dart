@@ -1,13 +1,13 @@
 // lib/presentation/thix_market/pages/local_market_home_page.dart
 // ============================================================================
-// DRC PRODUCTS PORTAL — v3 « Portail officiel · Made in Congo »
-//  • Aux couleurs du drapeau de la RDC (bleu, jaune, rouge) — « THIX LOCAL » retiré
-//  • Logo en haut (upload admin / moderator)
-//  • HERO des 10 nouveaux produits — même taille et style que market_home_page
-//  • Secteurs • « Nos partenaires » (photos en défilement automatique,
-//    ajout réservé admin / moderator) • 4 piliers officiels
-//  • Producteurs & coopératives • Grille produits
+// DRC PRODUCTS PORTAL — v4 « Modération & coopératives »
+//  • ✅ Les 4 piliers fixes → CARTES AUTO-DÉFILENTES gérées par modérateur/admin
+//  • ✅ Bandeau « Produit de la semaine » (choisi par le modérateur)
+//  • ✅ Producteurs & coopératives = COOPÉRATIVES UNIQUEMENT
+//  • ✅ Design RDC strictement conservé
 // ============================================================================
+
+import 'dart:async';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -20,6 +20,7 @@ import '../core/drc_portal_theme.dart';
 import '../core/local_sectors.dart';
 import '../providers/drc_portal_media_providers.dart';
 import '../providers/local_market_providers.dart';
+import '../providers/local_moderation_providers.dart';
 import '../widgets/products/drc_portal_widgets.dart';
 import '../widgets/products/local_hero_banner.dart';
 import '../widgets/products/local_product_card.dart';
@@ -79,7 +80,9 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     final filtered = ref.watch(filteredLocalProductsProvider);
     final counts = ref.watch(localSectorCountsProvider);
     final covers = ref.watch(localSectorCoverProvider);
-    final producersAsync = ref.watch(localProducersProvider);
+    final cooperativesAsync = ref.watch(localCooperativesProvider); // ✅ coopératives seulement
+    final highlightsAsync = ref.watch(drcPortalHighlightsProvider); // ✅ cartes modérables
+    final weeklyAsync = ref.watch(weeklyProductProvider); // ✅ produit de la semaine
     final selectedSector = ref.watch(localSectorFilterProvider);
     final hasMore = ref.read(localProductsProvider.notifier).hasMore;
 
@@ -97,6 +100,9 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ref.invalidate(drcPortalMediaProvider(kDrcKindLogo));
           ref.invalidate(drcPortalMediaProvider(kDrcKindPartner));
           ref.invalidate(drcPortalEditorProvider);
+          ref.invalidate(drcPortalHighlightsProvider);
+          ref.invalidate(weeklyProductProvider);
+          ref.invalidate(localCooperativesProvider);
           await ref.read(localProductsProvider.notifier).refresh();
         },
         child: CustomScrollView(
@@ -109,11 +115,15 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             SliverToBoxAdapter(child: DrcPartnersBand(lang: lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverToBoxAdapter(child: _buildPillars()),
+            // ✅ CARTES AUTO-DÉFILENTES (remplacent les 4 piliers fixes)
+            SliverToBoxAdapter(child: _buildHighlights(highlightsAsync, lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
             SliverToBoxAdapter(child: _buildSlogan()),
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+            // ✅ PRODUIT DE LA SEMAINE
+            SliverToBoxAdapter(child: _buildWeekly(weeklyAsync)),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
-            SliverToBoxAdapter(child: _buildProducers(producersAsync)),
+            SliverToBoxAdapter(child: _buildProducers(cooperativesAsync)),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             SliverToBoxAdapter(child: _buildProductsHeader(selectedSector, filtered.length, lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -129,7 +139,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
   Widget _buildTopSection(List<Map<String, dynamic>> hero, bool heroLoading, String lang) {
     return Stack(
       children: [
-        // Fond bleu (s'arrête _kHeroOverlap px au-dessus du bas : le hero déborde)
         Positioned(
           top: 0,
           left: 0,
@@ -240,7 +249,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ),
         ),
         const SizedBox(width: 12),
-        // ✅ LOGO (téléversable par admin / moderator)
         const Expanded(child: Align(alignment: Alignment.centerLeft, child: DrcPortalLogo())),
         const SizedBox(width: 12),
         GestureDetector(
@@ -469,59 +477,98 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ 4 PILIERS OFFICIELS ═══════════════════
-  Widget _buildPillars() {
-    Widget pillar(IconData icon, String label) => Expanded(
-          child: Row(
-            children: [
-              Container(
-                width: 38,
-                height: 38,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kDrcBlueDeep, kDrcBlue]),
+  // ═══════════════════ ✅ CARTES AUTO-DÉFILENTES (modérées) ═══════════════════
+  Widget _buildHighlights(AsyncValue<List<PortalHighlight>> async, String lang) {
+    return async.when(
+      loading: () => const SizedBox(
+        height: 118,
+        child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (items) {
+        if (items.isEmpty) return const SizedBox.shrink();
+        return _HighlightsCarousel(items: items, lang: lang);
+      },
+    );
+  }
+
+  // ═══════════════════ ✅ PRODUIT DE LA SEMAINE ═══════════════════
+  Widget _buildWeekly(AsyncValue<Map<String, dynamic>?> async) {
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (p) {
+        if (p == null) return const SizedBox.shrink();
+        final id = p['id']?.toString() ?? '';
+        final title = (p['title'] ?? '').toString();
+        final shop = (p['shop']?['name'] ?? '').toString();
+        final img = (p['image_url'] ?? '').toString();
+        final hasImg = img.startsWith('http');
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Semantics(
+            button: true,
+            label: title,
+            child: GestureDetector(
+              onTap: () {
+                HapticFeedback.selectionClick();
+                if (id.isNotEmpty) context.push('/market/product/$id');
+              },
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: kDrcYellow.withOpacity(0.6), width: 1.4),
+                  boxShadow: [BoxShadow(color: kDrcYellow.withOpacity(0.18), blurRadius: 16, offset: const Offset(0, 6))],
                 ),
-                child: Icon(icon, size: 18, color: Colors.white),
-              ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: kDrcInk, height: 1.2),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: BoxDecoration(
+                        color: kDrcSoft,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: kDrcBlue.withOpacity(0.2)),
+                        image: hasImg ? DecorationImage(image: CachedNetworkImageProvider(img), fit: BoxFit.cover) : null,
+                      ),
+                      child: hasImg ? null : const Icon(Icons.star_rounded, color: kDrcYellow, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            const Icon(Icons.star_rounded, color: kDrcYellow, size: 13),
+                            const SizedBox(width: 4),
+                            Text(
+                              _t('PRODUIT DE LA SEMAINE', 'PRODUCT OF THE WEEK', 'BIDHAA YA WIKI'),
+                              style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: kDrcBlueDeep, letterSpacing: 1),
+                            ),
+                          ]),
+                          const SizedBox(height: 4),
+                          Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5, color: kDrcInk)),
+                          const SizedBox(height: 2),
+                          Text(shop, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: kDrcSub)),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: const BoxDecoration(color: kDrcSoft, shape: BoxShape.circle),
+                      child: const Icon(Icons.arrow_forward_rounded, color: kDrcBlue, size: 16),
+                    ),
+                  ],
                 ),
               ),
-            ],
+            ),
           ),
         );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(22),
-          border: Border.all(color: kDrcLine),
-          boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 6))],
-        ),
-        child: Column(
-          children: [
-            Row(children: [
-              pillar(Icons.flag_rounded, _t('Produits 100% congolais', '100% Congolese products', 'Bidhaa 100% za Kongo')),
-              const SizedBox(width: 10),
-              pillar(Icons.verified_rounded, _t('Qualité et authenticité garanties', 'Quality and authenticity guaranteed', 'Ubora na uhalisi unahakikishwa')),
-            ]),
-            const SizedBox(height: 14),
-            Row(children: [
-              pillar(Icons.handshake_rounded, _t('Soutien aux producteurs locaux', 'Supporting local producers', 'Kusaidia wazalishaji wa ndani')),
-              const SizedBox(width: 10),
-              pillar(Icons.local_shipping_rounded, _t('Disponible sur nos marchés', 'Available on our markets', 'Inapatikana kwenye masoko yetu')),
-            ]),
-          ],
-        ),
-      ),
+      },
     );
   }
 
@@ -568,7 +615,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ PRODUCTEURS & COOPÉRATIVES ═══════════════════
+  // ═══════════════════ ✅ PRODUCTEURS = COOPÉRATIVES UNIQUEMENT ═══════════════════
   Widget _buildProducers(AsyncValue<List<Map<String, dynamic>>> async) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -576,7 +623,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         _sectionTitle(
           _t('Producteurs & coopératives', 'Producers & cooperatives', 'Wakulima na ushirika'),
           action: _t('Voir tout', 'Show all', 'Ona zote'),
-          onAction: () => context.push('/market/shops'),
+          onAction: () => context.push('/market/local/producers'), // ✅ page dédiée coopératives
         ),
         const SizedBox(height: 12),
         async.when(
@@ -590,7 +637,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
-                  _t('Aucun producteur pour le moment. Soyez le premier !', 'No producer yet. Be the first!', 'Hakuna mkulima bado. Kuwa wa kwanza!'),
+                  _t('Aucune coopérative pour le moment. Soyez le premier !', 'No cooperative yet. Be the first!', 'Hakuna ushirika bado. Kuwa wa kwanza!'),
                   style: const TextStyle(color: kDrcSub, fontSize: 12),
                 ),
               );
@@ -663,7 +710,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                   ]),
                   const SizedBox(height: 7),
                   Row(children: [
-                    _tag(_t('Vérifié', 'Verified', 'Imethibitishwa'), kDrcBlue, icon: Icons.verified_rounded),
+                    _tag(_t('Coopérative', 'Cooperative', 'Ushirika'), kDrcBlue, icon: Icons.verified_rounded),
                     const SizedBox(width: 6),
                     Flexible(child: _tag('$count ${_t('produits', 'products', 'bidhaa')}', kDrcBlueDeep)),
                   ]),
@@ -811,6 +858,113 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================================
+// ✅ CARROUSEL AUTO-DÉFILENT DES CARTES DU PORTAIL (4 s)
+// ============================================================================
+class _HighlightsCarousel extends StatefulWidget {
+  final List<PortalHighlight> items;
+  final String lang;
+  const _HighlightsCarousel({required this.items, required this.lang});
+
+  @override
+  State<_HighlightsCarousel> createState() => _HighlightsCarouselState();
+}
+
+class _HighlightsCarouselState extends State<_HighlightsCarousel> {
+  final PageController _ctrl = PageController(viewportFraction: 0.88);
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _start());
+  }
+
+  void _start() {
+    _timer?.cancel();
+    if (widget.items.length <= 1) return;
+    _timer = Timer.periodic(const Duration(seconds: 4), (_) {
+      if (!mounted || !_ctrl.hasClients) return;
+      final page = _ctrl.page?.round() ?? 0;
+      if (page >= widget.items.length - 1) {
+        _ctrl.animateToPage(0, duration: const Duration(milliseconds: 650), curve: Curves.easeInOutCubic);
+      } else {
+        _ctrl.nextPage(duration: const Duration(milliseconds: 650), curve: Curves.easeInOutCubic);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 118,
+      child: PageView.builder(
+        controller: _ctrl,
+        itemCount: widget.items.length,
+        itemBuilder: (_, i) {
+          final h = widget.items[i];
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(22),
+                border: Border.all(color: kDrcLine),
+                boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 6))],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [h.color.withOpacity(0.85), h.color]),
+                    ),
+                    child: Icon(portalHighlightIcon(h.icon), size: 20, color: Colors.white),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          h.title(widget.lang),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: kDrcInk, height: 1.2),
+                        ),
+                        if (h.subtitle(widget.lang).isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Text(
+                            h.subtitle(widget.lang),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 10.5, color: kDrcSub, height: 1.25),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 }
