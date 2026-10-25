@@ -156,9 +156,12 @@ class NewsArticle {
         json['category'],
         fallback: 'Général',
       ),
-      imageUrl: _nullableString(json['image_url']),
-      videoUrl: _nullableString(json['video_url']),
-      audioUrl: _nullableString(json['audio_url']), // ✅ LECTURE DEPUIS SUPABASE
+      imageUrl: _nullableString(json['image_url'] ?? json['imageUrl']),
+      videoUrl: _nullableString(json['video_url'] ?? json['videoUrl']),
+      // ✅ audio_url en priorité, puis audioUrl (camelCase), puis media_url (legacy)
+      audioUrl: _nullableString(
+        json['audio_url'] ?? json['audioUrl'] ?? json['media_url'],
+      ),
       viewsCount: _intValue(json['views_count']),
       isFeatured: _boolValue(json['is_featured']),
       isBreaking: _boolValue(json['is_breaking']),
@@ -174,6 +177,10 @@ class NewsArticle {
       magazineExtras: _mapValue(json['magazine_extras']),
     );
   }
+
+  /// ✅ Alias pour compatibilité avec le code existant qui appelle `fromMap`.
+  factory NewsArticle.fromMap(Map<String, dynamic> map) =>
+      NewsArticle.fromJson(map);
 
   // ===========================================================================
   // TO JSON
@@ -201,6 +208,9 @@ class NewsArticle {
       'magazine_extras': magazineExtras,
     };
   }
+
+  /// ✅ Alias pour compatibilité avec le code existant qui appelle `toMap`.
+  Map<String, dynamic> toMap() => toJson();
 
   // ===========================================================================
   // COPY WITH
