@@ -1,10 +1,12 @@
 // lib/presentation/thix_market/pages/local_market_home_page.dart
 // ============================================================================
-// HOME PRODUITS LOCAUX — v2 « ultra moderne, vert »
-//  • En-tête vert dégradé + recherche + HERO des 10 nouveaux produits (auto-scroll)
-//  • Secteurs (liste horizontale) • Bannière circuit court
-//  • Producteurs & coopératives (cartes) • Grille produits
-//  • Bouton « Vendre local » retiré
+// DRC PRODUCTS PORTAL — v3 « Portail officiel · Made in Congo »
+//  • Aux couleurs du drapeau de la RDC (bleu, jaune, rouge) — « THIX LOCAL » retiré
+//  • Logo en haut (upload admin / moderator)
+//  • HERO des 10 nouveaux produits — même taille et style que market_home_page
+//  • Secteurs • « Nos partenaires » (photos en défilement automatique,
+//    ajout réservé admin / moderator) • 4 piliers officiels
+//  • Producteurs & coopératives • Grille produits
 // ============================================================================
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -13,17 +15,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:thix_id/core/theme/thix_design_policy.dart';
 import '../core/african_countries.dart';
+import '../core/drc_portal_theme.dart';
 import '../core/local_sectors.dart';
+import '../providers/drc_portal_media_providers.dart';
 import '../providers/local_market_providers.dart';
+import '../widgets/products/drc_portal_widgets.dart';
 import '../widgets/products/local_hero_banner.dart';
 import '../widgets/products/local_product_card.dart';
 
-/// Hauteur du hero qui dépasse sous le fond vert.
-const double _kHeroOverlap = 74;
-const Color _kPageBg = Color(0xFFF5FAF6);
-const Color _kMint = Color(0xFFB9F0C8);
+/// Hauteur du hero qui dépasse sous le fond bleu.
+const double _kHeroOverlap = 120;
 
 class LocalMarketHomePage extends ConsumerStatefulWidget {
   const LocalMarketHomePage({super.key});
@@ -86,12 +88,15 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     final heroLoading = productsAsync.isLoading && all.isEmpty;
 
     return Scaffold(
-      backgroundColor: _kPageBg,
+      backgroundColor: kDrcBg,
       body: RefreshIndicator(
-        color: kLocalGreen,
+        color: kDrcBlue,
         onRefresh: () async {
           HapticFeedback.mediumImpact();
           invalidateLocalProviders(ref);
+          ref.invalidate(drcPortalMediaProvider(kDrcKindLogo));
+          ref.invalidate(drcPortalMediaProvider(kDrcKindPartner));
+          ref.invalidate(drcPortalEditorProvider);
           await ref.read(localProductsProvider.notifier).refresh();
         },
         child: CustomScrollView(
@@ -101,11 +106,15 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             SliverToBoxAdapter(child: _buildTopSection(hero, heroLoading, lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 18)),
             SliverToBoxAdapter(child: _buildSectors(lang, counts, covers, selectedSector)),
-            const SliverToBoxAdapter(child: SizedBox(height: 22)),
-            SliverToBoxAdapter(child: _buildPromoBanner()),
-            const SliverToBoxAdapter(child: SizedBox(height: 22)),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            SliverToBoxAdapter(child: DrcPartnersBand(lang: lang)),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
+            SliverToBoxAdapter(child: _buildPillars()),
+            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            SliverToBoxAdapter(child: _buildSlogan()),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
             SliverToBoxAdapter(child: _buildProducers(producersAsync)),
-            const SliverToBoxAdapter(child: SizedBox(height: 22)),
+            const SliverToBoxAdapter(child: SizedBox(height: 24)),
             SliverToBoxAdapter(child: _buildProductsHeader(selectedSector, filtered.length, lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
             _buildProductsGrid(productsAsync, filtered, hasMore),
@@ -116,11 +125,11 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ EN-TÊTE VERT + RECHERCHE + HERO ═══════════════════
+  // ═══════════════════ EN-TÊTE OFFICIEL + LOGO + RECHERCHE + HERO ═══════════════════
   Widget _buildTopSection(List<Map<String, dynamic>> hero, bool heroLoading, String lang) {
     return Stack(
       children: [
-        // Fond vert (s'arrête _kHeroOverlap px au-dessus du bas : le hero déborde)
+        // Fond bleu (s'arrête _kHeroOverlap px au-dessus du bas : le hero déborde)
         Positioned(
           top: 0,
           left: 0,
@@ -130,12 +139,17 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             borderRadius: const BorderRadius.vertical(bottom: Radius.circular(36)),
             child: Container(
               decoration: const BoxDecoration(
-                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kLocalGreen, kLocalGreenDeep]),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [kDrcNavy, kDrcBlueDeep, kDrcBlue],
+                  stops: [0.0, 0.55, 1.0],
+                ),
               ),
               child: Stack(children: [
-                Positioned(top: -70, right: -50, child: _halo(200, 0.08)),
-                Positioned(top: 110, left: -70, child: _halo(160, 0.06)),
-                Positioned(bottom: -40, right: 60, child: _halo(120, 0.07)),
+                Positioned(top: -70, right: -50, child: _halo(200, 0.07, Colors.white)),
+                Positioned(top: 130, left: -70, child: _halo(160, 0.06, Colors.white)),
+                Positioned(bottom: -40, right: 50, child: _halo(130, 0.10, kDrcYellow)),
               ]),
             ),
           ),
@@ -148,9 +162,49 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
               Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 0), child: _buildTopBar()),
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 0),
-                child: Text(
-                  _t('Le meilleur du local,\ntous secteurs', 'The best of local,\nall sectors', 'Bora ya ndani,\nsekta zote'),
-                  style: const TextStyle(color: Colors.white, fontSize: 25, fontWeight: FontWeight.w900, height: 1.12, letterSpacing: -0.8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(color: Colors.white.withOpacity(0.3)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(width: 6, height: 6, decoration: const BoxDecoration(color: kDrcYellow, shape: BoxShape.circle)),
+                          const SizedBox(width: 6),
+                          Text(
+                            _t('PORTAIL OFFICIEL', 'OFFICIAL PORTAL', 'PORTALI RASMI'),
+                            style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 1.1),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: _t('Les produits\n', 'The products\n', 'Bidhaa za\n'),
+                            style: const TextStyle(color: Colors.white),
+                          ),
+                          const TextSpan(text: 'Made in Congo', style: TextStyle(color: kDrcYellow)),
+                        ],
+                      ),
+                      style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900, height: 1.08, letterSpacing: -0.8),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      _t('Nos richesses, notre fierté !', 'Our riches, our pride!', 'Utajiri wetu, fahari yetu!'),
+                      style: TextStyle(color: Colors.white.withOpacity(0.86), fontSize: 12.5, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 10),
+                    const DrcTricolorStripe(width: 64, height: 4),
+                  ],
                 ),
               ),
               Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 18), child: _buildSearch()),
@@ -163,10 +217,10 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  Widget _halo(double size, double opacity) => Container(
+  Widget _halo(double size, double opacity, Color color) => Container(
         width: size,
         height: size,
-        decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(opacity)),
+        decoration: BoxDecoration(shape: BoxShape.circle, color: color.withOpacity(opacity)),
       );
 
   Widget _buildTopBar() {
@@ -186,34 +240,16 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ),
         ),
         const SizedBox(width: 12),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(children: [
-                const Text('THIX ', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.4)),
-                const Text('LOCAL', style: TextStyle(color: _kMint, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.4)),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(5)),
-                  child: Text(_t('100% LOCAL', '100% LOCAL', '100% NDANI'), style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900)),
-                ),
-              ]),
-              Text(
-                _t('L\'espace des produits de chez nous', 'The home-grown products space', 'Eneo la bidhaa za ndani'),
-                style: TextStyle(color: Colors.white.withOpacity(0.78), fontSize: 10.5, fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-        ),
+        // ✅ LOGO (téléversable par admin / moderator)
+        const Expanded(child: Align(alignment: Alignment.centerLeft, child: DrcPortalLogo())),
+        const SizedBox(width: 12),
         GestureDetector(
           onTap: () => context.push('/market/cart'),
           child: Container(
             width: 40,
             height: 40,
             decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-            child: const Icon(Icons.shopping_cart_rounded, color: kLocalGreenDeep, size: 19),
+            child: const Icon(Icons.shopping_cart_rounded, color: kDrcBlueDeep, size: 19),
           ),
         ),
       ],
@@ -226,23 +262,24 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 18, offset: const Offset(0, 8))],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.14), blurRadius: 18, offset: const Offset(0, 8))],
       ),
       child: Row(
         children: [
           const SizedBox(width: 14),
-          const Icon(Icons.search_rounded, color: kLocalGreen, size: 22),
+          const Icon(Icons.search_rounded, color: kDrcBlue, size: 22),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _searchCtrl,
               textInputAction: TextInputAction.search,
-              style: const TextStyle(fontSize: 13.5, color: ThixPolicy.textMain, fontWeight: FontWeight.w600),
+              cursorColor: kDrcBlue,
+              style: const TextStyle(fontSize: 13.5, color: kDrcInk, fontWeight: FontWeight.w600),
               decoration: InputDecoration(
                 isDense: true,
                 border: InputBorder.none,
-                hintText: _t('Rechercher un produit local, un producteur...', 'Search local product, producer...', 'Tafuta bidhaa ya ndani...'),
-                hintStyle: TextStyle(color: ThixPolicy.textMuted.withOpacity(0.85), fontSize: 12.5),
+                hintText: _t('Rechercher un produit congolais, un producteur...', 'Search a Congolese product, producer...', 'Tafuta bidhaa ya Kongo...'),
+                hintStyle: TextStyle(color: kDrcMuted.withOpacity(0.95), fontSize: 12.5),
               ),
               onChanged: (v) => ref.read(localSearchQueryProvider.notifier).state = v,
             ),
@@ -252,7 +289,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             builder: (_, v, __) => v.text.isEmpty
                 ? const SizedBox(width: 12)
                 : IconButton(
-                    icon: const Icon(Icons.close_rounded, size: 18, color: ThixPolicy.textSecondary),
+                    icon: const Icon(Icons.close_rounded, size: 18, color: kDrcSub),
                     onPressed: () {
                       _searchCtrl.clear();
                       ref.read(localSearchQueryProvider.notifier).state = '';
@@ -271,15 +308,24 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(children: [
-            Container(width: 4, height: 18, decoration: BoxDecoration(color: kLocalGreen, borderRadius: BorderRadius.circular(2))),
-            const SizedBox(width: 8),
-            Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5)),
-          ]),
+          Flexible(
+            child: Row(children: [
+              const DrcTricolorBar(),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: kDrcInk, letterSpacing: -0.5),
+                ),
+              ),
+            ]),
+          ),
           if (action != null)
             GestureDetector(
               onTap: onAction,
-              child: Text(action, style: const TextStyle(color: kLocalGreen, fontSize: 12.5, fontWeight: FontWeight.w800)),
+              child: Text(action, style: const TextStyle(color: kDrcBlue, fontSize: 12.5, fontWeight: FontWeight.w800)),
             ),
         ],
       ),
@@ -310,7 +356,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 return _sectorTile(
                   label: _t('Tout', 'All', 'Zote'),
                   icon: Icons.grid_view_rounded,
-                  color: kLocalGreen,
+                  color: kDrcBlue,
                   cover: null,
                   count: counts.values.fold<int>(0, (a, b) => a + b),
                   selected: selected == null,
@@ -366,10 +412,10 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: selected ? kLocalGreen : kLocalGreen.withOpacity(0.12), width: selected ? 2.2 : 1),
+                  border: Border.all(color: selected ? kDrcBlue : kDrcLine, width: selected ? 2.2 : 1),
                   boxShadow: [
                     BoxShadow(
-                      color: (selected ? kLocalGreen : Colors.black).withOpacity(selected ? 0.22 : 0.05),
+                      color: (selected ? kDrcBlue : Colors.black).withOpacity(selected ? 0.22 : 0.05),
                       blurRadius: selected ? 14 : 8,
                       offset: const Offset(0, 4),
                     ),
@@ -395,7 +441,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                           right: 4,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                            decoration: BoxDecoration(color: kLocalGreen, borderRadius: BorderRadius.circular(8)),
+                            decoration: BoxDecoration(color: kDrcRed, borderRadius: BorderRadius.circular(8)),
                             child: Text('$count', style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white)),
                           ),
                         ),
@@ -412,7 +458,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: selected ? FontWeight.w900 : FontWeight.w700,
-                  color: selected ? kLocalGreenDeep : ThixPolicy.textMain,
+                  color: selected ? kDrcBlueDeep : kDrcInk,
                   height: 1.15,
                 ),
               ),
@@ -423,51 +469,100 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ BANNIÈRE CIRCUIT COURT ═══════════════════
-  Widget _buildPromoBanner() {
+  // ═══════════════════ 4 PILIERS OFFICIELS ═══════════════════
+  Widget _buildPillars() {
+    Widget pillar(IconData icon, String label) => Expanded(
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kDrcBlueDeep, kDrcBlue]),
+                ),
+                child: Icon(icon, size: 18, color: Colors.white),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: kDrcInk, height: 1.2),
+                ),
+              ),
+            ],
+          ),
+        );
+
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Container(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          gradient: const LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [kLocalGreenDeep, kLocalGreen]),
-          borderRadius: BorderRadius.circular(24),
-          boxShadow: [BoxShadow(color: kLocalGreen.withOpacity(0.28), blurRadius: 18, offset: const Offset(0, 8))],
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: kDrcLine),
+          boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 6))],
         ),
-        child: Row(
+        child: Column(
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: _kMint, borderRadius: BorderRadius.circular(20)),
-                    child: Text(
-                      _t('Circuit court', 'Short supply chain', 'Biashara ya moja kwa moja'),
-                      style: const TextStyle(color: kLocalGreenDeep, fontSize: 8.5, fontWeight: FontWeight.w900),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    _t('100% Local\n& Authentique', '100% Local\n& Authentic', '100% Ndani\n& Halisi'),
-                    style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w900, height: 1.1),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _t('Directement des producteurs & coopératives', 'Directly from producers & cooperatives', 'Moja kwa moja kutoka kwa wakulima'),
-                    style: TextStyle(color: Colors.white.withOpacity(0.82), fontSize: 10, fontWeight: FontWeight.w500),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(color: Colors.white.withOpacity(0.16), shape: BoxShape.circle),
-              child: const Icon(Icons.agriculture_rounded, color: Colors.white, size: 34),
-            ),
+            Row(children: [
+              pillar(Icons.flag_rounded, _t('Produits 100% congolais', '100% Congolese products', 'Bidhaa 100% za Kongo')),
+              const SizedBox(width: 10),
+              pillar(Icons.verified_rounded, _t('Qualité et authenticité garanties', 'Quality and authenticity guaranteed', 'Ubora na uhalisi unahakikishwa')),
+            ]),
+            const SizedBox(height: 14),
+            Row(children: [
+              pillar(Icons.handshake_rounded, _t('Soutien aux producteurs locaux', 'Supporting local producers', 'Kusaidia wazalishaji wa ndani')),
+              const SizedBox(width: 10),
+              pillar(Icons.local_shipping_rounded, _t('Disponible sur nos marchés', 'Available on our markets', 'Inapatikana kwenye masoko yetu')),
+            ]),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlogan() {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [kDrcBlueDeep, kDrcBlue]),
+          ),
+          child: Row(
+            children: [
+              const SizedBox(
+                width: 6,
+                height: 54,
+                child: Column(
+                  children: [
+                    Expanded(child: ColoredBox(color: kDrcYellow, child: SizedBox.expand())),
+                    Expanded(child: ColoredBox(color: kDrcRed, child: SizedBox.expand())),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  child: Text(
+                    _t('Consommons congolais, valorisons notre pays !', 'Let us consume Congolese, let us value our country!',
+                        'Tutumie bidhaa za Kongo, tuthamini nchi yetu!'),
+                    style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, fontStyle: FontStyle.italic, height: 1.25),
+                  ),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 14),
+                child: Icon(Icons.favorite_rounded, color: kDrcYellow, size: 22),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -487,7 +582,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         async.when(
           loading: () => const SizedBox(
             height: 80,
-            child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kLocalGreen))),
+            child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
           ),
           error: (_, __) => const SizedBox.shrink(),
           data: (producers) {
@@ -496,7 +591,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Text(
                   _t('Aucun producteur pour le moment. Soyez le premier !', 'No producer yet. Be the first!', 'Hakuna mkulima bado. Kuwa wa kwanza!'),
-                  style: TextStyle(color: ThixPolicy.textSecondary, fontSize: 12),
+                  style: const TextStyle(color: kDrcSub, fontSize: 12),
                 ),
               );
             }
@@ -537,8 +632,8 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: kLocalGreen.withOpacity(0.10)),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 5))],
+          border: Border.all(color: kDrcLine),
+          boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 5))],
         ),
         child: Row(
           children: [
@@ -547,11 +642,11 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
               height: 54,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: kLocalGreenSoft,
-                border: Border.all(color: kLocalGreen.withOpacity(0.25), width: 1.5),
+                color: kDrcSoft,
+                border: Border.all(color: kDrcBlue.withOpacity(0.25), width: 1.5),
                 image: hasLogo ? DecorationImage(image: CachedNetworkImageProvider(logo), fit: BoxFit.cover) : null,
               ),
-              child: !hasLogo ? const Icon(Icons.agriculture_rounded, color: kLocalGreen, size: 24) : null,
+              child: !hasLogo ? const Icon(Icons.agriculture_rounded, color: kDrcBlue, size: 24) : null,
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -559,18 +654,18 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5, color: ThixPolicy.textMain)),
+                  Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5, color: kDrcInk)),
                   const SizedBox(height: 3),
                   Row(children: [
-                    const Icon(Icons.location_on_rounded, size: 11, color: kLocalGreen),
+                    const Icon(Icons.location_on_rounded, size: 11, color: kDrcRed),
                     const SizedBox(width: 2),
-                    Expanded(child: Text(city, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 10.5, color: ThixPolicy.textSecondary))),
+                    Expanded(child: Text(city, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: kDrcSub))),
                   ]),
                   const SizedBox(height: 7),
                   Row(children: [
-                    _tag(_t('Vérifié', 'Verified', 'Imethibitishwa'), kLocalGreen, icon: Icons.verified_rounded),
+                    _tag(_t('Vérifié', 'Verified', 'Imethibitishwa'), kDrcBlue, icon: Icons.verified_rounded),
                     const SizedBox(width: 6),
-                    Flexible(child: _tag('$count ${_t('produits', 'products', 'bidhaa')}', kLocalGreenDeep)),
+                    Flexible(child: _tag('$count ${_t('produits', 'products', 'bidhaa')}', kDrcBlueDeep)),
                   ]),
                 ],
               ),
@@ -592,14 +687,14 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ PRODUITS LOCAUX ═══════════════════
+  // ═══════════════════ PRODUITS ═══════════════════
   Widget _buildProductsHeader(String? sector, int count, String lang) {
     final s = localSectorById(sector);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          Container(width: 4, height: 18, decoration: BoxDecoration(color: kLocalGreen, borderRadius: BorderRadius.circular(2))),
+          const DrcTricolorBar(),
           const SizedBox(width: 8),
           if (s != null) ...[
             Container(
@@ -611,14 +706,16 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ],
           Expanded(
             child: Text(
-              s != null ? s.label(lang) : _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: ThixPolicy.textMain, letterSpacing: -0.5),
+              s != null ? s.label(lang) : _t('Produits Made in Congo', 'Made in Congo products', 'Bidhaa za Kongo'),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: kDrcInk, letterSpacing: -0.5),
             ),
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(color: kLocalGreen.withOpacity(0.10), borderRadius: BorderRadius.circular(20)),
-            child: Text('$count', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: kLocalGreenDeep)),
+            decoration: BoxDecoration(color: kDrcSoft, borderRadius: BorderRadius.circular(20)),
+            child: Text('$count', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: kDrcBlueDeep)),
           ),
         ],
       ),
@@ -634,7 +731,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
       skipLoadingOnReload: true,
       skipLoadingOnRefresh: true,
       loading: () => const SliverToBoxAdapter(
-        child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: kLocalGreen))),
+        child: Padding(padding: EdgeInsets.all(24), child: Center(child: CircularProgressIndicator(color: kDrcBlue))),
       ),
       error: (e, _) => SliverToBoxAdapter(
         child: Padding(
@@ -642,21 +739,21 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           child: Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: ThixPolicy.danger.withOpacity(0.05),
+              color: kDrcRed.withOpacity(0.05),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: ThixPolicy.danger.withOpacity(0.25)),
+              border: Border.all(color: kDrcRed.withOpacity(0.25)),
             ),
             child: Column(
               children: [
                 Text(
-                  _t('Erreur de chargement des produits locaux', 'Failed to load local products', 'Hitilafu ya kupakua'),
+                  _t('Erreur de chargement des produits', 'Failed to load products', 'Hitilafu ya kupakua'),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: ThixPolicy.danger, fontSize: 12.5),
+                  style: const TextStyle(color: kDrcRed, fontSize: 12.5),
                 ),
                 const SizedBox(height: 8),
                 TextButton(
                   onPressed: () => ref.read(localProductsProvider.notifier).refresh(),
-                  child: Text(_t('Réessayer', 'Retry', 'Jaribu tena'), style: const TextStyle(color: kLocalGreen, fontWeight: FontWeight.w800)),
+                  child: Text(_t('Réessayer', 'Retry', 'Jaribu tena'), style: const TextStyle(color: kDrcBlue, fontWeight: FontWeight.w800)),
                 ),
               ],
             ),
@@ -672,20 +769,20 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                 children: [
                   Container(
                     padding: const EdgeInsets.all(18),
-                    decoration: BoxDecoration(color: kLocalGreen.withOpacity(0.08), shape: BoxShape.circle),
-                    child: Icon(Icons.agriculture_rounded, size: 40, color: kLocalGreen.withOpacity(0.55)),
+                    decoration: const BoxDecoration(color: kDrcSoft, shape: BoxShape.circle),
+                    child: Icon(Icons.public_rounded, size: 40, color: kDrcBlue.withOpacity(0.6)),
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    _t('Aucun produit local dans cette sélection', 'No local product in this selection', 'Hakuna bidhaa ya ndani hapa'),
+                    _t('Aucun produit dans cette sélection', 'No product in this selection', 'Hakuna bidhaa hapa'),
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: ThixPolicy.textMain),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 14, color: kDrcInk),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     _t('Tirez pour actualiser ou changez de secteur.', 'Pull to refresh or change sector.', 'Vuta kuburudisha au badilisha sekta.'),
                     textAlign: TextAlign.center,
-                    style: TextStyle(fontSize: 12, color: ThixPolicy.textSecondary),
+                    style: const TextStyle(fontSize: 12, color: kDrcSub),
                   ),
                 ],
               ),
@@ -704,7 +801,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             delegate: SliverChildBuilderDelegate(
               (_, i) {
                 if (i >= filtered.length) {
-                  return const Center(child: CircularProgressIndicator(color: kLocalGreen, strokeWidth: 2));
+                  return const Center(child: CircularProgressIndicator(color: kDrcBlue, strokeWidth: 2));
                 }
                 final p = filtered[i];
                 return LocalProductCard(key: ValueKey('local_${p['id']}'), product: p);
