@@ -1,0 +1,477 @@
+// ============================================================================
+// MODÉRATION LOCALE — rôles, file de validation, produit de la semaine,
+// cartes du portail, coopératives, commandes modérateur
+// ============================================================================
+import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+import '../core/drc_portal_theme.dart';
+import 'local_market_providers.dart';
+
+// ----------------------------------------------------------------------------
+// RÔLES
+// ----------------------------------------------------------------------------
+final localIsModeratorProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final client = Supabase.instance.client;
+  if (client.auth.currentUser == null) return false;
+  try {
+    final res = await client.rpc('is_thix_moderator').timeout(const Duration(seconds: 8));
+    return res == true;
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ is_thix_moderator: $e');
+    return false;
+  }
+});
+
+final localMyShopProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  final uid = Supabase.instance.client.auth.currentUser?.id;
+  if (uid == null) return null;
+  try {
+    final res = await Supabase.instance.client
+        .from('shops')
+        .select('*')
+        .eq('owner_id', uid)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 8));
+    return res == null ? null : Map<String, dynamic>.from(res);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ myShop: $e');
+    return null;
+  }
+});
+
+// ----------------------------------------------------------------------------
+// FILE DE VALIDATION (produits locaux en attente)
+// ----------------------------------------------------------------------------
+final pendingLocalProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('products')
+        .select('*, shop:shops(id, name, logo_url, city, is_cooperative)')
+        .eq('is_local', true)
+        .eq('status', 'pending')
+        .order('created_at', ascending: false)
+        .limit(100)
+        .timeout(const Duration(seconds: 10));
+    return List<Map<String, dynamic>>.from(res as List);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ pending: $e');
+    return const [];
+  }
+});
+
+/// Produits locaux d'une shop (espace producteur)
+final myLocalProductsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, shopId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('products')
+        .select('*')
+        .eq('shop_id', shopId)
+        .eq('is_local', true)
+        .order('created_at', ascending: false)
+        .limit(200)
+        .timeout(const Duration(seconds: 10));
+    return List<Map<String, dynamic>>.from(res as List);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ myProducts: $e');
+    return const [];
+  }
+});
+
+/// Produits locaux ACTIFS (pour le choix du produit de la semaine)
+final activeLocalProductsForModProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('products')
+        .select('*, shop:shops(id, name)')
+        .eq('is_local', true)
+        .eq('status', 'active')
+        .order('created_at', ascending: false)
+        .limit(100)
+        .timeout(const Duration(seconds: 10));
+    return List<Map<String, dynamic>>.from(res as List);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ activeForMod: $e');
+    return const [];
+  }
+});
+
+// ----------------------------------------------------------------------------
+// PRODUIT DE LA SEMAINE
+// ----------------------------------------------------------------------------
+final weeklyProductProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('local_weekly_products')
+        .select('product:products(*, shop:shops(id, name, logo_url, city))')
+        .eq('is_active', true)
+        .order('created_at', ascending: false)
+        .limit(1)
+        .maybeSingle()
+        .timeout(const Duration(seconds: 8));
+    if (res == null || res['product'] == null) return null;
+    return Map<String, dynamic>.from(res['product'] as Map);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ weekly: $e');
+    return null;
+  }
+});
+
+// ----------------------------------------------------------------------------
+// CARTES DU PORTAIL (remplacent les 4 piliers)
+// ----------------------------------------------------------------------------
+class PortalHighlight {
+  final String id;
+  final String titleFr, titleEn, titleSw;
+  final String subtitleFr, subtitleEn, subtitleSw;
+  final String icon;
+  final String? imageUrl;
+  final String colorHex;
+  final int sortOrder;
+  final bool isActive;
+
+  const PortalHighlight({
+    required this.id,
+    required this.titleFr,
+    this.titleEn = '',
+    this.titleSw = '',
+    required this.subtitleFr,
+    this.subtitleEn = '',
+    this.subtitleSw = '',
+    required this.icon,
+    this.imageUrl,
+    required this.colorHex,
+    required this.sortOrder,
+    required this.isActive,
+  });
+
+  String title(String lang) {
+    final v = lang == 'en' ? titleEn : lang == 'sw' ? titleSw : titleFr;
+    return v.trim().isEmpty ? titleFr : v;
+  }
+
+  String subtitle(String lang) {
+    final v = lang == 'en' ? subtitleEn : lang == 'sw' ? subtitleSw : subtitleFr;
+    return v.trim().isEmpty ? subtitleFr : v;
+  }
+
+  Color get color {
+    try {
+      return Color(int.parse(colorHex.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+    } catch (_) {
+      return kDrcBlue;
+    }
+  }
+}
+
+IconData portalHighlightIcon(String key) {
+  switch (key) {
+    case 'verified':
+      return Icons.verified_rounded;
+    case 'handshake':
+      return Icons.handshake_rounded;
+    case 'truck':
+      return Icons.local_shipping_rounded;
+    case 'eco':
+      return Icons.eco_rounded;
+    case 'star':
+      return Icons.star_rounded;
+    case 'store':
+      return Icons.storefront_rounded;
+    default:
+      return Icons.flag_rounded;
+  }
+}
+
+final drcPortalHighlightsProvider = FutureProvider.autoDispose<List<PortalHighlight>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('drc_portal_highlights')
+        .select('*')
+        .eq('is_active', true)
+        .order('sort_order', ascending: true)
+        .limit(12)
+        .timeout(const Duration(seconds: 8));
+    return (res as List).map((e) {
+      final m = Map<String, dynamic>.from(e);
+      return PortalHighlight(
+        id: m['id']?.toString() ?? '',
+        titleFr: m['title_fr']?.toString() ?? '',
+        titleEn: m['title_en']?.toString() ?? '',
+        titleSw: m['title_sw']?.toString() ?? '',
+        subtitleFr: m['subtitle_fr']?.toString() ?? '',
+        subtitleEn: m['subtitle_en']?.toString() ?? '',
+        subtitleSw: m['subtitle_sw']?.toString() ?? '',
+        icon: m['icon']?.toString() ?? 'flag',
+        imageUrl: m['image_url']?.toString(),
+        colorHex: m['color']?.toString() ?? '#1E6FD9',
+        sortOrder: (m['sort_order'] as num?)?.toInt() ?? 0,
+        isActive: m['is_active'] == true,
+      );
+    }).toList();
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ highlights: $e');
+    return const [];
+  }
+});
+
+// ----------------------------------------------------------------------------
+// ✅ COOPÉRATIVES UNIQUEMENT (page Producteurs + home)
+// ----------------------------------------------------------------------------
+final localCooperativesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('shops')
+        .select('*, products(count)')
+        .eq('is_cooperative', true)
+        .order('name', ascending: true)
+        .limit(50)
+        .timeout(const Duration(seconds: 10));
+    return (res as List).map((e) {
+      final m = Map<String, dynamic>.from(e);
+      final counts = m['products'];
+      int count = 0;
+      if (counts is List && counts.isNotEmpty) {
+        count = (counts.first['count'] as num?)?.toInt() ?? 0;
+      }
+      m['local_count'] = count;
+      return m;
+    }).toList();
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ cooperatives: $e');
+    return const [];
+  }
+});
+
+// ----------------------------------------------------------------------------
+// COMMANDES LOCALES → MODÉRATEUR
+// ----------------------------------------------------------------------------
+final moderatorLocalOrdersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('orders')
+        .select('*')
+        .eq('handled_by_role', 'moderator')
+        .order('created_at', ascending: false)
+        .limit(50)
+        .timeout(const Duration(seconds: 10));
+    return List<Map<String, dynamic>>.from(res as List);
+  } catch (e) {
+    debugPrint('[LocalMod] ⚠️ orders: $e');
+    return const [];
+  }
+});
+
+// ----------------------------------------------------------------------------
+// NOTIFIER — actions modération
+// ----------------------------------------------------------------------------
+class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
+  final Ref _ref;
+  LocalModerationNotifier(this._ref) : super(const AsyncValue.data(null));
+
+  SupabaseClient get _client => Supabase.instance.client;
+  String? get _uid => _client.auth.currentUser?.id;
+
+  void _invalidateAll() {
+    _ref.invalidate(pendingLocalProductsProvider);
+    _ref.invalidate(localProductsProvider);
+    _ref.invalidate(filteredLocalProductsProvider);
+    _ref.invalidate(weeklyProductProvider);
+    _ref.invalidate(activeLocalProductsForModProvider);
+  }
+
+  Future<String?> _log(String productId, String action, {String? note}) async {
+    try {
+      await _client.from('product_moderation_logs').insert({
+        'product_id': productId,
+        'action': action,
+        'actor_id': _uid,
+        if (note != null) 'note': note,
+      });
+    } catch (e) {
+      debugPrint('[LocalMod] ⚠️ log: $e');
+    }
+    return null;
+  }
+
+  // ── VALIDATION ──
+  Future<String?> approve(String productId) async {
+    state = const AsyncValue.loading();
+    try {
+      await _client.from('products').update({
+        'status': 'active',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', productId);
+      await _log(productId, 'approved');
+      _invalidateAll();
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  Future<String?> reject(String productId, String note) async {
+    state = const AsyncValue.loading();
+    try {
+      await _client.from('products').update({
+        'status': 'rejected',
+        'updated_at': DateTime.now().toIso8601String(),
+      }).eq('id', productId);
+      await _log(productId, 'rejected', note: note);
+      _invalidateAll();
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  // ── PRODUIT DE LA SEMAINE ──
+  Future<String?> setWeekly(String productId) async {
+    state = const AsyncValue.loading();
+    try {
+      await _client.from('local_weekly_products').update({'is_active': false}).eq('is_active', true);
+      await _client.from('local_weekly_products').insert({
+        'product_id': productId,
+        'selected_by': _uid,
+        'is_active': true,
+      });
+      await _log(productId, 'weekly_on');
+      _ref.invalidate(weeklyProductProvider);
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  Future<String?> clearWeekly() async {
+    try {
+      await _client.from('local_weekly_products').update({'is_active': false}).eq('is_active', true);
+      _ref.invalidate(weeklyProductProvider);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  // ── CARTES PORTAIL ──
+  Future<String?> saveHighlight({
+    String? id,
+    required String titleFr,
+    String? subtitleFr,
+    required String icon,
+    required String colorHex,
+    bool isActive = true,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final payload = {
+        'title_fr': titleFr,
+        'subtitle_fr': subtitleFr ?? '',
+        'icon': icon,
+        'color': colorHex,
+        'is_active': isActive,
+      };
+      if (id == null) {
+        final maxRes = await _client.from('drc_portal_highlights').select('sort_order').order('sort_order', ascending: false).limit(1);
+        final next = ((maxRes as List).isEmpty ? 0 : (maxRes.first['sort_order'] as num).toInt() + 1);
+        await _client.from('drc_portal_highlights').insert({...payload, 'sort_order': next, 'created_by': _uid});
+      } else {
+        await _client.from('drc_portal_highlights').update(payload).eq('id', id);
+      }
+      _ref.invalidate(drcPortalHighlightsProvider);
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  Future<String?> deleteHighlight(String id) async {
+    try {
+      await _client.from('drc_portal_highlights').delete().eq('id', id);
+      _ref.invalidate(drcPortalHighlightsProvider);
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
+  // ── PRODUCTEUR : créer un produit (toujours PENDING) ──
+  Future<String?> createLocalProduct({
+    required String shopId,
+    required String title,
+    required double price,
+    required String sectorId,
+    int stock = 0,
+    String unit = 'pièce',
+    String? description,
+    String? imageUrl,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      final res = await _client.from('products').insert({
+        'shop_id': shopId,
+        'title': title,
+        'description': description ?? '',
+        'price': price,
+        'stock': stock,
+        'unit': unit,
+        'category': sectorId,
+        'is_local': true,
+        'status': 'pending', // ✅ visible seulement après approbation
+        'image_url': imageUrl,
+        'created_at': DateTime.now().toIso8601String(),
+      }).select('id').single();
+      await _log(res['id'].toString(), 'submitted');
+      _ref.invalidate(myLocalProductsProvider);
+      _ref.invalidate(pendingLocalProductsProvider);
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  // ── CRÉER UNE COOPÉRATIVE ──
+  Future<String?> createCooperative({
+    required String name,
+    required String city,
+    String? logoUrl,
+  }) async {
+    state = const AsyncValue.loading();
+    try {
+      await _client.from('shops').insert({
+        'owner_id': _uid,
+        'name': name,
+        'city': city,
+        'country': 'CD',
+        'type': 'cooperative',
+        'is_cooperative': true,
+        'is_producer': true,
+        'status': 'active',
+        'logo_url': logoUrl,
+        'created_at': DateTime.now().toIso8601String(),
+      });
+      _ref.invalidate(localMyShopProvider);
+      _ref.invalidate(localCooperativesProvider);
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+}
+
+final localModerationProvider =
+    StateNotifierProvider<LocalModerationNotifier, AsyncValue<void>>((ref) => LocalModerationNotifier(ref));
