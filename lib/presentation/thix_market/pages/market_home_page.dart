@@ -1,6 +1,6 @@
 // lib/presentation/thix_market/pages/market_home_page.dart
 // ============================================================================
-// MARKET HOME PAGE — Production Enterprise v6
+// MARKET HOME PAGE — Production Enterprise v7
 // ----------------------------------------------------------------------------
 //  • ✅ Sélecteur de devise (54 devises africaines) dans la topbar
 //  • ✅ Conversion automatique des prix dans la devise sélectionnée
@@ -8,9 +8,9 @@
 //  • ✅ Pastilles de notifications : cloche + Commandes / Favoris / Boutiques
 //  • ✅ Remise à zéro à l'ouverture de la section
 //  • ✅ Bouton panier central entier (n'est plus coupé)
-//  • ✅ NOUVEAU : Espace PRODUITS LOCAUX (remplace "Vendre sur THIX")
-//  • ✅ NOUVEAU : Bandeau teaser produits locaux (auto-scroll)
-//  • ✅ Améliorations visuelles sur les cartes promo
+//  • ✅ Espace PRODUITS LOCAUX (design professionnel moderne)
+//  • ✅ Bandeau teaser produits locaux (auto-scroll)
+//  • ✅ Carte locale : design épuré, pattern dots, shimmer subtil, flèche animée
 // ============================================================================
 
 import 'dart:async';
@@ -113,7 +113,6 @@ final marketTickerProvider = StreamProvider.autoDispose<int>((ref) {
   return Stream.periodic(const Duration(seconds: 30), (tick) => tick);
 });
 
-/// ✅ NOUVEAU : teaser des produits locaux pour la home
 final localTeaserProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
@@ -414,7 +413,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s16)),
                 SliverToBoxAdapter(child: _buildB2BTools(l10n, badges)),
                 const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s24)),
-                // ✅ NOUVEAU : teaser produits locaux avant le flash sale
                 SliverToBoxAdapter(child: _buildLocalTeaser(localAsync, l10n)),
                 SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
                 SliverToBoxAdapter(child: _buildSectionHeader(_allProductsTitle(l10n))),
@@ -1039,15 +1037,11 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
     );
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // ✅ PROMO BANNERS ROW — GAUCHE (Flash) + DROIT (PRODUITS LOCAUX)
-  // ═════════════════════════════════════════════════════════════════════════
   Widget _buildPromoBannersRow(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Row(
         children: [
-          // ── GAUCHE : Offres exclusives (inchangé) ──
           Expanded(
             child: Semantics(
               button: true,
@@ -1089,8 +1083,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             ),
           ),
           const SizedBox(width: ThixPolicy.s12),
-
-          // ── DROIT : PRODUITS LOCAUX (remplace "Vendre sur THIX") ──
           Expanded(child: _LocalPromoCard(onTap: () => _safeNavigate('marketLocalHome', '/market/local'))),
         ],
       ),
@@ -1157,7 +1149,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // ✅ NOUVEAU : TEASER PRODUITS LOCAUX (bandeau horizontal avant Flash Sale)
+  // ✅ TEASER PRODUITS LOCAUX (avec header amélioré)
   // ═════════════════════════════════════════════════════════════════════════
   Widget _buildLocalTeaser(
     AsyncValue<List<Map<String, dynamic>>> async,
@@ -1171,36 +1163,36 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header de la section
+            // Header amélioré avec badge pill élégant
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
               child: Row(
                 children: [
-                  // Badge pulsant vert
-                  _PulsingLocalBadge(),
-                  const SizedBox(width: 8),
-                  Text(
-                    _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w900,
-                        fontSize: 18,
-                        color: ThixPolicy.textMain,
-                        letterSpacing: -0.5),
-                  ),
-                  const SizedBox(width: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
-                      color: kLocalGreen.withOpacity(0.12),
+                      color: kLocalGreen.withOpacity(0.08),
                       borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: kLocalGreen.withOpacity(0.25),
+                        width: 1,
+                      ),
                     ),
-                    child: Text(
-                      _t('100% LOCAL', '100% LOCAL', '100% NDANI'),
-                      style: const TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w900,
-                          color: kLocalGreenDeep,
-                          letterSpacing: 0.3),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const _PulsingLocalBadge(),
+                        const SizedBox(width: 6),
+                        Text(
+                          _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                            fontSize: 15,
+                            color: ThixPolicy.textMain,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const Spacer(),
@@ -1212,12 +1204,31 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                         HapticFeedback.selectionClick();
                         _safeNavigate('marketLocalHome', '/market/local');
                       },
-                      child: Text(
-                        _t('Voir tout', 'Show all', 'Ona zote'),
-                        style: const TextStyle(
-                            color: kLocalGreen,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: kLocalGreen.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _t('Voir tout', 'Show all', 'Ona zote'),
+                              style: const TextStyle(
+                                color: kLocalGreenDeep,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            const SizedBox(width: 3),
+                            const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 10,
+                              color: kLocalGreenDeep,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ),
@@ -1226,7 +1237,6 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
             ),
             const SizedBox(height: ThixPolicy.s12),
 
-            // Liste horizontale auto-scroll des cartes locales
             SizedBox(
               height: 275,
               child: ListView.separated(
@@ -1608,7 +1618,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
 }
 
 // ============================================================================
-// ✅ NOUVEAU : CARTE "PRODUITS LOCAUX" (remplace "Vendre sur THIX")
+// ✅ CARTE "PRODUITS LOCAUX" — Design Professionnel v2
 // ============================================================================
 class _LocalPromoCard extends StatefulWidget {
   final VoidCallback onTap;
@@ -1621,14 +1631,19 @@ class _LocalPromoCard extends StatefulWidget {
 class _LocalPromoCardState extends State<_LocalPromoCard>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmerCtrl;
+  late final Animation<double> _arrowSlide;
 
   @override
   void initState() {
     super.initState();
     _shimmerCtrl = AnimationController(
       vsync: this,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(milliseconds: 3500),
     )..repeat();
+
+    _arrowSlide = Tween<double>(begin: 0, end: 4).animate(
+      CurvedAnimation(parent: _shimmerCtrl, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -1640,52 +1655,72 @@ class _LocalPromoCardState extends State<_LocalPromoCard>
   @override
   Widget build(BuildContext context) {
     final lang = Localizations.localeOf(context).languageCode;
-    final title = lang == 'sw' ? 'BIDHAA ZA NDANI'
-        : lang == 'en' ? 'LOCAL PRODUCTS' : 'PRODUITS LOCAUX';
-    final subtitle = lang == 'sw' ? 'Moja kwa moja kutoka kwa wakulima'
-        : lang == 'en' ? 'Straight from local producers'
-        : 'Direct producteurs locaux';
+    final title = lang == 'sw'
+        ? 'BIDHAA ZA NDANI'
+        : lang == 'en'
+            ? 'LOCAL GOODS'
+            : 'PRODUITS LOCAUX';
+    final subtitle = lang == 'sw'
+        ? 'Moja kwa moja kutoka kwa wakulima'
+        : lang == 'en'
+            ? 'Direct from local producers'
+            : 'Direct producteurs locaux';
+    final ctaLabel = lang == 'sw' ? 'Gundua' : lang == 'en' ? 'Discover' : 'Découvrir';
 
     return Semantics(
       button: true,
       label: 'Produits locaux, tous secteurs',
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          widget.onTap();
+        },
         child: AnimatedBuilder(
           animation: _shimmerCtrl,
           builder: (_, __) {
             return Container(
-              height: 140,
+              height: 150,
               padding: const EdgeInsets.all(ThixPolicy.s16),
               decoration: BoxDecoration(
                 gradient: const LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Color(0xFF159A44),
                     Color(0xFF0F7A37),
+                    Color(0xFF149A4A),
                     Color(0xFF0B6B31),
                   ],
                 ),
-                borderRadius: BorderRadius.circular(16),
+                borderRadius: BorderRadius.circular(18),
                 boxShadow: [
                   BoxShadow(
-                    color: const Color(0xFF159A44).withOpacity(0.35),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6),
+                    color: const Color(0xFF149A4A).withOpacity(0.35),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8),
                   ),
                   BoxShadow(
                     color: Colors.black.withOpacity(0.08),
-                    blurRadius: 4,
-                    offset: const Offset(0, 2),
+                    blurRadius: 6,
+                    offset: const Offset(0, 3),
                   ),
                 ],
-                border: Border.all(color: Colors.white.withOpacity(0.25)),
+                border: Border.all(color: Colors.white.withOpacity(0.2), width: 1),
               ),
               clipBehavior: Clip.antiAlias,
               child: Stack(
                 children: [
-                  // Effet de brillance animée (shimmer diagonal)
+                  // Pattern décoratif : grille de points subtils
+                  Positioned.fill(
+                    child: CustomPaint(
+                      painter: _DotsPatternPainter(
+                        color: Colors.white.withOpacity(0.06),
+                        spacing: 14,
+                        dotSize: 1.2,
+                      ),
+                    ),
+                  ),
+
+                  // Shimmer diagonal élégant
                   Positioned.fill(
                     child: IgnorePointer(
                       child: ShaderMask(
@@ -1693,11 +1728,11 @@ class _LocalPromoCardState extends State<_LocalPromoCard>
                         shaderCallback: (rect) {
                           final position = _shimmerCtrl.value;
                           return LinearGradient(
-                            begin: Alignment(-2 + position * 4, -1),
-                            end: Alignment(2 + position * 4, 1),
+                            begin: Alignment(-2 + position * 4, -0.5),
+                            end: Alignment(2 + position * 4, 0.5),
                             colors: [
                               Colors.white.withOpacity(0.0),
-                              Colors.white.withOpacity(0.18),
+                              Colors.white.withOpacity(0.12),
                               Colors.white.withOpacity(0.0),
                             ],
                           ).createShader(rect);
@@ -1707,24 +1742,45 @@ class _LocalPromoCardState extends State<_LocalPromoCard>
                     ),
                   ),
 
-                  // Motif décoratif (cercles flous)
+                  // Cercle décoratif flou (accent)
                   Positioned(
-                    top: -20, right: -20,
+                    top: -40,
+                    right: -40,
                     child: Container(
-                      width: 90, height: 90,
+                      width: 140,
+                      height: 140,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.08),
+                        gradient: RadialGradient(
+                          colors: [
+                            Colors.white.withOpacity(0.10),
+                            Colors.white.withOpacity(0.0),
+                          ],
+                        ),
                       ),
                     ),
                   ),
+
+                  // Illustration emoji (visuel distinctif)
                   Positioned(
-                    bottom: -30, right: 40,
+                    top: 12,
+                    right: 12,
                     child: Container(
-                      width: 70, height: 70,
+                      width: 52,
+                      height: 52,
                       decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.12),
                         shape: BoxShape.circle,
-                        color: Colors.white.withOpacity(0.05),
+                        border: Border.all(
+                          color: Colors.white.withOpacity(0.25),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Center(
+                        child: Text(
+                          '🌱',
+                          style: TextStyle(fontSize: 24),
+                        ),
                       ),
                     ),
                   ),
@@ -1733,134 +1789,165 @@ class _LocalPromoCardState extends State<_LocalPromoCard>
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Badge 100% LOCAL avec icône
+                      // Badge "100% LOCAL" compact et élégant
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFBBF24), // gold
-                          borderRadius: BorderRadius.circular(5),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFFFBBF24).withOpacity(0.5),
-                              blurRadius: 4,
-                              offset: const Offset(0, 1),
-                            ),
-                          ],
+                          color: Colors.white.withOpacity(0.18),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFFFBBF24).withOpacity(0.5),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.verified_rounded,
-                                size: 9, color: Color(0xFF78350F)),
-                            const SizedBox(width: 3),
+                            Container(
+                              width: 5,
+                              height: 5,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFFBBF24),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 5),
                             Text(
                               '100% LOCAL',
                               style: const TextStyle(
-                                  color: Color(0xFF78350F),
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 9,
-                                  letterSpacing: 0.4),
+                                color: Colors.white,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 9,
+                                letterSpacing: 0.8,
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
 
-                      // Titre
+                      // Titre principal
                       Text(
                         title,
                         style: const TextStyle(
                           color: Colors.white,
                           fontWeight: FontWeight.w900,
-                          fontSize: 15,
-                          letterSpacing: 0.3,
-                          height: 1.1,
+                          fontSize: 16,
+                          letterSpacing: 0.2,
+                          height: 1.15,
                         ),
                       ),
-                      const SizedBox(height: 3),
 
                       // Sous-titre
-                      Text(
-                        subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withOpacity(0.85),
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w500,
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white.withOpacity(0.80),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                            height: 1.2,
+                          ),
                         ),
                       ),
 
                       const Spacer(),
 
-                      // Icônes des secteurs + CTA
+                      // Footer : Icônes secteurs + CTA
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
-                          // Petites icônes de secteurs
+                          // Icônes de secteurs avec fond coloré
                           Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              _sectorMiniIcon(Icons.eco_rounded),
+                              _buildSectorIcon(
+                                Icons.eco_rounded,
+                                const Color(0xFFA7F3D0),
+                              ),
                               const SizedBox(width: 4),
-                              _sectorMiniIcon(Icons.brush_rounded),
+                              _buildSectorIcon(
+                                Icons.brush_rounded,
+                                const Color(0xFFFDE68A),
+                              ),
                               const SizedBox(width: 4),
-                              _sectorMiniIcon(Icons.handshake_rounded),
-                              const SizedBox(width: 4),
+                              _buildSectorIcon(
+                                Icons.handshake_rounded,
+                                const Color(0xFFBFDBFE),
+                              ),
+                              const SizedBox(width: 6),
                               Container(
                                 padding: const EdgeInsets.symmetric(
-                                    horizontal: 4, vertical: 1),
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
                                 decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(4),
+                                  color: Colors.white.withOpacity(0.15),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
                                 child: Text(
                                   '+${kLocalSectors.length - 3}',
                                   style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w800),
+                                    color: Colors.white,
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
                                 ),
                               ),
                             ],
                           ),
 
-                          // Bouton "Découvrir"
+                          // Bouton CTA élégant avec flèche animée
                           Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 6),
+                              horizontal: 12,
+                              vertical: 7,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.white,
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(12),
                               boxShadow: [
                                 BoxShadow(
-                                  color: Colors.black.withOpacity(0.15),
-                                  blurRadius: 4,
+                                  color: Colors.black.withOpacity(0.12),
+                                  blurRadius: 6,
                                   offset: const Offset(0, 2),
                                 ),
                               ],
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.agriculture_rounded,
-                                  size: 10,
-                                  color: Color(0xFF0B6B31),
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  lang == 'sw'
-                                      ? 'Gundua'
-                                      : lang == 'en'
-                                          ? 'Discover'
-                                          : 'Découvrir',
-                                  style: const TextStyle(
-                                      color: Color(0xFF0B6B31),
-                                      fontWeight: FontWeight.w900,
-                                      fontSize: 10),
-                                ),
-                              ],
+                            child: AnimatedBuilder(
+                              animation: _arrowSlide,
+                              builder: (_, child) {
+                                return Transform.translate(
+                                  offset: Offset(_arrowSlide.value, 0),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        ctaLabel,
+                                        style: const TextStyle(
+                                          color: Color(0xFF0B6B31),
+                                          fontWeight: FontWeight.w900,
+                                          fontSize: 10.5,
+                                          letterSpacing: 0.2,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 3),
+                                      const Icon(
+                                        Icons.arrow_forward_rounded,
+                                        size: 11,
+                                        color: Color(0xFF0B6B31),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ],
@@ -1876,21 +1963,57 @@ class _LocalPromoCardState extends State<_LocalPromoCard>
     );
   }
 
-  Widget _sectorMiniIcon(IconData icon) {
+  Widget _buildSectorIcon(IconData icon, Color bgColor) {
     return Container(
-      width: 20,
-      height: 20,
+      width: 24,
+      height: 24,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withOpacity(0.25)),
+        color: bgColor.withOpacity(0.18),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.25),
+          width: 0.8,
+        ),
       ),
-      child: Icon(icon, size: 11, color: Colors.white),
+      child: Icon(icon, size: 13, color: Colors.white),
     );
   }
 }
 
-// ✅ Badge pulsant vert (pour la section teaser)
+// ============================================================================
+// ✅ PAINTER : Motif de points décoratifs subtils
+// ============================================================================
+class _DotsPatternPainter extends CustomPainter {
+  final Color color;
+  final double spacing;
+  final double dotSize;
+
+  _DotsPatternPainter({
+    required this.color,
+    required this.spacing,
+    required this.dotSize,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+
+    for (double y = 0; y < size.height; y += spacing) {
+      for (double x = 0; x < size.width; x += spacing) {
+        canvas.drawCircle(Offset(x, y), dotSize, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ============================================================================
+// ✅ Badge pulsant vert amélioré (avec halo)
+// ============================================================================
 class _PulsingLocalBadge extends StatefulWidget {
   const _PulsingLocalBadge();
   @override
@@ -1906,10 +2029,12 @@ class _PulsingLocalBadgeState extends State<_PulsingLocalBadge>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat(reverse: true);
-    _scale = Tween<double>(begin: 0.85, end: 1.15)
-        .animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    )..repeat(reverse: true);
+    _scale = Tween<double>(begin: 0.9, end: 1.2).animate(
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+    );
   }
 
   @override
@@ -1920,29 +2045,48 @@ class _PulsingLocalBadgeState extends State<_PulsingLocalBadge>
 
   @override
   Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
-      child: Container(
-        width: 10,
-        height: 10,
-        decoration: BoxDecoration(
-          color: kLocalGreen,
-          shape: BoxShape.circle,
-          boxShadow: [
-            BoxShadow(
-              color: kLocalGreen.withOpacity(0.6),
-              blurRadius: 6,
-              spreadRadius: 1,
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (_, __) {
+        return Stack(
+          alignment: Alignment.center,
+          children: [
+            // Halo pulsant
+            Container(
+              width: 20,
+              height: 20,
+              decoration: BoxDecoration(
+                color: kLocalGreen.withOpacity(0.15 + _ctrl.value * 0.15),
+                shape: BoxShape.circle,
+              ),
+            ),
+            // Point central
+            ScaleTransition(
+              scale: _scale,
+              child: Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: kLocalGreen,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: kLocalGreen.withOpacity(0.5),
+                      blurRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ],
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
 // ============================================================================
-// COMPOSANTS RÉUTILISABLES (inchangés)
+// COMPOSANTS RÉUTILISABLES
 // ============================================================================
 
 class _CountBadge extends StatelessWidget {
