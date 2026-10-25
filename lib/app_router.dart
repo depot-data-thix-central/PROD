@@ -221,7 +221,7 @@ import 'package:thix_id/presentation/thix_info/breaking_news_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_downloads_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_info_space_page.dart';
 import 'package:thix_id/presentation/thix_info/thix_magazine_reader_page.dart';
-
+import 'package:thix_id/presentation/thix_info/thix_info_admin_page.dart';
 // === JOBS & OPPORTUNITIES ===
 import 'package:thix_id/presentation/jobs/jobs_page.dart';
 import 'package:thix_id/presentation/jobs/job_apply_page.dart';
