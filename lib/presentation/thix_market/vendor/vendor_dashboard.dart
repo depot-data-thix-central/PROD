@@ -1343,20 +1343,163 @@ class _ActionButton extends StatelessWidget {
 // ============================================================================
 class _SkeletonDashboard extends StatelessWidget {
   const _SkeletonDashboard();
+
   @override
-  Widget build(BuildContext context) => SingleChildScrollView(padding: const EdgeInsets.all(16), physics: const NeverScrollableScrollPhysics(), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [SizedBox(height: _kShopCardHeight, child: Row(children: List.generate(2, (i) => Expanded(child: Container(margin: EdgeInsets.only(right: i == 0 ? 12 : 0), decoration: BoxDecoration(gradient: LinearGradient(colors: [ThixPolicy.primary.withOpacity(0.2), ThixPolicy.inkDeep.withOpacity(0.2)]), borderRadius: BorderRadius.circular(16)))))), const SizedBox(height: 20), GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 1.55, children: List.generate(4, (_) => Container(padding: const EdgeInsets.all(14), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Row(children: [Container(width: 42, height: 42, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(12))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [Container(height: 16, width: 40, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 12, width: 70, color: Colors.grey.shade200)]))]))), const SizedBox(height: 24), Container(height: 16, width: 120, color: Colors.grey.shade200), const SizedBox(height: 12), GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: 4, crossAxisSpacing: 8, mainAxisSpacing: 8, childAspectRatio: 0.95, children: List.generate(8, (_) => Container(decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(width: 26, height: 26, decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle)), const SizedBox(height: 6), Container(height: 10, width: 40, color: Colors.grey.shade200)]))))]));
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: _kShopCardHeight,
+            child: Row(
+              children: List.generate(
+                2,
+                (i) => Expanded(
+                  child: Container(
+                    margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          ThixPolicy.primary.withOpacity(0.2),
+                          ThixPolicy.inkDeep.withOpacity(0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.55,
+            children: List.generate(
+              4,
+              (_) => Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(height: 16, width: 40, color: Colors.grey.shade200),
+                          const SizedBox(height: 6),
+                          Container(height: 12, width: 70, color: Colors.grey.shade200),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(height: 16, width: 120, color: Colors.grey.shade200),
+          const SizedBox(height: 12),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.95,
+            children: List.generate(
+              8,
+              (_) => Container(
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 40, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ItemsSkeleton extends StatelessWidget {
   const _ItemsSkeleton();
-  @override
-  Widget build(BuildContext context) => Column(children: List.generate(3, (_) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12)), child: Row(children: [Container(width: 50, height: 50, decoration: BoxDecoration(color: Colors.grey.shade200, borderRadius: BorderRadius.circular(8))), const SizedBox(width: 12), Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(height: 13, width: double.infinity, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 100, color: Colors.grey.shade200), const SizedBox(height: 6), Container(height: 10, width: 140, color: Colors.grey.shade200)]))]))));
-}
 
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  const _ErrorState({required this.message, required this.onRetry});
   @override
-  Widget build(BuildContext context) => Center(child: Padding(padding: const EdgeInsets.all(32), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: ThixPolicy.danger.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger)), const SizedBox(height: 20), Text(context.vdT('Erreur de chargement', 'Loading error'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)), const SizedBox(height: 8), Text(message, style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary), textAlign: TextAlign.center), const SizedBox(height: 24), Semantics(button: true, label: context.vdT('Réessayer', 'Retry'), child: ElevatedButton.icon(onPressed: () { HapticFeedback.mediumImpact(); onRetry(); }, icon: const Icon(Icons.refresh_rounded, color: Colors.white), label: Text(context.vdT('Réessayer', 'Retry'), style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)), padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12)))])));
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        3,
+        (_) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(height: 13, width: double.infinity, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 100, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 140, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
