@@ -1,9 +1,10 @@
 // lib/presentation/chat/call/call_history_page.dart
 //
 // ============================================================================
-// CALL HISTORY PAGE — Production Enterprise v2.1
+// CALL HISTORY PAGE — Production Enterprise v2.2
 //  • ✅ Appels désactivés (chat_screen) respectés partout : boutons masqués,
-//       vérification fraîche avant chaque appel
+//       vérification fraîche avant chaque appel (toutes les conversations
+//       directes du contact sont vérifiées)
 //  • ✅ Bouton « Nouvel appel » = symbole seul
 // ============================================================================
 
@@ -17,6 +18,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart'
     show supabaseClientProvider, supabaseUserIdProvider;
+import 'package:thix_id/presentation/chat/providers/chat_list_provider.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/call_invite.dart';
@@ -128,6 +130,10 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> with WidgetsB
     super.initState();
     debugPrint('[CallHistory] 🚀 Page opened');
     WidgetsBinding.instance.addObserver(this);
+
+    // ✅ Source des conversations : même liste que chat_screen (toutes les conversations directes)
+    _blocks.setConversationSource(() => ref.read(chatListProvider).all);
+
     _blocks.revision.addListener(_onBlocksChanged);
     _blockPoll = Timer.periodic(
       const Duration(seconds: _kCallBlockPollSeconds),
@@ -368,6 +374,11 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> with WidgetsB
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final newCallLabel = _trc(l10n, 'call_new_call', 'Nouvel appel');
+
+    // ✅ Dès que la liste des chats change, on revérifie les blocages
+    ref.listen(chatListProvider, (prev, next) {
+      _refreshBlocks();
+    });
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
