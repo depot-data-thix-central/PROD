@@ -827,9 +827,9 @@ class AppRouter {
               name: 'marketLocalVendorSpace',
               pageBuilder: (_, __) => const NoTransitionPage(child: LocalVendorSpacePage()),
             ),
-            // Dans app_router.dart, ajouter :
+            
 GoRoute(
-  path: '/market/vendor/products',
+  path: 'vendor/products', 
   name: 'vendorProducts',
   builder: (context, state) {
     final shopId = state.uri.queryParameters['shopId'];
