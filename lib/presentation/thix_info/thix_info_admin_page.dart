@@ -1,8 +1,9 @@
 // ============================================================================
-// ADMIN THIX INFO — Gestion des articles (CORRIGÉ v2)
+// ADMIN THIX INFO — Gestion des articles (CORRIGÉ v3)
+//  • ✅ Lecteur Audio local supprimé (conflit just_audio_background réglé)
+//  • ✅ Utilisation du podcastPlayerProvider global pour la prévisualisation
 //  • ✅ Buckets alignés : news/images/, news/videos/, news/audios/
 //  • ✅ Image en bytes (pas de base64 en RAM)
-//  • ✅ Preview audio (lecteur just_audio)
 //  • ✅ is_published automatique basé sur status
 //  • ✅ Validation taille fichiers (50Mo audio / 200Mo vidéo)
 //  • ✅ PopScope pour confirmer sortie avec modifs non sauvegardées
@@ -19,13 +20,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:just_audio/just_audio.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/models/news_article.dart';
+
+// ✅ IMPORT DU PROVIDER GLOBAL
+import '../../providers/podcast_player_provider.dart';
 
 // ============================================================================
 // CONSTANTES DE LIMITES D'UPLOAD
@@ -142,7 +145,6 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
           .order('created_at', ascending: false)
           .timeout(const Duration(seconds: 15));
 
-      // ✅ Utilisation de NewsArticle.fromJson (source unique)
       final list = (res as List)
           .map((e) => NewsArticle.fromJson(Map<String, dynamic>.from(e)))
           .toList();
@@ -212,14 +214,12 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     if (confirmed != true) return;
 
     try {
-      // 🗑️ Supprimer l'article
       await _supabase
           .from('news_articles')
           .delete()
           .eq('id', article.id)
           .timeout(const Duration(seconds: 10));
 
-      // 🗑️ Nettoyer les médias dans Storage
       await _cleanupMedia(article);
 
       if (mounted) {
@@ -231,7 +231,6 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     }
   }
 
-  /// Supprime les fichiers médias liés à un article dans Storage
   Future<void> _cleanupMedia(NewsArticle article) async {
     final paths = <String>[];
     if (article.imageUrl != null) paths.add(_extractPath(article.imageUrl!, 'images'));
@@ -251,9 +250,7 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
         if (bucket.isEmpty) continue;
         final file = path.substring(bucket.length + 1);
         await _supabase.storage.from('news').remove([file]);
-      } catch (_) {
-        // Ignorer si fichier inexistant
-      }
+      } catch (_) {}
     }
   }
 
@@ -261,7 +258,6 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
     try {
       final uri = Uri.parse(url);
       final segments = uri.pathSegments;
-      // URL type: /storage/v1/object/public/news/images/xxx.jpg
       final idx = segments.indexOf(folder);
       if (idx >= 0 && idx + 1 < segments.length) {
         return '$folder/${segments.sublist(idx + 1).join('/')}';
@@ -281,7 +277,6 @@ class _ThixInfoAdminPageState extends ConsumerState<ThixInfoAdminPage> {
           .eq('id', article.id)
           .timeout(const Duration(seconds: 10));
 
-      // ✅ Reconstruction via fromJson (source unique)
       final old = _articles[idx];
       final updated = NewsArticle.fromJson({
         'id': old.id,
@@ -743,7 +738,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   bool _hasUnsavedChanges = false;
 
   // ── Upload états ──
-  Uint8List? _imageBytes;        // ✅ Plus de base64, bytes direct
+  Uint8List? _imageBytes;
   String? _imageUrl;
   String? _videoUrl;
   String? _audioUrl;
@@ -757,9 +752,8 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   bool _isUploadingVideo = false;
   bool _isUploadingAudio = false;
 
-  // 🎧 Lecteur audio pour preview
-  final AudioPlayer _audioPreview = AudioPlayer();
-  bool _audioPreviewPlaying = false;
+  // ⚠️ SUPPRIMÉ : final AudioPlayer _audioPreview = AudioPlayer();
+  // ⚠️ SUPPRIMÉ : bool _audioPreviewPlaying = false; (on utilise le provider global)
 
   bool get _isEditing => widget.article != null;
   bool get _isMagazine => _category == 'Magazine';
@@ -786,7 +780,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
       _oldAudioUrl = a.audioUrl;
     }
 
-    // Suivi des modifications
     _titleCtrl.addListener(_markDirty);
     _summaryCtrl.addListener(_markDirty);
     _contentCtrl.addListener(_markDirty);
@@ -798,7 +791,12 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
   @override
   void dispose() {
-    _audioPreview.dispose();
+    // ⚠️ On ne dispose plus de lecteur ici, on l'arrête juste s'il joue notre preview
+    final playerState = ref.read(podcastPlayerProvider);
+    if (playerState.article?.audioUrl == _audioUrl && _audioUrl != null) {
+       ref.read(podcastPlayerProvider.notifier).stop();
+    }
+
     _titleCtrl.dispose();
     _summaryCtrl.dispose();
     _contentCtrl.dispose();
@@ -811,7 +809,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     super.dispose();
   }
 
-  // ─── PICK IMAGE (bytes direct, pas de base64) ───
   Future<void> _pickImage() async {
     try {
       final file = await _picker.pickImage(
@@ -838,7 +835,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── UPLOAD IMAGE (bucket unifié : news) ───
   Future<String?> _uploadImageToStorage() async {
     if (_imageBytes == null) return _imageUrl;
 
@@ -866,7 +862,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── PICK + UPLOAD VIDEO ───
   Future<void> _pickAndUploadVideo() async {
     try {
       final file = await _picker.pickVideo(source: ImageSource.gallery);
@@ -912,7 +907,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     }
   }
 
-  // ─── PICK + UPLOAD AUDIO (PODCAST) ───
   Future<void> _pickAndUploadAudio() async {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
@@ -983,7 +977,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} Mo';
   }
 
-  // ─── PICK DATE ───
   Future<void> _pickDate() async {
     final date = await showDatePicker(
       context: context,
@@ -1006,24 +999,44 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
     });
   }
 
-  // ─── PREVIEW AUDIO ───
+  // ─── PREVIEW AUDIO (CORRIGÉ : Utilise le provider global) ───
   Future<void> _toggleAudioPreview() async {
     if (_audioUrl == null) return;
+    
+    final playerNotifier = ref.read(podcastPlayerProvider.notifier);
+    final playerState = ref.read(podcastPlayerProvider);
+
     try {
-      if (_audioPreviewPlaying) {
-        await _audioPreview.pause();
-        setState(() => _audioPreviewPlaying = false);
+      // Si c'est déjà le fichier en cours de lecture -> Play/Pause
+      if (playerState.article?.audioUrl == _audioUrl) {
+        await playerNotifier.toggle();
       } else {
-        await _audioPreview.setUrl(_audioUrl!);
-        await _audioPreview.play();
-        setState(() => _audioPreviewPlaying = true);
+        // Sinon, on crée un faux article juste pour la preview
+        final fakeArticle = NewsArticle.fromJson({
+          'id': 'preview_${DateTime.now().millisecondsSinceEpoch}',
+          'title': _titleCtrl.text.trim().isEmpty ? 'Aperçu Audio' : _titleCtrl.text.trim(),
+          'summary': 'Prévisualisation Admin',
+          'content': '',
+          'category': 'Podcast',
+          'image_url': _imageUrl,
+          'video_url': null,
+          'audio_url': _audioUrl,
+          'views_count': 0,
+          'is_featured': false,
+          'is_breaking': false,
+          'status': 'draft',
+          'published_at': DateTime.now().toIso8601String(),
+          'created_at': DateTime.now().toIso8601String(),
+          'created_by': _supabase.auth.currentUser?.id ?? 'admin',
+        });
+        
+        await playerNotifier.playArticle(fakeArticle);
       }
     } catch (e) {
       _showSnack('Impossible de prévisualiser : $e', ThixPolicy.danger);
     }
   }
 
-  // ─── SAUVEGARDE ───
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_saving || _isUploadingVideo || _isUploadingImage || _isUploadingAudio) return;
@@ -1036,7 +1049,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
 
       final String? finalImageUrl = await _uploadImageToStorage();
 
-      // ✅ is_published basé sur le statut
       final isPublished = _status == 'published';
 
       Map<String, dynamic> magazineExtras = const {};
@@ -1060,7 +1072,7 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
         'video_url': _videoUrl,
         'audio_url': _audioUrl,
         'status': _status,
-        'is_published': isPublished,        // ✅ IMPORTANT
+        'is_published': isPublished,
         'is_featured': _isFeatured,
         'is_breaking': _isBreaking,
         'published_at': _publishedAt.toIso8601String(),
@@ -1075,7 +1087,6 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
             .eq('id', widget.article!.id)
             .timeout(const Duration(seconds: 30));
 
-        // 🗑️ Nettoyer anciens médias remplacés
         await _cleanupReplacedMedia(finalImageUrl);
       } else {
         payload['id'] = const Uuid().v4();
@@ -1540,6 +1551,11 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
   }
 
   Widget _buildAudioSection() {
+    // ✅ On écoute le provider global pour mettre à jour l'UI
+    final playerState = ref.watch(podcastPlayerProvider);
+    final isCurrentPreview = playerState.article?.audioUrl == _audioUrl && _audioUrl != null;
+    final isPlaying = isCurrentPreview && playerState.isPlaying;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1555,12 +1571,12 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(_audioPreviewPlaying
+                    Icon(isPlaying
                         ? Icons.pause_rounded
                         : Icons.play_arrow_rounded,
                         size: 16, color: const Color(0xFF6366F1)),
                     const SizedBox(width: 4),
-                    Text(_audioPreviewPlaying ? 'Pause' : 'Écouter',
+                    Text(isPlaying ? 'Pause' : 'Écouter',
                         style: const TextStyle(
                             color: Color(0xFF6366F1),
                             fontSize: 11,
@@ -1617,10 +1633,12 @@ class _ArticleFormPageState extends ConsumerState<_ArticleFormPage> {
                               icon: const Icon(Icons.close_rounded,
                                   color: Colors.white54, size: 20),
                               onPressed: () {
-                                _audioPreview.stop();
+                                // Arrêter le lecteur si c'était ce fichier qui jouait
+                                if (isCurrentPreview) {
+                                  ref.read(podcastPlayerProvider.notifier).stop();
+                                }
                                 setState(() {
                                   _audioUrl = null;
-                                  _audioPreviewPlaying = false;
                                   _hasUnsavedChanges = true;
                                 });
                               },
