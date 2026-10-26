@@ -79,8 +79,8 @@ LocalSector? localSectorById(String? id) {
   return null;
 }
 
-// ============================================================================
-// CERTIFICATIONS / LABELS LOCAUX
+// // ============================================================================
+// CERTIFICATIONS / LABELS LOCAUX (Mise à jour complète)
 // ============================================================================
 class LocalCertification {
   final String id;
@@ -93,13 +93,14 @@ class LocalCertification {
 }
 
 const List<LocalCertification> kLocalCertifications = [
-  LocalCertification('bio',        'Biologique',               'Organic',                Icons.eco_rounded),
-  LocalCertification('equitable',  'Commerce équitable',       'Fair trade',             Icons.handshake_rounded),
-  LocalCertification('artisanal',  'Fait main',                'Handmade',               Icons.brush_rounded),
-  LocalCertification('coop',       'Coopérative',              'Cooperative',            Icons.groups_rounded),
-  LocalCertification('ig',         'Indication géographique',  'Geographical indication',Icons.place_rounded),
-  LocalCertification('naturel',    '100% naturel',             '100% natural',           Icons.local_florist_rounded),
-  LocalCertification('femme',      'Producteur femme',         'Women producer',         Icons.favorite_rounded), // Ajout pertinent pour l'impact social
+  LocalCertification('naturel',          '100% naturel',          '100% natural',       Icons.local_florist_rounded),
+  LocalCertification('bio',              'Biologique',            'Organic',            Icons.eco_rounded),
+  LocalCertification('equitable',        'Commerce équitable',    'Fair trade',         Icons.handshake_rounded),
+  LocalCertification('artisanal',        'Fait main',             'Handmade',           Icons.brush_rounded),
+  LocalCertification('sans_conservateur','Sans conservateur',     'No preservatives',   Icons.shield_rounded),       // ✅ AJOUTÉ
+  LocalCertification('femme',            'Producteur femme',      'Women producer',     Icons.favorite_rounded),     // ✅ AJOUTÉ
+  LocalCertification('coop',             'Coopérative',           'Cooperative',        Icons.groups_rounded),
+  LocalCertification('made_in_congo',    'Made in Congo',         'Made in Congo',      Icons.flag_rounded),         // ✅ AJOUTÉ
 ];
 
 // ============================================================================
