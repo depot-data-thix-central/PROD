@@ -500,86 +500,128 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ ✅ PRODUIT DE LA SEMAINE ═══════════════════
-  Widget _buildWeekly(AsyncValue<Map<String, dynamic>?> async) {
-    return async.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (p) {
-        if (p == null) return const SizedBox.shrink();
-        final id = p['id']?.toString() ?? '';
-        final title = (p['title'] ?? '').toString();
-        final shop = (p['shop']?['name'] ?? '').toString();
-        final img = (p['image_url'] ?? '').toString();
-        final hasImg = img.startsWith('http');
+// ═══════════════════ ✅ PRODUIT DE LA SEMAINE — carte identique à LocalProductCard, réduite
+Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
+  return async.when(
+    loading: () => const SizedBox.shrink(),
+    error: (_, __) => const SizedBox.shrink(),
+    data: (products) {
+      if (products.isEmpty) return const SizedBox.shrink();
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Semantics(
-            button: true,
-            label: title,
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                if (id.isNotEmpty) context.push('/market/product/$id');
-              },
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: kDrcYellow.withOpacity(0.6), width: 1.4),
-                  boxShadow: [BoxShadow(color: kDrcYellow.withOpacity(0.18), blurRadius: 16, offset: const Offset(0, 6))],
+      // ✅ Affiche jusqu'à 2 produits (modérateur peut en choisir plusieurs)
+      final displayed = products.take(2).toList();
+
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.star_rounded, color: kDrcYellow, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  _t('Produit de la semaine', 'Product of the week', 'Bidhaa ya wiki'),
+                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: kDrcInk),
                 ),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: kDrcSoft,
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: kDrcBlue.withOpacity(0.2)),
-                        image: hasImg ? DecorationImage(image: CachedNetworkImageProvider(img), fit: BoxFit.cover) : null,
-                      ),
-                      child: hasImg ? null : const Icon(Icons.star_rounded, color: kDrcYellow, size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(children: [
-                            const Icon(Icons.star_rounded, color: kDrcYellow, size: 13),
-                            const SizedBox(width: 4),
-                            Text(
-                              _t('PRODUIT DE LA SEMAINE', 'PRODUCT OF THE WEEK', 'BIDHAA YA WIKI'),
-                              style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w900, color: kDrcBlueDeep, letterSpacing: 1),
+              ],
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 170, // 2 × (80 + 10 marge) = 180 → on garde 170 pour safety
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                itemCount: displayed.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (_, i) {
+                  final p = displayed[i];
+                  return SizedBox(
+                    width: 160,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: kDrcLine),
+                          boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // ✅ Identique à LocalProductCard : image + badge "100% local"
+                            SizedBox(
+                              height: 92,
+                              child: Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  if (p['image_url'] != null && p['image_url'].toString().isNotEmpty)
+                                    CachedNetworkImage(
+                                      imageUrl: p['image_url'].toString(),
+                                      fit: BoxFit.cover,
+                                      errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
+                                    )
+                                  else
+                                    const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
+                                  Positioned(
+                                    top: 8,
+                                    left: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(color: kDrcGreen, borderRadius: BorderRadius.circular(6)),
+                                      child: const Text('100% LOCAL', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
+                                    ),
+                                  ),
+                                  Positioned(
+                                    bottom: 8,
+                                    right: 8,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(color: kDrcBlue, borderRadius: BorderRadius.circular(6)),
+                                      child: Text(
+                                        '${p['price']?.toString() ?? '0'} ${_t('FC', 'FC', 'FC')}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
                             ),
-                          ]),
-                          const SizedBox(height: 4),
-                          Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13.5, color: kDrcInk)),
-                          const SizedBox(height: 2),
-                          Text(shop, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: kDrcSub)),
-                        ],
+                            const SizedBox(height: 8),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8),
+                              child: Text(
+                                p['title']?.toString() ?? '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: kDrcInk),
+                              ),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              child: Text(
+                                p['shop']?['name']?.toString() ?? '',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 9.5, color: kDrcSub),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: const BoxDecoration(color: kDrcSoft, shape: BoxShape.circle),
-                      child: const Icon(Icons.arrow_forward_rounded, color: kDrcBlue, size: 16),
-                    ),
-                  ],
-                ),
+                  );
+                },
               ),
             ),
-          ),
-        );
-      },
-    );
-  }
-
+          ],
+        ),
+      );
+    },
+  );
+}
   Widget _buildSlogan() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
