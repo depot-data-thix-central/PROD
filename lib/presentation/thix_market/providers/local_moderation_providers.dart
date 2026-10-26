@@ -28,7 +28,9 @@ final localIsModeratorProvider = FutureProvider.autoDispose<bool>((ref) async {
   final client = Supabase.instance.client;
   if (client.auth.currentUser == null) return false;
   try {
-    final res = await client.rpc('is_thix_moderator').timeout(const Duration(seconds: 8));
+    final res = await client
+        .rpc('is_thix_moderator')
+        .timeout(const Duration(seconds: 8));
     return res == true;
   } catch (e) {
     debugPrint('[LocalMod] ⚠️ is_thix_moderator: $e');
@@ -36,7 +38,8 @@ final localIsModeratorProvider = FutureProvider.autoDispose<bool>((ref) async {
   }
 });
 
-final localMyShopProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+final localMyShopProvider =
+    FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
   final uid = Supabase.instance.client.auth.currentUser?.id;
   if (uid == null) return null;
   try {
@@ -56,7 +59,8 @@ final localMyShopProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((r
 // ----------------------------------------------------------------------------
 // FILE DE VALIDATION
 // ----------------------------------------------------------------------------
-final pendingLocalProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final pendingLocalProductsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('products')
@@ -73,7 +77,8 @@ final pendingLocalProductsProvider = FutureProvider.autoDispose<List<Map<String,
   }
 });
 
-final myLocalProductsProvider = FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>((ref, shopId) async {
+final myLocalProductsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, shopId) async {
   try {
     final res = await Supabase.instance.client
         .from('products')
@@ -90,7 +95,8 @@ final myLocalProductsProvider = FutureProvider.autoDispose.family<List<Map<Strin
   }
 });
 
-final activeLocalProductsForModProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final activeLocalProductsForModProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('products')
@@ -110,8 +116,8 @@ final activeLocalProductsForModProvider = FutureProvider.autoDispose<List<Map<St
 // ----------------------------------------------------------------------------
 // PRODUIT DE LA SEMAINE
 // ----------------------------------------------------------------------------
-
-final weeklyProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final weeklyProductsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('local_weekly_products')
@@ -119,9 +125,16 @@ final weeklyProductsProvider = FutureProvider.autoDispose<List<Map<String, dynam
         .eq('is_active', true)
         .order('created_at', ascending: false)
         .limit(5) // ✅ max 5 produits (modérable)
-        .execute();
-    final list = (res as List).map((e) => (e as Map)['product'] as Map<String, dynamic>).whereType<Map<String, dynamic>>().toList();
-    return list;
+        .timeout(const Duration(seconds: 10));
+
+    // ✅ jointure null-safe : ignore les rows où le produit a été supprimé
+    return (res as List)
+        .map((e) {
+          final p = (e as Map)['product'];
+          return p is Map<String, dynamic> ? p : null;
+        })
+        .whereType<Map<String, dynamic>>()
+        .toList();
   } catch (e) {
     debugPrint('[ModWeekly] ❌ $e');
     return const [];
@@ -168,7 +181,8 @@ class PortalHighlight {
 
   Color get color {
     try {
-      return Color(int.parse(colorHex.replaceFirst('#', ''), radix: 16) | 0xFF000000);
+      return Color(
+          int.parse(colorHex.replaceFirst('#', ''), radix: 16) | 0xFF000000);
     } catch (_) {
       return kDrcBlue;
     }
@@ -177,17 +191,25 @@ class PortalHighlight {
 
 IconData portalHighlightIcon(String key) {
   switch (key) {
-    case 'verified': return Icons.verified_rounded;
-    case 'handshake': return Icons.handshake_rounded;
-    case 'truck': return Icons.local_shipping_rounded;
-    case 'eco': return Icons.eco_rounded;
-    case 'star': return Icons.star_rounded;
-    case 'store': return Icons.storefront_rounded;
-    default: return Icons.flag_rounded;
+    case 'verified':
+      return Icons.verified_rounded;
+    case 'handshake':
+      return Icons.handshake_rounded;
+    case 'truck':
+      return Icons.local_shipping_rounded;
+    case 'eco':
+      return Icons.eco_rounded;
+    case 'star':
+      return Icons.star_rounded;
+    case 'store':
+      return Icons.storefront_rounded;
+    default:
+      return Icons.flag_rounded;
   }
 }
 
-final drcPortalHighlightsProvider = FutureProvider.autoDispose<List<PortalHighlight>>((ref) async {
+final drcPortalHighlightsProvider =
+    FutureProvider.autoDispose<List<PortalHighlight>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('drc_portal_highlights')
@@ -222,7 +244,8 @@ final drcPortalHighlightsProvider = FutureProvider.autoDispose<List<PortalHighli
 // ----------------------------------------------------------------------------
 // COOPÉRATIVES UNIQUEMENT
 // ----------------------------------------------------------------------------
-final localCooperativesProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final localCooperativesProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('shops')
@@ -250,7 +273,8 @@ final localCooperativesProvider = FutureProvider.autoDispose<List<Map<String, dy
 // ----------------------------------------------------------------------------
 // COMMANDES LOCALES → MODÉRATEUR
 // ----------------------------------------------------------------------------
-final moderatorLocalOrdersProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final moderatorLocalOrdersProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('orders')
@@ -269,13 +293,15 @@ final moderatorLocalOrdersProvider = FutureProvider.autoDispose<List<Map<String,
 // ----------------------------------------------------------------------------
 // ✅ STATS MODÉRATION (KPI vendor dashboard)
 // ----------------------------------------------------------------------------
-final moderationStatsProvider = FutureProvider.autoDispose<Map<String, int>>((ref) async {
+final moderationStatsProvider =
+    FutureProvider.autoDispose<Map<String, int>>((ref) async {
   final db = Supabase.instance.client;
   final uid = db.auth.currentUser?.id;
   if (!_ModValidators.isValidId(uid)) return {};
 
   try {
-    final shopsRes = await db.from('shops').select('id').eq('owner_id', uid!).limit(50);
+    final shopsRes =
+        await db.from('shops').select('id').eq('owner_id', uid!).limit(50);
     final shopIds = (shopsRes as List)
         .map((s) => (s as Map)['id']?.toString())
         .whereType<String>()
@@ -285,21 +311,24 @@ final moderationStatsProvider = FutureProvider.autoDispose<Map<String, int>>((re
     if (shopIds.isEmpty) return {};
 
     // Compte par statut pour les produits locaux du vendeur
-    final activeRes = await db.from('products')
+    final activeRes = await db
+        .from('products')
         .select('id')
         .inFilter('shop_id', shopIds)
         .eq('is_local', true)
         .eq('status', 'active')
         .timeout(const Duration(seconds: 8));
 
-    final pendingRes = await db.from('products')
+    final pendingRes = await db
+        .from('products')
         .select('id')
         .inFilter('shop_id', shopIds)
         .eq('is_local', true)
         .eq('status', 'pending')
         .timeout(const Duration(seconds: 8));
 
-    final rejectedRes = await db.from('products')
+    final rejectedRes = await db
+        .from('products')
         .select('id')
         .inFilter('shop_id', shopIds)
         .eq('is_local', true)
@@ -331,7 +360,7 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
     _ref.invalidate(pendingLocalProductsProvider);
     _ref.invalidate(localProductsProvider);
     _ref.invalidate(filteredLocalProductsProvider);
-    _ref.invalidate(weeklyProductProvider);
+    _ref.invalidate(weeklyProductsProvider); // ✅ corrigé (pluriel)
     _ref.invalidate(activeLocalProductsForModProvider);
     _ref.invalidate(moderationStatsProvider);
   }
@@ -386,14 +415,55 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
   Future<String?> setWeekly(String productId) async {
     state = const AsyncValue.loading();
     try {
-      await _client.from('local_weekly_products').update({'is_active': false}).eq('is_active', true);
+      await _client
+          .from('local_weekly_products')
+          .update({'is_active': false}).eq('is_active', true);
       await _client.from('local_weekly_products').insert({
         'product_id': productId,
         'selected_by': _uid,
         'is_active': true,
       });
       await _log(productId, 'weekly_on');
-      _ref.invalidate(weeklyProductProvider);
+      _ref.invalidate(weeklyProductsProvider); // ✅ corrigé (pluriel)
+      state = const AsyncValue.data(null);
+      return null;
+    } catch (e) {
+      state = AsyncValue.error(e, StackTrace.current);
+      return e.toString();
+    }
+  }
+
+  // ✅ NOUVEAU : sélection multiple (max 5 produits de la semaine)
+  Future<String?> setWeeklyMultiple(List<String> productIds) async {
+    if (productIds.isEmpty) {
+      return 'Aucun produit sélectionné';
+    }
+    if (productIds.length > 5) {
+      return 'Maximum 5 produits par semaine';
+    }
+    state = const AsyncValue.loading();
+    try {
+      // 1. Désactive tous les actuels
+      await _client
+          .from('local_weekly_products')
+          .update({'is_active': false}).eq('is_active', true);
+
+      // 2. Batch insert (un seul round-trip, atomique côté PostgREST)
+      final rows = productIds
+          .map((id) => {
+                'product_id': id,
+                'selected_by': _uid,
+                'is_active': true,
+              })
+          .toList();
+      await _client.from('local_weekly_products').insert(rows);
+
+      // 3. Log par produit (traçabilité)
+      for (final id in productIds) {
+        await _log(id, 'weekly_on');
+      }
+
+      _ref.invalidate(weeklyProductsProvider); // ✅ pluriel
       state = const AsyncValue.data(null);
       return null;
     } catch (e) {
@@ -404,8 +474,10 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
 
   Future<String?> clearWeekly() async {
     try {
-      await _client.from('local_weekly_products').update({'is_active': false}).eq('is_active', true);
-      _ref.invalidate(weeklyProductProvider);
+      await _client
+          .from('local_weekly_products')
+          .update({'is_active': false}).eq('is_active', true);
+      _ref.invalidate(weeklyProductsProvider); // ✅ corrigé (pluriel)
       return null;
     } catch (e) {
       return e.toString();
@@ -430,11 +502,24 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
         'is_active': isActive,
       };
       if (id == null) {
-        final maxRes = await _client.from('drc_portal_highlights').select('sort_order').order('sort_order', ascending: false).limit(1);
-        final next = ((maxRes as List).isEmpty ? 0 : (maxRes.first['sort_order'] as num).toInt() + 1);
-        await _client.from('drc_portal_highlights').insert({...payload, 'sort_order': next, 'created_by': _uid});
+        final maxRes = await _client
+            .from('drc_portal_highlights')
+            .select('sort_order')
+            .order('sort_order', ascending: false)
+            .limit(1);
+        final next = ((maxRes as List).isEmpty
+            ? 0
+            : (maxRes.first['sort_order'] as num).toInt() + 1);
+        await _client.from('drc_portal_highlights').insert({
+          ...payload,
+          'sort_order': next,
+          'created_by': _uid,
+        });
       } else {
-        await _client.from('drc_portal_highlights').update(payload).eq('id', id);
+        await _client
+            .from('drc_portal_highlights')
+            .update(payload)
+            .eq('id', id);
       }
       _ref.invalidate(drcPortalHighlightsProvider);
       state = const AsyncValue.data(null);
@@ -522,5 +607,5 @@ class LocalModerationNotifier extends StateNotifier<AsyncValue<void>> {
   }
 }
 
-final localModerationProvider =
-    StateNotifierProvider<LocalModerationNotifier, AsyncValue<void>>((ref) => LocalModerationNotifier(ref));
+final localModerationProvider = StateNotifierProvider<LocalModerationNotifier,
+    AsyncValue<void>>((ref) => LocalModerationNotifier(ref));
