@@ -15,6 +15,7 @@ import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
+import 'package:thix_id/services/chat/call_block_guard.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 import 'call/call_page.dart';
@@ -32,6 +33,7 @@ const int _kLoadMoreThrottleMs = 500;
 const int _kMaxNameLength = 80;
 const int _kMaxRoleLength = 60;
 const int _kMaxMessageLength = 500;
+const int _kCallBlockPollSeconds = 15;
 
 // ============================================================================
 // VALIDATORS
@@ -80,6 +82,21 @@ class _ConnValidators {
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+/// Traduction avec texte de repli si la clé est absente.
+String _trc(AppLocalizations l10n, String key, String fallback) {
+  final v = l10n.t(key);
+  return (v.isEmpty || v == key) ? fallback : v;
+}
+
+/// Message affiché quand les appels sont désactivés (vous ou le contact).
+String _blockedMessage(AppLocalizations l10n, CallBlockStatus st) {
+  return st.byMe
+      ? _trc(l10n, 'connections_calls_off_by_me',
+          'Vous avez désactivé les appels avec ce contact. Réactivez-les depuis la conversation.')
+      : _trc(l10n, 'connections_calls_off_by_other', 'Ce contact a désactivé les appels.');
+}
+
 Future<T> _connRetry<T>(
   Future<T> Function() fn, {
   required String label,
@@ -418,24 +435,54 @@ class ConnectionsPage extends ConsumerStatefulWidget {
   ConsumerState<ConnectionsPage> createState() => _ConnectionsPageState();
 }
 
-class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
+class _ConnectionsPageState extends ConsumerState<ConnectionsPage> with WidgetsBindingObserver {
   final _scroll = ScrollController();
   DateTime? _lastLoadMore;
   bool _isStartingChat = false;
+
+  // ✅ Appels désactivés (même logique que chat_screen, partagée)
+  final CallBlockGuard _blocks = CallBlockGuard.instance;
+  Timer? _blockPoll;
 
   @override
   void initState() {
     super.initState();
     debugPrint('[Connections] 📄 Page opened');
+    WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
+    _blocks.revision.addListener(_onBlocksChanged);
+    _blockPoll = Timer.periodic(
+      const Duration(seconds: _kCallBlockPollSeconds),
+      (_) => _refreshBlocks(),
+    );
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _blockPoll?.cancel();
+    _blocks.revision.removeListener(_onBlocksChanged);
     _scroll.removeListener(_onScroll);
     _scroll.dispose();
     debugPrint('[Connections] 👋 Page disposed');
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshBlocks();
+  }
+
+  void _onBlocksChanged() {
+    if (mounted) setState(() {});
+  }
+
+  /// Rafraîchit le statut « appels désactivés » de toutes les connexions chargées.
+  void _refreshBlocks([ConnectionsState? s]) {
+    if (!mounted) return;
+    final st = s ?? ref.read(connectionsProvider);
+    if (st.loading || st.connections.isEmpty) return;
+    unawaited(_blocks.refreshPeers(st.connections.map((c) => c.otherUserId)));
   }
 
   void _onScroll() {
@@ -453,7 +500,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // ✅ COMMUNICATION ACTIONS — CORRIGÉES AVEC NAVIGATION VERS CHAT
+  // ✅ COMMUNICATION ACTIONS
   // ══════════════════════════════════════════════════════════════════════════
 
   /// ✅ Ouvre directement la discussion (création si nécessaire + navigation)
@@ -494,7 +541,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
 
     try {
       debugPrint('[Connections] 💬 Opening/creating DM with $otherUserId');
-      
+
       // ✅ "Get or create" : renvoie la conv existante sinon la crée
       //    (RPC create_direct_conversation, idempotent)
       final conv = await _connRetry(
@@ -504,21 +551,25 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       );
 
       if (!mounted) return;
-      
+
       // ✅ Fermer le loader avant de naviguer
       Navigator.of(context).pop();
 
       if (conv.id.isNotEmpty) {
         debugPrint('[Connections] 💬 Conversation ready: ${conv.id}');
-        
-        // ✅ FIX : Route STANDALONE (hors StatefulShellRoute) + extra avec conversation complète
-        // Contourne le bug go_router : push() d'une sous-route de StatefulShellRoute
-        // depuis une page hors-shell rend un navigationShell VIDE (écran gris).
+
+        // Mémorise la conversation pour le contrôle des appels désactivés
+        _blocks.remember(otherUserId, conv.id);
+
+        // ✅ Route STANDALONE (hors StatefulShellRoute) + extra avec conversation complète
         final route = '/conversation/${conv.id}';
         debugPrint('[Connections] 🧭 Navigating to standalone route: $route');
-        
+
         try {
-          context.push(route, extra: conv);
+          // Au retour de la conversation : le statut des appels a pu changer
+          context.push(route, extra: conv).then((_) {
+            if (mounted) _refreshBlocks();
+          });
         } catch (e) {
           debugPrint('[Connections] ❌ Navigation failed: $e');
           _showError('Navigation impossible. Vérifiez que la route $route existe.');
@@ -538,7 +589,19 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     }
   }
 
-  void _startAudioCall(ConnectionView connection) {
+  /// ✅ Vérification FRAÎCHE côté serveur avant tout appel.
+  Future<bool> _callsAllowed(ConnectionView connection) async {
+    final l10n = AppLocalizations.of(context);
+    final st = await _blocks.check(connection.otherUserId);
+    if (!mounted) return false;
+    if (st.blocked) {
+      _showWarning(_blockedMessage(l10n, st));
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> _startAudioCall(ConnectionView connection) async {
     final l10n = AppLocalizations.of(context);
     final myId = Supabase.instance.client.auth.currentUser?.id;
     if (myId == null) {
@@ -551,6 +614,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       _showError(l10n.t('escalation_invalid_conversation'));
       return;
     }
+
+    if (!await _callsAllowed(connection)) return;
 
     HapticFeedback.mediumImpact();
     debugPrint('[Connections] 📞 Starting audio call to $calleeId');
@@ -570,7 +635,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
         context, MaterialPageRoute(builder: (_) => const CallPage()));
   }
 
-  void _startVideoCall(ConnectionView connection) {
+  Future<void> _startVideoCall(ConnectionView connection) async {
     final l10n = AppLocalizations.of(context);
     final myId = Supabase.instance.client.auth.currentUser?.id;
     if (myId == null) {
@@ -583,6 +648,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       _showError(l10n.t('escalation_invalid_conversation'));
       return;
     }
+
+    if (!await _callsAllowed(connection)) return;
 
     HapticFeedback.mediumImpact();
     debugPrint('[Connections] 📹 Starting video call to $calleeId');
@@ -808,8 +875,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
   // BOTTOM SHEET (ACTIONS MENU)
   // ══════════════════════════════════════════════════════════════════════════
 
-  void _showConnectionActions(ConnectionView connection) {
+  Future<void> _showConnectionActions(ConnectionView connection) async {
     HapticFeedback.selectionClick();
+    final peerId = connection.otherUserId;
+
+    // ✅ Statut frais (3 s max) pour ne jamais proposer un appel désactivé
+    final status = await _blocks
+        .check(peerId)
+        .timeout(const Duration(seconds: 3), onTimeout: () => _blocks.statusOf(peerId));
+    if (!mounted) return;
+
     final l10n = AppLocalizations.of(context);
 
     showModalBottomSheet(
@@ -818,6 +893,7 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
       isScrollControlled: true,
       builder: (ctx) => _ConnectionActionsSheet(
         connection: connection,
+        callsStatus: status,
         onMessage: () {
           Navigator.pop(ctx);
           _startChat(connection);
@@ -867,6 +943,23 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     );
   }
 
+  void _showWarning(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.phone_disabled_rounded,
+              color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(message)),
+        ]),
+        backgroundColor: ThixPolicy.warning,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
@@ -910,6 +1003,16 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(connectionsProvider);
     final notifier = ref.read(connectionsProvider.notifier);
+
+    // ✅ Rafraîchit le statut des appels dès que la liste des connexions change
+    ref.listen<ConnectionsState>(connectionsProvider, (prev, next) {
+      if (next.loading) return;
+      if (prev == null ||
+          prev.loading ||
+          prev.connections.length != next.connections.length) {
+        _refreshBlocks(next);
+      }
+    });
 
     // ✅ GARDE : utilisateur non authentifié
     final user = Supabase.instance.client.auth.currentUser;
@@ -1082,6 +1185,8 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> {
                               children: [
                                 _ConnectionItem(
                                   connection: c,
+                                  callsBlocked:
+                                      _blocks.statusOf(c.otherUserId).blocked,
                                   onTap: () => _showConnectionActions(c),
                                 ),
                                 if (!isLast)
@@ -1501,9 +1606,14 @@ class _SentRequestCard extends StatelessWidget {
 // ============================================================================
 class _ConnectionItem extends StatelessWidget {
   final ConnectionView connection;
+  final bool callsBlocked;
   final VoidCallback onTap;
 
-  const _ConnectionItem({required this.connection, required this.onTap});
+  const _ConnectionItem({
+    required this.connection,
+    required this.callsBlocked,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1583,17 +1693,29 @@ class _ConnectionItem extends StatelessWidget {
           style: ThixPolicy.captionStyle.copyWith(
               color: ThixPolicy.textMuted, fontSize: 13),
         ),
-        trailing: Semantics(
-          button: true,
-          label: l10n.t('more'),
-          child: IconButton(
-            icon: Icon(Icons.more_horiz_rounded,
-                color: ThixPolicy.textMuted),
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              onTap();
-            },
-          ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // ✅ Appels désactivés : icône discrète
+            if (callsBlocked)
+              Tooltip(
+                message: _trc(l10n, 'connections_calls_disabled', 'Appels désactivés'),
+                child: Icon(Icons.phone_disabled_rounded,
+                    size: 18, color: ThixPolicy.textMuted),
+              ),
+            Semantics(
+              button: true,
+              label: l10n.t('more'),
+              child: IconButton(
+                icon: Icon(Icons.more_horiz_rounded,
+                    color: ThixPolicy.textMuted),
+                onPressed: () {
+                  HapticFeedback.selectionClick();
+                  onTap();
+                },
+              ),
+            ),
+          ],
         ),
         onTap: () {
           HapticFeedback.selectionClick();
@@ -1609,6 +1731,7 @@ class _ConnectionItem extends StatelessWidget {
 // ============================================================================
 class _ConnectionActionsSheet extends StatelessWidget {
   final ConnectionView connection;
+  final CallBlockStatus callsStatus;
   final VoidCallback onMessage;
   final VoidCallback onAudioCall;
   final VoidCallback onVideoCall;
@@ -1619,6 +1742,7 @@ class _ConnectionActionsSheet extends StatelessWidget {
 
   const _ConnectionActionsSheet({
     required this.connection,
+    required this.callsStatus,
     required this.onMessage,
     required this.onAudioCall,
     required this.onVideoCall,
@@ -1731,39 +1855,84 @@ class _ConnectionActionsSheet extends StatelessWidget {
               ),
             ),
 
-            // Barre d'actions rapides
+            // ✅ Barre d'actions rapides — appels masqués si désactivés
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: _QuickActionButton(
-                      icon: Icons.chat_bubble_rounded,
-                      label: l10n.t('connections_message'),
-                      color: ThixPolicy.primary,
-                      onTap: onMessage,
+              child: callsStatus.blocked
+                  ? Column(
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: _QuickActionButton(
+                                icon: Icons.chat_bubble_rounded,
+                                label: l10n.t('connections_message'),
+                                color: ThixPolicy.primary,
+                                onTap: onMessage,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 12),
+                          decoration: BoxDecoration(
+                            color: ThixPolicy.surfaceSoft,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: ThixPolicy.border),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(Icons.phone_disabled_rounded,
+                                  size: 18, color: ThixPolicy.textMuted),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(
+                                  _blockedMessage(l10n, callsStatus),
+                                  style: ThixPolicy.captionStyle.copyWith(
+                                    color: ThixPolicy.textMuted,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.chat_bubble_rounded,
+                            label: l10n.t('connections_message'),
+                            color: ThixPolicy.primary,
+                            onTap: onMessage,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.call_rounded,
+                            label: l10n.t('connections_audio'),
+                            color: ThixPolicy.success,
+                            onTap: onAudioCall,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _QuickActionButton(
+                            icon: Icons.videocam_rounded,
+                            label: l10n.t('connections_video'),
+                            color: ThixPolicy.warning,
+                            onTap: onVideoCall,
+                          ),
+                        ),
+                      ],
                     ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _QuickActionButton(
-                      icon: Icons.call_rounded,
-                      label: l10n.t('connections_audio'),
-                      color: ThixPolicy.success,
-                      onTap: onAudioCall,
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: _QuickActionButton(
-                      icon: Icons.videocam_rounded,
-                      label: l10n.t('connections_video'),
-                      color: ThixPolicy.warning,
-                      onTap: onVideoCall,
-                    ),
-                  ),
-                ],
-              ),
             ),
 
             Padding(
