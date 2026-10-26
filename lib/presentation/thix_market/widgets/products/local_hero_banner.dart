@@ -316,7 +316,7 @@ class _HeroCard extends StatelessWidget {
                           child: SizedBox(width: 6, height: 6),
                         ),
                         SizedBox(width: 6),
-                        Text('MADE IN CONGO',
+                        Text('MADE IN DRC',
                             style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
                       ],
                     ),
