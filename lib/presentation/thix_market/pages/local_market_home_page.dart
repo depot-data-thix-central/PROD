@@ -1,10 +1,11 @@
 // lib/presentation/thix_market/pages/local_market_home_page.dart
 // ============================================================================
-// DRC PRODUCTS PORTAL — v4 « Modération & coopératives »
+// DRC PRODUCTS PORTAL — v4.1 « Modération & coopératives + UI Compacte »
 //  • ✅ Les 4 piliers fixes → CARTES AUTO-DÉFILENTES gérées par modérateur/admin
-//  • ✅ Bandeau « Produit de la semaine » (choisi par le modérateur)
+//  • ✅ Bandeau « Produit de la semaine » (multi-produits, style LocalProductCard)
 //  • ✅ Producteurs & coopératives = COOPÉRATIVES UNIQUEMENT
 //  • ✅ Nos Partenaires (DrcPartnersBand) avec logique complète conservée
+//  • ✅ Cartes portail réduites (84px) + Slogan compact (46px)
 //  • ✅ Design RDC strictement conservé
 // ============================================================================
 
@@ -83,7 +84,8 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     final covers = ref.watch(localSectorCoverProvider);
     final cooperativesAsync = ref.watch(localCooperativesProvider);
     final highlightsAsync = ref.watch(drcPortalHighlightsProvider);
-    final weeklyAsync = ref.watch(weeklyProductProvider);
+    // ✅ FIX: Utilisation du provider liste (multi-produits)
+    final weeklyAsync = ref.watch(weeklyProductsProvider);
     final selectedSector = ref.watch(localSectorFilterProvider);
     final hasMore = ref.read(localProductsProvider.notifier).hasMore;
 
@@ -98,12 +100,12 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
         onRefresh: () async {
           HapticFeedback.mediumImpact();
           invalidateLocalProviders(ref);
-          // ✅ Invalidation complète de la logique partenaires & médias
           ref.invalidate(drcPortalMediaProvider(kDrcKindLogo));
           ref.invalidate(drcPortalMediaProvider(kDrcKindPartner));
           ref.invalidate(drcPortalEditorProvider);
           ref.invalidate(drcPortalHighlightsProvider);
-          ref.invalidate(weeklyProductProvider);
+          // ✅ FIX: Invalidation du bon provider
+          ref.invalidate(weeklyProductsProvider);
           ref.invalidate(localCooperativesProvider);
           await ref.read(localProductsProvider.notifier).refresh();
         },
@@ -117,17 +119,16 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             
             // ✅ NOS PARTENAIRES — Logique complète (widget externe DrcPartnersBand)
-            // Ce widget gère internement : affichage logos, défilement auto, 
-            // bouton ajout admin/modérateur, et liaison avec drcPortalMediaProvider
             SliverToBoxAdapter(child: DrcPartnersBand(lang: lang)),
             
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             // ✅ CARTES AUTO-DÉFILENTES (remplacent les 4 piliers fixes)
             SliverToBoxAdapter(child: _buildHighlights(highlightsAsync, lang)),
             const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            // ✅ SLOGAN COMPACT
             SliverToBoxAdapter(child: _buildSlogan()),
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
-            // ✅ PRODUIT DE LA SEMAINE
+            // ✅ PRODUIT DE LA SEMAINE (Multi + LocalProductCard style)
             SliverToBoxAdapter(child: _buildWeekly(weeklyAsync)),
             const SliverToBoxAdapter(child: SizedBox(height: 24)),
             SliverToBoxAdapter(child: _buildProducers(cooperativesAsync)),
@@ -256,7 +257,6 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
           ),
         ),
         const SizedBox(width: 12),
-        // ✅ LOGO OFFICIEL (géré par DrcPortalLogo + drcPortalMediaProvider)
         const Expanded(child: Align(alignment: Alignment.centerLeft, child: DrcPortalLogo())),
         const SizedBox(width: 12),
         GestureDetector(
@@ -485,11 +485,11 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-  // ═══════════════════ ✅ CARTES AUTO-DÉFILENTES (modérées) ═══════════════════
+  // ═══════════════════ ✅ CARTES AUTO-DÉFILENTES (modérées) — HAUTEUR RÉDUITE ═══════════════════
   Widget _buildHighlights(AsyncValue<List<PortalHighlight>> async, String lang) {
     return async.when(
       loading: () => const SizedBox(
-        height: 118,
+        height: 84,
         child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
       ),
       error: (_, __) => const SizedBox.shrink(),
@@ -500,133 +500,136 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
     );
   }
 
-// ═══════════════════ ✅ PRODUIT DE LA SEMAINE — carte identique à LocalProductCard, réduite
-Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
-  return async.when(
-    loading: () => const SizedBox.shrink(),
-    error: (_, __) => const SizedBox.shrink(),
-    data: (products) {
-      if (products.isEmpty) return const SizedBox.shrink();
+  // ═══════════════════ ✅ PRODUIT DE LA SEMAINE — Multi + Style LocalProductCard ═══════════════════
+  Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
+    return async.when(
+      loading: () => const SizedBox.shrink(),
+      error: (_, __) => const SizedBox.shrink(),
+      data: (products) {
+        if (products.isEmpty) return const SizedBox.shrink();
 
-      // ✅ Affiche jusqu'à 2 produits (modérateur peut en choisir plusieurs)
-      final displayed = products.take(2).toList();
+        // ✅ Affiche jusqu'à 3 produits (modérateur peut en choisir plusieurs)
+        final displayed = products.take(3).toList();
 
-      return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                const Icon(Icons.star_rounded, color: kDrcYellow, size: 20),
-                const SizedBox(width: 8),
-                Text(
-                  _t('Produit de la semaine', 'Product of the week', 'Bidhaa ya wiki'),
-                  style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: kDrcInk),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            SizedBox(
-              height: 170, // 2 × (80 + 10 marge) = 180 → on garde 170 pour safety
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                padding: const EdgeInsets.symmetric(horizontal: 4),
-                itemCount: displayed.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) {
-                  final p = displayed[i];
-                  return SizedBox(
-                    width: 160,
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(14),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: kDrcLine),
-                          boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // ✅ Identique à LocalProductCard : image + badge "100% local"
-                            SizedBox(
-                              height: 92,
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  if (p['image_url'] != null && p['image_url'].toString().isNotEmpty)
-                                    CachedNetworkImage(
-                                      imageUrl: p['image_url'].toString(),
-                                      fit: BoxFit.cover,
-                                      errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
-                                    )
-                                  else
-                                    const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
-                                  Positioned(
-                                    top: 8,
-                                    left: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(color: kDrcGreen, borderRadius: BorderRadius.circular(6)),
-                                      child: const Text('100% LOCAL', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
-                                    ),
-                                  ),
-                                  Positioned(
-                                    bottom: 8,
-                                    right: 8,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                      decoration: BoxDecoration(color: kDrcBlue, borderRadius: BorderRadius.circular(6)),
-                                      child: Text(
-                                        '${p['price']?.toString() ?? '0'} ${_t('FC', 'FC', 'FC')}',
-                                        style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800),
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.star_rounded, color: kDrcYellow, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    _t('Produits de la semaine', 'Products of the week', 'Bidhaa za wiki'),
+                    style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 14, color: kDrcInk),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 170,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  itemCount: displayed.length,
+                  separatorBuilder: (_, __) => const SizedBox(width: 10),
+                  itemBuilder: (_, i) {
+                    final p = displayed[i];
+                    return SizedBox(
+                      width: 160,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(color: kDrcLine),
+                            boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // ✅ Identique à LocalProductCard : image + badge "100% local"
+                              SizedBox(
+                                height: 92,
+                                child: Stack(
+                                  fit: StackFit.expand,
+                                  children: [
+                                    if (p['image_url'] != null && p['image_url'].toString().isNotEmpty)
+                                      CachedNetworkImage(
+                                        imageUrl: p['image_url'].toString(),
+                                        fit: BoxFit.cover,
+                                        errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
+                                      )
+                                    else
+                                      const Center(child: Icon(Icons.image_outlined, color: kDrcSub, size: 24)),
+                                    Positioned(
+                                      top: 8,
+                                      left: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        // ✅ FIX: kDrcGreen → kLocalGreen2
+                                        decoration: BoxDecoration(color: kLocalGreen2, borderRadius: BorderRadius.circular(6)),
+                                        child: const Text('100% LOCAL', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
                                       ),
                                     ),
-                                  ),
-                                ],
+                                    Positioned(
+                                      bottom: 8,
+                                      right: 8,
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(color: kDrcBlue, borderRadius: BorderRadius.circular(6)),
+                                        child: Text(
+                                          '${p['price']?.toString() ?? '0'} ${_t('FC', 'FC', 'FC')}',
+                                          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w800),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 8),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8),
-                              child: Text(
-                                p['title']?.toString() ?? '',
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: kDrcInk),
+                              const SizedBox(height: 8),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8),
+                                child: Text(
+                                  p['title']?.toString() ?? '',
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: kDrcInk),
+                                ),
                               ),
-                            ),
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              child: Text(
-                                p['shop']?['name']?.toString() ?? '',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(fontSize: 9.5, color: kDrcSub),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                child: Text(
+                                  p['shop']?['name']?.toString() ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(fontSize: 9.5, color: kDrcSub),
+                                ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
-          ],
-        ),
-      );
-    },
-  );
-}
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // ═══════════════════ ✅ SLOGAN COMPACT (hauteur réduite) ═══════════════════
   Widget _buildSlogan() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         child: Container(
           decoration: const BoxDecoration(
             gradient: LinearGradient(begin: Alignment.centerLeft, end: Alignment.centerRight, colors: [kDrcBlueDeep, kDrcBlue]),
@@ -634,8 +637,8 @@ Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
           child: Row(
             children: [
               const SizedBox(
-                width: 6,
-                height: 54,
+                width: 5,
+                height: 46, // ✅ Réduit de 54 → 46 px
                 child: Column(
                   children: [
                     Expanded(child: ColoredBox(color: kDrcYellow, child: SizedBox.expand())),
@@ -643,20 +646,20 @@ Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
                   ],
                 ),
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  padding: const EdgeInsets.symmetric(vertical: 8), // ✅ Réduit de 12 → 8
                   child: Text(
                     _t('Consommons congolais, valorisons notre pays !', 'Let us consume Congolese, let us value our country!',
                         'Tutumie bidhaa za Kongo, tuthamini nchi yetu!'),
-                    style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, fontStyle: FontStyle.italic, height: 1.25),
+                    style: const TextStyle(color: Colors.white, fontSize: 11.5, fontWeight: FontWeight.w800, fontStyle: FontStyle.italic, height: 1.2),
                   ),
                 ),
               ),
               const Padding(
-                padding: EdgeInsets.symmetric(horizontal: 14),
-                child: Icon(Icons.favorite_rounded, color: kDrcYellow, size: 22),
+                padding: EdgeInsets.symmetric(horizontal: 12),
+                child: Icon(Icons.favorite_rounded, color: kDrcYellow, size: 18), // ✅ Icône réduite
               ),
             ],
           ),
@@ -913,7 +916,7 @@ Widget _buildWeekly(AsyncValue<List<Map<String, dynamic>>> async) {
 }
 
 // ============================================================================
-// ✅ CARROUSEL AUTO-DÉFILENT DES CARTES DU PORTAIL (4 s)
+// ✅ CARROUSEL AUTO-DÉFILENT DES CARTES DU PORTAIL — HAUTEUR RÉDUITE (84px)
 // ============================================================================
 class _HighlightsCarousel extends StatefulWidget {
   final List<PortalHighlight> items;
@@ -958,7 +961,7 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 92, // ✅ Réduit de 118 → 92 px
+      height: 84, // ✅ Réduit sensiblement : 118 → 84 px
       child: PageView.builder(
         controller: _ctrl,
         itemCount: widget.items.length,
@@ -967,23 +970,23 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(10), // ✅ Padding réduit
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(18), // ✅ gardé, mais hauteur réduite
+                borderRadius: BorderRadius.circular(16),
                 border: Border.all(color: kDrcLine),
-                boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
+                boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 6, offset: const Offset(0, 2))],
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 38,
-                    height: 38,
+                    width: 34, // ✅ Icône réduite : 38 → 34
+                    height: 34,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [h.color.withOpacity(0.85), h.color]),
                     ),
-                    child: Icon(portalHighlightIcon(h.icon), size: 18, color: Colors.white),
+                    child: Icon(portalHighlightIcon(h.icon), size: 16, color: Colors.white),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -995,15 +998,15 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
                           h.title(widget.lang),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: kDrcInk, height: 1.2),
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: kDrcInk, height: 1.15),
                         ),
                         if (h.subtitle(widget.lang).isNotEmpty) ...[
-                          const SizedBox(height: 2),
+                          const SizedBox(height: 1),
                           Text(
                             h.subtitle(widget.lang),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 9.5, color: kDrcSub, height: 1.15),
+                            style: const TextStyle(fontSize: 9, color: kDrcSub, height: 1.1),
                           ),
                         ],
                       ],
