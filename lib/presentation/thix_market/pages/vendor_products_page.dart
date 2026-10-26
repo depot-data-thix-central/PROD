@@ -59,7 +59,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       if (widget.shopId != null && widget.shopId!.isNotEmpty) {
         shopIds = [widget.shopId!];
       } else {
-        // Cas 2 : charger TOUS les shops de l'utilisateur
+        // Cas 2 : charger TOUS les shops de l'utilisateur (comme le dashboard)
         final shopsRes = await client
             .from('shops')
             .select('id')
@@ -208,8 +208,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: Colors.red),
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
                       const SizedBox(height: 16),
                       Text(_error!, style: const TextStyle(color: Colors.red)),
                       const SizedBox(height: 16),
@@ -226,9 +225,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            widget.localOnly
-                                ? Icons.agriculture
-                                : Icons.inventory_2,
+                            widget.localOnly ? Icons.agriculture : Icons.inventory_2,
                             size: 64,
                             color: Colors.grey[400],
                           ),
@@ -245,8 +242,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _t('Créez votre premier produit',
-                                'Create your first product'),
+                            _t('Créez votre premier produit', 'Create your first product'),
                             style: TextStyle(color: Colors.grey[500]),
                           ),
                         ],
@@ -269,8 +265,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                                 context.push('/market/product/$id/edit');
                               }
                             },
-                            onDelete: () =>
-                                _deleteProduct(product['id']?.toString() ?? ''),
+                            onDelete: () => _deleteProduct(product['id']?.toString() ?? ''),
                           );
                         },
                       ),
@@ -309,6 +304,7 @@ class _ProductCard extends StatelessWidget {
 
     Color statusColor;
     String statusLabel;
+
     switch (status) {
       case 'active':
         statusColor = Colors.green;
@@ -345,8 +341,7 @@ class _ProductCard extends StatelessWidget {
           Stack(
             children: [
               ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
                 child: Container(
                   height: 120,
                   width: double.infinity,
@@ -355,8 +350,7 @@ class _ProductCard extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) =>
-                              const Icon(Icons.image, size: 40),
+                          errorWidget: (_, __, ___) => const Icon(Icons.image, size: 40),
                         )
                       : const Icon(Icons.image, size: 40),
                 ),
@@ -366,8 +360,7 @@ class _ProductCard extends StatelessWidget {
                   top: 8,
                   left: 8,
                   child: Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: kLocalGreen,
                       borderRadius: BorderRadius.circular(6),
@@ -386,8 +379,7 @@ class _ProductCard extends StatelessWidget {
                 top: 8,
                 right: 8,
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(6),
