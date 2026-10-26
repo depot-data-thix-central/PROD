@@ -571,7 +571,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                                       child: Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                         // ✅ FIX: kDrcGreen → kLocalGreen2
-                                        decoration: BoxDecoration(color: kLocalGreen2, borderRadius: BorderRadius.circular(6)),
+                                        decoration: BoxDecoration(color: const Color(0xFF149A4A), borderRadius: BorderRadius.circular(6)),
                                         child: const Text('100% LOCAL', style: TextStyle(color: Colors.white, fontSize: 7, fontWeight: FontWeight.w800)),
                                       ),
                                     ),
