@@ -153,7 +153,7 @@ import 'package:thix_id/presentation/thix_market/pages/local_market_home_page.da
 import 'package:thix_id/presentation/thix_market/pages/create_local_product_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/local_producers_page.dart';
 import 'package:thix_id/presentation/thix_market/pages/local_vendor_space_page.dart';
-import 'package:thix_id/presentation/thix_market/pages/vendor_products_page.dart
+import 'package:thix_id/presentation/thix_market/pages/vendor_products_page.dart';
 
 
 // === THIX SANTÉ ===
