@@ -1,4 +1,3 @@
-
 // ============================================================================
 // ESPACE PRODUCTEUR & MODÉRATION
 //  • Producteur : crée ses produits locaux (toujours PENDING) + suit ses statuts
@@ -292,18 +291,23 @@ class _ValidationQueueSection extends ConsumerWidget {
 }
 
 // ============================================================================
-// PRODUIT DE LA SEMAINE (modérateur)
+// ✅ PRODUIT DE LA SEMAINE (modérateur) — CORRIGÉ POUR LISTE
 // ============================================================================
 class _WeeklySection extends ConsumerWidget {
   const _WeeklySection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // ✅ weeklyProductsProvider retourne maintenant une List<Map>
     final async = ref.watch(weeklyProductsProvider);
+    
     return async.when(
       loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
       error: (_, __) => const SizedBox.shrink(),
-      data: (p) {
+      data: (products) {
+        // ✅ On prend le premier produit de la liste pour l'affichage résumé
+        final p = products.isNotEmpty ? products.first : null;
+        
         return Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: kDrcYellow.withOpacity(0.5))),
@@ -318,6 +322,11 @@ class _WeeklySection extends ConsumerWidget {
                           Text(p['title']?.toString() ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, color: kDrcInk)),
                           const SizedBox(height: 2),
                           Text(p['shop']?['name']?.toString() ?? '', style: const TextStyle(fontSize: 10.5, color: kDrcSub)),
+                          if (products.length > 1)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text('+${products.length - 1} autre(s)', style: const TextStyle(fontSize: 9, color: kDrcBlue, fontWeight: FontWeight.w700)),
+                            ),
                         ],
                       ),
               ),
@@ -327,7 +336,7 @@ class _WeeklySection extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(color: kDrcBlue, borderRadius: BorderRadius.circular(10)),
-                  child: const Text('Choisir', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
+                  child: const Text('Gérer', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11)),
                 ),
               ),
             ],
@@ -344,27 +353,53 @@ class _WeeklyPickerSheet extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(activeLocalProductsForModProvider);
+    // ✅ Récupérer les IDs déjà sélectionnés pour afficher un check
+    final currentWeekly = ref.watch(weeklyProductsProvider).valueOrNull ?? [];
+    final selectedIds = currentWeekly.map((e) => e['id']?.toString()).toSet();
+
     return Container(
       constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-      child: async.when(
-        loading: () => const Center(child: CircularProgressIndicator(color: kDrcBlue)),
-        error: (_, __) => const Center(child: Text('Erreur')),
-        data: (list) => ListView(
-          shrinkWrap: true,
-          children: list.map((p) {
-            return ListTile(
-              onTap: () async {
-                Navigator.pop(context);
-                await ref.read(localModerationProvider.notifier).setWeekly(p['id'].toString());
-              },
-              leading: const Icon(Icons.star_outline_rounded, color: kDrcYellow),
-              title: Text(p['title']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-              subtitle: Text(p['shop']?['name']?.toString() ?? '', style: const TextStyle(fontSize: 10.5)),
-            );
-          }).toList(),
-        ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: kDrcLine, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          const Text('Sélectionner les produits de la semaine', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: kDrcInk)),
+          const SizedBox(height: 4),
+          const Text('Max 5 produits. Les anciens seront remplacés.', style: TextStyle(fontSize: 11, color: kDrcSub)),
+          const SizedBox(height: 16),
+          Expanded(
+            child: async.when(
+              loading: () => const Center(child: CircularProgressIndicator(color: kDrcBlue)),
+              error: (_, __) => const Center(child: Text('Erreur')),
+              data: (list) => ListView(
+                shrinkWrap: true,
+                children: list.map((p) {
+                  final id = p['id']?.toString() ?? '';
+                  final isSelected = selectedIds.contains(id);
+                  return ListTile(
+                    onTap: () async {
+                      Navigator.pop(context);
+                      // ✅ Pour simplifier l'UX, on remplace la sélection actuelle 
+                      // par ce seul produit. Pour du multi-select complexe, 
+                      // il faudrait un état local avec checkboxes + bouton valider.
+                      await ref.read(localModerationProvider.notifier).setWeekly(id);
+                    },
+                    leading: Icon(
+                      isSelected ? Icons.star_rounded : Icons.star_outline_rounded, 
+                      color: isSelected ? kDrcYellow : kDrcSub
+                    ),
+                    title: Text(p['title']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
+                    subtitle: Text(p['shop']?['name']?.toString() ?? '', style: const TextStyle(fontSize: 10.5)),
+                    trailing: isSelected ? const Icon(Icons.check, color: kDrcBlue, size: 20) : null,
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
