@@ -212,7 +212,7 @@ class _LocalMarketHomePageState extends ConsumerState<LocalMarketHomePage> {
                             text: _t('Les produits\n', 'The products\n', 'Bidhaa za\n'),
                             style: const TextStyle(color: Colors.white),
                           ),
-                          const TextSpan(text: 'Made in Congo', style: TextStyle(color: kDrcYellow)),
+                          const TextSpan(text: 'Made in DRC', style: TextStyle(color: kDrcYellow)),
                         ],
                       ),
                       style: const TextStyle(fontSize: 27, fontWeight: FontWeight.w900, height: 1.08, letterSpacing: -0.8),
