@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+
+// ✅ FIX 1: Ajout de l'import manquant pour ThixPolicy
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+
 import '../core/local_sectors.dart';
 import '../providers/local_moderation_providers.dart';
 
@@ -41,7 +45,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
     try {
       final client = Supabase.instance.client;
       final uid = client.auth.currentUser?.id;
-      
+
       if (uid == null) {
         setState(() {
           _error = 'Utilisateur non authentifié';
@@ -51,7 +55,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       }
 
       String? shopId = widget.shopId;
-      
+
       // Si pas de shopId fourni, récupérer la première boutique
       if (shopId == null) {
         final shopsRes = await client
@@ -71,10 +75,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       }
 
       // Construire la requête
-      var query = client
-          .from('products')
-          .select('*')
-          .eq('shop_id', shopId!);
+      var query = client.from('products').select('*').eq('shop_id', shopId!);
 
       // Filtrer produits locaux si demandé
       if (widget.localOnly) {
@@ -82,7 +83,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       }
 
       final res = await query.order('created_at', ascending: false);
-      
+
       setState(() {
         _products = List<Map<String, dynamic>>.from(res as List);
         _loading = false;
@@ -122,9 +123,9 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
           .from('products')
           .delete()
           .eq('id', productId);
-      
+
       _loadProducts(); // Recharger la liste
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
@@ -159,7 +160,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.localOnly 
+              widget.localOnly
                   ? _t('Produits locaux', 'Local products')
                   : _t('Tous les produits', 'All products'),
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
@@ -170,6 +171,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
             ),
           ],
         ),
+        // ✅ FIX 2: ThixPolicy est maintenant reconnu grâce à l'import
         backgroundColor: widget.localOnly ? kLocalGreen : ThixPolicy.primary,
         actions: [
           IconButton(
@@ -189,7 +191,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
         },
         backgroundColor: widget.localOnly ? kLocalGreen : ThixPolicy.primary,
         icon: const Icon(Icons.add),
-        label: Text(widget.localOnly 
+        label: Text(widget.localOnly
             ? _t('Produit local', 'Local product')
             : _t('Produit', 'Product')),
       ),
@@ -200,7 +202,8 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const Icon(Icons.error_outline,
+                          size: 48, color: Colors.red),
                       const SizedBox(height: 16),
                       Text(_error!, style: const TextStyle(color: Colors.red)),
                       const SizedBox(height: 16),
@@ -217,7 +220,9 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Icon(
-                            widget.localOnly ? Icons.agriculture : Icons.inventory_2,
+                            widget.localOnly
+                                ? Icons.agriculture
+                                : Icons.inventory_2,
                             size: 64,
                             color: Colors.grey[400],
                           ),
@@ -234,7 +239,8 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            _t('Créez votre premier produit', 'Create your first product'),
+                            _t('Créez votre premier produit',
+                                'Create your first product'),
                             style: TextStyle(color: Colors.grey[500]),
                           ),
                         ],
@@ -257,7 +263,8 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                                 context.push('/market/product/$id/edit');
                               }
                             },
-                            onDelete: () => _deleteProduct(product['id']?.toString() ?? ''),
+                            onDelete: () =>
+                                _deleteProduct(product['id']?.toString() ?? ''),
                           );
                         },
                       ),
@@ -279,8 +286,9 @@ class _ProductCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  String _t(String fr, String en) {
-    final lang = Localizations.localeOf(BuildContext.current).languageCode;
+  // ✅ FIX 3: Remplacement de BuildContext.current par un paramètre context
+  String _t(BuildContext context, String fr, String en) {
+    final lang = Localizations.localeOf(context).languageCode;
     return lang == 'fr' ? fr : en;
   }
 
@@ -299,19 +307,19 @@ class _ProductCard extends StatelessWidget {
     switch (status) {
       case 'active':
         statusColor = Colors.green;
-        statusLabel = _t('Actif', 'Active');
+        statusLabel = _t(context, 'Actif', 'Active');
         break;
       case 'pending':
         statusColor = Colors.orange;
-        statusLabel = _t('En attente', 'Pending');
+        statusLabel = _t(context, 'En attente', 'Pending');
         break;
       case 'rejected':
         statusColor = Colors.red;
-        statusLabel = _t('Refusé', 'Rejected');
+        statusLabel = _t(context, 'Refusé', 'Rejected');
         break;
       default:
         statusColor = Colors.grey;
-        statusLabel = _t('Brouillon', 'Draft');
+        statusLabel = _t(context, 'Brouillon', 'Draft');
     }
 
     return Container(
@@ -333,7 +341,8 @@ class _ProductCard extends StatelessWidget {
           Stack(
             children: [
               ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(12)),
                 child: Container(
                   height: 120,
                   width: double.infinity,
@@ -342,7 +351,8 @@ class _ProductCard extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: imageUrl,
                           fit: BoxFit.cover,
-                          errorWidget: (_, __, ___) => const Icon(Icons.image, size: 40),
+                          errorWidget: (_, __, ___) =>
+                              const Icon(Icons.image, size: 40),
                         )
                       : const Icon(Icons.image, size: 40),
                 ),
@@ -352,7 +362,8 @@ class _ProductCard extends StatelessWidget {
                   top: 8,
                   left: 8,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: kLocalGreen,
                       borderRadius: BorderRadius.circular(6),
@@ -371,7 +382,8 @@ class _ProductCard extends StatelessWidget {
                 top: 8,
                 right: 8,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: statusColor.withOpacity(0.9),
                     borderRadius: BorderRadius.circular(6),
@@ -388,7 +400,7 @@ class _ProductCard extends StatelessWidget {
               ),
             ],
           ),
-          
+
           // Contenu
           Padding(
             padding: const EdgeInsets.all(12),
@@ -422,11 +434,12 @@ class _ProductCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
+                        // ✅ FIX 4: ThixPolicy est maintenant reconnu
                         color: isLocal ? kLocalGreen : ThixPolicy.primary,
                       ),
                     ),
                     Text(
-                      _t('Stock: $stock', 'Stock: $stock'),
+                      _t(context, 'Stock: $stock', 'Stock: $stock'),
                       style: TextStyle(
                         fontSize: 12,
                         color: stock > 0 ? Colors.green[700] : Colors.red[700],
@@ -442,8 +455,9 @@ class _ProductCard extends StatelessWidget {
                       child: OutlinedButton.icon(
                         onPressed: onEdit,
                         icon: const Icon(Icons.edit, size: 16),
-                        label: Text(_t('Modifier', 'Edit')),
+                        label: Text(_t(context, 'Modifier', 'Edit')),
                         style: OutlinedButton.styleFrom(
+                          // ✅ FIX 5: ThixPolicy est maintenant reconnu
                           foregroundColor: ThixPolicy.primary,
                         ),
                       ),
@@ -452,7 +466,7 @@ class _ProductCard extends StatelessWidget {
                     IconButton(
                       onPressed: onDelete,
                       icon: const Icon(Icons.delete_outline, color: Colors.red),
-                      tooltip: _t('Supprimer', 'Delete'),
+                      tooltip: _t(context, 'Supprimer', 'Delete'),
                     ),
                   ],
                 ),
