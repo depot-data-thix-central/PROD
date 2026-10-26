@@ -54,30 +54,40 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
         return;
       }
 
-      String? shopId = widget.shopId;
+      List<String> shopIds = [];
 
-      // Si pas de shopId fourni, récupérer la première boutique
-      if (shopId == null) {
+      // Cas 1 : un shopId précis a été passé → on charge seulement ce shop
+      if (widget.shopId != null && widget.shopId!.isNotEmpty) {
+        shopIds = [widget.shopId!];
+      } else {
+        // Cas 2 : aucun shopId → on charge TOUS les shops de l'utilisateur
+        // (comme le fait le dashboard pour les KPIs)
         final shopsRes = await client
             .from('shops')
             .select('id')
-            .eq('owner_id', uid)
-            .limit(1);
-        final shops = List<Map<String, dynamic>>.from(shopsRes as List);
-        if (shops.isEmpty) {
-          setState(() {
-            _error = 'Aucune boutique trouvée';
-            _loading = false;
-          });
-          return;
-        }
-        shopId = shops.first['id']?.toString();
+            .eq('owner_id', uid);
+
+        shopIds = (shopsRes as List)
+            .map((s) => (s as Map)['id']?.toString())
+            .whereType<String>()
+            .toList();
       }
 
-      // Construire la requête
-      var query = client.from('products').select('*').eq('shop_id', shopId!);
+      if (shopIds.isEmpty) {
+        setState(() {
+          _error = 'Aucune boutique trouvée';
+          _loading = false;
+        });
+        return;
+      }
 
-      // Filtrer produits locaux si demandé
+      // Requête multi-shops
+      var query = client
+          .from('products')
+          .select('*')
+          .inFilter('shop_id', shopIds);
+
+      // Filtre produits locaux si demandé
       if (widget.localOnly) {
         query = query.eq('is_local', true);
       }
@@ -166,7 +176,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
             Text(
-              '${_products.length} produit${_products.length > 1 ? 's' : ''}',
+              '\( {_products.length} produit \){_products.length > 1 ? 's' : ''}',
               style: const TextStyle(fontSize: 11, color: Colors.white70),
             ),
           ],
