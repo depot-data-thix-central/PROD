@@ -1,9 +1,10 @@
 // lib/presentation/thix_market/widgets/products/local_product_card.dart
 // ============================================================================
-// CARTE PRODUIT LOCAL — affiche TOUT pour un produit local
+// CARTE PRODUIT « MADE IN CONGO » — DRC Products Portal
 //  • Secteur (badge coloré) • Producteur / coopérative • Terroir + drapeau
 //  • Labels / certifications • Prix converti par unité • Périssable / expiration
-//  • Stock • Note • Wishlist • Ribbon "100% LOCAL"
+//  • Stock • Note • Wishlist • Ribbon « MADE IN CONGO » + filet tricolore
+//  • Couleurs du drapeau de la RDC (bleu, jaune, rouge) — plus de vert
 // ============================================================================
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -16,6 +17,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import '../../core/african_countries.dart';
 import '../../core/currency_service.dart';
+import '../../core/drc_portal_theme.dart';
 import '../../core/local_sectors.dart';
 import '../../providers/currency_provider.dart';
 import 'wishlist_button.dart';
@@ -142,9 +144,11 @@ class LocalProductCard extends ConsumerWidget {
             height: height,
             decoration: BoxDecoration(
               color: ThixPolicy.card,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: ThixPolicy.border.withOpacity(0.7)),
-              boxShadow: ThixPolicy.shadowSoft(opacity: 0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: kDrcLine),
+              boxShadow: [
+                BoxShadow(color: kDrcBlueDeep.withOpacity(0.07), blurRadius: 12, offset: const Offset(0, 5)),
+              ],
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -152,26 +156,28 @@ class LocalProductCard extends ConsumerWidget {
                 // ─────────── IMAGE + BADGES ───────────
                 Expanded(
                   child: ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
                     child: Stack(
                       fit: StackFit.expand,
                       children: [
                         img == null
                             ? Container(
-                                color: kLocalGreenSoft,
-                                child: Icon(sector?.icon ?? Icons.agriculture_rounded,
-                                    color: kLocalGreen.withOpacity(0.5), size: 34),
+                                color: kDrcSoft,
+                                child: Icon(sector?.icon ?? Icons.public_rounded,
+                                    color: kDrcBlue.withOpacity(0.5), size: 34),
                               )
                             : CachedNetworkImage(
                                 imageUrl: img,
                                 fit: BoxFit.cover,
                                 placeholder: (_, __) => const Center(
-                                    child: SizedBox(width: 18, height: 18,
-                                        child: CircularProgressIndicator(strokeWidth: 2, color: kLocalGreen))),
+                                    child: SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
                                 errorWidget: (_, __, ___) => Container(
-                                    color: kLocalGreenSoft,
-                                    child: Icon(sector?.icon ?? Icons.agriculture_rounded,
-                                        color: kLocalGreen.withOpacity(0.5), size: 34)),
+                                    color: kDrcSoft,
+                                    child: Icon(sector?.icon ?? Icons.public_rounded,
+                                        color: kDrcBlue.withOpacity(0.5), size: 34)),
                               ),
 
                         if (isOut || isExpired)
@@ -233,23 +239,24 @@ class LocalProductCard extends ConsumerWidget {
                             ),
                           ),
 
-                        // Ribbon 100% LOCAL (bas gauche)
+                        // Ribbon MADE IN CONGO (bas gauche)
                         Positioned(
-                          bottom: 6,
+                          bottom: 9,
                           left: 6,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [kLocalGreen, kLocalGreenDeep]),
+                              gradient: const LinearGradient(colors: [kDrcBlueDeep, kDrcBlue]),
                               borderRadius: BorderRadius.circular(6),
+                              boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.35), blurRadius: 4, offset: const Offset(0, 1))],
                             ),
                             child: const Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.verified_rounded, size: 9, color: Colors.white),
+                                Icon(Icons.verified_rounded, size: 9, color: kDrcYellow),
                                 SizedBox(width: 3),
-                                Text('100% LOCAL',
-                                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
+                                Text('MADE IN CONGO',
+                                    style: TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
                               ],
                             ),
                           ),
@@ -258,7 +265,7 @@ class LocalProductCard extends ConsumerWidget {
                         // Chip expiration (bas droite)
                         if (perishable && daysLeft != null && !isExpired)
                           Positioned(
-                            bottom: 6,
+                            bottom: 9,
                             right: 6,
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
@@ -272,6 +279,9 @@ class LocalProductCard extends ConsumerWidget {
                               ),
                             ),
                           ),
+
+                        // Filet tricolore (bas de la photo)
+                        const Positioned(left: 0, right: 0, bottom: 0, child: DrcTricolorStripe(height: 3)),
                       ],
                     ),
                   ),
@@ -279,7 +289,7 @@ class LocalProductCard extends ConsumerWidget {
 
                 // ─────────── INFOS ───────────
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+                  padding: const EdgeInsets.fromLTRB(9, 7, 9, 9),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisSize: MainAxisSize.min,
@@ -289,7 +299,7 @@ class LocalProductCard extends ConsumerWidget {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: ThixPolicy.labelStyle.copyWith(
-                            fontWeight: ThixPolicy.semiBold, fontSize: 11.5, color: ThixPolicy.textMain, height: 1.2),
+                            fontWeight: ThixPolicy.semiBold, fontSize: 11.5, color: kDrcInk, height: 1.2),
                       ),
 
                       // Producteur / coopérative (fallback boutique)
@@ -297,7 +307,7 @@ class LocalProductCard extends ConsumerWidget {
                         const SizedBox(height: 3),
                         Row(
                           children: [
-                            const Icon(Icons.handshake_rounded, size: 10, color: kLocalGreen),
+                            const Icon(Icons.handshake_rounded, size: 10, color: kDrcBlue),
                             const SizedBox(width: 3),
                             Expanded(
                               child: Text(
@@ -305,7 +315,7 @@ class LocalProductCard extends ConsumerWidget {
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                                 style: ThixPolicy.microStyle.copyWith(
-                                    color: kLocalGreen, fontSize: 9.5, fontWeight: ThixPolicy.semiBold),
+                                    color: kDrcBlue, fontSize: 9.5, fontWeight: ThixPolicy.semiBold),
                               ),
                             ),
                           ],
@@ -316,13 +326,13 @@ class LocalProductCard extends ConsumerWidget {
                       const SizedBox(height: 2),
                       Row(
                         children: [
-                          const Icon(Icons.location_on_outlined, size: 9.5, color: ThixPolicy.textMuted),
+                          const Icon(Icons.location_on_rounded, size: 9.5, color: kDrcRed),
                           const SizedBox(width: 2),
                           Expanded(
                             child: Text(originLine,
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
-                                style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 9)),
+                                style: ThixPolicy.microStyle.copyWith(color: kDrcMuted, fontSize: 9)),
                           ),
                         ],
                       ),
@@ -337,9 +347,9 @@ class LocalProductCard extends ConsumerWidget {
                                 margin: const EdgeInsets.only(right: 4),
                                 padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: kLocalGreen.withOpacity(0.1),
+                                  color: kDrcSoft,
                                   borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: kLocalGreen.withOpacity(0.35)),
+                                  border: Border.all(color: kDrcBlue.withOpacity(0.35)),
                                 ),
                                 child: Text(
                                   (lang == 'fr'
@@ -347,12 +357,14 @@ class LocalProductCard extends ConsumerWidget {
                                               orElse: () => LocalCertification(c, c, c, Icons.verified_rounded)).labelFr
                                           : kLocalCertifications.firstWhere((e) => e.id == c,
                                               orElse: () => LocalCertification(c, c, c, Icons.verified_rounded)).labelEn),
-                                  style: TextStyle(fontSize: 7.5, fontWeight: FontWeight.w800, color: kLocalGreenDeep),
+                                  style: const TextStyle(fontSize: 7.5, fontWeight: FontWeight.w800, color: kDrcBlueDeep),
                                 ),
                               ),
                             if (certs.length > 2)
+                              const Text('+', style: TextStyle(fontSize: 0)),
+                            if (certs.length > 2)
                               Text('+${certs.length - 2}',
-                                  style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: ThixPolicy.textMuted)),
+                                  style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: kDrcMuted)),
                           ],
                         ),
                       ],
@@ -365,10 +377,10 @@ class LocalProductCard extends ConsumerWidget {
                             Padding(
                               padding: const EdgeInsets.only(right: 4),
                               child: Text(origLabel,
-                                  style: TextStyle(
+                                  style: const TextStyle(
                                       decoration: TextDecoration.lineThrough,
                                       fontSize: 9,
-                                      color: ThixPolicy.textMuted)),
+                                      color: kDrcMuted)),
                             ),
                           Expanded(
                             child: Text(
@@ -378,23 +390,23 @@ class LocalProductCard extends ConsumerWidget {
                               style: ThixPolicy.labelStyle.copyWith(
                                   fontWeight: ThixPolicy.bold,
                                   fontSize: 13,
-                                  color: isOut ? ThixPolicy.textMuted : ThixPolicy.danger),
+                                  color: isOut ? kDrcMuted : ThixPolicy.danger),
                             ),
                           ),
                           if (rating > 0)
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.star_rounded, size: 10, color: ThixPolicy.gold),
+                                const Icon(Icons.star_rounded, size: 10, color: kDrcYellow),
                                 Text(rating.toStringAsFixed(1),
-                                    style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: ThixPolicy.textSecondary)),
+                                    style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w800, color: kDrcSub)),
                               ],
                             ),
                         ],
                       ),
                       if (unit.isNotEmpty && !isOut)
                         Text('/ ${kLocalUnitLabel(unit)}',
-                            style: ThixPolicy.microStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 8.5)),
+                            style: ThixPolicy.microStyle.copyWith(color: kDrcMuted, fontSize: 8.5)),
 
                       // Stock
                       if (!isOut) ...[
