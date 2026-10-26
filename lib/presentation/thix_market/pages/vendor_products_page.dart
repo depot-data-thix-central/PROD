@@ -59,7 +59,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       if (widget.shopId != null && widget.shopId!.isNotEmpty) {
         shopIds = [widget.shopId!];
       } else {
-        // Cas 2 : charger TOUS les shops de l'utilisateur (comme le dashboard)
+        // Cas 2 : charger TOUS les shops de l'utilisateur
         final shopsRes = await client
             .from('shops')
             .select('id')
@@ -95,6 +95,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
         _loading = false;
       });
     } catch (e) {
+      debugPrint('[VendorProducts] ❌ Load error: $e');
       setState(() {
         _error = 'Erreur de chargement: $e';
         _loading = false;
@@ -159,6 +160,11 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
 
   @override
   Widget build(BuildContext context) {
+    // ✅ FIX: Interpolation Dart correcte
+    final productCountText = _products.length > 1
+        ? '${_products.length} produits'
+        : '${_products.length} produit';
+
     return Scaffold(
       backgroundColor: Colors.grey[50],
       appBar: AppBar(
@@ -172,7 +178,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
             Text(
-              '\( {_products.length} produit \){_products.length > 1 ? "s" : ""}',
+              productCountText,
               style: const TextStyle(fontSize: 11, color: Colors.white70),
             ),
           ],
@@ -299,7 +305,7 @@ class _ProductCard extends StatelessWidget {
     final stock = product['stock']?.toInt() ?? 0;
     final status = product['status']?.toString() ?? 'draft';
     final imageUrl = product['image_url']?.toString();
-    final sectorId = product['category']?.toString();
+    final sectorId = product['local_sector']?.toString() ?? product['category']?.toString();
     final sector = localSectorById(sectorId);
 
     Color statusColor;
