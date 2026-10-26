@@ -15,6 +15,7 @@ import 'package:thix_id/models/certification_tier.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/presentation/certification/widgets/certification_name_badge.dart';
+import 'package:thix_id/presentation/chat/providers/chat_list_provider.dart';
 import 'package:thix_id/services/chat/call_block_guard.dart';
 import 'package:thix_id/services/chat/connection_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
@@ -450,6 +451,10 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> with WidgetsB
     debugPrint('[Connections] 📄 Page opened');
     WidgetsBinding.instance.addObserver(this);
     _scroll.addListener(_onScroll);
+
+    // ✅ Source des conversations : même liste que chat_screen (toutes les conversations directes)
+    _blocks.setConversationSource(() => ref.read(chatListProvider).all);
+
     _blocks.revision.addListener(_onBlocksChanged);
     _blockPoll = Timer.periodic(
       const Duration(seconds: _kCallBlockPollSeconds),
@@ -479,11 +484,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> with WidgetsB
 
   /// Rafraîchit le statut « appels désactivés » de toutes les connexions chargées.
   void _refreshBlocks([ConnectionsState? s]) {
-  if (!mounted) return;
-  final ConnectionsState st = s ?? ref.read(connectionsProvider);
-  if (st.loading || st.connections.isEmpty) return;
-  unawaited(_blocks.refreshPeers(st.connections.map((c) => c.otherUserId)));
-}
+    if (!mounted) return;
+    final st = s ?? ref.read(connectionsProvider);
+    if (st.loading || st.connections.isEmpty) return;
+    unawaited(_blocks.refreshPeers(st.connections.map((c) => c.otherUserId)));
+  }
 
   void _onScroll() {
     if (_scroll.position.pixels >
@@ -1012,6 +1017,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> with WidgetsB
           prev.connections.length != next.connections.length) {
         _refreshBlocks(next);
       }
+    });
+
+    // ✅ ... et dès que la liste des chats change (nouvelles conversations connues)
+    ref.listen(chatListProvider, (prev, next) {
+      _refreshBlocks();
     });
 
     // ✅ GARDE : utilisateur non authentifié
