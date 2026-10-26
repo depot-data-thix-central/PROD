@@ -1,21 +1,26 @@
-///services/chat/call_block_guard.dart
-
 // lib/services/chat/call_block_guard.dart
 // ============================================================================
-// CALL BLOCK GUARD — état « appels désactivés » partagé par TOUS les écrans
+// CALL BLOCK GUARD v2 — état « appels désactivés » partagé par TOUS les écrans
 // ----------------------------------------------------------------------------
 //  Réutilise exactement la logique de chat_screen : CallBlockService.fetch()
 //  (table chat_call_blocks, blocage par conversation directe).
-//  • statusOf(peerId)        → statut en cache (synchrone, pour l'UI)
-//  • check(peerId)           → vérification FRAÎCHE côté serveur
-//  • refreshPeers(peerIds)   → rafraîchit une liste de contacts (par lots)
-//  • revision                → ValueNotifier : notifie les écrans à chaque changement
+//
+//  ✅ v2 : un contact peut avoir PLUSIEURS conversations directes avec vous.
+//     On vérifie TOUTES celles connues (liste des chats + conversation
+//     « get or create ») : si l'une est bloquée → appels désactivés partout.
+//
+//  • setConversationSource(fn) → fournit la liste des conversations (chat list)
+//  • statusOf(peerId)          → statut en cache (synchrone, pour l'UI)
+//  • check(peerId)             → vérification FRAÎCHE côté serveur
+//  • refreshPeers(peerIds)     → rafraîchit une liste de contacts (par lots)
+//  • revision                  → ValueNotifier : notifie les écrans
 // ============================================================================
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/services/chat/call_block_service.dart';
 import 'package:thix_id/services/chat/chat_service.dart';
 
@@ -34,6 +39,9 @@ class CallBlockStatus {
   static const CallBlockStatus none = CallBlockStatus();
 }
 
+/// Fournit la liste des conversations de l'utilisateur (ex. chatListProvider.all).
+typedef ConversationSource = List<ChatConversation> Function();
+
 class CallBlockGuard {
   CallBlockGuard._();
   static final CallBlockGuard instance = CallBlockGuard._();
@@ -44,11 +52,17 @@ class CallBlockGuard {
   final Map<String, String> _convByPeer = <String, String>{};
   final Map<String, String?> _blockedBy = <String, String?>{};
   final Map<String, Future<String?>> _convInflight = <String, Future<String?>>{};
+  ConversationSource? _source;
 
   /// Incrémenté à chaque changement de statut : les pages s'y abonnent.
   final ValueNotifier<int> revision = ValueNotifier<int>(0);
 
   String get _me => Supabase.instance.client.auth.currentUser?.id ?? '';
+
+  /// Les pages enregistrent ici la source de la liste des chats.
+  void setConversationSource(ConversationSource source) {
+    _source = source;
+  }
 
   /// Mémorise une conversation déjà connue (évite un aller-retour réseau).
   void remember(String peerId, String conversationId) {
@@ -61,6 +75,22 @@ class CallBlockGuard {
     final by = _blockedBy[peerId];
     if (by == null || by.isEmpty) return CallBlockStatus.none;
     return CallBlockStatus(blockedBy: by, byMe: by == _me);
+  }
+
+  /// Toutes les conversations DIRECTES connues avec ce contact (liste des chats).
+  Set<String> _directConversationsWith(String peerId) {
+    final out = <String>{};
+    try {
+      final list = _source?.call() ?? const <ChatConversation>[];
+      for (final c in list) {
+        if (c.isGroup) continue;
+        if (c.id.isEmpty) continue;
+        if (c.participantIds.contains(peerId)) out.add(c.id);
+      }
+    } catch (e) {
+      debugPrint('[CallBlockGuard] ⚠️ lecture liste des chats: $e');
+    }
+    return out;
   }
 
   Future<String?> _conversationId(String peerId) async {
@@ -94,21 +124,49 @@ class CallBlockGuard {
 
   void _set(String peerId, String? by) {
     final clean = (by == null || by.isEmpty) ? null : by;
-    if (_blockedBy[peerId] == clean && _blockedBy.containsKey(peerId)) return;
+    if (_blockedBy.containsKey(peerId) && _blockedBy[peerId] == clean) return;
     _blockedBy[peerId] = clean;
     revision.value++;
   }
 
-  /// Vérification FRAÎCHE côté serveur pour un contact.
+  /// Vérification FRAÎCHE côté serveur pour un contact (toutes ses conversations directes).
   Future<CallBlockStatus> check(String peerId, {Duration timeout = const Duration(seconds: 8)}) async {
     if (peerId.isEmpty) return CallBlockStatus.none;
-    final convId = await _conversationId(peerId);
-    if (convId == null) return statusOf(peerId);
+
+    // 1) Conversations connues via la liste des chats (même source que chat_screen)
+    final ids = _directConversationsWith(peerId);
+
+    // 2) Conversation « get or create » (mémorisée) — ou créée si aucune connue
+    final cached = _convByPeer[peerId];
+    if (cached != null) {
+      ids.add(cached);
+    } else if (ids.isEmpty) {
+      final created = await _conversationId(peerId);
+      if (created != null) ids.add(created);
+    }
+
+    if (ids.isEmpty) return statusOf(peerId);
+
     try {
-      final by = await _svc.fetch(convId).timeout(timeout);
+      final results = await Future.wait(ids.map((id) async {
+        try {
+          return await _svc.fetch(id).timeout(timeout);
+        } catch (e) {
+          debugPrint('[CallBlockGuard] ⚠️ fetch($id): $e');
+          return null;
+        }
+      }));
+
+      String? by;
+      for (final r in results) {
+        if (r != null && r.isNotEmpty) {
+          by = r;
+          break;
+        }
+      }
       _set(peerId, by);
     } catch (e) {
-      debugPrint('[CallBlockGuard] ⚠️ fetch($peerId): $e');
+      debugPrint('[CallBlockGuard] ⚠️ check($peerId): $e');
     }
     return statusOf(peerId);
   }
