@@ -1,17 +1,10 @@
 // lib/providers/podcast_player_provider.dart
-import 'package:audio_service/audio_service.dart';
+import 'package:flutter/foundation.dart'; // Pour debugPrint
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 
 import '../models/news_article.dart';
-
-// ═══════════════════════════════════════════════════════════════
-// 🎧 LECTEUR PODCAST GLOBAL (Audio & Vidéo)
-// - Survit à la navigation (provider global)
-// - Continue hors application (just_audio_background)
-// - ExoPlayer/AVPlayer extrait la piste audio des fichiers vidéo
-// ═══════════════════════════════════════════════════════════════
 
 bool isVideoPodcast(NewsArticle a) =>
     (a.videoUrl ?? '').isNotEmpty || a.title.toLowerCase().contains('vidéo');
@@ -40,6 +33,7 @@ class PodcastPlayerState {
     Duration? position,
     Duration? duration,
     String? error,
+    bool clearError = false, // ✅ Permet d'effacer l'erreur
   }) =>
       PodcastPlayerState(
         article: article ?? this.article,
@@ -47,7 +41,7 @@ class PodcastPlayerState {
         isLoading: isLoading ?? this.isLoading,
         position: position ?? this.position,
         duration: duration ?? this.duration,
-        error: error ?? this.error,
+        error: clearError ? null : (error ?? this.error),
       );
 }
 
@@ -74,14 +68,14 @@ class PodcastPlayerNotifier extends StateNotifier<PodcastPlayerState> {
   }
 
   String? mediaUrl(NewsArticle a) {
-    final v = a.videoUrl;
-    if (v != null && v.isNotEmpty) return v;
+    // Priorité à l'audio pour les podcasts
     final au = a.audioUrl;
     if (au != null && au.isNotEmpty) return au;
+    final v = a.videoUrl;
+    if (v != null && v.isNotEmpty) return v;
     return null;
   }
 
-  /// Lance un épisode, ou play/pause si c'est déjà l'épisode actif.
   Future<void> playArticle(NewsArticle a) async {
     final url = mediaUrl(a);
     if (url == null) {
@@ -92,9 +86,11 @@ class PodcastPlayerNotifier extends StateNotifier<PodcastPlayerState> {
 
     if (state.article?.id == a.id) return toggle();
 
-    // Nouvel épisode → reset complet (efface aussi l'erreur précédente)
     state = PodcastPlayerState(article: a, isLoading: true);
+    
     try {
+      debugPrint('🎧 [Podcast] Tentative de lecture: $url');
+      
       await _player.setAudioSource(
         AudioSource.uri(
           Uri.parse(url),
@@ -110,7 +106,11 @@ class PodcastPlayerNotifier extends StateNotifier<PodcastPlayerState> {
       );
       await _player.play();
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Lecture impossible : $e');
+      debugPrint('❌ [Podcast] Erreur lecture: $e');
+      state = state.copyWith(
+        isLoading: false, 
+        error: 'Lecture impossible : $e',
+      );
     }
   }
 
@@ -128,7 +128,6 @@ class PodcastPlayerNotifier extends StateNotifier<PodcastPlayerState> {
   Future<void> skipBy(int seconds) =>
       _player.seek(state.position + Duration(seconds: seconds));
 
-  /// Stoppe tout et retire le mini-player.
   Future<void> stop() async {
     await _player.stop();
     state = const PodcastPlayerState();
