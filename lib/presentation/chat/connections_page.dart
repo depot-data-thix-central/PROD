@@ -484,11 +484,11 @@ class _ConnectionsPageState extends ConsumerState<ConnectionsPage> with WidgetsB
 
   /// Rafraîchit le statut « appels désactivés » de toutes les connexions chargées.
   void _refreshBlocks([ConnectionsState? s]) {
-    if (!mounted) return;
-    final st = s ?? ref.read(connectionsProvider);
-    if (st.loading || st.connections.isEmpty) return;
-    unawaited(_blocks.refreshPeers(st.connections.map((c) => c.otherUserId)));
-  }
+  if (!mounted) return;
+  final ConnectionsState st = s ?? ref.read(connectionsProvider);
+  if (st.loading || st.connections.isEmpty) return;
+  unawaited(_blocks.refreshPeers(st.connections.map((c) => c.otherUserId)));
+}
 
   void _onScroll() {
     if (_scroll.position.pixels >
