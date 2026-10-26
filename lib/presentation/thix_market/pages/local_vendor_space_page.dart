@@ -386,7 +386,7 @@ class _WeeklyPickerSheetState extends ConsumerState<_WeeklyPickerSheet> {
   Future<void> _save() async {
     setState(() => _busy = true);
     // Assurez-vous d'avoir la méthode setWeeklyProducts(List<String>)
-    final err = await ref.read(localModerationProvider.notifier).setWeeklyProducts(_selectedIds.toList());
+    final err = await ref.read(localModerationProvider.notifier).setWeeklyMultiple(_selectedIds.toList());
     
     if (!mounted) return;
     setState(() => _busy = false);
