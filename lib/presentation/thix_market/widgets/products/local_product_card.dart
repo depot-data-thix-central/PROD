@@ -255,7 +255,7 @@ class LocalProductCard extends ConsumerWidget {
                               children: [
                                 Icon(Icons.verified_rounded, size: 9, color: kDrcYellow),
                                 SizedBox(width: 3),
-                                Text('MADE IN CONGO',
+                                Text('MADE IN DRC',
                                     style: TextStyle(color: Colors.white, fontSize: 7.5, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
                               ],
                             ),
