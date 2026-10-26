@@ -110,21 +110,21 @@ final activeLocalProductsForModProvider = FutureProvider.autoDispose<List<Map<St
 // ----------------------------------------------------------------------------
 // PRODUIT DE LA SEMAINE
 // ----------------------------------------------------------------------------
-final weeklyProductProvider = FutureProvider.autoDispose<Map<String, dynamic>?>((ref) async {
+
+final weeklyProductsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
     final res = await Supabase.instance.client
         .from('local_weekly_products')
         .select('product:products(*, shop:shops(id, name, logo_url, city))')
         .eq('is_active', true)
         .order('created_at', ascending: false)
-        .limit(1)
-        .maybeSingle()
-        .timeout(const Duration(seconds: 8));
-    if (res == null || res['product'] == null) return null;
-    return Map<String, dynamic>.from(res['product'] as Map);
+        .limit(5) // ✅ max 5 produits (modérable)
+        .execute();
+    final list = (res as List).map((e) => (e as Map)['product'] as Map<String, dynamic>).whereType<Map<String, dynamic>>().toList();
+    return list;
   } catch (e) {
-    debugPrint('[LocalMod] ⚠️ weekly: $e');
-    return null;
+    debugPrint('[ModWeekly] ❌ $e');
+    return const [];
   }
 });
 
