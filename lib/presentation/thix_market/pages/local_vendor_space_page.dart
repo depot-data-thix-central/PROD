@@ -299,7 +299,7 @@ class _WeeklySection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(weeklyProductProvider);
+    final async = ref.watch(weeklyProductsProvider);
     return async.when(
       loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
       error: (_, __) => const SizedBox.shrink(),
