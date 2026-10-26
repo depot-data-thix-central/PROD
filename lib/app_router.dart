@@ -829,16 +829,14 @@ class AppRouter {
             ),
             
 GoRoute(
-  path: 'vendor/products', 
+  path: 'vendor/products',
   name: 'vendorProducts',
-  builder: (context, state) {
-    final shopId = state.uri.queryParameters['shopId'];
-    final localOnly = state.uri.queryParameters['local'] == 'true';
-    return VendorProductsPage(
-      shopId: shopId,
-      localOnly: localOnly,
-    );
-  },
+  pageBuilder: (_, state) => NoTransitionPage(
+    child: VendorProductsPage(
+      shopId: state.uri.queryParameters['shopId'],
+      localOnly: state.uri.queryParameters['local'] == 'true',
+    ),
+  ),
 ),
             GoRoute(path: 'home',                                 name: 'marketHome',                pageBuilder: (_, __)     => const NoTransitionPage(child: MarketHomePage())),
             GoRoute(path: 'local',                                name: 'marketLocalHome',           pageBuilder: (_, __)     => const NoTransitionPage(child: LocalMarketHomePage())),
