@@ -1,7 +1,10 @@
 // lib/presentation/chat/call/call_history_page.dart
 //
 // ============================================================================
-// CALL HISTORY PAGE — Production Enterprise v2.0
+// CALL HISTORY PAGE — Production Enterprise v2.1
+//  • ✅ Appels désactivés (chat_screen) respectés partout : boutons masqués,
+//       vérification fraîche avant chaque appel
+//  • ✅ Bouton « Nouvel appel » = symbole seul
 // ============================================================================
 
 import 'dart:async';
@@ -20,6 +23,7 @@ import 'package:thix_id/models/chat/call_invite.dart';
 import 'package:thix_id/models/chat/call_status.dart';
 import 'package:thix_id/presentation/chat/call/call_page.dart';
 import 'package:thix_id/presentation/chat/call/providers/call_provider.dart';
+import 'package:thix_id/services/chat/call_block_guard.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -28,6 +32,25 @@ const int _kMaxHistoryItems = 100;
 const int _kMaxSearchLength = 100;
 const Duration _kSearchDebounce = Duration(milliseconds: 300);
 const Duration _kCallStartTimeout = Duration(seconds: 10);
+const int _kCallBlockPollSeconds = 15;
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+
+/// Traduction avec texte de repli si la clé est absente (évite « call_yesterday » à l'écran).
+String _trc(AppLocalizations l10n, String key, String fallback) {
+  final v = l10n.t(key);
+  return (v.isEmpty || v == key) ? fallback : v;
+}
+
+/// Message affiché quand les appels sont désactivés (vous ou le contact).
+String _blockedMessage(AppLocalizations l10n, CallBlockStatus st) {
+  return st.byMe
+      ? _trc(l10n, 'connections_calls_off_by_me',
+          'Vous avez désactivé les appels avec ce contact. Réactivez-les depuis la conversation.')
+      : _trc(l10n, 'connections_calls_off_by_other', 'Ce contact a désactivé les appels.');
+}
 
 // ============================================================================
 // VALIDATORS
@@ -88,25 +111,53 @@ class CallHistoryPage extends ConsumerStatefulWidget {
   ConsumerState<CallHistoryPage> createState() => _CallHistoryPageState();
 }
 
-class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
+class _CallHistoryPageState extends ConsumerState<CallHistoryPage> with WidgetsBindingObserver {
   final _searchCtrl = TextEditingController();
   late Future<List<_CallRow>> _future;
   String _query = '';
-  
+
   String? _callingPeerId;
+
+  // ✅ Appels désactivés (même logique que chat_screen, partagée)
+  final CallBlockGuard _blocks = CallBlockGuard.instance;
+  Timer? _blockPoll;
+  List<String> _peerIds = <String>[];
 
   @override
   void initState() {
     super.initState();
     debugPrint('[CallHistory] 🚀 Page opened');
+    WidgetsBinding.instance.addObserver(this);
+    _blocks.revision.addListener(_onBlocksChanged);
+    _blockPoll = Timer.periodic(
+      const Duration(seconds: _kCallBlockPollSeconds),
+      (_) => _refreshBlocks(),
+    );
     _future = _load();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _blockPoll?.cancel();
+    _blocks.revision.removeListener(_onBlocksChanged);
     _searchCtrl.dispose();
     debugPrint('[CallHistory] 👋 Page disposed');
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) _refreshBlocks();
+  }
+
+  void _onBlocksChanged() {
+    if (mounted) setState(() {});
+  }
+
+  void _refreshBlocks() {
+    if (!mounted || _peerIds.isEmpty) return;
+    unawaited(_blocks.refreshPeers(_peerIds));
   }
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
@@ -125,6 +176,23 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
         ]),
         backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
+  void _showWarning(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(children: [
+          const Icon(Icons.phone_disabled_rounded, color: Colors.white, size: 20),
+          const SizedBox(width: 12),
+          Expanded(child: Text(message, style: const TextStyle(fontSize: 14))),
+        ]),
+        backgroundColor: ThixPolicy.warning,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -154,8 +222,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
       for (final inv in invites) {
         final peer = inv.callerId == uid ? inv.calleeId : inv.callerId;
         if (_CallHistoryValidators.isValidUuid(peer)) {
-          // ✅ CORRECTION 1 : Ajout du ! car peer a été validé par isValidUuid
-          peerIds.add(peer!); 
+          peerIds.add(peer!);
         }
       }
 
@@ -192,12 +259,15 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 
         return _CallRow(
           invite: inv,
-          // ✅ CORRECTION 2 : Ajout de ?? '' au cas où peerId serait null
-          peerId: peerId ?? '', 
+          peerId: peerId ?? '',
           peerName: name,
           peerAvatar: avatar ?? avatarById[peerId],
         );
       }).toList();
+
+      // ✅ Statut des appels désactivés pour tous les contacts de l'historique
+      _peerIds = peerIds.toList();
+      unawaited(_blocks.refreshPeers(_peerIds));
 
       return result;
     } catch (e) {
@@ -225,6 +295,14 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
     debugPrint('[CallHistory] 📞 Calling back: ${row.peerName} (video=$video)');
 
     try {
+      // ✅ Vérification FRAÎCHE : si désactivé dans chat_screen, on n'appelle pas
+      final st = await _blocks.check(row.peerId);
+      if (!mounted) return;
+      if (st.blocked) {
+        _showWarning(_blockedMessage(l10n, st));
+        return;
+      }
+
       await ref.read(callProvider.notifier).start(
             myUserId: _myId,
             calleeId: row.peerId,
@@ -252,7 +330,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   void _openSearchToCall() {
     if (_callingPeerId != null) return;
     HapticFeedback.selectionClick();
-    
+
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -289,6 +367,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final newCallLabel = _trc(l10n, 'call_new_call', 'Nouvel appel');
 
     return Scaffold(
       backgroundColor: ThixPolicy.surfaceSoft,
@@ -308,12 +387,17 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
           ),
         ],
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: ThixPolicy.primary,
-        foregroundColor: Colors.white,
-        onPressed: _callingPeerId != null ? null : _openSearchToCall,
-        icon: const Icon(Icons.add_ic_call), 
-        label: Text(l10n.t('call_new_call')),
+      // ✅ Symbole seul (plus de texte « Nouvel appel »)
+      floatingActionButton: Semantics(
+        button: true,
+        label: newCallLabel,
+        child: FloatingActionButton(
+          tooltip: newCallLabel,
+          backgroundColor: ThixPolicy.primary,
+          foregroundColor: Colors.white,
+          onPressed: _callingPeerId != null ? null : _openSearchToCall,
+          child: const Icon(Icons.add_ic_call),
+        ),
       ),
       body: Column(
         children: [
@@ -368,15 +452,21 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
                   }
 
                   return ListView.separated(
+                    // ✅ marge basse : le bouton flottant ne cache plus la dernière ligne
+                    padding: const EdgeInsets.only(bottom: 96),
                     itemCount: list.length,
                     separatorBuilder: (_, __) => const Divider(height: 1, indent: 72),
                     itemBuilder: (context, i) {
+                      final row = list[i];
+                      final st = _blocks.statusOf(row.peerId);
                       return _CallHistoryTile(
-                        row: list[i],
+                        row: row,
                         l10n: l10n,
                         myId: _myId,
-                        isCalling: _isCalling(list[i].peerId),
-                        onCall: (video) => _callBack(list[i], video: video),
+                        isCalling: _isCalling(row.peerId),
+                        callsStatus: st,
+                        onBlockedTap: () => _showWarning(_blockedMessage(l10n, st)),
+                        onCall: (video) => _callBack(row, video: video),
                       );
                     },
                   );
@@ -417,8 +507,8 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(
-            isSearch ? Icons.search_off_rounded : Icons.call_end_rounded, 
-            size: 64, 
+            isSearch ? Icons.search_off_rounded : Icons.call_end_rounded,
+            size: 64,
             color: ThixPolicy.textMuted.withOpacity(0.4),
           ),
           const SizedBox(height: 16),
@@ -443,7 +533,7 @@ class _CallHistoryPageState extends ConsumerState<CallHistoryPage> {
 }
 
 // ============================================================================
-// CALL HISTORY TILE (Extrait pour performance et lisibilité)
+// CALL HISTORY TILE
 // ============================================================================
 
 class _CallHistoryTile extends StatelessWidget {
@@ -451,6 +541,8 @@ class _CallHistoryTile extends StatelessWidget {
   final AppLocalizations l10n;
   final String myId;
   final bool isCalling;
+  final CallBlockStatus callsStatus;
+  final VoidCallback onBlockedTap;
   final Function(bool video) onCall;
 
   const _CallHistoryTile({
@@ -458,6 +550,8 @@ class _CallHistoryTile extends StatelessWidget {
     required this.l10n,
     required this.myId,
     required this.isCalling,
+    required this.callsStatus,
+    required this.onBlockedTap,
     required this.onCall,
   });
 
@@ -469,7 +563,7 @@ class _CallHistoryTile extends StatelessWidget {
         inv.status == CallStatus.canceled;
 
     return InkWell(
-      onTap: () => onCall(false),
+      onTap: () => callsStatus.blocked ? onBlockedTap() : onCall(false),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
@@ -480,16 +574,17 @@ class _CallHistoryTile extends StatelessWidget {
               children: [
                 CircleAvatar(
                   radius: 28,
-                  backgroundColor: ThixPolicy.surfaceSoft,
+                  backgroundColor: ThixPolicy.tint,
                   backgroundImage: row.peerAvatar != null && row.peerAvatar!.isNotEmpty
                       ? NetworkImage(row.peerAvatar!)
                       : null,
                   child: row.peerAvatar == null || row.peerAvatar!.isEmpty
                       ? Text(
                           _CallHistoryValidators.safeInitial(row.peerName),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w700,
                             fontSize: 20,
+                            color: ThixPolicy.primary, // ✅ initiale lisible
                           ),
                         )
                       : null,
@@ -514,7 +609,7 @@ class _CallHistoryTile extends StatelessWidget {
               ],
             ),
             const SizedBox(width: 16),
-            
+
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -567,23 +662,30 @@ class _CallHistoryTile extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Row(
-                  children: [
-                    _ActionIconButton(
-                      icon: Icons.videocam_rounded,
-                      isCalling: isCalling,
-                      color: ThixPolicy.primary,
-                      onPressed: () => onCall(true),
-                    ),
-                    const SizedBox(width: 8),
-                    _ActionIconButton(
-                      icon: Icons.call_rounded,
-                      isCalling: isCalling,
-                      color: ThixPolicy.success,
-                      onPressed: () => onCall(false),
-                    ),
-                  ],
-                ),
+                // ✅ Appels désactivés : plus de boutons, un badge discret
+                if (callsStatus.blocked)
+                  _BlockedCallBadge(
+                    tooltip: _blockedMessage(l10n, callsStatus),
+                    onTap: onBlockedTap,
+                  )
+                else
+                  Row(
+                    children: [
+                      _ActionIconButton(
+                        icon: Icons.videocam_rounded,
+                        isCalling: isCalling,
+                        color: ThixPolicy.primary,
+                        onPressed: () => onCall(true),
+                      ),
+                      const SizedBox(width: 8),
+                      _ActionIconButton(
+                        icon: Icons.call_rounded,
+                        isCalling: isCalling,
+                        color: ThixPolicy.success,
+                        onPressed: () => onCall(false),
+                      ),
+                    ],
+                  ),
               ],
             ),
           ],
@@ -609,8 +711,10 @@ class _CallHistoryTile extends StatelessWidget {
   String _subtitle(_CallRow row, AppLocalizations l10n) {
     final inv = row.invite;
     final isVideoCall = inv.callType == CallType.video;
-    final type = isVideoCall ? l10n.t('call_type_video') : l10n.t('call_type_audio');
-    
+    final type = isVideoCall
+        ? _trc(l10n, 'call_type_video', 'Vidéo')
+        : _trc(l10n, 'call_type_audio', 'Audio');
+
     if (inv.durationSec > 0) {
       final m = (inv.durationSec / 60).floor();
       final s = inv.durationSec % 60;
@@ -626,17 +730,48 @@ class _CallHistoryTile extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final day = DateTime(local.year, local.month, local.day);
-    
+
     if (day == today) return DateFormat('HH:mm').format(local);
     if (day == today.subtract(const Duration(days: 1))) {
-      return l10n.t('call_yesterday');
+      return _trc(l10n, 'call_yesterday', 'Hier');
     }
     return DateFormat('dd/MM/yy').format(local);
   }
 }
 
 // ============================================================================
-// ACTION ICON BUTTON (Optimisé)
+// BADGE « APPELS DÉSACTIVÉS »
+// ============================================================================
+
+class _BlockedCallBadge extends StatelessWidget {
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _BlockedCallBadge({required this.tooltip, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: ThixPolicy.textMuted.withOpacity(0.12),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(Icons.phone_disabled_rounded, color: ThixPolicy.textMuted, size: 20),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ACTION ICON BUTTON
 // ============================================================================
 
 class _ActionIconButton extends StatelessWidget {
@@ -699,6 +834,7 @@ class _SearchCallSheet extends ConsumerStatefulWidget {
 
 class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   final _ctrl = TextEditingController();
+  final CallBlockGuard _blocks = CallBlockGuard.instance;
   List<Map<String, dynamic>> _results = [];
   bool _loading = false;
   Timer? _searchDebounce;
@@ -706,14 +842,20 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   @override
   void initState() {
     super.initState();
+    _blocks.revision.addListener(_onBlocksChanged);
     _search('');
   }
 
   @override
   void dispose() {
+    _blocks.revision.removeListener(_onBlocksChanged);
     _ctrl.dispose();
     _searchDebounce?.cancel();
     super.dispose();
+  }
+
+  void _onBlocksChanged() {
+    if (mounted) setState(() {});
   }
 
   SupabaseClient get _db => ref.read(supabaseClientProvider);
@@ -721,7 +863,7 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
   Future<void> _search(String q) async {
     final query = _CallHistoryValidators.sanitizeName(q, maxLength: _kMaxSearchLength).toLowerCase();
     final myId = ref.read(supabaseUserIdProvider);
-    
+
     if (myId == null || !_CallHistoryValidators.isValidUuid(myId)) return;
 
     setState(() => _loading = true);
@@ -767,6 +909,8 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
           _results = list;
           _loading = false;
         });
+        // ✅ Statut des appels désactivés (en arrière-plan, la liste se met à jour seule)
+        unawaited(_blocks.refreshPeers(list.map((p) => '${p['id'] ?? ''}')));
       }
     } catch (e) {
       debugPrint('[SearchCallSheet] ❌ Search failed: $e');
@@ -806,7 +950,7 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
               child: Text(
-                l10n.t('call_new_call'),
+                _trc(l10n, 'call_new_call', 'Nouvel appel'),
                 style: ThixPolicy.titleStyle.copyWith(
                   fontWeight: FontWeight.w800,
                   fontSize: 20,
@@ -863,59 +1007,83 @@ class _SearchCallSheetState extends ConsumerState<_SearchCallSheet> {
                           '${p['display_name'] ?? p['full_name'] ?? l10n.t('call_unknown_contact')}',
                         );
                         final avatar = p['avatar_url']?.toString();
+                        final st = _blocks.statusOf(id);
 
                         return InkWell(
-                          onTap: () => widget.onPick(id, name, avatar, video: false),
+                          // ✅ Contact avec appels désactivés : aucun appel possible
+                          onTap: st.blocked ? null : () => widget.onPick(id, name, avatar, video: false),
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                             child: Row(
                               children: [
                                 CircleAvatar(
                                   radius: 24,
-                                  backgroundColor: ThixPolicy.surfaceSoft,
+                                  backgroundColor: ThixPolicy.tint,
                                   backgroundImage: avatar != null && avatar.isNotEmpty
                                       ? NetworkImage(avatar)
                                       : null,
                                   child: avatar == null || avatar.isEmpty
                                       ? Text(
                                           _CallHistoryValidators.safeInitial(name),
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                             fontWeight: FontWeight.w700,
                                             fontSize: 18,
+                                            color: ThixPolicy.primary,
                                           ),
                                         )
                                       : null,
                                 ),
                                 const SizedBox(width: 16),
                                 Expanded(
-                                  child: Text(
-                                    name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 16,
-                                    ),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 16,
+                                        ),
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                      if (st.blocked) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _trc(l10n, 'connections_calls_disabled', 'Appels désactivés'),
+                                          style: ThixPolicy.captionStyle.copyWith(
+                                            color: ThixPolicy.textMuted,
+                                            fontSize: 12,
+                                          ),
+                                        ),
+                                      ],
+                                    ],
                                   ),
                                 ),
-                                Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    _ActionIconButton(
-                                      icon: Icons.videocam_rounded,
-                                      isCalling: false,
-                                      color: ThixPolicy.primary,
-                                      onPressed: () => widget.onPick(id, name, avatar, video: true),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _ActionIconButton(
-                                      icon: Icons.call_rounded,
-                                      isCalling: false,
-                                      color: ThixPolicy.success,
-                                      onPressed: () => widget.onPick(id, name, avatar, video: false),
-                                    ),
-                                  ],
-                                ),
+                                if (st.blocked)
+                                  _BlockedCallBadge(
+                                    tooltip: _blockedMessage(l10n, st),
+                                    onTap: () {},
+                                  )
+                                else
+                                  Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _ActionIconButton(
+                                        icon: Icons.videocam_rounded,
+                                        isCalling: false,
+                                        color: ThixPolicy.primary,
+                                        onPressed: () => widget.onPick(id, name, avatar, video: true),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _ActionIconButton(
+                                        icon: Icons.call_rounded,
+                                        isCalling: false,
+                                        color: ThixPolicy.success,
+                                        onPressed: () => widget.onPick(id, name, avatar, video: false),
+                                      ),
+                                    ],
+                                  ),
                               ],
                             ),
                           ),
