@@ -291,21 +291,19 @@ class _ValidationQueueSection extends ConsumerWidget {
 }
 
 // ============================================================================
-// ✅ PRODUIT DE LA SEMAINE (modérateur) — CORRIGÉ POUR LISTE
+// ✅ PRODUIT DE LA SEMAINE (modérateur)
 // ============================================================================
 class _WeeklySection extends ConsumerWidget {
   const _WeeklySection();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // ✅ weeklyProductsProvider retourne maintenant une List<Map>
     final async = ref.watch(weeklyProductsProvider);
     
     return async.when(
       loading: () => const SizedBox(height: 50, child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: kDrcBlue))),
       error: (_, __) => const SizedBox.shrink(),
       data: (products) {
-        // ✅ On prend le premier produit de la liste pour l'affichage résumé
         final p = products.isNotEmpty ? products.first : null;
         
         return Container(
@@ -332,7 +330,14 @@ class _WeeklySection extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => showModalBottomSheet(context: context, backgroundColor: Colors.transparent, isScrollControlled: true, builder: (_) => const _WeeklyPickerSheet()),
+                onTap: () => showModalBottomSheet(
+                  context: context, 
+                  backgroundColor: Colors.transparent, 
+                  isScrollControlled: true, 
+                  builder: (_) => _WeeklyPickerSheet(
+                    initialSelectedIds: products.map((e) => e['id']?.toString() ?? '').toSet(),
+                  ),
+                ),
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                   decoration: BoxDecoration(color: kDrcBlue, borderRadius: BorderRadius.circular(10)),
@@ -347,56 +352,231 @@ class _WeeklySection extends ConsumerWidget {
   }
 }
 
-class _WeeklyPickerSheet extends ConsumerWidget {
-  const _WeeklyPickerSheet();
+// ============================================================================
+// ✅ PICKER MULTI-SÉLECTION AVEC RECHERCHE ET PHOTOS
+// ============================================================================
+class _WeeklyPickerSheet extends ConsumerStatefulWidget {
+  final Set<String> initialSelectedIds;
+  const _WeeklyPickerSheet({required this.initialSelectedIds});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_WeeklyPickerSheet> createState() => _WeeklyPickerSheetState();
+}
+
+class _WeeklyPickerSheetState extends ConsumerState<_WeeklyPickerSheet> {
+  late Set<String> _selectedIds;
+  bool _busy = false;
+  
+  // ✅ Contrôleur pour la barre de recherche
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIds = Set.from(widget.initialSelectedIds);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    setState(() => _busy = true);
+    // Assurez-vous d'avoir la méthode setWeeklyProducts(List<String>)
+    final err = await ref.read(localModerationProvider.notifier).setWeeklyProducts(_selectedIds.toList());
+    
+    if (!mounted) return;
+    setState(() => _busy = false);
+    
+    if (err == null) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Produits de la semaine mis à jour ✅'), backgroundColor: kDrcBlue));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(err), backgroundColor: kDrcRed));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final async = ref.watch(activeLocalProductsForModProvider);
-    // ✅ Récupérer les IDs déjà sélectionnés pour afficher un check
-    final currentWeekly = ref.watch(weeklyProductsProvider).valueOrNull ?? [];
-    final selectedIds = currentWeekly.map((e) => e['id']?.toString()).toSet();
+    // Ajustement pour le clavier
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
 
     return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.7),
+      constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * 0.85),
       decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomInset),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(width: 40, height: 4, decoration: BoxDecoration(color: kDrcLine, borderRadius: BorderRadius.circular(2))),
           const SizedBox(height: 16),
-          const Text('Sélectionner les produits de la semaine', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: kDrcInk)),
+          const Text('Sélectionner les produits', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: kDrcInk)),
           const SizedBox(height: 4),
-          const Text('Max 5 produits. Les anciens seront remplacés.', style: TextStyle(fontSize: 11, color: kDrcSub)),
-          const SizedBox(height: 16),
+          Text('${_selectedIds.length}/5 produits sélectionnés', style: const TextStyle(fontSize: 11, color: kDrcSub)),
+          const SizedBox(height: 14),
+          
+          // ✅ BARRE DE RECHERCHE
+          TextField(
+            controller: _searchController,
+            onChanged: (val) => setState(() => _searchQuery = val.trim().toLowerCase()),
+            decoration: InputDecoration(
+              hintText: 'Rechercher un produit ou une boutique...',
+              hintStyle: const TextStyle(fontSize: 13, color: kDrcSub),
+              prefixIcon: const Icon(Icons.search_rounded, size: 20, color: kDrcSub),
+              suffixIcon: _searchQuery.isNotEmpty 
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18, color: kDrcSub),
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                    ) 
+                  : null,
+              filled: true,
+              fillColor: kDrcSoft,
+              contentPadding: const EdgeInsets.symmetric(vertical: 0),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: kDrcBlue, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 12),
+          
+          // LISTE DES PRODUITS
           Expanded(
             child: async.when(
               loading: () => const Center(child: CircularProgressIndicator(color: kDrcBlue)),
-              error: (_, __) => const Center(child: Text('Erreur')),
-              data: (list) => ListView(
-                shrinkWrap: true,
-                children: list.map((p) {
-                  final id = p['id']?.toString() ?? '';
-                  final isSelected = selectedIds.contains(id);
-                  return ListTile(
-                    onTap: () async {
-                      Navigator.pop(context);
-                      // ✅ Pour simplifier l'UX, on remplace la sélection actuelle 
-                      // par ce seul produit. Pour du multi-select complexe, 
-                      // il faudrait un état local avec checkboxes + bouton valider.
-                      await ref.read(localModerationProvider.notifier).setWeekly(id);
-                    },
-                    leading: Icon(
-                      isSelected ? Icons.star_rounded : Icons.star_outline_rounded, 
-                      color: isSelected ? kDrcYellow : kDrcSub
-                    ),
-                    title: Text(p['title']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13)),
-                    subtitle: Text(p['shop']?['name']?.toString() ?? '', style: const TextStyle(fontSize: 10.5)),
-                    trailing: isSelected ? const Icon(Icons.check, color: kDrcBlue, size: 20) : null,
-                  );
-                }).toList(),
+              error: (_, __) => const Center(child: Text('Erreur de chargement')),
+              data: (list) {
+                // ✅ Filtrage selon la recherche
+                final filteredList = list.where((p) {
+                  final title = (p['title'] ?? '').toString().toLowerCase();
+                  final shopName = (p['shop']?['name'] ?? '').toString().toLowerCase();
+                  return title.contains(_searchQuery) || shopName.contains(_searchQuery);
+                }).toList();
+
+                if (filteredList.isEmpty) {
+                  return const Center(child: Text('Aucun produit trouvé.', style: TextStyle(fontSize: 13, color: kDrcSub)));
+                }
+
+                return ListView.separated(
+                  itemCount: filteredList.length,
+                  separatorBuilder: (_, __) => const Divider(height: 1, color: kDrcLine),
+                  itemBuilder: (context, index) {
+                    final p = filteredList[index];
+                    final id = p['id']?.toString() ?? '';
+                    final isSelected = _selectedIds.contains(id);
+                    
+                    // ✅ Récupération de l'image
+                    final imgUrl = p['image_url']?.toString() ?? '';
+                    final hasImage = imgUrl.startsWith('http');
+
+                    return InkWell(
+                      onTap: () {
+                        if (!isSelected && _selectedIds.length >= 5) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Maximum 5 produits autorisés.'), backgroundColor: kDrcRed),
+                          );
+                          return;
+                        }
+                        setState(() {
+                          if (isSelected) {
+                            _selectedIds.remove(id);
+                          } else {
+                            _selectedIds.add(id);
+                          }
+                        });
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          children: [
+                            // ✅ PHOTO DU PRODUIT
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: kDrcSoft,
+                                borderRadius: BorderRadius.circular(10),
+                                image: hasImage ? DecorationImage(image: CachedNetworkImageProvider(imgUrl), fit: BoxFit.cover) : null,
+                              ),
+                              child: hasImage ? null : const Icon(Icons.inventory_2_outlined, color: kDrcSub, size: 18),
+                            ),
+                            const SizedBox(width: 12),
+                            
+                            // Titre et boutique
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    p['title']?.toString() ?? '', 
+                                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13, color: kDrcInk),
+                                    maxLines: 1, 
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    p['shop']?['name']?.toString() ?? '', 
+                                    style: const TextStyle(fontSize: 10.5, color: kDrcSub),
+                                    maxLines: 1, 
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            
+                            // Case à cocher
+                            Checkbox(
+                              value: isSelected,
+                              activeColor: kDrcBlue,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                              onChanged: (val) {
+                                if (val == true && _selectedIds.length >= 5) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(content: Text('Maximum 5 produits autorisés.'), backgroundColor: kDrcRed),
+                                  );
+                                  return;
+                                }
+                                setState(() {
+                                  if (val == true) {
+                                    _selectedIds.add(id);
+                                  } else {
+                                    _selectedIds.remove(id);
+                                  }
+                                });
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          
+          const SizedBox(height: 16),
+          
+          // Bouton de validation
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: ElevatedButton(
+              onPressed: _busy ? null : _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kDrcBlue, 
+                foregroundColor: Colors.white, 
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))
               ),
+              child: _busy 
+                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                : const Text('Valider la sélection', style: TextStyle(fontWeight: FontWeight.w900)),
             ),
           ),
         ],
@@ -404,7 +584,6 @@ class _WeeklyPickerSheet extends ConsumerWidget {
     );
   }
 }
-
 // ============================================================================
 // CARTES DU PORTAIL (modérateur)
 // ============================================================================
