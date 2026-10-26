@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 
-// ✅ FIX 1: Ajout de l'import manquant pour ThixPolicy
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import '../core/local_sectors.dart';
@@ -56,12 +55,11 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
 
       List<String> shopIds = [];
 
-      // Cas 1 : un shopId précis a été passé → on charge seulement ce shop
+      // Cas 1 : un shopId précis a été passé
       if (widget.shopId != null && widget.shopId!.isNotEmpty) {
         shopIds = [widget.shopId!];
       } else {
-        // Cas 2 : aucun shopId → on charge TOUS les shops de l'utilisateur
-        // (comme le fait le dashboard pour les KPIs)
+        // Cas 2 : charger TOUS les shops de l'utilisateur
         final shopsRes = await client
             .from('shops')
             .select('id')
@@ -81,13 +79,11 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
         return;
       }
 
-      // Requête multi-shops
       var query = client
           .from('products')
           .select('*')
           .inFilter('shop_id', shopIds);
 
-      // Filtre produits locaux si demandé
       if (widget.localOnly) {
         query = query.eq('is_local', true);
       }
@@ -134,7 +130,7 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
           .delete()
           .eq('id', productId);
 
-      _loadProducts(); // Recharger la liste
+      _loadProducts();
 
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -176,12 +172,11 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900),
             ),
             Text(
-              '\( {_products.length} produit \){_products.length > 1 ? 's' : ''}',
+              '\( {_products.length} produit \){_products.length > 1 ? "s" : ""}',
               style: const TextStyle(fontSize: 11, color: Colors.white70),
             ),
           ],
         ),
-        // ✅ FIX 2: ThixPolicy est maintenant reconnu grâce à l'import
         backgroundColor: widget.localOnly ? kLocalGreen : ThixPolicy.primary,
         actions: [
           IconButton(
@@ -192,7 +187,6 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
-          // Navigation vers création de produit
           if (widget.localOnly) {
             context.push('/market/local/create');
           } else {
@@ -201,9 +195,11 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
         },
         backgroundColor: widget.localOnly ? kLocalGreen : ThixPolicy.primary,
         icon: const Icon(Icons.add),
-        label: Text(widget.localOnly
-            ? _t('Produit local', 'Local product')
-            : _t('Produit', 'Product')),
+        label: Text(
+          widget.localOnly
+              ? _t('Produit local', 'Local product')
+              : _t('Produit', 'Product'),
+        ),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
@@ -296,7 +292,6 @@ class _ProductCard extends StatelessWidget {
     required this.onDelete,
   });
 
-  // ✅ FIX 3: Remplacement de BuildContext.current par un paramètre context
   String _t(BuildContext context, String fr, String en) {
     final lang = Localizations.localeOf(context).languageCode;
     return lang == 'fr' ? fr : en;
@@ -347,7 +342,6 @@ class _ProductCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Image
           Stack(
             children: [
               ClipRRect(
@@ -410,8 +404,6 @@ class _ProductCard extends StatelessWidget {
               ),
             ],
           ),
-
-          // Contenu
           Padding(
             padding: const EdgeInsets.all(12),
             child: Column(
@@ -444,7 +436,6 @@ class _ProductCard extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.w800,
-                        // ✅ FIX 4: ThixPolicy est maintenant reconnu
                         color: isLocal ? kLocalGreen : ThixPolicy.primary,
                       ),
                     ),
@@ -467,7 +458,6 @@ class _ProductCard extends StatelessWidget {
                         icon: const Icon(Icons.edit, size: 16),
                         label: Text(_t(context, 'Modifier', 'Edit')),
                         style: OutlinedButton.styleFrom(
-                          // ✅ FIX 5: ThixPolicy est maintenant reconnu
                           foregroundColor: ThixPolicy.primary,
                         ),
                       ),
