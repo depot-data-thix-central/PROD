@@ -696,6 +696,7 @@ class _VendorDashboardState extends ConsumerState<VendorDashboard> {
                           productsCount: products.length,
                           localProductsLabel: localLabel,
                           rating: rating,
+                          shopId: shop?['id']?.toString(), // ✅ AJOUT : passe le shopId
                         ),
                         const SizedBox(height: 24),
                       ],
@@ -804,7 +805,7 @@ class _DualShopHeader extends StatelessWidget {
 }
 
 // ============================================================================
-// KPI GRID — ✅ localProductsLabel dynamique selon rôle
+// KPI GRID — ✅ localProductsLabel dynamique selon rôle + NAVIGATION
 // ============================================================================
 class _KpiGrid extends StatelessWidget {
   final int ordersCount;
@@ -813,17 +814,86 @@ class _KpiGrid extends StatelessWidget {
   final int productsCount;
   final String localProductsLabel;
   final double rating;
+  final String? shopId; // ✅ AJOUT : pour navigation
 
-  const _KpiGrid({required this.ordersCount, required this.pending, required this.processing, required this.productsCount, required this.localProductsLabel, required this.rating});
+  const _KpiGrid({
+    required this.ordersCount,
+    required this.pending,
+    required this.processing,
+    required this.productsCount,
+    required this.localProductsLabel,
+    required this.rating,
+    this.shopId, // ✅ AJOUT
+  });
 
   @override
   Widget build(BuildContext context) {
     final kpis = [
-      {'label': context.vdT('Commandes', 'Orders'), 'value': '$ordersCount', 'icon': Icons.shopping_bag_outlined, 'color': ThixPolicy.primary},
-      {'label': context.vdT('En attente', 'Pending'), 'value': '$pending', 'icon': Icons.pending_actions_rounded, 'color': ThixPolicy.gold},
-      {'label': context.vdT('Produits', 'Products'), 'value': '$productsCount', 'icon': Icons.inventory_2_outlined, 'color': ThixPolicy.success},
-      {'label': context.vdT('Locaux', 'Local'), 'value': localProductsLabel, 'icon': Icons.agriculture_rounded, 'color': kLocalGreen},
-      {'label': context.vdT('Note', 'Rating'), 'value': rating > 0 ? rating.toStringAsFixed(1) : '-', 'icon': Icons.star_rounded, 'color': ThixPolicy.gold},
+      {
+        'label': context.vdT('Commandes', 'Orders'),
+        'value': '$ordersCount',
+        'icon': Icons.shopping_bag_outlined,
+        'color': ThixPolicy.primary,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          try {
+            context.push('/market/vendor/orders');
+          } catch (_) {
+            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
+          }
+        },
+      },
+      {
+        'label': context.vdT('En attente', 'Pending'),
+        'value': '$pending',
+        'icon': Icons.pending_actions_rounded,
+        'color': ThixPolicy.gold,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          try {
+            context.push('/market/vendor/orders');
+          } catch (_) {
+            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
+          }
+        },
+      },
+      {
+        'label': context.vdT('Produits', 'Products'),
+        'value': '$productsCount',
+        'icon': Icons.inventory_2_outlined,
+        'color': ThixPolicy.success,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          // ✅ Navigation vers gestion produits (tous produits)
+          if (shopId != null) {
+            context.push('/market/vendor/products?shopId=$shopId');
+          } else {
+            context.push('/market/vendor/products');
+          }
+        },
+      },
+      {
+        'label': context.vdT('Locaux', 'Local'),
+        'value': localProductsLabel,
+        'icon': Icons.agriculture_rounded,
+        'color': kLocalGreen,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          // ✅ Navigation vers gestion produits locaux uniquement
+          if (shopId != null) {
+            context.push('/market/vendor/products?shopId=$shopId&local=true');
+          } else {
+            context.push('/market/vendor/products?local=true');
+          }
+        },
+      },
+      {
+        'label': context.vdT('Note', 'Rating'),
+        'value': rating > 0 ? rating.toStringAsFixed(1) : '-',
+        'icon': Icons.star_rounded,
+        'color': ThixPolicy.gold,
+        'onTap': null, // Pas de navigation pour la note
+      },
     ];
 
     return Semantics(
@@ -837,24 +907,55 @@ class _KpiGrid extends StatelessWidget {
         childAspectRatio: 1.55,
         children: kpis.map((kpi) {
           final color = kpi['color'] as Color;
-          return Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), boxShadow: ThixPolicy.shadowSoft(opacity: 0.04)),
-            child: Row(
-              children: [
-                Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(12)), child: Icon(kpi['icon'] as IconData, color: color, size: 22)),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(kpi['value'] as String, style: ThixPolicy.titleStyle.copyWith(fontSize: 18, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
-                      Text(kpi['label'] as String, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
-                    ],
-                  ),
+          final onTap = kpi['onTap'] as VoidCallback?;
+          return GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: ThixPolicy.card,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
+                border: Border.all(
+                  color: onTap != null ? color.withOpacity(0.2) : Colors.transparent,
+                  width: 1,
                 ),
-              ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(kpi['icon'] as IconData, color: color, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          kpi['value'] as String,
+                          style: ThixPolicy.titleStyle.copyWith(
+                            fontSize: 18,
+                            fontWeight: ThixPolicy.bold,
+                            color: ThixPolicy.textMain,
+                          ),
+                        ),
+                        Text(
+                          kpi['label'] as String,
+                          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onTap != null)
+                    Icon(Icons.chevron_right_rounded, color: color.withOpacity(0.5), size: 16),
+                ],
+              ),
             ),
           );
         }).toList(),
