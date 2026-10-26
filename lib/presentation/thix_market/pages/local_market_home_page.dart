@@ -958,7 +958,7 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 118,
+      height: 92, // ✅ Réduit de 118 → 92 px
       child: PageView.builder(
         controller: _ctrl,
         itemCount: widget.items.length,
@@ -967,25 +967,25 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6),
             child: Container(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(18), // ✅ gardé, mais hauteur réduite
                 border: Border.all(color: kDrcLine),
-                boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.06), blurRadius: 14, offset: const Offset(0, 6))],
+                boxShadow: [BoxShadow(color: kDrcBlueDeep.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
               ),
               child: Row(
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 38,
+                    height: 38,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [h.color.withOpacity(0.85), h.color]),
                     ),
-                    child: Icon(portalHighlightIcon(h.icon), size: 20, color: Colors.white),
+                    child: Icon(portalHighlightIcon(h.icon), size: 18, color: Colors.white),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -993,17 +993,17 @@ class _HighlightsCarouselState extends State<_HighlightsCarousel> {
                       children: [
                         Text(
                           h.title(widget.lang),
-                          maxLines: 2,
+                          maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: kDrcInk, height: 1.2),
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: kDrcInk, height: 1.2),
                         ),
                         if (h.subtitle(widget.lang).isNotEmpty) ...[
-                          const SizedBox(height: 3),
+                          const SizedBox(height: 2),
                           Text(
                             h.subtitle(widget.lang),
-                            maxLines: 2,
+                            maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 10.5, color: kDrcSub, height: 1.25),
+                            style: const TextStyle(fontSize: 9.5, color: kDrcSub, height: 1.15),
                           ),
                         ],
                       ],
