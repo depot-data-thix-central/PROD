@@ -13,6 +13,13 @@ class AppUpdateService {
   AppUpdateService._();
   static final AppUpdateService instance = AppUpdateService._();
 
+  // ✅ Lien Play Store en dur (secours si la mise à jour intégrée est impossible)
+  static const String kPlayStorePackage = 'com.thixhub';
+  static const String kPlayStoreUrl =
+      'https://play.google.com/store/apps/details?id=com.thixhub';
+  static const String kPlayStoreMarketUrl =
+      'market://details?id=com.thixhub';
+
   static const String _kLastPromptKey = 'app_update_last_prompt_ms';
   static const Duration _kPromptInterval = Duration(hours: 24);
 
@@ -106,13 +113,22 @@ class AppUpdateService {
     await openStore();
   }
 
+  // ── OUVERTURE DU PLAY STORE (lien en dur) ──
   Future<void> openStore() async {
     try {
-      final pkg = (await PackageInfo.fromPlatform()).packageName;
-      final market = Uri.parse('market://details?id=$pkg');
-      final web = Uri.parse('https://play.google.com/store/apps/details?id=$pkg');
-      final ok = await launchUrl(market, mode: LaunchMode.externalApplication);
-      if (!ok) await launchUrl(web, mode: LaunchMode.externalApplication);
+      final ok = await launchUrl(
+        Uri.parse(kPlayStoreMarketUrl),
+        mode: LaunchMode.externalApplication,
+      );
+      if (ok) return;
+    } catch (e) {
+      debugPrint('[AppUpdate] ⚠️ market:// failed, fallback web: $e');
+    }
+    try {
+      await launchUrl(
+        Uri.parse(kPlayStoreUrl),
+        mode: LaunchMode.externalApplication,
+      );
     } catch (e) {
       debugPrint('[AppUpdate] ❌ openStore failed: $e');
     }
