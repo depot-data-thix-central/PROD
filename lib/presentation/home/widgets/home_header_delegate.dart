@@ -18,6 +18,7 @@ import 'package:thix_id/services/app_update_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
 import 'app_update_sheet.dart';
+import 'app_update_strings.dart';
 import 'home_theme.dart';
 
 const double _kHeaderHeight = 58.0;
@@ -255,7 +256,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _UpdateHint(onTap: _openUpdateSheet),
+              _UpdateHint(localeCode: localeCode, onTap: _openUpdateSheet),
               const SizedBox(height: 2),
               Row(
                 children: [
@@ -388,14 +389,16 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
 }
 
 // ============================================================================
-// INDICATEUR "UPDATE · METTRE À JOUR" (remplace les salutations)
+// INDICATEUR "UPDATE · METTRE À JOUR" (FR / EN / SW)
 // ============================================================================
 class _UpdateHint extends StatelessWidget {
+  final String localeCode;
   final VoidCallback onTap;
-  const _UpdateHint({required this.onTap});
+  const _UpdateHint({required this.localeCode, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
+    final t = AppUpdateStrings.of(localeCode);
     return ValueListenableBuilder<bool>(
       valueListenable: AppUpdateService.instance.updateAvailable,
       builder: (context, available, _) {
@@ -409,7 +412,7 @@ class _UpdateHint extends StatelessWidget {
               ? Semantics(
                   key: const ValueKey('update_hint'),
                   button: true,
-                  label: 'Mettre à jour',
+                  label: t.hintAction,
                   child: GestureDetector(
                     onTap: onTap,
                     behavior: HitTestBehavior.opaque,
@@ -426,7 +429,7 @@ class _UpdateHint extends StatelessWidget {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              'Update',
+                              t.hintTag,
                               style: ThixPolicy.microStyle.copyWith(
                                 color: HomeTheme.skyDeep,
                                 fontSize: 8,
@@ -437,7 +440,7 @@ class _UpdateHint extends StatelessWidget {
                           ),
                           const SizedBox(width: 6),
                           Text(
-                            'Mettre à jour',
+                            t.hintAction,
                             style: ThixPolicy.captionStyle.copyWith(
                               color: HomeTheme.skyDeep,
                               fontSize: 11,
