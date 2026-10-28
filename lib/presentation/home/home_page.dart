@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
 
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -48,6 +49,11 @@ const int _kMaxTagLength = 30;
 const int _kMinImageWidth = 800;
 const int _kMinImageHeight = 400;
 const double _kMaxAspectRatio = 2.5;
+
+// Qualité réseau
+const Duration _kQualityInterval = Duration(seconds: 30);
+const Duration _kQualityTimeout = Duration(seconds: 3);
+const int _kWeakLatencyMs = 1500;
 
 // ============================================================================
 // VALIDATORS
@@ -160,17 +166,88 @@ class _HomePagePremiumState extends State<HomePagePremium> {
   bool _isAdmin = false;
   bool _uploadingBanner = false;
 
+  // ✅ Stream des badges créé UNE seule fois, en broadcast.
+  Stream<SectionBadgeCounts>? _badgeStream;
+  String? _badgeStreamUid;
+
+  // ✅ Qualité réseau
+  StreamSubscription<List<ConnectivityResult>>? _connSub;
+  Timer? _qualityTimer;
+  bool _weakNetwork = false;
+  bool _checkingQuality = false;
+
   @override
   void initState() {
     super.initState();
     _checkAdminRole();
+    _initNetworkQuality();
   }
 
   @override
   void dispose() {
+    _connSub?.cancel();
+    _qualityTimer?.cancel();
     _searchController.dispose();
     _headlinesController.dispose();
     super.dispose();
+  }
+
+  // ── QUALITÉ RÉSEAU ──
+  void _initNetworkQuality() {
+    unawaited(_checkNetworkQuality());
+    _connSub = Connectivity().onConnectivityChanged.listen((_) {
+      unawaited(_checkNetworkQuality());
+    });
+    _qualityTimer = Timer.periodic(_kQualityInterval, (_) {
+      unawaited(_checkNetworkQuality());
+    });
+  }
+
+  Future<void> _checkNetworkQuality() async {
+    if (_checkingQuality) return;
+    _checkingQuality = true;
+    try {
+      final results = await Connectivity().checkConnectivity();
+      final offline = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
+
+      // Hors ligne : géré par le routeur (page "Pas de connexion").
+      if (offline) {
+        _setWeak(false);
+        return;
+      }
+
+      final sw = Stopwatch()..start();
+      try {
+        final lookup = await InternetAddress.lookup('google.com').timeout(_kQualityTimeout);
+        sw.stop();
+        _setWeak(lookup.isEmpty || sw.elapsedMilliseconds > _kWeakLatencyMs);
+      } catch (_) {
+        _setWeak(true);
+      }
+    } catch (e) {
+      debugPrint('[HomePage] ⚠️ Network quality check failed: $e');
+    } finally {
+      _checkingQuality = false;
+    }
+  }
+
+  void _setWeak(bool value) {
+    if (!mounted || _weakNetwork == value) return;
+    setState(() => _weakNetwork = value);
+  }
+
+  // ── STREAM BADGES (cache + broadcast) ──
+  Stream<SectionBadgeCounts> _badgeStreamFor(String? uid) {
+    if (_badgeStream != null && _badgeStreamUid == uid) {
+      return _badgeStream!;
+    }
+    _badgeStreamUid = uid;
+    if (uid == null) {
+      _badgeStream = const Stream<SectionBadgeCounts>.empty().asBroadcastStream();
+    } else {
+      _badgeStream = _counters.streamCounts(uid).asBroadcastStream();
+    }
+    return _badgeStream!;
   }
 
   // ── ADMIN ──
@@ -557,9 +634,7 @@ class _HomePagePremiumState extends State<HomePagePremium> {
 
     final photoUrl = auth.currentUser?.photoUrl;
 
-    final badgeCountsStream = auth.currentUser == null
-        ? Stream<SectionBadgeCounts>.value(SectionBadgeCounts.zero)
-        : _counters.streamCounts(auth.currentUser!.id);
+    final badgeCountsStream = _badgeStreamFor(auth.currentUser?.id);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -588,6 +663,20 @@ class _HomePagePremiumState extends State<HomePagePremium> {
             onServiceTap: _handleServiceTap,
             onMiniAppsTap: _openMiniApps,
             onScanQrTap: _openScanQr,
+          ),
+          // ✅ Pastille qualité réseau
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 96,
+            child: IgnorePointer(
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 250),
+                child: _weakNetwork
+                    ? const _WeakNetworkBanner(key: ValueKey('weak'))
+                    : const SizedBox.shrink(key: ValueKey('ok')),
+              ),
+            ),
           ),
           if (_searching) const _SearchingOverlay(),
           const NoConnectionOverlay(),
@@ -654,7 +743,6 @@ class _HomeContent extends StatelessWidget {
     return CustomScrollView(
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
-        // ✅ Header avec icône 🔍 rétractable intégrée
         SliverPersistentHeader(
           pinned: true,
           delegate: HomeHeaderDelegate(
@@ -707,10 +795,10 @@ class _HomeContent extends StatelessWidget {
           ),
         ),
         const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s12)),
-        // ✅ Constellation directement sur le fond (plus de Container/support)
         SliverToBoxAdapter(
           child: StreamBuilder<SectionBadgeCounts>(
             stream: badgeCountsStream,
+            initialData: SectionBadgeCounts.zero,
             builder: (context, snap) {
               final counts = snap.data ?? SectionBadgeCounts.zero;
               return HomeServicesConstellation(
@@ -739,6 +827,36 @@ class _HomeContent extends StatelessWidget {
 // ============================================================================
 // COMPOSANTS
 // ============================================================================
+class _WeakNetworkBanner extends StatelessWidget {
+  const _WeakNetworkBanner({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: HomeTheme.ink.withOpacity(0.92),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.signal_cellular_connected_no_internet_0_bar_rounded, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                'Connexion instable — chargement lent possible',
+                style: TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _AdminBannerButton extends StatelessWidget {
   final bool isUploading;
   final VoidCallback onTap;
