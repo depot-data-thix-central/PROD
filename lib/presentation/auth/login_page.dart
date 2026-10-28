@@ -1032,7 +1032,7 @@ class _LoginPageState extends ConsumerState<LoginPage>
       await _syncRouterController();
       if (!mounted) return;
       context.go('${AppRoutes.personalReg}?step=3');
-      _showError(l10n.t('login_error_finalize_registration'));
+      _showError(l10n.t('Erreur lors de la finalisation de l’inscription'));
       return;
     }
 
