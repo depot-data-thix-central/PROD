@@ -1,5 +1,4 @@
 // lib/presentation/home/widgets/home_header_delegate.dart
-import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -15,14 +14,15 @@ import 'package:thix_id/widgets/language_sheet.dart';
 import 'package:thix_id/l10n/locale_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
+import 'package:thix_id/services/app_update_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
+import 'app_update_sheet.dart';
 import 'home_theme.dart';
 
 const double _kHeaderHeight = 58.0;
 const int _kMaxDisplayNameLength = 30;
 const int _kMaxBadgeDisplay = 9;
-const int _kGreetingRotationSeconds = 4;
 const int _kMaxSearchLength = 100;
 
 class _HeaderValidators {
@@ -70,7 +70,7 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   final VoidCallback onProfileTap;
   final VoidCallback onAccountRequest;
 
-  // ✅ NOUVEAU : recherche rétractable dans le header
+  // Recherche rétractable dans le header
   final TextEditingController? searchController;
   final bool isSearching;
   final VoidCallback? onVerify;
@@ -142,7 +142,7 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
 }
 
 // ============================================================================
-// HEADER PREMIUM (avec recherche rétractable)
+// HEADER PREMIUM (recherche rétractable + indicateur de mise à jour)
 // ============================================================================
 class _PremiumHeader extends StatefulWidget {
   final double safeTop;
@@ -176,9 +176,30 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
   bool _searchOpen = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initUpdateCheck());
+  }
+
+  @override
   void dispose() {
     _searchFocus.dispose();
     super.dispose();
+  }
+
+  // ── MISE À JOUR : détection + panneau (max 1 fois / 24 h) ──
+  Future<void> _initUpdateCheck() async {
+    final svc = AppUpdateService.instance;
+    await svc.checkForUpdate();
+    if (!mounted || !svc.updateAvailable.value) return;
+    if (!await svc.shouldPromptNow()) return;
+    if (!mounted) return;
+    await AppUpdateSheet.show(context);
+  }
+
+  void _openUpdateSheet() {
+    HapticFeedback.selectionClick();
+    AppUpdateSheet.show(context);
   }
 
   void _openSearch() {
@@ -223,7 +244,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     );
   }
 
-  // ── ÉTAT REPLIÉ : nom + [🔍] [] [] ────────────────────────────────────
+  // ── ÉTAT REPLIÉ : [Update · Mettre à jour] + nom + [🔍] [🌐] [🔔] ──────
   Widget _buildIdleRow(String localeCode, bool canSearch) {
     return Row(
       key: const ValueKey('header_idle'),
@@ -234,7 +255,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const _RotatingGreeting(),
+              _UpdateHint(onTap: _openUpdateSheet),
               const SizedBox(height: 2),
               Row(
                 children: [
@@ -260,7 +281,6 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // ✅ Icône recherche rétractable, juste à côté de la langue
             if (canSearch) ...[
               _HeaderIconButton(
                 icon: Icons.search_rounded,
@@ -364,6 +384,77 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     } else {
       context.push(AppRoutes.login);
     }
+  }
+}
+
+// ============================================================================
+// INDICATEUR "UPDATE · METTRE À JOUR" (remplace les salutations)
+// ============================================================================
+class _UpdateHint extends StatelessWidget {
+  final VoidCallback onTap;
+  const _UpdateHint({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<bool>(
+      valueListenable: AppUpdateService.instance.updateAvailable,
+      builder: (context, available, _) {
+        return AnimatedSwitcher(
+          duration: const Duration(milliseconds: 300),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SizeTransition(sizeFactor: anim, axisAlignment: -1, child: child),
+          ),
+          child: available
+              ? Semantics(
+                  key: const ValueKey('update_hint'),
+                  button: true,
+                  label: 'Mettre à jour',
+                  child: GestureDetector(
+                    onTap: onTap,
+                    behavior: HitTestBehavior.opaque,
+                    child: SizedBox(
+                      height: 17,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: HomeTheme.skySoft,
+                              border: Border.all(color: HomeTheme.sky.withOpacity(0.25)),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'Update',
+                              style: ThixPolicy.microStyle.copyWith(
+                                color: HomeTheme.skyDeep,
+                                fontSize: 8,
+                                fontWeight: ThixPolicy.bold,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Mettre à jour',
+                            style: ThixPolicy.captionStyle.copyWith(
+                              color: HomeTheme.skyDeep,
+                              fontSize: 11,
+                              fontWeight: ThixPolicy.bold,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          const Icon(Icons.chevron_right_rounded, size: 14, color: HomeTheme.skyDeep),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('no_update')),
+        );
+      },
+    );
   }
 }
 
@@ -494,6 +585,7 @@ class _NotificationsButton extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     return StreamBuilder<SectionBadgeCounts>(
       stream: badgeCountsStream,
+      initialData: SectionBadgeCounts.zero,
       builder: (context, snap) {
         final counts = snap.data ?? SectionBadgeCounts.zero;
         final total = _calculateTotalNotifications(counts);
@@ -539,103 +631,6 @@ class _NotificationsButton extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-class _RotatingGreeting extends StatefulWidget {
-  const _RotatingGreeting();
-  @override
-  State<_RotatingGreeting> createState() => _RotatingGreetingState();
-}
-
-class _RotatingGreetingState extends State<_RotatingGreeting> with WidgetsBindingObserver {
-  static const List<Map<String, String>> _greetings = [
-    {'lang': 'Lingala', 'text': 'Mbote'},
-    {'lang': 'Kiswahili', 'text': 'Jambo'},
-    {'lang': 'Tshiluba', 'text': 'Moyo'},
-    {'lang': 'Kikongo', 'text': 'Mbote'},
-  ];
-
-  int _index = 0;
-  Timer? _timer;
-  bool _isAppVisible = true;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-    _startTimer();
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    _timer?.cancel();
-    super.dispose();
-  }
-
-  @override
-  void didChangeAppLifecycleState(AppLifecycleState state) {
-    _isAppVisible = state == AppLifecycleState.resumed;
-    if (_isAppVisible) {
-      _startTimer();
-    } else {
-      _timer?.cancel();
-    }
-  }
-
-  void _startTimer() {
-    _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: _kGreetingRotationSeconds), (_) {
-      if (!mounted || !_isAppVisible) return;
-      setState(() => _index = (_index + 1) % _greetings.length);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final g = _greetings[_index];
-    return SizedBox(
-      height: 17,
-      child: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 400),
-        transitionBuilder: (child, anim) => FadeTransition(
-          opacity: anim,
-          child: SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, 0.3), end: Offset.zero).animate(anim),
-            child: child,
-          ),
-        ),
-        child: Row(
-          key: ValueKey(g['lang']),
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              g['text']!,
-              style: ThixPolicy.captionStyle.copyWith(color: HomeTheme.inkSoft, fontSize: 11, fontWeight: ThixPolicy.bold),
-            ),
-            const SizedBox(width: 6),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-              decoration: BoxDecoration(
-                color: HomeTheme.skySoft,
-                border: Border.all(color: HomeTheme.sky.withOpacity(0.25)),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                g['lang']!,
-                style: ThixPolicy.microStyle.copyWith(
-                  color: HomeTheme.skyDeep,
-                  fontSize: 8,
-                  fontWeight: ThixPolicy.bold,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
