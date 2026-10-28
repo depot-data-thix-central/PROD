@@ -452,10 +452,12 @@ class AppRouter {
           if (offline) return null;
 
           // 1) RETOUR OAUTH
+          // ✅ FIX : on NE vide PLUS oauthReturnPath ici. redirect() peut être appelé
+          // plusieurs fois pour un même retour (lien profond en double, rafraîchissement
+          // à la connexion) : le 2e appel trouvait null et renvoyait vers /login.
+          // La page d'inscription remet oauthReturnPath à null elle-même.
           if (loc.startsWith('/login-callback')) {
-            final back = oauthReturnPath;
-            oauthReturnPath = null;
-            return back ?? AppRoutes.login;
+            return oauthReturnPath ?? AppRoutes.login;
           }
 
           final isLoginPage = loc == AppRoutes.login;
@@ -484,6 +486,13 @@ class AppRouter {
 
           final logged = auth.isAuthenticated;
           final currentUser = auth.currentUser;
+
+          // ✅ FIX : retour Google lancé depuis l'inscription. Si on atterrit sur le
+          // login alors que la session est là, on repart directement sur l'inscription
+          // (plus besoin de rappuyer sur « Créer »).
+          if (logged && isLoginPage && oauthReturnPath != null) {
+            return oauthReturnPath;
+          }
 
           // 2) PAS CONNECTÉ
           if (!logged) {
@@ -827,17 +836,17 @@ class AppRouter {
               name: 'marketLocalVendorSpace',
               pageBuilder: (_, __) => const NoTransitionPage(child: LocalVendorSpacePage()),
             ),
-            
-GoRoute(
-  path: 'vendor/products',
-  name: 'vendorProducts',
-  pageBuilder: (_, state) => NoTransitionPage(
-    child: VendorProductsPage(
-      shopId: state.uri.queryParameters['shopId'],
-      localOnly: state.uri.queryParameters['local'] == 'true',
-    ),
-  ),
-),
+
+            GoRoute(
+              path: 'vendor/products',
+              name: 'vendorProducts',
+              pageBuilder: (_, state) => NoTransitionPage(
+                child: VendorProductsPage(
+                  shopId: state.uri.queryParameters['shopId'],
+                  localOnly: state.uri.queryParameters['local'] == 'true',
+                ),
+              ),
+            ),
             GoRoute(path: 'home',                                 name: 'marketHome',                pageBuilder: (_, __)     => const NoTransitionPage(child: MarketHomePage())),
             GoRoute(path: 'local',                                name: 'marketLocalHome',           pageBuilder: (_, __)     => const NoTransitionPage(child: LocalMarketHomePage())),
             GoRoute(path: 'local/create',                         name: 'marketLocalCreate',         pageBuilder: (_, s)      => NoTransitionPage(child: CreateLocalProductPage(shopId: s.extra is String ? s.extra as String : null))),
