@@ -1,23 +1,36 @@
 // lib/presentation/home/widgets/app_update_sheet.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 
+import 'package:thix_id/l10n/locale_controller.dart';
 import 'package:thix_id/services/app_update_service.dart';
 
+import 'app_update_strings.dart';
 import 'home_theme.dart';
 
 class AppUpdateSheet extends StatefulWidget {
-  const AppUpdateSheet({super.key});
+  final String languageCode;
+  const AppUpdateSheet({super.key, this.languageCode = 'fr'});
 
   /// Affiche le panneau et enregistre l'heure (rappel max 1 fois / 24 h).
   static Future<void> show(BuildContext context) async {
     await AppUpdateService.instance.markPromptedNow();
     if (!context.mounted) return;
+
+    // Langue lue depuis le contexte appelant (fr / en / sw).
+    String code;
+    try {
+      code = context.read<LocaleController>().locale.languageCode;
+    } catch (_) {
+      code = Localizations.localeOf(context).languageCode;
+    }
+
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => const AppUpdateSheet(),
+      builder: (_) => AppUpdateSheet(languageCode: code),
     );
   }
 
@@ -45,10 +58,11 @@ class _AppUpdateSheetState extends State<AppUpdateSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppUpdateStrings.of(widget.languageCode);
     final svc = AppUpdateService.instance;
     final installed = svc.installedVersion.isEmpty
         ? ''
-        : 'Version installée : ${svc.installedVersion}${svc.installedBuild.isEmpty ? '' : ' (${svc.installedBuild})'}';
+        : '${t.installed} : ${svc.installedVersion}${svc.installedBuild.isEmpty ? '' : ' (${svc.installedBuild})'}';
 
     return SafeArea(
       top: false,
@@ -99,10 +113,10 @@ class _AppUpdateSheetState extends State<AppUpdateSheet> {
               child: const Icon(Icons.system_update_rounded, color: Colors.white, size: 32),
             ),
             const SizedBox(height: 18),
-            const Text(
-              'Mise à jour disponible',
+            Text(
+              t.title,
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 fontSize: 19,
                 fontWeight: FontWeight.w800,
                 color: HomeTheme.ink,
@@ -110,11 +124,10 @@ class _AppUpdateSheetState extends State<AppUpdateSheet> {
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              'Une nouvelle version de THIX ID est disponible sur le Play Store. '
-              'Mettez à jour pour profiter des dernières améliorations et corrections.',
+            Text(
+              t.body,
               textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 13.5, height: 1.45, color: HomeTheme.inkSoft),
+              style: const TextStyle(fontSize: 13.5, height: 1.45, color: HomeTheme.inkSoft),
             ),
             if (installed.isNotEmpty) ...[
               const SizedBox(height: 12),
@@ -153,9 +166,9 @@ class _AppUpdateSheetState extends State<AppUpdateSheet> {
                         height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
                       )
-                    : const Text(
-                        'Mettre à jour',
-                        style: TextStyle(
+                    : Text(
+                        t.action,
+                        style: const TextStyle(
                           color: Colors.white,
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -166,9 +179,9 @@ class _AppUpdateSheetState extends State<AppUpdateSheet> {
             const SizedBox(height: 6),
             TextButton(
               onPressed: _loading ? null : _onLater,
-              child: const Text(
-                'Me le rappeler plus tard',
-                style: TextStyle(
+              child: Text(
+                t.later,
+                style: const TextStyle(
                   color: HomeTheme.inkSoft,
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
