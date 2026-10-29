@@ -4,12 +4,13 @@
 // ----------------------------------------------------------------------------
 //  • ✅ Fond BLANC PUR, typographies RÉDUITES pour lisibilité maximale
 //  • ✅ Accent ORANGE standard marketplace (vert UNIQUEMENT carte locale)
-//  • ✅ Topbar compacte : recherche = icône seule, icon COMPTE SUPPRIMÉE
+//  • ✅ Topbar compacte : recherche = icône seule, icon COMPTE SUPPRIMÉ
 //  • ✅ Cartes promo avec PHOTOS de fond multiples + défilement auto (4 s)
 //  • ✅ v12.2 : IMAGES CLAIRES (sans voile coloré, sans flou) comme les cartes
 //       produits + scrim noir léger haut/bas pour la lisibilité du texte
 //  • ✅ Titre "PRODUITS LOCAUX" déplacé EN HAUT de la carte verte
 //  • ✅ Bouton d'ajout de photos visible UNIQUEMENT pour les ADMIN
+//  • ✅ Footer "Thix Market - African Marketplace" ajouté en bas
 // ============================================================================
 
 import 'dart:async';
@@ -367,15 +368,12 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
         }
       });
 
-  Future<void> _openShops(bool hasShop) => _go(MarketBadge.shops, () async {
-        if (hasShop) {
-          try {
-            await context.pushNamed('vendorDashboard');
-          } catch (_) {
-            await context.push('/market/vendor/dashboard');
-          }
-        } else {
-          await Navigator.push(context, MaterialPageRoute(builder: (_) => AllShopsAndSupermarketsPage()));
+  // ✅ MODIFIÉ : Va TOUJOURS vers le Vendor Dashboard (plus de hasShop)
+  Future<void> _openShops() => _go(MarketBadge.shops, () async {
+        try {
+          await context.pushNamed('vendorDashboard');
+        } catch (_) {
+          await context.push('/market/vendor/dashboard');
         }
       });
 
@@ -522,6 +520,28 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 SliverToBoxAdapter(child: _buildSectionHeader(_allProductsTitle(l10n))),
                 const SliverToBoxAdapter(child: SizedBox(height: 14)),
                 _buildGrid(forYouAsync, fallbackProducts, hasMore, l10n),
+                
+                // ✅ NOUVEAU : Footer Slogan African
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 32),
+                    child: Column(
+                      children: [
+                        Text(
+                          'THIX MARKET', 
+                          style: TextStyle(color: kInkMuted, fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 13),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'African Marketplace · L\'e-commerce intelligent', 
+                          style: TextStyle(color: kInkMuted, fontSize: 11, fontWeight: FontWeight.w500),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // Padding pour ne pas être caché par la Bottom Nav
                 const SliverToBoxAdapter(child: SizedBox(height: 120)),
               ],
             ),
@@ -559,8 +579,9 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                 RichText(
                   text: const TextSpan(
                     children: [
+                      // ✅ Changement du nom ici : THIX MARKET
                       TextSpan(text: 'THIX', style: TextStyle(color: kInk, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.4)),
-                      TextSpan(text: '.', style: TextStyle(color: kAccent, fontWeight: FontWeight.w900, fontSize: 16)),
+                      TextSpan(text: ' MARKET', style: TextStyle(color: kAccent, fontWeight: FontWeight.w900, fontSize: 16)),
                     ],
                   ),
                 ),
@@ -1603,7 +1624,7 @@ class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware
                         icon: Icons.storefront_rounded,
                         label: _t('Boutiques', 'Shops', 'Maduka'),
                         badge: badges.shops,
-                        onTap: () => _openShops(badges.hasShop),
+                        onTap: _openShops, // ✅ Appel direct (toujours vers le dashboard vendeur)
                       ),
                     ],
                   ),
