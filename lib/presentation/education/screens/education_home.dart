@@ -1130,32 +1130,53 @@ class _HomePageState extends ConsumerState<_HomePage>
   }
 
   List<Category> _mergeCategories(List<Category> dbCats) {
-    const customCats = [
-      Category(id: 'cat-langues', name: 'Langues'),
-      Category(id: 'cat-entrepreneuriat', name: 'Entrepreneuriat'),
-      Category(id: 'cat-dev', name: 'Développement personnel'),
-      Category(id: 'cat-culture', name: 'Culture'),
-    ];
-    final List<Category> allCats = List.from(dbCats);
-    for (var custom in customCats) {
-      if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
-        allCats.add(custom);
-      }
+  // ✅ Retiré 'const' car Category n'a pas de constructeur const
+  final customCats = <Category>[
+    Category(
+      id: 'cat-langues',
+      name: 'Langues',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ),
+    Category(
+      id: 'cat-entrepreneuriat',
+      name: 'Entrepreneuriat',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ),
+    Category(
+      id: 'cat-dev',
+      name: 'Développement personnel',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ),
+    Category(
+      id: 'cat-culture',
+      name: 'Culture',
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    ),
+  ];
+  
+  final List<Category> allCats = List.from(dbCats);
+  for (var custom in customCats) {
+    if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
+      allCats.add(custom);
     }
-    return allCats;
   }
+  return allCats;
+}
 
-  bool _matchesCategory(Formation f, Category cat) {
-    try {
-      final fCatId = (f as dynamic).categoryId;
-      if (fCatId == cat.id) return true;
-      final fCatName = (f as dynamic).category?.name;
-      if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) {
-        return true;
-      }
-    } catch (_) {}
-    return false;
-  }
+bool _matchesCategory(Formation f, Category cat) {
+  try {
+    final fCatId = (f as dynamic).categoryId;
+    if (fCatId == cat.id) return true;
+    final fCatName = (f as dynamic).category?.name;
+    if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) {
+      return true;
+    }
+  } catch (_) {}
+  return false;
 }
 
 // ============================================================================
