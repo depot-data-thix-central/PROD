@@ -378,14 +378,16 @@ class PcReactionPicker {
       barrierColor: Colors.black12,
       transitionDuration: const Duration(milliseconds: 170),
       pageBuilder: (ctx, _, __) {
-        final size = MediaQuery.sizeOf(ctx);
-        final w = pcReactions.length * 52.0 + 16;
-        final left = anchor.left.clamp(8.0, max(8.0, size.width - w - 8));
-        final top = max(anchor.top - 66, 48.0);
-        return Stack(children: [
-          Positioned(left: left, top: top, child: const _ReactionPill()),
-        ]);
-      },
+  final size = MediaQuery.sizeOf(ctx);
+  final w = pcReactions.length * 52.0 + 16;
+  final double left = anchor.left
+      .clamp(8.0, max(8.0, size.width - w - 8))
+      .toDouble();
+  final double top = max(anchor.top - 66, 48.0).toDouble();
+  return Stack(children: [
+    Positioned(left: left, top: top, child: const _ReactionPill()),
+  ]);
+},
       transitionBuilder: (ctx, anim, _, child) => FadeTransition(
         opacity: anim,
         child: ScaleTransition(
