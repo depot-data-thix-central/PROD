@@ -189,38 +189,48 @@ class _LessonManagementPageState
       });
       request.contentLength = fileSize;
 
-      int sent = 0;
-      double lastReported = 0.0;
-      
-      await file.openRead().map((chunk) {
-        sent += chunk.length;
-        final progress = sent / fileSize;
+      final client = http.Client();
+      try {
+        // On lance l'envoi de la requête (cela consomme le sink en arrière-plan)
+        final responseFuture = client.send(request);
+
+        int sent = 0;
+        double lastReported = 0.0;
         
-        // Mettre à jour la progression tous les 1% pour éviter de surcharger l'UI
-        if (progress - lastReported >= 0.01) {
-          lastReported = progress;
-          if (mounted) {
-            setState(() => _uploadProgress = progress);
+        await file.openRead().map((chunk) {
+          sent += chunk.length;
+          final progress = sent / fileSize;
+          
+          // Mettre à jour la progression tous les 1% pour éviter de surcharger l'UI
+          if (progress - lastReported >= 0.01) {
+            lastReported = progress;
+            if (mounted) {
+              setState(() => _uploadProgress = progress);
+            }
           }
+          return chunk;
+        }).pipe(request.sink);
+
+        // On attend la réponse du serveur une fois le flux terminé
+        final streamedResponse = await responseFuture;
+        final response = await http.Response.fromStream(streamedResponse);
+        final body = response.body;
+        
+        if (response.statusCode >= 400) {
+          throw Exception('Upload échoué (${response.statusCode}) : $body');
         }
-        return chunk;
-      }).pipe(request.sink);
 
-      final response = await request.close();
-      final body = await response.stream.bytesToString();
-      
-      if (response.statusCode >= 400) {
-        throw Exception('Upload échoué (${response.statusCode}) : $body');
-      }
-
-      final publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath);
-      
-      if (mounted) {
-        setState(() {
-          _contentController.text = publicUrl;
-          _isUploading = false;
-          _uploadProgress = 0.0;
-        });
+        final publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath);
+        
+        if (mounted) {
+          setState(() {
+            _contentController.text = publicUrl;
+            _isUploading = false;
+            _uploadProgress = 0.0;
+          });
+        }
+      } finally {
+        client.close();
       }
     } catch (e) {
       if (mounted) {
