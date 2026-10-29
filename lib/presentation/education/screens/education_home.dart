@@ -12,13 +12,12 @@ import '../providers/education_provider.dart' hide certificatesProvider;
 import '../providers/certificate_provider.dart';
 import 'package:thix_id/presentation/education/providers/book_provider.dart';
 import '../widgets/common/education_category_chip.dart';
-import '../widgets/common/formation_card.dart';
 import '../models/category.dart';
 import '../models/formation.dart';
 import '../models/certificate.dart';
 
 // ============================================================================
-// CONSTANTES COULEURS "ENTREPRISE ÉDUCATION"
+// CONSTANTES COULEURS "ENTREPRISE ÉDUCATION" (INCHANGÉES)
 // ============================================================================
 const Color _eduNavyBlue = Color(0xFF0F172A);
 const Color _eduAccentBlue = Color(0xFF0284C7);
@@ -30,6 +29,9 @@ const Color _eduShelfShadow = Color(0xFFB5835A);
 // ============================================================================
 final _eduTabIndexProvider = StateProvider<int>((ref) => 0);
 final _selectedCategoryProvider = StateProvider<String?>((ref) => null);
+
+/// ✅ NOUVEAU : Favoris locaux (bookmark sur les cartes)
+final _favoritesProvider = StateProvider<Set<String>>((ref) => <String>{});
 
 final _unreadNotificationsProvider =
     FutureProvider.autoDispose<int>((ref) async {
@@ -47,9 +49,7 @@ final _unreadNotificationsProvider =
   }
 });
 
-/// ✅ NOUVEAU : Provider de rôle formateur/admin/moderateur
-/// Retourne true si l'utilisateur peut accéder à l'espace formateur.
-/// Les rôles autorisés : formateur, admin, moderateur, entreprise, support
+/// Rôle formateur/admin/moderateur → accès espace formateur
 final _instructorRoleProvider = FutureProvider.autoDispose<bool>((ref) async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return false;
@@ -64,7 +64,15 @@ final _instructorRoleProvider = FutureProvider.autoDispose<bool>((ref) async {
         .toString()
         .toLowerCase()
         .trim();
-    const allowed = {'formateur', 'admin', 'moderateur', 'entreprise', 'support', 'instructor', 'teacher'};
+    const allowed = {
+      'formateur',
+      'admin',
+      'moderateur',
+      'entreprise',
+      'support',
+      'instructor',
+      'teacher'
+    };
     return allowed.contains(role);
   } catch (_) {
     return false;
@@ -72,12 +80,220 @@ final _instructorRoleProvider = FutureProvider.autoDispose<bool>((ref) async {
 });
 
 // ============================================================================
+// HELPERS GLOBAUX
+// ============================================================================
+int _lessonCount(Formation f) =>
+    f.modules?.fold<int>(0, (sum, m) => sum + (m.lessons?.length ?? 0)) ?? 0;
+
+String _durationLabel(Formation f) {
+  final h = f.duration ~/ 60;
+  final m = f.duration % 60;
+  if (h <= 0) return '${m}min';
+  return m <= 0 ? '${h}h' : '${h}h ${m}min';
+}
+
+IconData _categoryIcon(String name) {
+  final n = name.toLowerCase();
+  if (n.contains('dev') || n.contains('code') || n.contains('info')) {
+    return Icons.code_rounded;
+  }
+  if (n.contains('lang')) return Icons.translate_rounded;
+  if (n.contains('business') || n.contains('entrep') || n.contains('manage')) {
+    return Icons.business_center_rounded;
+  }
+  if (n.contains('design') || n.contains('art')) return Icons.palette_rounded;
+  if (n.contains('market')) return Icons.campaign_rounded;
+  if (n.contains('santé') || n.contains('health') || n.contains('sport')) {
+    return Icons.favorite_rounded;
+  }
+  if (n.contains('finance') || n.contains('compta')) {
+    return Icons.payments_rounded;
+  }
+  if (n.contains('musiq') || n.contains('music')) return Icons.music_note_rounded;
+  if (n.contains('culture')) return Icons.museum_rounded;
+  return Icons.school_rounded;
+}
+
+// ============================================================================
+// ANIMATIONS RÉUTILISABLES (niveau pro)
+// ============================================================================
+
+/// Entrée en fondu + slide vers le haut, avec délai (stagger)
+class _FadeInUp extends StatefulWidget {
+  final Widget child;
+  final int delayMs;
+  const _FadeInUp({required this.child, this.delayMs = 0});
+
+  @override
+  State<_FadeInUp> createState() => _FadeInUpState();
+}
+
+class _FadeInUpState extends State<_FadeInUp>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 550),
+  );
+  late final Animation<double> _anim =
+      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) _ctrl.forward();
+    });
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _anim,
+      child: SlideTransition(
+        position: Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
+            .animate(_anim),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Effet "press" (scale down) sur les cartes & boutons
+class _Pressable extends StatefulWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _Pressable({required this.child, required this.onTap});
+
+  @override
+  State<_Pressable> createState() => _PressableState();
+}
+
+class _PressableState extends State<_Pressable> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      onTap: widget.onTap,
+      child: AnimatedScale(
+        scale: _pressed ? 0.965 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Badge de notification qui pulse
+class _PulseBadge extends StatefulWidget {
+  final int count;
+  const _PulseBadge({required this.count});
+
+  @override
+  State<_PulseBadge> createState() => _PulseBadgeState();
+}
+
+class _PulseBadgeState extends State<_PulseBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: Tween<double>(begin: 1.0, end: 1.25).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: const BoxDecoration(
+          color: ThixPolicy.danger,
+          shape: BoxShape.circle,
+        ),
+        child: Text(
+          '${widget.count}',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Skeleton shimmer pendant chargement du hero
+class _ShimmerBox extends StatefulWidget {
+  final double height;
+  final double width;
+  final double radius;
+  const _ShimmerBox({
+    required this.height,
+    this.width = double.infinity,
+    this.radius = 24,
+  });
+
+  @override
+  State<_ShimmerBox> createState() => _ShimmerBoxState();
+}
+
+class _ShimmerBoxState extends State<_ShimmerBox>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.45, end: 0.9).animate(
+        CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        height: widget.height,
+        width: widget.width,
+        decoration: BoxDecoration(
+          color: ThixPolicy.border.withOpacity(0.5),
+          borderRadius: BorderRadius.circular(widget.radius),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // PAGE PRINCIPALE (HUB E-LEARNING)
 // ============================================================================
 class EducationHome extends ConsumerWidget {
   const EducationHome({super.key});
 
-  // ✅ Profil RETIRÉ de la liste des pages
   static const _pages = [
     _HomePage(),
     _MyLearningPage(),
@@ -110,13 +326,12 @@ class EducationHome extends ConsumerWidget {
 }
 
 // ============================================================================
-// BOTTOM NAVIGATION (sans Profil)
+// BOTTOM NAVIGATION FLOTTANTE (animée)
 // ============================================================================
 class _FloatingBottomNav extends ConsumerWidget {
   final int selectedIndex;
   const _FloatingBottomNav({required this.selectedIndex});
 
-  // ✅ Profil RETIRÉ — seulement 4 items
   static const _items = [
     (Icons.home_rounded, 'Accueil'),
     (Icons.play_circle_outline_rounded, 'My Learning'),
@@ -132,16 +347,17 @@ class _FloatingBottomNav extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(
             ThixPolicy.s12, 0, ThixPolicy.s12, ThixPolicy.s12),
         child: Container(
-          height: 64,
+          height: 68,
           decoration: BoxDecoration(
             color: ThixPolicy.card,
-            borderRadius: BorderRadius.circular(32),
+            borderRadius: BorderRadius.circular(34),
             border: Border.all(color: ThixPolicy.border.withOpacity(0.5)),
             boxShadow: [
               BoxShadow(
-                  color: _eduNavyBlue.withOpacity(0.08),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8)),
+                color: _eduNavyBlue.withOpacity(0.10),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
+              ),
             ],
           ),
           child: Row(
@@ -149,38 +365,55 @@ class _FloatingBottomNav extends ConsumerWidget {
             children: List.generate(_items.length, (i) {
               final isSelected = selectedIndex == i;
               final item = _items[i];
-              return InkWell(
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  ref.read(_eduTabIndexProvider.notifier).state = i;
-                },
-                borderRadius: BorderRadius.circular(24),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        item.$1,
-                        color: isSelected
-                            ? _eduAccentBlue
-                            : ThixPolicy.textSecondary,
-                        size: isSelected ? 24 : 22,
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        item.$2,
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight:
-                              isSelected ? FontWeight.w800 : FontWeight.w600,
-                          color: isSelected
-                              ? _eduAccentBlue
-                              : ThixPolicy.textSecondary,
+              return Expanded(
+                child: InkWell(
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    ref.read(_eduTabIndexProvider.notifier).state = i;
+                  },
+                  borderRadius: BorderRadius.circular(24),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 250),
+                    curve: Curves.easeOut,
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? _eduAccentBlue.withOpacity(0.10)
+                          : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          transitionBuilder: (child, anim) =>
+                              ScaleTransition(scale: anim, child: child),
+                          child: Icon(
+                            item.$1,
+                            key: ValueKey(isSelected),
+                            color: isSelected
+                                ? _eduAccentBlue
+                                : ThixPolicy.textSecondary,
+                            size: isSelected ? 25 : 22,
+                          ),
                         ),
-                      ),
-                    ],
+                        const SizedBox(height: 3),
+                        Text(
+                          item.$2,
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: isSelected
+                                ? FontWeight.w800
+                                : FontWeight.w600,
+                            color: isSelected
+                                ? _eduAccentBlue
+                                : ThixPolicy.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -222,8 +455,8 @@ class _MyLearningPage extends ConsumerWidget {
         ),
       ),
       body: enrollAsync.when(
-        loading: () => const Center(
-            child: CircularProgressIndicator(color: _eduAccentBlue)),
+        loading: () =>
+            const Center(child: CircularProgressIndicator(color: _eduAccentBlue)),
         error: (e, _) => Center(child: Text('Erreur : $e')),
         data: (list) {
           if (list.isEmpty) {
@@ -271,76 +504,112 @@ class _MyLearningPage extends ConsumerWidget {
               final f = e.formation;
               if (f == null) return const SizedBox.shrink();
               final pct = ((e.progress ?? 0) * 100).round();
+              final done = pct >= 100;
 
-              return InkWell(
-                onTap: () => context.push('/education/formation/${f.id}'),
-                borderRadius: BorderRadius.circular(16),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                  ),
-                  child: Row(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: f.imageUrl != null && f.imageUrl!.isNotEmpty
-                            ? Image.network(
-                                f.imageUrl!,
-                                width: 64,
-                                height: 64,
-                                fit: BoxFit.cover,
-                              )
-                            : Container(
-                                width: 64,
-                                height: 64,
-                                color: _eduNavyBlue,
-                                child: const Icon(Icons.school,
-                                    color: Colors.white),
-                              ),
-                      ),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              return _FadeInUp(
+                delayMs: i * 60,
+                child: _Pressable(
+                  onTap: () => context.push('/education/formation/${f.id}'),
+                  child: Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      children: [
+                        Stack(
                           children: [
-                            Text(
-                              f.title,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w800,
-                                fontSize: 14,
-                                color: _eduNavyBlue,
-                              ),
-                            ),
-                            const SizedBox(height: 8),
                             ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: LinearProgressIndicator(
-                                value: e.progress ?? 0,
-                                minHeight: 6,
-                                backgroundColor: Colors.grey.shade200,
-                                color: _eduAccentBlue,
-                              ),
+                              borderRadius: BorderRadius.circular(14),
+                              child: f.imageUrl != null &&
+                                      f.imageUrl!.isNotEmpty
+                                  ? Image.network(
+                                      f.imageUrl!,
+                                      width: 64,
+                                      height: 64,
+                                      fit: BoxFit.cover,
+                                    )
+                                  : Container(
+                                      width: 64,
+                                      height: 64,
+                                      color: _eduNavyBlue,
+                                      child: const Icon(Icons.school,
+                                          color: Colors.white),
+                                    ),
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '$pct % terminé',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                color: Colors.grey,
-                                fontWeight: FontWeight.w600,
+                            if (done)
+                              Positioned(
+                                right: -4,
+                                bottom: -4,
+                                child: Container(
+                                  padding: const EdgeInsets.all(3),
+                                  decoration: BoxDecoration(
+                                    color: ThixPolicy.card,
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: const Icon(
+                                    Icons.verified_rounded,
+                                    color: Color(0xFF10B981),
+                                    size: 18,
+                                  ),
+                                ),
                               ),
-                            ),
                           ],
                         ),
-                      ),
-                      const Icon(Icons.chevron_right_rounded,
-                          color: Colors.grey),
-                    ],
+                        const SizedBox(width: 14),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                f.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 14,
+                                  color: _eduNavyBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: LinearProgressIndicator(
+                                  value: e.progress ?? 0,
+                                  minHeight: 6,
+                                  backgroundColor: Colors.grey.shade200,
+                                  color: done
+                                      ? const Color(0xFF10B981)
+                                      : _eduAccentBlue,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                done ? 'Terminé 🎉' : '$pct % terminé',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: done
+                                      ? const Color(0xFF10B981)
+                                      : Colors.grey,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: Colors.grey),
+                      ],
+                    ),
                   ),
                 ),
               );
@@ -380,13 +649,18 @@ class _HomePageState extends ConsumerState<_HomePage>
   }
 
   @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     super.build(context);
     final user = Supabase.instance.client.auth.currentUser;
     final unreadAsync = ref.watch(_unreadNotificationsProvider);
     final formationsAsync = ref.watch(formationsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
-    // ✅ NOUVEAU : récupération du rôle formateur
     final isInstructorAsync = ref.watch(_instructorRoleProvider);
 
     return RefreshIndicator(
@@ -403,6 +677,7 @@ class _HomePageState extends ConsumerState<_HomePage>
         physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics()),
         slivers: [
+          // ================= HEADER =================
           SliverToBoxAdapter(
             child: Container(
               padding: EdgeInsets.only(
@@ -423,9 +698,11 @@ class _HomePageState extends ConsumerState<_HomePage>
                         CircleAvatar(
                           radius: 22,
                           backgroundColor: _eduNavyBlue.withOpacity(0.05),
-                          backgroundImage: user?.userMetadata?['avatar_url'] != null
-                              ? NetworkImage(user!.userMetadata!['avatar_url'])
-                              : null,
+                          backgroundImage:
+                              user?.userMetadata?['avatar_url'] != null
+                                  ? NetworkImage(
+                                      user!.userMetadata!['avatar_url'])
+                                  : null,
                           child: user?.userMetadata?['avatar_url'] == null
                               ? const Icon(Icons.person,
                                   color: _eduNavyBlue, size: 22)
@@ -437,7 +714,7 @@ class _HomePageState extends ConsumerState<_HomePage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                  'Bonjour, ${user?.userMetadata?['full_name']?.split(' ')[0] ?? 'Apprenant'}',
+                                  'Bonjour, ${user?.userMetadata?['full_name']?.split(' ')[0] ?? 'Apprenant'} 👋',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
@@ -452,7 +729,7 @@ class _HomePageState extends ConsumerState<_HomePage>
                             ],
                           ),
                         ),
-                        GestureDetector(
+                        _Pressable(
                           onTap: () => context.push('/notifications'),
                           child: Stack(
                             clipBehavior: Clip.none,
@@ -463,25 +740,17 @@ class _HomePageState extends ConsumerState<_HomePage>
                                     shape: BoxShape.circle,
                                     border: Border.all(
                                         color: ThixPolicy.border)),
-                                child: const Icon(Icons.notifications_none_rounded,
-                                    color: _eduNavyBlue, size: 20),
+                                child: const Icon(
+                                    Icons.notifications_none_rounded,
+                                    color: _eduNavyBlue,
+                                    size: 20),
                               ),
                               unreadAsync.maybeWhen(
                                 data: (count) => count > 0
                                     ? Positioned(
-                                        right: -2,
-                                        top: -2,
-                                        child: Container(
-                                          padding: const EdgeInsets.all(4),
-                                          decoration: const BoxDecoration(
-                                              color: ThixPolicy.danger,
-                                              shape: BoxShape.circle),
-                                          child: Text('$count',
-                                              style: const TextStyle(
-                                                  color: Colors.white,
-                                                  fontSize: 9,
-                                                  fontWeight: FontWeight.bold)),
-                                        ),
+                                        right: -4,
+                                        top: -4,
+                                        child: _PulseBadge(count: count),
                                       )
                                     : const SizedBox.shrink(),
                                 orElse: () => const SizedBox.shrink(),
@@ -496,7 +765,7 @@ class _HomePageState extends ConsumerState<_HomePage>
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: ThixPolicy.s16),
-                    child: GestureDetector(
+                    child: _Pressable(
                       onTap: () => context.push('/education/search'),
                       child: Container(
                         height: 48,
@@ -504,8 +773,8 @@ class _HomePageState extends ConsumerState<_HomePage>
                             horizontal: ThixPolicy.s16),
                         decoration: BoxDecoration(
                             color: ThixPolicy.surface,
-                            borderRadius:
-                                BorderRadius.circular(ThixPolicy.inputRadius),
+                            borderRadius: BorderRadius.circular(
+                                ThixPolicy.inputRadius),
                             border: Border.all(color: ThixPolicy.border)),
                         child: const Row(
                           children: [
@@ -520,22 +789,23 @@ class _HomePageState extends ConsumerState<_HomePage>
                                       fontSize: 13,
                                       fontWeight: FontWeight.w500)),
                             ),
+                            Icon(Icons.tune_rounded,
+                                color: ThixPolicy.textSecondary, size: 20),
                           ],
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(height: ThixPolicy.s16),
-                  // ✅ QUICK ICONS : layout dynamique selon le rôle
                   Padding(
                     padding: const EdgeInsets.symmetric(
                         horizontal: ThixPolicy.s16),
                     child: isInstructorAsync.when(
                       loading: () => const _QuickIconsSkeleton(),
-                      error: (_, __) => _QuickIconsRow(showInstructor: false),
-                      data: (isInstructor) => _QuickIconsRow(
-                        showInstructor: isInstructor,
-                      ),
+                      error: (_, __) =>
+                          const _QuickIconsRow(showInstructor: false),
+                      data: (isInstructor) =>
+                          _QuickIconsRow(showInstructor: isInstructor),
                     ),
                   ),
                 ],
@@ -543,132 +813,183 @@ class _HomePageState extends ConsumerState<_HomePage>
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
+
+          // ================= CONTENU =================
           formationsAsync.when(
             loading: () => const SliverToBoxAdapter(
-                child: Padding(
-                    padding: EdgeInsets.all(40),
-                    child: Center(
-                        child:
-                            CircularProgressIndicator(color: _eduAccentBlue)))),
-            error: (_, __) => const SliverToBoxAdapter(
-                child: Center(child: Text('Erreur de chargement.'))),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
+                child: Column(
+                  children: [
+                    _ShimmerBox(height: 380),
+                    SizedBox(height: 24),
+                    _ShimmerBox(height: 110, radius: 20),
+                    SizedBox(height: 24),
+                    _ShimmerBox(height: 260, radius: 20),
+                  ],
+                ),
+              ),
+            ),
+            error: (_, __) => SliverToBoxAdapter(
+              child: Center(
+                child: Column(
+                  children: [
+                    const SizedBox(height: 60),
+                    const Icon(Icons.cloud_off_rounded,
+                        size: 56, color: ThixPolicy.textSecondary),
+                    const SizedBox(height: 12),
+                    const Text('Erreur de chargement.',
+                        style: TextStyle(
+                            color: ThixPolicy.textSecondary,
+                            fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: () => ref.invalidate(formationsProvider),
+                      icon: const Icon(Icons.refresh_rounded, size: 18),
+                      label: const Text('Réessayer'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _eduAccentBlue,
+                        foregroundColor: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
             data: (paginated) {
               final formations = paginated.items;
-              final recentFormations = formations.take(5).toList();
-              
+              final recentFormations = formations.take(6).toList();
+
               final topFormations = [...formations]
                 ..sort((a, b) => b.rating.compareTo(a.rating));
               final awaitedFormations = formations.reversed.take(4).toList();
 
               return SliverList(
                 delegate: SliverChildListDelegate([
-                  if (user != null)
-                    Padding(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: ThixPolicy.s16),
-                        child: _ContinueLearningCard(userId: user.id)),
-                  const SizedBox(height: ThixPolicy.s20),
-                  Padding(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: ThixPolicy.s16),
-                      child: _HeroCarousel(recentFormations: recentFormations)),
+                  // ============ HERO CAROUSEL (style THIX Market) ============
+                  _FadeInUp(
+                    child: _HeroCarousel(recentFormations: recentFormations),
+                  ),
                   const SizedBox(height: ThixPolicy.s24),
 
+                  // ============ REPRENDRE ============
+                  if (user != null)
+                    _FadeInUp(
+                      delayMs: 80,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: ThixPolicy.s16),
+                        child: _ContinueLearningCard(userId: user.id),
+                      ),
+                    ),
+                  const SizedBox(height: ThixPolicy.s24),
+
+                  // ============ TOP FORMATIONS ============
                   if (topFormations.isNotEmpty) ...[
-                    _SectionHeader(
+                    _FadeInUp(
+                      delayMs: 120,
+                      child: _SectionHeader(
                         title: 'Top des formations',
-                        onSeeAll: () => context.push('/education/explore')),
+                        icon: Icons.star_rounded,
+                        onSeeAll: () => context.push('/education/explore'),
+                      ),
+                    ),
                     const SizedBox(height: ThixPolicy.s12),
                     SizedBox(
-                      height: 260,
+                      height: 300,
                       child: ListView.separated(
                         padding: const EdgeInsets.symmetric(
                             horizontal: ThixPolicy.s16),
                         scrollDirection: Axis.horizontal,
-                        itemCount: topFormations.length > 6
-                            ? 6
-                            : topFormations.length,
+                        itemCount:
+                            topFormations.length > 6 ? 6 : topFormations.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(width: ThixPolicy.s16),
                         itemBuilder: (_, i) {
                           final f = topFormations[i];
                           return SizedBox(
-                              width: 200,
-                              child: FormationCard(
-                                  formation: f,
-                                  onTap: () => context.push(
-                                      '/education/formation/${f.id}')));
+                            width: 210,
+                            child: _ProFormationCard(
+                              formation: f,
+                              onTap: () => context.push(
+                                  '/education/formation/${f.id}'),
+                            ),
+                          );
                         },
                       ),
                     ),
-                    const SizedBox(height: ThixPolicy.s24),
+                    const SizedBox(height: ThixPolicy.s28),
                   ],
 
-                  if (awaitedFormations.isNotEmpty) ...[
-                    _SectionHeader(
-                        title: 'Les plus attendus',
-                        onSeeAll: () => context.push('/education/explore')),
-                    const SizedBox(height: ThixPolicy.s12),
-                    SizedBox(
-                      height: 250,
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: ThixPolicy.s16),
-                        scrollDirection: Axis.horizontal,
-                        itemCount: awaitedFormations.length > 4
-                            ? 4
-                            : awaitedFormations.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(width: ThixPolicy.s16),
-                        itemBuilder: (_, i) {
-                          final f = awaitedFormations[i];
-                          return SizedBox(
-                              width: 220,
-                              child: _AwaitedFormationCard(formation: f));
-                        },
-                      ),
-                    ),
-                    const SizedBox(height: ThixPolicy.s24),
-                  ],
-
-                  categoriesAsync.when(
+                  // ============ PARCOURIR PAR CATÉGORIE (NOUVEAU) ============
+                  categoriesAsync.maybeWhen(
                     data: (dbCats) {
-                      final customCats = [
-                        Category(id: 'cat-langues', name: 'Langues'),
-                        Category(id: 'cat-entrepreneuriat', name: 'Entrepreneuriat'),
-                        Category(id: 'cat-dev', name: 'Développement personnel'),
-                        Category(id: 'cat-culture', name: 'Culture'),
-                      ];
+                      final allCats = _mergeCategories(dbCats);
+                      if (allCats.isEmpty) return const SizedBox.shrink();
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _FadeInUp(
+                            child: _SectionHeader(
+                              title: 'Parcourir par catégorie',
+                              icon: Icons.category_rounded,
+                              onSeeAll: () =>
+                                  context.push('/education/explore'),
+                              seeAllLabel: 'Tout voir',
+                            ),
+                          ),
+                          const SizedBox(height: ThixPolicy.s12),
+                          SizedBox(
+                            height: 108,
+                            child: ListView.separated(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: ThixPolicy.s16),
+                              scrollDirection: Axis.horizontal,
+                              itemCount: allCats.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: ThixPolicy.s12),
+                              itemBuilder: (_, i) {
+                                final cat = allCats[i];
+                                final count = formations
+                                    .where((f) => _matchesCategory(f, cat))
+                                    .length;
+                                return _CategoryTile(
+                                  category: cat,
+                                  count: count,
+                                  index: i,
+                                  onTap: () => context.push(
+                                      '/education/explore?category=${cat.id}'),
+                                );
+                              },
+                            ),
+                          ),
+                          const SizedBox(height: ThixPolicy.s28),
+                        ],
+                      );
+                    },
+                    orElse: () => const SizedBox.shrink(),
+                  ),
 
-                      final List<Category> allCats = List.from(dbCats);
-                      for (var custom in customCats) {
-                        if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
-                          allCats.add(custom);
-                        }
-                      }
-
+                  // ============ RANGÉES PAR CATÉGORIE ============
+                  categoriesAsync.maybeWhen(
+                    data: (dbCats) {
+                      final allCats = _mergeCategories(dbCats);
                       return Column(
                         children: allCats.map((cat) {
-                          final catFormations = formations.where((f) {
-                            try {
-                              final fCatId = (f as dynamic).categoryId;
-                              if (fCatId == cat.id) return true;
-                              
-                              final fCatName = (f as dynamic).category?.name;
-                              if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) return true;
-                            } catch (_) {}
-                            return false;
-                          }).toList();
+                          final catFormations =
+                              formations.where((f) => _matchesCategory(f, cat)).toList();
 
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               _SectionHeader(
-                                  title: cat.name,
-                                  onSeeAll: () => context.push(
-                                      '/education/explore?category=${cat.id}')),
+                                title: cat.name,
+                                icon: _categoryIcon(cat.name),
+                                onSeeAll: () => context.push(
+                                    '/education/explore?category=${cat.id}'),
+                                seeAllLabel: 'Voir tout',
+                              ),
                               const SizedBox(height: ThixPolicy.s12),
-                              
                               if (catFormations.isEmpty)
                                 Container(
                                   margin: const EdgeInsets.symmetric(
@@ -676,8 +997,8 @@ class _HomePageState extends ConsumerState<_HomePage>
                                   height: 90,
                                   decoration: BoxDecoration(
                                     color: ThixPolicy.surface,
-                                    borderRadius: BorderRadius.circular(
-                                        ThixPolicy.rLg),
+                                    borderRadius:
+                                        BorderRadius.circular(ThixPolicy.rLg),
                                     border: Border.all(
                                         color: ThixPolicy.border,
                                         style: BorderStyle.solid),
@@ -691,7 +1012,7 @@ class _HomePageState extends ConsumerState<_HomePage>
                                 )
                               else
                                 SizedBox(
-                                  height: 260,
+                                  height: 300,
                                   child: ListView.separated(
                                     padding: const EdgeInsets.symmetric(
                                         horizontal: ThixPolicy.s16),
@@ -702,22 +1023,100 @@ class _HomePageState extends ConsumerState<_HomePage>
                                     itemBuilder: (_, i) {
                                       final f = catFormations[i];
                                       return SizedBox(
-                                          width: 200,
-                                          child: FormationCard(
-                                              formation: f,
-                                              onTap: () => context.push(
-                                                  '/education/formation/${f.id}')));
+                                        width: 210,
+                                        child: _ProFormationCard(
+                                          formation: f,
+                                          onTap: () => context.push(
+                                              '/education/formation/${f.id}'),
+                                        ),
+                                      );
                                     },
                                   ),
                                 ),
-                              const SizedBox(height: ThixPolicy.s24),
+                              const SizedBox(height: ThixPolicy.s28),
                             ],
                           );
                         }).toList(),
                       );
                     },
-                    loading: () => const SizedBox.shrink(),
-                    error: (_, __) => const SizedBox.shrink(),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
+
+                  // ============ LES PLUS ATTENDUS ============
+                  if (awaitedFormations.isNotEmpty) ...[
+                    _SectionHeader(
+                      title: 'Les plus attendus',
+                      icon: Icons.local_fire_department_rounded,
+                      onSeeAll: () => context.push('/education/explore'),
+                    ),
+                    const SizedBox(height: ThixPolicy.s12),
+                    SizedBox(
+                      height: 260,
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: ThixPolicy.s16),
+                        scrollDirection: Axis.horizontal,
+                        itemCount: awaitedFormations.length > 4
+                            ? 4
+                            : awaitedFormations.length,
+                        separatorBuilder: (_, __) =>
+                            const SizedBox(width: ThixPolicy.s16),
+                        itemBuilder: (_, i) {
+                          final f = awaitedFormations[i];
+                          return SizedBox(
+                            width: 220,
+                            child: _AwaitedFormationCard(formation: f),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: ThixPolicy.s28),
+                  ],
+
+                  // ============ CTA CATALOGUE ============
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: ThixPolicy.s16),
+                    child: _Pressable(
+                      onTap: () => context.push('/education/explore'),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_eduNavyBlue, Color(0xFF1E293B)],
+                          ),
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _eduNavyBlue.withOpacity(0.25),
+                              blurRadius: 16,
+                              offset: const Offset(0, 8),
+                            ),
+                          ],
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.grid_view_rounded,
+                                color: ThixPolicy.gold, size: 20),
+                            SizedBox(width: 10),
+                            Text(
+                              'Explorer tout le catalogue',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w900,
+                                fontSize: 15,
+                                letterSpacing: 0.2,
+                              ),
+                            ),
+                            SizedBox(width: 8),
+                            Icon(Icons.arrow_forward_rounded,
+                                color: ThixPolicy.gold, size: 18),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
 
                   const SizedBox(height: 120),
@@ -729,10 +1128,768 @@ class _HomePageState extends ConsumerState<_HomePage>
       ),
     );
   }
+
+  List<Category> _mergeCategories(List<Category> dbCats) {
+    const customCats = [
+      Category(id: 'cat-langues', name: 'Langues'),
+      Category(id: 'cat-entrepreneuriat', name: 'Entrepreneuriat'),
+      Category(id: 'cat-dev', name: 'Développement personnel'),
+      Category(id: 'cat-culture', name: 'Culture'),
+    ];
+    final List<Category> allCats = List.from(dbCats);
+    for (var custom in customCats) {
+      if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
+        allCats.add(custom);
+      }
+    }
+    return allCats;
+  }
+
+  bool _matchesCategory(Formation f, Category cat) {
+    try {
+      final fCatId = (f as dynamic).categoryId;
+      if (fCatId == cat.id) return true;
+      final fCatName = (f as dynamic).category?.name;
+      if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
 }
 
 // ============================================================================
-// ✅ NOUVEAU : WIDGET QuickIconsRow avec Formateur conditionnel
+// ✅ HERO CAROUSEL IMMERSIF (référence THIX Market)
+// ============================================================================
+class _HeroCarousel extends StatefulWidget {
+  final List<Formation> recentFormations;
+  const _HeroCarousel({required this.recentFormations});
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  final PageController _controller = PageController(viewportFraction: 0.92);
+  double _pageOffset = 0;
+  int _page = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(() {
+      if (mounted) setState(() => _pageOffset = _controller.page ?? 0);
+    });
+    _restartTimer();
+  }
+
+  void _restartTimer() {
+    _timer?.cancel();
+    if (widget.recentFormations.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 5), (_) {
+        if (!mounted || !_controller.hasClients) return;
+        final next = (_page + 1) % widget.recentFormations.length;
+        _controller.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 650),
+          curve: Curves.easeInOutCubic,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.recentFormations.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 400,
+          child: PageView.builder(
+            controller: _controller,
+            itemCount: widget.recentFormations.length,
+            onPageChanged: (i) {
+              setState(() => _page = i);
+              _restartTimer();
+            },
+            itemBuilder: (_, i) {
+              final f = widget.recentFormations[i];
+              final delta = (i - _pageOffset).abs().clamp(0.0, 1.0);
+              final scale = 1.0 - (delta * 0.06);
+              final lessons = _lessonCount(f);
+
+              return Transform.scale(
+                scale: scale,
+                child: _Pressable(
+                  onTap: () => context.push('/education/formation/${f.id}'),
+                  child: Container(
+                    margin: const EdgeInsets.symmetric(
+                        horizontal: 4, vertical: 8),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(28),
+                      color: _eduNavyBlue,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _eduNavyBlue.withOpacity(0.30),
+                          blurRadius: 24,
+                          offset: const Offset(0, 12),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(28),
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          // Image de fond
+                          if (f.imageUrl != null && f.imageUrl!.isNotEmpty)
+                            Image.network(
+                              f.imageUrl!,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  const _HeroPlaceholder(),
+                            )
+                          else
+                            const _HeroPlaceholder(),
+
+                          // Voile sombre selon la position (parallax feel)
+                          Positioned.fill(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withOpacity(0.25 + delta * 0.3),
+                                    Colors.transparent,
+                                    Colors.black.withOpacity(0.85),
+                                  ],
+                                  stops: const [0.0, 0.45, 1.0],
+                                ),
+                              ),
+                            ),
+                          ),
+
+                          // Badges hauts
+                          Positioned(
+                            top: 16,
+                            left: 16,
+                            right: 16,
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 7),
+                                  decoration: BoxDecoration(
+                                    color: _eduAccentBlue,
+                                    borderRadius: BorderRadius.circular(20),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color:
+                                            _eduAccentBlue.withOpacity(0.45),
+                                        blurRadius: 12,
+                                        offset: const Offset(0, 4),
+                                      ),
+                                    ],
+                                  ),
+                                  child: const Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.auto_awesome_rounded,
+                                          color: Colors.white, size: 12),
+                                      SizedBox(width: 6),
+                                      Text('NOUVEAU',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: 0.8)),
+                                    ],
+                                  ),
+                                ),
+                                const Spacer(),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 10, vertical: 6),
+                                  decoration: BoxDecoration(
+                                    color: Colors.black45,
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.star_rounded,
+                                          color: ThixPolicy.gold, size: 14),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        f.rating.toStringAsFixed(1),
+                                        style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w800),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+
+                          // Contenu bas
+                          Positioned(
+                            left: 20,
+                            right: 20,
+                            bottom: 22,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (f.category?.name != null)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 10, vertical: 5),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white.withOpacity(0.18),
+                                      borderRadius: BorderRadius.circular(8),
+                                      border: Border.all(
+                                          color: Colors.white24),
+                                    ),
+                                    child: Text(
+                                      f.category!.name.toUpperCase(),
+                                      style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w900,
+                                          letterSpacing: 1.0),
+                                    ),
+                                  ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  f.title,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 26,
+                                    fontWeight: FontWeight.w900,
+                                    height: 1.15,
+                                    letterSpacing: -0.6,
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 12,
+                                      backgroundColor:
+                                          Colors.white.withOpacity(0.2),
+                                      child: const Icon(Icons.person,
+                                          size: 13, color: Colors.white),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        f.instructorName ?? 'THIX Academy',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w600),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 16),
+                                Row(
+                                  children: [
+                                    // Bouton "Découvrir" (style Market)
+                                    GestureDetector(
+                                      onTap: () => context.push(
+                                          '/education/formation/${f.id}'),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 18, vertical: 12),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius:
+                                              BorderRadius.circular(28),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: Colors.black
+                                                  .withOpacity(0.25),
+                                              blurRadius: 12,
+                                              offset: const Offset(0, 5),
+                                            ),
+                                          ],
+                                        ),
+                                        child: const Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Icon(Icons.menu_book_rounded,
+                                                color: _eduNavyBlue, size: 18),
+                                            SizedBox(width: 8),
+                                            Text('Découvrir',
+                                                style: TextStyle(
+                                                    color: _eduNavyBlue,
+                                                    fontSize: 14,
+                                                    fontWeight:
+                                                        FontWeight.w900)),
+                                            SizedBox(width: 8),
+                                            Icon(Icons.arrow_forward_rounded,
+                                                color: _eduNavyBlue, size: 16),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 12, vertical: 10),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.16),
+                                        borderRadius: BorderRadius.circular(16),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          const Icon(
+                                              Icons.video_library_rounded,
+                                              color: Colors.white,
+                                              size: 15),
+                                          const SizedBox(width: 6),
+                                          Text('$lessons leçons',
+                                              style: const TextStyle(
+                                                  color: Colors.white,
+                                                  fontSize: 11,
+                                                  fontWeight:
+                                                      FontWeight.w700)),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: ThixPolicy.s12),
+        if (widget.recentFormations.length > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(
+              widget.recentFormations.length,
+              (i) => AnimatedContainer(
+                duration: const Duration(milliseconds: 350),
+                curve: Curves.easeOutCubic,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                width: _page == i ? 24 : 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: _page == i ? _eduAccentBlue : ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _HeroPlaceholder extends StatelessWidget {
+  const _HeroPlaceholder();
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_eduNavyBlue, _eduAccentBlue],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.school_rounded, size: 90, color: Colors.white24),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ CARTE PRO (badge, favoris, rating, meta, CTA)
+// ============================================================================
+class _ProFormationCard extends ConsumerWidget {
+  final Formation formation;
+  final VoidCallback onTap;
+  const _ProFormationCard({required this.formation, required this.onTap});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final favs = ref.watch(_favoritesProvider);
+    final isFav = favs.contains(formation.id);
+    final lessons = _lessonCount(formation);
+    final isTop = formation.rating >= 4.5;
+
+    return _Pressable(
+      onTap: onTap,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: ThixPolicy.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 14,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ---------- IMAGE + OVERLAYS ----------
+            Expanded(
+              flex: 5,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(20)),
+                    child: formation.imageUrl != null &&
+                            formation.imageUrl!.isNotEmpty
+                        ? Image.network(formation.imageUrl!,
+                            fit: BoxFit.cover)
+                        : Container(
+                            color: _eduNavyBlue,
+                            child: const Icon(Icons.school,
+                                color: Colors.white30, size: 44),
+                          ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withOpacity(0.35),
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.45),
+                          ],
+                          stops: const [0.0, 0.4, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Badge haut gauche
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: isTop ? ThixPolicy.gold : _eduAccentBlue,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isTop ? 'TOP' : 'NOUVEAU',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.6),
+                      ),
+                    ),
+                  ),
+                  // Favori haut droit
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: GestureDetector(
+                      onTap: () {
+                        final next = Set<String>.from(favs);
+                        if (isFav) {
+                          next.remove(formation.id);
+                        } else {
+                          next.add(formation.id);
+                        }
+                        ref.read(_favoritesProvider.notifier).state = next;
+                        HapticFeedback.lightImpact();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(isFav
+                                ? 'Retiré des favoris'
+                                : 'Ajouté aux favoris ❤️'),
+                            duration: const Duration(seconds: 1),
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.15),
+                              blurRadius: 8,
+                            ),
+                          ],
+                        ),
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 250),
+                          transitionBuilder: (child, anim) =>
+                              ScaleTransition(scale: anim, child: child),
+                          child: Icon(
+                            isFav
+                                ? Icons.bookmark_rounded
+                                : Icons.bookmark_border_rounded,
+                            key: ValueKey(isFav),
+                            color: isFav ? _eduAccentBlue : Colors.grey,
+                            size: 18,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  // Rating bas gauche
+                  Positioned(
+                    bottom: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.black54,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.star_rounded,
+                              color: ThixPolicy.gold, size: 13),
+                          const SizedBox(width: 3),
+                          Text(
+                            formation.rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // ---------- INFOS ----------
+            Expanded(
+              flex: 4,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    SizedBox(
+                      height: 36,
+                      child: Text(
+                        formation.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: _eduNavyBlue,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      formation.instructorName ?? 'THIX Academy',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          color: ThixPolicy.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.video_library_rounded,
+                            size: 13, color: _eduAccentBlue),
+                        const SizedBox(width: 4),
+                        Text('$lessons',
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: ThixPolicy.textSecondary,
+                                fontWeight: FontWeight.w700)),
+                        const SizedBox(width: 10),
+                        const Icon(Icons.timer_rounded,
+                            size: 13, color: _eduAccentBlue),
+                        const SizedBox(width: 4),
+                        Text(_durationLabel(formation),
+                            style: const TextStyle(
+                                fontSize: 11,
+                                color: ThixPolicy.textSecondary,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                    const Spacer(),
+                    Row(
+                      children: [
+                        formation.price > 0
+                            ? Text(
+                                '${formation.price.toInt()} ${formation.currency}',
+                                style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                    color: _eduAccentBlue),
+                              )
+                            : const Text('Gratuit',
+                                style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w900,
+                                    color: Color(0xFF10B981))),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: _eduAccentBlue.withOpacity(0.10),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.arrow_forward_rounded,
+                              color: _eduAccentBlue, size: 14),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ TUILE CATÉGORIE (parcourir par catégorie)
+// ============================================================================
+class _CategoryTile extends StatelessWidget {
+  final Category category;
+  final int count;
+  final int index;
+  final VoidCallback onTap;
+  const _CategoryTile({
+    required this.category,
+    required this.count,
+    required this.index,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final gradients = index.isEven
+        ? const [_eduNavyBlue, Color(0xFF1E3A5F)]
+        : const [_eduAccentBlue, Color(0xFF0EA5E9)];
+
+    return _FadeInUp(
+      delayMs: index * 50,
+      child: _Pressable(
+        onTap: onTap,
+        child: Container(
+          width: 160,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: gradients,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                color: _eduNavyBlue.withOpacity(0.20),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(_categoryIcon(category.name),
+                    color: ThixPolicy.gold, size: 20),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    category.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w900,
+                      fontSize: 14,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    count <= 0
+                        ? 'Bientôt disponible'
+                        : '$count cours disponible${count > 1 ? 's' : ''}',
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.7),
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// QUICK ICONS
 // ============================================================================
 class _QuickIconsRow extends StatelessWidget {
   final bool showInstructor;
@@ -745,46 +1902,40 @@ class _QuickIconsRow extends StatelessWidget {
           child: _QuickIcon(
               icon: Icons.grid_view_rounded,
               label: 'Parcourir',
-              onTap: () =>
-                  ProviderScope.containerOf(context)
-                      .read(_eduTabIndexProvider.notifier)
-                      .state = 1)),
+              onTap: () => ProviderScope.containerOf(context)
+                  .read(_eduTabIndexProvider.notifier)
+                  .state = 1)),
       Expanded(
           child: _QuickIcon(
               icon: Icons.local_library_rounded,
               label: 'Bibliothèque',
-              onTap: () =>
-                  ProviderScope.containerOf(context)
-                      .read(_eduTabIndexProvider.notifier)
-                      .state = 2)),
+              onTap: () => ProviderScope.containerOf(context)
+                  .read(_eduTabIndexProvider.notifier)
+                  .state = 2)),
       Expanded(
           child: _QuickIcon(
               icon: Icons.workspace_premium_rounded,
               label: 'Certificats',
-              onTap: () =>
-                  ProviderScope.containerOf(context)
-                      .read(_eduTabIndexProvider.notifier)
-                      .state = 3)),
+              onTap: () => ProviderScope.containerOf(context)
+                  .read(_eduTabIndexProvider.notifier)
+                  .state = 3)),
     ];
 
-    // ✅ Formateur ajouté UNIQUEMENT si rôle autorisé
     if (showInstructor) {
       items.add(
         Expanded(
             child: _QuickIcon(
                 icon: Icons.co_present_rounded,
                 label: 'Formateur',
+                gold: true,
                 onTap: () => context.push('/instructor/dashboard'))),
       );
     }
 
-    return Row(
-      children: items,
-    );
+    return Row(children: items);
   }
 }
 
-/// Skeleton pendant le chargement du rôle (évite le flash visuel)
 class _QuickIconsSkeleton extends StatelessWidget {
   const _QuickIconsSkeleton();
   @override
@@ -823,153 +1974,43 @@ class _QuickIconsSkeleton extends StatelessWidget {
   }
 }
 
-// ----------------------------------------------------------------------------
-// WIDGET : CARTE SPÉCIALE "LES PLUS ATTENDUS" (VERROUILLÉE)
-// ----------------------------------------------------------------------------
-class _AwaitedFormationCard extends StatelessWidget {
-  final dynamic formation; 
-  const _AwaitedFormationCard({required this.formation});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: const Row(
-              children: [
-                Icon(Icons.lock_clock, color: Colors.white),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Bientôt disponible ! (Ouverture prévue prochainement)',
-                    style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ],
-            ),
-            backgroundColor: ThixPolicy.primaryDeep,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-            duration: const Duration(seconds: 3),
-          ),
-        );
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-          border: Border.all(color: ThixPolicy.border),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 4))
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(ThixPolicy.rLg)),
-                child: formation.imageUrl != null &&
-                        formation.imageUrl!.isNotEmpty
-                    ? Image.network(formation.imageUrl!,
-                        fit: BoxFit.cover, width: double.infinity)
-                    : Container(
-                        width: double.infinity,
-                        color: _eduNavyBlue,
-                        child: const Icon(Icons.school,
-                            color: Colors.white30, size: 40),
-                      ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(ThixPolicy.s12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: ThixPolicy.gold.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                    child: const Text('OUVERTURE PROCHAINE',
-                        style: TextStyle(
-                            color: ThixPolicy.premiumAccent,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w900)),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    formation.title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 14,
-                        color: _eduNavyBlue),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    formation.instructorName ?? 'THIX Academy',
-                    style: const TextStyle(
-                        color: ThixPolicy.textSecondary,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  const SizedBox(height: 10),
-                  const Row(
-                    children: [
-                      Icon(Icons.calendar_today_rounded,
-                          size: 14, color: _eduAccentBlue),
-                      SizedBox(width: 6),
-                      Text('Prévu pour : Bientôt',
-                          style: TextStyle(
-                              fontSize: 12,
-                              color: _eduAccentBlue,
-                              fontWeight: FontWeight.w700)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _QuickIcon extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _QuickIcon(
-      {required this.icon, required this.label, required this.onTap});
+  final bool gold;
+  const _QuickIcon({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.gold = false,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    final tint = gold ? ThixPolicy.premiumAccent : _eduAccentBlue;
+    return _Pressable(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
       child: Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
         child: Column(
           children: [
             Container(
-              width: 46,
-              height: 46,
+              width: 48,
+              height: 48,
               decoration: BoxDecoration(
-                  color: _eduAccentBlue.withOpacity(0.08),
-                  borderRadius: BorderRadius.circular(16)),
-              child: Icon(icon, color: _eduAccentBlue, size: 22),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    tint.withOpacity(0.14),
+                    tint.withOpacity(0.05),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: tint.withOpacity(0.15)),
+              ),
+              child: Icon(icon, color: tint, size: 22),
             ),
             const SizedBox(height: 6),
             Text(label,
@@ -986,32 +2027,63 @@ class _QuickIcon extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// SECTION HEADER (barre accent + icône + voir tout)
+// ============================================================================
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final IconData icon;
   final VoidCallback? onSeeAll;
-  const _SectionHeader({required this.title, this.onSeeAll});
+  final String? seeAllLabel;
+  const _SectionHeader({
+    required this.title,
+    required this.icon,
+    this.onSeeAll,
+    this.seeAllLabel,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title,
-              style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _eduNavyBlue,
-                  letterSpacing: -0.3)),
+          Container(
+            width: 4,
+            height: 22,
+            decoration: BoxDecoration(
+              color: _eduAccentBlue,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Icon(icon, size: 19, color: ThixPolicy.gold),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                    color: _eduNavyBlue,
+                    letterSpacing: -0.3)),
+          ),
           if (onSeeAll != null)
             GestureDetector(
               onTap: onSeeAll,
-              child: const Text('Voir le catalogue',
-                  style: TextStyle(
-                      color: _eduAccentBlue,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 13)),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(seeAllLabel ?? 'Voir le catalogue',
+                      style: const TextStyle(
+                          color: _eduAccentBlue,
+                          fontWeight: FontWeight.w700,
+                          fontSize: 12)),
+                  const Icon(Icons.chevron_right_rounded,
+                      color: _eduAccentBlue, size: 16),
+                ],
+              ),
             ),
         ],
       ),
@@ -1019,6 +2091,9 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
+// ============================================================================
+// CARTE "REPRENDRE L'APPRENTISSAGE"
+// ============================================================================
 class _ContinueLearningCard extends ConsumerWidget {
   final String userId;
   const _ContinueLearningCard({required this.userId});
@@ -1042,19 +2117,19 @@ class _ContinueLearningCard extends ConsumerWidget {
         final f = current.formation!;
         final pct = ((current.progress ?? 0) * 100).round();
 
-        return GestureDetector(
+        return _Pressable(
           onTap: () => context.push('/education/formation/${f.id}'),
           child: Container(
             padding: const EdgeInsets.all(ThixPolicy.s16),
             decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                  colors: [_eduNavyBlue, Color(0xFF1E293B)]),
+              gradient:
+                  const LinearGradient(colors: [_eduNavyBlue, Color(0xFF1E293B)]),
               borderRadius: BorderRadius.circular(ThixPolicy.rLg),
               boxShadow: [
                 BoxShadow(
-                    color: _eduNavyBlue.withOpacity(0.2),
-                    blurRadius: 12,
-                    offset: const Offset(0, 6))
+                    color: _eduNavyBlue.withOpacity(0.25),
+                    blurRadius: 16,
+                    offset: const Offset(0, 8))
               ],
             ),
             child: Row(
@@ -1105,12 +2180,19 @@ class _ContinueLearningCard extends ConsumerWidget {
                 ),
                 const SizedBox(width: ThixPolicy.s16),
                 Container(
-                  width: 48,
-                  height: 48,
-                  decoration: const BoxDecoration(
-                      color: ThixPolicy.gold, shape: BoxShape.circle),
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                      color: ThixPolicy.gold,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                            color: ThixPolicy.gold.withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4))
+                      ]),
                   child: const Icon(Icons.play_arrow_rounded,
-                      color: _eduNavyBlue, size: 28),
+                      color: _eduNavyBlue, size: 30),
                 ),
               ],
             ),
@@ -1121,154 +2203,174 @@ class _ContinueLearningCard extends ConsumerWidget {
   }
 }
 
-class _HeroCarousel extends StatefulWidget {
-  final List<Formation> recentFormations;
-  const _HeroCarousel({required this.recentFormations});
-
-  @override
-  State<_HeroCarousel> createState() => _HeroCarouselState();
-}
-
-class _HeroCarouselState extends State<_HeroCarousel> {
-  final PageController _controller = PageController();
-  int _page = 0;
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    if (widget.recentFormations.length > 1) {
-      _timer = Timer.periodic(const Duration(seconds: 4), (Timer timer) {
-        if (_page < widget.recentFormations.length - 1) {
-          _page++;
-        } else {
-          _page = 0;
-        }
-        if (_controller.hasClients) {
-          _controller.animateToPage(
-            _page,
-            duration: const Duration(milliseconds: 600),
-            curve: Curves.fastOutSlowIn,
-          );
-        }
-      });
-    }
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _controller.dispose();
-    super.dispose();
-  }
+// ============================================================================
+// CARTE "LES PLUS ATTENDUS" (VERROUILLÉE)
+// ============================================================================
+class _AwaitedFormationCard extends StatelessWidget {
+  final dynamic formation;
+  const _AwaitedFormationCard({required this.formation});
 
   @override
   Widget build(BuildContext context) {
-    if (widget.recentFormations.isEmpty) return const SizedBox.shrink();
-
-    return Column(
-      children: [
-        SizedBox(
-          height: 180,
-          child: PageView.builder(
-            controller: _controller,
-            itemCount: widget.recentFormations.length,
-            onPageChanged: (i) => setState(() => _page = i),
-            itemBuilder: (_, i) {
-              final f = widget.recentFormations[i];
-              return GestureDetector(
-                onTap: () => context.push('/education/formation/${f.id}'),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 2),
-                  decoration: BoxDecoration(
-                    borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                    gradient: const LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                      colors: [_eduNavyBlue, _eduAccentBlue],
-                    ),
-                    image: f.imageUrl != null
-                        ? DecorationImage(
-                            image: NetworkImage(f.imageUrl!),
-                            fit: BoxFit.cover,
-                            colorFilter: ColorFilter.mode(
-                                Colors.black.withOpacity(0.5),
-                                BlendMode.darken),
-                          )
-                        : null,
-                    boxShadow: [
-                      BoxShadow(
-                          color: _eduNavyBlue.withOpacity(0.2),
-                          blurRadius: 10,
-                          offset: const Offset(0, 5))
-                    ],
-                  ),
-                  padding: const EdgeInsets.all(ThixPolicy.s24),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.white30)),
-                        child: const Text('NOUVEAU PROGRAMME',
-                            style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w900,
-                                letterSpacing: 0.8)),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(f.title,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
-                              letterSpacing: -0.5)),
-                      const SizedBox(height: 8),
-                      Text(f.instructorName ?? 'THIX Academy',
-                          style: const TextStyle(
-                              color: Colors.white70,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600)),
-                    ],
+    return _Pressable(
+      onTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Row(
+              children: [
+                Icon(Icons.lock_clock, color: Colors.white),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Bientôt disponible ! (Ouverture prévue prochainement)',
+                    style:
+                        TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
                   ),
                 ),
-              );
-            },
+              ],
+            ),
+            backgroundColor: ThixPolicy.primaryDeep,
+            behavior: SnackBarBehavior.floating,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            duration: const Duration(seconds: 3),
           ),
+        );
+      },
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+          border: Border.all(color: ThixPolicy.border),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 10,
+                offset: const Offset(0, 4))
+          ],
         ),
-        const SizedBox(height: ThixPolicy.s12),
-        if (widget.recentFormations.length > 1)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(
-              widget.recentFormations.length,
-              (i) => AnimatedContainer(
-                duration: const Duration(milliseconds: 300),
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                width: _page == i ? 18 : 8,
-                height: 8,
-                decoration: BoxDecoration(
-                    color: _page == i ? _eduAccentBlue : ThixPolicy.border,
-                    borderRadius: BorderRadius.circular(4)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                        top: Radius.circular(ThixPolicy.rLg)),
+                    child: formation.imageUrl != null &&
+                            formation.imageUrl!.isNotEmpty
+                        ? Image.network(formation.imageUrl!,
+                            fit: BoxFit.cover, width: double.infinity)
+                        : Container(
+                            width: double.infinity,
+                            color: _eduNavyBlue,
+                            child: const Icon(Icons.school,
+                                color: Colors.white30, size: 40),
+                          ),
+                  ),
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            Colors.black.withOpacity(0.35),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 10,
+                    left: 10,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.gold.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: const Text('OUVERTURE PROCHAINE',
+                          style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 0.5)),
+                    ),
+                  ),
+                  Positioned(
+                    bottom: 10,
+                    right: 10,
+                    child: Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.lock_rounded,
+                          color: _eduNavyBlue, size: 15),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
-      ],
+            Expanded(
+              flex: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(ThixPolicy.s12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      formation.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 14,
+                          color: _eduNavyBlue),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      formation.instructorName ?? 'THIX Academy',
+                      style: const TextStyle(
+                          color: ThixPolicy.textSecondary,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const Spacer(),
+                    const Row(
+                      children: [
+                        Icon(Icons.calendar_today_rounded,
+                            size: 13, color: _eduAccentBlue),
+                        SizedBox(width: 6),
+                        Text('Prévu pour : Bientôt',
+                            style: TextStyle(
+                                fontSize: 11,
+                                color: _eduAccentBlue,
+                                fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
 
 // ============================================================================
-// ONGLET CACHÉ : DÉCOUVRIR
+// ONGLET CACHÉ : DÉCOUVRIR (CATALOGUE)
 // ============================================================================
 class _ExplorePage extends ConsumerWidget {
   const _ExplorePage();
@@ -1318,9 +2420,8 @@ class _ExplorePage extends ConsumerWidget {
                         label: 'Tous',
                         isSelected: selectedCategory == null,
                         onTap: () {
-                          ref
-                              .read(_selectedCategoryProvider.notifier)
-                              .state = null;
+                          ref.read(_selectedCategoryProvider.notifier).state =
+                              null;
                           ref
                               .read(formationsProvider.notifier)
                               .filterByCategory(null);
@@ -1332,9 +2433,8 @@ class _ExplorePage extends ConsumerWidget {
                       label: cat.name,
                       isSelected: selectedCategory == cat.id,
                       onTap: () {
-                        ref
-                            .read(_selectedCategoryProvider.notifier)
-                            .state = cat.id;
+                        ref.read(_selectedCategoryProvider.notifier).state =
+                            cat.id;
                         ref
                             .read(formationsProvider.notifier)
                             .filterByCategory(cat.id);
@@ -1368,16 +2468,20 @@ class _ExplorePage extends ConsumerWidget {
                       ThixPolicy.s16, ThixPolicy.s16, ThixPolicy.s16, 120),
                   gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
-                      childAspectRatio: 0.68,
+                      childAspectRatio: 0.62,
                       crossAxisSpacing: ThixPolicy.s16,
                       mainAxisSpacing: ThixPolicy.s16),
                   itemCount: paginated.items.length,
                   itemBuilder: (_, i) {
                     final f = paginated.items[i];
-                    return FormationCard(
+                    return _FadeInUp(
+                      delayMs: (i % 6) * 60,
+                      child: _ProFormationCard(
                         formation: f,
                         onTap: () =>
-                            context.push('/education/formation/${f.id}'));
+                            context.push('/education/formation/${f.id}'),
+                      ),
+                    );
                   },
                 );
               },
@@ -1390,7 +2494,7 @@ class _ExplorePage extends ConsumerWidget {
 }
 
 // ============================================================================
-// ONGLET 3 : BIBLIOTHÈQUE
+// ONGLET 3 : BIBLIOTHÈQUE (inchangé)
 // ============================================================================
 class _LibraryPage extends ConsumerStatefulWidget {
   const _LibraryPage();
@@ -1448,7 +2552,6 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
               ),
             ),
           ),
-
           Expanded(
             child: booksAsync.when(
               loading: () => const Center(
@@ -1528,7 +2631,6 @@ class _LibraryPageState extends ConsumerState<_LibraryPage> {
                           ],
                         ),
                       ),
-
                     Expanded(
                       child: ListView.builder(
                         padding: const EdgeInsets.only(bottom: 120, top: 8),
@@ -1661,7 +2763,6 @@ class _AuthorShelf extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 8),
-
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: List.generate(3, (i) {
@@ -1676,7 +2777,6 @@ class _AuthorShelf extends StatelessWidget {
               return const Expanded(child: SizedBox.shrink());
             }),
           ),
-
           Container(
             height: 16,
             decoration: BoxDecoration(
@@ -1719,7 +2819,7 @@ class _BookSpineCard extends StatelessWidget {
       countdown = d > 0 ? '${d}j ${h}h' : '${h}h';
     }
 
-    return GestureDetector(
+    return _Pressable(
       onTap: () => context.push('/education/book/${book.id}'),
       child: Container(
         height: 170,
@@ -1760,7 +2860,6 @@ class _BookSpineCard extends StatelessWidget {
                             ),
                           ),
                   ),
-
                   Positioned(
                     top: 6,
                     right: 6,
@@ -1783,7 +2882,6 @@ class _BookSpineCard extends StatelessWidget {
                       ),
                     ),
                   ),
-
                   if (isDeleting)
                     Positioned(
                       left: 4,
@@ -1857,7 +2955,7 @@ class _BookSpineCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ONGLET 4 : CERTIFICATS
+// ONGLET 4 : CERTIFICATS (inchangé)
 // ============================================================================
 class _CertificatesPage extends ConsumerWidget {
   const _CertificatesPage();
@@ -1909,57 +3007,60 @@ class _CertificatesPage extends ConsumerWidget {
             itemCount: certs.length,
             itemBuilder: (_, i) {
               final cert = certs[i];
-              return Container(
-                margin: const EdgeInsets.only(bottom: ThixPolicy.s16),
-                padding: const EdgeInsets.all(ThixPolicy.s20),
-                decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(ThixPolicy.rLg),
-                    border: Border.all(color: const Color(0xFFE2E8F0)),
-                    boxShadow: [
-                      BoxShadow(
-                          color: Colors.black.withOpacity(0.03),
-                          blurRadius: 10,
-                          offset: const Offset(0, 4))
-                    ]),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                          gradient: ThixPolicy.goldGradient,
-                          borderRadius: BorderRadius.circular(16)),
-                      child: const Icon(Icons.workspace_premium_rounded,
-                          color: ThixPolicy.inkDeep, size: 30),
-                    ),
-                    const SizedBox(width: ThixPolicy.s16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text('Certificat d\'Expertise',
-                              style: TextStyle(
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 15,
-                                  color: _eduNavyBlue)),
-                          const SizedBox(height: 4),
-                          Text(
-                              'Délivré le ${cert.issuedAt.day}/${cert.issuedAt.month}/${cert.issuedAt.year}',
-                              style: const TextStyle(
-                                  fontSize: 12,
-                                  color: ThixPolicy.textSecondary,
-                                  fontWeight: FontWeight.w500)),
-                        ],
+              return _FadeInUp(
+                delayMs: i * 70,
+                child: Container(
+                  margin: const EdgeInsets.only(bottom: ThixPolicy.s16),
+                  padding: const EdgeInsets.all(ThixPolicy.s20),
+                  decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(ThixPolicy.rLg),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                      boxShadow: [
+                        BoxShadow(
+                            color: Colors.black.withOpacity(0.03),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4))
+                      ]),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                            gradient: ThixPolicy.goldGradient,
+                            borderRadius: BorderRadius.circular(16)),
+                        child: const Icon(Icons.workspace_premium_rounded,
+                            color: ThixPolicy.inkDeep, size: 30),
                       ),
-                    ),
-                    IconButton(
-                        icon: const Icon(Icons.download_rounded,
-                            color: _eduAccentBlue, size: 28),
-                        onPressed: () => context.push(
-                            '/education/certificate/${cert.id}',
-                            extra: cert)),
-                  ],
+                      const SizedBox(width: ThixPolicy.s16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Certificat d\'Expertise',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                    fontSize: 15,
+                                    color: _eduNavyBlue)),
+                            const SizedBox(height: 4),
+                            Text(
+                                'Délivré le ${cert.issuedAt.day}/${cert.issuedAt.month}/${cert.issuedAt.year}',
+                                style: const TextStyle(
+                                    fontSize: 12,
+                                    color: ThixPolicy.textSecondary,
+                                    fontWeight: FontWeight.w500)),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                          icon: const Icon(Icons.download_rounded,
+                              color: _eduAccentBlue, size: 28),
+                          onPressed: () => context.push(
+                              '/education/certificate/${cert.id}',
+                              extra: cert)),
+                    ],
+                  ),
                 ),
               );
             },
