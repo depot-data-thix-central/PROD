@@ -1,5 +1,6 @@
 // lib/presentation/education/instructor/content/module_management_page.dart
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/education/models/module.dart';
@@ -21,6 +22,7 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
   final _titleController = TextEditingController();
   final _descriptionController = TextEditingController();
   bool _isLoading = false;
+  bool _isSavingModule = false;
   List<Lesson> _lessons = [];
   String? _savedModuleId;
 
@@ -52,7 +54,7 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
 
   Future<void> _saveModule() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+    setState(() => _isSavingModule = true);
 
     try {
       final formationId =
@@ -110,7 +112,7 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
           backgroundColor: Color(0xFF10B981),
         ),
       );
-      Navigator.pop(context, moduleToSave);
+      context.pop(moduleToSave);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -118,7 +120,7 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         );
       }
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() => _isSavingModule = false);
     }
   }
 
@@ -135,11 +137,12 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
       return;
     }
 
-    final newLesson = await Navigator.push<Lesson>(
-      context,
-      MaterialPageRoute(
-        builder: (_) => LessonManagementPage(moduleId: _validModuleId),
-      ),
+    final newLesson = await context.push<Lesson>(
+      '/education/instructor/lesson',
+      extra: {
+        'moduleId': _validModuleId,
+        'formationId': widget.courseId ?? widget.module?.formationId,
+      },
     );
 
     if (newLesson != null && mounted) {
@@ -204,11 +207,11 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
           targetEvaluationId = evalList['id'] as String;
         } else {
           final evalRes = await Supabase.instance.client
-    .from('evaluations')
-    .insert({
-      'lesson_id': currentLessonId,
-      'title': 'Quiz - ${lesson.title}',
-      'passing_score': 50,
+              .from('evaluations')
+              .insert({
+                'lesson_id': currentLessonId,
+                'title': 'Quiz - ${lesson.title}',
+                'passing_score': 50,
               })
               .select('id')
               .single();
@@ -216,12 +219,8 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         }
 
         if (targetEvaluationId != null && mounted) {
-          await Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) =>
-                  QuestionManagementPage(evaluationId: targetEvaluationId!),
-            ),
+          await context.push(
+            '/education/instructor/questions/$targetEvaluationId',
           );
         }
       } catch (e) {
@@ -238,14 +237,13 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         if (mounted) setState(() => _isLoading = false);
       }
     } else {
-      final updatedLesson = await Navigator.push<Lesson>(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LessonManagementPage(
-            moduleId: _validModuleId,
-            lesson: lesson,
-          ),
-        ),
+      final updatedLesson = await context.push<Lesson>(
+        '/education/instructor/lesson',
+        extra: {
+          'moduleId': _validModuleId,
+          'formationId': widget.courseId ?? widget.module?.formationId,
+          'lesson': lesson,
+        },
       );
 
       if (updatedLesson != null && mounted) {
@@ -260,8 +258,91 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
     }
   }
 
-  void _deleteLesson(Lesson lesson) {
-    setState(() => _lessons.remove(lesson));
+  // ✅ CORRIGÉ : Supprime aussi de Supabase
+  Future<void> _deleteLesson(Lesson lesson) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Supprimer la leçon ?'),
+        content: Text('Êtes-vous sûr de vouloir supprimer "${lesson.title}" ?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Annuler'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isLoading = true);
+    try {
+      // Supprimer de Supabase si la leçon a un ID
+      if (lesson.id.isNotEmpty) {
+        await Supabase.instance.client
+            .from('lessons')
+            .delete()
+            .eq('id', lesson.id);
+        
+        // Supprimer aussi l'évaluation associée si elle existe
+        final evalRes = await Supabase.instance.client
+            .from('evaluations')
+            .select('id')
+            .eq('lesson_id', lesson.id)
+            .maybeSingle();
+        
+        if (evalRes != null) {
+          await Supabase.instance.client
+              .from('evaluations')
+              .delete()
+              .eq('id', evalRes['id'] as String);
+        }
+      }
+
+      // Supprimer de la liste locale
+      if (mounted) {
+        setState(() => _lessons.remove(lesson));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Leçon supprimée'),
+            backgroundColor: Color(0xFF10B981),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erreur lors de la suppression : $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ✅ NOUVEAU : Réorganiser les leçons
+  void _reorderLessons(int oldIndex, int newIndex) {
+    setState(() {
+      if (newIndex > oldIndex) {
+        newIndex -= 1;
+      }
+      final lesson = _lessons.removeAt(oldIndex);
+      _lessons.insert(newIndex, lesson);
+      
+      // Mettre à jour l'ordre de toutes les leçons
+      for (int i = 0; i < _lessons.length; i++) {
+        _lessons[i] = _lessons[i].copyWith(order: i);
+      }
+    });
   }
 
   @override
@@ -282,12 +363,21 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         centerTitle: true,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back_rounded, color: Color(0xFF0F172A)),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.pop(),
         ),
         actions: [
           IconButton(
-            icon: const Icon(Icons.save_rounded, color: Color(0xFF2D6CDF)),
-            onPressed: _isLoading ? null : _saveModule,
+            icon: _isSavingModule
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: Color(0xFF2D6CDF),
+                    ),
+                  )
+                : const Icon(Icons.save_rounded, color: Color(0xFF2D6CDF)),
+            onPressed: _isSavingModule ? null : _saveModule,
           ),
         ],
       ),
@@ -416,13 +506,15 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
                               textAlign: TextAlign.center,
                             ),
                           )
-                        : ListView.builder(
+                        : ReorderableListView.builder(
                             itemCount: _lessons.length,
+                            onReorder: _reorderLessons,
                             itemBuilder: (context, index) {
                               final lesson = _lessons[index];
                               final isQuiz = lesson.type == 'quiz' ||
                                   lesson.type == 'evaluation';
                               return Container(
+                                key: ValueKey(lesson.id),
                                 margin: const EdgeInsets.only(bottom: 12),
                                 decoration: BoxDecoration(
                                   color: Colors.white,
@@ -431,20 +523,33 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
                                       color: const Color(0xFFE2E8F0)),
                                 ),
                                 child: ListTile(
-                                  leading: CircleAvatar(
-                                    backgroundColor: isQuiz
-                                        ? const Color(0xFFF59E0B)
-                                            .withOpacity(0.1)
-                                        : const Color(0xFF2D6CDF)
-                                            .withOpacity(0.1),
-                                    child: Icon(
-                                      isQuiz
-                                          ? Icons.quiz_rounded
-                                          : Icons.play_arrow_rounded,
-                                      color: isQuiz
-                                          ? const Color(0xFFF59E0B)
-                                          : const Color(0xFF2D6CDF),
-                                    ),
+                                  leading: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.drag_indicator,
+                                        color: const Color(0xFF94A3B8),
+                                        size: 20,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      CircleAvatar(
+                                        backgroundColor: isQuiz
+                                            ? const Color(0xFFF59E0B)
+                                                .withOpacity(0.1)
+                                            : const Color(0xFF2D6CDF)
+                                                .withOpacity(0.1),
+                                        radius: 18,
+                                        child: Icon(
+                                          isQuiz
+                                              ? Icons.quiz_rounded
+                                              : Icons.play_arrow_rounded,
+                                          color: isQuiz
+                                              ? const Color(0xFFF59E0B)
+                                              : const Color(0xFF2D6CDF),
+                                          size: 18,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                   title: Text(
                                     lesson.title,
