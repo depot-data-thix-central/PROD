@@ -53,6 +53,17 @@ List<GoRoute> educationRoutes = [
         pageBuilder: (_, __) =>
             const NoTransitionPage(child: EducationAllFormations()),
       ),
+      // ✅ NOUVELLE ROUTE : CATALOGUE / EXPLORE (avec filtre ?category=xxx)
+      GoRoute(
+        path: 'explore',
+        name: 'educationExplore',
+        pageBuilder: (context, state) {
+          final categoryId = state.uri.queryParameters['category'];
+          return NoTransitionPage(
+            child: EducationExplorePage(initialCategoryId: categoryId),
+          );
+        },
+      ),
       GoRoute(
         path: 'my-learning',
         name: 'educationMyLearning',
@@ -67,29 +78,29 @@ List<GoRoute> educationRoutes = [
       ),
 
       GoRoute(
-  path: '/verify/:hash',
-  name: 'certificateVerify',
-  pageBuilder: (context, state) {
-    final hash = state.pathParameters['hash'] ?? '';
-    return NoTransitionPage(
-      child: CertificateVerifyPage(hash: hash),
-    );
-  },
-),
-      GoRoute(
-  path: '/education/library/author',
-  name: 'libraryAuthor',
-  pageBuilder: (context, state) {
-    final extra = state.extra as Map<String, dynamic>? ?? {};
-    return NoTransitionPage(
-      child: AuthorLibraryPage(
-        author: extra['author'] as String? ?? '',
-        shelfCode: extra['shelfCode'] as String? ?? '',
-        books: (extra['books'] as List<Book>?) ?? [],
+        path: '/verify/:hash',
+        name: 'certificateVerify',
+        pageBuilder: (context, state) {
+          final hash = state.pathParameters['hash'] ?? '';
+          return NoTransitionPage(
+            child: CertificateVerifyPage(hash: hash),
+          );
+        },
       ),
-    );
-  },
-),
+      GoRoute(
+        path: '/education/library/author',
+        name: 'libraryAuthor',
+        pageBuilder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return NoTransitionPage(
+            child: AuthorLibraryPage(
+              author: extra['author'] as String? ?? '',
+              shelfCode: extra['shelfCode'] as String? ?? '',
+              books: (extra['books'] as List<Book>?) ?? [],
+            ),
+          );
+        },
+      ),
       // Détail de la formation
       GoRoute(
         path: 'formation/:formationId',
