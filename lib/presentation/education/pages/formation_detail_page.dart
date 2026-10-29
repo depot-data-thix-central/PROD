@@ -30,7 +30,7 @@ class _C {
 }
 
 // ==========================================
-// PROVIDER LOCAL : Favoris
+// PROVIDER LOCAL : Favoris (par formation)
 // ==========================================
 final _formationFavoriteProvider =
     StateProvider.family<bool, String>((ref, id) => false);
@@ -129,7 +129,6 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
   bool _isEnrolling = false;
   bool _descriptionExpanded = false;
   final _scrollController = ScrollController();
-  double _heroOpacity = 0.0;
 
   @override
   void initState() {
@@ -138,11 +137,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
   }
 
   void _onScroll() {
-    final offset = _scrollController.offset;
-    setState(() {
-      // L'opacité du hero augmente progressivement pendant le scroll
-      _heroOpacity = (offset / 280).clamp(0.0, 1.0);
-    });
+    // Possibilité d'ajouter un parallax ici si besoin
   }
 
   @override
@@ -201,23 +196,23 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                   _buildSliverHero(formation),
                   SliverToBoxAdapter(
                     child: Padding(
-                      padding: const EdgeInsets.only(bottom: 120),
+                      padding: EdgeInsets.only(
+                        bottom: isEnrolled ? 40 : 140,
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           _FadeInUp(child: _buildStatsSection(formation)),
                           const SizedBox(height: 16),
-                          _FadeInUp(
-                            delayMs: 80,
-                            child: _buildEnrollmentSection(
-                              context,
-                              ref,
-                              formation,
-                              isEnrolled,
-                              progress,
-                              userId,
+                          if (isEnrolled)
+                            _FadeInUp(
+                              delayMs: 80,
+                              child: _buildEnrolledSection(
+                                context,
+                                formation,
+                                progress,
+                              ),
                             ),
-                          ),
                           const SizedBox(height: 20),
                           _FadeInUp(
                             delayMs: 120,
@@ -277,7 +272,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                 ],
               ),
 
-              // ========== FLOATING BOTTOM BAR ==========
+              // ========== FLOATING BOTTOM BAR (si non inscrit) ==========
               if (!isEnrolled)
                 Positioned(
                   left: 0,
@@ -298,7 +293,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
   }
 
   // ==========================================
-  // HERO IMMERSIF AVEC PARALLAX
+  // HERO IMMERSIF (340px)
   // ==========================================
   Widget _buildSliverHero(Formation formation) {
     return SliverAppBar(
@@ -327,7 +322,6 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
         ),
       ),
       actions: [
-        // Bouton Favori
         Consumer(
           builder: (context, ref, _) {
             final isFav =
@@ -343,9 +337,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                   ScaffoldMessenger.of(context).showSnackBar(
                     SnackBar(
                       content: Text(
-                        isFav
-                            ? 'Retiré des favoris'
-                            : 'Ajouté aux favoris ❤️',
+                        isFav ? 'Retiré des favoris' : 'Ajouté aux favoris ❤️',
                       ),
                       duration: const Duration(seconds: 1),
                       behavior: SnackBarBehavior.floating,
@@ -375,7 +367,6 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
             );
           },
         ),
-        // Bouton Partager
         Padding(
           padding: const EdgeInsets.only(right: 16),
           child: _Pressable(
@@ -391,8 +382,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                   ),
                 ],
               ),
-              child:
-                  const Icon(Icons.share_rounded, color: Colors.white),
+              child: const Icon(Icons.share_rounded, color: Colors.white),
             ),
           ),
         ),
@@ -427,8 +417,8 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
               ),
             ),
 
-            // Badge de certification
-            if (formation.certificateEnabled)
+            // Badge "Certifié"
+            if (formation.isCertifying)
               Positioned(
                 top: 100,
                 right: 20,
@@ -466,7 +456,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                 ),
               ),
 
-            // Contenu bas (titre + instructeur + rating)
+            // Contenu bas
             Positioned(
               bottom: 24,
               left: 20,
@@ -516,7 +506,6 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                   // Rating + instructeur
                   Row(
                     children: [
-                      // Rating
                       Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 6),
@@ -542,7 +531,6 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      // Instructeur
                       if (formation.instructorName != null &&
                           formation.instructorName!.isNotEmpty) ...[
                         CircleAvatar(
@@ -659,28 +647,24 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
       spacing: 8,
       runSpacing: 8,
       children: [
+        if (formation.category != null)
+          _buildBadge(
+            Icons.category_rounded,
+            formation.category?.name ?? 'Non catégorisé',
+            _C.primary,
+          ),
         if (formation.level.isNotEmpty)
           _buildBadge(
             _getLevelIcon(formation.level),
             _getLevelLabel(formation.level),
             _getLevelColor(formation.level),
           ),
-        if (formation.language != null && formation.language!.isNotEmpty)
+        if (formation.isCertifying)
           _buildBadge(
-            Icons.language_rounded,
-            formation.language!.toUpperCase(),
-            _C.textMuted,
+            Icons.workspace_premium_rounded,
+            'Certifiant',
+            _C.green,
           ),
-        _buildBadge(
-          Icons.signal_cellular_alt_rounded,
-          'Tous niveaux',
-          _C.primary,
-        ),
-        _buildBadge(
-          Icons.device_hub_rounded,
-          'Mobile & Desktop',
-          _C.textMuted,
-        ),
       ],
     );
   }
@@ -754,8 +738,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
     final text = formation.description;
     final isLong = text.length > 180;
     final shouldTruncate = isLong && !_descriptionExpanded;
-    final displayText =
-        shouldTruncate ? '${text.substring(0, 180)}...' : text;
+    final displayText = shouldTruncate ? '${text.substring(0, 180)}...' : text;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -824,11 +807,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
     );
   }
 
-  // ==========================================
-  // "CE QUE VOUS ALLEZ APPRENDRE" (style Udemy/Coursera)
-  // ==========================================
   Widget _buildWhatYoullLearn(Formation formation) {
-    // On génère quelques points clés automatiquement
     final totalLessons = formation.modules?.fold<int>(
             0, (sum, m) => sum + (m.lessons?.length ?? 0)) ??
         0;
@@ -837,7 +816,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
       if (formation.instructorName != null)
         'Apprenez avec ${formation.instructorName!}, expert reconnu',
       'Accédez à $totalLessons leçons structurées et progressives',
-      if (formation.certificateEnabled)
+      if (formation.isCertifying)
         'Obtenez un certificat officiel à la complétion',
       'Support et communauté pour répondre à vos questions',
       'Contenu accessible à vie, à votre rythme',
@@ -947,8 +926,8 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_C.navy, const Color(0xFF1E293B)],
+        gradient: const LinearGradient(
+          colors: [_C.navy, Color(0xFF1E293B)],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
@@ -1014,115 +993,107 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
     );
   }
 
-  Widget _buildEnrollmentSection(
+  Widget _buildEnrolledSection(
     BuildContext context,
-    WidgetRef ref,
     Formation formation,
-    bool isEnrolled,
     double progress,
-    String? userId,
   ) {
-    if (isEnrolled) {
-      final progressPercent = (progress * 100).toInt();
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 20),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [_C.green, const Color(0xFF059669)],
-          ),
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: _C.green.withOpacity(0.3),
-              blurRadius: 18,
-              offset: const Offset(0, 8),
-            ),
-          ],
+    final progressPercent = (progress * 100).toInt();
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [_C.green, Color(0xFF059669)],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.check_circle_rounded,
-                      color: Colors.white, size: 20),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: _C.green.withOpacity(0.3),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(width: 12),
-                const Expanded(
-                  child: Text(
-                    'Vous êtes inscrit à ce cours',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
-                    ),
-                  ),
-                ),
-                Text(
-                  '$progressPercent%',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 22,
+                child: const Icon(Icons.check_circle_rounded,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Vous êtes inscrit à ce cours',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                     color: Colors.white,
                   ),
                 ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: LinearProgressIndicator(
-                value: progress,
-                backgroundColor: Colors.white.withOpacity(0.2),
-                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                minHeight: 8,
               ),
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () => _continueLearning(context, formation),
-                icon: const Icon(Icons.play_circle_fill_rounded,
-                    color: _C.green),
-                label: Text(
-                  progressPercent == 0
-                      ? 'Commencer le cours'
-                      : 'Continuer l\'apprentissage',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                    color: _C.green,
-                  ),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
+              Text(
+                '$progressPercent%',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                  color: Colors.white,
                 ),
               ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: progress,
+              backgroundColor: Colors.white.withOpacity(0.2),
+              valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
+              minHeight: 8,
             ),
-          ],
-        ),
-      );
-    }
-
-    // Non inscrit : section supprimée (le CTA est en bas en flottant)
-    return const SizedBox.shrink();
+          ),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            height: 48,
+            child: ElevatedButton.icon(
+              onPressed: () => _continueLearning(context, formation),
+              icon: const Icon(Icons.play_circle_fill_rounded,
+                  color: _C.green),
+              label: Text(
+                progressPercent == 0
+                    ? 'Commencer le cours'
+                    : 'Continuer l\'apprentissage',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                  color: _C.green,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   // ==========================================
-  // ACTIONS
+  // INSCRIPTION
   // ==========================================
   Future<void> _enrollInCourse(
     BuildContext context,
@@ -1260,7 +1231,7 @@ class _FormationDetailPageState extends ConsumerState<FormationDetailPage> {
 }
 
 // ==========================================
-// STAT PILL (pour la section stats compacte)
+// STAT PILL
 // ==========================================
 class _StatPill extends StatelessWidget {
   final IconData icon;
@@ -1317,7 +1288,7 @@ class _StatPill extends StatelessWidget {
 }
 
 // ==========================================
-// FLOATING ENROLL BAR (CTA principal flottant)
+// FLOATING ENROLL BAR
 // ==========================================
 class _FloatingEnrollBar extends StatelessWidget {
   final Formation formation;
@@ -1360,7 +1331,6 @@ class _FloatingEnrollBar extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // Prix
           Expanded(
             flex: 2,
             child: Column(
@@ -1377,9 +1347,7 @@ class _FloatingEnrollBar extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  isFree
-                      ? 'Accès illimité à vie'
-                      : 'Paiement unique',
+                  isFree ? 'Accès illimité à vie' : 'Paiement unique',
                   style: const TextStyle(
                     fontSize: 11,
                     color: _C.textMuted,
@@ -1390,7 +1358,6 @@ class _FloatingEnrollBar extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          // Bouton
           Expanded(
             flex: 3,
             child: SizedBox(
