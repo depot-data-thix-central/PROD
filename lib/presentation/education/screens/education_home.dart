@@ -17,7 +17,7 @@ import '../models/formation.dart';
 import '../models/certificate.dart';
 
 // ============================================================================
-// CONSTANTES COULEURS "ENTREPRISE ÉDUCATION" (INCHANGÉES)
+// CONSTANTES COULEURS "ENTREPRISE ÉDUCATION"
 // ============================================================================
 const Color _eduNavyBlue = Color(0xFF0F172A);
 const Color _eduAccentBlue = Color(0xFF0284C7);
@@ -29,8 +29,6 @@ const Color _eduShelfShadow = Color(0xFFB5835A);
 // ============================================================================
 final _eduTabIndexProvider = StateProvider<int>((ref) => 0);
 final _selectedCategoryProvider = StateProvider<String?>((ref) => null);
-
-/// ✅ NOUVEAU : Favoris locaux (bookmark sur les cartes)
 final _favoritesProvider = StateProvider<Set<String>>((ref) => <String>{});
 
 final _unreadNotificationsProvider =
@@ -49,7 +47,6 @@ final _unreadNotificationsProvider =
   }
 });
 
-/// Rôle formateur/admin/moderateur → accès espace formateur
 final _instructorRoleProvider = FutureProvider.autoDispose<bool>((ref) async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return false;
@@ -109,16 +106,16 @@ IconData _categoryIcon(String name) {
   if (n.contains('finance') || n.contains('compta')) {
     return Icons.payments_rounded;
   }
-  if (n.contains('musiq') || n.contains('music')) return Icons.music_note_rounded;
+  if (n.contains('musiq') || n.contains('music')) {
+    return Icons.music_note_rounded;
+  }
   if (n.contains('culture')) return Icons.museum_rounded;
   return Icons.school_rounded;
 }
 
 // ============================================================================
-// ANIMATIONS RÉUTILISABLES (niveau pro)
+// ANIMATIONS RÉUTILISABLES
 // ============================================================================
-
-/// Entrée en fondu + slide vers le haut, avec délai (stagger)
 class _FadeInUp extends StatefulWidget {
   final Widget child;
   final int delayMs;
@@ -164,7 +161,6 @@ class _FadeInUpState extends State<_FadeInUp>
   }
 }
 
-/// Effet "press" (scale down) sur les cartes & boutons
 class _Pressable extends StatefulWidget {
   final Widget child;
   final VoidCallback onTap;
@@ -195,7 +191,6 @@ class _PressableState extends State<_Pressable> {
   }
 }
 
-/// Badge de notification qui pulse
 class _PulseBadge extends StatefulWidget {
   final int count;
   const _PulseBadge({required this.count});
@@ -242,7 +237,6 @@ class _PulseBadgeState extends State<_PulseBadge>
   }
 }
 
-/// Skeleton shimmer pendant chargement du hero
 class _ShimmerBox extends StatefulWidget {
   final double height;
   final double width;
@@ -326,7 +320,7 @@ class EducationHome extends ConsumerWidget {
 }
 
 // ============================================================================
-// BOTTOM NAVIGATION FLOTTANTE (animée)
+// BOTTOM NAVIGATION FLOTTANTE
 // ============================================================================
 class _FloatingBottomNav extends ConsumerWidget {
   final int selectedIndex;
@@ -552,8 +546,8 @@ class _MyLearningPage extends ConsumerWidget {
                                 bottom: -4,
                                 child: Container(
                                   padding: const EdgeInsets.all(3),
-                                  decoration: BoxDecoration(
-                                    color: ThixPolicy.card,
+                                  decoration: const BoxDecoration(
+                                    color: Colors.white,
                                     shape: BoxShape.circle,
                                   ),
                                   child: const Icon(
@@ -654,6 +648,38 @@ class _HomePageState extends ConsumerState<_HomePage>
     super.dispose();
   }
 
+  // ✅ MÉTHODES CATÉGORIES (bien DANS la classe _HomePageState)
+  List<Category> _mergeCategories(List<Category> dbCats) {
+    // ✅ PAS de 'const' ici : le constructeur de Category n'est pas const
+    final customCats = <Category>[
+      Category(id: 'cat-langues', name: 'Langues'),
+      Category(id: 'cat-entrepreneuriat', name: 'Entrepreneuriat'),
+      Category(id: 'cat-dev', name: 'Développement personnel'),
+      Category(id: 'cat-culture', name: 'Culture'),
+    ];
+    final List<Category> allCats = List.from(dbCats);
+    for (var custom in customCats) {
+      if (!allCats
+          .any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
+        allCats.add(custom);
+      }
+    }
+    return allCats;
+  }
+
+  bool _matchesCategory(Formation f, Category cat) {
+    try {
+      final fCatId = f.categoryId;
+      if (fCatId == cat.id) return true;
+      final fCatName = f.category?.name;
+      if (fCatName != null &&
+          fCatName.toLowerCase() == cat.name.toLowerCase()) {
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -677,7 +703,6 @@ class _HomePageState extends ConsumerState<_HomePage>
         physics: const AlwaysScrollableScrollPhysics(
             parent: BouncingScrollPhysics()),
         slivers: [
-          // ================= HEADER =================
           SliverToBoxAdapter(
             child: Container(
               padding: EdgeInsets.only(
@@ -738,8 +763,8 @@ class _HomePageState extends ConsumerState<_HomePage>
                                 padding: const EdgeInsets.all(10),
                                 decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    border: Border.all(
-                                        color: ThixPolicy.border)),
+                                    border:
+                                        Border.all(color: ThixPolicy.border)),
                                 child: const Icon(
                                     Icons.notifications_none_rounded,
                                     color: _eduNavyBlue,
@@ -813,8 +838,6 @@ class _HomePageState extends ConsumerState<_HomePage>
             ),
           ),
           const SliverToBoxAdapter(child: SizedBox(height: ThixPolicy.s20)),
-
-          // ================= CONTENU =================
           formationsAsync.when(
             loading: () => const SliverToBoxAdapter(
               child: Padding(
@@ -866,13 +889,11 @@ class _HomePageState extends ConsumerState<_HomePage>
 
               return SliverList(
                 delegate: SliverChildListDelegate([
-                  // ============ HERO CAROUSEL (style THIX Market) ============
                   _FadeInUp(
                     child: _HeroCarousel(recentFormations: recentFormations),
                   ),
                   const SizedBox(height: ThixPolicy.s24),
 
-                  // ============ REPRENDRE ============
                   if (user != null)
                     _FadeInUp(
                       delayMs: 80,
@@ -884,7 +905,6 @@ class _HomePageState extends ConsumerState<_HomePage>
                     ),
                   const SizedBox(height: ThixPolicy.s24),
 
-                  // ============ TOP FORMATIONS ============
                   if (topFormations.isNotEmpty) ...[
                     _FadeInUp(
                       delayMs: 120,
@@ -901,8 +921,9 @@ class _HomePageState extends ConsumerState<_HomePage>
                         padding: const EdgeInsets.symmetric(
                             horizontal: ThixPolicy.s16),
                         scrollDirection: Axis.horizontal,
-                        itemCount:
-                            topFormations.length > 6 ? 6 : topFormations.length,
+                        itemCount: topFormations.length > 6
+                            ? 6
+                            : topFormations.length,
                         separatorBuilder: (_, __) =>
                             const SizedBox(width: ThixPolicy.s16),
                         itemBuilder: (_, i) {
@@ -921,7 +942,6 @@ class _HomePageState extends ConsumerState<_HomePage>
                     const SizedBox(height: ThixPolicy.s28),
                   ],
 
-                  // ============ PARCOURIR PAR CATÉGORIE (NOUVEAU) ============
                   categoriesAsync.maybeWhen(
                     data: (dbCats) {
                       final allCats = _mergeCategories(dbCats);
@@ -970,14 +990,14 @@ class _HomePageState extends ConsumerState<_HomePage>
                     orElse: () => const SizedBox.shrink(),
                   ),
 
-                  // ============ RANGÉES PAR CATÉGORIE ============
                   categoriesAsync.maybeWhen(
                     data: (dbCats) {
                       final allCats = _mergeCategories(dbCats);
                       return Column(
                         children: allCats.map((cat) {
-                          final catFormations =
-                              formations.where((f) => _matchesCategory(f, cat)).toList();
+                          final catFormations = formations
+                              .where((f) => _matchesCategory(f, cat))
+                              .toList();
 
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1042,7 +1062,6 @@ class _HomePageState extends ConsumerState<_HomePage>
                     orElse: () => const SizedBox.shrink(),
                   ),
 
-                  // ============ LES PLUS ATTENDUS ============
                   if (awaitedFormations.isNotEmpty) ...[
                     _SectionHeader(
                       title: 'Les plus attendus',
@@ -1073,10 +1092,9 @@ class _HomePageState extends ConsumerState<_HomePage>
                     const SizedBox(height: ThixPolicy.s28),
                   ],
 
-                  // ============ CTA CATALOGUE ============
                   Padding(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: ThixPolicy.s16),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: ThixPolicy.s16),
                     child: _Pressable(
                       onTap: () => context.push('/education/explore'),
                       child: Container(
@@ -1128,59 +1146,10 @@ class _HomePageState extends ConsumerState<_HomePage>
       ),
     );
   }
-
-  List<Category> _mergeCategories(List<Category> dbCats) {
-  // ✅ Retiré 'const' car Category n'a pas de constructeur const
-  final customCats = <Category>[
-    Category(
-      id: 'cat-langues',
-      name: 'Langues',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-    Category(
-      id: 'cat-entrepreneuriat',
-      name: 'Entrepreneuriat',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-    Category(
-      id: 'cat-dev',
-      name: 'Développement personnel',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-    Category(
-      id: 'cat-culture',
-      name: 'Culture',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    ),
-  ];
-  
-  final List<Category> allCats = List.from(dbCats);
-  for (var custom in customCats) {
-    if (!allCats.any((c) => c.name.toLowerCase() == custom.name.toLowerCase())) {
-      allCats.add(custom);
-    }
-  }
-  return allCats;
-}
-
-bool _matchesCategory(Formation f, Category cat) {
-  try {
-    final fCatId = (f as dynamic).categoryId;
-    if (fCatId == cat.id) return true;
-    final fCatName = (f as dynamic).category?.name;
-    if (fCatName != null && fCatName.toLowerCase() == cat.name.toLowerCase()) {
-      return true;
-    }
-  } catch (_) {}
-  return false;
 }
 
 // ============================================================================
-// ✅ HERO CAROUSEL IMMERSIF (référence THIX Market)
+// HERO CAROUSEL IMMERSIF
 // ============================================================================
 class _HeroCarousel extends StatefulWidget {
   final List<Formation> recentFormations;
@@ -1253,8 +1222,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 child: _Pressable(
                   onTap: () => context.push('/education/formation/${f.id}'),
                   child: Container(
-                    margin: const EdgeInsets.symmetric(
-                        horizontal: 4, vertical: 8),
+                    margin:
+                        const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(28),
                       color: _eduNavyBlue,
@@ -1271,7 +1240,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // Image de fond
                           if (f.imageUrl != null && f.imageUrl!.isNotEmpty)
                             Image.network(
                               f.imageUrl!,
@@ -1282,7 +1250,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                           else
                             const _HeroPlaceholder(),
 
-                          // Voile sombre selon la position (parallax feel)
                           Positioned.fill(
                             child: DecoratedBox(
                               decoration: BoxDecoration(
@@ -1300,7 +1267,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                             ),
                           ),
 
-                          // Badges hauts
                           Positioned(
                             top: 16,
                             left: 16,
@@ -1365,7 +1331,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                             ),
                           ),
 
-                          // Contenu bas
                           Positioned(
                             left: 20,
                             right: 20,
@@ -1381,8 +1346,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                                     decoration: BoxDecoration(
                                       color: Colors.white.withOpacity(0.18),
                                       borderRadius: BorderRadius.circular(8),
-                                      border: Border.all(
-                                          color: Colors.white24),
+                                      border: Border.all(color: Colors.white24),
                                     ),
                                     child: Text(
                                       f.category!.name.toUpperCase(),
@@ -1433,7 +1397,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                                 const SizedBox(height: 16),
                                 Row(
                                   children: [
-                                    // Bouton "Découvrir" (style Market)
                                     GestureDetector(
                                       onTap: () => context.push(
                                           '/education/formation/${f.id}'),
@@ -1555,7 +1518,7 @@ class _HeroPlaceholder extends StatelessWidget {
 }
 
 // ============================================================================
-// ✅ CARTE PRO (badge, favoris, rating, meta, CTA)
+// CARTE PRO FORMATION
 // ============================================================================
 class _ProFormationCard extends ConsumerWidget {
   final Formation formation;
@@ -1587,7 +1550,6 @@ class _ProFormationCard extends ConsumerWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ---------- IMAGE + OVERLAYS ----------
             Expanded(
               flex: 5,
               child: Stack(
@@ -1622,7 +1584,6 @@ class _ProFormationCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  // Badge haut gauche
                   Positioned(
                     top: 10,
                     left: 10,
@@ -1643,7 +1604,6 @@ class _ProFormationCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  // Favori haut droit
                   Positioned(
                     top: 8,
                     right: 8,
@@ -1669,7 +1629,7 @@ class _ProFormationCard extends ConsumerWidget {
                       },
                       child: Container(
                         padding: const EdgeInsets.all(7),
-                        decoration: BoxDecoration(
+                        decoration: const BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
                           boxShadow: [
@@ -1695,7 +1655,6 @@ class _ProFormationCard extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  // Rating bas gauche
                   Positioned(
                     bottom: 10,
                     left: 10,
@@ -1726,7 +1685,6 @@ class _ProFormationCard extends ConsumerWidget {
                 ],
               ),
             ),
-            // ---------- INFOS ----------
             Expanded(
               flex: 4,
               child: Padding(
@@ -1820,7 +1778,7 @@ class _ProFormationCard extends ConsumerWidget {
 }
 
 // ============================================================================
-// ✅ TUILE CATÉGORIE (parcourir par catégorie)
+// TUILE CATÉGORIE
 // ============================================================================
 class _CategoryTile extends StatelessWidget {
   final Category category;
@@ -2049,7 +2007,7 @@ class _QuickIcon extends StatelessWidget {
 }
 
 // ============================================================================
-// SECTION HEADER (barre accent + icône + voir tout)
+// SECTION HEADER
 // ============================================================================
 class _SectionHeader extends StatelessWidget {
   final String title;
@@ -2113,7 +2071,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ============================================================================
-// CARTE "REPRENDRE L'APPRENTISSAGE"
+// CARTE REPRENDRE L'APPRENTISSAGE
 // ============================================================================
 class _ContinueLearningCard extends ConsumerWidget {
   final String userId;
@@ -2225,7 +2183,7 @@ class _ContinueLearningCard extends ConsumerWidget {
 }
 
 // ============================================================================
-// CARTE "LES PLUS ATTENDUS" (VERROUILLÉE)
+// CARTE "LES PLUS ATTENDUS"
 // ============================================================================
 class _AwaitedFormationCard extends StatelessWidget {
   final dynamic formation;
@@ -2244,8 +2202,8 @@ class _AwaitedFormationCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     'Bientôt disponible ! (Ouverture prévue prochainement)',
-                    style:
-                        TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                    style: TextStyle(
+                        color: Colors.white, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -2391,7 +2349,7 @@ class _AwaitedFormationCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ONGLET CACHÉ : DÉCOUVRIR (CATALOGUE)
+// ONGLET CACHÉ : CATALOGUE
 // ============================================================================
 class _ExplorePage extends ConsumerWidget {
   const _ExplorePage();
@@ -2515,7 +2473,7 @@ class _ExplorePage extends ConsumerWidget {
 }
 
 // ============================================================================
-// ONGLET 3 : BIBLIOTHÈQUE (inchangé)
+// ONGLET 3 : BIBLIOTHÈQUE
 // ============================================================================
 class _LibraryPage extends ConsumerStatefulWidget {
   const _LibraryPage();
@@ -2976,7 +2934,7 @@ class _BookSpineCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ONGLET 4 : CERTIFICATS (inchangé)
+// ONGLET 4 : CERTIFICATS
 // ============================================================================
 class _CertificatesPage extends ConsumerWidget {
   const _CertificatesPage();
