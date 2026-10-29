@@ -1629,7 +1629,8 @@ class _ProFormationCard extends ConsumerWidget {
                       },
                       child: Container(
                         padding: const EdgeInsets.all(7),
-                        decoration: const BoxDecoration(
+                          
+                        decoration: BoxDecoration(
                           color: Colors.white,
                           shape: BoxShape.circle,
                           boxShadow: [
