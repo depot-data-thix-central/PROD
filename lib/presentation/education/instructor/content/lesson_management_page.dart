@@ -1,10 +1,12 @@
 // lib/presentation/education/instructor/content/lesson_management_page.dart
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:http/http.dart' as http;
 
 import 'package:thix_id/presentation/education/models/lesson.dart';
 import 'package:thix_id/presentation/education/models/video.dart';
@@ -61,6 +63,9 @@ class _LessonManagementPageState
   bool _isUploading = false;
   bool _isLoadingModules = false;
   bool _isLoadingEval = false;
+  
+  // ✅ NOUVEAU : Progression de l'upload en temps réel
+  double _uploadProgress = 0.0;
 
   bool get _hasValidModule =>
       _selectedModuleId != null && _selectedModuleId!.trim().isNotEmpty;
@@ -135,41 +140,99 @@ class _LessonManagementPageState
     super.dispose();
   }
 
+  // ✅ CORRIGÉ : Upload en streaming depuis le disque (ne charge PAS la vidéo en RAM)
   Future<void> _uploadFile() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: _type == 'video' ? FileType.video : FileType.custom,
         allowedExtensions:
             _type == 'document' ? ['pdf', 'doc', 'docx', 'ppt', 'pptx'] : null,
-        withData: true,
+        withData: false, // ✅ Ne charge PAS le fichier en mémoire
       );
+      
       if (result == null || result.files.isEmpty) return;
 
-      setState(() => _isUploading = true);
-      final file = result.files.first;
-      final bytes = file.bytes;
-      if (bytes == null) throw Exception('Impossible de lire le fichier.');
+      final picked = result.files.first;
+      final filePath = picked.path;
+      if (filePath == null) {
+        throw Exception('Chemin du fichier inaccessible.');
+      }
 
-      final bucket = _type == 'video' ? 'videos' : 'documents';
-      final ext = file.extension ?? 'bin';
-      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final path = 'lessons/$fileName';
-
-      await Supabase.instance.client.storage
-          .from(bucket)
-          .uploadBinary(path, bytes);
-      final publicUrl =
-          Supabase.instance.client.storage.from(bucket).getPublicUrl(path);
+      final file = File(filePath);
+      final fileSize = await file.length();
 
       setState(() {
-        _contentController.text = publicUrl;
-        _isUploading = false;
+        _isUploading = true;
+        _uploadProgress = 0.0;
       });
-    } catch (e) {
-      setState(() => _isUploading = false);
+
+      final bucket = _type == 'video' ? 'videos' : 'documents';
+      final ext = picked.extension ?? 'bin';
+      final fileName = '${DateTime.now().millisecondsSinceEpoch}.$ext';
+      final objectPath = 'lessons/$fileName';
+
+      final supabase = Supabase.instance.client;
+      final session = supabase.auth.currentSession;
+      if (session == null) {
+        throw Exception('Session expirée, reconnectez-vous.');
+      }
+
+      final uri = Uri.parse('${supabase.storage.url}/object/$bucket/$objectPath');
+
+      // ✅ Upload en streaming avec progression
+      final request = http.StreamedRequest('POST', uri);
+      request.headers.addAll({
+        'Authorization': 'Bearer ${session.accessToken}',
+        'Content-Type': _type == 'video' ? 'video/mp4' : 'application/octet-stream',
+        'x-upsert': 'false',
+        'cache-control': '3600',
+      });
+      request.contentLength = fileSize;
+
+      int sent = 0;
+      double lastReported = 0.0;
+      
+      await file.openRead().map((chunk) {
+        sent += chunk.length;
+        final progress = sent / fileSize;
+        
+        // Mettre à jour la progression tous les 1% pour éviter de surcharger l'UI
+        if (progress - lastReported >= 0.01) {
+          lastReported = progress;
+          if (mounted) {
+            setState(() => _uploadProgress = progress);
+          }
+        }
+        return chunk;
+      }).pipe(request.sink);
+
+      final response = await request.close();
+      final body = await response.stream.bytesToString();
+      
+      if (response.statusCode >= 400) {
+        throw Exception('Upload échoué (${response.statusCode}) : $body');
+      }
+
+      final publicUrl = supabase.storage.from(bucket).getPublicUrl(objectPath);
+      
       if (mounted) {
+        setState(() {
+          _contentController.text = publicUrl;
+          _isUploading = false;
+          _uploadProgress = 0.0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0.0;
+        });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload : $e'), backgroundColor: _C.red),
+          SnackBar(
+            content: Text('Upload : $e'),
+            backgroundColor: _C.red,
+          ),
         );
       }
     }
@@ -483,31 +546,73 @@ class _LessonManagementPageState
                     const SizedBox(height: 16),
 
                     if (_type == 'video' || _type == 'document')
-                      Row(
+                      Column(
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              controller: _contentController,
-                              decoration: _inputDecoration(
-                                _type == 'video'
-                                    ? 'URL de la vidéo'
-                                    : 'URL du document',
-                                Icons.link_rounded,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _contentController,
+                                  decoration: _inputDecoration(
+                                    _type == 'video'
+                                        ? 'URL de la vidéo'
+                                        : 'URL du document',
+                                    Icons.link_rounded,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: _isUploading
+                                    ? const SizedBox(
+                                        width: 20,
+                                        height: 20,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2),
+                                      )
+                                    : const Icon(Icons.upload_rounded,
+                                        color: _C.primary),
+                                onPressed: _isUploading ? null : _uploadFile,
+                              ),
+                            ],
+                          ),
+                          // ✅ NOUVEAU : Barre de progression en temps réel
+                          if (_isUploading && _uploadProgress > 0)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      const Text(
+                                        'Upload en cours...',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: _C.textMuted,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Text(
+                                        '${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: _C.primary,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 8),
+                                  LinearProgressIndicator(
+                                    value: _uploadProgress,
+                                    backgroundColor: _C.border,
+                                    valueColor: const AlwaysStoppedAnimation<Color>(_C.primary),
+                                    minHeight: 6,
+                                  ),
+                                ],
                               ),
                             ),
-                          ),
-                          IconButton(
-                            icon: _isUploading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.upload_rounded,
-                                    color: _C.primary),
-                            onPressed: _isUploading ? null : _uploadFile,
-                          ),
                         ],
                       )
                     else if (_type == 'text')
