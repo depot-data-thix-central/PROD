@@ -2350,13 +2350,45 @@ class _AwaitedFormationCard extends StatelessWidget {
 }
 
 // ============================================================================
-// ONGLET CACHÉ : CATALOGUE
+// CATALOGUE / EXPLORE (page PUBLIQUE pour la route /education/explore)
 // ============================================================================
-class _ExplorePage extends ConsumerWidget {
-  const _ExplorePage();
+class EducationExplorePage extends ConsumerStatefulWidget {
+  final String? initialCategoryId;
+  const EducationExplorePage({super.key, this.initialCategoryId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<EducationExplorePage> createState() =>
+      _EducationExplorePageState();
+}
+
+class _EducationExplorePageState extends ConsumerState<EducationExplorePage> {
+  @override
+  void initState() {
+    super.initState();
+    // ✅ Applique le filtre catégorie passé via ?category=...
+    if (widget.initialCategoryId != null &&
+        widget.initialCategoryId!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(_selectedCategoryProvider.notifier).state =
+            widget.initialCategoryId;
+        ref
+            .read(formationsProvider.notifier)
+            .filterByCategory(widget.initialCategoryId);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    // ✅ Réinitialise le filtre pour ne pas polluer l'accueil au retour
+    ref.read(_selectedCategoryProvider.notifier).state = null;
+    ref.read(formationsProvider.notifier).filterByCategory(null);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final formationsAsync = ref.watch(formationsProvider);
     final categoriesAsync = ref.watch(categoriesProvider);
     final selectedCategory = ref.watch(_selectedCategoryProvider);
@@ -2367,6 +2399,10 @@ class _ExplorePage extends ConsumerWidget {
         backgroundColor: ThixPolicy.card,
         elevation: 0,
         scrolledUnderElevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_rounded, color: _eduNavyBlue),
+          onPressed: () => context.pop(),
+        ),
         title: const Text('Catalogue',
             style: TextStyle(
                 color: _eduNavyBlue,
@@ -2400,8 +2436,9 @@ class _ExplorePage extends ConsumerWidget {
                         label: 'Tous',
                         isSelected: selectedCategory == null,
                         onTap: () {
-                          ref.read(_selectedCategoryProvider.notifier).state =
-                              null;
+                          ref
+                              .read(_selectedCategoryProvider.notifier)
+                              .state = null;
                           ref
                               .read(formationsProvider.notifier)
                               .filterByCategory(null);
@@ -2413,8 +2450,9 @@ class _ExplorePage extends ConsumerWidget {
                       label: cat.name,
                       isSelected: selectedCategory == cat.id,
                       onTap: () {
-                        ref.read(_selectedCategoryProvider.notifier).state =
-                            cat.id;
+                        ref
+                            .read(_selectedCategoryProvider.notifier)
+                            .state = cat.id;
                         ref
                             .read(formationsProvider.notifier)
                             .filterByCategory(cat.id);
@@ -2472,6 +2510,7 @@ class _ExplorePage extends ConsumerWidget {
     );
   }
 }
+
 
 // ============================================================================
 // ONGLET 3 : BIBLIOTHÈQUE
