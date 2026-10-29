@@ -160,7 +160,6 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
 
   @override
   Widget build(BuildContext context) {
-    // ✅ FIX: Interpolation Dart correcte
     final productCountText = _products.length > 1
         ? '${_products.length} produits'
         : '${_products.length} produit';
@@ -265,11 +264,19 @@ class _VendorProductsPageState extends ConsumerState<VendorProductsPage> {
                           return _ProductCard(
                             product: product,
                             isLocal: widget.localOnly,
-                            onEdit: () {
+                            onEdit: () async {
                               final id = product['id']?.toString();
-                              if (id != null) {
-                                context.push('/market/product/$id/edit');
-                              }
+                              if (id == null) return;
+
+                              // ✅ Route existante vers EditAnnouncementPage (edit_announcement_page.dart)
+                              await context.pushNamed(
+                                'marketEditAnnouncement',
+                                pathParameters: {'announcementId': id},
+                              );
+                              // équivalent : await context.push('/market/announcement/$id/edit');
+
+                              // Rafraîchit la liste au retour (EditAnnouncementPage pop avec updatedData)
+                              if (mounted) _loadProducts();
                             },
                             onDelete: () => _deleteProduct(product['id']?.toString() ?? ''),
                           );
