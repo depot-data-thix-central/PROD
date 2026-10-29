@@ -1,3031 +1,1667 @@
-// lib/presentation/thix_market/pages/market_home_page.dart
-// ============================================================================
-// MARKET HOME PAGE — Production Enterprise v12 "PROMO PHOTOS"
-// ----------------------------------------------------------------------------
-//  • ✅ Fond BLANC PUR, typographies RÉDUITES pour lisibilité maximale
-//  • ✅ Accent ORANGE standard marketplace (vert UNIQUEMENT carte locale)
-//  • ✅ Topbar compacte : recherche = icône seule, icon COMPTE SUPPRIMÉ
-//  • ✅ Cartes promo avec PHOTOS de fond multiples + défilement auto (4 s)
-//  • ✅ v12.2 : IMAGES CLAIRES (sans voile coloré, sans flou) comme les cartes
-//       produits + scrim noir léger haut/bas pour la lisibilité du texte
-//  • ✅ Titre "PRODUITS LOCAUX" déplacé EN HAUT de la carte verte
-//  • ✅ Bouton d'ajout de photos visible UNIQUEMENT pour les ADMIN
-//  • ✅ Footer "Thix Market - African Marketplace" ajouté en bas
-// ============================================================================
-
 import 'dart:async';
-import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:intl/intl.dart';
+import 'package:barcode_widget/barcode_widget.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:image_picker/image_picker.dart';
-
-import 'package:thix_id/data/models/live/live_model.dart';
-import 'package:thix_id/presentation/network/live/live_viewer_screen.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
-
-import '../core/currency_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:thix_id/core/theme/thix_design_policy.dart';
+import '../providers/shop_provider.dart' hide myShopIdProvider;
 import '../providers/market_providers.dart';
-import '../providers/market_badges_provider.dart';
-import '../providers/currency_provider.dart';
-import '../widgets/products/product_card.dart';
-import '../widgets/products/local_product_card.dart';
-import '../widgets/market/flash_sale_timer.dart';
-import '../widgets/market/currency_selector.dart';
-import 'all_shops_and_supermarkets_page.dart';
+import '../providers/local_moderation_providers.dart';
+import '../core/local_sectors.dart';
 
 // ============================================================================
-// DESIGN TOKENS — FOND BLANC PUR + ACCENT ORANGE (vert = carte locale seule)
+// CONSTANTES
 // ============================================================================
-const Color kBg = Colors.white; // ✅ fond blanc pur
-const Color kInk = Color(0xFF0F172A);
-const Color kInkSoft = Color(0xFF475569);
-const Color kInkMuted = Color(0xFF94A3B8);
-const Color kBorder = Color(0xFFE2E8F0);
-const Color kSurface = Color(0xFFF8FAFC);
-
-// ✅ Nouvel accent standard marketplace (orange) — remplace le vert
-const Color kAccent = Color(0xFFF97316);
-const Color kAccentDark = Color(0xFFC2410C);
-const Color kAccentSoft = Color(0xFFFFEDD5);
-
-const Color kPromoBlue1 = Color(0xFF1E3A8A);
-const Color kPromoBlue2 = Color(0xFF2563EB);
-const Color kGold = Color(0xFFE3B848);
-const Color kDanger = Color(0xFFEF4444);
-
-// ✅ Vert réservé UNIQUEMENT à la carte produits locaux
-const Color kLocalGreen1 = Color(0xFF0F7A37);
-const Color kLocalGreen2 = Color(0xFF149A4A);
-
-const Duration _kBannerAutoPlay = Duration(seconds: 5);
-const Duration _kBannerResumeDelay = Duration(seconds: 2);
-const int _kMaxTitleLength = 120;
-const int _kMaxDescriptionLength = 300;
-const int _kMaxNameLength = 50;
-const int _kMaxLiveCards = 10;
-const int _kMaxHeroSlides = 10;
-const int _kMaxFeaturedShops = 4;
-const int _kMaxLocalTeaser = 6;
-const double _kGridCardHeight = 250;
-const double _kPromoRowHeight = 184;
-
-// ✅ Photos de fond des cartes promo
-const String _kPromoBucket = 'promo-banners';
-const String _kPromoTable = 'promo_card_banners';
-const String _kCardExclusive = 'exclusive';
-const String _kCardLocal = 'local';
-const int _kMaxPromoPhotos = 8;
-const int _kMaxPromoFileBytes = 5 * 1024 * 1024;
-const Duration _kPromoSlide = Duration(seconds: 4);
-
-class _MarketValidators {
-  _MarketValidators._();
-
-  static String sanitize(String? input, {int maxLength = 500}) {
-    if (input == null || input.trim().isEmpty) return '';
-    try {
-      final doc = html_parser.parse(input);
-      var sanitized = doc.body?.text ?? input;
-      sanitized = sanitized
-          .replaceAll(RegExp(r'<[^>]*>'), '')
-          .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
-          .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
-          .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-          .trim();
-      return sanitized.length > maxLength ? sanitized.substring(0, maxLength) : sanitized;
-    } catch (e) {
-      debugPrint('[Market] ⚠️ sanitize error: $e');
-      return '';
-    }
-  }
-
-  static String? sanitizeUrl(String? url) {
-    if (url == null || url.trim().isEmpty) return null;
-    final trimmed = url.trim();
-    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) return null;
-    return trimmed.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
-  }
-
-  static String groupNumber(num v) {
-    final s = v.round().abs().toString();
-    return s.replaceAllMapped(RegExp(r'(\d)(?=(\d{3})+$)'), (m) => '${m[1]} ');
-  }
-
-  static String parseError(dynamic e, AppLocalizations l10n) {
-    final msg = e.toString().toLowerCase();
-    if (msg.contains('timeout')) return l10n.t('error_timeout');
-    if (msg.contains('network') || msg.contains('socket')) return l10n.t('error_network');
-    if (msg.contains('unauthorized')) return l10n.t('error_session_expired');
-    return l10n.t('error_generic');
-  }
-}
+const Duration _kRequestTimeout = Duration(seconds: 20);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
+const int _kMaxRetries = 1;
+const int _kMaxOrderIdDisplay = 8;
+const int _kMaxNameLength = 60;
+const int _kMaxTitleLength = 80;
+const double _kShopCardHeight = 132;
 
 // ============================================================================
 // PROVIDERS
 // ============================================================================
-final activeMarketLiveSessionsProvider = StreamProvider.autoDispose<List<Map<String, dynamic>>>((ref) {
+final vendorOrdersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final db = ref.read(supabaseClientProvider);
+  final uid = db.auth.currentUser?.id;
+  if (!_VdValidators.isValidId(uid)) return [];
+
   try {
-    return Supabase.instance.client
-        .from('live_sessions')
-        .stream(primaryKey: ['id'])
-        .eq('status', 'live')
-        .limit(_kMaxLiveCards)
-        .handleError((e) {
-      debugPrint('[Market] ⚠️ Live stream error: $e');
-    });
+    final shopsRes = await _vdRetry(
+      () => db.from('shops').select('id').eq('owner_id', uid!),
+      label: 'fetchVendorShops',
+    );
+    final shopIds = (shopsRes as List)
+        .map((s) => (s as Map)['id']?.toString())
+        .whereType<String>()
+        .where(_VdValidators.isValidId)
+        .toList();
+
+    if (shopIds.isEmpty) return [];
+
+    final res = await _vdRetry(
+      () => db
+          .from('orders')
+          .select(
+            'id, total, status, payment_status, payout_status, payment_method, '
+            'currency, created_at, user_id, address_id, receipt_code, refund_requested, '
+            'refund_reason, received_at, shipping_method, shipping_address, '
+            'customer_name, customer_phone, customer_email, handled_by_role',
+          )
+          .inFilter('shop_id', shopIds)
+          .order('created_at', ascending: false)
+          .limit(50),
+      label: 'fetchVendorOrders',
+    );
+
+    return (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   } catch (e) {
-    debugPrint('[Market] ❌ Live provider error: $e');
-    return Stream.value(const <Map<String, dynamic>>[]);
+    debugPrint('[VendorDashboard] ❌ Orders load error: $e');
+    return [];
   }
 });
 
-final marketTickerProvider = StreamProvider.autoDispose<int>((ref) {
-  return Stream.periodic(const Duration(seconds: 30), (tick) => tick);
-});
+final vendorProductsProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
+  final db = ref.read(supabaseClientProvider);
+  final uid = db.auth.currentUser?.id;
+  if (!_VdValidators.isValidId(uid)) return [];
 
-/// ✅ HERO : 10 nouveautés — EXCLUT produits locaux & produits supermarchés
-final heroNewArrivalsProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
   try {
-    final res = await Supabase.instance.client
-        .from('products')
-        .select('*, shop:shops!inner(id, name, type)')
-        .eq('status', 'active')
-        .order('created_at', ascending: false)
-        .limit(40)
-        .timeout(const Duration(seconds: 10));
+    final shopsRes = await _vdRetry(
+      () => db.from('shops').select('id').eq('owner_id', uid!),
+      label: 'fetchVendorShops[products]',
+    );
+    final shopIds = (shopsRes as List)
+        .map((s) => (s as Map)['id']?.toString())
+        .whereType<String>()
+        .where(_VdValidators.isValidId)
+        .toList();
 
-    final all = List<Map<String, dynamic>>.from(res as List);
+    if (shopIds.isEmpty) return [];
 
-    final filtered = all.where((p) {
-      if (p['is_local'] == true) return false;
-      final shopType = (p['shop']?['type'] ?? '').toString().toLowerCase();
-      if (shopType.contains('super')) return false;
-      return true;
-    }).take(_kMaxHeroSlides).toList();
+    final res = await _vdRetry(
+      () => db
+          .from('products')
+          .select('id, title, price, status, stock')
+          .inFilter('shop_id', shopIds)
+          .order('created_at', ascending: false),
+      label: 'fetchVendorProducts',
+    );
 
-    debugPrint('[Market] 🎬 Hero: ${filtered.length} nouveautés (hors local/supermarché)');
-    return filtered;
+    return (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
   } catch (e) {
-    debugPrint('[Market] ⚠️ Hero arrivals error: $e');
-    return const <Map<String, dynamic>>[];
+    debugPrint('[VendorDashboard] ❌ Products load error: $e');
+    return [];
   }
 });
 
-final localTeaserProvider = FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+final vendorLocalProductsCountProvider = FutureProvider<int>((ref) async {
+  final db = ref.read(supabaseClientProvider);
+  final uid = db.auth.currentUser?.id;
+  if (!_VdValidators.isValidId(uid)) return 0;
+
   try {
-    final res = await Supabase.instance.client
-        .from('products')
-        .select('*, shop:shops!inner(id, name, logo_url, city, type)')
-        .eq('status', 'active')
-        .eq('is_local', true)
-        .order('created_at', ascending: false)
-        .limit(_kMaxLocalTeaser)
-        .timeout(const Duration(seconds: 10));
-    return List<Map<String, dynamic>>.from(res as List);
+    final shopsRes = await _vdRetry(
+      () => db.from('shops').select('id').eq('owner_id', uid!),
+      label: 'fetchVendorShops[local]',
+    );
+    final shopIds = (shopsRes as List)
+        .map((s) => (s as Map)['id']?.toString())
+        .whereType<String>()
+        .where(_VdValidators.isValidId)
+        .toList();
+
+    if (shopIds.isEmpty) return 0;
+
+    final res = await _vdRetry(
+      () => db
+          .from('products')
+          .select('id')
+          .inFilter('shop_id', shopIds)
+          .eq('is_local', true)
+          .eq('status', 'active'),
+      label: 'countLocalProducts',
+    );
+
+    return (res as List).length;
   } catch (e) {
-    debugPrint('[Market] ⚠️ Local teaser error: $e');
-    return const <Map<String, dynamic>>[];
+    debugPrint('[VendorDashboard] ⚠️ Local count error: $e');
+    return 0;
   }
 });
 
-// ----------------------------------------------------------------------------
-// ✅ ADMIN : source unique = fonction SQL is_thix_admin() (même logique que RLS)
-// ----------------------------------------------------------------------------
-final marketIsAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
-  final client = Supabase.instance.client;
-  if (client.auth.currentUser == null) return false;
-  try {
-    final res = await client.rpc('is_thix_admin').timeout(const Duration(seconds: 8));
-    return res == true;
-  } catch (e) {
-    debugPrint('[Market] ⚠️ is_thix_admin error: $e');
-    return false;
-  }
-});
+// ============================================================================
+// VALIDATEURS
+// ============================================================================
+class _VdValidators {
+  _VdValidators._();
 
-// ----------------------------------------------------------------------------
-// ✅ PHOTOS DES CARTES PROMO
-// ----------------------------------------------------------------------------
-class PromoBanner {
-  final String id;
-  final String imageUrl;
-  final String storagePath;
-  final int sortOrder;
-  const PromoBanner({
-    required this.id,
-    required this.imageUrl,
-    required this.storagePath,
-    required this.sortOrder,
-  });
+  static bool isValidId(String? id) {
+    if (id == null || id.trim().isEmpty) return false;
+    return RegExp(r'^[0-9a-fA-F-]{8,}$').hasMatch(id.trim());
+  }
+
+  static String sanitize(String? input, {int maxLength = 500}) {
+    if (input == null || input.trim().isEmpty) return '';
+    final doc = html_parser.parse(input);
+    var s = doc.body?.text ?? input;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'javascript:', caseSensitive: false), '')
+        .replaceAll(RegExp(r'on\w+\s*=', caseSensitive: false), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > maxLength ? s.substring(0, maxLength) : s;
+  }
+
+  static String? sanitizeUrl(String? url) {
+    if (url == null || url.trim().isEmpty) return null;
+    final t = url.trim();
+    if (!t.startsWith('http://') && !t.startsWith('https://')) return null;
+    return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+  }
+
+  static double safeDouble(dynamic v, {double fallback = 0.0}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toDouble() ?? fallback;
+    return parsed < 0 || parsed.isNaN || parsed.isInfinite ? fallback : parsed;
+  }
+
+  static int safeInt(dynamic v, {int fallback = 0}) {
+    if (v == null) return fallback;
+    final parsed = (v as num?)?.toInt() ?? fallback;
+    return parsed < 0 ? fallback : parsed;
+  }
+
+  static String shortId(String? id) {
+    if (id == null || id.isEmpty) return 'N/A';
+    if (id.length <= _kMaxOrderIdDisplay) return id.toUpperCase();
+    return id.substring(0, _kMaxOrderIdDisplay).toUpperCase();
+  }
+
+  static String normalizeCurrency(String? raw) {
+    if (raw == null) return 'FC';
+    final c = raw.toString().toUpperCase().trim();
+    if (c == 'USD' || c == '\$') return 'USD';
+    if (c == 'XOF' || c == 'FCFA' || c == 'FC' || c == 'CDF' || c == 'XAF') return 'FC';
+    if (c == 'EUR' || c == '€') return 'EUR';
+    return c.isEmpty ? 'FC' : c;
+  }
+
+  static String currencySymbol(String currency) {
+    switch (currency) {
+      case 'USD': return '\$';
+      case 'EUR': return '€';
+      default: return 'FC';
+    }
+  }
+
+  static String formatAmount(double amount, String locale, {bool isUSD = false}) {
+    try {
+      if (isUSD) {
+        return NumberFormat.decimalPatternDigits(locale: locale, decimalDigits: 2).format(amount);
+      }
+      return NumberFormat.decimalPattern(locale).format(amount.toInt());
+    } catch (_) {
+      return isUSD ? amount.toStringAsFixed(2) : amount.toInt().toString();
+    }
+  }
+
+  static String friendlyError(dynamic e) {
+    final msg = e.toString().toLowerCase();
+    if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
+    if (msg.contains('network') || msg.contains('socket')) return 'Erreur réseau. Réessayez.';
+    if (msg.contains('permission') || msg.contains('policy')) return 'Accès non autorisé.';
+    return 'Une erreur est survenue. Réessayez.';
+  }
 }
 
-final promoBannersProvider = FutureProvider.autoDispose.family<List<PromoBanner>, String>((ref, cardKey) async {
-  try {
-    final res = await Supabase.instance.client
-        .from(_kPromoTable)
-        .select('id, image_url, storage_path, sort_order')
-        .eq('card_key', cardKey)
-        .eq('is_active', true)
-        .order('sort_order', ascending: true)
-        .order('created_at', ascending: true)
-        .limit(_kMaxPromoPhotos)
-        .timeout(const Duration(seconds: 10));
-
-    final out = <PromoBanner>[];
-    for (final row in List<Map<String, dynamic>>.from(res as List)) {
-      final url = _MarketValidators.sanitizeUrl(row['image_url']?.toString());
-      if (url == null) continue;
-      out.add(PromoBanner(
-        id: row['id']?.toString() ?? '',
-        imageUrl: url,
-        storagePath: row['storage_path']?.toString() ?? '',
-        sortOrder: (row['sort_order'] as num?)?.toInt() ?? 0,
-      ));
-    }
-    return out;
-  } catch (e) {
-    debugPrint('[Market] ⚠️ Promo banners ($cardKey) error: $e');
-    return const <PromoBanner>[];
+// ============================================================================
+// LOCALIZATION HELPER
+// ============================================================================
+extension _VdL10n on BuildContext {
+  String vdT(String fr, String en) {
+    final lang = Localizations.localeOf(this).languageCode;
+    return lang == 'fr' ? fr : en;
   }
-});
+
+  String get localeCode => Localizations.localeOf(this).languageCode;
+}
+
+// ============================================================================
+// HELPERS
+// ============================================================================
+Future<T> _vdRetry<T>(
+  Future<T> Function() fn, {
+  required String label,
+  int maxRetries = _kMaxRetries,
+}) async {
+  int attempt = 0;
+  while (true) {
+    try {
+      return await fn().timeout(_kRequestTimeout);
+    } on TimeoutException {
+      attempt++;
+      if (attempt > maxRetries) {
+        debugPrint('[VendorDashboard] ❌ $label: timeout after $attempt attempts');
+        throw TimeoutException('$label: délai dépassé');
+      }
+      debugPrint('[VendorDashboard] ⏱️ $label timeout — retry $attempt/$maxRetries');
+      await Future.delayed(_kRetryDelay);
+    } catch (e) {
+      debugPrint('[VendorDashboard] ❌ $label error: $e');
+      rethrow;
+    }
+  }
+}
+
+String _pick(Map<String, dynamic>? m, List<String> keys) {
+  if (m == null) return '';
+  for (final k in keys) {
+    final v = m[k]?.toString().trim() ?? '';
+    if (v.isNotEmpty) return v;
+  }
+  return '';
+}
+
+// ============================================================================
+// STATUS CONFIGURATION
+// ============================================================================
+class _OrderStatus {
+  final String key;
+  final String labelFr;
+  final String labelEn;
+  final IconData icon;
+  final Color color;
+
+  const _OrderStatus({
+    required this.key,
+    required this.labelFr,
+    required this.labelEn,
+    required this.icon,
+    required this.color,
+  });
+
+  String label(BuildContext context) => context.vdT(labelFr, labelEn);
+}
+
+const List<_OrderStatus> _kOrderStatuses = [
+  _OrderStatus(key: 'pending', labelFr: 'En attente', labelEn: 'Pending', icon: Icons.hourglass_top_rounded, color: ThixPolicy.gold),
+  _OrderStatus(key: 'processing', labelFr: 'En préparation', labelEn: 'Processing', icon: Icons.kitchen_rounded, color: ThixPolicy.primary),
+  _OrderStatus(key: 'shipped', labelFr: 'Expédiée', labelEn: 'Shipped', icon: Icons.local_shipping_rounded, color: ThixPolicy.primary),
+  _OrderStatus(key: 'delivered', labelFr: 'Livrée', labelEn: 'Delivered', icon: Icons.check_circle_rounded, color: ThixPolicy.success),
+  _OrderStatus(key: 'cancelled', labelFr: 'Annulée', labelEn: 'Cancelled', icon: Icons.cancel_rounded, color: ThixPolicy.danger),
+];
+
+_OrderStatus _getOrderStatus(String key) {
+  return _kOrderStatuses.firstWhere(
+    (s) => s.key == key,
+    orElse: () => const _OrderStatus(key: 'unknown', labelFr: 'Inconnu', labelEn: 'Unknown', icon: Icons.help_outline_rounded, color: ThixPolicy.textMuted),
+  );
+}
 
 // ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
-class MarketHomePage extends ConsumerStatefulWidget {
-  const MarketHomePage({super.key});
+class VendorDashboard extends ConsumerStatefulWidget {
+  const VendorDashboard({super.key});
+
   @override
-  ConsumerState<MarketHomePage> createState() => _MarketHomePageState();
+  ConsumerState<VendorDashboard> createState() => _VendorDashboardState();
 }
 
-class _MarketHomePageState extends ConsumerState<MarketHomePage> with RouteAware {
-  final ScrollController _scroll = ScrollController();
-  final PageController _bannerCtrl = PageController(viewportFraction: 0.92);
-  Timer? _bannerTimer;
-  bool _bannerReady = false;
-  int _currentBanner = 0;
+class _VendorDashboardState extends ConsumerState<VendorDashboard> {
+  bool _isRefreshing = false;
+  final Set<String> _updatingOrders = <String>{};
 
   @override
   void initState() {
     super.initState();
-    _scroll.addListener(_onScroll);
-    _refreshCurrencyRates();
-  }
-
-  Future<void> _refreshCurrencyRates() async {
-    try {
-      await CurrencyService.instance.refreshRates();
-    } catch (e) {
-      debugPrint('[Market] ⚠️ Currency refresh failed: $e');
-    }
-  }
-
-  void _invalidatePromo() {
-    ref.invalidate(promoBannersProvider(_kCardExclusive));
-    ref.invalidate(promoBannersProvider(_kCardLocal));
-    ref.invalidate(marketIsAdminProvider);
-  }
-
-  @override
-  void didPopNext() {
-    invalidateAllMarketProviders(ref);
-    ref.read(forYouProvider.notifier).refresh();
-    ref.read(marketBadgesProvider.notifier).refresh();
-    ref.invalidate(localTeaserProvider);
-    ref.invalidate(heroNewArrivalsProvider);
-    _invalidatePromo();
-    _refreshCurrencyRates();
-  }
-
-  void _onScroll() {
-    if (!_scroll.hasClients) return;
-    final pos = _scroll.position;
-    if (pos.pixels > pos.maxScrollExtent - 700) {
-      ref.read(forYouProvider.notifier).loadMore();
-    }
+    debugPrint('[VendorDashboard] 🏪 Page opened');
+    Future.microtask(() {
+      ref.invalidate(myShopsProvider);
+      ref.invalidate(vendorOrdersProvider);
+      ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider);
+      ref.invalidate(localIsModeratorProvider);
+      ref.invalidate(moderationStatsProvider);
+    });
   }
 
   @override
   void dispose() {
-    _scroll.removeListener(_onScroll);
-    _scroll.dispose();
-    _bannerCtrl.dispose();
-    _bannerTimer?.cancel();
+    debugPrint('[VendorDashboard] 👋 Page disposed');
     super.dispose();
   }
 
-  String _t(String fr, String en, [String? sw]) {
-    final lang = Localizations.localeOf(context).languageCode;
-    if (lang == 'sw' && sw != null) return sw;
-    return lang == 'fr' ? fr : en;
+  Future<void> _refresh() async {
+    if (_isRefreshing) return;
+    setState(() => _isRefreshing = true);
+    HapticFeedback.mediumImpact();
+    debugPrint('[VendorDashboard] 🔄 Refresh triggered');
+
+    try {
+      ref.invalidate(myShopsProvider);
+      ref.invalidate(vendorOrdersProvider);
+      ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider);
+      ref.invalidate(localIsModeratorProvider);
+      ref.invalidate(moderationStatsProvider);
+
+      await Future.wait([
+        ref.read(myShopsProvider.future),
+        ref.read(vendorOrdersProvider.future),
+        ref.read(vendorProductsProvider.future),
+        ref.read(vendorLocalProductsCountProvider.future),
+        ref.read(localIsModeratorProvider.future),
+        ref.read(moderationStatsProvider.future),
+      ]);
+    } catch (e) {
+      debugPrint('[VendorDashboard] ❌ Refresh error: $e');
+    } finally {
+      if (mounted) setState(() => _isRefreshing = false);
+    }
   }
 
-  void _safeNavigate(String name, String path) {
-    HapticFeedback.selectionClick();
-    try {
-      context.pushNamed(name);
-    } catch (_) {
+  Future<void> _openCreateLocalProduct() async {
+    HapticFeedback.mediumImpact();
+
+    // ✅ Si modérateur/admin : redirige vers l'espace de modération complet
+    final isMod = ref.read(localIsModeratorProvider).valueOrNull ?? false;
+    if (isMod) {
+      context.push('/market/local/vendor-space');
+      return;
+    }
+
+    String? shopId = ref.read(myShopIdProvider).valueOrNull;
+    if (shopId == null) {
       try {
-        context.push(path);
-      } catch (e) {
-        debugPrint('[Market] ❌ Nav failed: $e');
-      }
+        shopId = await ref.read(myShopIdProvider.future);
+      } catch (_) {}
+    }
+    if (shopId == null) {
+      shopId = await _resolveShopIdDirect();
+    }
+
+    if (shopId == null) {
+      _showInfo(context.vdT(
+        'Créez d\'abord une boutique pour vendre un produit local',
+        'Create a shop first to sell a local product',
+      ));
+      return;
+    }
+
+    final created = await context.push<bool>('/market/local/create', extra: shopId);
+    if (created == true && mounted) {
+      ref.invalidate(vendorProductsProvider);
+      ref.invalidate(vendorLocalProductsCountProvider);
+      ref.invalidate(moderationStatsProvider);
+      _showSuccess(context.vdT('Produit local soumis pour validation ✅', 'Local product submitted for validation ✅'));
     }
   }
 
-  Future<void> _go(MarketBadge kind, Future<dynamic> Function() nav) async {
-    HapticFeedback.lightImpact();
-    final badges = ref.read(marketBadgesProvider.notifier);
-    badges.markSeen(kind);
+  Future<String?> _resolveShopIdDirect() async {
     try {
-      await nav();
-    } catch (e) {
-      debugPrint('[Market] ❌ Nav failed ($kind): $e');
-    }
-    if (mounted) badges.refresh();
-  }
-
-  Future<void> _openNotifications() => _go(MarketBadge.alerts, () async {
-        try {
-          await context.pushNamed('marketNotifications');
-        } catch (_) {
-          await context.push('/market/notifications');
-        }
-      });
-
-  Future<void> _openOrders() => _go(MarketBadge.orders, () => context.push('/market/orders'));
-
-  Future<void> _openWishlist() => _go(MarketBadge.wishlist, () async {
-        try {
-          await context.pushNamed('marketWishlist');
-        } catch (_) {
-          await context.push('/market/wishlist');
-        }
-      });
-
-  // ✅ MODIFIÉ : Va TOUJOURS vers le Vendor Dashboard (plus de hasShop)
-  Future<void> _openShops() => _go(MarketBadge.shops, () async {
-        try {
-          await context.pushNamed('vendorDashboard');
-        } catch (_) {
-          await context.push('/market/vendor/dashboard');
-        }
-      });
-
-  void _startBannerAuto(int count) {
-    if (_bannerReady || count <= 1) return;
-    _bannerReady = true;
-    _bannerTimer?.cancel();
-    _bannerTimer = Timer.periodic(_kBannerAutoPlay, (_) {
-      if (!mounted || !_bannerCtrl.hasClients) return;
-      _currentBanner = (_currentBanner + 1) % count;
-      _bannerCtrl.animateToPage(
-        _currentBanner,
-        duration: const Duration(milliseconds: 750),
-        curve: Curves.easeOutCubic,
+      final db = ref.read(supabaseClientProvider);
+      final uid = db.auth.currentUser?.id;
+      if (uid == null) return null;
+      final res = await db
+          .from('shops')
+          .select('id,type')
+          .eq('owner_id', uid)
+          .order('created_at', ascending: true)
+          .limit(5)
+          .timeout(_kRequestTimeout);
+      final list = List<Map<String, dynamic>>.from(res as List);
+      if (list.isEmpty) return null;
+      final pick = list.firstWhere(
+        (s) => s['type']?.toString() != 'supermarket',
+        orElse: () => list.first,
       );
-    });
-  }
-
-  String? _extractImage(Map<String, dynamic> p) {
-    final url1 = p['image_url']?.toString();
-    if (url1 != null && url1.isNotEmpty) return _MarketValidators.sanitizeUrl(url1);
-    if (p['images'] is List && (p['images'] as List).isNotEmpty) {
-      return _MarketValidators.sanitizeUrl((p['images'] as List).first.toString());
+      return pick['id']?.toString();
+    } catch (e) {
+      debugPrint('[VendorDashboard] ⚠️ direct shop resolve: $e');
+      return null;
     }
-    return null;
   }
 
-  String _greetingName(AppLocalizations l10n) {
+  Future<void> _updateStatus(String orderId, String newStatus) async {
+    if (!_VdValidators.isValidId(orderId)) {
+      _showError(context.vdT('Identifiant invalide', 'Invalid ID'));
+      return;
+    }
+
+    if (_updatingOrders.contains(orderId)) return;
+
+    setState(() => _updatingOrders.add(orderId));
+    HapticFeedback.mediumImpact();
+
     try {
-      final user = Supabase.instance.client.auth.currentUser;
-      final full = user?.userMetadata?['full_name'] ?? user?.userMetadata?['name'];
-      if (full != null && (full as String).trim().isNotEmpty) {
-        return _MarketValidators.sanitize(full.trim().split(' ').first, maxLength: _kMaxNameLength);
+      final db = ref.read(supabaseClientProvider);
+      final payload = <String, dynamic>{
+        'status': newStatus,
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+
+      if (newStatus == 'shipped') {
+        payload['receipt_code'] = orderId;
+        payload['payout_status'] = 'held';
       }
-      final email = user?.email;
-      if (email != null && email.contains('@')) {
-        return _MarketValidators.sanitize(email.split('@').first, maxLength: _kMaxNameLength);
+      if (newStatus == 'delivered') {
+        payload['received_at'] = DateTime.now().toIso8601String();
+        payload['payout_status'] = 'released';
+        payload['payment_status'] = 'paid';
+      }
+      if (newStatus == 'cancelled') {
+        payload['payout_status'] = 'refunded';
+      }
+
+      await _vdRetry(
+        () => db.from('orders').update(payload).eq('id', orderId),
+        label: 'updateOrderStatus[$orderId → $newStatus]',
+      );
+
+      ref.invalidate(vendorOrdersProvider);
+
+      if (mounted) {
+        final status = _getOrderStatus(newStatus);
+        _showSuccess('${context.vdT('Statut', 'Status')} → ${status.label(context)}');
       }
     } catch (e) {
-      debugPrint('[Market] ⚠️ greetingName error: $e');
+      debugPrint('[VendorDashboard] ❌ Update status error: $e');
+      if (mounted) _showError(_VdValidators.friendlyError(e));
+    } finally {
+      if (mounted) setState(() => _updatingOrders.remove(orderId));
     }
-    return _MarketValidators.sanitize(l10n.t('market_client_default'), maxLength: _kMaxNameLength);
   }
 
-  void _showComing(String feature) {
-    final l10n = AppLocalizations.of(context);
-    HapticFeedback.selectionClick();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(l10n.t('market_coming_soon', args: [feature])),
-        backgroundColor: kInk,
-        behavior: SnackBarBehavior.floating,
+  void _showQrSheet(Map<String, dynamic> order) {
+    final orderId = order['id']?.toString() ?? '';
+    final code = (order['receipt_code'] ?? orderId).toString();
+    final short = _VdValidators.shortId(orderId);
+
+    HapticFeedback.mediumImpact();
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: ThixPolicy.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => _QrCodeSheet(
+        code: code,
+        shortOrderId: short,
+        titleLabel: context.vdT('Code de livraison', 'Delivery code'),
+        orderLabel: context.vdT('Commande', 'Order'),
+        instructionLabel: context.vdT(
+          'Présentez ce QR au client pour confirmer la réception.\nL\'argent ne sera versé qu\'après le scan.',
+          'Show this QR to the customer to confirm receipt.\nFunds will be released after scan.',
+        ),
+        copyLabel: context.vdT('Copier', 'Copy'),
+        copiedLabel: context.vdT('Code copié', 'Code copied'),
+        closeLabel: context.vdT('Fermer', 'Close'),
       ),
     );
   }
 
-  List<Map<String, dynamic>> _stableSort(List<Map<String, dynamic>> items) => stableSortProducts(items);
-
-  bool _isExpired(Map<String, dynamic> p) {
-    final exp = p['expires_at'];
-    if (exp == null) return false;
-    final dt = DateTime.tryParse(exp.toString());
-    if (dt == null) return false;
-    return !dt.isAfter(DateTime.now());
+  Future<bool> _confirmAction({required String title, required String content, required Color actionColor, required String actionLabel}) async {
+    HapticFeedback.mediumImpact();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rLg)),
+        title: Text(title, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold)),
+        content: Text(content, style: ThixPolicy.bodyStyle),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(context.vdT('Annuler', 'Cancel'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.textSecondary))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: actionColor, foregroundColor: Colors.white),
+            child: Text(actionLabel, style: const TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+    return result ?? false;
   }
 
-  String _allProductsTitle(AppLocalizations l10n) {
-    final t = l10n.t('market_all_products');
-    if (t.trim().isEmpty || t == 'market_all_products') {
-      return _t('Tous les produits', 'All products', 'Bidhaa zote');
-    }
-    return t;
+  Future<void> _confirmStatusChange(String orderId, String newStatus) async {
+    final status = _getOrderStatus(newStatus);
+    final short = _VdValidators.shortId(orderId);
+    final confirmed = await _confirmAction(
+      title: context.vdT('Confirmer le changement', 'Confirm change'),
+      content: context.vdT('Passer la commande #$short en "${status.label(context)}" ?', 'Change order #$short to "${status.label(context)}"?'),
+      actionColor: status.color,
+      actionLabel: context.vdT('Confirmer', 'Confirm'),
+    );
+    if (confirmed && mounted) await _updateStatus(orderId, newStatus);
   }
 
-  void _openPromoManager(String cardKey, String title) {
+  Future<void> _confirmCancel(String orderId) async {
+    final short = _VdValidators.shortId(orderId);
+    final ok = await _confirmAction(
+      title: context.vdT('Annuler la commande ?', 'Cancel order?'),
+      content: context.vdT('Le client sera notifié et le paiement ne sera pas versé. Commande #$short', 'Customer will be notified and payment will not be released. Order #$short'),
+      actionColor: ThixPolicy.danger,
+      actionLabel: context.vdT('Oui, annuler', 'Yes, cancel'),
+    );
+    if (ok && mounted) await _updateStatus(orderId, 'cancelled');
+  }
+
+  void _showOrderDetails(Map<String, dynamic> order) {
     HapticFeedback.selectionClick();
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _PromoBannerManagerSheet(cardKey: cardKey, title: title),
+      backgroundColor: ThixPolicy.card,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.85,
+        minChildSize: 0.5,
+        maxChildSize: 0.95,
+        expand: false,
+        builder: (_, scrollController) => _DashboardOrderDetailsSheet(
+          order: order,
+          scrollController: scrollController,
+          onUpdateStatus: (id, status) => _confirmStatusChange(id, status),
+          onShowQr: _showQrSheet,
+          onCancel: _confirmCancel,
+        ),
+      ),
     );
+  }
+
+  void _showError(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.error_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.danger,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
+  void _showSuccess(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.success,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
+
+  void _showInfo(String message) {
+    if (!mounted) return;
+    HapticFeedback.lightImpact();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Row(children: [const Icon(Icons.info_outline_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Expanded(child: Text(message))]),
+      backgroundColor: ThixPolicy.warning,
+      behavior: SnackBarBehavior.floating,
+    ));
   }
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final heroAsync = ref.watch(heroNewArrivalsProvider);
-    final featuredAsync = ref.watch(featuredProductsProvider);
-    final flashAsync = ref.watch(flashSalesProvider);
-    final forYouAsync = ref.watch(forYouProvider);
-    final liveSessionsAsync = ref.watch(activeMarketLiveSessionsProvider);
-    final fallbackProducts = ref.watch(allMarketProductsProvider);
-    final badges = ref.watch(marketBadgesProvider);
-    final localAsync = ref.watch(localTeaserProvider);
-    ref.watch(currencyProvider);
-    ref.watch(exchangeRatesProvider);
-    ref.watch(marketTickerProvider);
-
-    final hasMore = ref.read(forYouProvider.notifier).hasMore;
-
-    heroAsync.whenData((b) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _startBannerAuto(b.length));
-    });
+    final shopsAsync = ref.watch(myShopsProvider);
+    final ordersAsync = ref.watch(vendorOrdersProvider);
+    final productsAsync = ref.watch(vendorProductsProvider);
+    final localCountAsync = ref.watch(vendorLocalProductsCountProvider);
+    final isModeratorAsync = ref.watch(localIsModeratorProvider);
+    final modStatsAsync = ref.watch(moderationStatsProvider);
 
     return Scaffold(
-      backgroundColor: kBg,
-      extendBody: true,
-      body: Stack(
-        children: [
-          RefreshIndicator(
-            color: kAccent,
-            backgroundColor: Colors.white,
-            onRefresh: () async {
-              HapticFeedback.mediumImpact();
-              invalidateAllMarketProviders(ref);
-              ref.read(marketBadgesProvider.notifier).refresh();
-              ref.invalidate(localTeaserProvider);
-              ref.invalidate(heroNewArrivalsProvider);
-              _invalidatePromo();
-              await ref.read(forYouProvider.notifier).refresh();
-              await _refreshCurrencyRates();
-            },
-            child: CustomScrollView(
-              controller: _scroll,
-              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-              slivers: [
-                SliverToBoxAdapter(child: _buildTopBar(l10n, badges)),
-                SliverToBoxAdapter(child: _buildGreetingRow(l10n, heroAsync)),
-                SliverToBoxAdapter(child: _buildHero(heroAsync, l10n)),
-                SliverToBoxAdapter(child: _buildFeaturedStrip(featuredAsync, l10n)),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _buildLiveSection(liveSessionsAsync, l10n)),
-                SliverToBoxAdapter(child: _buildSupermarketSection(l10n)),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _Reveal(delayMs: 60, child: _buildPromoBannersRow(l10n))),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _Reveal(delayMs: 100, child: _buildB2BTools(l10n, badges))),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _Reveal(delayMs: 60, child: _buildLocalTeaser(localAsync, l10n))),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _buildFlashSaleSection(flashAsync, l10n)),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                SliverToBoxAdapter(child: _buildSectionHeader(_allProductsTitle(l10n))),
-                const SliverToBoxAdapter(child: SizedBox(height: 14)),
-                _buildGrid(forYouAsync, fallbackProducts, hasMore, l10n),
-                
-                // ✅ NOUVEAU : Footer Slogan African
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(vertical: 32),
-                    child: Column(
-                      children: [
-                        Text(
-                          'THIX MARKET', 
-                          style: TextStyle(color: kInkMuted, fontWeight: FontWeight.w900, letterSpacing: 1.2, fontSize: 13),
-                        ),
-                        SizedBox(height: 6),
-                        Text(
-                          'African Marketplace · L\'e-commerce intelligent', 
-                          style: TextStyle(color: kInkMuted, fontSize: 11, fontWeight: FontWeight.w500),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Padding pour ne pas être caché par la Bottom Nav
-                const SliverToBoxAdapter(child: SizedBox(height: 120)),
-              ],
-            ),
+      backgroundColor: ThixPolicy.surfaceSoft,
+      appBar: AppBar(
+        title: Text(context.vdT('Espace vendeur', 'Vendor Dashboard'), style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain)),
+        backgroundColor: ThixPolicy.card,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        iconTheme: IconThemeData(color: ThixPolicy.textMain),
+        actions: [
+          Semantics(
+            button: true,
+            label: context.vdT('Actualiser', 'Refresh'),
+            child: IconButton(icon: const Icon(Icons.refresh_rounded), tooltip: context.vdT('Actualiser', 'Refresh'), onPressed: _isRefreshing ? null : _refresh),
           ),
-          Positioned(left: 0, right: 0, bottom: 0, child: _buildBottomNavBar(l10n, badges)),
         ],
       ),
-    );
-  }
+      body: shopsAsync.when(
+        loading: () => const _SkeletonDashboard(),
+        error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
+        data: (shops) {
+          final hasShop = shops.isNotEmpty;
+          final boutiqueList = shops.where((s) => s['type']?.toString() != 'supermarket').toList();
+          final superList = shops.where((s) => s['type']?.toString() == 'supermarket').toList();
+          final b = boutiqueList.isEmpty ? null : boutiqueList.first;
+          final sm = superList.isEmpty ? null : superList.first;
+          final shop = b ?? sm;
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // ✅ TOPBAR COMPACTE : recherche = icône seule, compte SUPPRIMÉ
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildTopBar(AppLocalizations l10n, MarketBadges badges) {
-    return Container(
-      color: Colors.white,
-      padding: EdgeInsets.fromLTRB(16, MediaQuery.paddingOf(context).top + 8, 16, 10),
-      child: Row(
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kAccent, kAccentDark]),
-              borderRadius: BorderRadius.circular(11),
-              boxShadow: [BoxShadow(color: kAccent.withOpacity(0.25), blurRadius: 8, offset: const Offset(0, 3))],
-            ),
-            child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                RichText(
-                  text: const TextSpan(
+          return ordersAsync.when(
+            loading: () => const _SkeletonDashboard(),
+            error: (e, _) => _ErrorState(message: _VdValidators.friendlyError(e), onRetry: _refresh),
+            data: (orders) {
+              final products = productsAsync.valueOrNull ?? [];
+              final rating = _VdValidators.safeDouble(shop?['rating']);
+              final isModerator = isModeratorAsync.valueOrNull ?? false;
+              final modStats = modStatsAsync.valueOrNull ?? {};
+
+              // ✅ FILTRAGE DES COMMANDES PAR RÔLE
+              final filteredOrders = isModerator
+                  ? orders
+                  : orders.where((o) => o['handled_by_role'] != 'moderator').toList();
+
+              final pending = filteredOrders.where((o) => o['status'] == 'pending').length;
+              final processing = filteredOrders.where((o) => o['status'] == 'processing').length;
+
+              // ✅ KPI LOCAL DYNAMIQUE SELON RÔLE
+              final localActive = modStats['active'] ?? (localCountAsync.valueOrNull ?? 0);
+              final localPending = modStats['pending'] ?? 0;
+              final localRejected = modStats['rejected'] ?? 0;
+              final localDisplayCount = isModerator ? localActive + localPending + localRejected : localActive;
+              final localLabel = isModerator && localPending > 0
+                  ? '$localDisplayCount • $localPending en attente'
+                  : '$localDisplayCount';
+
+              return RefreshIndicator(
+                color: ThixPolicy.primary,
+                onRefresh: _refresh,
+                child: SingleChildScrollView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // ✅ Changement du nom ici : THIX MARKET
-                      TextSpan(text: 'THIX', style: TextStyle(color: kInk, fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: -0.4)),
-                      TextSpan(text: ' MARKET', style: TextStyle(color: kAccent, fontWeight: FontWeight.w900, fontSize: 16)),
+                      _DualShopHeader(
+                        boutique: b,
+                        supermarket: sm,
+                        onCreateShop: () { HapticFeedback.mediumImpact(); context.pushNamed('marketCreateShop'); },
+                        onCreateSupermarket: () { HapticFeedback.mediumImpact(); context.push('/market/supermarket/create'); },
+                        onOpenShop: b != null ? () { HapticFeedback.selectionClick(); context.pushNamed('marketManageShop', pathParameters: {'shopId': b['id'].toString()}); } : null,
+                        onOpenSupermarket: sm != null ? () { HapticFeedback.selectionClick(); context.push('/market/supermarket/${sm['id']}'); } : null,
+                        onManageSupermarket: sm != null ? () { HapticFeedback.selectionClick(); context.push('/market/supermarket/${sm['id']}/manage'); } : null,
+                      ),
+                      const SizedBox(height: 20),
+                      if (hasShop) ...[
+                        _KpiGrid(
+                          ordersCount: filteredOrders.length,
+                          pending: pending,
+                          processing: processing,
+                          productsCount: products.length,
+                          localProductsLabel: localLabel,
+                          rating: rating,
+                          shopId: shop?['id']?.toString(), // ✅ AJOUT : passe le shopId
+                        ),
+                        const SizedBox(height: 24),
+                      ],
+                      _ActionGrid(
+                        hasShop: hasShop,
+                        shop: shop,
+                        isModerator: isModerator,
+                        onNeedShop: () => _showInfo(context.vdT('Créez d\'abord une boutique', 'Create a shop first')),
+                        onCreateLocalProduct: _openCreateLocalProduct,
+                        onOpenLocalSpace: () { HapticFeedback.selectionClick(); context.push('/market/local'); },
+                      ),
+                      const SizedBox(height: 24),
+                      if (hasShop)
+                        _RecentOrders(
+                          orders: filteredOrders,
+                          onOrderTap: _showOrderDetails,
+                          onViewAll: () {
+                            HapticFeedback.selectionClick();
+                            try { context.push('/market/vendor/orders'); } catch (_) { context.pushNamed('marketSell', queryParameters: {'tab': 'orders'}); }
+                          },
+                        ),
+                      const SizedBox(height: 80),
                     ],
                   ),
                 ),
-                Text(
-                  _MarketValidators.sanitize(l10n.t('market_app_tagline'), maxLength: 40),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: kInkMuted, fontSize: 10, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 6),
-          Semantics(
-            button: true,
-            label: l10n.t('market_search_hint'),
-            child: _TapScale(
-              onTap: () => _safeNavigate('marketSearch', '/market/search'),
-              radius: BorderRadius.circular(11),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(color: kAccentSoft, borderRadius: BorderRadius.circular(11)),
-                child: const Icon(Icons.search_rounded, size: 18, color: kAccentDark),
-              ),
-            ),
-          ),
-          const SizedBox(width: 6),
-          const CurrencySelector(),
-          const SizedBox(width: 6),
-          Semantics(
-            button: true,
-            label: badges.alerts > 0 ? '${l10n.t('common_notifications')}, ${badges.alerts}' : l10n.t('common_notifications'),
-            child: _TapScale(
-              onTap: _openNotifications,
-              radius: BorderRadius.circular(11),
-              child: Container(
-                width: 36,
-                height: 36,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(11),
-                  border: Border.all(color: kBorder),
-                ),
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Center(
-                      child: Icon(
-                        badges.alerts > 0 ? Icons.notifications_active_rounded : Icons.notifications_none_rounded,
-                        size: 17,
-                        color: kInkSoft,
-                      ),
-                    ),
-                    Positioned(top: -4, right: -4, child: _CountBadge(count: badges.alerts)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // GREETING ROW — textes réduits
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildGreetingRow(AppLocalizations l10n, AsyncValue<List<Map<String, dynamic>>> heroAsync) {
-    final count = heroAsync.valueOrNull?.length ?? 0;
-    return _Reveal(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            Flexible(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _MarketValidators.sanitize(l10n.t('market_greeting'), maxLength: 30),
-                    style: const TextStyle(color: kInkMuted, fontSize: 11.5, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 1),
-                  Text(
-                    _greetingName(l10n),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: kInk, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.6, height: 1.1),
-                  ),
-                ],
-              ),
-            ),
-            if (count > 0)
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                decoration: BoxDecoration(
-                  color: kAccentSoft.withOpacity(0.7),
-                  borderRadius: BorderRadius.circular(30),
-                  border: Border.all(color: kAccent.withOpacity(0.35)),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const _PulsingDot(color: kAccent, size: 6),
-                    const SizedBox(width: 6),
-                    Text(
-                      'NEW · $count',
-                      style: const TextStyle(color: kAccentDark, fontSize: 10.5, fontWeight: FontWeight.w900, letterSpacing: 0.5),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // ✅ HERO — compteur SUPPRIMÉ, textes réduits, Ken Burns, auto-scroll
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildHero(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
-    return async.when(
-      loading: () => const _HeroSkeleton(),
-      error: (e, _) => _MarketErrorCard(
-        message: _MarketValidators.parseError(e, l10n),
-        onRetry: () => ref.invalidate(heroNewArrivalsProvider),
-      ),
-      data: (products) {
-        if (products.isEmpty) return const SizedBox.shrink();
-        return _buildHeroContent(products, l10n);
-      },
-    );
-  }
-
-  Widget _buildHeroContent(List<Map<String, dynamic>> products, AppLocalizations l10n) {
-    final heroH = (MediaQuery.sizeOf(context).height * 0.46).clamp(300.0, 420.0);
-    return _Reveal(
-      delayMs: 80,
-      child: Column(
-        children: [
-          SizedBox(
-            height: heroH,
-            child: NotificationListener<ScrollNotification>(
-              onNotification: (n) {
-                if (n is ScrollStartNotification) {
-                  _bannerTimer?.cancel();
-                  _bannerReady = false;
-                } else if (n is ScrollEndNotification) {
-                  Future.delayed(_kBannerResumeDelay, () {
-                    if (mounted) _startBannerAuto(products.length);
-                  });
-                }
-                return false;
-              },
-              child: PageView.builder(
-                controller: _bannerCtrl,
-                itemCount: products.length,
-                onPageChanged: (i) {
-                  if (mounted) setState(() => _currentBanner = i);
-                },
-                itemBuilder: (_, index) {
-                  final p = products[index];
-                  final imageUrl = _extractImage(p);
-                  final title = _MarketValidators.sanitize(p['title']?.toString(), maxLength: _kMaxTitleLength);
-                  final subtitle = _MarketValidators.sanitize(p['description']?.toString(), maxLength: _kMaxDescriptionLength);
-                  final price = (p['price'] as num?)?.toDouble();
-                  final id = p['id']?.toString() ?? '';
-
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    child: Semantics(
-                      button: true,
-                      label: title.isEmpty ? l10n.t('market_featured_offer') : title,
-                      child: _TapScale(
-                        onTap: () {
-                          HapticFeedback.selectionClick();
-                          if (id.isNotEmpty) context.push('/market/product/$id');
-                        },
-                        radius: BorderRadius.circular(22),
-                        child: Container(
-                          decoration: BoxDecoration(
-                            borderRadius: BorderRadius.circular(22),
-                            color: const Color(0xFFE5E7EB),
-                            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.10), blurRadius: 18, offset: const Offset(0, 8))],
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              if (imageUrl != null)
-                                _KenBurnsImage(url: imageUrl)
-                              else
-                                const Center(child: Icon(Icons.image_outlined, size: 48, color: kInkMuted)),
-
-                              Positioned.fill(
-                                child: IgnorePointer(
-                                  child: DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topCenter,
-                                        end: Alignment.bottomCenter,
-                                        colors: [
-                                          Colors.black.withOpacity(0.04),
-                                          Colors.transparent,
-                                          Colors.black.withOpacity(0.6),
-                                        ],
-                                        stops: const [0.0, 0.45, 1.0],
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-
-                              Positioned(
-                                top: 12,
-                                right: 12,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-                                  decoration: BoxDecoration(
-                                    color: kAccent,
-                                    borderRadius: BorderRadius.circular(30),
-                                    boxShadow: [BoxShadow(color: kAccent.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 3))],
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _PulsingDot(color: Colors.white, size: 5),
-                                      SizedBox(width: 6),
-                                      Text('NEW', style: TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w900, letterSpacing: 0.8)),
-                                    ],
-                                  ),
-                                ),
-                              ),
-
-                              Positioned(
-                                left: 16,
-                                right: 16,
-                                bottom: 16,
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    if (price != null && price > 0)
-                                      ClipRRect(
-                                        borderRadius: BorderRadius.circular(10),
-                                        child: BackdropFilter(
-                                          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                                          child: Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                                            decoration: BoxDecoration(
-                                              color: Colors.white.withOpacity(0.16),
-                                              borderRadius: BorderRadius.circular(10),
-                                              border: Border.all(color: Colors.white.withOpacity(0.45)),
-                                            ),
-                                            child: Text(
-                                              _MarketValidators.groupNumber(price),
-                                              style: const TextStyle(color: Colors.white, fontSize: 12.5, fontWeight: FontWeight.w800, letterSpacing: 0.4),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    const SizedBox(height: 8),
-                                    Text(
-                                      title.isEmpty ? '—' : title,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(color: Colors.white, fontSize: 21, fontWeight: FontWeight.w900, letterSpacing: -0.5, height: 1.15),
-                                    ),
-                                    if (subtitle.isNotEmpty) ...[
-                                      const SizedBox(height: 3),
-                                      Text(
-                                        subtitle,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 11.5, fontWeight: FontWeight.w500),
-                                      ),
-                                    ],
-                                    const SizedBox(height: 12),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(12),
-                                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.16), blurRadius: 10, offset: const Offset(0, 4))],
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(Icons.shopping_bag_rounded, size: 14, color: kInk),
-                                          const SizedBox(width: 8),
-                                          Text(
-                                            _t('Découvrir', 'Discover', 'Gundua'),
-                                            style: const TextStyle(color: kInk, fontWeight: FontWeight.w800, fontSize: 12),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          const Icon(Icons.arrow_forward_rounded, size: 13, color: kInk),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: List.generate(products.length, (i) {
-              final active = i == _currentBanner;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 350),
-                curve: Curves.easeOutCubic,
-                margin: const EdgeInsets.symmetric(horizontal: 2.5),
-                height: 3.5,
-                width: active ? 20 : 8,
-                decoration: BoxDecoration(
-                  color: active ? kAccent : const Color(0xFFD8DEE7),
-                  borderRadius: BorderRadius.circular(4),
-                ),
               );
-            }),
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// HEADER DOUBLE
+// ============================================================================
+class _DualShopHeader extends StatelessWidget {
+  final Map<String, dynamic>? boutique;
+  final Map<String, dynamic>? supermarket;
+  final VoidCallback onCreateShop;
+  final VoidCallback onCreateSupermarket;
+  final VoidCallback? onOpenShop;
+  final VoidCallback? onOpenSupermarket;
+  final VoidCallback? onManageSupermarket;
+
+  const _DualShopHeader({required this.boutique, required this.supermarket, required this.onCreateShop, required this.onCreateSupermarket, this.onOpenShop, this.onOpenSupermarket, this.onManageSupermarket});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _kShopCardHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(
+            child: boutique != null
+                ? _entityCard(context, icon: Icons.storefront_rounded, name: _VdValidators.sanitize(boutique!['name']?.toString(), maxLength: 40), sub: _VdValidators.sanitize(boutique!['city']?.toString(), maxLength: 20), colors: const [ThixPolicy.primary, ThixPolicy.inkDeep], actionLabel: context.vdT('Gérer', 'Manage'), onAction: onOpenShop)
+                : _createCard(context, icon: Icons.add_business_rounded, label: context.vdT('Boutique', 'Shop'), onTap: onCreateShop),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(width: 12),
+          Expanded(
+            child: supermarket != null
+                ? GestureDetector(onTap: onOpenSupermarket, child: _entityCard(context, icon: Icons.local_grocery_store_rounded, name: _VdValidators.sanitize(supermarket!['name']?.toString(), maxLength: 40), sub: _VdValidators.sanitize(supermarket!['city']?.toString(), maxLength: 20), colors: const [Color(0xFF065F46), Color(0xFF059669)], actionLabel: context.vdT('Gérer', 'Manage'), onAction: onManageSupermarket))
+                : _createCard(context, icon: Icons.local_grocery_store_rounded, label: context.vdT('Supermarché', 'Supermarket'), onTap: onCreateSupermarket),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildFeaturedStrip(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
-    return async.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (products) {
-        if (products.isEmpty) return const SizedBox.shrink();
-        return _AutoScrollProductStrip(
-          products: products,
-          badgeType: _StripBadge.featured,
-          title: _MarketValidators.sanitize(l10n.t('market_featured_products'), maxLength: 50),
-          icon: Icons.star_rounded,
-        );
-      },
-    );
-  }
-
-  Widget _buildLiveSection(AsyncValue<List<Map<String, dynamic>>> liveAsync, AppLocalizations l10n) {
-    return liveAsync.when(
-      loading: () => const SizedBox.shrink(),
-      error: (e, _) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: _MarketErrorCard(
-          message: _MarketValidators.parseError(e, l10n),
-          onRetry: () => ref.invalidate(activeMarketLiveSessionsProvider),
-          compact: true,
-        ),
+  Widget _entityCard(BuildContext context, {required IconData icon, required String name, required String sub, required List<Color> colors, required String actionLabel, VoidCallback? onAction}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors), borderRadius: BorderRadius.circular(16), boxShadow: ThixPolicy.shadowSoft(opacity: 0.1)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), shape: BoxShape.circle), child: Icon(icon, color: Colors.white, size: 18)),
+          const SizedBox(height: 8),
+          Text(name.isEmpty ? '—' : name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 13.5, fontWeight: FontWeight.w900)),
+          if (sub.isNotEmpty) Text(sub, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.white.withOpacity(0.75), fontSize: 10.5)),
+          const Spacer(),
+          Align(alignment: Alignment.centerRight, child: ElevatedButton(onPressed: onAction, style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: colors.first, elevation: 0, minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: Text(actionLabel, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900)))),
+        ],
       ),
-      data: (sessions) {
-        if (sessions.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  const _AccentBar(color: kDanger),
-                  const SizedBox(width: 8),
-                  const _PulsingDot(color: kDanger, size: 7),
-                  const SizedBox(width: 7),
-                  Flexible(
-                    child: Text(
-                      l10n.t('market_live_ongoing'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5, color: kInk, letterSpacing: -0.3),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(color: kDanger.withOpacity(0.12), borderRadius: BorderRadius.circular(20)),
-                    child: Text(
-                      '${sessions.length}',
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: kDanger),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 136,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: sessions.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (ctx, i) => _buildLiveCard(sessions[i], l10n),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 
-  Widget _buildLiveCard(Map<String, dynamic> s, AppLocalizations l10n) {
-    final hostAvatar = _MarketValidators.sanitizeUrl(s['host_avatar']?.toString());
-    final shopName = _MarketValidators.sanitize(
-      s['channel_name']?.toString() ?? s['host_name']?.toString() ?? l10n.t('market_client_default'),
-      maxLength: _kMaxNameLength,
+  Widget _createCard(BuildContext context, {required IconData icon, required String label, required VoidCallback onTap}) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border, width: 1.5)),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: ThixPolicy.textMuted, size: 26),
+          const SizedBox(height: 6),
+          Text(label, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: ThixPolicy.textMain)),
+          const SizedBox(height: 8),
+          OutlinedButton(onPressed: onTap, style: OutlinedButton.styleFrom(foregroundColor: ThixPolicy.primary, side: const BorderSide(color: ThixPolicy.primary), minimumSize: const Size(0, 30), padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))), child: Text(context.vdT('Créer', 'Create'), style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w900))),
+        ],
+      ),
     );
+  }
+}
 
-    return Semantics(
-      button: true,
-      label: l10n.t('market_shop_semantics', args: [shopName]),
-      child: _TapScale(
-        onTap: () {
-          HapticFeedback.mediumImpact();
+// ============================================================================
+// KPI GRID — ✅ localProductsLabel dynamique selon rôle + NAVIGATION
+// ============================================================================
+class _KpiGrid extends StatelessWidget {
+  final int ordersCount;
+  final int pending;
+  final int processing;
+  final int productsCount;
+  final String localProductsLabel;
+  final double rating;
+  final String? shopId; // ✅ AJOUT : pour navigation
+
+  const _KpiGrid({
+    required this.ordersCount,
+    required this.pending,
+    required this.processing,
+    required this.productsCount,
+    required this.localProductsLabel,
+    required this.rating,
+    this.shopId, // ✅ AJOUT
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final kpis = [
+      {
+        'label': context.vdT('Commandes', 'Orders'),
+        'value': '$ordersCount',
+        'icon': Icons.shopping_bag_outlined,
+        'color': ThixPolicy.primary,
+        'onTap': () {
+          HapticFeedback.selectionClick();
           try {
-            final liveSession = LiveSession(
-              id: s['id']?.toString() ?? '',
-              channelName: s['channel_name']?.toString() ?? '',
-              title: _MarketValidators.sanitize(s['title']?.toString(), maxLength: _kMaxTitleLength),
-              hostId: s['host_id']?.toString() ?? '',
-              hostName: shopName,
-              hostAvatarUrl: hostAvatar,
-            );
-            Navigator.push(context, MaterialPageRoute(builder: (context) => LiveViewerScreen(session: liveSession)));
-          } catch (e) {
-            debugPrint('[Market] ❌ Live nav error: $e');
+            context.push('/market/vendor/orders');
+          } catch (_) {
+            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
           }
         },
-        radius: BorderRadius.circular(16),
-        child: Container(
-          width: 100,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            color: const Color(0xFFE5E7EB),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 10, offset: const Offset(0, 4))],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hostAvatar != null)
-                CachedNetworkImage(
-                  imageUrl: hostAvatar,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => const Center(child: Icon(Icons.storefront, color: kInkMuted, size: 30)),
-                )
-              else
-                const Center(child: Icon(Icons.storefront, color: kInkMuted, size: 30)),
-              Positioned.fill(
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [Colors.transparent, Colors.black.withOpacity(0.75)],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 7,
-                left: 7,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                  decoration: BoxDecoration(color: kDanger, borderRadius: BorderRadius.circular(5)),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      _PulsingDot(color: Colors.white, size: 4),
-                      SizedBox(width: 4),
-                      Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.6)),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 8,
-                left: 8,
-                right: 8,
-                child: Text(
-                  shopName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white, fontSize: 10.5, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+      },
+      {
+        'label': context.vdT('En attente', 'Pending'),
+        'value': '$pending',
+        'icon': Icons.pending_actions_rounded,
+        'color': ThixPolicy.gold,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          try {
+            context.push('/market/vendor/orders');
+          } catch (_) {
+            context.pushNamed('marketSell', queryParameters: {'tab': 'orders'});
+          }
+        },
+      },
+      {
+        'label': context.vdT('Produits', 'Products'),
+        'value': '$productsCount',
+        'icon': Icons.inventory_2_outlined,
+        'color': ThixPolicy.success,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          // ✅ Navigation vers gestion produits (tous produits)
+          if (shopId != null) {
+            context.push('/market/vendor/products?shopId=$shopId');
+          } else {
+            context.push('/market/vendor/products');
+          }
+        },
+      },
+      {
+        'label': context.vdT('Locaux', 'Local'),
+        'value': localProductsLabel,
+        'icon': Icons.agriculture_rounded,
+        'color': kLocalGreen,
+        'onTap': () {
+          HapticFeedback.selectionClick();
+          // ✅ Navigation vers gestion produits locaux uniquement
+          if (shopId != null) {
+            context.push('/market/vendor/products?shopId=$shopId&local=true');
+          } else {
+            context.push('/market/vendor/products?local=true');
+          }
+        },
+      },
+      {
+        'label': context.vdT('Note', 'Rating'),
+        'value': rating > 0 ? rating.toStringAsFixed(1) : '-',
+        'icon': Icons.star_rounded,
+        'color': ThixPolicy.gold,
+        'onTap': null, // Pas de navigation pour la note
+      },
+    ];
 
-  Widget _buildSupermarketSection(AppLocalizations l10n) {
-    final shopsAsync = ref.watch(featuredShopsProvider);
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSectionHeader(
-            _MarketValidators.sanitize(l10n.t('market_home_supermarkets'), maxLength: 50),
-            onSeeAll: () {
-              Navigator.push(context, MaterialPageRoute(builder: (context) => AllShopsAndSupermarketsPage()));
-            },
-            l10n: l10n,
-          ),
-          const SizedBox(height: 14),
-          shopsAsync.when(
-            loading: () => const _ShopsSkeleton(),
-            error: (e, _) => _MarketErrorCard(
-              message: _MarketValidators.parseError(e, l10n),
-              onRetry: () => ref.invalidate(featuredShopsProvider),
-              compact: true,
-            ),
-            data: (shops) {
-              if (shops.isEmpty) {
-                return Text(
-                  _MarketValidators.sanitize(l10n.t('market_no_supermarket'), maxLength: 100),
-                  style: const TextStyle(color: kInkMuted, fontSize: 11.5),
-                );
-              }
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: shops.take(_kMaxFeaturedShops).map((s) {
-                  final id = s['id']?.toString() ?? '';
-                  final name = _MarketValidators.sanitize(s['name']?.toString() ?? 'Shop', maxLength: _kMaxNameLength);
-                  final logoUrl = _MarketValidators.sanitizeUrl(s['logo_url']?.toString());
-                  return Semantics(
-                    button: true,
-                    label: l10n.t('market_shop_semantics', args: [name]),
-                    child: _TapScale(
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        if (id.isNotEmpty) context.push('/market/shop/$id');
-                      },
-                      radius: BorderRadius.circular(16),
-                      child: Column(
-                        children: [
-                          Container(
-                            height: 58,
-                            width: 58,
-                            padding: const EdgeInsets.all(2.5),
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.white,
-                              border: Border.all(color: kBorder),
-                              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 3))],
-                            ),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: kSurface,
-                                image: logoUrl != null
-                                    ? DecorationImage(image: CachedNetworkImageProvider(logoUrl), fit: BoxFit.cover)
-                                    : null,
-                              ),
-                              child: logoUrl == null ? const Icon(Icons.storefront_rounded, color: kInkMuted, size: 22) : null,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          SizedBox(
-                            width: 68,
-                            child: Text(
-                              name,
-                              textAlign: TextAlign.center,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: kInkSoft),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              );
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // ✅ LES 2 CARTES PROMO — photos CLAIRES + bouton ADMIN
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildPromoBannersRow(AppLocalizations l10n) {
-    final isAdmin = ref.watch(marketIsAdminProvider).valueOrNull ?? false;
-    final exclusivePhotos = (ref.watch(promoBannersProvider(_kCardExclusive)).valueOrNull ?? const <PromoBanner>[])
-        .map((b) => b.imageUrl)
-        .toList();
-    final localPhotos = (ref.watch(promoBannersProvider(_kCardLocal)).valueOrNull ?? const <PromoBanner>[])
-        .map((b) => b.imageUrl)
-        .toList();
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: SizedBox(
-        height: _kPromoRowHeight,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: _ExclusivePromoCard(
-                tag: _MarketValidators.sanitize(l10n.t('market_exclusive_offers_tag'), maxLength: 30),
-                title: _MarketValidators.sanitize(l10n.t('market_up_to_50'), maxLength: 50),
-                subtitle: _MarketValidators.sanitize(l10n.t('market_premium_selection'), maxLength: 60),
-                cta: _MarketValidators.sanitize(l10n.t('market_discover'), maxLength: 20),
-                photos: exclusivePhotos,
-                isAdmin: isAdmin,
-                onAdminTap: () => _openPromoManager(
-                  _kCardExclusive,
-                  _t('Offres exclusives', 'Exclusive offers', 'Ofa maalum'),
-                ),
-                onTap: () => _safeNavigate('marketFlashSales', '/market/flash-sales'),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _LocalPromoCard(
-                photos: localPhotos,
-                isAdmin: isAdmin,
-                onAdminTap: () => _openPromoManager(
-                  _kCardLocal,
-                  _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
-                ),
-                onTap: () => _safeNavigate('marketLocalHome', '/market/local'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildB2BTools(AppLocalizations l10n, MarketBadges badges) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(18),
-          border: Border.all(color: kBorder),
-          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 5))],
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: [
-            _b2bItem(Icons.compare_arrows_rounded, _MarketValidators.sanitize(l10n.t('market_compare'), maxLength: 20),
-                () => _safeNavigate('marketProductComparator', '/market/compare')),
-            _b2bItem(Icons.notifications_active_rounded, _MarketValidators.sanitize(l10n.t('market_price_alert'), maxLength: 20),
-                () => _safeNavigate('marketPriceAlerts', '/market/price-alerts')),
-            _b2bItem(Icons.request_quote_rounded, _MarketValidators.sanitize(l10n.t('market_b2b_quote'), maxLength: 20),
-                () => _showComing(l10n.t('market_b2b_quote'))),
-            _b2bItem(Icons.favorite_rounded, _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20), _openWishlist,
-                badge: badges.wishlist),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _b2bItem(IconData icon, String label, VoidCallback onTap, {int badge = 0}) {
     return Semantics(
-      button: true,
-      label: badge > 0 ? '$label, $badge' : label,
-      child: _TapScale(
-        onTap: onTap,
-        radius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.all(3),
-          child: Column(
-            children: [
-              Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(9),
-                    decoration: BoxDecoration(color: kSurface, borderRadius: BorderRadius.circular(12)),
-                    child: Icon(icon, color: kInkSoft, size: 17),
-                  ),
-                  Positioned(top: -4, right: -4, child: _CountBadge(count: badge)),
-                ],
+      label: context.vdT('Statistiques', 'Statistics'),
+      child: GridView.count(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 12,
+        childAspectRatio: 1.55,
+        children: kpis.map((kpi) {
+          final color = kpi['color'] as Color;
+          final onTap = kpi['onTap'] as VoidCallback?;
+          return GestureDetector(
+            onTap: onTap,
+            child: Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: ThixPolicy.card,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: ThixPolicy.shadowSoft(opacity: 0.04),
+                border: Border.all(
+                  color: onTap != null ? color.withOpacity(0.2) : Colors.transparent,
+                  width: 1,
+                ),
               ),
-              const SizedBox(height: 6),
-              Text(label, style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: kInkSoft)),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildLocalTeaser(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
-    return async.when(
-      loading: () => const SizedBox.shrink(),
-      error: (_, __) => const SizedBox.shrink(),
-      data: (products) {
-        if (products.isEmpty) return const SizedBox.shrink();
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  const _AccentBar(color: kLocalGreen2),
-                  const SizedBox(width: 8),
-                  const _PulsingDot(color: kLocalGreen2, size: 7),
-                  const SizedBox(width: 7),
-                  Flexible(
-                    child: Text(
-                      _t('Produits locaux', 'Local products', 'Bidhaa za ndani'),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5, color: kInk, letterSpacing: -0.3),
-                    ),
-                  ),
-                  const Spacer(),
-                  Semantics(
-                    button: true,
-                    label: _t('Voir tout', 'Show all', 'Ona zote'),
-                    child: _TapScale(
-                      onTap: () => _safeNavigate('marketLocalHome', '/market/local'),
-                      radius: BorderRadius.circular(10),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            _t('Voir tout', 'Show all', 'Ona zote'),
-                            style: const TextStyle(color: kLocalGreen2, fontSize: 11, fontWeight: FontWeight.w800),
-                          ),
-                          const SizedBox(width: 3),
-                          const Icon(Icons.arrow_forward_ios_rounded, size: 9, color: kLocalGreen2),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 275,
-              child: ListView.separated(
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                scrollDirection: Axis.horizontal,
-                physics: const BouncingScrollPhysics(),
-                itemCount: products.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 10),
-                itemBuilder: (_, i) => SizedBox(
-                  width: 180,
-                  child: LocalProductCard(product: products[i], width: 180, height: 275),
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildFlashSaleSection(AsyncValue<List<Map<String, dynamic>>> async, AppLocalizations l10n) {
-    return async.when(
-      loading: () => const SizedBox.shrink(),
-      error: (e, _) => _MarketErrorCard(
-        message: _MarketValidators.parseError(e, l10n),
-        onRetry: () => ref.invalidate(flashSalesProvider),
-      ),
-      data: (list) {
-        final active = list.where((p) => !_isExpired(p)).toList();
-        if (active.isEmpty) return const SizedBox.shrink();
-
-        DateTime? timerEnd;
-        for (final p in active) {
-          final dt = DateTime.tryParse(p['expires_at']?.toString() ?? '');
-          if (dt != null && (timerEnd == null || dt.isBefore(timerEnd))) timerEnd = dt;
-        }
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (timerEnd != null)
-              Container(
-                decoration: const BoxDecoration(color: kDanger),
-                padding: const EdgeInsets.symmetric(vertical: 7),
-                margin: const EdgeInsets.only(bottom: 12),
-                child: Row(
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(left: 16, right: 10),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(7)),
-                        child: FlashSaleTimer(endTime: timerEnd!),
-                      ),
-                    ),
-                    Expanded(
-                      child: SizedBox(
-                        height: 22,
-                        child: _MarqueeText(text: _MarketValidators.sanitize(l10n.t('market_flash_sale_banner'), maxLength: 100)),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            _AutoScrollProductStrip(
-              products: active,
-              badgeType: _StripBadge.flash,
-              title: _MarketValidators.sanitize(l10n.t('market_flash_offers'), maxLength: 50),
-              icon: Icons.bolt_rounded,
-              liveLabel: _MarketValidators.sanitize(l10n.t('market_live_badge'), maxLength: 10),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSectionHeader(String title, {VoidCallback? onSeeAll, AppLocalizations? l10n}) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Flexible(
-            child: Row(
-              children: [
-                const _AccentBar(color: kAccent),
-                const SizedBox(width: 8),
-                Flexible(
-                  child: Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5, color: kInk, letterSpacing: -0.3),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          if (onSeeAll != null && l10n != null)
-            Semantics(
-              button: true,
-              label: l10n.t('common_see_all'),
-              child: _TapScale(
-                onTap: onSeeAll,
-                radius: BorderRadius.circular(10),
-                child: Text(
-                  l10n.t('common_see_all'),
-                  style: const TextStyle(color: kAccentDark, fontSize: 11.5, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildGrid(
-    AsyncValue<List<Map<String, dynamic>>> forYouAsync,
-    List<Map<String, dynamic>> fallback,
-    bool hasMore,
-    AppLocalizations l10n,
-  ) {
-    return forYouAsync.when(
-      skipLoadingOnReload: true,
-      skipLoadingOnRefresh: true,
-      loading: () {
-        if (fallback.isNotEmpty) return _productGridSliver(fallback, false);
-        return const SliverToBoxAdapter(child: _GridSkeleton());
-      },
-      error: (e, _) {
-        if (fallback.isNotEmpty) return _productGridSliver(fallback, false);
-        return SliverToBoxAdapter(
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: _MarketErrorCard(
-              message: _MarketValidators.parseError(e, l10n),
-              onRetry: () => ref.read(forYouProvider.notifier).refresh(),
-            ),
-          ),
-        );
-      },
-      data: (items) {
-        final source = items.isNotEmpty ? items : fallback;
-        if (source.isEmpty) {
-          return SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-              child: Column(
-                children: [
-                  const Icon(Icons.inventory_2_outlined, size: 44, color: kInkMuted),
-                  const SizedBox(height: 12),
-                  Text(
-                    l10n.t('market_no_products'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700, color: kInk),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _t('Tirez vers le bas pour actualiser', 'Pull down to refresh', 'Vuta chini ili kuburudisha'),
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 11.5, color: kInkMuted),
-                  ),
-                  const SizedBox(height: 12),
-                  TextButton.icon(
-                    onPressed: () {
-                      HapticFeedback.mediumImpact();
-                      ref.read(forYouProvider.notifier).refresh();
-                    },
-                    icon: const Icon(Icons.refresh_rounded, size: 16),
-                    label: Text(l10n.t('common_retry'), style: const TextStyle(fontSize: 12.5)),
-                    style: TextButton.styleFrom(foregroundColor: kAccentDark),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
-        return _productGridSliver(source, hasMore);
-      },
-    );
-  }
-
-  Widget _productGridSliver(List<Map<String, dynamic>> source, bool hasMore) {
-    final sorted = _stableSort(source);
-    return SliverPadding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      sliver: SliverGrid(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          mainAxisExtent: _kGridCardHeight,
-        ),
-        delegate: SliverChildBuilderDelegate(
-          (_, i) {
-            if (i >= sorted.length) {
-              return const Center(child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5));
-            }
-            final p = sorted[i];
-            return LayoutBuilder(
-              builder: (context, box) => SizedBox(
-                width: box.maxWidth,
-                height: _kGridCardHeight,
-                child: ProductCard(
-                  key: ValueKey('grid_${p['id']}'),
-                  product: p,
-                  variant: ProductCardVariant.horizontal,
-                  width: box.maxWidth,
-                ),
-              ),
-            );
-          },
-          childCount: sorted.length + (hasMore ? 1 : 0),
-        ),
-      ),
-    );
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // BOTTOM NAV compacte + FAB orange pulsant
-  // ──────────────────────────────────────────────────────────────────────────
-  Widget _buildBottomNavBar(AppLocalizations l10n, MarketBadges badges) {
-    const barH = 54.0;
-    const fabSize = 56.0;
-    const lift = 20.0;
-
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-        child: SizedBox(
-          height: barH + lift,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.topCenter,
-            children: [
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: barH,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(color: kBorder),
-                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.07), blurRadius: 20, offset: const Offset(0, 8))],
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      _navItem(
-                        icon: Icons.home_rounded,
-                        label: _MarketValidators.sanitize(l10n.t('common_home'), maxLength: 20),
-                        selected: true,
-                        onTap: () {
-                          HapticFeedback.lightImpact();
-                          if (_scroll.hasClients) {
-                            _scroll.animateTo(0, duration: const Duration(milliseconds: 450), curve: Curves.easeOut);
-                          }
-                        },
-                      ),
-                      _navItem(
-                        icon: Icons.receipt_long_rounded,
-                        label: _MarketValidators.sanitize(l10n.t('market_orders'), maxLength: 20),
-                        badge: badges.orders,
-                        onTap: _openOrders,
-                      ),
-                      const SizedBox(width: fabSize + 6),
-                      _navItem(
-                        icon: Icons.favorite_rounded,
-                        label: _MarketValidators.sanitize(l10n.t('market_wishlist'), maxLength: 20),
-                        badge: badges.wishlist,
-                        onTap: _openWishlist,
-                      ),
-                      _navItem(
-                        icon: Icons.storefront_rounded,
-                        label: _t('Boutiques', 'Shops', 'Maduka'),
-                        badge: badges.shops,
-                        onTap: _openShops, // ✅ Appel direct (toujours vers le dashboard vendeur)
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                top: 0,
-                child: _PulsingFab(label: l10n.t('market_cart_semantics'), onTap: () => context.push('/market/cart')),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _navItem({
-    required IconData icon,
-    required String label,
-    required VoidCallback onTap,
-    bool selected = false,
-    int badge = 0,
-  }) {
-    final color = selected ? kAccent : kInkMuted;
-    return Semantics(
-      button: true,
-      label: badge > 0 ? '$label, $badge' : label,
-      selected: selected,
-      child: _TapScale(
-        onTap: onTap,
-        radius: BorderRadius.circular(12),
-        child: SizedBox(
-          width: 52,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 3),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    Icon(icon, color: color, size: 20),
-                    Positioned(top: -5, right: -9, child: _CountBadge(count: badge)),
-                  ],
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 8.5, color: color, fontWeight: selected ? FontWeight.w800 : FontWeight.w600),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ✅ COQUILLE COMMUNE DES CARTES PROMO (v3 — IMAGES CLAIRES)
-//    • Photo NETTE (pas de flou, pas de voile coloré) comme les cartes produits
-//    • Scrim noir léger UNIQUEMENT en haut (titre) et en bas (CTA)
-//    • Sans photo : dégradé de couleur + points (fallback identité)
-// ============================================================================
-class _PromoCardShell extends StatelessWidget {
-  final List<Color> colors;
-  final Color shadow;
-  final List<String> photos;
-  final bool isAdmin;
-  final VoidCallback onAdminTap;
-  final VoidCallback onTap;
-  final String semanticsLabel;
-  final double dotSpacing;
-  final Widget child;
-
-  const _PromoCardShell({
-    required this.colors,
-    required this.shadow,
-    required this.photos,
-    required this.isAdmin,
-    required this.onAdminTap,
-    required this.onTap,
-    required this.semanticsLabel,
-    required this.child,
-    this.dotSpacing = 14,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final hasPhotos = photos.isNotEmpty;
-    return Semantics(
-      button: true,
-      label: semanticsLabel,
-      child: _TapScale(
-        onTap: onTap,
-        radius: BorderRadius.circular(18),
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: colors),
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: [BoxShadow(color: shadow, blurRadius: 14, offset: const Offset(0, 7))],
-          ),
-          clipBehavior: Clip.antiAlias,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (hasPhotos) ...[
-                // ✅ IMAGE CLAIRE & NETTE — aucun voile coloré, aucun flou
-                Positioned.fill(child: _PromoPhotoCarousel(urls: photos)),
-                // Scrim HAUT : lisibilité du titre (noir → transparent)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.55),
-                            Colors.black.withOpacity(0.28),
-                            Colors.transparent,
-                          ],
-                          stops: const [0.0, 0.22, 0.50],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-                // Scrim BAS : lisibilité du CTA (transparent → noir)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.18),
-                            Colors.black.withOpacity(0.48),
-                          ],
-                          stops: const [0.55, 0.80, 1.0],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ] else
-                // Sans photo : identité couleur + motif de points
-                Positioned.fill(
-                  child: CustomPaint(
-                    painter: _DotsPatternPainter(color: Colors.white.withOpacity(0.06), spacing: dotSpacing, dotSize: 1.1),
-                  ),
-                ),
-              const Positioned.fill(child: _ShimmerSweep()),
-              Padding(padding: const EdgeInsets.all(13), child: child),
-              if (isAdmin)
-                Positioned(
-                  top: 6,
-                  right: 6,
-                  child: _AdminPhotoButton(onTap: onAdminTap),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// Bouton d'ajout de photos — rendu UNIQUEMENT si isAdmin == true
-class _AdminPhotoButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _AdminPhotoButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return Tooltip(
-      message: 'Photos',
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: onTap,
-        child: Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.94),
-            shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.18), blurRadius: 6, offset: const Offset(0, 2))],
-          ),
-          child: const Icon(Icons.add_photo_alternate_rounded, size: 16, color: kInk),
-        ),
-      ),
-    );
-  }
-}
-
-/// Carrousel de photos : défilement automatique infini (glissement horizontal)
-class _PromoPhotoCarousel extends StatefulWidget {
-  final List<String> urls;
-  const _PromoPhotoCarousel({required this.urls});
-
-  @override
-  State<_PromoPhotoCarousel> createState() => _PromoPhotoCarouselState();
-}
-
-class _PromoPhotoCarouselState extends State<_PromoPhotoCarousel> {
-  final PageController _ctrl = PageController();
-  Timer? _timer;
-
-  @override
-  void initState() {
-    super.initState();
-    _restartTimer();
-  }
-
-  @override
-  void didUpdateWidget(covariant _PromoPhotoCarousel old) {
-    super.didUpdateWidget(old);
-    if (old.urls.length != widget.urls.length) _restartTimer();
-  }
-
-  void _restartTimer() {
-    _timer?.cancel();
-    if (widget.urls.length <= 1) return;
-    _timer = Timer.periodic(_kPromoSlide, (_) {
-      if (!mounted || !_ctrl.hasClients) return;
-      _ctrl.nextPage(duration: const Duration(milliseconds: 700), curve: Curves.easeInOutCubic);
-    });
-  }
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  Widget _img(String url) {
-    return CachedNetworkImage(
-      imageUrl: url,
-      fit: BoxFit.cover,
-      width: double.infinity,
-      height: double.infinity,
-      fadeInDuration: const Duration(milliseconds: 220),
-      placeholder: (_, __) => const SizedBox.shrink(),
-      errorWidget: (_, __, ___) => const SizedBox.shrink(),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final urls = widget.urls;
-    if (urls.isEmpty) return const SizedBox.shrink();
-    if (urls.length == 1) return _img(urls.first);
-    return PageView.builder(
-      controller: _ctrl,
-      physics: const NeverScrollableScrollPhysics(),
-      itemBuilder: (_, i) => _img(urls[i % urls.length]),
-    );
-  }
-}
-
-/// Reflet lumineux qui balaie toute la carte
-class _ShimmerSweep extends StatefulWidget {
-  const _ShimmerSweep();
-
-  @override
-  State<_ShimmerSweep> createState() => _ShimmerSweepState();
-}
-
-class _ShimmerSweepState extends State<_ShimmerSweep> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 3400))..repeat();
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: LayoutBuilder(
-        builder: (_, box) {
-          final w = box.maxWidth.isFinite ? box.maxWidth : 200.0;
-          final band = w * 0.55;
-          return AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) {
-              final x = -band + (w + band) * _ctrl.value;
-              return Stack(
-                children: [
-                  Positioned(
-                    left: x,
-                    top: 0,
-                    bottom: 0,
-                    width: band,
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [
-                            Colors.white.withOpacity(0.0),
-                            Colors.white.withOpacity(0.10),
-                            Colors.white.withOpacity(0.0),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ✅ CARTE PROMO 1 — OFFRES EXCLUSIVES (bleue)
-//    Texte EN HAUT sur scrim noir + CTA en bas
-// ============================================================================
-class _ExclusivePromoCard extends StatelessWidget {
-  final String tag, title, subtitle, cta;
-  final List<String> photos;
-  final bool isAdmin;
-  final VoidCallback onAdminTap;
-  final VoidCallback onTap;
-
-  const _ExclusivePromoCard({
-    required this.tag,
-    required this.title,
-    required this.subtitle,
-    required this.cta,
-    required this.photos,
-    required this.isAdmin,
-    required this.onAdminTap,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return _PromoCardShell(
-      colors: const [kPromoBlue1, kPromoBlue2],
-      shadow: kPromoBlue2.withOpacity(0.28),
-      photos: photos,
-      isAdmin: isAdmin,
-      onAdminTap: onAdminTap,
-      onTap: onTap,
-      semanticsLabel: title,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ✅ Bloc texte EN HAUT (leave la place au bouton admin si présent)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Flexible(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: kGold, borderRadius: BorderRadius.circular(6)),
-                  child: Text(
-                    tag,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(color: Color(0xFF3B2F0B), fontWeight: FontWeight.w800, fontSize: 8.5),
-                  ),
-                ),
-              ),
-              if (isAdmin) const SizedBox(width: 24),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            title,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w900,
-              fontSize: 16,
-              height: 1.15,
-              letterSpacing: -0.2,
-              shadows: [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
-            ),
-          ),
-          const SizedBox(height: 3),
-          Text(
-            subtitle,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w600,
-              shadows: [Shadow(color: Color(0x99000000), blurRadius: 6, offset: Offset(0, 1))],
-            ),
-          ),
-          const Expanded(child: SizedBox.shrink()),
-          Row(
-            children: [
-              Text(cta, style: const TextStyle(color: kGold, fontWeight: FontWeight.w800, fontSize: 10.5, shadows: [Shadow(color: Color(0x99000000), blurRadius: 6, offset: Offset(0, 1))])),
-              const SizedBox(width: 4),
-              const Icon(Icons.arrow_forward_rounded, size: 11, color: kGold),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ✅ CARTE PROMO 2 — PRODUITS LOCAUX (verte)
-//    ✅ TITRE EN HAUT + bouton Découvrir en bas — image claire
-// ============================================================================
-class _LocalPromoCard extends StatelessWidget {
-  final List<String> photos;
-  final bool isAdmin;
-  final VoidCallback onAdminTap;
-  final VoidCallback onTap;
-
-  const _LocalPromoCard({
-    required this.photos,
-    required this.isAdmin,
-    required this.onAdminTap,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final lang = Localizations.localeOf(context).languageCode;
-    final title = lang == 'sw' ? 'BIDHAA ZA NDANI' : lang == 'en' ? 'LOCAL GOODS' : 'PRODUITS LOCAUX';
-    final ctaLabel = lang == 'sw' ? 'Gundua' : lang == 'en' ? 'Discover' : 'Découvrir';
-
-    return _PromoCardShell(
-      colors: const [kLocalGreen1, kLocalGreen2],
-      shadow: kLocalGreen2.withOpacity(0.3),
-      photos: photos,
-      isAdmin: isAdmin,
-      onAdminTap: onAdminTap,
-      onTap: onTap,
-      semanticsLabel: 'Produits locaux, tous secteurs',
-      dotSpacing: 13,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ✅ TITRE EN HAUT (sur scrim noir → toujours lisible)
-          Padding(
-            padding: EdgeInsets.only(right: isAdmin ? 26 : 0),
-            child: Text(
-              title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 17,
-                letterSpacing: 0.2,
-                height: 1.1,
-                shadows: [Shadow(color: Color(0x99000000), blurRadius: 8, offset: Offset(0, 2))],
-              ),
-            ),
-          ),
-          const Expanded(child: SizedBox.shrink()),
-          // ✅ CTA en bas
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.25), blurRadius: 6, offset: const Offset(0, 2))],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  ctaLabel,
-                  style: const TextStyle(color: Color(0xFF0B6B31), fontWeight: FontWeight.w900, fontSize: 10.5),
-                ),
-                const SizedBox(width: 4),
-                const Icon(Icons.arrow_forward_rounded, size: 11, color: Color(0xFF0B6B31)),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// ✅ FEUILLE DE GESTION DES PHOTOS (ADMIN) — ajout multiple / suppression
-// ============================================================================
-class _PromoBannerManagerSheet extends ConsumerStatefulWidget {
-  final String cardKey;
-  final String title;
-  const _PromoBannerManagerSheet({required this.cardKey, required this.title});
-
-  @override
-  ConsumerState<_PromoBannerManagerSheet> createState() => _PromoBannerManagerSheetState();
-}
-
-class _PromoBannerManagerSheetState extends ConsumerState<_PromoBannerManagerSheet> {
-  final ImagePicker _picker = ImagePicker();
-  bool _busy = false;
-  String _progress = '';
-
-  String _t(String fr, String en) {
-    final lang = Localizations.localeOf(context).languageCode;
-    return lang == 'fr' ? fr : en;
-  }
-
-  void _snack(String msg, {bool error = false}) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg),
-        backgroundColor: error ? kDanger : kInk,
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-  }
-
-  String _friendlyError(Object e) {
-    final m = e.toString().toLowerCase();
-    if (m.contains('row-level security') || m.contains('403') || m.contains('unauthorized') || m.contains('not authorized')) {
-      return _t('Accès refusé : réservé aux administrateurs.', 'Access denied: administrators only.');
-    }
-    if (m.contains('mime') || m.contains('not supported')) {
-      return _t('Format non supporté (JPG, PNG ou WebP).', 'Unsupported format (JPG, PNG or WebP).');
-    }
-    if (m.contains('too large') || m.contains('413') || m.contains('size')) {
-      return _t('Image trop lourde (5 Mo max).', 'Image too large (5 MB max).');
-    }
-    return _t('Échec de l\'envoi. Réessayez.', 'Upload failed. Please retry.');
-  }
-
-  Future<void> _addPhotos(List<PromoBanner> current) async {
-    if (_busy) return;
-    final remaining = _kMaxPromoPhotos - current.length;
-    if (remaining <= 0) {
-      _snack(_t('Maximum $_kMaxPromoPhotos photos par carte.', 'Maximum $_kMaxPromoPhotos photos per card.'), error: true);
-      return;
-    }
-
-    List<XFile> picked;
-    try {
-      picked = await _picker.pickMultiImage(imageQuality: 85, maxWidth: 1600, maxHeight: 1600);
-    } catch (e) {
-      debugPrint('[Market] ⚠️ pickMultiImage error: $e');
-      _snack(_t('Impossible d\'ouvrir la galerie.', 'Unable to open the gallery.'), error: true);
-      return;
-    }
-    if (picked.isEmpty) return;
-
-    final files = picked.take(remaining).toList();
-    final client = Supabase.instance.client;
-    int ok = 0;
-    int failed = 0;
-    int nextOrder = current.fold<int>(-1, (m, b) => b.sortOrder > m ? b.sortOrder : m) + 1;
-    Object? lastError;
-
-    setState(() {
-      _busy = true;
-      _progress = '0/${files.length}';
-    });
-
-    for (int i = 0; i < files.length; i++) {
-      final f = files[i];
-      String? uploadedPath;
-      try {
-        final bytes = await f.readAsBytes();
-        if (bytes.length > _kMaxPromoFileBytes) {
-          failed++;
-          lastError = 'too large';
-          continue;
-        }
-        var ext = f.name.contains('.') ? f.name.split('.').last.toLowerCase() : 'jpg';
-        if (!const ['jpg', 'jpeg', 'png', 'webp'].contains(ext)) ext = 'jpg';
-        final mime = ext == 'png' ? 'image/png' : ext == 'webp' ? 'image/webp' : 'image/jpeg';
-        final path = '${widget.cardKey}/${DateTime.now().microsecondsSinceEpoch}_$i.$ext';
-
-        await client.storage.from(_kPromoBucket).uploadBinary(
-              path,
-              bytes,
-              fileOptions: FileOptions(contentType: mime, upsert: false),
-            );
-        uploadedPath = path;
-
-        final url = client.storage.from(_kPromoBucket).getPublicUrl(path);
-        await client.from(_kPromoTable).insert({
-          'card_key': widget.cardKey,
-          'image_url': url,
-          'storage_path': path,
-          'sort_order': nextOrder++,
-          'is_active': true,
-        });
-        ok++;
-      } catch (e) {
-        failed++;
-        lastError = e;
-        debugPrint('[Market] ❌ promo upload error: $e');
-        if (uploadedPath != null) {
-          try {
-            await client.storage.from(_kPromoBucket).remove([uploadedPath]);
-          } catch (_) {}
-        }
-      }
-      if (mounted) setState(() => _progress = '${i + 1}/${files.length}');
-    }
-
-    ref.invalidate(promoBannersProvider(widget.cardKey));
-    if (!mounted) return;
-    setState(() {
-      _busy = false;
-      _progress = '';
-    });
-
-    if (ok > 0 && failed == 0) {
-      _snack(_t('$ok photo(s) ajoutée(s).', '$ok photo(s) added.'));
-    } else if (ok > 0) {
-      _snack(_t('$ok ajoutée(s), $failed échec(s).', '$ok added, $failed failed.'), error: true);
-    } else {
-      _snack(_friendlyError(lastError ?? ''), error: true);
-    }
-  }
-
-  Future<void> _delete(PromoBanner b) async {
-    if (_busy) return;
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(_t('Supprimer cette photo ?', 'Delete this photo?'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w800)),
-        content: Text(_t('Elle disparaîtra de la carte.', 'It will be removed from the card.')),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(_t('Annuler', 'Cancel'))),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            style: TextButton.styleFrom(foregroundColor: kDanger),
-            child: Text(_t('Supprimer', 'Delete')),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true) return;
-
-    final client = Supabase.instance.client;
-    setState(() => _busy = true);
-    try {
-      await client.from(_kPromoTable).delete().eq('id', b.id);
-      if (b.storagePath.isNotEmpty) {
-        try {
-          await client.storage.from(_kPromoBucket).remove([b.storagePath]);
-        } catch (e) {
-          debugPrint('[Market] ⚠️ storage remove error: $e');
-        }
-      }
-      ref.invalidate(promoBannersProvider(widget.cardKey));
-      _snack(_t('Photo supprimée.', 'Photo deleted.'));
-    } catch (e) {
-      debugPrint('[Market] ❌ promo delete error: $e');
-      _snack(_friendlyError(e), error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final async = ref.watch(promoBannersProvider(widget.cardKey));
-    final banners = async.valueOrNull ?? const <PromoBanner>[];
-    final maxH = MediaQuery.sizeOf(context).height * 0.85;
-    final bottom = MediaQuery.paddingOf(context).bottom;
-
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxHeight: maxH),
-      child: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
-        padding: EdgeInsets.fromLTRB(18, 12, 18, 18 + bottom),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(color: kBorder, borderRadius: BorderRadius.circular(2)),
-                ),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
                   Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(color: kAccentSoft, borderRadius: BorderRadius.circular(11)),
-                    child: const Icon(Icons.photo_library_rounded, size: 16, color: kAccentDark),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(kpi['icon'] as IconData, color: color, size: 22),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          '${_t('Photos', 'Photos')} — ${widget.title}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w800, color: kInk, letterSpacing: -0.3),
+                          kpi['value'] as String,
+                          style: ThixPolicy.titleStyle.copyWith(
+                            fontSize: 18,
+                            fontWeight: ThixPolicy.bold,
+                            color: ThixPolicy.textMain,
+                          ),
                         ),
                         Text(
-                          _t(
-                            '${banners.length}/$_kMaxPromoPhotos · défilement auto toutes les ${_kPromoSlide.inSeconds} s',
-                            '${banners.length}/$_kMaxPromoPhotos · auto-scroll every ${_kPromoSlide.inSeconds} s',
-                          ),
-                          style: const TextStyle(fontSize: 10.5, color: kInkMuted, fontWeight: FontWeight.w600),
+                          kpi['label'] as String,
+                          style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted),
                         ),
                       ],
                     ),
                   ),
+                  if (onTap != null)
+                    Icon(Icons.chevron_right_rounded, color: color.withOpacity(0.5), size: 16),
                 ],
               ),
-              const SizedBox(height: 16),
-              if (async.isLoading && banners.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 28),
-                  child: Center(child: CircularProgressIndicator(color: kAccent, strokeWidth: 2.5)),
-                )
-              else if (banners.isEmpty)
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 26, horizontal: 16),
-                  decoration: BoxDecoration(
-                    color: kSurface,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: kBorder),
-                  ),
-                  child: Column(
-                    children: [
-                      const Icon(Icons.image_outlined, size: 30, color: kInkMuted),
-                      const SizedBox(height: 8),
-                      Text(
-                        _t('Aucune photo : la carte garde son dégradé.', 'No photo: the card keeps its gradient.'),
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 12, color: kInkSoft, fontWeight: FontWeight.w600),
-                      ),
-                    ],
-                  ),
-                )
-              else
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    for (int i = 0; i < banners.length; i++) _thumb(banners[i], i),
-                  ],
-                ),
-              const SizedBox(height: 18),
-              SizedBox(
-                width: double.infinity,
-                height: 48,
-                child: ElevatedButton.icon(
-                  onPressed: _busy ? null : () => _addPhotos(banners),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: kAccent,
-                    foregroundColor: Colors.white,
-                    disabledBackgroundColor: kAccent.withOpacity(0.5),
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  ),
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.add_photo_alternate_rounded, size: 18),
-                  label: Text(
-                    _busy
-                        ? '${_t('Envoi', 'Uploading')} $_progress'
-                        : _t('Ajouter des photos', 'Add photos'),
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13.5),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _t('JPG, PNG ou WebP · 5 Mo max par photo · Réservé aux administrateurs.',
-                    'JPG, PNG or WebP · 5 MB max per photo · Administrators only.'),
-                style: const TextStyle(fontSize: 10, color: kInkMuted, fontWeight: FontWeight.w500),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _thumb(PromoBanner b, int index) {
-    return SizedBox(
-      width: 96,
-      height: 96,
-      child: Stack(
-        children: [
-          Positioned.fill(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(14),
-              child: CachedNetworkImage(
-                imageUrl: b.imageUrl,
-                fit: BoxFit.cover,
-                placeholder: (_, __) => Container(color: kSurface),
-                errorWidget: (_, __, ___) => Container(
-                  color: kSurface,
-                  child: const Icon(Icons.broken_image_outlined, color: kInkMuted),
-                ),
-              ),
             ),
-          ),
-          Positioned(
-            left: 6,
-            bottom: 6,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), borderRadius: BorderRadius.circular(6)),
-              child: Text('${index + 1}', style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w800)),
-            ),
-          ),
-          Positioned(
-            top: 4,
-            right: 4,
-            child: GestureDetector(
-              onTap: _busy ? null : () => _delete(b),
-              child: Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: kDanger,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1.5),
-                ),
-                child: const Icon(Icons.close_rounded, size: 13, color: Colors.white),
-              ),
-            ),
-          ),
-        ],
+          );
+        }).toList(),
       ),
     );
   }
 }
 
 // ============================================================================
-// ANIMATIONS
+// ACTION GRID — ✅ Filtrage par rôle modérateur
 // ============================================================================
-class _Reveal extends StatefulWidget {
-  final Widget child;
-  final int delayMs;
-  const _Reveal({required this.child, this.delayMs = 0});
+class _ActionGrid extends StatelessWidget {
+  final bool hasShop;
+  final Map<String, dynamic>? shop;
+  final bool isModerator;
+  final VoidCallback onNeedShop;
+  final VoidCallback onCreateLocalProduct;
+  final VoidCallback onOpenLocalSpace;
 
-  @override
-  State<_Reveal> createState() => _RevealState();
-}
-
-class _RevealState extends State<_Reveal> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
-  late final Animation<double> _curve = CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic);
-  Timer? _delay;
-
-  @override
-  void initState() {
-    super.initState();
-    _delay = Timer(Duration(milliseconds: widget.delayMs), () {
-      if (mounted) _ctrl.forward();
-    });
-  }
-
-  @override
-  void dispose() {
-    _delay?.cancel();
-    _ctrl.dispose();
-    super.dispose();
-  }
+  const _ActionGrid({required this.hasShop, required this.shop, required this.isModerator, required this.onNeedShop, required this.onCreateLocalProduct, required this.onOpenLocalSpace});
 
   @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _curve,
-      builder: (_, child) => Opacity(
-        opacity: _curve.value,
-        child: Transform.translate(offset: Offset(0, 18 * (1 - _curve.value)), child: child),
-      ),
-      child: widget.child,
-    );
-  }
-}
+    final shopId = shop?['id']?.toString();
 
-class _TapScale extends StatefulWidget {
-  final Widget child;
-  final VoidCallback? onTap;
-  final BorderRadius? radius;
-  const _TapScale({required this.child, this.onTap, this.radius});
+    final actions = <Map<String, dynamic>>[
+      {'icon': Icons.agriculture_rounded, 'label': context.vdT('Produit local', 'Local product'), 'color': kLocalGreen, 'onTap': onCreateLocalProduct, 'needShop': true},
+      {'icon': Icons.inventory_2_outlined, 'label': context.vdT('Produits', 'Products'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketSell'), 'needShop': true},
+      {'icon': Icons.shopping_bag_outlined, 'label': context.vdT('Commandes', 'Orders'), 'color': ThixPolicy.primary, 'onTap': () { try { context.push('/market/vendor/orders'); } catch (_) { context.pushNamed('marketSell', queryParameters: {'tab': 'orders'}); } }, 'needShop': true},
+      {'icon': Icons.add_box_outlined, 'label': context.vdT('Annonce', 'Listing'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketPublishAnnouncement'), 'needShop': true},
+      {'icon': Icons.live_tv_outlined, 'label': context.vdT('Live', 'Live'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('marketCreateLive'), 'needShop': true},
+      {'icon': Icons.bar_chart_rounded, 'label': context.vdT('Stats', 'Stats'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.push('/market/shop/$shopId/stats'); }, 'needShop': true},
+      {'icon': Icons.local_shipping_outlined, 'label': context.vdT('Livraisons', 'Deliveries'), 'color': ThixPolicy.primary, 'onTap': () => context.pushNamed('deliveryManagement'), 'needShop': true},
+      {'icon': Icons.storefront_outlined, 'label': context.vdT('Boutique', 'Shop'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) { context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); } else { context.pushNamed('marketCreateShop'); } }, 'needShop': false},
+      {'icon': Icons.settings_outlined, 'label': context.vdT('Réglages', 'Settings'), 'color': ThixPolicy.primary, 'onTap': () { if (shopId != null && _VdValidators.isValidId(shopId)) context.pushNamed('marketManageShop', pathParameters: {'shopId': shopId}); }, 'needShop': true},
+      {'icon': Icons.eco_rounded, 'label': context.vdT('Espace local', 'Local space'), 'color': kLocalGreen, 'onTap': onOpenLocalSpace, 'needShop': false},
+    ];
 
-  @override
-  State<_TapScale> createState() => _TapScaleState();
-}
-
-class _TapScaleState extends State<_TapScale> {
-  bool _pressed = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTapDown: (_) => setState(() => _pressed = true),
-      onTapUp: (_) => setState(() => _pressed = false),
-      onTapCancel: () => setState(() => _pressed = false),
-      onTap: widget.onTap,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween(begin: 1, end: _pressed ? 0.96 : 1),
-        duration: const Duration(milliseconds: 140),
-        curve: Curves.easeOut,
-        builder: (_, v, child) => Transform.scale(scale: v, child: child),
-        child: widget.radius != null ? ClipRRect(borderRadius: widget.radius!, child: widget.child) : widget.child,
-      ),
-    );
-  }
-}
-
-class _KenBurnsImage extends StatefulWidget {
-  final String url;
-  const _KenBurnsImage({required this.url});
-
-  @override
-  State<_KenBurnsImage> createState() => _KenBurnsImageState();
-}
-
-class _KenBurnsImageState extends State<_KenBurnsImage> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 7))..repeat(reverse: true);
-  late final Animation<double> _scale = Tween<double>(begin: 1.0, end: 1.1).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _scale,
-      builder: (_, __) => Transform.scale(
-        scale: _scale.value,
-        child: CachedNetworkImage(
-          imageUrl: widget.url,
-          fit: BoxFit.cover,
-          width: double.infinity,
-          height: double.infinity,
-          errorWidget: (_, __, ___) => const Center(child: Icon(Icons.image_outlined, size: 48, color: kInkMuted)),
-        ),
-      ),
-    );
-  }
-}
-
-class _PulsingFab extends StatefulWidget {
-  final VoidCallback onTap;
-  final String label;
-  const _PulsingFab({required this.onTap, required this.label});
-
-  @override
-  State<_PulsingFab> createState() => _PulsingFabState();
-}
-
-class _PulsingFabState extends State<_PulsingFab> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat(reverse: true);
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, child) {
-        final t = _ctrl.value;
-        return Stack(
-          alignment: Alignment.center,
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 56 + t * 12,
-              height: 56 + t * 12,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: kAccent.withOpacity(0.16 * (1 - t))),
-            ),
-            child!,
-          ],
-        );
-      },
-      child: Semantics(
-        button: true,
-        label: widget.label,
-        child: _TapScale(
-          onTap: widget.onTap,
-          radius: BorderRadius.circular(28),
-          child: Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [kAccent, kAccentDark]),
-              shape: BoxShape.circle,
-              border: Border.all(color: Colors.white, width: 3),
-              boxShadow: [BoxShadow(color: kAccent.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 5))],
-            ),
-            child: const Icon(Icons.shopping_bag_rounded, color: Colors.white, size: 22),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// WIDGETS UTILITAIRES
-// ============================================================================
-class _AccentBar extends StatelessWidget {
-  final Color color;
-  const _AccentBar({required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(width: 3.5, height: 15, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(4)));
-  }
-}
-
-class _PulsingDot extends StatefulWidget {
-  final Color color;
-  final double size;
-  const _PulsingDot({required this.color, this.size = 8});
-
-  @override
-  State<_PulsingDot> createState() => _PulsingDotState();
-}
-
-class _PulsingDotState extends State<_PulsingDot> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
-  late final Animation<double> _scale = Tween<double>(begin: 0.7, end: 1.25).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut));
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScaleTransition(
-      scale: _scale,
-      child: Container(width: widget.size, height: widget.size, decoration: BoxDecoration(color: widget.color, shape: BoxShape.circle)),
-    );
-  }
-}
-
-class _CountBadge extends StatelessWidget {
-  final int count;
-  const _CountBadge({required this.count});
-
-  @override
-  Widget build(BuildContext context) {
-    if (count <= 0) return const SizedBox.shrink();
-    final text = count > 99 ? '99+' : '$count';
-    return Container(
-      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: kDanger,
-        borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: Colors.white, width: 1.2),
-      ),
-      child: Text(text, style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, height: 1.1)),
-    );
-  }
-}
-
-class _DotsPatternPainter extends CustomPainter {
-  final Color color;
-  final double spacing;
-  final double dotSize;
-
-  _DotsPatternPainter({required this.color, required this.spacing, required this.dotSize});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..style = PaintingStyle.fill;
-    for (double y = 0; y < size.height; y += spacing) {
-      for (double x = 0; x < size.width; x += spacing) {
-        canvas.drawCircle(Offset(x, y), dotSize, paint);
-      }
+    // ✅ ACTIONS EXCLUSIVES MODÉRATEUR / ADMIN
+    if (isModerator) {
+      actions.addAll([
+        {'icon': Icons.fact_check_rounded, 'label': context.vdT('Validation', 'Validation'), 'color': Colors.blueAccent, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+        {'icon': Icons.star_rounded, 'label': context.vdT('Semaine', 'Weekly pick'), 'color': Colors.amber, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+        {'icon': Icons.style_rounded, 'label': context.vdT('Cartes portail', 'Portal cards'), 'color': Colors.deepPurple, 'onTap': () => context.push('/market/local/vendor-space'), 'needShop': false},
+      ]);
     }
-  }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
-}
-
-class _MarketErrorCard extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  final bool compact;
-
-  const _MarketErrorCard({required this.message, required this.onRetry, this.compact = false});
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      padding: EdgeInsets.all(compact ? 10 : 16),
-      decoration: BoxDecoration(
-        color: kDanger.withOpacity(0.05),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: kDanger.withOpacity(0.2)),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.error_outline_rounded, color: kDanger, size: compact ? 18 : 24),
-          const SizedBox(width: 10),
-          Expanded(child: Text(message, style: TextStyle(color: kDanger, fontSize: compact ? 11 : 12.5))),
-          if (!compact)
-            TextButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded, size: 16),
-              label: Text(l10n.t('common_retry'), style: const TextStyle(fontSize: 12)),
-              style: TextButton.styleFrom(foregroundColor: kAccentDark),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeroSkeleton extends StatelessWidget {
-  const _HeroSkeleton();
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
-        height: 340,
-        decoration: BoxDecoration(color: const Color(0xFFE9EDF2), borderRadius: BorderRadius.circular(22)),
-      ),
-    );
-  }
-}
-
-class _ShopsSkeleton extends StatelessWidget {
-  const _ShopsSkeleton();
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: List.generate(
-        4,
-        (_) => Column(
-          children: [
-            Container(width: 58, height: 58, decoration: const BoxDecoration(color: Color(0xFFE9EDF2), shape: BoxShape.circle)),
-            const SizedBox(height: 6),
-            Container(width: 52, height: 10, color: const Color(0xFFE9EDF2)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GridSkeleton extends StatelessWidget {
-  const _GridSkeleton();
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: GridView.builder(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
-          mainAxisExtent: _kGridCardHeight,
-        ),
-        itemCount: 4,
-        itemBuilder: (_, __) => Container(
-          decoration: BoxDecoration(color: const Color(0xFFE9EDF2), borderRadius: BorderRadius.circular(14)),
-        ),
-      ),
-    );
-  }
-}
-
-enum _StripBadge { flash, featured, none }
-
-class _AutoScrollProductStrip extends StatefulWidget {
-  final List<Map<String, dynamic>> products;
-  final _StripBadge badgeType;
-  final String title;
-  final IconData icon;
-  final String? liveLabel;
-
-  const _AutoScrollProductStrip({
-    required this.products,
-    required this.badgeType,
-    required this.title,
-    required this.icon,
-    this.liveLabel,
-  });
-
-  @override
-  State<_AutoScrollProductStrip> createState() => _AutoScrollProductStripState();
-}
-
-class _AutoScrollProductStripState extends State<_AutoScrollProductStrip> {
-  final ScrollController _ctrl = ScrollController();
-  Timer? _timer;
-  bool _paused = false;
-  static const double _step = 1.1;
-  static const Duration _tick = Duration(milliseconds: 16);
-
-  bool get _active => widget.products.length > 4;
-
-  @override
-  void initState() {
-    super.initState();
-    if (_active) WidgetsBinding.instance.addPostFrameCallback((_) => _start());
-  }
-
-  @override
-  void didUpdateWidget(covariant _AutoScrollProductStrip old) {
-    super.didUpdateWidget(old);
-    final wasActive = old.products.length > 4;
-    final isActiveNow = widget.products.length > 4;
-    if (!wasActive && isActiveNow) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _start());
-    } else if (wasActive && !isActiveNow) {
-      _timer?.cancel();
-    }
-  }
-
-  void _start() {
-    _timer?.cancel();
-    _timer = Timer.periodic(_tick, (_) {
-      if (!mounted || !_ctrl.hasClients || _paused) return;
-      final position = _ctrl.position;
-      final maxExt = position.maxScrollExtent;
-      if (maxExt <= 0) return;
-      final next = _ctrl.offset + _step;
-      _ctrl.jumpTo(next >= maxExt ? 0 : next);
-    });
-  }
-
-  void _pause() => _paused = true;
-  void _resumeAfterDelay() => Future.delayed(_kBannerResumeDelay, () {
-        if (mounted) _paused = false;
-      });
-
-  @override
-  void dispose() {
-    _timer?.cancel();
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isFlash = widget.badgeType == _StripBadge.flash;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Row(
-            children: [
-              _AccentBar(color: isFlash ? kDanger : kGold),
-              const SizedBox(width: 8),
-              Icon(widget.icon, color: isFlash ? kDanger : kGold, size: 16),
-              const SizedBox(width: 7),
-              Flexible(
-                child: Text(
-                  widget.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15.5, color: kInk, letterSpacing: -0.3),
-                ),
-              ),
-              if (_active && widget.liveLabel != null) ...[
-                const SizedBox(width: 7),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(color: kDanger.withOpacity(0.12), borderRadius: BorderRadius.circular(5)),
-                  child: Text(widget.liveLabel!, style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w900, color: kDanger)),
-                ),
-              ],
-            ],
-          ),
-        ),
+        Text(context.vdT('Actions rapides', 'Quick actions'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
         const SizedBox(height: 12),
-        SizedBox(
-          height: 220,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (n) {
-              if (!_active) return false;
-              if (n is ScrollStartNotification) _pause();
-              if (n is ScrollEndNotification) _resumeAfterDelay();
-              return false;
-            },
-            child: ListView.separated(
-              controller: _ctrl,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemCount: widget.products.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (_, i) => ProductCard(
-                product: widget.products[i],
-                variant: ProductCardVariant.horizontal,
-                width: 140,
-                isFlashSale: widget.badgeType == _StripBadge.flash,
-                isFeatured: widget.badgeType == _StripBadge.featured,
+        GridView.count(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          crossAxisCount: 4,
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
+          childAspectRatio: 0.95,
+          children: actions.map((a) {
+            final needShop = a['needShop'] == true;
+            final enabled = !needShop || hasShop;
+            final color = (a['color'] as Color?) ?? ThixPolicy.primary;
+            return Semantics(
+              button: true,
+              label: a['label'] as String,
+              enabled: enabled,
+              child: InkWell(
+                onTap: () { HapticFeedback.selectionClick(); if (!enabled) { onNeedShop(); return; } (a['onTap'] as VoidCallback)(); },
+                borderRadius: BorderRadius.circular(14),
+                child: AnimatedOpacity(
+                  duration: const Duration(milliseconds: 200),
+                  opacity: enabled ? 1.0 : 0.5,
+                  child: Container(
+                    decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: color == kLocalGreen ? kLocalGreen.withOpacity(0.5) : ThixPolicy.border.withOpacity(0.6))),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(a['icon'] as IconData, size: 26, color: color),
+                        const SizedBox(height: 6),
+                        Text(a['label'] as String, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.textMain)),
+                      ],
+                    ),
+                  ),
+                ),
               ),
-            ),
-          ),
+            );
+          }).toList(),
         ),
       ],
     );
   }
 }
 
-class _MarqueeText extends StatefulWidget {
-  final String text;
-  const _MarqueeText({required this.text});
+// ============================================================================
+// RECENT ORDERS
+// ============================================================================
+class _RecentOrders extends StatelessWidget {
+  final List<Map<String, dynamic>> orders;
+  final ValueChanged<Map<String, dynamic>> onOrderTap;
+  final VoidCallback onViewAll;
+
+  const _RecentOrders({required this.orders, required this.onOrderTap, required this.onViewAll});
+
   @override
-  State<_MarqueeText> createState() => _MarqueeTextState();
+  Widget build(BuildContext context) {
+    final recent = orders.take(5).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(context.vdT('Dernières commandes', 'Recent orders'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16, color: ThixPolicy.textMain)),
+            Semantics(button: true, label: context.vdT('Voir toutes les commandes', 'View all orders'), child: TextButton(onPressed: onViewAll, child: Text(context.vdT('Voir tout', 'View all'), style: ThixPolicy.labelStyle.copyWith(color: ThixPolicy.primary, fontWeight: ThixPolicy.semiBold)))),
+          ],
+        ),
+        const SizedBox(height: 8),
+        if (recent.isEmpty)
+          Container(width: double.infinity, padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14)), child: Center(child: Text(context.vdT('Aucune commande pour le moment', 'No orders yet'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted))))
+        else
+          Container(
+            decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
+            child: ListView.separated(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: recent.length,
+              separatorBuilder: (_, __) => Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6)),
+              itemBuilder: (c, i) {
+                final o = recent[i];
+                final id = o['id']?.toString() ?? '';
+                final shortId = _VdValidators.shortId(id);
+                final total = _VdValidators.safeDouble(o['total']);
+                final currency = _VdValidators.normalizeCurrency(o['currency']?.toString());
+                final symbol = _VdValidators.currencySymbol(currency);
+                final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
+                final statusKey = (o['status'] ?? 'pending').toString().toLowerCase();
+                final statusConfig = _getOrderStatus(statusKey);
+
+                return Semantics(
+                  button: true,
+                  label: '${context.vdT('Commande', 'Order')} #$shortId, ${statusConfig.label(context)}, $formattedTotal $symbol',
+                  child: ListTile(
+                    onTap: () => onOrderTap(o),
+                    leading: CircleAvatar(backgroundColor: statusConfig.color.withOpacity(0.15), radius: 18, child: Icon(statusConfig.icon, color: statusConfig.color, size: 18)),
+                    title: Text('${context.vdT('Commande', 'Order')} #$shortId', style: ThixPolicy.labelStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain)),
+                    subtitle: Text('$formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary)),
+                    trailing: Container(padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4), decoration: BoxDecoration(color: statusConfig.color.withOpacity(0.12), borderRadius: BorderRadius.circular(20)), child: Text(statusConfig.label(context), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, fontWeight: ThixPolicy.bold, color: statusConfig.color))),
+                  ),
+                );
+              },
+            ),
+          ),
+      ],
+    );
+  }
 }
 
-class _MarqueeTextState extends State<_MarqueeText> with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl = AnimationController(vsync: this, duration: const Duration(seconds: 8))..repeat();
-  static const double _itemWidth = 300;
+// ============================================================================
+// QR CODE SHEET
+// ============================================================================
+class _QrCodeSheet extends StatelessWidget {
+  final String code;
+  final String shortOrderId;
+  final String titleLabel;
+  final String orderLabel;
+  final String instructionLabel;
+  final String copyLabel;
+  final String copiedLabel;
+  final String closeLabel;
 
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
+  const _QrCodeSheet({required this.code, required this.shortOrderId, required this.titleLabel, required this.orderLabel, required this.instructionLabel, required this.copyLabel, required this.copiedLabel, required this.closeLabel});
+
+  void _copy(BuildContext context) {
+    HapticFeedback.selectionClick();
+    Clipboard.setData(ClipboardData(text: code));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle_rounded, color: Colors.white, size: 18), const SizedBox(width: 8), Text(copiedLabel)]), backgroundColor: ThixPolicy.success, behavior: SnackBarBehavior.floating));
   }
 
   @override
   Widget build(BuildContext context) {
-    return ClipRect(
-      child: LayoutBuilder(
-        builder: (context, box) {
-          final w = box.maxWidth.isFinite ? box.maxWidth : 300.0;
-          final count = (w / _itemWidth).ceil() + 2;
-          return AnimatedBuilder(
-            animation: _ctrl,
-            builder: (_, __) {
-              final shift = _ctrl.value * _itemWidth;
-              return Stack(
-                clipBehavior: Clip.hardEdge,
-                children: List.generate(count, (i) {
-                  return Positioned(
-                    left: i * _itemWidth - shift,
-                    top: 0,
-                    bottom: 0,
-                    width: _itemWidth,
-                    child: Center(
-                      child: Text(
-                        widget.text,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 11.5, letterSpacing: 0.4),
+    return Padding(
+      padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + MediaQuery.of(context).padding.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2))),
+          const SizedBox(height: 16),
+          Text(titleLabel, style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18)),
+          const SizedBox(height: 6),
+          Text('$orderLabel #$shortOrderId', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)),
+          const SizedBox(height: 8),
+          Text(instructionLabel, textAlign: TextAlign.center, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12, height: 1.4)),
+          const SizedBox(height: 20),
+          Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(16), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))), child: BarcodeWidget(barcode: Barcode.qrCode(), data: code, width: 200, height: 200, drawText: false, color: ThixPolicy.textMain)),
+          const SizedBox(height: 12),
+          Semantics(label: 'Code: $code', child: SelectableText(code, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 12, color: ThixPolicy.textMain))),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: Semantics(button: true, label: copyLabel, child: OutlinedButton.icon(onPressed: () => _copy(context), icon: const Icon(Icons.copy_rounded, size: 18), label: Text(copyLabel), style: OutlinedButton.styleFrom(minimumSize: const Size(0, 46), foregroundColor: ThixPolicy.textMain, side: BorderSide(color: ThixPolicy.border), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)))))),
+              const SizedBox(width: 12),
+              Expanded(child: Semantics(button: true, label: closeLabel, child: ElevatedButton(onPressed: () { HapticFeedback.selectionClick(); Navigator.pop(context); }, style: ElevatedButton.styleFrom(backgroundColor: ThixPolicy.primary, foregroundColor: Colors.white, minimumSize: const Size(0, 46), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: Text(closeLabel, style: const TextStyle(fontWeight: ThixPolicy.bold))))),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ORDER DETAILS SHEET
+// ============================================================================
+class _DashboardOrderDetailsSheet extends ConsumerStatefulWidget {
+  final Map<String, dynamic> order;
+  final ScrollController scrollController;
+  final Future<void> Function(String, String) onUpdateStatus;
+  final void Function(Map<String, dynamic>) onShowQr;
+  final Future<void> Function(String) onCancel;
+
+  const _DashboardOrderDetailsSheet({required this.order, required this.scrollController, required this.onUpdateStatus, required this.onShowQr, required this.onCancel});
+
+  @override
+  ConsumerState<_DashboardOrderDetailsSheet> createState() => _DashboardOrderDetailsSheetState();
+}
+
+class _DashboardOrderDetailsSheetState extends ConsumerState<_DashboardOrderDetailsSheet> {
+  bool _isLoading = true;
+  List<Map<String, dynamic>> _items = [];
+  Map<String, dynamic>? _profile;
+  Map<String, dynamic>? _address;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadExtraData();
+  }
+
+  Future<void> _loadExtraData() async {
+    final db = ref.read(supabaseClientProvider);
+    final orderId = widget.order['id']?.toString();
+    final userId = widget.order['user_id']?.toString();
+    final addressId = widget.order['address_id']?.toString();
+
+    if (_VdValidators.isValidId(orderId)) {
+      try {
+        final res = await _vdRetry(() => db.from('order_items').select('*, product:products(title, image_url, currency)').eq('order_id', orderId!), label: 'loadOrderItems');
+        _items = (res as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ items+embed failed: $e'); }
+
+      if (_items.isEmpty) {
+        try {
+          final res2 = await db.from('order_items').select('*').eq('order_id', orderId!).timeout(_kRequestTimeout);
+          _items = (res2 as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } catch (e2) { debugPrint('[VendorDashboard] ⚠️ items plain failed: $e2'); }
+      }
+
+      if (_items.isEmpty) {
+        try {
+          final rpcRes = await db.rpc('get_order_items_secure', params: {'p_order_id': orderId}).timeout(_kRequestTimeout);
+          if (rpcRes is List) _items = rpcRes.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+        } catch (e3) { debugPrint('[VendorDashboard] ⚠️ RPC items failed: $e3'); }
+      }
+    }
+
+    if (_VdValidators.isValidId(userId)) {
+      try {
+        final u = await db.from('users').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
+        if (u != null) _profile = Map<String, dynamic>.from(u as Map);
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ users fetch failed: $e'); }
+      if (_profile == null) {
+        try {
+          final p = await db.from('profiles').select('*').eq('id', userId!).maybeSingle().timeout(_kRequestTimeout);
+          if (p != null) _profile = Map<String, dynamic>.from(p as Map);
+        } catch (e) { debugPrint('[VendorDashboard] ⚠️ profiles fetch failed: $e'); }
+      }
+    }
+
+    if (_VdValidators.isValidId(addressId)) {
+      try {
+        final a = await db.from('addresses').select('*').eq('id', addressId!).maybeSingle().timeout(_kRequestTimeout);
+        if (a != null) _address = Map<String, dynamic>.from(a as Map);
+      } catch (e) { debugPrint('[VendorDashboard] ⚠️ address fetch failed: $e'); }
+    }
+
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  String _shippingLabel(String raw, BuildContext context) {
+    switch (raw) {
+      case 'pickup': return context.vdT('Retrait en boutique', 'Store pickup');
+      case 'home_delivery': return context.vdT('Livraison à domicile', 'Home delivery');
+      case 'express': return context.vdT('Livraison express', 'Express delivery');
+      default: return raw.isEmpty ? context.vdT('Standard', 'Standard') : raw;
+    }
+  }
+
+  Future<void> _callPhone(String phone) async {
+    final clean = phone.replaceAll(RegExp(r'[^\d+]'), '');
+    if (clean.isEmpty) return;
+    HapticFeedback.selectionClick();
+    try { await launchUrl(Uri(scheme: 'tel', path: clean)); } catch (_) {}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final o = widget.order;
+    final orderId = o['id']?.toString() ?? '';
+    final short = _VdValidators.shortId(orderId);
+    final statusKey = (o['status'] ?? 'pending').toString().toLowerCase();
+    final total = _VdValidators.safeDouble(o['total']);
+    final currency = _VdValidators.normalizeCurrency(o['currency']?.toString());
+    final symbol = _VdValidators.currencySymbol(currency);
+    final formattedTotal = _VdValidators.formatAmount(total, context.localeCode, isUSD: currency == 'USD');
+    final dateStr = o['created_at']?.toString();
+    final formattedDate = dateStr != null ? DateFormat('dd MMM yyyy, HH:mm', context.localeCode).format(DateTime.tryParse(dateStr) ?? DateTime.now()) : '';
+    final shippingMethod = _VdValidators.sanitize(o['shipping_method']?.toString(), maxLength: 60);
+    final notProvided = context.vdT('Non renseigné', 'Not provided');
+
+    final clientName = _VdValidators.sanitize(
+      _pick(o, ['customer_name']).isNotEmpty ? _pick(o, ['customer_name']) : _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']).isNotEmpty ? _pick(_address, ['receiver_name', 'full_name', 'name', 'client_name']) : _pick(_profile, ['full_name', 'name', 'display_name']),
+      maxLength: _kMaxNameLength,
+    );
+    final clientPhone = _pick(o, ['customer_phone']).isNotEmpty ? _pick(o, ['customer_phone']) : _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']).isNotEmpty ? _pick(_address, ['phone', 'phone_number', 'telephone', 'receiver_phone']) : _pick(_profile, ['phone', 'phone_number', 'telephone']);
+    final clientEmail = _pick(o, ['customer_email']).isNotEmpty ? _pick(o, ['customer_email']) : _pick(_profile, ['email', 'email_address']);
+
+    final addressFromOrder = _pick(o, ['shipping_address']);
+    final addressParts = <String>[_pick(_address, ['address', 'line1', 'street', 'avenue', 'quartier', 'commune_name']), _pick(_address, ['city', 'commune', 'province', 'region']), _pick(_address, ['country'])]..removeWhere((s) => s.isEmpty);
+    final addressFull = addressFromOrder.isNotEmpty ? addressFromOrder : addressParts.join(', ');
+
+    return Container(
+      padding: EdgeInsets.fromLTRB(20, 12, 20, 24 + MediaQuery.of(context).padding.bottom),
+      child: ListView(
+        controller: widget.scrollController,
+        children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: ThixPolicy.border, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          Row(children: [Expanded(child: Text('${context.vdT('Détails Commande', 'Order Details')} #$short', style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, fontSize: 18, color: ThixPolicy.textMain))), Semantics(button: true, label: context.vdT('Fermer', 'Close'), child: IconButton(icon: const Icon(Icons.close_rounded, color: ThixPolicy.textMain), onPressed: () => Navigator.pop(context)))]),
+          if (formattedDate.isNotEmpty) Text('${context.vdT('Commandé le', 'Ordered on')} $formattedDate', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 12)),
+          const SizedBox(height: 20),
+
+          _SectionTitle(title: context.vdT('Client & Livraison', 'Customer & Delivery')),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _InfoRow(icon: Icons.person_outline_rounded, label: context.vdT('Client', 'Customer'), value: clientName.isEmpty ? notProvided : clientName),
+                const SizedBox(height: 6),
+                _InfoRow(icon: Icons.phone_outlined, label: context.vdT('Téléphone', 'Phone'), value: clientPhone.isEmpty ? notProvided : clientPhone, trailing: clientPhone.isNotEmpty ? IconButton(tooltip: context.vdT('Appeler', 'Call'), onPressed: () => _callPhone(clientPhone), icon: const Icon(Icons.call_rounded, size: 16, color: ThixPolicy.success), padding: EdgeInsets.zero, constraints: const BoxConstraints()) : null),
+                const SizedBox(height: 6),
+                _InfoRow(icon: Icons.email_outlined, label: 'Email', value: clientEmail.isEmpty ? notProvided : clientEmail),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
+                _InfoRow(icon: Icons.local_shipping_outlined, label: context.vdT('Mode', 'Method'), value: _shippingLabel(shippingMethod, context)),
+                const SizedBox(height: 6),
+                Row(crossAxisAlignment: CrossAxisAlignment.start, children: [const Padding(padding: EdgeInsets.only(top: 2), child: Icon(Icons.location_on_outlined, size: 16, color: ThixPolicy.textMuted)), const SizedBox(width: 8), Expanded(child: Text(addressFull.isEmpty ? context.vdT('Non spécifiée', 'Not specified') : addressFull, style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain, height: 1.4)))]),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+
+          _SectionTitle(title: context.vdT('Articles commandés', 'Order items')),
+          const SizedBox(height: 8),
+          _isLoading
+              ? const _ItemsSkeleton()
+              : _items.isEmpty
+                  ? Padding(padding: const EdgeInsets.all(12), child: Text(context.vdT('Aucun article trouvé', 'No items found'), style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13)))
+                  : Column(children: _items.map((item) => _OrderItemTile(item: item, currency: currency, locale: context.localeCode)).toList()),
+          const SizedBox(height: 20),
+
+          _SectionTitle(title: context.vdT('Facturation', 'Billing')),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(color: ThixPolicy.surfaceSoft, borderRadius: BorderRadius.circular(14), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
+            child: Column(children: [
+              _BillingRow(label: context.vdT('Méthode de paiement', 'Payment method'), value: (o['payment_method']?.toString().toUpperCase() ?? 'N/A')),
+              const SizedBox(height: 6),
+              _BillingRow(label: context.vdT('Statut paiement', 'Payment status'), value: o['payment_status']?.toString() ?? 'N/A', valueColor: ThixPolicy.success),
+              Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(height: 1, color: ThixPolicy.border.withOpacity(0.6))),
+              _BillingRow(label: context.vdT('Total', 'Total'), value: '$formattedTotal $symbol', isBold: true, valueColor: ThixPolicy.primary),
+            ]),
+          ),
+          const SizedBox(height: 24),
+
+          _SectionTitle(title: context.vdT('Actions', 'Actions')),
+          const SizedBox(height: 10),
+          if (statusKey == 'pending') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.kitchen_rounded, label: context.vdT('Passer en préparation', 'Mark as processing'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'processing'); })),
+          if (statusKey == 'pending' || statusKey == 'processing' || statusKey == 'confirmed') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.local_shipping_rounded, label: context.vdT('Marquer comme expédiée', 'Mark as shipped'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onUpdateStatus(orderId, 'shipped'); widget.onShowQr({...o, 'status': 'shipped', 'receipt_code': orderId}); })),
+          if (statusKey == 'shipped') Padding(padding: const EdgeInsets.only(bottom: 8), child: _ActionButton(icon: Icons.qr_code_2_rounded, label: context.vdT('Afficher le QR de livraison', 'Show delivery QR'), color: ThixPolicy.primary, onTap: () { Navigator.pop(context); widget.onShowQr(o); })),
+          if (statusKey != 'delivered' && statusKey != 'cancelled') _ActionButton(icon: Icons.cancel_outlined, label: context.vdT('Annuler la commande', 'Cancel order'), color: ThixPolicy.danger, onTap: () { Navigator.pop(context); widget.onCancel(orderId); }),
+        ],
+      ),
+    );
+  }
+}
+
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle({required this.title});
+  @override
+  Widget build(BuildContext context) => Text(title, style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 15, color: ThixPolicy.textMain));
+}
+
+class _InfoRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Widget? trailing;
+  const _InfoRow({required this.icon, required this.label, required this.value, this.trailing});
+  @override
+  Widget build(BuildContext context) => Row(children: [Icon(icon, size: 16, color: ThixPolicy.textMuted), const SizedBox(width: 8), Text('$label : ', style: ThixPolicy.captionStyle.copyWith(fontSize: 13, color: ThixPolicy.textMuted)), Expanded(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontSize: 13, fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain), overflow: TextOverflow.ellipsis)), if (trailing != null) trailing!]);
+}
+
+class _BillingRow extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool isBold;
+  final Color? valueColor;
+  const _BillingRow({required this.label, required this.value, this.isBold = false, this.valueColor});
+  @override
+  Widget build(BuildContext context) => Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text(label, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted, fontSize: 13, fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.regular)), Flexible(child: Text(value, style: ThixPolicy.captionStyle.copyWith(fontWeight: isBold ? ThixPolicy.bold : ThixPolicy.semiBold, fontSize: isBold ? 15 : 13, color: valueColor ?? ThixPolicy.textMain), overflow: TextOverflow.ellipsis))]);
+}
+
+class _OrderItemTile extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final String currency;
+  final String locale;
+  const _OrderItemTile({required this.item, required this.currency, required this.locale});
+
+  @override
+  Widget build(BuildContext context) {
+    final product = (item['product'] is Map) ? (item['product'] as Map) : <String, dynamic>{};
+    final title = _VdValidators.sanitize((item['title_snapshot']?.toString() ?? item['product_name']?.toString() ?? product['title']?.toString() ?? item['title']?.toString() ?? context.vdT('Produit', 'Product')), maxLength: _kMaxTitleLength);
+    final qty = _VdValidators.safeInt(item['quantity'] ?? item['qty'], fallback: 1);
+    final price = _VdValidators.safeDouble(item['price'] ?? item['unit_price']);
+    final variant = _VdValidators.sanitize(item['variant']?.toString(), maxLength: 30);
+    final color = _VdValidators.sanitize(item['color']?.toString(), maxLength: 30);
+    final imageUrl = _VdValidators.sanitizeUrl(item['product_image']?.toString() ?? product['image_url']?.toString());
+    final itemCurrency = _VdValidators.normalizeCurrency(item['currency']?.toString() ?? product['currency']?.toString() ?? currency);
+    final symbol = _VdValidators.currencySymbol(itemCurrency);
+    final formattedPrice = _VdValidators.formatAmount(price, locale, isUSD: itemCurrency == 'USD');
+    final formattedTotal = _VdValidators.formatAmount(price * qty, locale, isUSD: itemCurrency == 'USD');
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(color: ThixPolicy.card, borderRadius: BorderRadius.circular(12), border: Border.all(color: ThixPolicy.border.withOpacity(0.6))),
+      child: Row(
+        children: [
+          ClipRRect(borderRadius: BorderRadius.circular(8), child: imageUrl != null && imageUrl.isNotEmpty ? CachedNetworkImage(imageUrl: imageUrl, width: 50, height: 50, fit: BoxFit.cover, placeholder: (_, __) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Center(child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)))), errorWidget: (_, __, ___) => Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20))) : Container(width: 50, height: 50, color: ThixPolicy.surfaceSoft, child: const Icon(Icons.image_outlined, color: ThixPolicy.textMuted, size: 20))),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 13, color: ThixPolicy.textMain), maxLines: 2, overflow: TextOverflow.ellipsis),
+                if (variant.isNotEmpty || color.isNotEmpty) Text([if (variant.isNotEmpty) 'Var: $variant', if (color.isNotEmpty) '${context.vdT('Couleur', 'Color')}: $color'].join(' | '), style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: ThixPolicy.textMuted)),
+                const SizedBox(height: 4),
+                Text('${context.vdT('Qté', 'Qty')}: $qty × $formattedPrice $symbol = $formattedTotal $symbol', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, fontWeight: ThixPolicy.semiBold, color: ThixPolicy.primary)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _ActionButton({required this.icon, required this.label, required this.color, required this.onTap});
+  @override
+  Widget build(BuildContext context) => Semantics(button: true, label: label, child: SizedBox(width: double.infinity, child: ElevatedButton.icon(onPressed: () { HapticFeedback.mediumImpact(); onTap(); }, icon: Icon(icon, size: 18, color: Colors.white), label: Text(label, style: const TextStyle(color: Colors.white)), style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white, minimumSize: const Size(0, 48), elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), textStyle: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 14, color: Colors.white)))));
+}
+
+// ============================================================================
+// SKELETON & ERROR STATES
+// ============================================================================
+class _SkeletonDashboard extends StatelessWidget {
+  const _SkeletonDashboard();
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      physics: const NeverScrollableScrollPhysics(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            height: _kShopCardHeight,
+            child: Row(
+              children: List.generate(
+                2,
+                (i) => Expanded(
+                  child: Container(
+                    margin: EdgeInsets.only(right: i == 0 ? 12 : 0),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          ThixPolicy.primary.withOpacity(0.2),
+                          ThixPolicy.inkDeep.withOpacity(0.2),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 2,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+            childAspectRatio: 1.55,
+            children: List.generate(
+              4,
+              (_) => Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        borderRadius: BorderRadius.circular(12),
                       ),
                     ),
-                  );
-                }),
-              );
-            },
-          );
-        },
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(height: 16, width: 40, color: Colors.grey.shade200),
+                          const SizedBox(height: 6),
+                          Container(height: 12, width: 70, color: Colors.grey.shade200),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Container(height: 16, width: 120, color: Colors.grey.shade200),
+          const SizedBox(height: 12),
+          GridView.count(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            crossAxisCount: 4,
+            crossAxisSpacing: 8,
+            mainAxisSpacing: 8,
+            childAspectRatio: 0.95,
+            children: List.generate(
+              8,
+              (_) => Container(
+                decoration: BoxDecoration(
+                  color: ThixPolicy.card,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      width: 26,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade200,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 40, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ItemsSkeleton extends StatelessWidget {
+  const _ItemsSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(
+        3,
+        (_) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: ThixPolicy.card,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade200,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(height: 13, width: double.infinity, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 100, color: Colors.grey.shade200),
+                    const SizedBox(height: 6),
+                    Container(height: 10, width: 140, color: Colors.grey.shade200),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+
+  const _ErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: ThixPolicy.danger.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.error_outline_rounded, size: 56, color: ThixPolicy.danger),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              context.vdT('Erreur de chargement', 'Loading error'),
+              style: ThixPolicy.h3Style.copyWith(fontWeight: ThixPolicy.bold, color: ThixPolicy.textMain),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            Semantics(
+              button: true,
+              label: context.vdT('Réessayer', 'Retry'),
+              child: ElevatedButton.icon(
+                onPressed: () {
+                  HapticFeedback.mediumImpact();
+                  onRetry();
+                },
+                icon: const Icon(Icons.refresh_rounded, color: Colors.white),
+                label: Text(
+                  context.vdT('Réessayer', 'Retry'),
+                  style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.bold, color: Colors.white),
+                ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: ThixPolicy.primary,
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(ThixPolicy.rFull)),
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
