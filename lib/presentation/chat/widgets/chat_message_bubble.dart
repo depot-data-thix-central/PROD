@@ -1,5 +1,6 @@
 // lib/presentation/chat/widgets/chat_message_bubble.dart
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -21,7 +22,8 @@ import 'package:thix_id/presentation/thix_market/core/chat_service.dart' as mark
 import 'package:thix_id/presentation/thix_market/core/currency_service.dart';
 import 'package:thix_id/presentation/thix_market/providers/currency_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
-
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 // ============================================================================
 // HELPERS
 // ============================================================================
@@ -1152,6 +1154,8 @@ class PhotoPager extends StatefulWidget {
 class _PhotoPagerState extends State<PhotoPager> {
   late final PageController _ctrl;
   int _idx = 0;
+  bool _downloading = false;
+
   @override
   void initState() {
     super.initState();
@@ -1165,8 +1169,41 @@ class _PhotoPagerState extends State<PhotoPager> {
     super.dispose();
   }
 
+  Future<void> _downloadImage(String url) async {
+    if (_downloading) return;
+    setState(() => _downloading = true);
+    final l10n = AppLocalizations.of(context);
+    try {
+      if (kIsWeb) {
+        // Sur le Web : ouvre l'image dans un nouvel onglet
+        await launchUrl(Uri.parse(url), webOnlyWindowName: '_blank');
+      } else {
+        // Sur Mobile : Téléchargement
+        final response = await HttpClient().getUrl(Uri.parse(url)).then((req) => req.close());
+        final bytes = await consolidateHttpClientResponseBytes(response);
+        
+        final dir = await getApplicationDocumentsDirectory();
+        final fileName = 'THIX_IMG_${DateTime.now().millisecondsSinceEpoch}.jpg';
+        final file = File(p.join(dir.path, fileName));
+        await file.writeAsBytes(bytes);
+
+        if (mounted) {
+          chatSnack(context, '✅ Image enregistrée : ${file.path}', ChatSnackKind.success);
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        chatSnack(context, 'Erreur lors du téléchargement : $e', ChatSnackKind.error);
+      }
+    } finally {
+      if (mounted) setState(() => _downloading = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentUrl = ChatValidators.sanitizeUrl(widget.images[_idx].mediaUrl);
+
     return Scaffold(
       backgroundColor: Colors.black,
       appBar: AppBar(
@@ -1174,6 +1211,19 @@ class _PhotoPagerState extends State<PhotoPager> {
         iconTheme: const IconThemeData(color: Colors.white),
         title: Text('${_idx + 1}/${widget.images.length}', style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         centerTitle: true,
+        actions: [
+          if (currentUrl != null)
+            _downloading
+                ? const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white)),
+                  )
+                : IconButton(
+                    icon: const Icon(Icons.download_rounded),
+                    tooltip: 'Télécharger',
+                    onPressed: () => _downloadImage(currentUrl),
+                  ),
+        ],
       ),
       body: PageView.builder(
         controller: _ctrl,
