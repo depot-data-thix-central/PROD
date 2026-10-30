@@ -137,8 +137,9 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
       return;
     }
 
+    // ✅ CORRECTION : Utilisation de la bonne route formateur
     final newLesson = await context.push<Lesson>(
-      '/education/instructor/lesson',
+      '/instructor/content/lessons/create',
       extra: {
         'moduleId': _validModuleId,
         'formationId': widget.courseId ?? widget.module?.formationId,
@@ -219,8 +220,9 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         }
 
         if (targetEvaluationId != null && mounted) {
+          // ✅ CORRECTION : Utilisation de la bonne route pour les questions
           await context.push(
-            '/education/instructor/questions/$targetEvaluationId',
+            '/instructor/evaluations/$targetEvaluationId/questions',
           );
         }
       } catch (e) {
@@ -237,8 +239,9 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         if (mounted) setState(() => _isLoading = false);
       }
     } else {
+      // ✅ CORRECTION : Utilisation de la bonne route formateur avec la leçon existante
       final updatedLesson = await context.push<Lesson>(
-        '/education/instructor/lesson',
+        '/instructor/content/lessons/create',
         extra: {
           'moduleId': _validModuleId,
           'formationId': widget.courseId ?? widget.module?.formationId,
@@ -258,7 +261,6 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
     }
   }
 
-  // ✅ CORRIGÉ : Supprime aussi de Supabase
   Future<void> _deleteLesson(Lesson lesson) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -283,14 +285,12 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
 
     setState(() => _isLoading = true);
     try {
-      // Supprimer de Supabase si la leçon a un ID
       if (lesson.id.isNotEmpty) {
         await Supabase.instance.client
             .from('lessons')
             .delete()
             .eq('id', lesson.id);
         
-        // Supprimer aussi l'évaluation associée si elle existe
         final evalRes = await Supabase.instance.client
             .from('evaluations')
             .select('id')
@@ -305,7 +305,6 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
         }
       }
 
-      // Supprimer de la liste locale
       if (mounted) {
         setState(() => _lessons.remove(lesson));
         ScaffoldMessenger.of(context).showSnackBar(
@@ -329,7 +328,6 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
     }
   }
 
-  // ✅ NOUVEAU : Réorganiser les leçons
   void _reorderLessons(int oldIndex, int newIndex) {
     setState(() {
       if (newIndex > oldIndex) {
@@ -338,7 +336,6 @@ class _ModuleManagementPageState extends State<ModuleManagementPage> {
       final lesson = _lessons.removeAt(oldIndex);
       _lessons.insert(newIndex, lesson);
       
-      // Mettre à jour l'ordre de toutes les leçons
       for (int i = 0; i < _lessons.length; i++) {
         _lessons[i] = _lessons[i].copyWith(order: i);
       }
