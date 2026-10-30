@@ -570,7 +570,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
   // ══════════════════════════════════════════════════════════════════════
   // APP BAR — Verre, icônes 40px cohérentes, wordmark typographié
   // ══════════════════════════════════════════════════════════════════════
-  Widget _buildAppBar(String? avatarUrl, String currentUserId) {
+   Widget _buildAppBar(String? avatarUrl, String currentUserId) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return SliverAppBar(
       backgroundColor: Colors.transparent,
@@ -578,6 +578,7 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
       scrolledUnderElevation: 0,
       floating: true,
       snap: true,
+      centerTitle: false,
       toolbarHeight: 60,
       titleSpacing: Ent.s4,
       flexibleSpace: ClipRect(
@@ -598,73 +599,50 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
           ),
         ),
       ),
-      title: Row(
-        children: [
-          // Wordmark : carré or + wordmark, plus fin qu'un simple texte gras
-          Container(
-            width: 26,
-            height: 26,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Ent.gold, Ent.goldDeep],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+      // Titre seul (plus de logo ⚡), se réduit si l'écran est étroit
+      title: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text.rich(
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'THIX',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.2,
+                  color: Ent.textMain(context),
+                ),
               ),
-              borderRadius: BorderRadius.circular(7),
-            ),
-            child: const Icon(Icons.bolt_rounded,
-                size: 15, color: Ent.ink),
-          ),
-          const SizedBox(width: Ent.s2),
-          Text.rich(
-            TextSpan(
-              children: [
-                TextSpan(
-                  text: 'THIX',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1.2,
-                    color: Ent.textMain(context),
-                  ),
+              TextSpan(
+                text: ' PRO',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w300,
+                  letterSpacing: 1.2,
+                  color: Ent.textSecondary(context),
                 ),
-                TextSpan(
-                  text: ' PRO',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w300,
-                    letterSpacing: 1.2,
-                    color: Ent.textSecondary(context),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
       actions: [
-        _AppBarAction(
-          icon: Icons.edit_rounded,
-          filled: true,
-          onTap: () => CreatePostDialog.show(context),
-        ),
-        const SizedBox(width: Ent.s2),
-        _AppBarAction(
-          icon: Icons.mic_none_rounded,
-          onTap: _openCreateAudioSpace,
-        ),
-        const SizedBox(width: Ent.s2),
+        // Bloc « Space » (ancien micro) → Audio Spaces
+        _SpaceButton(onTap: _openCreateAudioSpace),
+        const SizedBox(width: 6),
         _AppBarAction(
           icon: Icons.search_rounded,
           onTap: () => _safePush('/network/search'),
         ),
-        const SizedBox(width: Ent.s2),
+        const SizedBox(width: 6),
         _AppBarAction(
           icon: Icons.notifications_none_rounded,
           badge: true,
           onTap: () => _safePush('/network/notifications'),
         ),
-        const SizedBox(width: Ent.s2),
+        const SizedBox(width: 6),
         Padding(
           padding: const EdgeInsets.only(right: Ent.s4),
           child: GestureDetector(
