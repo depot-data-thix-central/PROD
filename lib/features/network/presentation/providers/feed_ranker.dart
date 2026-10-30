@@ -26,8 +26,12 @@ class _FeedRankerLogger {
 // CONSTANTS
 // ============================================================================
 
-/// Demi-vie de décroissance temporelle (en heures)
-const double _kDecayHalfLifeHours = 24.0;
+/// Constante de temps de la décroissance (en heures) : après ~10 h un post
+/// perd 63 % de son score, après 2-3 jours il est quasi invisible.
+const double _kDecayHalfLifeHours = 10.0;
+
+/// Constante de temps pour l'onglet « Populaires » (≈ 3 jours)
+const double _kPopularDecayHours = 72.0;
 
 /// Score d'affinité pour un post d'une connexion
 const double _kAffinityConnection = 1.0;
@@ -54,14 +58,15 @@ const double _kMaxScore = 1000.0;
 // FEED RANKER (Production Enterprise)
 // ============================================================================
 
-/// Algorithme de ranking intelligent type Facebook EdgeRank
+/// Algorithme de ranking type Facebook EdgeRank, centré sur la RÉCENCE.
 ///
-/// Score = (Affinité × Poids × Décroissance) + Boost
+/// Score = Affinité × Engagement × Décroissance(âge) × Boosts
 ///
-/// - Affinité : Connexion avec l'auteur (0.0 à 1.0)
-/// - Poids : Type d'interaction (like=1, comment=2)
-/// - Décroissance : Âge du post (plus ancien = score plus bas)
-/// - Boost : Posts épinglés, tendances, etc.
+/// - Affinité : connexion avec l'auteur (1.0 connexion, 0.3 inconnu)
+/// - Engagement : 1 + ln(1 + likes + 2×commentaires) — toujours >= 1,
+///   donc un post récent à 0 like n'est jamais écrasé
+/// - Décroissance : e^(-âge/10h) — les posts anciens disparaissent
+/// - Boosts : épinglé, médias
 class FeedRanker {
   FeedRanker._();
 
@@ -72,13 +77,15 @@ class FeedRanker {
     required String feedType,
   }) {
     if (posts.isEmpty) {
-      _FeedRankerLogger.info('Rank called on empty list',
-          {'feedType': feedType});
+      _FeedRankerLogger.info('Rank called on empty list', {'feedType': feedType});
       return posts;
     }
 
-    _FeedRankerLogger.info('Ranking posts',
-        {'count': posts.length, 'feedType': feedType, 'connections': connectionIds.length});
+    _FeedRankerLogger.info('Ranking posts', {
+      'count': posts.length,
+      'feedType': feedType,
+      'connections': connectionIds.length,
+    });
 
     try {
       switch (feedType) {
@@ -90,39 +97,33 @@ class FeedRanker {
           return _rankByNetwork(posts, connectionIds);
         case 'smart':
         case 'edge_rank':
-          // ✅ Algorithme EdgeRank activé
           return _rankBySmartAlgorithm(posts, connectionIds);
         case 'all':
         default:
-          // ✅ Ordre déjà calculé par get_smart_feed (DB) — on ne re-trie PAS
-          _FeedRankerLogger.info('Passthrough (DB already sorted)',
+          _FeedRankerLogger.info('Passthrough (no re-sort)',
               {'feedType': feedType, 'count': posts.length});
           return posts;
       }
     } catch (e, stack) {
       _FeedRankerLogger.error('Ranking failed, returning original',
           {'feedType': feedType, 'error': '$e', 'stack': stack.toString()});
-      // Fallback : retourner la liste originale non triée
       return posts;
     }
   }
 
   // ══════════════════════════════════════════════════════════════
-  // SMART ALGORITHM (EdgeRank-like)
+  // SMART ALGORITHM (EdgeRank-like, récence forte)
   // ══════════════════════════════════════════════════════════════
 
-  /// Algorithme intelligent (Facebook EdgeRank-like)
   static List<NetworkPost> _rankBySmartAlgorithm(
     List<NetworkPost> posts,
     Set<String> connectionIds,
   ) {
     final now = DateTime.now().toUtc();
 
-    // Validation : filtrer les posts invalides
     final validPosts = _filterValidPosts(posts);
     if (validPosts.isEmpty) {
-      _FeedRankerLogger.warn('No valid posts after filtering',
-          {'original': posts.length});
+      _FeedRankerLogger.warn('No valid posts after filtering', {'original': posts.length});
       return posts;
     }
 
@@ -131,13 +132,18 @@ class FeedRanker {
       return (post: post, score: score);
     }).toList();
 
-    // Tri décroissant par score
-    scored.sort((a, b) => b.score.compareTo(a.score));
+    // Tri décroissant par score ; à score égal, le plus récent d'abord
+    scored.sort((a, b) {
+      final c = b.score.compareTo(a.score);
+      return c != 0 ? c : b.post.createdAt.compareTo(a.post.createdAt);
+    });
 
     final result = scored.map((e) => e.post).toList();
 
-    _FeedRankerLogger.info('Smart ranking completed',
-        {'posts': result.length, 'topScore': scored.first.score.toStringAsFixed(2)});
+    _FeedRankerLogger.info('Smart ranking completed', {
+      'posts': result.length,
+      'topScore': scored.first.score.toStringAsFixed(2),
+    });
 
     return result;
   }
@@ -148,72 +154,55 @@ class FeedRanker {
     Set<String> connectionIds,
     DateTime now,
   ) {
-    // 1. Affinité (0.0 à 1.0)
+    // 1. Affinité
     final affinity = connectionIds.contains(post.userId)
         ? _kAffinityConnection
         : _kAffinityStranger;
 
-    // 2. Poids des interactions
+    // 2. Engagement (toujours >= 1)
     final engagementScore = _calculateEngagementScore(post);
 
-    // 3. Décroissance temporelle (demi-vie de 24h)
-    final ageInHours = now.difference(post.createdAt).inHours.toDouble();
-
-    // Protection : si post a une date future, clamp à 0
+    // 3. Décroissance temporelle précise (minutes) : e^(-t/10h)
+    final ageInHours = now.difference(post.createdAt.toUtc()).inMinutes / 60.0;
     final safeAgeInHours = ageInHours < 0 ? 0.0 : ageInHours;
-
-    // Décroissance exponentielle : e^(-t/24)
     final decay = exp(-safeAgeInHours / _kDecayHalfLifeHours);
 
-    // 4. Boost pour posts épinglés
+    // 4. Boosts
     final pinBoost = post.isPinned ? _kPinBoost : 1.0;
-
-    // 5. Boost pour posts avec médias
     final mediaBoost = post.hasMedia ? _kMediaBoost : 1.0;
 
-    // Score final
     var score = affinity * engagementScore * decay * pinBoost * mediaBoost;
 
-    // Protection contre NaN/Infinity
     if (score.isNaN || score.isInfinite) {
       _FeedRankerLogger.warn('Invalid score detected, using fallback',
           {'postId': post.id, 'score': '$score'});
       score = 0.0;
     }
 
-    // Clamp entre min et max
     return score.clamp(_kMinScore, _kMaxScore);
   }
 
-  /// Score d'engagement (likes + comments × 2)
+  /// Engagement adouci (log) : 1 + ln(1 + likes + 2×commentaires)
   static double _calculateEngagementScore(NetworkPost post) {
-    final likes = post.likesCount.toDouble();
-    final comments = post.commentsCount.toDouble();
-
-    return likes + (comments * _kCommentMultiplier);
+    final raw = post.likesCount + (post.commentsCount * _kCommentMultiplier);
+    return 1.0 + log(1.0 + raw);
   }
 
-  /// Filtre les posts valides (createdAt non null, etc.)
+  /// Filtre les posts valides
   static List<NetworkPost> _filterValidPosts(List<NetworkPost> posts) {
     final valid = <NetworkPost>[];
     int invalidCount = 0;
 
     for (final post in posts) {
       try {
-        // Validation minimale
         if (post.id.isEmpty) {
-          invalidCount++;
-          continue;
-        }
-        if (post.createdAt == null) {
           invalidCount++;
           continue;
         }
         valid.add(post);
       } catch (e) {
         invalidCount++;
-        _FeedRankerLogger.warn('Invalid post skipped in ranking',
-            {'error': '$e'});
+        _FeedRankerLogger.warn('Invalid post skipped in ranking', {'error': '$e'});
       }
     }
 
@@ -226,16 +215,23 @@ class FeedRanker {
   }
 
   // ══════════════════════════════════════════════════════════════
-  // POPULARITY RANKING
+  // POPULARITY RANKING (likes pondérés par l'âge)
   // ══════════════════════════════════════════════════════════════
 
-  /// Tri par popularité (likes décroissants)
   static List<NetworkPost> _rankByPopularity(List<NetworkPost> posts) {
-    final sorted = List<NetworkPost>.from(posts);
-    sorted.sort((a, b) => b.likesCount.compareTo(a.likesCount));
+    final now = DateTime.now().toUtc();
 
-    _FeedRankerLogger.info('Popularity ranking completed',
-        {'count': sorted.length, 'topLikes': sorted.first.likesCount});
+    double score(NetworkPost p) {
+      final raw = p.likesCount + (p.commentsCount * _kCommentMultiplier);
+      final ageH = (now.difference(p.createdAt.toUtc()).inMinutes / 60.0)
+          .clamp(0.0, 1000000.0);
+      return (1.0 + raw) * exp(-ageH / _kPopularDecayHours);
+    }
+
+    final sorted = List<NetworkPost>.from(posts);
+    sorted.sort((a, b) => score(b).compareTo(score(a)));
+
+    _FeedRankerLogger.info('Popularity ranking completed', {'count': sorted.length});
 
     return sorted;
   }
@@ -244,14 +240,12 @@ class FeedRanker {
   // RECENCY RANKING
   // ══════════════════════════════════════════════════════════════
 
-  /// Tri par récence (date décroissante)
   static List<NetworkPost> _rankByRecency(List<NetworkPost> posts) {
     final validPosts = _filterValidPosts(posts);
     final sorted = List<NetworkPost>.from(validPosts);
     sorted.sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-    _FeedRankerLogger.info('Recency ranking completed',
-        {'count': sorted.length});
+    _FeedRankerLogger.info('Recency ranking completed', {'count': sorted.length});
 
     return sorted;
   }
@@ -278,8 +272,7 @@ class FeedRanker {
       return b.createdAt.compareTo(a.createdAt);
     });
 
-    final connectionCount =
-        sorted.where((p) => connectionIds.contains(p.userId)).length;
+    final connectionCount = sorted.where((p) => connectionIds.contains(p.userId)).length;
 
     _FeedRankerLogger.info('Network ranking completed',
         {'count': sorted.length, 'connections': connectionCount});
