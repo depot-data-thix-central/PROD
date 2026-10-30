@@ -398,22 +398,27 @@ class _EditAnnouncementPageState extends State<EditAnnouncementPage> {
             ),
           ],
         ),
-        body: PublishAnnouncementForm(
-          shopId: shopId,
-          editAnnouncement: _announcement,
-          onDirty: () {
-            if (mounted && !_hasUnsavedChanges) {
-              setState(() => _hasUnsavedChanges = true);
-            }
-          },
-          onSuccess: (updatedData) {
-            if (!mounted) return;
-            HapticFeedback.mediumImpact();
-            setState(() => _hasUnsavedChanges = false);
-            _showSuccess('Annonce mise à jour avec succès');
-            debugPrint('[EditAnnouncement] ✅ Updated successfully');
-            Navigator.pop(context, updatedData);
-          },
+        // ✅ CORRECTION : Envelopper dans SingleChildScrollView pour que le bouton "Enregistrer" soit visible
+        body: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          child: PublishAnnouncementForm(
+            shopId: shopId,
+            editAnnouncement: _announcement,
+            onDirty: () {
+              if (mounted && !_hasUnsavedChanges) {
+                setState(() => _hasUnsavedChanges = true);
+              }
+            },
+            onSuccess: (updatedData) {
+              if (!mounted) return;
+              HapticFeedback.mediumImpact();
+              setState(() => _hasUnsavedChanges = false);
+              _showSuccess('Annonce mise à jour avec succès');
+              debugPrint('[EditAnnouncement] ✅ Updated successfully');
+              Navigator.pop(context, updatedData);
+            },
+          ),
         ),
       ),
     );
