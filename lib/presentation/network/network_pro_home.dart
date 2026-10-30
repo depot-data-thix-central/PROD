@@ -1225,7 +1225,55 @@ class _NetworkProHomeState extends ConsumerState<NetworkProHome>
 // ════════════════════════════════════════════════════════════════════════════
 // COMPOSANTS PRIVÉS
 // ════════════════════════════════════════════════════════════════════════════
+/// Bloc « Space » : micro + texte, ouvre la création d'un Audio Space.
+class _SpaceButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _SpaceButton({required this.onTap});
 
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: 'Space',
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Ent.ink, Color(0xFF2A2A2E)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(Ent.rPill),
+            border: Border.all(color: Ent.gold.withValues(alpha: 0.45), width: 1),
+            boxShadow: Ent.shadow(Ent.ink, a: 0.25, blur: 8, y: 2),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.mic_rounded, size: 16, color: Ent.gold),
+              SizedBox(width: 6),
+              Text(
+                'Space',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12.5,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 /// Bouton d'app bar : 40px de cible tactile, style cohérent, option badge
 /// notification et variant « filled » pour l'action primaire.
 class _AppBarAction extends StatelessWidget {
