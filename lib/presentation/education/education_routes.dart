@@ -265,11 +265,24 @@ List<GoRoute> instructorRoutes = [
     },
   ),
 
+  // ✅ CORRECTION ICI : Récupération des paramètres extra pour la création/édition de leçon
   GoRoute(
     path: '/instructor/content/lessons/create',
     name: 'instructorCreateLesson',
-    pageBuilder: (_, __) =>
-        const NoTransitionPage(child: LessonManagementPage()),
+    pageBuilder: (_, state) {
+      final extras = state.extra as Map<String, dynamic>? ?? {};
+      final moduleId = extras['moduleId'] as String?;
+      final formationId = extras['formationId'] as String?;
+      final lesson = extras['lesson']; // Peut être null (création) ou un objet Lesson (édition)
+      
+      return NoTransitionPage(
+        child: LessonManagementPage(
+          moduleId: moduleId,
+          formationId: formationId,
+          lesson: lesson,
+        ),
+      );
+    },
   ),
 
   GoRoute(
