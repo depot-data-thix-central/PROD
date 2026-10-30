@@ -1,8 +1,8 @@
 // lib/presentation/network/widgets/post_card_parts.dart
 //
-// Parties communes de PostCard : config, validateurs, cache, notifier,
-// galerie, lecteur vidéo, badges, audio, aperçu de lien, miniature vidéo,
-// likers, boutons, sélecteur de réactions.
+// Parties communes de PostCard : config, thème, validateurs, cache, notifier
+// (compteurs réels like/commentaires), image adaptative, galerie, vidéo,
+// badges, audio, aperçu de lien, miniature vidéo, likers, boutons, réactions.
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
@@ -25,13 +25,25 @@ import 'package:thix_id/models/network_post.dart';
 import 'package:thix_id/services/media_saver.dart';
 
 // ============================================================================
-// PALETTE + CONFIG
+// PALETTE + THÈME (aligné sur la home « Enterprise » : zinc + or)
 // ============================================================================
 class PcMono {
   PcMono._();
-  static const Color accent = Color(0xFF3F3F46);
-  static const Color accentDeep = Color(0xFF18181B);
-  static const Color accentSoft = Color(0xFF71717A);
+  static const Color accent = Color(0xFFA16207); // or profond (liens, accents)
+  static const Color accentDeep = Color(0xFF713F12);
+  static const Color accentSoft = Color(0xFFEAB308);
+}
+
+class PcTheme {
+  PcTheme._();
+  static const Color gold = Color(0xFFEAB308);
+  static const Color goldDeep = Color(0xFFA16207);
+  static bool dark(BuildContext c) => Theme.of(c).brightness == Brightness.dark;
+  static Color card(BuildContext c) => dark(c) ? const Color(0xFF18181B) : Colors.white;
+  static Color soft(BuildContext c) => dark(c) ? const Color(0xFF27272A) : const Color(0xFFF4F4F5);
+  static Color text(BuildContext c) => dark(c) ? const Color(0xFFFAFAFA) : const Color(0xFF09090B);
+  static Color text2(BuildContext c) => dark(c) ? const Color(0xFFA1A1AA) : const Color(0xFF52525B);
+  static Color line(BuildContext c) => dark(c) ? Colors.white.withValues(alpha: 0.08) : const Color(0xFFE4E4E7);
 }
 
 class PcConfig {
@@ -46,6 +58,8 @@ class PcConfig {
   static const Duration reportThrottle = Duration(milliseconds: 1500);
   static const Duration repostThrottle = Duration(milliseconds: 1500);
   static const Duration likeVerifyTimeout = Duration(seconds: 6);
+  static const Duration countsTtl = Duration(seconds: 45);
+  static const Duration cacheTtl = Duration(minutes: 5);
   static const int maxContentChars = 250;
   static const int maxContentLines = 7;
   static const int maxParseDepth = 6;
@@ -53,20 +67,23 @@ class PcConfig {
   static const int maxReportDetailsLength = 500;
   static const int maxRepostQuoteLength = 500;
   static const int cacheMaxSize = 50;
-  static const Duration cacheTtl = Duration(minutes: 5);
-  static const double dialogBlurSigma = 10;
+  static const int imageRatioCacheMax = 400;
   static const int maxLikersFetched = 5;
   static const int avatarFallbackSize = 256;
-  static const double cardBottomBorderWidth = 1.2;
-  static const double cardFirstTopBorderWidth = 2.0;
   static const int maxVideoFrameFallbacks = 3;
+  static const double cardBottomBorderWidth = 1.0;
+  static const double cardFirstTopBorderWidth = 1.5;
   static const String permalinkBase = 'https://thix.id/network/post/';
 
-  // ✅ Ratios FIXES des médias → la carte ne change plus de hauteur au chargement
-  static const double singleMediaRatio = 1.0; // 1 photo
-  static const double videoRatio = 16 / 9; // 1 vidéo
-  static const double twoMediaRatio = 1.6; // 2 médias
-  static const double multiMediaRatio = 1.4; // 3 médias ou plus
+  /// ⚠️ Nom de la table des commentaires (adapte si différent)
+  static const String commentsTable = 'post_comments';
+
+  // Médias : ratio réel de la photo, borné (façon Facebook)
+  static const double minImageRatio = 0.75; // 3:4 (plus haut → coupé en bas)
+  static const double maxImageRatio = 1.91; // paysage max
+  static const double videoRatio = 16 / 9;
+  static const double twoMediaRatio = 1.6;
+  static const double multiMediaRatio = 1.4;
 
   static const Set<String> knownRedirectDomains = {
     'facebook.com', 'fb.me', 'l.facebook.com', 'share.google', 'goo.gl', 'g.co',
@@ -176,7 +193,7 @@ String pcPlainText(String content) {
   return s.trim();
 }
 
-/// ✅ Affiche toujours le nombre (0 inclus)
+/// Affiche toujours le nombre (0 inclus)
 String pcCount(int count) {
   if (count <= 0) return '0';
   if (count >= 1000000) return '${(count / 1000000).toStringAsFixed(1)}M';
@@ -216,7 +233,6 @@ String pcTr(AppLocalizations l10n, String key, String fallback) {
 
 bool _timeagoReady = false;
 
-/// ✅ "il y a 18 jours" (fr) au lieu de "18 days ago"
 String pcTimeAgo(BuildContext context, DateTime dt) {
   if (!_timeagoReady) {
     _timeagoReady = true;
@@ -226,7 +242,7 @@ String pcTimeAgo(BuildContext context, DateTime dt) {
   return timeago.format(dt.toLocal(), locale: code == 'fr' ? 'fr' : 'en');
 }
 
-/// ✅ Largeur de décodage = largeur écran × densité (qualité nette)
+/// Largeur de décodage = largeur écran × densité (qualité nette)
 int pcCacheWidth(BuildContext context, {double fraction = 1}) {
   final w = MediaQuery.sizeOf(context).width * MediaQuery.devicePixelRatioOf(context) * fraction;
   return w.clamp(300, 1600).round();
@@ -307,6 +323,15 @@ class _CacheEntry<T> {
   _CacheEntry(this.value) : timestamp = DateTime.now();
 }
 
+/// Compteurs réels lus en base (likes + commentaires)
+class PcCounts {
+  final int likes;
+  final int comments;
+  final DateTime at;
+  PcCounts(this.likes, this.comments) : at = DateTime.now();
+  bool get fresh => DateTime.now().difference(at) < PcConfig.countsTtl;
+}
+
 class PcCache {
   PcCache._();
   static final PcCache instance = PcCache._();
@@ -314,11 +339,13 @@ class PcCache {
   final LinkedHashMap<String, _CacheEntry<List<String>>> _likers = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<Map<String, dynamic>>> _linkPreviews = LinkedHashMap();
   final LinkedHashMap<String, _CacheEntry<String>> _videoThumbs = LinkedHashMap();
+  final Map<String, double> _imageRatios = {};
   final Map<String, bool> optimisticLikes = {};
   final Map<String, int> optimisticLikeCounts = {};
   final Map<String, bool> optimisticSaves = {};
   final Map<String, bool> optimisticReposts = {};
   final Map<String, int> optimisticRepostCounts = {};
+  final Map<String, PcCounts> counts = {};
 
   /// postId → code de réaction (like, love, haha, wow, fire)
   final Map<String, String> myReactions = {};
@@ -329,6 +356,17 @@ class PcCache {
   void setLinkPreview(String url, Map<String, dynamic> d) => _set(_linkPreviews, url, d);
   String? getVideoThumb(String url) => _get(_videoThumbs, url);
   void setVideoThumb(String url, String t) => _set(_videoThumbs, url, t);
+
+  double? getImageRatio(String url) => _imageRatios[url];
+  void setImageRatio(String url, double r) {
+    if (_imageRatios.length >= PcConfig.imageRatioCacheMax) _imageRatios.remove(_imageRatios.keys.first);
+    _imageRatios[url] = r;
+  }
+
+  void setCounts(String postId, int likes, int comments) {
+    if (counts.length > 300) counts.remove(counts.keys.first);
+    counts[postId] = PcCounts(likes, comments);
+  }
 
   T? _get<T>(LinkedHashMap<String, _CacheEntry<T>> map, String key) {
     final e = map[key];
@@ -378,16 +416,12 @@ class PcReactionPicker {
       barrierColor: Colors.black12,
       transitionDuration: const Duration(milliseconds: 170),
       pageBuilder: (ctx, _, __) {
-  final size = MediaQuery.sizeOf(ctx);
-  final w = pcReactions.length * 52.0 + 16;
-  final double left = anchor.left
-      .clamp(8.0, max(8.0, size.width - w - 8))
-      .toDouble();
-  final double top = max(anchor.top - 66, 48.0).toDouble();
-  return Stack(children: [
-    Positioned(left: left, top: top, child: const _ReactionPill()),
-  ]);
-},
+        final size = MediaQuery.sizeOf(ctx);
+        final w = pcReactions.length * 52.0 + 16;
+        final double left = anchor.left.clamp(8.0, max(8.0, size.width - w - 8)).toDouble();
+        final double top = max(anchor.top - 66, 48.0).toDouble();
+        return Stack(children: [Positioned(left: left, top: top, child: const _ReactionPill())]);
+      },
       transitionBuilder: (ctx, anim, _, child) => FadeTransition(
         opacity: anim,
         child: ScaleTransition(
@@ -405,30 +439,27 @@ class _ReactionPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: PcTheme.card(context),
       elevation: 10,
       shadowColor: Colors.black38,
       borderRadius: BorderRadius.circular(32),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final r in pcReactions)
-              GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  Navigator.of(context).pop(r.key);
-                },
-                child: SizedBox(
-                  width: 52,
-                  height: 48,
-                  child: Center(child: Text(r.value, style: const TextStyle(fontSize: 30))),
-                ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          for (final r in pcReactions)
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                Navigator.of(context).pop(r.key);
+              },
+              child: SizedBox(
+                width: 52,
+                height: 48,
+                child: Center(child: Text(r.value, style: const TextStyle(fontSize: 30))),
               ),
-          ],
-        ),
+            ),
+        ]),
       ),
     );
   }
@@ -448,7 +479,7 @@ final _originalPostProvider = FutureProvider.autoDispose.family<NetworkPost?, St
 });
 
 // ============================================================================
-// STATE NOTIFIER
+// STATE NOTIFIER — compteurs RÉELS (lus en base) + like optimiste
 // ============================================================================
 final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, NetworkPost>(
   (ref) => throw UnimplementedError('postItemProvider doit être surchargé par PostCard'),
@@ -456,38 +487,41 @@ final postItemProvider = StateNotifierProvider.autoDispose<PostItemNotifier, Net
 
 class PostItemNotifier extends StateNotifier<NetworkPost> {
   PostItemNotifier(NetworkPost post, this.ref) : super(post) {
-    bool changed = false;
-    bool newIsLiked = state.isLiked;
-    int newLikesCount = state.likesCount;
-    bool newIsSaved = state.isSaved;
-    bool newIsReposted = state.isReposted;
-    int newRepostsCount = state.repostsCount;
     final c = PcCache.instance;
-    final hasOptimisticLike = c.optimisticLikes.containsKey(post.id);
-    if (hasOptimisticLike) {
-      newIsLiked = c.optimisticLikes[post.id]!;
-      newLikesCount = c.optimisticLikeCounts[post.id] ?? state.likesCount;
-      changed = true;
+    var liked = post.isLiked;
+    var likes = post.likesCount;
+    var comments = post.commentsCount;
+    var saved = post.isSaved;
+    var reposted = post.isReposted;
+    var reposts = post.repostsCount;
+
+    final hasOptLike = c.optimisticLikes.containsKey(post.id);
+    if (hasOptLike) {
+      liked = c.optimisticLikes[post.id]!;
+      likes = c.optimisticLikeCounts[post.id] ?? likes;
     }
-    if (c.optimisticSaves.containsKey(post.id)) {
-      newIsSaved = c.optimisticSaves[post.id]!;
-      changed = true;
+    final cn = c.counts[post.id];
+    if (cn != null) {
+      likes = cn.likes;
+      comments = cn.comments;
     }
+    if (liked && likes < 1) likes = 1;
+    if (c.optimisticSaves.containsKey(post.id)) saved = c.optimisticSaves[post.id]!;
     if (c.optimisticReposts.containsKey(post.id)) {
-      newIsReposted = c.optimisticReposts[post.id]!;
-      newRepostsCount = c.optimisticRepostCounts[post.id] ?? state.repostsCount;
-      changed = true;
+      reposted = c.optimisticReposts[post.id]!;
+      reposts = c.optimisticRepostCounts[post.id] ?? reposts;
     }
-    if (changed) {
-      state = state.copyWith(
-        isLiked: newIsLiked,
-        likesCount: newLikesCount,
-        isSaved: newIsSaved,
-        isReposted: newIsReposted,
-        repostsCount: newRepostsCount,
-      );
-    }
-    if (!hasOptimisticLike && _isAuthenticated) _verifyLikeStatusFromServer(post.id);
+    state = state.copyWith(
+      isLiked: liked,
+      likesCount: likes,
+      commentsCount: comments,
+      isSaved: saved,
+      isReposted: reposted,
+      repostsCount: reposts,
+    );
+
+    if (_isAuthenticated && !hasOptLike) _verifyLikeStatusFromServer(post.id);
+    refreshCounts();
   }
 
   final Ref ref;
@@ -502,6 +536,46 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
 
   bool get _isAuthenticated => Supabase.instance.client.auth.currentUser != null;
 
+  Future<int?> _count(String table, String col, String postId) async {
+    try {
+      final res = await Supabase.instance.client
+          .from(table)
+          .select(col)
+          .eq('post_id', postId)
+          .count(CountOption.exact)
+          .timeout(PcConfig.networkTimeout);
+      return res.count;
+    } catch (e) {
+      PcLog.warn('count failed', {'table': table, 'error': '$e'});
+      return null;
+    }
+  }
+
+  /// ✅ Lit les VRAIS compteurs en base (post_likes + table commentaires).
+  Future<void> refreshCounts({bool force = false}) async {
+    if (_isDisposed) return;
+    final id = state.id;
+    final cached = PcCache.instance.counts[id];
+    if (!force && cached != null && cached.fresh) return;
+    final results = await Future.wait<int?>([
+      _count('post_likes', 'post_id', id),
+      _count(PcConfig.commentsTable, 'id', id),
+    ]);
+    if (_isDisposed) return;
+    final likes = results[0];
+    final comments = results[1];
+    if (likes == null && comments == null) return;
+
+    var l = _likeBusy ? state.likesCount : (likes ?? state.likesCount);
+    if (state.isLiked && l < 1) l = 1;
+    final cm = comments ?? state.commentsCount;
+    if (l != state.likesCount || cm != state.commentsCount) {
+      state = state.copyWith(likesCount: l, commentsCount: cm);
+    }
+    PcCache.instance.setCounts(id, l, cm);
+    PcCache.instance.optimisticLikeCounts[id] = l;
+  }
+
   Future<void> _verifyLikeStatusFromServer(String postId) async {
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
@@ -513,13 +587,18 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
           .eq('user_id', uid)
           .maybeSingle()
           .timeout(PcConfig.likeVerifyTimeout);
+      if (_isDisposed || _likeBusy) return;
       final reallyLiked = res != null;
-      if (_isDisposed) return;
-      if (reallyLiked != state.isLiked) state = state.copyWith(isLiked: reallyLiked);
+      if (reallyLiked != state.isLiked) {
+        var n = state.likesCount;
+        if (reallyLiked && n < 1) n = 1;
+        state = state.copyWith(isLiked: reallyLiked, likesCount: n);
+      } else if (reallyLiked && state.likesCount < 1) {
+        state = state.copyWith(likesCount: 1);
+      }
       PcCache.instance.optimisticLikes[postId] = reallyLiked;
       PcCache.instance.optimisticLikeCounts[postId] = state.likesCount;
 
-      // Réaction enregistrée (non bloquant : la table peut ne pas exister)
       if (reallyLiked && !PcCache.instance.myReactions.containsKey(postId)) {
         try {
           final r = await Supabase.instance.client
@@ -544,46 +623,53 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   Future<void> toggleLike() async {
     if (_likeBusy || !_isAuthenticated || _isDisposed) return;
     _likeBusy = true;
+    final id = state.id;
     final wasLiked = state.isLiked;
     final oldCount = state.likesCount;
     final newLiked = !wasLiked;
     final newCount = wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1;
     state = state.copyWith(isLiked: newLiked, likesCount: newCount);
-    PcCache.instance.optimisticLikes[state.id] = newLiked;
-    PcCache.instance.optimisticLikeCounts[state.id] = newCount;
+    PcCache.instance.optimisticLikes[id] = newLiked;
+    PcCache.instance.optimisticLikeCounts[id] = newCount;
+    PcCache.instance.setCounts(id, newCount, state.commentsCount);
     if (wasLiked) {
-      PcCache.instance.myReactions.remove(state.id);
-      _deleteReaction(state.id);
+      PcCache.instance.myReactions.remove(id);
+      _deleteReaction(id);
     }
+    var failed = false;
     try {
       final service = ref.read(networkServiceProvider);
       try {
-        final result = await service.togglePostLike(state.id).timeout(PcConfig.networkTimeout);
+        final result = await service.togglePostLike(id).timeout(PcConfig.networkTimeout);
         if (_isDisposed) return;
-        state = state.copyWith(isLiked: result.liked, likesCount: result.likesCount);
-        PcCache.instance.optimisticLikes[state.id] = result.liked;
-        PcCache.instance.optimisticLikeCounts[state.id] = result.likesCount;
+        // On ne fait PAS confiance à result.likesCount (peut valoir 0) :
+        // seul l'état liked est pris, le compteur est relu en base ensuite.
+        state = state.copyWith(isLiked: result.liked);
+        PcCache.instance.optimisticLikes[id] = result.liked;
       } catch (_) {
         if (_isDisposed) return;
         if (wasLiked) {
-          await service.unlikePost(state.id).timeout(PcConfig.networkTimeout);
+          await service.unlikePost(id).timeout(PcConfig.networkTimeout);
         } else {
-          await service.likePost(state.id).timeout(PcConfig.networkTimeout);
+          await service.likePost(id).timeout(PcConfig.networkTimeout);
         }
       }
     } catch (e) {
-      PcLog.error('toggleLike failed', {'postId': state.id});
+      failed = true;
+      PcLog.error('toggleLike failed', {'postId': id});
       if (!_isDisposed) {
         state = state.copyWith(isLiked: wasLiked, likesCount: oldCount);
-        PcCache.instance.optimisticLikes[state.id] = wasLiked;
-        PcCache.instance.optimisticLikeCounts[state.id] = oldCount;
+        PcCache.instance.optimisticLikes[id] = wasLiked;
+        PcCache.instance.optimisticLikeCounts[id] = oldCount;
+        PcCache.instance.setCounts(id, oldCount, state.commentsCount);
       }
     } finally {
       if (!_isDisposed) _likeBusy = false;
     }
+    if (!_isDisposed && !failed) await refreshCounts(force: true);
   }
 
-  /// ✅ Réaction (👍 ❤️ 😂 😮 🔥) : like le post si besoin + enregistre la réaction
+  /// Réaction (👍 ❤️ 😂 😮 🔥) : like le post si besoin + enregistre la réaction
   Future<void> react(String code) async {
     if (!_isAuthenticated || _isDisposed || pcReactionEmoji(code) == null) return;
     final id = state.id;
@@ -641,12 +727,160 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
   }
 
   void incrementRepost() {
-    if (!_isDisposed) {
-      final n = state.repostsCount + 1;
-      state = state.copyWith(repostsCount: n, isReposted: true);
-      PcCache.instance.optimisticReposts[state.id] = true;
-      PcCache.instance.optimisticRepostCounts[state.id] = n;
+    if (_isDisposed) return;
+    final n = state.repostsCount + 1;
+    state = state.copyWith(repostsCount: n, isReposted: true);
+    PcCache.instance.optimisticReposts[state.id] = true;
+    PcCache.instance.optimisticRepostCounts[state.id] = n;
+  }
+}
+
+// ============================================================================
+// ANIMATION « POP » (pulse du ⚡ au like)
+// ============================================================================
+class PcPop extends StatefulWidget {
+  final bool active;
+  final Widget child;
+  const PcPop({super.key, required this.active, required this.child});
+
+  @override
+  State<PcPop> createState() => _PcPopState();
+}
+
+class _PcPopState extends State<PcPop> with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 340));
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.4).chain(CurveTween(curve: Curves.easeOut)), weight: 40),
+    TweenSequenceItem(tween: Tween(begin: 1.4, end: 1.0).chain(CurveTween(curve: Curves.easeIn)), weight: 60),
+  ]).animate(_c);
+
+  @override
+  void didUpdateWidget(covariant PcPop old) {
+    super.didUpdateWidget(old);
+    if (widget.active && !old.active) _c.forward(from: 0);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => ScaleTransition(scale: _scale, child: widget.child);
+}
+
+// ============================================================================
+// IMAGE ADAPTATIVE — ratio réel de la photo (façon Facebook)
+//   • ratio borné [minImageRatio, maxImageRatio]
+//   • si coupe nécessaire → coupe EN BAS (alignement haut), jamais en haut
+//   • ratio mémorisé → pas de saut de hauteur au re-scroll
+// ============================================================================
+class PcAdaptiveImage extends StatefulWidget {
+  final String url;
+  final int cacheWidth;
+  final VoidCallback? onTap;
+  const PcAdaptiveImage({super.key, required this.url, required this.cacheWidth, this.onTap});
+
+  @override
+  State<PcAdaptiveImage> createState() => _PcAdaptiveImageState();
+}
+
+class _PcAdaptiveImageState extends State<PcAdaptiveImage> {
+  late CachedNetworkImageProvider _provider;
+  ImageStream? _stream;
+  ImageStreamListener? _listener;
+  double? _ratio;
+  bool _error = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ratio = PcCache.instance.getImageRatio(widget.url);
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(covariant PcAdaptiveImage old) {
+    super.didUpdateWidget(old);
+    if (old.url != widget.url) {
+      _detach();
+      _ratio = PcCache.instance.getImageRatio(widget.url);
+      _error = false;
+      _resolve();
     }
+  }
+
+  void _resolve() {
+    _provider = CachedNetworkImageProvider(widget.url, maxWidth: widget.cacheWidth);
+    final stream = _provider.resolve(ImageConfiguration.empty);
+    _listener = ImageStreamListener(
+      (info, _) {
+        final w = info.image.width;
+        final h = info.image.height;
+        if (w <= 0 || h <= 0) return;
+        final r = w / h;
+        PcCache.instance.setImageRatio(widget.url, r);
+        if (mounted && (_ratio == null || (r - _ratio!).abs() > 0.01)) setState(() => _ratio = r);
+      },
+      onError: (_, __) {
+        if (mounted) setState(() => _error = true);
+      },
+    );
+    stream.addListener(_listener!);
+    _stream = stream;
+  }
+
+  void _detach() {
+    if (_stream != null && _listener != null) _stream!.removeListener(_listener!);
+    _stream = null;
+    _listener = null;
+  }
+
+  @override
+  void dispose() {
+    _detach();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final soft = PcTheme.soft(context);
+    if (_error) {
+      return AspectRatio(
+        aspectRatio: 1,
+        child: Container(color: soft, child: Icon(Icons.broken_image_outlined, color: PcTheme.text2(context))),
+      );
+    }
+    final ratio = (_ratio ?? 1.0).clamp(PcConfig.minImageRatio, PcConfig.maxImageRatio).toDouble();
+    return GestureDetector(
+      onTap: widget.onTap,
+      child: AspectRatio(
+        aspectRatio: ratio,
+        child: Image(
+          image: _provider,
+          fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
+          filterQuality: FilterQuality.medium,
+          gaplessPlayback: true,
+          frameBuilder: (ctx, child, frame, sync) {
+            if (sync) return child;
+            return Stack(fit: StackFit.expand, children: [
+              Container(color: soft),
+              AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: const Duration(milliseconds: 160),
+                child: child,
+              ),
+              if (frame == null)
+                const Center(
+                  child: SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: PcMono.accent)),
+                ),
+            ]);
+          },
+        ),
+      ),
+    );
   }
 }
 
@@ -657,10 +891,10 @@ class PcOriginalPostEmbed extends ConsumerWidget {
   final String postId;
   const PcOriginalPostEmbed({super.key, required this.postId});
 
-  BoxDecoration get _box => BoxDecoration(
-        color: PcMono.accent.withValues(alpha: 0.05),
+  BoxDecoration _box(BuildContext c) => BoxDecoration(
+        color: PcTheme.soft(c),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: PcMono.accent.withValues(alpha: 0.15)),
+        border: Border.all(color: PcTheme.line(c)),
       );
 
   @override
@@ -669,7 +903,7 @@ class PcOriginalPostEmbed extends ConsumerWidget {
     return async.when(
       loading: () => Container(
         height: 90,
-        decoration: _box,
+        decoration: _box(context),
         child: const Center(
           child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: PcMono.accent)),
         ),
@@ -683,14 +917,14 @@ class PcOriginalPostEmbed extends ConsumerWidget {
     final l10n = AppLocalizations.of(context);
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: _box,
+      decoration: _box(context),
       child: Row(children: [
-        const Icon(Icons.info_outline_rounded, color: ThixPolicy.textSecondary, size: 18),
+        Icon(Icons.info_outline_rounded, color: PcTheme.text2(context), size: 18),
         const SizedBox(width: 8),
         Expanded(
           child: Text(
             pcTr(l10n, 'post_original_unavailable', "Ce post n'est plus disponible"),
-            style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary),
+            style: ThixPolicy.captionStyle.copyWith(color: PcTheme.text2(context)),
           ),
         ),
       ]),
@@ -715,63 +949,56 @@ class PcOriginalPostEmbed extends ConsumerWidget {
       },
       child: Container(
         padding: const EdgeInsets.all(12),
-        decoration: _box,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(children: [
-              GestureDetector(
-                onTap: () {
-                  if (!PcValidators.isValidId(original.userId)) return;
-                  HapticFeedback.selectionClick();
-                  context.push('/network/profile/${original.userId}');
-                },
-                child: Container(
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: ThixPolicy.surfaceSoft,
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.9), width: 1.2),
-                  ),
-                  child: ClipOval(
-                    child: avatar != null
-                        ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover)
-                        : const Icon(Icons.person_rounded, size: 15, color: ThixPolicy.textMuted),
-                  ),
+        decoration: _box(context),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            GestureDetector(
+              onTap: () {
+                if (!PcValidators.isValidId(original.userId)) return;
+                HapticFeedback.selectionClick();
+                context.push('/network/profile/${original.userId}');
+              },
+              child: Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(shape: BoxShape.circle, color: PcTheme.soft(context)),
+                child: ClipOval(
+                  child: avatar != null
+                      ? CachedNetworkImage(imageUrl: avatar, fit: BoxFit.cover, memCacheWidth: 120)
+                      : Icon(Icons.person_rounded, size: 15, color: PcTheme.text2(context)),
                 ),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text(
-                    name.isEmpty ? pcTr(l10n, 'post_user_fallback', 'Utilisateur') : name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.titleStyle.copyWith(fontSize: 13, fontWeight: FontWeight.bold, color: ThixPolicy.textMain),
-                  ),
-                  Text(
-                    pcTimeAgo(context, original.createdAt),
-                    style: ThixPolicy.captionStyle.copyWith(fontSize: 10.5, color: ThixPolicy.textSecondary),
-                  ),
-                ]),
-              ),
-            ]),
-            if (content.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Text(
-                content,
-                maxLines: 5,
-                overflow: TextOverflow.ellipsis,
-                style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, height: 1.4, color: ThixPolicy.textMain),
-              ),
-            ],
-            if (media.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              _media(context, media),
-            ],
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(
+                  name.isEmpty ? pcTr(l10n, 'post_user_fallback', 'Utilisateur') : name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: ThixPolicy.titleStyle.copyWith(fontSize: 13, fontWeight: FontWeight.bold, color: PcTheme.text(context)),
+                ),
+                Text(
+                  pcTimeAgo(context, original.createdAt),
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 10.5, color: PcTheme.text2(context)),
+                ),
+              ]),
+            ),
+          ]),
+          if (content.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              content,
+              maxLines: 5,
+              overflow: TextOverflow.ellipsis,
+              style: ThixPolicy.bodyStyle.copyWith(fontSize: 13.5, height: 1.4, color: PcTheme.text(context)),
+            ),
           ],
-        ),
+          if (media.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _media(context, media),
+          ],
+        ]),
       ),
     );
   }
@@ -803,12 +1030,12 @@ class PcOriginalPostEmbed extends ConsumerWidget {
         child: CachedNetworkImage(
           imageUrl: first,
           fit: BoxFit.cover,
+          alignment: Alignment.topCenter,
           memCacheWidth: pcCacheWidth(context),
-          filterQuality: FilterQuality.high,
-          placeholder: (_, __) => Container(color: Colors.white.withValues(alpha: 0.5)),
+          placeholder: (_, __) => Container(color: PcTheme.soft(context)),
           errorWidget: (_, __, ___) => Container(
-            color: Colors.white.withValues(alpha: 0.5),
-            child: const Icon(Icons.broken_image_outlined, color: ThixPolicy.textMuted),
+            color: PcTheme.soft(context),
+            child: Icon(Icons.broken_image_outlined, color: PcTheme.text2(context)),
           ),
         ),
       );
@@ -870,7 +1097,7 @@ class PcMediaChipButton extends StatelessWidget {
 }
 
 // ============================================================================
-// GALERIE PLEIN ÉCRAN — qualité ORIGINALE (aucune réduction)
+// GALERIE PLEIN ÉCRAN — qualité ORIGINALE
 // ============================================================================
 class PcFullScreenGallery extends StatefulWidget {
   final List<String> imageUrls;
@@ -1117,7 +1344,7 @@ class _PcFullScreenVideoPlayerState extends State<PcFullScreenVideoPlayer> {
                         c,
                         allowScrubbing: true,
                         padding: const EdgeInsets.symmetric(vertical: 8),
-                        colors: VideoProgressColors(
+                        colors: const VideoProgressColors(
                           playedColor: Colors.white,
                           bufferedColor: Colors.white38,
                           backgroundColor: Colors.white24,
@@ -1161,7 +1388,6 @@ class PcStaticBadgeChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: style.color,
         borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.92), width: 1.6),
         boxShadow: [BoxShadow(color: style.color.withValues(alpha: 0.35), blurRadius: 10, offset: const Offset(0, 3))],
       ),
       child: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1192,8 +1418,8 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
   void initState() {
     super.initState();
     _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 950));
-    _scale = Tween<double>(begin: 1.0, end: 1.08).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
-    _glow = Tween<double>(begin: 0.25, end: 0.65).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
+    _scale = Tween<double>(begin: 1.0, end: 1.06).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
+    _glow = Tween<double>(begin: 0.25, end: 0.6).chain(CurveTween(curve: Curves.easeInOut)).animate(_ctrl);
     _ctrl.repeat(reverse: true);
   }
 
@@ -1212,9 +1438,8 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
         decoration: BoxDecoration(
           color: widget.style.color,
           borderRadius: BorderRadius.circular(ThixPolicy.rSm),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.92), width: 1.8),
           boxShadow: [
-            BoxShadow(color: widget.style.color.withValues(alpha: _glow.value), blurRadius: 16, spreadRadius: 1, offset: const Offset(0, 2)),
+            BoxShadow(color: widget.style.color.withValues(alpha: _glow.value), blurRadius: 14, spreadRadius: 1, offset: const Offset(0, 2)),
           ],
         ),
         child: Transform.scale(
@@ -1263,7 +1488,7 @@ class PcActionBtn extends StatelessWidget {
         onLongPress: onLongPress,
         behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             iconWidget ?? Icon(icon, size: 22, color: color),
             if (label.isNotEmpty) ...[
@@ -1347,29 +1572,27 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
     final l10n = AppLocalizations.of(context);
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     final remaining = _duration - _position;
+    final t2 = PcTheme.text2(context);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [PcMono.accent.withValues(alpha: 0.15), PcMono.accent.withValues(alpha: 0.05)]),
+        color: PcTheme.soft(context),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: PcMono.accent.withValues(alpha: 0.3), width: 1.5),
+        border: Border.all(color: PcTheme.line(context)),
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: const BoxDecoration(gradient: LinearGradient(colors: [PcMono.accent, PcMono.accentDeep]), shape: BoxShape.circle),
+            decoration: const BoxDecoration(gradient: LinearGradient(colors: [PcMono.accentSoft, PcMono.accent]), shape: BoxShape.circle),
             child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 18),
           ),
           const SizedBox(width: 10),
           Text(pcTr(l10n, 'post_voice_note', 'Note vocale'),
-              style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.bold, color: ThixPolicy.textMain, fontSize: 12)),
+              style: ThixPolicy.labelStyle.copyWith(fontWeight: FontWeight.bold, color: PcTheme.text(context), fontSize: 12)),
           const Spacer(),
           if (_duration.inSeconds > 0)
-            Text(_fmt(_duration), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontWeight: FontWeight.bold)),
+            Text(_fmt(_duration), style: ThixPolicy.captionStyle.copyWith(color: t2, fontWeight: FontWeight.bold)),
         ]),
         const SizedBox(height: 12),
         Row(children: [
@@ -1386,7 +1609,7 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
               width: 44,
               height: 44,
               decoration: BoxDecoration(
-                gradient: const LinearGradient(colors: [PcMono.accent, PcMono.accentDeep]),
+                gradient: const LinearGradient(colors: [PcMono.accentSoft, PcMono.accent]),
                 shape: BoxShape.circle,
                 boxShadow: [BoxShadow(color: PcMono.accent.withValues(alpha: 0.3), blurRadius: 8, offset: const Offset(0, 2))],
               ),
@@ -1413,9 +1636,8 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
               decoration: BoxDecoration(
-                color: PcMono.accent.withValues(alpha: 0.15),
+                color: PcMono.accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: PcMono.accent.withValues(alpha: 0.3)),
               ),
               child: Text('${_speed}x',
                   style: ThixPolicy.captionStyle.copyWith(color: PcMono.accent, fontWeight: FontWeight.bold, fontSize: 11)),
@@ -1424,10 +1646,10 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
         ]),
         const SizedBox(height: 8),
         Row(children: [
-          Text(_fmt(_position), style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10)),
+          Text(_fmt(_position), style: ThixPolicy.captionStyle.copyWith(color: t2, fontSize: 10)),
           const Spacer(),
           Text('-${_fmt(remaining.isNegative ? Duration.zero : remaining)}',
-              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 10)),
+              style: ThixPolicy.captionStyle.copyWith(color: t2, fontSize: 10)),
         ]),
       ]),
     );
@@ -1444,16 +1666,17 @@ class _WaveformPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final bw = size.width / (_bars * 1.5);
     final sp = bw * 0.5;
+    final on = Paint()..color = color;
+    final off = Paint()..color = color.withValues(alpha: 0.3);
     for (var i = 0; i < _bars; i++) {
       final x = i * (bw + sp);
       final hp = (sin(i * 0.5) * 0.3 + 0.5 + (i % 3) * 0.1).clamp(0.2, 0.9);
       final bh = size.height * hp;
       final y = (size.height - bh) / 2;
-      final active = (i / _bars) <= progress;
-      final paint = Paint()
-        ..color = active ? color : color.withValues(alpha: 0.3)
-        ..style = PaintingStyle.fill;
-      canvas.drawRRect(RRect.fromRectAndRadius(Rect.fromLTWH(x, y, bw, bh), Radius.circular(bw / 2)), paint);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(Rect.fromLTWH(x, y, bw, bh), Radius.circular(bw / 2)),
+        (i / _bars) <= progress ? on : off,
+      );
     }
   }
 
@@ -1462,10 +1685,7 @@ class _WaveformPainter extends CustomPainter {
 }
 
 // ============================================================================
-// ✅ APERÇU DE LIEN — hauteur STABLE, jamais de double image
-//   • YouTube sans média  → grande vignette 16:9 (construite depuis l'ID)
-//   • Autres cas          → carte horizontale compacte (hauteur fixe)
-//   • Si le post a déjà une photo/vidéo → toujours la carte compacte
+// APERÇU DE LIEN — hauteur STABLE, jamais de double image
 // ============================================================================
 class PcLinkPreview extends StatefulWidget {
   final String url;
@@ -1536,15 +1756,14 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
     if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  BoxDecoration get _deco => BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.75),
+  BoxDecoration _deco(BuildContext c) => BoxDecoration(
+        color: PcTheme.soft(c),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.9)),
-        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+        border: Border.all(color: PcTheme.line(c)),
       );
 
   Widget _faviconBox() => Container(
-        color: PcMono.accent.withValues(alpha: 0.06),
+        color: PcMono.accent.withValues(alpha: 0.08),
         alignment: Alignment.center,
         child: CachedNetworkImage(
           imageUrl: _favicon,
@@ -1568,24 +1787,26 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
     return GestureDetector(
       onTap: _open,
       onLongPress: () => pcCopy(context, widget.url, pcTr(l10n, 'post_link_copied', 'Lien copié')),
-      child: (yt != null && !widget.hasMedia) ? _big(title, og ?? yt) : _compact(title, desc, widget.hasMedia ? null : (og ?? yt), l10n),
+      child: (yt != null && !widget.hasMedia)
+          ? _big(context, title, og ?? yt)
+          : _compact(context, title, desc, widget.hasMedia ? null : (og ?? yt)),
     );
   }
 
-  Widget _domainRow() => Row(children: [
-        const Icon(Icons.link_rounded, size: 14, color: ThixPolicy.textSecondary),
+  Widget _domainRow(BuildContext c) => Row(children: [
+        Icon(Icons.link_rounded, size: 14, color: PcTheme.text2(c)),
         const SizedBox(width: 6),
         Expanded(
           child: Text(_domain,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12, fontWeight: FontWeight.w600)),
+              style: ThixPolicy.captionStyle.copyWith(color: PcTheme.text2(c), fontSize: 12, fontWeight: FontWeight.w600)),
         ),
       ]);
 
-  Widget _big(String title, String image) {
+  Widget _big(BuildContext c, String title, String image) {
     return Container(
-      decoration: _deco,
+      decoration: _deco(c),
       clipBehavior: Clip.antiAlias,
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         AspectRatio(
@@ -1594,6 +1815,7 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
             CachedNetworkImage(
               imageUrl: image,
               fit: BoxFit.cover,
+              memCacheWidth: pcCacheWidth(c),
               placeholder: (_, __) => Container(color: PcMono.accentDeep),
               errorWidget: (_, __, ___) => _faviconBox(),
             ),
@@ -1614,8 +1836,8 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
               Text(title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 14, height: 1.25)),
-              _domainRow(),
+                  style: ThixPolicy.titleStyle.copyWith(color: PcTheme.text(c), fontWeight: FontWeight.bold, fontSize: 14, height: 1.25)),
+              _domainRow(c),
             ]),
           ),
         ),
@@ -1623,17 +1845,17 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
     );
   }
 
-  Widget _compact(String title, String desc, String? image, AppLocalizations l10n) {
+  Widget _compact(BuildContext c, String title, String desc, String? image) {
     return Container(
       height: 92,
-      decoration: _deco,
+      decoration: _deco(c),
       clipBehavior: Clip.antiAlias,
       child: Row(children: [
         SizedBox(
           width: 92,
           height: 92,
           child: image != null
-              ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, errorWidget: (_, __, ___) => _faviconBox())
+              ? CachedNetworkImage(imageUrl: image, fit: BoxFit.cover, memCacheWidth: 300, errorWidget: (_, __, ___) => _faviconBox())
               : _faviconBox(),
         ),
         Expanded(
@@ -1643,16 +1865,16 @@ class _PcLinkPreviewState extends State<PcLinkPreview> {
               Text(title,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: ThixPolicy.titleStyle.copyWith(color: ThixPolicy.textMain, fontWeight: FontWeight.bold, fontSize: 13.5, height: 1.25)),
+                  style: ThixPolicy.titleStyle.copyWith(color: PcTheme.text(c), fontWeight: FontWeight.bold, fontSize: 13.5, height: 1.25)),
               if (desc.isNotEmpty) ...[
                 const SizedBox(height: 2),
                 Text(desc,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.bodySmallStyle.copyWith(color: ThixPolicy.textSecondary, fontSize: 12)),
+                    style: ThixPolicy.bodySmallStyle.copyWith(color: PcTheme.text2(c), fontSize: 12)),
               ],
               const SizedBox(height: 4),
-              _domainRow(),
+              _domainRow(c),
             ]),
           ),
         ),
@@ -1750,7 +1972,13 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
 
   Widget _background() {
     if (_thumbnailUrl != null) {
-      return CachedNetworkImage(imageUrl: _thumbnailUrl!, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholder());
+      return CachedNetworkImage(
+        imageUrl: _thumbnailUrl!,
+        fit: BoxFit.cover,
+        alignment: Alignment.topCenter,
+        memCacheWidth: 900,
+        errorWidget: (_, __, ___) => _placeholder(),
+      );
     }
     final c = _frameController;
     if (_frameReady && c != null && c.value.isInitialized) {
@@ -1769,7 +1997,7 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
 
   Widget _placeholder() => Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [PcMono.accentDeep, PcMono.accent]),
+          gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFF09090B), Color(0xFF27272A)]),
         ),
       );
 
@@ -1781,7 +2009,7 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
       child: Container(
         width: widget.width,
         height: widget.height,
-        color: PcMono.accentDeep,
+        color: const Color(0xFF09090B),
         child: Stack(fit: StackFit.expand, children: [
           _background(),
           Container(color: Colors.black.withValues(alpha: 0.18)),
@@ -1854,17 +2082,23 @@ class _PcLikersStackState extends State<PcLikersStack> {
   @override
   void didUpdateWidget(covariant PcLikersStack old) {
     super.didUpdateWidget(old);
-    if (widget.count != old.count) _fetch();
+    if (widget.count != old.count) _fetch(force: true);
   }
 
-  Future<void> _fetch() async {
+  Future<void> _fetch({bool force = false}) async {
     if (widget.count == 0) {
-      if (mounted) setState(() { _loading = false; _avatars = []; });
+      if (mounted) setState(() {
+        _loading = false;
+        _avatars = [];
+      });
       return;
     }
-    final cached = PcCache.instance.getLikers(widget.postId);
+    final cached = force ? null : PcCache.instance.getLikers(widget.postId);
     if (cached != null) {
-      if (mounted) setState(() { _avatars = cached; _loading = false; });
+      if (mounted) setState(() {
+        _avatars = cached;
+        _loading = false;
+      });
       return;
     }
     try {
@@ -1884,7 +2118,10 @@ class _PcLikersStackState extends State<PcLikersStack> {
         }
       }
       PcCache.instance.setLikers(widget.postId, avatars);
-      if (mounted) setState(() { _avatars = avatars; _loading = false; });
+      if (mounted) setState(() {
+        _avatars = avatars;
+        _loading = false;
+      });
     } catch (_) {
       PcLog.error('fetchLikersAvatars failed', {'postId': widget.postId});
       if (mounted) setState(() => _loading = false);
@@ -1895,12 +2132,13 @@ class _PcLikersStackState extends State<PcLikersStack> {
   Widget build(BuildContext context) {
     final shown = min(PcConfig.maxLikersFetched, widget.count);
     final extra = widget.count - shown;
-    final colors = [PcMono.accent, ThixPolicy.danger, PcMono.accentDeep, ThixPolicy.info, ThixPolicy.domainMedia];
+    const colors = [PcMono.accent, ThixPolicy.danger, PcMono.accentDeep, ThixPolicy.info, ThixPolicy.domainMedia];
     final text = widget.isLikedByMe
         ? (widget.count == 1
             ? widget.l10n.t('post_liked_by_you')
             : widget.l10n.t('post_liked_by_you_and_others', args: ['${widget.count - 1}']))
         : widget.l10n.t('post_liked_by_others', args: ['${widget.count}']);
+    final t2 = PcTheme.text2(context);
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(children: [
@@ -1916,8 +2154,8 @@ class _PcLikersStackState extends State<PcLikersStack> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: colors[(widget.postId.hashCode + i).abs() % colors.length],
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.8), width: 1.5),
-                  image: real ? DecorationImage(image: CachedNetworkImageProvider(url), fit: BoxFit.cover) : null,
+                  border: Border.all(color: PcTheme.card(context), width: 1.5),
+                  image: real ? DecorationImage(image: CachedNetworkImageProvider(url, maxWidth: 80), fit: BoxFit.cover) : null,
                 ),
                 child: !real ? const Icon(Icons.person, size: 12, color: Colors.white) : null,
               ),
@@ -1927,13 +2165,11 @@ class _PcLikersStackState extends State<PcLikersStack> {
         if (extra > 0)
           Padding(
             padding: const EdgeInsets.only(left: 4),
-            child: Text('+$extra',
-                style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: ThixPolicy.textSecondary, fontWeight: FontWeight.bold)),
+            child: Text('+$extra', style: ThixPolicy.captionStyle.copyWith(fontSize: 12, color: t2, fontWeight: FontWeight.bold)),
           ),
         const SizedBox(width: 8),
         Expanded(
-          child: Text(text,
-              style: ThixPolicy.captionStyle.copyWith(fontSize: 12.5, color: ThixPolicy.textSecondary), overflow: TextOverflow.ellipsis),
+          child: Text(text, style: ThixPolicy.captionStyle.copyWith(fontSize: 12.5, color: t2), overflow: TextOverflow.ellipsis),
         ),
       ]),
     );
