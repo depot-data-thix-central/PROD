@@ -249,7 +249,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     if (!isOwn && showSender && isFirstInGroup && (senderName ?? '').isNotEmpty && !bare) {
       children.add(Padding(
-        padding: const EdgeInsets.only(bottom: 2),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Text(ChatValidators.sanitize(senderName, maxLength: 40),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -259,7 +259,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     if (isInternalNote && isAgentView) {
       children.add(Padding(
-        padding: const EdgeInsets.only(bottom: 3),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.lock_rounded, size: 11, color: ThixPolicy.gold),
           const SizedBox(width: 4),
@@ -271,7 +271,7 @@ class ChatMessageBubble extends StatelessWidget {
 
     if (m.isForwarded && !deleted) {
       children.add(Padding(
-        padding: const EdgeInsets.only(bottom: 3),
+        padding: const EdgeInsets.only(bottom: 4),
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           const Icon(Icons.forward_rounded, size: 12, color: ThixPolicy.textMuted),
           const SizedBox(width: 4),
@@ -284,7 +284,7 @@ class ChatMessageBubble extends StatelessWidget {
     if (replyToMessage != null && !deleted) {
       final r = replyToMessage!;
       children.add(Container(
-        margin: const EdgeInsets.only(bottom: 5),
+        margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.fromLTRB(8, 5, 8, 5),
         decoration: BoxDecoration(
           color: Colors.black.withOpacity(0.05),
@@ -310,7 +310,7 @@ class ChatMessageBubble extends StatelessWidget {
     // ✅ COMPTE À REBOURS ÉPHÉMÈRE
     if (m.isEphemeral && !deleted && (m.ephemeralDuration ?? 0) > 0) {
       children.add(Padding(
-        padding: const EdgeInsets.only(top: 3),
+        padding: const EdgeInsets.only(top: 6),
         child: EphemeralCountdown(expiresAt: m.createdAt.add(Duration(seconds: m.ephemeralDuration!))),
       ));
     }
@@ -318,7 +318,7 @@ class ChatMessageBubble extends StatelessWidget {
     // Méta (heure, ticks…)
     if (!isSticker) {
       children.add(Padding(
-        padding: const EdgeInsets.only(top: 2),
+        padding: const EdgeInsets.only(top: 4),
         child: Align(alignment: Alignment.centerRight, child: _meta(json, deleted)),
       ));
     }
@@ -395,6 +395,17 @@ class ChatMessageBubble extends StatelessWidget {
     );
   }
 
+  String _formatMetaTime(DateTime date) {
+    final now = DateTime.now();
+    if (chatSameDay(date, now)) {
+      return DateFormat('HH:mm').format(date);
+    } else if (chatSameDay(date, now.subtract(const Duration(days: 1)))) {
+      return 'Hier ${DateFormat('HH:mm').format(date)}';
+    } else {
+      return '${DateFormat('dd/MM').format(date)} ${DateFormat('HH:mm').format(date)}';
+    }
+  }
+
   Widget _meta(Map<String, dynamic> json, bool deleted) {
     final m = message;
     final edited = json['is_edited'] == true && !deleted;
@@ -404,7 +415,7 @@ class ChatMessageBubble extends StatelessWidget {
       if (m.isStarred) const Padding(padding: EdgeInsets.only(right: 3), child: Icon(Icons.star_rounded, size: 11, color: ThixPolicy.gold)),
       if (isEphemeralActive) Padding(padding: const EdgeInsets.only(right: 3), child: Icon(Icons.timer_outlined, size: 11, color: muted)),
       if (edited) Padding(padding: const EdgeInsets.only(right: 4), child: Text('modifié', style: TextStyle(fontSize: 10, color: muted, fontStyle: FontStyle.italic))),
-      Text(DateFormat('HH:mm').format(m.createdAt.toLocal()), style: TextStyle(fontSize: 10, color: muted)),
+      Text(_formatMetaTime(m.createdAt.toLocal()), style: TextStyle(fontSize: 10, color: muted)),
       if (isOwn && !deleted) ...[
         const SizedBox(width: 3),
         Icon(m.isRead || m.isDelivered ? Icons.done_all_rounded : Icons.done_rounded,
@@ -415,7 +426,7 @@ class ChatMessageBubble extends StatelessWidget {
 
   List<Widget> _body(BuildContext context, AppLocalizations l10n, String type, bool deleted, bool jumbo, double maxW) {
     final m = message;
-    final textStyle = const TextStyle(fontSize: 15, height: 1.3, color: ThixPolicy.textMain);
+    final textStyle = const TextStyle(fontSize: 15, height: 1.4, color: ThixPolicy.textMain);
 
     if (deleted) {
       return [
@@ -434,7 +445,7 @@ class ChatMessageBubble extends StatelessWidget {
     final hasCaption = caption.isNotEmpty && caption != (m.mediaName ?? '') && !caption.startsWith('🎤');
 
     Widget? captionWidget() => hasCaption
-        ? Padding(padding: const EdgeInsets.only(top: 5), child: _LinkText(text: caption, style: textStyle))
+        ? Padding(padding: const EdgeInsets.only(top: 6), child: _LinkText(text: caption, style: textStyle))
         : null;
 
     switch (type) {
