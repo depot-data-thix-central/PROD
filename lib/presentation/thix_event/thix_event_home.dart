@@ -1,7 +1,13 @@
 // lib/presentation/thix_event/thix_event_home.dart
 //
-// ThixEventHome — DESIGN v2 (clair éditorial + Glassmorphism)
+// ThixEventHome — DESIGN v3 (blanc épuré + glassmorphism léger)
 //
+// • Fond blanc très clair, panneaux en verre dépoli discret
+// • « Les plus attendus » : carrousel de cartes hautes
+// • « À la une / tous les événements » : cartes CÔTE À CÔTE (horizontal)
+// • Bannière Accès VIP : SUPPRIMÉE
+// • Navigation basse ATTACHÉE en bas (non flottante), hauteur réduite (54 px)
+// • Paddings réduits (16) pour maximiser visibilité et lisibilité
 import 'dart:async';
 import 'dart:ui';
 
@@ -17,25 +23,21 @@ import '../../models/event_model.dart';
 import '../../providers/event_provider.dart';
 
 // ============================================================================
-// PALETTE
+// PALETTE — BLANC TRÈS CLAIR + VERRE DÉPOLI
 // ============================================================================
 
 class _C {
-  static const bg = Color(0xFFF7F5F2);
+  static const bg = Color(0xFFFBFBFD); // blanc très clair
   static const surface = Colors.white;
-  static const ink = Color(0xFF0E0E16);
-  static const inkSoft = Color(0xFF6B6B7B);
-  static const line = Color(0xFFE8E4DD);
+  static const ink = Color(0xFF101018);
+  static const inkSoft = Color(0xFF71717E);
+  static const line = Color(0xFFECECF2);
   static const accent = Color(0xFF5B3DF5);
   static const accentDeep = Color(0xFF3B22C9);
   static const amber = Color(0xFFFFB020);
   static const soldOut = Color(0xFFEF4444);
   static const lowStock = Color(0xFFF59E0B);
   static const imgBase = Color(0xFF1A1A26);
-  
-  // Glassmorphism
-  static const glassWhite = Color(0x40FFFFFF); // 25% blanc
-  static const glassBorder = Color(0x33FFFFFF); // 20% blanc
 }
 
 // ============================================================================
@@ -64,7 +66,7 @@ class _EventLogger {
 }
 
 // ============================================================================
-// PROVIDER ADMIN
+// PROVIDER ADMIN (sécurisé)
 // ============================================================================
 
 final isEventAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
@@ -114,6 +116,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   final ScrollController _scrollController = ScrollController();
   final PageController _heroController = PageController();
   final ScrollController _recScrollController = ScrollController();
+  final ScrollController _allScrollController = ScrollController();
   final ValueNotifier<double> _scrollY = ValueNotifier<double>(0);
 
   Timer? _heroTimer;
@@ -127,6 +130,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    _allScrollController.addListener(_onAllScroll);
     _startHero();
     _startRec();
     _EventLogger.info('ThixEventHome initialized');
@@ -136,6 +140,14 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     final p = _scrollController.position;
     _scrollY.value = p.pixels;
     if (p.pixels > p.maxScrollExtent - 300) {
+      ref.read(eventListProvider.notifier).loadMore();
+    }
+  }
+
+  // Pagination horizontale pour la liste « tous les événements »
+  void _onAllScroll() {
+    final p = _allScrollController.position;
+    if (p.pixels > p.maxScrollExtent - 260) {
       ref.read(eventListProvider.notifier).loadMore();
     }
   }
@@ -181,7 +193,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           _recForward = false;
         } else {
           _recScrollController.animateTo(
-            cur + 236,
+            cur + 226,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeOutCubic,
           );
@@ -191,7 +203,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           _recForward = true;
         } else {
           _recScrollController.animateTo(
-            cur - 236,
+            cur - 226,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeOutCubic,
           );
@@ -205,6 +217,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     _scrollController.dispose();
     _heroController.dispose();
     _recScrollController.dispose();
+    _allScrollController.dispose();
     _scrollY.dispose();
     _heroTimer?.cancel();
     _recTimer?.cancel();
@@ -239,7 +252,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           ),
         ),
         child: const Center(
-          child: Icon(Icons.confirmation_num_rounded, color: Colors.white24, size: 48),
+          child: Icon(Icons.confirmation_num_rounded, color: Colors.white24, size: 44),
         ),
       );
 
@@ -268,19 +281,19 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
 
   Widget _pill(String text, Color bg, Color fg, {IconData? icon}) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(18)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: fg),
+            Icon(icon, size: 11, color: fg),
             const SizedBox(width: 4),
           ],
           Text(
             text,
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 10,
               fontWeight: FontWeight.w900,
               color: fg,
               letterSpacing: 0.4,
@@ -291,23 +304,42 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
+  /// Pilule en verre dépoli (fond blanc translucide + blur)
+  Widget _glassPill({required Widget child, double radius = 16}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.92),
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(color: Colors.white.withOpacity(0.6), width: 1),
+          ),
+          child: child,
+        ),
+      ),
+    );
+  }
+
   Widget _glassChip(IconData icon, String text) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(18),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.62),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.6),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.22),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: Colors.white.withOpacity(0.3)),
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: Colors.white.withOpacity(0.28)),
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon, size: 13, color: Colors.white),
+              Icon(icon, size: 12, color: Colors.white),
               const SizedBox(width: 6),
               Flexible(
                 child: Text(
@@ -316,7 +348,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
@@ -328,11 +360,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
-  Widget _metaRow(IconData icon, String text) {
+  Widget _miniMeta(IconData icon, String text, {Color iconColor = _C.accent}) {
     return Row(
       children: [
-        Icon(icon, size: 15, color: _C.accent),
-        const SizedBox(width: 8),
+        Icon(icon, size: 13, color: iconColor),
+        const SizedBox(width: 6),
         Expanded(
           child: Text(
             text,
@@ -340,7 +372,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _C.inkSoft,
-              fontSize: 12.5,
+              fontSize: 11.5,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -354,11 +386,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       left: 0,
       right: 0,
       bottom: -1,
-      height: 28,
+      height: 24,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: _C.bg,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
         ),
       ),
     );
@@ -373,7 +405,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     final l10n = AppLocalizations.of(context);
     final size = MediaQuery.of(context).size;
     final topPad = MediaQuery.of(context).padding.top;
-    final heroH = (size.height * 0.66).clamp(500.0, 680.0).toDouble();
+    final heroH = (size.height * 0.58).clamp(430.0, 600.0).toDouble();
 
     final featuredAsync = ref.watch(featuredEventsProvider);
     final eventsState = ref.watch(eventListProvider);
@@ -418,7 +450,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           RefreshIndicator(
             backgroundColor: Colors.white,
             color: _C.accent,
-            edgeOffset: topPad + 60,
+            edgeOffset: topPad + 56,
             onRefresh: () async {
               if (!_throttle()) return;
               HapticFeedback.mediumImpact();
@@ -439,53 +471,57 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       _categoryChips(l10n),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       _dateSegment(l10n),
-                      const SizedBox(height: 30),
+                      const SizedBox(height: 22),
                       _headerSection(
                         l10n,
                         l10n.t('event_most_anticipated'),
                         isPremium: true,
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                       if (recommended.isNotEmpty)
                         SizedBox(
-                          height: 340,
+                          height: 280,
                           child: ListView.separated(
                             controller: _recScrollController,
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 20,
-                              vertical: 4,
-                            ),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
                             itemCount: recommended.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
                             itemBuilder: (_, i) => _tallCard(l10n, recommended[i]),
                           ),
                         ),
-                      const SizedBox(height: 30),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        child: _vipBanner(l10n),
-                      ),
-                      const SizedBox(height: 34),
+                      const SizedBox(height: 22),
                       _headerSection(l10n, l10n.t('event_featured')),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                     ],
                   ),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  sliver: SliverList.separated(
-                    itemCount: items.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 20),
-                    itemBuilder: (_, i) => _bigCard(l10n, items[i]),
-                  ),
+                // ── TOUS LES ÉVÉNEMENTS : CARTES CÔTE À CÔTE ──
+                SliverToBoxAdapter(
+                  child: items.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          child: _emptyPanel(l10n),
+                        )
+                      : SizedBox(
+                          height: 280,
+                          child: ListView.separated(
+                            controller: _allScrollController,
+                            scrollDirection: Axis.horizontal,
+                            physics: const BouncingScrollPhysics(),
+                            padding: const EdgeInsets.symmetric(horizontal: 16),
+                            itemCount: items.length,
+                            separatorBuilder: (_, __) => const SizedBox(width: 14),
+                            itemBuilder: (_, i) => _sideCard(l10n, items[i]),
+                          ),
+                        ),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 140)),
+                const SliverToBoxAdapter(child: SizedBox(height: 96)),
               ],
             ),
           ),
@@ -496,8 +532,40 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
+  Widget _emptyPanel(AppLocalizations l10n) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(22),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+        child: Container(
+          height: 180,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.7),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: _C.line),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.event_available_rounded, size: 40, color: _C.inkSoft),
+              const SizedBox(height: 10),
+              Text(
+                l10n.t('event_no_events'),
+                style: const TextStyle(
+                  color: _C.inkSoft,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   // ════════════════════════════════════════════════════════════
-  // TOP BAR
+  // TOP BAR (verre dépoli au scroll)
   // ════════════════════════════════════════════════════════════
 
   Widget _circleBtn({
@@ -515,17 +583,17 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
         onTap: onTap,
         behavior: HitTestBehavior.opaque,
         child: Container(
-          width: 40,
-          height: 40,
+          width: 38,
+          height: 38,
           decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
           child: Stack(
             alignment: Alignment.center,
             children: [
-              Icon(icon, size: 20, color: fg),
+              Icon(icon, size: 19, color: fg),
               if (badge)
                 Positioned(
-                  top: 9,
-                  right: 10,
+                  top: 8,
+                  right: 9,
                   child: Container(
                     width: 8,
                     height: 8,
@@ -558,121 +626,126 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           final fg = Color.lerp(Colors.white, _C.ink, t)!;
           final chip = Color.lerp(
             Colors.white.withOpacity(0.18),
-            _C.ink.withOpacity(0.06),
+            _C.ink.withOpacity(0.05),
             t,
           )!;
 
           return AnnotatedRegion<SystemUiOverlayStyle>(
             value: t < 0.5 ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
-            child: Container(
-              padding: EdgeInsets.fromLTRB(20, topPad + 8, 16, 8),
-              decoration: BoxDecoration(
-                color: _C.bg.withOpacity(0.95 * t),
-                border: Border(
-                  bottom: BorderSide(color: _C.line.withOpacity(t)),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 30,
-                    height: 30,
-                    decoration: BoxDecoration(
-                      color: _C.amber,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.confirmation_num_rounded,
-                      size: 16,
-                      color: _C.ink,
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16 * t, sigmaY: 16 * t),
+                child: Container(
+                  padding: EdgeInsets.fromLTRB(16, topPad + 8, 12, 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.78 * t),
+                    border: Border(
+                      bottom: BorderSide(color: _C.line.withOpacity(t)),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  Flexible(
-                    child: Text.rich(
-                      TextSpan(
-                        children: [
-                          TextSpan(
-                            text: 'THIX',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: fg,
-                              letterSpacing: -0.4,
-                            ),
-                          ),
-                          TextSpan(
-                            text: ' ${l10n.t('event_tickets')}',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w300,
-                              color: fg.withOpacity(0.85),
-                            ),
-                          ),
-                        ],
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 30,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: _C.amber,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Icon(
+                          Icons.confirmation_num_rounded,
+                          size: 16,
+                          color: _C.ink,
+                        ),
                       ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const Spacer(),
-                  _circleBtn(
-                    icon: Icons.search_rounded,
-                    fg: fg,
-                    bg: chip,
-                    label: l10n.t('common_search'),
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      context.push('/thix-event/search');
-                    },
-                  ),
-                  const SizedBox(width: 8),
-                  _circleBtn(
-                    icon: Icons.notifications_none_rounded,
-                    fg: fg,
-                    bg: chip,
-                    label: l10n.t('common_notifications'),
-                    badge: true,
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      _EventLogger.info('Notifications tapped');
-                    },
-                  ),
-                  if (isAdmin) ...[
-                    const SizedBox(width: 8),
-                    Semantics(
-                      button: true,
-                      label: l10n.t('event_admin_panel'),
-                      child: GestureDetector(
+                      const SizedBox(width: 10),
+                      Flexible(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: 'THIX',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w900,
+                                  color: fg,
+                                  letterSpacing: -0.4,
+                                ),
+                              ),
+                              TextSpan(
+                                text: ' ${l10n.t('event_tickets')}',
+                                style: TextStyle(
+                                  fontSize: 17,
+                                  fontWeight: FontWeight.w300,
+                                  color: fg.withOpacity(0.85),
+                                ),
+                              ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      const Spacer(),
+                      _circleBtn(
+                        icon: Icons.search_rounded,
+                        fg: fg,
+                        bg: chip,
+                        label: l10n.t('common_search'),
                         onTap: () {
                           if (!_throttle()) return;
-                          HapticFeedback.mediumImpact();
-                          _EventLogger.info('Admin panel opened');
-                          context.push('/thix-event/admin');
+                          HapticFeedback.selectionClick();
+                          context.push('/thix-event/search');
                         },
-                        child: Container(
-                          width: 40,
-                          height: 40,
-                          decoration: const BoxDecoration(
-                            color: _C.amber,
-                            shape: BoxShape.circle,
-                          ),
-                          alignment: Alignment.center,
-                          child: const Text(
-                            'AN',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w900,
-                              color: _C.ink,
+                      ),
+                      const SizedBox(width: 8),
+                      _circleBtn(
+                        icon: Icons.notifications_none_rounded,
+                        fg: fg,
+                        bg: chip,
+                        label: l10n.t('common_notifications'),
+                        badge: true,
+                        onTap: () {
+                          if (!_throttle()) return;
+                          HapticFeedback.selectionClick();
+                          _EventLogger.info('Notifications tapped');
+                        },
+                      ),
+                      if (isAdmin) ...[
+                        const SizedBox(width: 8),
+                        Semantics(
+                          button: true,
+                          label: l10n.t('event_admin_panel'),
+                          child: GestureDetector(
+                            onTap: () {
+                              if (!_throttle()) return;
+                              HapticFeedback.mediumImpact();
+                              _EventLogger.info('Admin panel opened');
+                              context.push('/thix-event/admin');
+                            },
+                            child: Container(
+                              width: 38,
+                              height: 38,
+                              decoration: const BoxDecoration(
+                                color: _C.amber,
+                                shape: BoxShape.circle,
+                              ),
+                              alignment: Alignment.center,
+                              child: const Text(
+                                'AN',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w900,
+                                  color: _C.ink,
+                                ),
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-                  ],
-                ],
+                      ],
+                    ],
+                  ),
+                ),
               ),
             ),
           );
@@ -698,7 +771,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           ),
           _heroCurve(),
           Positioned(
-            bottom: 40,
+            bottom: 36,
             left: 0,
             right: 0,
             child: _heroDots(list.length),
@@ -746,9 +819,9 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
             ),
           ),
           Positioned(
-            left: 20,
-            right: 20,
-            bottom: 78,
+            left: 16,
+            right: 16,
+            bottom: 70,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
@@ -771,20 +844,20 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       ),
                   ],
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Text(
                   e.title,
                   maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: Colors.white,
-                    fontSize: 34,
+                    fontSize: 30,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -1.0,
                     height: 1.05,
                   ),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -793,7 +866,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                     _glassChip(Icons.location_on_rounded, e.location),
                   ],
                 ),
-                const SizedBox(height: 18),
+                const SizedBox(height: 16),
                 Row(
                   children: [
                     Expanded(
@@ -803,7 +876,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 24,
+                          fontSize: 22,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.5,
                         ),
@@ -817,11 +890,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       child: GestureDetector(
                         onTap: soldOut ? null : () => _openEvent(e, 'Hero book tapped'),
                         child: Container(
-                          height: 54,
-                          padding: const EdgeInsets.symmetric(horizontal: 26),
+                          height: 50,
+                          padding: const EdgeInsets.symmetric(horizontal: 24),
                           decoration: BoxDecoration(
                             color: soldOut ? Colors.grey.shade700 : _C.amber,
-                            borderRadius: BorderRadius.circular(27),
+                            borderRadius: BorderRadius.circular(25),
                             boxShadow: soldOut
                                 ? null
                                 : [
@@ -843,7 +916,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                                 style: TextStyle(
                                   color: soldOut ? Colors.white70 : _C.ink,
                                   fontWeight: FontWeight.w900,
-                                  fontSize: 15,
+                                  fontSize: 14,
                                 ),
                               ),
                               if (!soldOut) ...[
@@ -851,7 +924,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                                 const Icon(
                                   Icons.arrow_forward_rounded,
                                   color: _C.ink,
-                                  size: 19,
+                                  size: 18,
                                 ),
                               ],
                             ],
@@ -926,16 +999,16 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   else
                     Icon(
                       error ? Icons.error_outline_rounded : Icons.confirmation_num_rounded,
-                      size: 64,
+                      size: 60,
                       color: Colors.white,
                     ),
-                  const SizedBox(height: 18),
+                  const SizedBox(height: 16),
                   Text(
                     error ? l10n.t('error_generic') : 'THIX ${l10n.t('event_tickets')}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 30,
+                      fontSize: 28,
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.8,
                     ),
@@ -983,11 +1056,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     ];
 
     return SizedBox(
-      height: 46,
+      height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: filters.length,
         separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
@@ -1006,16 +1079,16 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 16),
+                padding: const EdgeInsets.symmetric(horizontal: 15),
                 decoration: BoxDecoration(
-                  color: isSel ? _C.accent : _C.surface,
-                  borderRadius: BorderRadius.circular(23),
+                  color: isSel ? _C.accent : Colors.white.withOpacity(0.8),
+                  borderRadius: BorderRadius.circular(22),
                   border: Border.all(color: isSel ? _C.accent : _C.line),
                   boxShadow: isSel
                       ? [
                           BoxShadow(
-                            color: _C.accent.withOpacity(0.3),
-                            blurRadius: 12,
+                            color: _C.accent.withOpacity(0.25),
+                            blurRadius: 10,
                             offset: const Offset(0, 4),
                           ),
                         ]
@@ -1026,14 +1099,14 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   children: [
                     Icon(
                       f['icon'] as IconData,
-                      size: 17,
+                      size: 16,
                       color: isSel ? Colors.white : _C.ink,
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 7),
                     Text(
                       f['label'] as String,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: 12.5,
                         fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
                         color: isSel ? Colors.white : _C.ink,
                       ),
@@ -1058,52 +1131,59 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     ];
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Container(
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: const Color(0xFFECE8E1),
-          borderRadius: BorderRadius.circular(24),
-        ),
-        child: Row(
-          children: filters.map((f) {
-            final isSel = selected == f['value'];
-            return Expanded(
-              child: Semantics(
-                button: true,
-                selected: isSel,
-                label: f['label'] as String,
-                child: GestureDetector(
-                  onTap: () {
-                    if (!_throttle()) return;
-                    HapticFeedback.lightImpact();
-                    ref.read(eventDateFilterProvider.notifier).state = f['value'] as String;
-                    _EventLogger.info('Date filter changed', {'filter': f['value']});
-                  },
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeOutCubic,
-                    padding: const EdgeInsets.symmetric(vertical: 10),
-                    decoration: BoxDecoration(
-                      color: isSel ? _C.ink : Colors.transparent,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      f['label'] as String,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
-                        color: isSel ? Colors.white : _C.inkSoft,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.65),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: _C.line),
+            ),
+            child: Row(
+              children: filters.map((f) {
+                final isSel = selected == f['value'];
+                return Expanded(
+                  child: Semantics(
+                    button: true,
+                    selected: isSel,
+                    label: f['label'] as String,
+                    child: GestureDetector(
+                      onTap: () {
+                        if (!_throttle()) return;
+                        HapticFeedback.lightImpact();
+                        ref.read(eventDateFilterProvider.notifier).state = f['value'] as String;
+                        _EventLogger.info('Date filter changed', {'filter': f['value']});
+                      },
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 220),
+                        curve: Curves.easeOutCubic,
+                        padding: const EdgeInsets.symmetric(vertical: 9),
+                        decoration: BoxDecoration(
+                          color: isSel ? _C.ink : Colors.transparent,
+                          borderRadius: BorderRadius.circular(18),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          f['label'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
+                            color: isSel ? Colors.white : _C.inkSoft,
+                          ),
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ),
-            );
-          }).toList(),
+                );
+              }).toList(),
+            ),
+          ),
         ),
       ),
     );
@@ -1119,7 +1199,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     bool isPremium = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
           Expanded(
@@ -1127,8 +1207,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               children: [
                 if (isPremium)
                   Container(
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    margin: const EdgeInsets.only(right: 9),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: _C.amber,
                       borderRadius: BorderRadius.circular(8),
@@ -1136,7 +1216,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                     child: Text(
                       l10n.t('event_premium'),
                       style: const TextStyle(
-                        fontSize: 10,
+                        fontSize: 9.5,
                         fontWeight: FontWeight.w900,
                         color: _C.ink,
                         letterSpacing: 0.5,
@@ -1149,7 +1229,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 22,
+                      fontSize: 20,
                       fontWeight: FontWeight.w900,
                       color: _C.ink,
                       letterSpacing: -0.6,
@@ -1174,13 +1254,13 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   Text(
                     l10n.t('event_view_all'),
                     style: const TextStyle(
-                      fontSize: 12.5,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                       color: _C.accent,
                     ),
                   ),
                   const SizedBox(width: 3),
-                  const Icon(Icons.arrow_forward_rounded, size: 15, color: _C.accent),
+                  const Icon(Icons.arrow_forward_rounded, size: 14, color: _C.accent),
                 ],
               ),
             ),
@@ -1191,7 +1271,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // CARTE HAUTE (Glassmorphism + Blanc)
+  // CARTE HAUTE (carrousel « les plus attendus »)
   // ════════════════════════════════════════════════════════════
 
   Widget _tallCard(AppLocalizations l10n, Event e) {
@@ -1205,28 +1285,26 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       child: GestureDetector(
         onTap: soldOut ? null : () => _openEvent(e, 'Recommended card tapped'),
         child: Container(
-          width: 240,
+          width: 210,
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(28),
+            borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
+                color: _C.ink.withOpacity(0.1),
+                blurRadius: 16,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Stack(
+            fit: StackFit.expand,
             children: [
-              // Image de fond
               ClipRRect(
-                borderRadius: BorderRadius.circular(28),
-                child: _img(e.imageUrl, cacheWidth: 800),
+                borderRadius: BorderRadius.circular(24),
+                child: _img(e.imageUrl, cacheWidth: 700),
               ),
-              
-              // Overlay dégradé subtil
               ClipRRect(
-                borderRadius: BorderRadius.circular(28),
+                borderRadius: BorderRadius.circular(24),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -1234,68 +1312,50 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       end: Alignment.bottomCenter,
                       colors: [
                         Colors.transparent,
-                        Colors.black.withOpacity(0.2),
-                        Colors.black.withOpacity(0.85),
+                        Colors.black.withOpacity(0.15),
+                        Colors.black.withOpacity(0.75),
                       ],
-                      stops: const [0.0, 0.5, 1.0],
+                      stops: const [0.35, 0.6, 1.0],
                     ),
                   ),
                 ),
               ),
-
-              // Badge prix (verre dépoli)
               if (!soldOut)
                 Positioned(
-                  right: 14,
-                  top: 14,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(16),
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.92),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: Colors.white.withOpacity(0.5), width: 1),
-                        ),
-                        child: Text(
-                          e.formattedPrice,
-                          style: const TextStyle(
-                            color: _C.ink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: -0.3,
-                          ),
-                        ),
+                  right: 10,
+                  top: 10,
+                  child: _glassPill(
+                    child: Text(
+                      e.formattedPrice,
+                      style: const TextStyle(
+                        color: _C.ink,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                   ),
                 ),
-
-              // Badge stock bas
               if (low && !soldOut)
                 Positioned(
-                  left: 14,
-                  top: 14,
+                  left: 10,
+                  top: 10,
                   child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
                 ),
-
-              // Contenu en bas (verre dépoli)
+              // Panneau info en verre dépoli blanc
               Positioned(
-                left: 16,
-                right: 16,
-                bottom: 16,
+                left: 10,
+                right: 10,
+                bottom: 10,
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(20),
+                  borderRadius: BorderRadius.circular(18),
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                    filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
                     child: Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.95),
-                        borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.2),
+                        color: Colors.white.withOpacity(0.9),
+                        borderRadius: BorderRadius.circular(18),
+                        border: Border.all(color: Colors.white.withOpacity(0.6)),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1307,102 +1367,36 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: _C.ink,
-                              fontSize: 17,
+                              fontSize: 14.5,
                               fontWeight: FontWeight.w900,
-                              height: 1.2,
+                              height: 1.15,
                               letterSpacing: -0.3,
                             ),
                           ),
-                          const SizedBox(height: 10),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: _C.amber.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.calendar_today_rounded, size: 14, color: _C.amber),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  e.shortDate,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: _C.inkSoft,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: _C.accent.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: const Icon(Icons.location_on_rounded, size: 14, color: _C.accent),
-                              ),
-                              const SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  e.location,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(
-                                    color: _C.inkSoft,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
+                          const SizedBox(height: 7),
+                          _miniMeta(Icons.calendar_today_rounded, e.shortDate,
+                              iconColor: _C.amber),
                         ],
                       ),
                     ),
                   ),
                 ),
               ),
-
-              // Overlay SOLD OUT
               if (soldOut)
                 Positioned.fill(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.black.withOpacity(0.7),
-                      borderRadius: BorderRadius.circular(28),
+                      color: Colors.black.withOpacity(0.62),
+                      borderRadius: BorderRadius.circular(24),
                     ),
                     alignment: Alignment.center,
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: _C.soldOut.withOpacity(0.2),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.block_rounded, color: _C.soldOut, size: 48),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(
-                          l10n.t('event_sold_out'),
-                          style: const TextStyle(
-                            color: _C.soldOut,
-                            fontSize: 22,
-                            fontWeight: FontWeight.w900,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ],
+                    child: Text(
+                      l10n.t('event_sold_out'),
+                      style: const TextStyle(
+                        color: _C.soldOut,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
                   ),
                 ),
@@ -1414,10 +1408,10 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // GRANDE CARTE (Glassmorphism + Blanc)
+  // CARTE CÔTE À CÔTE (tous les événements)
   // ════════════════════════════════════════════════════════════
 
-  Widget _bigCard(AppLocalizations l10n, Event e) {
+  Widget _sideCard(AppLocalizations l10n, Event e) {
     final soldOut = _isSoldOut(e);
     final low = _isLow(e);
 
@@ -1426,279 +1420,113 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       label: '${e.title}, ${e.formattedPrice}',
       enabled: !soldOut,
       child: GestureDetector(
-        onTap: soldOut ? null : () => _openEvent(e, 'Event card tapped'),
-        child: Container(
-          decoration: BoxDecoration(
-            color: _C.surface,
-            borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: soldOut ? _C.soldOut.withOpacity(0.35) : _C.line,
-              width: 1.2,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.08),
-                blurRadius: 24,
-                offset: const Offset(0, 12),
+        onTap: soldOut ? null : () => _openEvent(e, 'All-events card tapped'),
+        child: SizedBox(
+          width: 240,
+          child: Container(
+            clipBehavior: Clip.antiAlias,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.85),
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(
+                color: soldOut ? _C.soldOut.withOpacity(0.35) : _C.line,
               ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Image avec overlay verre
-              Stack(
-                children: [
-                  ClipRRect(
-                    borderRadius: const BorderRadius.vertical(top: Radius.circular(27)),
-                    child: AspectRatio(
-                      aspectRatio: 16 / 11,
-                      child: _img(e.imageUrl, cacheWidth: 1000),
-                    ),
-                  ),
-                  
-                  // Overlay dégradé
-                  Positioned.fill(
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(27)),
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.transparent,
-                              Colors.black.withOpacity(0.6),
-                            ],
-                            stops: const [0.6, 1.0],
-                          ),
+              boxShadow: [
+                BoxShadow(
+                  color: _C.ink.withOpacity(0.07),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Image
+                SizedBox(
+                  height: 140,
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _img(e.imageUrl, cacheWidth: 700),
+                      if (!soldOut && low)
+                        Positioned(
+                          left: 10,
+                          top: 10,
+                          child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
                         ),
-                      ),
-                    ),
-                  ),
-
-                  // Badge stock bas
-                  if (!soldOut && low)
-                    Positioned(
-                      left: 14,
-                      top: 14,
-                      child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
-                    ),
-
-                  // Bouton favori (verre dépoli)
-                  if (!soldOut)
-                    Positioned(
-                      right: 14,
-                      top: 14,
-                      child: Semantics(
-                        button: true,
-                        label: l10n.t('event_add_favorites'),
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(18),
-                          child: BackdropFilter(
-                            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-                            child: Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.95),
-                                shape: BoxShape.circle,
-                                border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.2),
-                              ),
-                              child: const Icon(
-                                Icons.favorite_border_rounded,
-                                size: 20,
-                                color: _C.ink,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-
-                  // Prix (verre dépoli)
-                  if (!soldOut)
-                    Positioned(
-                      left: 16,
-                      bottom: 16,
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(16),
-                        child: BackdropFilter(
-                          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.95),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: Colors.white.withOpacity(0.5), width: 1.2),
-                            ),
+                      if (!soldOut)
+                        Positioned(
+                          right: 10,
+                          top: 10,
+                          child: _glassPill(
+                            radius: 14,
                             child: Text(
                               e.formattedPrice,
                               style: const TextStyle(
                                 color: _C.ink,
-                                fontSize: 15,
+                                fontSize: 11.5,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: -0.3,
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ),
-
-                  // Overlay SOLD OUT
-                  if (soldOut)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.75),
-                          borderRadius: const BorderRadius.vertical(top: Radius.circular(27)),
-                        ),
-                        alignment: Alignment.center,
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: _C.soldOut.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(Icons.block_rounded, color: _C.soldOut, size: 56),
-                            ),
-                            const SizedBox(height: 16),
-                            Text(
+                      if (soldOut)
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.black.withOpacity(0.6),
+                            alignment: Alignment.center,
+                            child: Text(
                               l10n.t('event_sold_out'),
                               style: const TextStyle(
                                 color: _C.soldOut,
-                                fontSize: 24,
+                                fontSize: 18,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 1.5,
                               ),
                             ),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // Corps en verre dépoli blanc
+                Expanded(
+                  child: ClipRRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        color: Colors.white.withOpacity(0.72),
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                e.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  color: soldOut ? _C.inkSoft : _C.ink,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w900,
+                                  height: 1.2,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            _miniMeta(Icons.calendar_today_rounded, e.shortDate,
+                                iconColor: _C.amber),
+                            const SizedBox(height: 5),
+                            _miniMeta(Icons.location_on_rounded, e.location),
                           ],
                         ),
                       ),
                     ),
-                ],
-              ),
-
-              // Contenu texte (blanc pur)
-              Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      e.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: 19,
-                        fontWeight: FontWeight.w900,
-                        color: soldOut ? _C.inkSoft : _C.ink,
-                        height: 1.2,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    
-                    // Métadonnées avec icônes dans des conteneurs
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      decoration: BoxDecoration(
-                        color: _C.bg.withOpacity(0.6),
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: _C.line, width: 1),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: _C.amber.withOpacity(0.12),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.calendar_today_rounded, size: 16, color: _C.amber),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Date',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: _C.inkSoft,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      e.shortDate,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                        color: _C.ink,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: _C.accent.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.location_on_rounded, size: 16, color: _C.accent),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    const Text(
-                                      'Lieu',
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: _C.inkSoft,
-                                        letterSpacing: 0.5,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      e.location,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w800,
-                                        color: _C.ink,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1706,148 +1534,81 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // VIP BANNER
-  // ════════════════════════════════════════════════════════════
-
-  Widget _vipBanner(AppLocalizations l10n) {
-    return Semantics(
-      button: true,
-      label: l10n.t('event_vip_access'),
-      child: Container(
-        padding: const EdgeInsets.all(22),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [_C.accent, _C.accentDeep],
-          ),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(
-              color: _C.accent.withOpacity(0.35),
-              blurRadius: 20,
-              offset: const Offset(0, 8),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            Container(
-              height: 52,
-              width: 52,
-              decoration: const BoxDecoration(
-                color: _C.amber,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.verified_rounded, color: _C.ink, size: 26),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    l10n.t('event_vip_access'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.3,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    l10n.t('event_vip_description'),
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.88),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      height: 1.3,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // BOTTOM NAV
+  // NAVIGATION BASSE — ATTACHÉE, RÉDUITE (54 px)
   // ════════════════════════════════════════════════════════════
 
   Widget _bottomNav(AppLocalizations l10n) {
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Positioned(
       left: 0,
       right: 0,
       bottom: 0,
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
           child: Container(
-            height: 68,
-            padding: const EdgeInsets.symmetric(horizontal: 6),
+            padding: EdgeInsets.only(bottom: bottomPad),
             decoration: BoxDecoration(
-              color: _C.surface,
-              borderRadius: BorderRadius.circular(34),
-              border: Border.all(color: _C.line),
+              color: Colors.white.withOpacity(0.9),
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              border: Border(top: BorderSide(color: _C.line, width: 1)),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.14),
-                  blurRadius: 26,
-                  offset: const Offset(0, 8),
+                  color: _C.ink.withOpacity(0.05),
+                  blurRadius: 16,
+                  offset: const Offset(0, -4),
                 ),
               ],
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _navItem(
-                  icon: Icons.home_rounded,
-                  label: l10n.t('common_home'),
-                  selected: true,
-                  onTap: () {},
-                ),
-                _navItem(
-                  icon: Icons.explore_outlined,
-                  label: l10n.t('event_explorer'),
-                  onTap: () {
-                    if (!_throttle()) return;
-                    HapticFeedback.selectionClick();
-                    context.push('/thix-event/search');
-                  },
-                ),
-                _navItem(
-                  icon: Icons.confirmation_num_outlined,
-                  label: l10n.t('event_my_tickets'),
-                  onTap: () {
-                    if (!_throttle()) return;
-                    HapticFeedback.selectionClick();
-                    context.push('/thix-event/my-tickets');
-                  },
-                ),
-                _navItem(
-                  icon: Icons.favorite_border_rounded,
-                  label: l10n.t('event_favorites'),
-                  onTap: () {
-                    if (!_throttle()) return;
-                    HapticFeedback.selectionClick();
-                    context.push('/thix-event/favorites');
-                  },
-                ),
-                _navItem(
-                  icon: Icons.person_outline_rounded,
-                  label: l10n.t('common_profile'),
-                  onTap: () {
-                    if (!_throttle()) return;
-                    HapticFeedback.selectionClick();
-                    context.push('/profile');
-                  },
-                ),
-              ],
+            child: SizedBox(
+              height: 54,
+              child: Row(
+                children: [
+                  _navItem(
+                    icon: Icons.home_rounded,
+                    label: l10n.t('common_home'),
+                    selected: true,
+                    onTap: () {},
+                  ),
+                  _navItem(
+                    icon: Icons.explore_outlined,
+                    label: l10n.t('event_explorer'),
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      context.push('/thix-event/search');
+                    },
+                  ),
+                  _navItem(
+                    icon: Icons.confirmation_num_outlined,
+                    label: l10n.t('event_my_tickets'),
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      context.push('/thix-event/my-tickets');
+                    },
+                  ),
+                  _navItem(
+                    icon: Icons.favorite_border_rounded,
+                    label: l10n.t('event_favorites'),
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      context.push('/thix-event/favorites');
+                    },
+                  ),
+                  _navItem(
+                    icon: Icons.person_outline_rounded,
+                    label: l10n.t('common_profile'),
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      context.push('/profile');
+                    },
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -1862,40 +1623,41 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     VoidCallback? onTap,
   }) {
     final color = selected ? _C.accent : _C.inkSoft;
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: SizedBox(
-          width: 62,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
-                decoration: BoxDecoration(
-                  color: selected ? _C.accent.withOpacity(0.12) : Colors.transparent,
-                  borderRadius: BorderRadius.circular(16),
+    return Expanded(
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: label,
+        child: GestureDetector(
+          onTap: onTap,
+          behavior: HitTestBehavior.opaque,
+          child: SizedBox(
+            height: 54,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: selected ? _C.accent.withOpacity(0.12) : Colors.transparent,
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Icon(icon, size: 19, color: color),
                 ),
-                child: Icon(icon, size: 22, color: color),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                  color: color,
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
