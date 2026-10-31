@@ -1,8 +1,6 @@
 // lib/presentation/thix_weeding/pages/staff/invités/guest_list_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — GUEST LIST (PRODUCTION)
-// Design ultra royal + Scanner QR + Import Excel + Stats live + Multi-actions
-// Branché sur providers & services EXISTANTS du dépôt
+// THIX WEDDING & EVENTS — GUEST LIST (PRODUCTION) — CORRIGÉ
 // ============================================================================
 import 'dart:async';
 
@@ -15,6 +13,29 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/services/thix_weeding_services.dart';
+
+// ============================================================================
+// STYLE MONOSPACE GLOBAL (compatible Web / WASM)
+// ============================================================================
+const TextStyle _monoStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontFeatures: [FontFeature.tabularFigures()],
+  letterSpacing: 0.5,
+);
+
+TextStyle _mono({
+  double? fontSize,
+  FontWeight? fontWeight,
+  Color? color,
+  double? letterSpacing,
+}) {
+  return _monoStyle.copyWith(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing ?? 0.5,
+  );
+}
 
 // ============================================================================
 // DESIGN SYSTEM ROYAL
@@ -155,7 +176,7 @@ class GuestListPage extends ConsumerStatefulWidget {
 class _GuestListPageState extends ConsumerState<GuestListPage> {
   final _searchCtrl = TextEditingController();
   String _search = '';
-  String _filter = 'all'; // all, present, absent, confirmed, declined, vip
+  String _filter = 'all';
   String? _groupFilter;
   Timer? _debounce;
 
@@ -237,14 +258,12 @@ class _GuestListContent extends StatelessWidget {
 
   List<GuestModel> get _filtered {
     return guests.where((g) {
-      // Search
       final matchSearch = search.isEmpty ||
           g.name.toLowerCase().contains(search) ||
           (g.phone ?? '').toLowerCase().contains(search) ||
           (g.email ?? '').toLowerCase().contains(search) ||
           (g.groupName ?? '').toLowerCase().contains(search);
 
-      // Filter
       bool matchFilter = true;
       final rsvp = _parseRsvp(g.rsvpStatus);
       switch (filter) {
@@ -265,27 +284,22 @@ class _GuestListContent extends StatelessWidget {
           break;
       }
 
-      // Group filter
       final matchGroup = groupFilter == null ||
           (g.groupName ?? '').toLowerCase() == groupFilter!.toLowerCase();
 
       return matchSearch && matchFilter && matchGroup;
     }).toList()
       ..sort((a, b) {
-        // VIP en premier
         final aVip = (a.groupName ?? '').toLowerCase().contains('vip');
         final bVip = (b.groupName ?? '').toLowerCase().contains('vip');
         if (aVip && !bVip) return -1;
         if (!aVip && bVip) return 1;
-        // Puis présents en premier
         if (a.isPresent && !b.isPresent) return -1;
         if (!a.isPresent && b.isPresent) return 1;
-        // Puis par nom
         return a.name.compareTo(b.name);
       });
   }
 
-  // Extraire les groupes uniques
   List<String> get _uniqueGroups {
     final set = <String>{};
     for (final g in guests) {
@@ -301,7 +315,6 @@ class _GuestListContent extends StatelessWidget {
     final filtered = _filtered;
     final uniqueGroups = _uniqueGroups;
 
-    // Stats
     final total = guests.length;
     final totalSeats = guests.fold<int>(0, (s, g) => s + g.guestsCount);
     final present = guests.where((g) => g.isPresent).fold<int>(0, (s, g) => s + g.guestsCount);
@@ -310,7 +323,6 @@ class _GuestListContent extends StatelessWidget {
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ── APP BAR ROYALE ──────────────────────────────────────────────
         _RoyalAppBar(
           weddingId: weddingId,
           total: total,
@@ -319,12 +331,10 @@ class _GuestListContent extends StatelessWidget {
           totalSeats: totalSeats,
           searchCtrl: searchCtrl,
         ),
-
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              // ── STATS BAR ─────────────────────────────────────────────
               _StatsBar(
                 total: total,
                 confirmed: confirmed,
@@ -332,8 +342,6 @@ class _GuestListContent extends StatelessWidget {
                 declined: guests.where((g) => _parseRsvp(g.rsvpStatus) == _RsvpStatus.declined).length,
               ),
               const SizedBox(height: 12),
-
-              // ── FILTRES ──────────────────────────────────────────────
               _FilterRow(
                 current: filter,
                 onChanged: onFilterChanged,
@@ -347,16 +355,12 @@ class _GuestListContent extends StatelessWidget {
                 ),
               ],
               const SizedBox(height: 16),
-
-              // ── RÉSULTATS ────────────────────────────────────────────
               _ResultHeader(
                 count: filtered.length,
                 total: total,
                 search: search,
               ),
               const SizedBox(height: 10),
-
-              // ── LISTE / EMPTY ────────────────────────────────────────
               if (filtered.isEmpty)
                 _EmptyState(
                   hasSearch: search.isNotEmpty,
@@ -430,7 +434,6 @@ class _RoyalAppBar extends StatelessWidget {
         onPressed: () => context.pop(),
       ),
       actions: [
-        // Bouton import Excel
         Material(
           color: Colors.white,
           shape: const CircleBorder(),
@@ -444,7 +447,6 @@ class _RoyalAppBar extends StatelessWidget {
           ),
         ),
         const SizedBox(width: 4),
-        // Bouton Scanner QR
         Material(
           color: Colors.white,
           shape: const CircleBorder(),
@@ -469,7 +471,6 @@ class _RoyalAppBar extends StatelessWidget {
         ),
         child: Stack(
           children: [
-            // Motifs décoratifs
             Positioned(
               right: -60,
               top: -60,
@@ -494,7 +495,6 @@ class _RoyalAppBar extends StatelessWidget {
                 ),
               ),
             ),
-
             FlexibleSpaceBar(
               background: SafeArea(
                 child: Padding(
@@ -556,13 +556,10 @@ class _RoyalAppBar extends StatelessWidget {
                               ],
                             ),
                           ),
-                          // Bouton Ajouter
                           _AddButton(weddingId: weddingId),
                         ],
                       ),
                       const SizedBox(height: 14),
-
-                      // Search bar
                       Container(
                         height: 44,
                         decoration: BoxDecoration(
@@ -1073,7 +1070,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
           ),
           child: Row(
             children: [
-              // Avatar
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -1104,7 +1100,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                       ),
                     ),
                   ),
-                  // Badge présence
                   Positioned(
                     right: -2,
                     bottom: -2,
@@ -1132,8 +1127,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                 ],
               ),
               const SizedBox(width: 12),
-
-              // Infos
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1276,8 +1269,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                 ),
               ),
               const SizedBox(width: 8),
-
-              // Quick toggle
               _isToggling
                   ? const SizedBox(
                       width: 36,
@@ -1300,8 +1291,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                         ),
                       ),
                     ),
-
-              // Menu
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert, size: 20, color: _R.text2),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1311,9 +1300,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                     context.push('/thix-weeding/staff/${widget.weddingId}/invites/${g.id}/edit');
                   }
                   if (v == 'delete') _delete();
-                  if (v == 'call' && g.phone != null) {
-                    // url_launcher
-                  }
                 },
                 itemBuilder: (_) => [
                   PopupMenuItem(
@@ -1333,17 +1319,6 @@ class _GuestCardState extends ConsumerState<_GuestCard> {
                       ],
                     ),
                   ),
-                  if (g.phone != null && g.phone!.isNotEmpty)
-                    PopupMenuItem(
-                      value: 'call',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.call, size: 18, color: _R.green),
-                          const SizedBox(width: 10),
-                          Text('Appeler', style: GoogleFonts.inter(fontSize: 13)),
-                        ],
-                      ),
-                    ),
                   PopupMenuItem(
                     value: 'edit',
                     child: Row(
@@ -1632,8 +1607,6 @@ class _ImportSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-
-          // Option 1 : Excel/CSV
           _ImportOption(
             icon: Icons.table_chart,
             label: 'Fichier Excel (.xlsx)',
@@ -1658,7 +1631,6 @@ class _ImportSheet extends StatelessWidget {
             onTap: () => Navigator.pop(context),
           ),
           const SizedBox(height: 16),
-
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
@@ -1764,68 +1736,65 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   final _manualCtrl = TextEditingController();
   bool _isChecking = false;
 
-  
-// ── CORRIGÉ : Scanner Result Dialog ──────────────────────────────────
-Future<void> _validate(String code) async {
-  if (code.trim().isEmpty) return;
-  setState(() => _isChecking = true);
-  
-  await Future.delayed(const Duration(milliseconds: 800));
-  setState(() => _isChecking = false);
-  
-  if (!mounted) return;
-  
-  showDialog(
-    context: context,
-    builder: (_) => Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: const BoxDecoration(
-                gradient: _R.greenG,
-                shape: BoxShape.circle,
+  Future<void> _validate(String code) async {
+    if (code.trim().isEmpty) return;
+    setState(() => _isChecking = true);
+
+    await Future.delayed(const Duration(milliseconds: 800));
+
+    setState(() => _isChecking = false);
+
+    if (!mounted) return;
+
+    showDialog(
+      context: context,
+      builder: (_) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: const BoxDecoration(
+                  gradient: _R.greenG,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.check_circle, color: Colors.white, size: 32),
               ),
-              child: const Icon(Icons.check_circle, color: Colors.white, size: 32),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Code scanné',
-              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: _R.surface,
-                borderRadius: BorderRadius.circular(8),
+              const SizedBox(height: 12),
+              Text(
+                'Code scanné',
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
               ),
-              child: Text(
-                code,
-                style: const TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 12,
-                  color: _R.text,
-                  letterSpacing: 0.5,
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _R.surface,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  code,
+                  style: _mono(
+                    fontSize: 12,
+                    color: _R.text,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            FilledButton(
-              onPressed: () => Navigator.pop(context),
-              style: FilledButton.styleFrom(backgroundColor: _R.blue),
-              child: const Text('OK'),
-            ),
-          ],
+              const SizedBox(height: 16),
+              FilledButton(
+                onPressed: () => Navigator.pop(context),
+                style: FilledButton.styleFrom(backgroundColor: _R.blue),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
         ),
       ),
-    ),
-  );
-}
+    );
+  }
 
   @override
   void dispose() {
@@ -1878,8 +1847,6 @@ Future<void> _validate(String code) async {
             ],
           ),
           const SizedBox(height: 20),
-
-          // Preview zone (à remplacer par mobile_scanner)
           Container(
             height: 240,
             decoration: BoxDecoration(
@@ -1917,7 +1884,6 @@ Future<void> _validate(String code) async {
                     ],
                   ),
                 ),
-                // Cadre
                 Center(
                   child: Container(
                     width: 200,
@@ -1932,8 +1898,6 @@ Future<void> _validate(String code) async {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Ou saisie manuelle
           Row(
             children: [
               Expanded(
@@ -1958,10 +1922,9 @@ Future<void> _validate(String code) async {
             ],
           ),
           const SizedBox(height: 16),
-
           TextField(
             controller: _manualCtrl,
-            style: GoogleFonts.robotoMono(fontSize: 13, color: _R.blue)
+            style: _mono(fontSize: 13),
             decoration: InputDecoration(
               hintText: 'Saisir le Thix ID manuellement...',
               hintStyle: GoogleFonts.inter(fontSize: 13, color: _R.text2),
@@ -1976,7 +1939,6 @@ Future<void> _validate(String code) async {
             ),
           ),
           const SizedBox(height: 12),
-
           SizedBox(
             width: double.infinity,
             child: FilledButton.icon(
