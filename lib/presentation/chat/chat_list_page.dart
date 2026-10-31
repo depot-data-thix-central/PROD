@@ -1,6 +1,6 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — v5.1 (enterprise)
+// ChatListPage — v5.2 (enterprise)
 // ✅ Design tokens centralisés (Ct) — ardoise + émeraude, aucun or
 // ✅ Demandes de connexion en attente affichées INLINE dans la liste
 //    avec actions Accepter / Refuser (cartes horizontales défilantes)
@@ -8,7 +8,7 @@
 // ✅ Cibles tactiles 40px, icônes cohérentes, mode sombre supporté
 // ✅ Conserve : escalades, brouillons, appels manqués, verrou biométrique,
 //    bloc-notes, sélection groupée, dismissible, filtres, recherche
-// ✅ Migration vers connectionsProvider (ConnectionService)
+// ✅ Migration vers connectionsProvider et ConnectionService
 //
 // ⚠️ Dépendance : crypto: ^3.0.3
 import 'dart:async';
@@ -26,7 +26,7 @@ import 'package:thix_id/features/auth/presentation/providers/auth_controller.dar
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/models/chat/chat_message.dart';
 import 'package:thix_id/presentation/chat/call/call_history_page.dart';
-import 'package:thix_id/presentation/chat/connections_page.dart'; // ✅ Contient connectionsProvider & ConnectionRequest
+import 'package:thix_id/presentation/chat/connections_page.dart'; // Pour connectionsProvider
 import 'package:thix_id/presentation/chat/providers/chat_list_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_notification_counters_provider.dart';
 import 'package:thix_id/presentation/chat/providers/presence_provider.dart';
@@ -35,6 +35,8 @@ import 'package:thix_id/presentation/chat/screens/group_create_page.dart';
 import 'package:thix_id/presentation/chat/settings/chat_settings_page.dart';
 import 'package:thix_id/presentation/chat/widgets/status_story_row.dart';
 import 'package:thix_id/services/biometric_service.dart';
+import 'package:thix_id/services/chat/connection_service.dart'; // ✅ Import correct de ConnectionRequest
+
 import 'chat_screen.dart';
 import 'new_conversation_page.dart';
 import 'widgets/chat_list_widgets.dart';
@@ -267,7 +269,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 🟢 AVATAR CONTACT EN LIGNE (Résolution de l'erreur _onlineAvatarNode)
+  // 🟢 AVATAR CONTACT EN LIGNE
   // ==========================================================================
   Widget _onlineAvatarNode({
     required String label,
