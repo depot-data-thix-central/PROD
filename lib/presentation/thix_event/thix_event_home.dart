@@ -1,6 +1,6 @@
 // lib/presentation/thix_event/thix_event_home.dart
 //
-// ThixEventHome — Production Enterprise (Redesign 100% Premium Dark Neon)
+// ThixEventHome — Production Enterprise (Corrections UI)
 //
 import 'dart:async';
 import 'dart:math' as math;
@@ -23,10 +23,10 @@ import '../../providers/event_provider.dart';
 class _ThixColors {
   static const bg = Color(0xFF030305);
   static const surface = Color(0xFF0F0F13);
-  static const surfaceGlass = Color(0x4D1A1A23); // 30% opacity
-  static const primary = Color(0xFFFF0A54); // Neon Pink/Red
+  static const surfaceGlass = Color(0x4D1A1A23);
+  static const primary = Color(0xFFFF0A54);
   static const primaryGlow = Color(0x66FF0A54);
-  static const accent = Color(0xFF7C3AED); // Deep Purple
+  static const accent = Color(0xFF7C3AED);
   static const accentGlow = Color(0x667C3AED);
   static const gold = Color(0xFFFFD700);
   static const textMain = Color(0xFFFFFFFF);
@@ -186,7 +186,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               controller: _scrollController,
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
-                // 1. HERO GÉANT IMMERSIF
+                // 1. HERO GÉANT IMMERSIF (Hauteur augmentée)
                 SliverToBoxAdapter(
                   child: featuredAsync.when(
                     loading: () => const SizedBox(height: 550, child: Center(child: CircularProgressIndicator(color: _ThixColors.primary))),
@@ -195,24 +195,20 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   ),
                 ),
                 
-                // 2. FILTRES PREMIUM
-                SliverToBoxAdapter(
-                  child: Transform.translate(
-                    offset: const Offset(0, -20),
-                    child: Column(
-                      children: [
-                        _quickFilters(l10n),
-                        const SizedBox(height: 12),
-                        _dateFilters(l10n),
-                      ],
-                    ),
-                  ),
-                ),
+                // 2. ESPACEMENT avant les filtres
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
+                
+                // 3. FILTRES PREMIUM (Espacés du hero)
+                SliverToBoxAdapter(child: _quickFilters(l10n)),
+                SliverToBoxAdapter(child: SizedBox(height: 12)),
+                SliverToBoxAdapter(child: _dateFilters(l10n)),
+                
+                const SliverToBoxAdapter(child: SizedBox(height: 24)),
 
-                // 3. SECTION: MOST ANTICIPATED (Horizontal)
+                // 4. SECTION: MOST ANTICIPATED (Horizontal)
                 SliverToBoxAdapter(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
+                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
                     child: _headerSection(l10n, l10n.t('event_most_anticipated'), isPremium: true),
                   ),
                 ),
@@ -232,16 +228,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                     ),
                   ),
                 
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // 4. BANNIÈRE VIP "BLACK CARD"
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _vipBanner(l10n),
-                  ),
-                ),
-
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
                 // 5. SECTION: FEATURED / UPCOMING (Grid)
@@ -266,11 +252,11 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       crossAxisCount: 2,
                       mainAxisSpacing: 20,
                       crossAxisSpacing: 16,
-                      childAspectRatio: 0.65, // Légèrement ajusté pour plus d'élégance
+                      childAspectRatio: 0.65,
                     ),
                   ),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 120)), // Espace pour la bottom nav
+                const SliverToBoxAdapter(child: SizedBox(height: 100)), // Espace pour la bottom nav réduite
               ],
             ),
           ),
@@ -282,7 +268,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
 
   // ════════════════════════════════════════════════════════════
   // APP BAR TRANSPARENT & GLASS
-  // ════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
   PreferredSizeWidget _appBar(AppLocalizations l10n) {
     final isAdmin = ref.watch(isEventAdminProvider).valueOrNull ?? false;
     return PreferredSize(
@@ -365,13 +351,13 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // HERO IMMERSIF GÉANT (NOUVEAU DESIGN)
+  // HERO IMMERSIF GÉANT (VISIBLE)
   // ════════════════════════════════════════════════════════════
   Widget _immersiveHero(AppLocalizations l10n, List<Event> list) {
-    if (list.isEmpty) return const SizedBox(height: 400);
+    if (list.isEmpty) return const SizedBox(height: 500);
     
     return SizedBox(
-      height: MediaQuery.of(context).size.height * 0.62, // ~60% de l'écran
+      height: MediaQuery.of(context).size.height * 0.65, // ~65% de l'écran pour meilleure visibilité
       child: Stack(
         children: [
           PageView.builder(
@@ -387,8 +373,12 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               return Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Image plein écran
-                  Image.network(e.imageUrl ?? '', fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface)),
+                  // Image plein écran avec meilleur fit
+                  Image.network(
+                    e.imageUrl ?? '', 
+                    fit: BoxFit.cover, 
+                    errorBuilder: (_, __, ___) => Container(color: _ThixColors.surface),
+                  ),
                   
                   // Dégradé dramatique
                   DecoratedBox(
@@ -515,7 +505,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
 
   // ════════════════════════════════════════════════════════════
   // FILTRES GLASSMORPHIQUES
-  // ════════════════════════════════════════════════════════════
+  // ═══════════════════════════════════════════════════════════
   Widget _quickFilters(AppLocalizations l10n) {
     final selected = ref.watch(eventCategoryProvider);
     final filters = [
@@ -638,7 +628,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // EVENT CARD (CONSERVÉ & LÉGÈREMENT POLI)
+  // EVENT CARD
   // ════════════════════════════════════════════════════════════
   Widget _card(AppLocalizations l10n, Event event) {
     final int tickets = event.remainingTickets ?? 0;
@@ -736,64 +726,21 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // VIP BANNER "BLACK CARD" (NOUVEAU DESIGN)
-  // ════════════════════════════════════════════════════════════
-  Widget _vipBanner(AppLocalizations l10n) {
-    return GestureDetector(
-      onTap: () { if (!_throttle()) return; context.push('/thix-event/vip'); },
-      child: Container(
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [Color(0xFF1A1A2E), Color(0xFF16213E), Color(0xFF0F3460)],
-          ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: _ThixColors.gold.withOpacity(0.3), width: 1.5),
-          boxShadow: [BoxShadow(color: _ThixColors.gold.withOpacity(0.1), blurRadius: 20, offset: const Offset(0, 10))],
-        ),
-        child: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(color: _ThixColors.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(16), border: Border.all(color: _ThixColors.gold.withOpacity(0.4))),
-              child: const Icon(Icons.diamond_rounded, color: _ThixColors.gold, size: 28),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(l10n.t('event_vip_access'), style: const TextStyle(color: _ThixColors.gold, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-                  const SizedBox(height: 4),
-                  Text(l10n.t('event_vip_description'), style: const TextStyle(color: Colors.white70, fontSize: 12, fontWeight: FontWeight.w500, height: 1.3)),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded, color: _ThixColors.gold, size: 24),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════
-  // BOTTOM NAV FLOTTANTE GLASS
+  // BOTTOM NAV FLOTTANTE GLASS (RÉDUITE)
   // ════════════════════════════════════════════════════════════
   Widget _bottomNav(AppLocalizations l10n) {
     return Positioned(
-      left: 16, right: 16, bottom: 24,
+      left: 16, right: 16, bottom: 16, // Position ajustée
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.circular(28), // Rayon réduit
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
           child: Container(
-            height: 68,
+            height: 60, // Hauteur réduite de 68 à 60
             padding: const EdgeInsets.symmetric(horizontal: 8),
             decoration: BoxDecoration(
               color: _ThixColors.surface.withOpacity(0.85),
-              borderRadius: BorderRadius.circular(32),
+              borderRadius: BorderRadius.circular(28),
               border: Border.all(color: Colors.white.withOpacity(0.12), width: 1.2),
               boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 30, offset: const Offset(0, 15))],
             ),
@@ -817,14 +764,14 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     return GestureDetector(
       onTap: () { if (!_throttle()) return; HapticFeedback.selectionClick(); onTap(); },
       child: Container(
-        width: 56,
-        padding: const EdgeInsets.symmetric(vertical: 8),
+        width: 52, // Largeur légèrement réduite
+        padding: const EdgeInsets.symmetric(vertical: 6),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(icon, size: 24, color: selected ? _ThixColors.primary : _ThixColors.textSecondary),
-            const SizedBox(height: 4),
+            Icon(icon, size: 22, color: selected ? _ThixColors.primary : _ThixColors.textSecondary), // Icônes réduites
+            const SizedBox(height: 2),
             Text(label, style: TextStyle(fontSize: 9, fontWeight: selected ? FontWeight.w900 : FontWeight.w600, color: selected ? _ThixColors.primary : _ThixColors.textSecondary, letterSpacing: 0.2)),
           ],
         ),
