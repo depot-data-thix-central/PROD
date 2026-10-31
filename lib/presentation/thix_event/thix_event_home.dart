@@ -1,18 +1,14 @@
 // lib/presentation/thix_event/thix_event_home.dart
 //
-// ThixEventHome — Production Enterprise (i18n 8 langues + Sécurité)
+// ThixEventHome — DESIGN v2 (clair éditorial, hero banner géant permanent)
 //
-// Features :
-// - Intégration complète AppLocalizations (FR/EN/ES/PT/LN/SW/KG/LU)
-// - Semantics sur tous les contrôles interactifs
-// - Throttling anti-double-tap (500ms)
-// - Indicateurs sold out / low stock visuels
-// - Logging structuré
-// - Gestion erreurs i18n
-// - Admin check sécurisé
+// • Hero plein écran (66 % de la hauteur), parallax, toujours affiché :
+//   événements « featured » → sinon recommandés/à venir → sinon hero de marque
+// • Barre du haut transparente sur le hero, qui devient claire au scroll
+// • Chips catégories + segment de dates, carrousel de grandes cartes,
+//   bannière VIP, liste de grandes cartes 16:11, navigation flottante
+// • i18n AppLocalizations (mêmes clés), Semantics, throttling, logging
 import 'dart:async';
-import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -26,19 +22,21 @@ import '../../models/event_model.dart';
 import '../../providers/event_provider.dart';
 
 // ============================================================================
-// COULEURS SPÉCIFIQUES EVENT (DARK & NEON)
+// PALETTE
 // ============================================================================
 
-class _ThixColors {
-  static const bg = Color(0xFF050508);
-  static const surface = Color(0xFF111118);
-  static const primary = Color(0xFFFF0A54);
-  static const primaryLight = Color(0xFFFF8FB0);
-  static const gradientEnd = Color(0xFFFF8A00);
-  static const accentPurple = Color(0xFF7C3AED);
-  static const textSecondary = Color(0x99FFFFFF);
+class _C {
+  static const bg = Color(0xFFF7F5F2);
+  static const surface = Colors.white;
+  static const ink = Color(0xFF0E0E16);
+  static const inkSoft = Color(0xFF6B6B7B);
+  static const line = Color(0xFFE8E4DD);
+  static const accent = Color(0xFF5B3DF5);
+  static const accentDeep = Color(0xFF3B22C9);
+  static const amber = Color(0xFFFFB020);
   static const soldOut = Color(0xFFEF4444);
   static const lowStock = Color(0xFFF59E0B);
+  static const imgBase = Color(0xFF1A1A26);
 }
 
 // ============================================================================
@@ -56,7 +54,7 @@ class _EventLogger {
   static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
   static void warn(String m, [Map<String, dynamic>? d]) => _log('WARN', m, d);
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
-  
+
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
     final data = d != null
@@ -76,7 +74,7 @@ final isEventAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
     _EventLogger.warn('Admin check: no user');
     return false;
   }
-  
+
   try {
     final res = await Supabase.instance.client
         .from('profiles')
@@ -84,14 +82,14 @@ final isEventAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
         .eq('id', uid)
         .maybeSingle()
         .timeout(const Duration(seconds: 10));
-    
-    final isAdmin = res != null && 
-        (res['role'] == 'admin' || res['role'] == 'superadmin');
-    
+
+    final isAdmin =
+        res != null && (res['role'] == 'admin' || res['role'] == 'superadmin');
+
     if (isAdmin) {
       _EventLogger.info('Admin access granted', {'userId': uid});
     }
-    
+
     return isAdmin;
   } catch (e, stack) {
     _EventLogger.error('Admin check failed', {
@@ -108,19 +106,21 @@ final isEventAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
 
 class ThixEventHome extends ConsumerStatefulWidget {
   const ThixEventHome({super.key});
-  
+
   @override
   ConsumerState<ThixEventHome> createState() => _ThixEventHomeState();
 }
 
 class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   final ScrollController _scrollController = ScrollController();
-  final PageController _heroController = PageController(viewportFraction: 1.0);
+  final PageController _heroController = PageController();
   final ScrollController _recScrollController = ScrollController();
-  
+  final ValueNotifier<double> _scrollY = ValueNotifier<double>(0);
+
   Timer? _heroTimer;
   Timer? _recTimer;
   int _heroPage = 0;
+  int _heroCount = 0;
   bool _recForward = true;
   DateTime? _lastAction;
 
@@ -134,37 +134,39 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   void _onScroll() {
-    if (_scrollController.position.pixels > 
-        _scrollController.position.maxScrollExtent - 300) {
+    final p = _scrollController.position;
+    _scrollY.value = p.pixels;
+    if (p.pixels > p.maxScrollExtent - 300) {
       ref.read(eventListProvider.notifier).loadMore();
     }
   }
 
   bool _throttle() {
     final now = DateTime.now();
-    if (_lastAction != null && 
-        now.difference(_lastAction!) < _kActionThrottle) {
+    if (_lastAction != null && now.difference(_lastAction!) < _kActionThrottle) {
       return false;
     }
     _lastAction = now;
     return true;
   }
 
+  double _pageValue() {
+    if (_heroController.hasClients && _heroController.position.hasPixels) {
+      return _heroController.page ?? _heroPage.toDouble();
+    }
+    return _heroPage.toDouble();
+  }
+
   void _startHero() {
     _heroTimer?.cancel();
     _heroTimer = Timer.periodic(const Duration(seconds: 6), (_) {
-      if (!_heroController.hasClients) return;
-      final count = ref.read(featuredEventsProvider).valueOrNull?.length ?? 0;
-      if (count <= 1) return;
-      _heroPage = (_heroPage + 1) % count;
-      if (mounted) {
-        setState(() {});
-        _heroController.animateToPage(
-          _heroPage,
-          duration: const Duration(milliseconds: 700),
-          curve: Curves.easeOutCubic,
-        );
-      }
+      if (!mounted || !_heroController.hasClients || _heroCount <= 1) return;
+      final next = (_pageValue().round() + 1) % _heroCount;
+      _heroController.animateToPage(
+        next,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -174,13 +176,13 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       if (!_recScrollController.hasClients) return;
       final max = _recScrollController.position.maxScrollExtent;
       final cur = _recScrollController.position.pixels;
-      
+
       if (_recForward) {
         if (cur >= max - 20) {
           _recForward = false;
         } else {
           _recScrollController.animateTo(
-            cur + 268,
+            cur + 236,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeOutCubic,
           );
@@ -190,7 +192,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           _recForward = true;
         } else {
           _recScrollController.animateTo(
-            cur - 268,
+            cur - 236,
             duration: const Duration(milliseconds: 800),
             curve: Curves.easeOutCubic,
           );
@@ -204,15 +206,170 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     _scrollController.dispose();
     _heroController.dispose();
     _recScrollController.dispose();
+    _scrollY.dispose();
     _heroTimer?.cancel();
     _recTimer?.cancel();
     _EventLogger.info('ThixEventHome disposed');
     super.dispose();
   }
 
+  // ════════════════════════════════════════════════════════════
+  // HELPERS
+  // ════════════════════════════════════════════════════════════
+
+  bool _isSoldOut(Event e) => (e.remainingTickets ?? 0) <= 0;
+
+  bool _isLow(Event e) {
+    final t = e.remainingTickets ?? 0;
+    return t > 0 && t < 10;
+  }
+
+  void _openEvent(Event e, String logMsg) {
+    if (!_throttle()) return;
+    HapticFeedback.mediumImpact();
+    _EventLogger.info(logMsg, {'eventId': e.id});
+    context.push('/thix-event/event/${e.id}');
+  }
+
+  Widget _imgPlaceholder() => Container(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [_C.accentDeep, _C.accent],
+          ),
+        ),
+        child: const Center(
+          child: Icon(Icons.confirmation_num_rounded, color: Colors.white24, size: 48),
+        ),
+      );
+
+  Widget _img(String? url, {int? cacheWidth}) {
+    if (url == null || url.isEmpty) return _imgPlaceholder();
+    return ColoredBox(
+      color: _C.imgBase,
+      child: Image.network(
+        url,
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        cacheWidth: cacheWidth,
+        gaplessPlayback: true,
+        frameBuilder: (ctx, child, frame, sync) => sync
+            ? child
+            : AnimatedOpacity(
+                opacity: frame == null ? 0 : 1,
+                duration: const Duration(milliseconds: 250),
+                child: child,
+              ),
+        errorBuilder: (_, __, ___) => _imgPlaceholder(),
+      ),
+    );
+  }
+
+  Widget _pill(String text, Color bg, Color fg, {IconData? icon}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
+      decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(20)),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 12, color: fg),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            text,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+              color: fg,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _glassChip(IconData icon, String text) {
+    return Container(
+      constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.62),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.16),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 13, color: Colors.white),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _metaRow(IconData icon, String text) {
+    return Row(
+      children: [
+        Icon(icon, size: 15, color: _C.accent),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _C.inkSoft,
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _heroCurve() {
+    return const Positioned(
+      left: 0,
+      right: 0,
+      bottom: -1,
+      height: 28,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: _C.bg,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+        ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final size = MediaQuery.of(context).size;
+    final topPad = MediaQuery.of(context).padding.top;
+    final heroH = (size.height * 0.66).clamp(500.0, 680.0).toDouble();
+
     final featuredAsync = ref.watch(featuredEventsProvider);
     final eventsState = ref.watch(eventListProvider);
     final recommended = ref.watch(recommendedEventsProvider);
@@ -224,18 +381,40 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       }
     });
 
+    // Hero : featured → sinon recommandés + à venir → sinon placeholder de marque
+    List<Event> heroList = featuredAsync.valueOrNull ?? <Event>[];
+    if (heroList.isEmpty) {
+      final seen = <String>{};
+      heroList = [...recommended, ...upcoming]
+          .where((e) => seen.add('${e.id}'))
+          .take(5)
+          .toList();
+    }
+    _heroCount = heroList.length;
+
+    Widget heroSection;
+    if (heroList.isNotEmpty) {
+      heroSection = _hero(l10n, heroList, heroH);
+    } else if (featuredAsync.hasError) {
+      heroSection = _heroPlaceholder(l10n, heroH, error: true);
+    } else if (featuredAsync.isLoading) {
+      heroSection = _heroPlaceholder(l10n, heroH, loading: true);
+    } else {
+      heroSection = _heroPlaceholder(l10n, heroH);
+    }
+
+    final List<Event> items = upcoming.isNotEmpty
+        ? upcoming
+        : (eventsState.valueOrNull?.items ?? <Event>[]);
+
     return Scaffold(
-      backgroundColor: _ThixColors.bg,
-      extendBodyBehindAppBar: true,
-      extendBody: true,
-      appBar: _appBar(l10n),
+      backgroundColor: _C.bg,
       body: Stack(
         children: [
-          const Positioned.fill(child: _EventAmbientBackground()),
-          
           RefreshIndicator(
-            backgroundColor: _ThixColors.surface,
-            color: _ThixColors.primary,
+            backgroundColor: Colors.white,
+            color: _C.accent,
+            edgeOffset: topPad + 60,
             onRefresh: () async {
               if (!_throttle()) return;
               HapticFeedback.mediumImpact();
@@ -251,41 +430,16 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                 parent: AlwaysScrollableScrollPhysics(),
               ),
               slivers: [
-                SliverToBoxAdapter(
-                  child: SizedBox(
-                    height: MediaQuery.of(context).padding.top + 56,
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: featuredAsync.when(
-                    loading: () => const SizedBox(
-                      height: 460,
-                      child: Center(
-                        child: CircularProgressIndicator(
-                          color: _ThixColors.primary,
-                        ),
-                      ),
-                    ),
-                    error: (e, _) => _ErrorWidget(
-                      message: l10n.t('error_generic'),
-                      onRetry: () {
-                        if (!_throttle()) return;
-                        ref.read(featuredEventsProvider.notifier).refresh();
-                      },
-                      retryLabel: l10n.t('common_retry'),
-                    ),
-                    data: (list) => _hero(l10n, list),
-                  ),
-                ),
+                SliverToBoxAdapter(child: heroSection),
                 SliverToBoxAdapter(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const SizedBox(height: 24),
-                      _quickFilters(l10n),
-                      const SizedBox(height: 16),
-                      _dateFilters(l10n),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 6),
+                      _categoryChips(l10n),
+                      const SizedBox(height: 14),
+                      _dateSegment(l10n),
+                      const SizedBox(height: 30),
                       _headerSection(
                         l10n,
                         l10n.t('event_most_anticipated'),
@@ -294,64 +448,44 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       const SizedBox(height: 16),
                       if (recommended.isNotEmpty)
                         SizedBox(
-                          height: 270,
+                          height: 310,
                           child: ListView.separated(
                             controller: _recScrollController,
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
                             padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 6,
+                              horizontal: 20,
+                              vertical: 4,
                             ),
                             itemCount: recommended.length,
-                            separatorBuilder: (_, __) => 
-                                const SizedBox(width: 16),
-                            itemBuilder: (_, i) => SizedBox(
-                              width: 210,
-                              child: _card(l10n, recommended[i]),
-                            ),
+                            separatorBuilder: (_, __) => const SizedBox(width: 16),
+                            itemBuilder: (_, i) => _tallCard(l10n, recommended[i]),
                           ),
                         ),
-                      const SizedBox(height: 32),
+                      const SizedBox(height: 30),
                       Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: _vipBanner(l10n),
                       ),
-                      const SizedBox(height: 36),
+                      const SizedBox(height: 34),
                       _headerSection(l10n, l10n.t('event_featured')),
                       const SizedBox(height: 16),
                     ],
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverGrid(
-                    delegate: SliverChildBuilderDelegate(
-                      (_, i) {
-                        final ev = upcoming.isNotEmpty
-                            ? upcoming[i]
-                            : (eventsState.valueOrNull?.items[i]);
-                        if (ev == null) return const SizedBox();
-                        return _card(l10n, ev);
-                      },
-                      childCount: upcoming.isNotEmpty
-                          ? upcoming.length
-                          : (eventsState.valueOrNull?.items.length ?? 0)
-                              .clamp(0, 6),
-                    ),
-                    gridDelegate: 
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
-                      childAspectRatio: 0.68,
-                    ),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  sliver: SliverList.separated(
+                    itemCount: items.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 20),
+                    itemBuilder: (_, i) => _bigCard(l10n, items[i]),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 140)),
               ],
             ),
           ),
+          _topBar(l10n, heroH),
           _bottomNav(l10n),
         ],
       ),
@@ -359,468 +493,373 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // APP BAR
+  // TOP BAR (transparente sur le hero → claire au scroll)
   // ════════════════════════════════════════════════════════════
 
-  PreferredSizeWidget _appBar(AppLocalizations l10n) {
-    final isAdmin = ref.watch(isEventAdminProvider).valueOrNull ?? false;
-
-    return PreferredSize(
-      preferredSize: const Size.fromHeight(60),
-      child: ClipRRect(
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 15, sigmaY: 15),
-          child: Container(
-            color: _ThixColors.bg.withOpacity(0.8),
-            decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: Colors.white.withOpacity(0.1),
-                  width: 1,
+  Widget _circleBtn({
+    required IconData icon,
+    required Color fg,
+    required Color bg,
+    required String label,
+    required VoidCallback onTap,
+    bool badge = false,
+  }) {
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Icon(icon, size: 20, color: fg),
+              if (badge)
+                Positioned(
+                  top: 9,
+                  right: 10,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: _C.amber,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 1.2),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            child: SafeArea(
-              bottom: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16,
-                  vertical: 10,
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      height: 32,
-                      width: 32,
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [_ThixColors.primary, _ThixColors.gradientEnd],
-                        ),
-                        borderRadius: BorderRadius.circular(10),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _ThixColors.primary.withOpacity(0.4),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2),
-                          ),
-                        ],
-                      ),
-                      child: const Icon(
-                        Icons.confirmation_num_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.baseline,
-                      textBaseline: TextBaseline.alphabetic,
-                      children: [
-                        Text(
-                          'THIX',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(width: 3),
-                        Text(
-                          l10n.t('event_tickets'),
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w300,
-                            color: _ThixColors.textSecondary,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Spacer(),
-                    Semantics(
-                      button: true,
-                      label: l10n.t('common_search'),
-                      child: IconButton(
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        icon: const Icon(
-                          Icons.search_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        onPressed: () {
-                          if (!_throttle()) return;
-                          HapticFeedback.selectionClick();
-                          context.push('/thix-event/search');
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Semantics(
-                      button: true,
-                      label: l10n.t('common_notifications'),
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        children: [
-                          IconButton(
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(),
-                            icon: const Icon(
-                              Icons.notifications_none_rounded,
-                              color: Colors.white,
-                              size: 22,
-                            ),
-                            onPressed: () {
-                              if (!_throttle()) return;
-                              HapticFeedback.selectionClick();
-                              _EventLogger.info('Notifications tapped');
-                              // TODO: Ouvrir page notifications
-                            },
-                          ),
-                          Positioned(
-                            right: 2,
-                            top: 2,
-                            child: Container(
-                              height: 8,
-                              width: 8,
-                              decoration: const BoxDecoration(
-                                color: _ThixColors.primary,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    if (isAdmin) ...[
-                      const SizedBox(width: 12),
-                      Semantics(
-                        button: true,
-                        label: l10n.t('event_admin_panel'),
-                        child: InkWell(
-                          onTap: () {
-                            if (!_throttle()) return;
-                            HapticFeedback.mediumImpact();
-                            _EventLogger.info('Admin panel opened');
-                            context.push('/thix-event/admin');
-                          },
-                          borderRadius: BorderRadius.circular(20),
-                          child: Container(
-                            height: 32,
-                            width: 32,
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [
-                                  _ThixColors.primary,
-                                  _ThixColors.gradientEnd,
-                                ],
-                              ),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withOpacity(0.2),
-                              ),
-                            ),
-                            alignment: Alignment.center,
-                            child: const Text(
-                              'AN',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
+  Widget _topBar(AppLocalizations l10n, double heroH) {
+    final isAdmin = ref.watch(isEventAdminProvider).valueOrNull ?? false;
+    final topPad = MediaQuery.of(context).padding.top;
+
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      child: ValueListenableBuilder<double>(
+        valueListenable: _scrollY,
+        builder: (_, y, __) {
+          final t = (y / (heroH - topPad - 70)).clamp(0.0, 1.0).toDouble();
+          final fg = Color.lerp(Colors.white, _C.ink, t)!;
+          final chip = Color.lerp(
+            Colors.white.withOpacity(0.18),
+            _C.ink.withOpacity(0.06),
+            t,
+          )!;
+
+          return AnnotatedRegion<SystemUiOverlayStyle>(
+            value: t < 0.5 ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
+            child: Container(
+              padding: EdgeInsets.fromLTRB(20, topPad + 8, 16, 8),
+              decoration: BoxDecoration(
+                color: _C.bg.withOpacity(0.95 * t),
+                border: Border(
+                  bottom: BorderSide(color: _C.line.withOpacity(t)),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 30,
+                    height: 30,
+                    decoration: BoxDecoration(
+                      color: _C.amber,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.confirmation_num_rounded,
+                      size: 16,
+                      color: _C.ink,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text.rich(
+                      TextSpan(
+                        children: [
+                          TextSpan(
+                            text: 'THIX',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: fg,
+                              letterSpacing: -0.4,
+                            ),
+                          ),
+                          TextSpan(
+                            text: ' ${l10n.t('event_tickets')}',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w300,
+                              color: fg.withOpacity(0.85),
+                            ),
+                          ),
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const Spacer(),
+                  _circleBtn(
+                    icon: Icons.search_rounded,
+                    fg: fg,
+                    bg: chip,
+                    label: l10n.t('common_search'),
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      context.push('/thix-event/search');
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                  _circleBtn(
+                    icon: Icons.notifications_none_rounded,
+                    fg: fg,
+                    bg: chip,
+                    label: l10n.t('common_notifications'),
+                    badge: true,
+                    onTap: () {
+                      if (!_throttle()) return;
+                      HapticFeedback.selectionClick();
+                      _EventLogger.info('Notifications tapped');
+                      // TODO: Ouvrir page notifications
+                    },
+                  ),
+                  if (isAdmin) ...[
+                    const SizedBox(width: 8),
+                    Semantics(
+                      button: true,
+                      label: l10n.t('event_admin_panel'),
+                      child: GestureDetector(
+                        onTap: () {
+                          if (!_throttle()) return;
+                          HapticFeedback.mediumImpact();
+                          _EventLogger.info('Admin panel opened');
+                          context.push('/thix-event/admin');
+                        },
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: const BoxDecoration(
+                            color: _C.amber,
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: const Text(
+                            'AN',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
+                              color: _C.ink,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   // ════════════════════════════════════════════════════════════
-  // HERO CAROUSEL
+  // HERO GÉANT
   // ════════════════════════════════════════════════════════════
 
-  Widget _hero(AppLocalizations l10n, List<Event> list) {
-    if (list.isEmpty) return const SizedBox(height: 320);
-    
+  Widget _hero(AppLocalizations l10n, List<Event> list, double h) {
     return SizedBox(
-      height: 480,
+      height: h,
       child: Stack(
         children: [
           PageView.builder(
             controller: _heroController,
             itemCount: list.length,
-            onPageChanged: (i) {
-              setState(() => _heroPage = i);
-            },
-            itemBuilder: (_, idx) {
-              final e = list[idx];
-              final int tickets = e.remainingTickets ?? 0;
-             final isSoldOut = tickets == 0;
-             final isLowStock = !isSoldOut && tickets < 10;
-
-              
-              return Container(
-                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-                clipBehavior: Clip.antiAlias,
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(
-                    color: Colors.white.withOpacity(0.15),
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.6),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    Image.network(
-                      e.imageUrl ?? '',
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: _ThixColors.surface,
-                      ),
-                    ),
-                    DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
-                          colors: [
-                            Colors.black.withOpacity(0.4),
-                            Colors.transparent,
-                            Colors.black.withOpacity(0.95),
-                          ],
-                          stops: const [0.0, 0.4, 1.0],
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      left: 16,
-                      top: 16,
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 6,
-                            ),
-                            decoration: BoxDecoration(
-                              color: _ThixColors.primary,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              l10n.t('event_best_seller'),
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          if (isSoldOut)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _ThixColors.soldOut,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                l10n.t('event_sold_out'),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            )
-                          else if (isLowStock)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: _ThixColors.lowStock,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                l10n.t('event_low_stock'),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            )
-                          else
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.4),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(
-                                  color: Colors.white.withOpacity(0.2),
-                                ),
-                              ),
-                              child: Text(
-                                l10n.t('event_upcoming'),
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                    Positioned(
-                      bottom: 24,
-                      left: 20,
-                      right: 20,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            e.title,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 28,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5,
-                              height: 1.1,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Container(
-                                  height: 48,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.15),
-                                    border: Border.all(
-                                      color: Colors.white.withOpacity(0.25),
-                                    ),
-                                    borderRadius: BorderRadius.circular(24),
-                                  ),
-                                  alignment: Alignment.center,
-                                  child: Text(
-                                    e.formattedPrice,
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 15,
-                                      fontWeight: FontWeight.w900,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Semantics(
-                                button: true,
-                                label: l10n.t('event_book_now'),
-                                enabled: !isSoldOut,
-                                child: GestureDetector(
-                                  onTap: isSoldOut
-                                      ? null
-                                      : () {
-                                          if (!_throttle()) return;
-                                          HapticFeedback.mediumImpact();
-                                          _EventLogger.info(
-                                            'Hero book tapped',
-                                            {'eventId': e.id},
-                                          );
-                                          context.push(
-                                            '/thix-event/event/${e.id}',
-                                          );
-                                        },
-                                  child: Container(
-                                    height: 48,
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 24,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: isSoldOut
-                                          ? Colors.grey.shade700
-                                          : Colors.white,
-                                      borderRadius: BorderRadius.circular(24),
-                                      boxShadow: isSoldOut
-                                          ? null
-                                          : [
-                                              BoxShadow(
-                                                color: Colors.white
-                                                    .withOpacity(0.2),
-                                                blurRadius: 10,
-                                              ),
-                                            ],
-                                    ),
-                                    alignment: Alignment.center,
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        Text(
-                                          isSoldOut
-                                              ? l10n.t('event_sold_out')
-                                              : l10n.t('event_book_now'),
-                                          style: TextStyle(
-                                            color: isSoldOut
-                                                ? Colors.white70
-                                                : Colors.black,
-                                            fontWeight: FontWeight.w900,
-                                            fontSize: 15,
-                                          ),
-                                        ),
-                                        if (!isSoldOut) ...[
-                                          const SizedBox(width: 6),
-                                          const Icon(
-                                            Icons.arrow_forward_rounded,
-                                            color: Colors.black,
-                                            size: 18,
-                                          ),
-                                        ],
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
+            onPageChanged: (i) => setState(() => _heroPage = i),
+            itemBuilder: (_, idx) => _heroSlide(l10n, list[idx], idx),
           ),
+          _heroCurve(),
           Positioned(
-            bottom: 12,
+            bottom: 40,
             left: 0,
             right: 0,
             child: _heroDots(list.length),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _heroSlide(AppLocalizations l10n, Event e, int idx) {
+    final soldOut = _isSoldOut(e);
+    final low = _isLow(e);
+
+    return GestureDetector(
+      onTap: soldOut ? null : () => _openEvent(e, 'Hero tapped'),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          ClipRect(
+            child: AnimatedBuilder(
+              animation: _heroController,
+              child: _img(e.imageUrl, cacheWidth: 1200),
+              builder: (_, child) {
+                final delta = (_pageValue() - idx).clamp(-1.0, 1.0).toDouble();
+                return Transform.translate(
+                  offset: Offset(delta * 70, 0),
+                  child: Transform.scale(scale: 1.22, child: child),
+                );
+              },
+            ),
+          ),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.55),
+                  Colors.transparent,
+                  Colors.black.withOpacity(0.35),
+                  Colors.black.withOpacity(0.92),
+                ],
+                stops: const [0.0, 0.28, 0.55, 1.0],
+              ),
+            ),
+          ),
+          Positioned(
+            left: 20,
+            right: 20,
+            bottom: 78,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _pill(l10n.t('event_best_seller'), _C.amber, _C.ink,
+                        icon: Icons.bolt_rounded),
+                    if (soldOut)
+                      _pill(l10n.t('event_sold_out'), _C.soldOut, Colors.white)
+                    else if (low)
+                      _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white)
+                    else
+                      _pill(
+                        l10n.t('event_upcoming'),
+                        Colors.white.withOpacity(0.18),
+                        Colors.white,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  e.title,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 34,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -1.0,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    _glassChip(Icons.calendar_today_rounded, e.shortDate),
+                    _glassChip(Icons.location_on_rounded, e.location),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        e.formattedPrice,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 24,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Semantics(
+                      button: true,
+                      label: l10n.t('event_book_now'),
+                      enabled: !soldOut,
+                      child: GestureDetector(
+                        onTap: soldOut ? null : () => _openEvent(e, 'Hero book tapped'),
+                        child: Container(
+                          height: 54,
+                          padding: const EdgeInsets.symmetric(horizontal: 26),
+                          decoration: BoxDecoration(
+                            color: soldOut ? Colors.grey.shade700 : _C.amber,
+                            borderRadius: BorderRadius.circular(27),
+                            boxShadow: soldOut
+                                ? null
+                                : [
+                                    BoxShadow(
+                                      color: _C.amber.withOpacity(0.4),
+                                      blurRadius: 16,
+                                      offset: const Offset(0, 6),
+                                    ),
+                                  ],
+                          ),
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                soldOut
+                                    ? l10n.t('event_sold_out')
+                                    : l10n.t('event_book_now'),
+                                style: TextStyle(
+                                  color: soldOut ? Colors.white70 : _C.ink,
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              if (!soldOut) ...[
+                                const SizedBox(width: 8),
+                                const Icon(
+                                  Icons.arrow_forward_rounded,
+                                  color: _C.ink,
+                                  size: 19,
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -836,14 +875,93 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           duration: const Duration(milliseconds: 250),
           margin: const EdgeInsets.symmetric(horizontal: 3),
           height: 6,
-          width: _heroPage == i ? 20 : 6,
+          width: _heroPage == i ? 24 : 6,
           decoration: BoxDecoration(
-            color: _heroPage == i
-                ? _ThixColors.primary
-                : Colors.white.withOpacity(0.3),
+            color: _heroPage == i ? _C.amber : Colors.white.withOpacity(0.4),
             borderRadius: BorderRadius.circular(4),
           ),
         ),
+      ),
+    );
+  }
+
+  /// Hero de marque : affiché pendant le chargement, en cas d'erreur
+  /// ou quand aucun événement n'existe encore → le hero reste TOUJOURS géant.
+  Widget _heroPlaceholder(
+    AppLocalizations l10n,
+    double h, {
+    bool loading = false,
+    bool error = false,
+  }) {
+    return SizedBox(
+      height: h,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [_C.accentDeep, _C.accent, Color(0xFF8B5CF6)],
+              ),
+            ),
+          ),
+          Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (loading)
+                    const SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: CircularProgressIndicator(
+                        color: Colors.white,
+                        strokeWidth: 3,
+                      ),
+                    )
+                  else
+                    Icon(
+                      error ? Icons.error_outline_rounded : Icons.confirmation_num_rounded,
+                      size: 64,
+                      color: Colors.white,
+                    ),
+                  const SizedBox(height: 18),
+                  Text(
+                    error ? l10n.t('error_generic') : 'THIX ${l10n.t('event_tickets')}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.8,
+                    ),
+                  ),
+                  if (error) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        if (!_throttle()) return;
+                        ref.read(featuredEventsProvider.notifier).refresh();
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _C.amber,
+                        foregroundColor: _C.ink,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(24),
+                        ),
+                      ),
+                      child: Text(l10n.t('common_retry')),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          _heroCurve(),
+        ],
       ),
     );
   }
@@ -852,7 +970,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   // FILTRES
   // ════════════════════════════════════════════════════════════
 
-  Widget _quickFilters(AppLocalizations l10n) {
+  Widget _categoryChips(AppLocalizations l10n) {
     final selected = ref.watch(eventCategoryProvider);
     final filters = [
       {'value': 'all', 'label': l10n.t('event_filter_all'), 'icon': Icons.auto_awesome_rounded},
@@ -862,15 +980,15 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       {'value': 'sport', 'label': l10n.t('event_filter_sport'), 'icon': Icons.emoji_events_rounded},
       {'value': 'culture', 'label': l10n.t('event_filter_culture'), 'icon': Icons.palette_outlined},
     ];
-    
+
     return SizedBox(
-      height: 90,
+      height: 46,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
         itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final f = filters[i];
           final isSel = selected == f['value'];
@@ -878,56 +996,45 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
             button: true,
             selected: isSel,
             label: f['label'] as String,
-            child: InkWell(
+            child: GestureDetector(
               onTap: () {
                 if (!_throttle()) return;
                 HapticFeedback.lightImpact();
-                ref.read(eventCategoryProvider.notifier).state = 
-                    f['value'] as String;
-                _EventLogger.info(
-                  'Category filter changed',
-                  {'category': f['value']},
-                );
+                ref.read(eventCategoryProvider.notifier).state = f['value'] as String;
+                _EventLogger.info('Category filter changed', {'category': f['value']});
               },
-              borderRadius: BorderRadius.circular(20),
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
-                width: 80,
-                height: 80,
+                padding: const EdgeInsets.symmetric(horizontal: 16),
                 decoration: BoxDecoration(
-                  color: isSel ? _ThixColors.primary : _ThixColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSel
-                        ? _ThixColors.primaryLight
-                        : Colors.white.withOpacity(0.1),
-                  ),
+                  color: isSel ? _C.accent : _C.surface,
+                  borderRadius: BorderRadius.circular(23),
+                  border: Border.all(color: isSel ? _C.accent : _C.line),
                   boxShadow: isSel
                       ? [
                           BoxShadow(
-                            color: _ThixColors.primary.withOpacity(0.4),
+                            color: _C.accent.withOpacity(0.3),
                             blurRadius: 12,
                             offset: const Offset(0, 4),
                           ),
                         ]
                       : [],
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
                       f['icon'] as IconData,
-                      color: isSel ? Colors.white : Colors.white70,
-                      size: 24,
+                      size: 17,
+                      color: isSel ? Colors.white : _C.ink,
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(width: 8),
                     Text(
                       f['label'] as String,
-                      textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w600,
-                        color: isSel ? Colors.white : Colors.white70,
+                        fontSize: 13,
+                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
+                        color: isSel ? Colors.white : _C.ink,
                       ),
                     ),
                   ],
@@ -940,7 +1047,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
-  Widget _dateFilters(AppLocalizations l10n) {
+  Widget _dateSegment(AppLocalizations l10n) {
     final selected = ref.watch(eventDateFilterProvider);
     final filters = [
       {'value': 'all', 'label': l10n.t('event_date_all')},
@@ -948,70 +1055,55 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       {'value': 'week', 'label': l10n.t('event_date_week')},
       {'value': 'month', 'label': l10n.t('event_date_month')},
     ];
-    
-    return SizedBox(
-      height: 38,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 10),
-        itemBuilder: (_, i) {
-          final f = filters[i];
-          final isSel = selected == f['value'];
-          return Semantics(
-            button: true,
-            selected: isSel,
-            label: f['label'] as String,
-            child: InkWell(
-              onTap: () {
-                if (!_throttle()) return;
-                HapticFeedback.lightImpact();
-                ref.read(eventDateFilterProvider.notifier).state = 
-                    f['value'] as String;
-                _EventLogger.info(
-                  'Date filter changed',
-                  {'filter': f['value']},
-                );
-              },
-              borderRadius: BorderRadius.circular(20),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 8,
-                ),
-                decoration: BoxDecoration(
-                  color: isSel ? Colors.white : _ThixColors.surface,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isSel
-                        ? Colors.white
-                        : Colors.white.withOpacity(0.15),
-                  ),
-                  boxShadow: isSel
-                      ? [
-                          BoxShadow(
-                            color: Colors.white.withOpacity(0.2),
-                            blurRadius: 8,
-                          ),
-                        ]
-                      : [],
-                ),
-                alignment: Alignment.center,
-                child: Text(
-                  f['label'] as String,
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
-                    color: isSel ? Colors.black : Colors.white70,
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFECE8E1),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          children: filters.map((f) {
+            final isSel = selected == f['value'];
+            return Expanded(
+              child: Semantics(
+                button: true,
+                selected: isSel,
+                label: f['label'] as String,
+                child: GestureDetector(
+                  onTap: () {
+                    if (!_throttle()) return;
+                    HapticFeedback.lightImpact();
+                    ref.read(eventDateFilterProvider.notifier).state = f['value'] as String;
+                    _EventLogger.info('Date filter changed', {'filter': f['value']});
+                  },
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeOutCubic,
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSel ? _C.ink : Colors.transparent,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      f['label'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: isSel ? FontWeight.w900 : FontWeight.w700,
+                        color: isSel ? Colors.white : _C.inkSoft,
+                      ),
+                    ),
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -1026,45 +1118,45 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     bool isPremium = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              if (isPremium)
-                Container(
-                  margin: const EdgeInsets.only(right: 10),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_ThixColors.primary, _ThixColors.gradientEnd],
+          Expanded(
+            child: Row(
+              children: [
+                if (isPremium)
+                  Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _C.amber,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    borderRadius: BorderRadius.circular(8),
+                    child: Text(
+                      l10n.t('event_premium'),
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        color: _C.ink,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
                   ),
+                Flexible(
                   child: Text(
-                    l10n.t('event_premium'),
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
-                      fontSize: 10,
+                      fontSize: 22,
                       fontWeight: FontWeight.w900,
-                      color: Colors.white,
-                      letterSpacing: 0.5,
+                      color: _C.ink,
+                      letterSpacing: -0.6,
                     ),
                   ),
                 ),
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                  letterSpacing: -0.5,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
           Semantics(
             button: true,
@@ -1076,33 +1168,19 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                 _EventLogger.info('View all tapped');
                 context.push('/thix-event/recommended');
               },
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  children: [
-                    Text(
-                      l10n.t('event_view_all'),
-                      style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
+              child: Row(
+                children: [
+                  Text(
+                    l10n.t('event_view_all'),
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: _C.accent,
                     ),
-                    const SizedBox(width: 4),
-                    const Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      size: 12,
-                      color: Colors.white,
-                    ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(width: 3),
+                  const Icon(Icons.arrow_forward_rounded, size: 15, color: _C.accent),
+                ],
               ),
             ),
           ),
@@ -1112,242 +1190,255 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // EVENT CARD
+  // CARTE HAUTE (carrousel « les plus attendus »)
   // ════════════════════════════════════════════════════════════
 
-  Widget _card(AppLocalizations l10n, Event event) {
-    final int tickets = event.remainingTickets ?? 0;
-final isSoldOut = tickets == 0;
-final isLowStock = !isSoldOut && tickets < 10;
+  Widget _tallCard(AppLocalizations l10n, Event e) {
+    final soldOut = _isSoldOut(e);
+    final low = _isLow(e);
 
-    
     return Semantics(
       button: true,
-      label: '${event.title}, ${event.formattedPrice}',
-      enabled: !isSoldOut,
+      label: '${e.title}, ${e.formattedPrice}',
+      enabled: !soldOut,
       child: GestureDetector(
-        onTap: isSoldOut
-            ? null
-            : () {
-                if (!_throttle()) return;
-                HapticFeedback.selectionClick();
-                _EventLogger.info('Event card tapped', {'eventId': event.id});
-                context.push('/thix-event/event/${event.id}');
-              },
+        onTap: soldOut ? null : () => _openEvent(e, 'Recommended card tapped'),
+        child: Container(
+          width: 220,
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(26),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.14),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
+              ),
+            ],
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              _img(e.imageUrl, cacheWidth: 700),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.15),
+                      Colors.black.withOpacity(0.88),
+                    ],
+                    stops: const [0.35, 0.6, 1.0],
+                  ),
+                ),
+              ),
+              if (!soldOut)
+                Positioned(
+                  right: 12,
+                  top: 12,
+                  child: _pill(e.formattedPrice, Colors.white, _C.ink),
+                ),
+              if (low && !soldOut)
+                Positioned(
+                  left: 12,
+                  top: 12,
+                  child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
+                ),
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 14,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      e.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        height: 1.15,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded,
+                            size: 12, color: _C.amber),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            e.shortDate,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (soldOut)
+                Positioned.fill(
+                  child: Container(
+                    color: Colors.black.withOpacity(0.62),
+                    alignment: Alignment.center,
+                    child: Text(
+                      l10n.t('event_sold_out'),
+                      style: const TextStyle(
+                        color: _C.soldOut,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // GRANDE CARTE (liste principale)
+  // ════════════════════════════════════════════════════════════
+
+  Widget _bigCard(AppLocalizations l10n, Event e) {
+    final soldOut = _isSoldOut(e);
+    final low = _isLow(e);
+
+    return Semantics(
+      button: true,
+      label: '${e.title}, ${e.formattedPrice}',
+      enabled: !soldOut,
+      child: GestureDetector(
+        onTap: soldOut ? null : () => _openEvent(e, 'Event card tapped'),
         child: Container(
           decoration: BoxDecoration(
-            color: _ThixColors.surface,
-            borderRadius: BorderRadius.circular(20),
+            color: _C.surface,
+            borderRadius: BorderRadius.circular(26),
             border: Border.all(
-              color: isSoldOut
-                  ? _ThixColors.soldOut.withOpacity(0.3)
-                  : Colors.white.withOpacity(0.1),
+              color: soldOut ? _C.soldOut.withOpacity(0.35) : _C.line,
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.3),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: Colors.black.withOpacity(0.06),
+                blurRadius: 18,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Stack(
-                children: [
-                  AspectRatio(
-                    aspectRatio: 1.25,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.vertical(
-                        top: Radius.circular(19),
-                      ),
-                      child: Image.network(
-                        event.imageUrl ?? '',
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: _ThixColors.surface,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (isSoldOut)
-                    Positioned.fill(
-                      child: Container(
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: const BorderRadius.vertical(
-                            top: Radius.circular(19),
-                          ),
-                        ),
-                        child: Center(
-                          child: Text(
-                            l10n.t('event_sold_out'),
-                            style: const TextStyle(
-                              color: _ThixColors.soldOut,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                        ),
-                      ),
-                    )
-                  else ...[
-                    Positioned(
-                      right: 10,
-                      top: 10,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 5,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.2),
-                          ),
-                        ),
-                        child: Text(
-                          event.formattedPrice,
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 11,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (isLowStock)
-                      Positioned(
-                        left: 10,
-                        top: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _ThixColors.lowStock,
-                            borderRadius: BorderRadius.circular(12),
-                          ),
-                          child: Text(
-                            l10n.t('event_low_stock'),
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: Semantics(
-                        button: true,
-                        label: l10n.t('event_add_favorites'),
-                        child: Container(
-                          height: 32,
-                          width: 32,
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.2),
-                            ),
-                          ),
-                          child: const Icon(
-                            Icons.favorite_border_rounded,
-                            color: Colors.white,
-                            size: 16,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              ClipRRect(
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(25)),
+                child: AspectRatio(
+                  aspectRatio: 16 / 11,
+                  child: Stack(
+                    fit: StackFit.expand,
                     children: [
-                      Text(
-                        event.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: isSoldOut
-                              ? Colors.white54
-                              : Colors.white,
-                          height: 1.2,
-                          letterSpacing: -0.2,
+                      _img(e.imageUrl, cacheWidth: 900),
+                      DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Colors.black.withOpacity(0.5),
+                            ],
+                            stops: const [0.55, 1.0],
+                          ),
                         ),
                       ),
-                      Column(
-                        children: [
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.calendar_today_rounded,
-                                size: 12,
-                                color: isSoldOut
-                                    ? Colors.white38
-                                    : _ThixColors.primaryLight,
+                      if (!soldOut && low)
+                        Positioned(
+                          left: 12,
+                          top: 12,
+                          child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
+                        ),
+                      if (!soldOut)
+                        Positioned(
+                          right: 12,
+                          top: 12,
+                          child: Semantics(
+                            button: true,
+                            label: l10n.t('event_add_favorites'),
+                            child: Container(
+                              width: 36,
+                              height: 36,
+                              decoration: const BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  event.shortDate,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isSoldOut
-                                        ? Colors.white38
-                                        : Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
+                              child: const Icon(
+                                Icons.favorite_border_rounded,
+                                size: 18,
+                                color: _C.ink,
                               ),
-                            ],
+                            ),
                           ),
-                          const SizedBox(height: 6),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.location_on_rounded,
-                                size: 12,
-                                color: isSoldOut
-                                    ? Colors.white38
-                                    : _ThixColors.primaryLight,
+                        ),
+                      if (!soldOut)
+                        Positioned(
+                          left: 14,
+                          bottom: 14,
+                          child: _pill(e.formattedPrice, Colors.white, _C.ink),
+                        ),
+                      if (soldOut)
+                        Positioned.fill(
+                          child: Container(
+                            color: Colors.black.withOpacity(0.6),
+                            alignment: Alignment.center,
+                            child: Text(
+                              l10n.t('event_sold_out'),
+                              style: const TextStyle(
+                                color: _C.soldOut,
+                                fontSize: 22,
+                                fontWeight: FontWeight.w900,
                               ),
-                              const SizedBox(width: 6),
-                              Expanded(
-                                child: Text(
-                                  event.location,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: TextStyle(
-                                    color: isSoldOut
-                                        ? Colors.white38
-                                        : Colors.white,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ),
-                            ],
+                            ),
                           ),
-                        ],
-                      ),
+                        ),
                     ],
                   ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      e.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: soldOut ? _C.inkSoft : _C.ink,
+                        height: 1.15,
+                        letterSpacing: -0.4,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _metaRow(Icons.calendar_today_rounded, e.shortDate),
+                    const SizedBox(height: 7),
+                    _metaRow(Icons.location_on_rounded, e.location),
+                  ],
                 ),
               ),
             ],
@@ -1366,43 +1457,32 @@ final isLowStock = !isSoldOut && tickets < 10;
       button: true,
       label: l10n.t('event_vip_access'),
       child: Container(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.all(22),
         decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              _ThixColors.primary.withOpacity(0.85),
-              _ThixColors.gradientEnd.withOpacity(0.85),
-            ],
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [_C.accent, _C.accentDeep],
           ),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(
-            color: Colors.white.withOpacity(0.3),
-          ),
+          borderRadius: BorderRadius.circular(28),
           boxShadow: [
             BoxShadow(
-              color: _ThixColors.primary.withOpacity(0.3),
-              blurRadius: 15,
-              offset: const Offset(0, 5),
+              color: _C.accent.withOpacity(0.35),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
             ),
           ],
         ),
         child: Row(
           children: [
             Container(
-              height: 46,
-              width: 46,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.5),
-                ),
+              height: 52,
+              width: 52,
+              decoration: const BoxDecoration(
+                color: _C.amber,
+                shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.verified_rounded,
-                color: Colors.white,
-                size: 24,
-              ),
+              child: const Icon(Icons.verified_rounded, color: _C.ink, size: 26),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -1413,17 +1493,17 @@ final isLowStock = !isSoldOut && tickets < 10;
                     l10n.t('event_vip_access'),
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 14,
+                      fontSize: 15,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
+                      letterSpacing: 0.3,
                     ),
                   ),
-                  const SizedBox(height: 2),
+                  const SizedBox(height: 3),
                   Text(
                     l10n.t('event_vip_description'),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11.5,
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.88),
+                      fontSize: 12,
                       fontWeight: FontWeight.w600,
                       height: 1.3,
                     ),
@@ -1438,7 +1518,7 @@ final isLowStock = !isSoldOut && tickets < 10;
   }
 
   // ════════════════════════════════════════════════════════════
-  // BOTTOM NAV
+  // BOTTOM NAV (pilule flottante claire)
   // ════════════════════════════════════════════════════════════
 
   Widget _bottomNav(AppLocalizations l10n) {
@@ -1446,82 +1526,71 @@ final isLowStock = !isSoldOut && tickets < 10;
       left: 0,
       right: 0,
       bottom: 0,
-      child: Container(
-        color: Colors.transparent,
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: Container(
-              height: 64,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              decoration: BoxDecoration(
-                color: _ThixColors.surface,
-                borderRadius: BorderRadius.circular(32),
-                border: Border.all(
-                  color: Colors.white.withOpacity(0.15),
-                  width: 1.2,
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 0, 20, 14),
+          child: Container(
+            height: 68,
+            padding: const EdgeInsets.symmetric(horizontal: 6),
+            decoration: BoxDecoration(
+              color: _C.surface,
+              borderRadius: BorderRadius.circular(34),
+              border: Border.all(color: _C.line),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.14),
+                  blurRadius: 26,
+                  offset: const Offset(0, 8),
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.4),
-                    blurRadius: 30,
-                    offset: const Offset(0, 10),
-                  ),
-                ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  _navItem(
-                    l10n,
-                    icon: Icons.home_rounded,
-                    label: l10n.t('common_home'),
-                    selected: true,
-                    onTap: () {},
-                  ),
-                  _navItem(
-                    l10n,
-                    icon: Icons.explore_outlined,
-                    label: l10n.t('event_explorer'),
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      context.push('/thix-event/search');
-                    },
-                  ),
-                  _navItem(
-                    l10n,
-                    icon: Icons.confirmation_num_outlined,
-                    label: l10n.t('event_my_tickets'),
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      context.push('/thix-event/my-tickets');
-                    },
-                  ),
-                  _navItem(
-                    l10n,
-                    icon: Icons.favorite_border_rounded,
-                    label: l10n.t('event_favorites'),
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      context.push('/thix-event/favorites');
-                    },
-                  ),
-                  _navItem(
-                    l10n,
-                    icon: Icons.person_outline_rounded,
-                    label: l10n.t('common_profile'),
-                    onTap: () {
-                      if (!_throttle()) return;
-                      HapticFeedback.selectionClick();
-                      context.push('/profile');
-                    },
-                  ),
-                ],
-              ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _navItem(
+                  icon: Icons.home_rounded,
+                  label: l10n.t('common_home'),
+                  selected: true,
+                  onTap: () {},
+                ),
+                _navItem(
+                  icon: Icons.explore_outlined,
+                  label: l10n.t('event_explorer'),
+                  onTap: () {
+                    if (!_throttle()) return;
+                    HapticFeedback.selectionClick();
+                    context.push('/thix-event/search');
+                  },
+                ),
+                _navItem(
+                  icon: Icons.confirmation_num_outlined,
+                  label: l10n.t('event_my_tickets'),
+                  onTap: () {
+                    if (!_throttle()) return;
+                    HapticFeedback.selectionClick();
+                    context.push('/thix-event/my-tickets');
+                  },
+                ),
+                _navItem(
+                  icon: Icons.favorite_border_rounded,
+                  label: l10n.t('event_favorites'),
+                  onTap: () {
+                    if (!_throttle()) return;
+                    HapticFeedback.selectionClick();
+                    context.push('/thix-event/favorites');
+                  },
+                ),
+                _navItem(
+                  icon: Icons.person_outline_rounded,
+                  label: l10n.t('common_profile'),
+                  onTap: () {
+                    if (!_throttle()) return;
+                    HapticFeedback.selectionClick();
+                    context.push('/profile');
+                  },
+                ),
+              ],
             ),
           ),
         ),
@@ -1529,42 +1598,44 @@ final isLowStock = !isSoldOut && tickets < 10;
     );
   }
 
-  Widget _navItem(
-    AppLocalizations l10n, {
+  Widget _navItem({
     required IconData icon,
     required String label,
     bool selected = false,
     VoidCallback? onTap,
   }) {
+    final color = selected ? _C.accent : _C.inkSoft;
     return Semantics(
       button: true,
       selected: selected,
       label: label,
       child: GestureDetector(
         onTap: onTap,
-        child: Container(
-          width: 60,
-          padding: const EdgeInsets.symmetric(vertical: 4),
+        behavior: HitTestBehavior.opaque,
+        child: SizedBox(
+          width: 62,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
-                icon,
-                size: 24,
-                color: selected
-                    ? _ThixColors.primaryLight
-                    : Colors.white.withOpacity(0.5),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 3),
+                decoration: BoxDecoration(
+                  color: selected ? _C.accent.withOpacity(0.12) : Colors.transparent,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Icon(icon, size: 22, color: color),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 10,
                   fontWeight: selected ? FontWeight.w900 : FontWeight.w600,
-                  color: selected
-                      ? _ThixColors.primaryLight
-                      : Colors.white.withOpacity(0.5),
+                  color: color,
                 ),
               ),
             ],
@@ -1573,186 +1644,4 @@ final isLowStock = !isSoldOut && tickets < 10;
       ),
     );
   }
-}
-
-// ============================================================================
-// ERROR WIDGET
-// ============================================================================
-
-class _ErrorWidget extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-  final String retryLabel;
-
-  const _ErrorWidget({
-    required this.message,
-    required this.onRetry,
-    required this.retryLabel,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 460,
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(
-              Icons.error_outline,
-              color: Colors.white54,
-              size: 48,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white70),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton(
-              onPressed: onRetry,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _ThixColors.primary,
-                foregroundColor: Colors.white,
-              ),
-              child: Text(retryLabel),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// BACKGROUND ANIMÉ (optimisé)
-// ============================================================================
-
-class _EventAmbientBackground extends StatefulWidget {
-  const _EventAmbientBackground();
-
-  @override
-  State<_EventAmbientBackground> createState() => 
-      _EventAmbientBackgroundState();
-}
-
-class _EventAmbientBackgroundState extends State<_EventAmbientBackground>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 12),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  Widget _buildPerformanceLight(
-    double left,
-    double top,
-    double size,
-    Color color,
-  ) {
-    return Positioned(
-      left: left - (size / 2),
-      top: top - (size / 2),
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          gradient: RadialGradient(
-            colors: [color, color.withOpacity(0.0)],
-            stops: const [0.0, 1.0],
-          ),
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-
-    return IgnorePointer(
-      child: RepaintBoundary(
-        child: AnimatedBuilder(
-          animation: _controller,
-          builder: (context, child) {
-            final t = _controller.value * 2 * math.pi;
-
-            final p1X = size.width * 0.3 + math.cos(t) * 200.0;
-            final p1Y = size.height * 0.2 + math.sin(t * 1.5) * 150.0;
-
-            final p2X = size.width * 0.7 + math.sin(t * 1.2) * 180.0;
-            final p2Y = size.height * 0.5 + math.cos(t * 0.8) * 200.0;
-
-            final p3X = size.width * 0.5 + math.cos(t * 0.7) * 250.0;
-            final p3Y = size.height * 0.8 + math.sin(t * 1.1) * 100.0;
-
-            return Stack(
-              children: [
-                Positioned.fill(
-                  child: Container(color: _ThixColors.bg),
-                ),
-                _buildPerformanceLight(
-                  p1X,
-                  p1Y,
-                  700,
-                  _ThixColors.primary.withOpacity(0.22),
-                ),
-                _buildPerformanceLight(
-                  p2X,
-                  p2Y,
-                  800,
-                  _ThixColors.gradientEnd.withOpacity(0.16),
-                ),
-                _buildPerformanceLight(
-                  p3X,
-                  p3Y,
-                  900,
-                  _ThixColors.accentPurple.withOpacity(0.18),
-                ),
-                Positioned.fill(
-                  child: CustomPaint(painter: _EventGridPainter()),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-    );
-  }
-}
-
-class _EventGridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final dotPaint = Paint()
-      ..color = Colors.white.withOpacity(0.04)
-      ..strokeWidth = 1.0
-      ..strokeCap = StrokeCap.round;
-
-    final points = <Offset>[];
-    const double spacing = 40.0;
-
-    for (double x = 0; x < size.width; x += spacing) {
-      for (double y = 0; y < size.height; y += spacing) {
-        points.add(Offset(x, y));
-      }
-    }
-    canvas.drawPoints(PointMode.points, points, dotPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
