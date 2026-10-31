@@ -852,44 +852,86 @@ class _InfoRow extends StatelessWidget {
   final bool mono;
   final String? copyable;
 
-  const _InfoRow({required this.icon, required this.label, required this.value, required this.color, this.badge = false, this.mono = false, this.copyable});
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.color,
+    this.badge = false,
+    this.mono = false,
+    this.copyable,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
-      child: Row(children: [
-        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 16, color: color)),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
-            const SizedBox(height: 2),
-            badge
-                ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(0.3))),
-                    child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
-                  )
-                : Text(
-                    value,
-                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseignée' ? _R.text2 : _R.text, fontFamily: mono ? 'monospace' : null),
-                  ),
-          ]),
-        ),
-        if (copyable != null)
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () {
-                Clipboard.setData(ClipboardData(text: copyable!));
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Copié ✓'), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))));
-              },
-              borderRadius: BorderRadius.circular(6),
-              child: Container(padding: const EdgeInsets.all(6), child: const Icon(Icons.copy, size: 14, color: _R.text2)),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 16, color: color),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(label, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
+                const SizedBox(height: 2),
+                badge
+                    ? Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: color.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: color.withOpacity(0.3)),
+                        ),
+                        child: Text(
+                          value,
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: color),
+                        ),
+                      )
+                    : Text(
+                        value,
+                        style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: value == 'Non renseignée' ? _R.text2 : _R.text,
+                          fontFamily: mono ? 'monospace' : null,
+                        ),
+                      ),
+              ],
             ),
           ),
-      ]),
+          if (copyable != null)
+            Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: copyable!));
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: const Text('Copié ✓'),
+                      backgroundColor: _R.green,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                  );
+                },
+                borderRadius: BorderRadius.circular(6),
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  child: const Icon(Icons.copy, size: 14, color: _R.text2),
+                ),
+              ),
+            ), // ← CETTE PARENTHÈSE ÉTAIT MANQUANTE
+        ],
+      ),
     );
   }
 }
