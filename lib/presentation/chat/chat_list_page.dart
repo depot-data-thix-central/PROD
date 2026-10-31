@@ -1,16 +1,12 @@
 // lib/presentation/chat/chat_list_page.dart
 //
-// ChatListPage — v5.2 (enterprise)
-// ✅ Design tokens centralisés (Ct) — ardoise + émeraude, aucun or
-// ✅ Demandes de connexion en attente affichées INLINE dans la liste
-//    avec actions Accepter / Refuser (cartes horizontales défilantes)
-// ✅ Palette : neutre ardoise, émeraude = accent/actions, rouge = alertes
-// ✅ Cibles tactiles 40px, icônes cohérentes, mode sombre supporté
-// ✅ Conserve : escalades, brouillons, appels manqués, verrou biométrique,
-//    bloc-notes, sélection groupée, dismissible, filtres, recherche
-// ✅ Migration vers connectionsProvider et ConnectionService
+// ChatListPage — v5.3 (enterprise)
+// ✅ BLEU au lieu de VERT (couleurs professionnelles)
+// ✅ Cartes demandes de connexion compactes (180px)
+// ✅ Status style WhatsApp
+// ✅ Online contacts repositionnés
 //
-// ⚠️ Dépendance : crypto: ^3.0.3
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -26,7 +22,7 @@ import 'package:thix_id/features/auth/presentation/providers/auth_controller.dar
 import 'package:thix_id/models/chat/chat_conversation.dart';
 import 'package:thix_id/models/chat/chat_message.dart';
 import 'package:thix_id/presentation/chat/call/call_history_page.dart';
-import 'package:thix_id/presentation/chat/connections_page.dart'; // Pour connectionsProvider
+import 'package:thix_id/presentation/chat/connections_page.dart';
 import 'package:thix_id/presentation/chat/providers/chat_list_provider.dart';
 import 'package:thix_id/presentation/chat/providers/chat_notification_counters_provider.dart';
 import 'package:thix_id/presentation/chat/providers/presence_provider.dart';
@@ -35,14 +31,14 @@ import 'package:thix_id/presentation/chat/screens/group_create_page.dart';
 import 'package:thix_id/presentation/chat/settings/chat_settings_page.dart';
 import 'package:thix_id/presentation/chat/widgets/status_story_row.dart';
 import 'package:thix_id/services/biometric_service.dart';
-import 'package:thix_id/services/chat/connection_service.dart'; // ✅ Import correct de ConnectionRequest
+import 'package:thix_id/services/chat/connection_service.dart';
 
 import 'chat_screen.dart';
 import 'new_conversation_page.dart';
 import 'widgets/chat_list_widgets.dart';
 
 // ════════════════════════════════════════════════════════════════════════════
-// DESIGN TOKENS — Ardoise + Émeraude (aucun or)
+// DESIGN TOKENS — Ardoise + BLEU (plus professionnel)
 // ════════════════════════════════════════════════════════════════════════════
 class Ct {
   Ct._();
@@ -54,16 +50,16 @@ class Ct {
   static const Color slateLt   = Color(0xFF94A3B8); // slate-400
   static const Color mist      = Color(0xFFE2E8F0); // slate-200
 
-  // Accent émeraude — actions primaires, statuts actifs
-  static const Color accent    = Color(0xFF059669); // emerald-600
-  static const Color accentDp  = Color(0xFF047857); // emerald-700
-  static const Color accentSoft= Color(0xFF10B981); // emerald-500
+  // Accent BLEU — actions primaires (remplace le vert)
+  static const Color accent    = Color(0xFF2563EB); // blue-600
+  static const Color accentDp  = Color(0xFF1D4ED8); // blue-700
+  static const Color accentSoft= Color(0xFF3B82F6); // blue-500
 
   // Sémantique
   static const Color danger    = Color(0xFFDC2626);
   static const Color warning   = Color(0xFFD97706);
-  static const Color success   = Color(0xFF059669);
-  static const Color online    = Color(0xFF22C55E);
+  static const Color success   = Color(0xFF059669); // gardé pour succès uniquement
+  static const Color online    = Color(0xFF22C55E); // gardé pour statut online
 
   // Rayons
   static const double rSm = 10, rMd = 14, rLg = 20, rXl = 24, rPill = 28;
@@ -90,13 +86,13 @@ class Ct {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// PROVIDERS — existants + demandes de connexion en attente
+// PROVIDERS
 // ════════════════════════════════════════════════════════════════════════════
 final _connRequestsProvider = StateProvider<List<ConnectionRequest>>((ref) => []);
 final _connRequestsLoadingProvider = StateProvider<bool>((ref) => false);
 
-// ════════════════════════════════════════════════════════════════════════════
-// VERRE DÉPOLI standardisé
+// ═══════════════════════════════════════════════════════════════════════════
+// VERRE DÉPOLI
 // ════════════════════════════════════════════════════════════════════════════
 class CtGlass extends StatelessWidget {
   final Widget child;
@@ -206,15 +202,12 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 🤝 DEMANDES DE CONNEXION (Via ConnectionService / connectionsProvider)
+  // 🤝 DEMANDES DE CONNEXION
   // ==========================================================================
   Future<void> _loadConnectionRequests() async {
     try {
       ref.read(_connRequestsLoadingProvider.notifier).state = true;
-
-      // Charge les données initiales du ConnectionService si besoin
       await ref.read(connectionsProvider.notifier).loadInitial();
-
       if (!mounted) return;
       final requests = ref.read(connectionsProvider).received;
       ref.read(_connRequestsProvider.notifier).state = requests;
@@ -233,7 +226,6 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         req.sender?.displayName ?? '', maxLength: 30);
     HapticFeedback.mediumImpact();
 
-    // Retrait optimiste de la liste locale
     final current = ref.read(_connRequestsProvider);
     ref.read(_connRequestsProvider.notifier).state =
         current.where((r) => r.id != id).toList();
@@ -269,7 +261,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 🟢 AVATAR CONTACT EN LIGNE
+  // 🟢 AVATAR CONTACT EN LIGNE (WhatsApp style - plus compact)
   // ==========================================================================
   Widget _onlineAvatarNode({
     required String label,
@@ -290,17 +282,17 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
             Stack(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
+                  width: 56, // WhatsApp size
+                  height: 56,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     border: Border.all(
-                      color: Ct.accent.withValues(alpha: 0.4),
+                      color: Ct.accent.withValues(alpha: 0.3),
                       width: 2,
                     ),
                   ),
                   child: CircleAvatar(
-                    radius: 20,
+                    radius: 26,
                     backgroundColor: Ct.surface(context),
                     backgroundImage: avatarUrl != null
                         ? CachedNetworkImageProvider(avatarUrl)
@@ -311,18 +303,18 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
                             style: ThixPolicy.titleStyle.copyWith(
                               color: Ct.accentDp,
                               fontWeight: ThixPolicy.bold,
-                              fontSize: 14,
+                              fontSize: 18,
                             ),
                           )
                         : null,
                   ),
                 ),
                 Positioned(
-                  bottom: 1,
-                  right: 1,
+                  bottom: 0,
+                  right: 0,
                   child: Container(
-                    width: 11,
-                    height: 11,
+                    width: 14,
+                    height: 14,
                     decoration: BoxDecoration(
                       color: Ct.online,
                       shape: BoxShape.circle,
@@ -336,15 +328,19 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
               ],
             ),
             const SizedBox(height: 4),
-            Text(
-              label,
-              style: ThixPolicy.microStyle.copyWith(
-                color: Ct.textSecondary(context),
-                fontWeight: ThixPolicy.medium,
-                fontSize: 11,
+            SizedBox(
+              width: 64,
+              child: Text(
+                label,
+                style: ThixPolicy.microStyle.copyWith(
+                  color: Ct.textSecondary(context),
+                  fontWeight: ThixPolicy.medium,
+                  fontSize: 11,
+                ),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                textAlign: TextAlign.center,
               ),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -405,7 +401,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 📞 APPELS MANQUÉS
+  //  APPELS MANQUÉS
   // ==========================================================================
   Future<void> _loadCallsSeen() async {
     try {
@@ -936,7 +932,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     final unread = conv.unreadCount > 0;
     if (type == 'system_screenshot') {
       return ChatListPreview(
-        _s(ctx, 'chatlist_screenshot', fb: 'Capture d’écran effectuée'),
+        _s(ctx, 'chatlist_screenshot', fb: 'Capture d'écran effectuée'),
         icon: Icons.screenshot_rounded,
         color: Ct.warning,
       );
@@ -1530,7 +1526,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
   }
 
   // ==========================================================================
-  // 🤝 SECTION DEMANDES DE CONNEXION (nouveau)
+  // 🤝 SECTION DEMANDES DE CONNEXION (COMPACTE)
   // ==========================================================================
   Widget _buildConnectionRequests() {
     final requests = ref.watch(_connRequestsProvider);
@@ -1592,7 +1588,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
         ]),
       ),
       SizedBox(
-        height: 148,
+        height: 120, // Réduit de 148 à 120
         child: loading
             ? const Center(
                 child: SizedBox(
@@ -1875,27 +1871,44 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
                           ),
                         ),
                       ),
+                      // Status WhatsApp style
                       SliverToBoxAdapter(
                         child: Padding(
                           padding: const EdgeInsets.fromLTRB(
-                              Ct.s5, Ct.s2, Ct.s5, Ct.s3),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              StatusStoryRow(
-                                currentUserId: currentUserId,
-                                currentUserAvatar: currentUserPhoto,
-                                currentUserName: currentUserName,
-                              ),
-                              if (onlineContacts.isNotEmpty) ...[
-                                const SizedBox(height: Ct.s4),
+                              Ct.s5, Ct.s3, Ct.s5, Ct.s3),
+                          child: StatusStoryRow(
+                            currentUserId: currentUserId,
+                            currentUserAvatar: currentUserPhoto,
+                            currentUserName: currentUserName,
+                          ),
+                        ),
+                      ),
+                      SliverToBoxAdapter(child: _buildSearchBarGlass()),
+                      // Personnes en ligne (déplacé après recherche)
+                      if (onlineContacts.isNotEmpty)
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(
+                                Ct.s5, Ct.s3, Ct.s5, Ct.s3),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'En ligne',
+                                  style: ThixPolicy.titleStyle.copyWith(
+                                    color: Ct.textSecondary(context),
+                                    fontSize: 13,
+                                    fontWeight: ThixPolicy.semiBold,
+                                  ),
+                                ),
+                                const SizedBox(height: Ct.s3),
                                 SizedBox(
-                                  height: 64,
+                                  height: 76,
                                   child: ListView.separated(
                                     scrollDirection: Axis.horizontal,
                                     itemCount: onlineContacts.length,
                                     separatorBuilder: (_, __) =>
-                                        const SizedBox(width: Ct.s4),
+                                        const SizedBox(width: Ct.s3),
                                     itemBuilder: (c, i) {
                                       final conv = onlineContacts[i];
                                       final label =
@@ -1914,12 +1927,10 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
                                   ),
                                 ),
                               ],
-                            ],
+                            ),
                           ),
                         ),
-                      ),
-                      SliverToBoxAdapter(child: _buildSearchBarGlass()),
-                      // ── 🤝 Nouveau : demandes de connexion inline ──
+                      // ── 🤝 Demandes de connexion ──
                       SliverToBoxAdapter(child: _buildConnectionRequests()),
                       if (state.pendingEscalations > 0)
                         SliverToBoxAdapter(
@@ -2369,7 +2380,7 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// BOUTON D'APP BAR — 40px, badge optionnel, style cohérent
+// BOUTON D'APP BAR
 // ════════════════════════════════════════════════════════════════════════════
 class _AppBarBtn extends StatelessWidget {
   final IconData icon;
@@ -2440,7 +2451,7 @@ class _AppBarBtn extends StatelessWidget {
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// CARTE DEMANDE DE CONNEXION (Mise à jour pour lire le modèle ConnectionRequest)
+// CARTE DEMANDE DE CONNEXION (COMPACTE - 180px)
 // ════════════════════════════════════════════════════════════════════════════
 class _ConnectionRequestCard extends StatelessWidget {
   final ConnectionRequest request;
@@ -2458,14 +2469,11 @@ class _ConnectionRequestCard extends StatelessWidget {
     final sender = request.sender;
     final name = ChatListValidators.sanitize(
         sender?.displayName ?? '',
-        maxLength: 22);
-    final headline = ChatListValidators.sanitize(
-        sender?.username ?? '',
-        maxLength: 34);
+        maxLength: 18);
     final avatar = ChatListValidators.sanitizeUrl(sender?.avatarUrl);
 
     return Container(
-      width: 228,
+      width: 180, // Réduit de 228 à 180
       padding: const EdgeInsets.all(Ct.s3),
       decoration: BoxDecoration(
         color: Ct.card(context),
@@ -2473,62 +2481,55 @@ class _ConnectionRequestCard extends StatelessWidget {
         border: Border.all(color: Ct.border(context)),
         boxShadow: Ct.shadow(Ct.ink, a: 0.05, blur: 10, y: 3),
       ),
-      child: Column(children: [
-        Row(children: [
-          Container(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(color: Ct.accent.withValues(alpha: 0.35), width: 1.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Avatar + Nom
+          Row(children: [
+            Container(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: Ct.accent.withValues(alpha: 0.35), width: 1.5),
+              ),
+              child: CircleAvatar(
+                radius: 18, // Plus petit
+                backgroundColor: Ct.surface(context),
+                backgroundImage: avatar != null
+                    ? CachedNetworkImageProvider(avatar)
+                    : null,
+                child: avatar == null
+                    ? Text(
+                        ChatListValidators.safeInitial(name),
+                        style: ThixPolicy.titleStyle.copyWith(
+                          color: Ct.accentDp,
+                          fontSize: 14,
+                        ),
+                      )
+                    : null,
+              ),
             ),
-            child: CircleAvatar(
-              radius: 22,
-              backgroundColor: Ct.surface(context),
-              backgroundImage: avatar != null
-                  ? CachedNetworkImageProvider(avatar)
-                  : null,
-              child: avatar == null
-                  ? Text(
-                      ChatListValidators.safeInitial(name),
-                      style: ThixPolicy.h3Style.copyWith(color: Ct.accentDp),
-                    )
-                  : null,
+            const SizedBox(width: Ct.s2),
+            Expanded(
+              child: Text(
+                name.isEmpty ? '—' : name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: ThixPolicy.titleStyle.copyWith(
+                  fontSize: 12,
+                  fontWeight: ThixPolicy.bold,
+                  color: Ct.textMain(context),
+                ),
+              ),
             ),
-          ),
-          const SizedBox(width: Ct.s3),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(name.isEmpty ? '—' : name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.titleStyle.copyWith(
-                      fontSize: 13.5,
-                      fontWeight: ThixPolicy.bold,
-                      color: Ct.textMain(context),
-                    )),
-                const SizedBox(height: 1),
-                Text(headline.isEmpty ? _s(context, 'chatlist_thix_member', fb: 'Membre THIX') : headline,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: ThixPolicy.captionStyle.copyWith(
-                      fontSize: 11,
-                      color: Ct.textSecondary(context),
-                    )),
-              ],
-            ),
-          ),
-        ]),
-        const Spacer(),
-        Row(children: [
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: _s(context, 'chatlist_decline', fb: 'Refuser'),
+          ]),
+          const Spacer(),
+          // Boutons côte à côte
+          Row(children: [
+            Expanded(
               child: GestureDetector(
                 onTap: onDecline,
                 child: Container(
-                  height: 34,
+                  height: 28, // Plus petit
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Ct.surface(context),
@@ -2536,26 +2537,22 @@ class _ConnectionRequestCard extends StatelessWidget {
                     border: Border.all(color: Ct.border(context)),
                   ),
                   child: Text(
-                    _s(context, 'chatlist_decline', fb: 'Refuser'),
+                    'Refuser',
                     style: ThixPolicy.bodySmallStyle.copyWith(
                       fontWeight: ThixPolicy.bold,
                       color: Ct.textSecondary(context),
-                      fontSize: 12,
+                      fontSize: 10,
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: Ct.s2),
-          Expanded(
-            child: Semantics(
-              button: true,
-              label: _s(context, 'chatlist_accept', fb: 'Accepter'),
+            const SizedBox(width: 4),
+            Expanded(
               child: GestureDetector(
                 onTap: onAccept,
                 child: Container(
-                  height: 34,
+                  height: 28,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(
@@ -2565,25 +2562,25 @@ class _ConnectionRequestCard extends StatelessWidget {
                     boxShadow: Ct.shadow(Ct.accentDp, a: 0.3, blur: 8, y: 2),
                   ),
                   child: Text(
-                    _s(context, 'chatlist_accept', fb: 'Accepter'),
+                    'Accepter',
                     style: ThixPolicy.bodySmallStyle.copyWith(
                       fontWeight: FontWeight.w800,
                       color: Colors.white,
-                      fontSize: 12,
+                      fontSize: 10,
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ]),
-      ]),
+          ]),
+        ],
+      ),
     );
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════════
-// POINT PULSANT (escalades)
+// POINT PULSANT
 // ════════════════════════════════════════════════════════════════════════════
 class _PulseDot extends StatefulWidget {
   final Color color;
