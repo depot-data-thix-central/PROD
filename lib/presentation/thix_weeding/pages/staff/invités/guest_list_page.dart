@@ -1807,11 +1807,11 @@ class _ScannerSheetState extends State<_ScannerSheet> {
                 ),
                 child: Text(
                   code,
-                  style: GoogleFonts.inter(
-                    fontFamily: 'monospace',
-                    fontSize: 12,
-                    color: _R.text,
-                  ),
+                  style: GoogleFonts.robotoMono(
+  fontSize: 12,
+  fontWeight: FontWeight.w600,
+  color: _R.blue,
+)
                 ),
               ),
               const SizedBox(height: 16),
@@ -1961,7 +1961,7 @@ class _ScannerSheetState extends State<_ScannerSheet> {
 
           TextField(
             controller: _manualCtrl,
-            style: GoogleFonts.inter(fontFamily: 'monospace', fontSize: 13),
+            style: GoogleFonts.robotoMono(fontSize: 13, color: _R.blue)
             decoration: InputDecoration(
               hintText: 'Saisir le Thix ID manuellement...',
               hintStyle: GoogleFonts.inter(fontSize: 13, color: _R.text2),
