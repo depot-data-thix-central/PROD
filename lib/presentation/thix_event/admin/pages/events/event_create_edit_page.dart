@@ -111,7 +111,9 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
   String _publishSection = 'upcoming';
   Uint8List? _imgBytes, _bannerBytes;
   final _picker = ImagePicker();
-  List> _tiers = [];
+  
+  // ✅ CORRECTION ICI : Ajout de <Map<String, dynamic>>
+  List<Map<String, dynamic>> _tiers = []; 
 
   @override
   void initState() {
