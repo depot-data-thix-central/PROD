@@ -1764,68 +1764,68 @@ class _ScannerSheetState extends State<_ScannerSheet> {
   final _manualCtrl = TextEditingController();
   bool _isChecking = false;
 
-  Future<void> _validate(String code) async {
-    if (code.trim().isEmpty) return;
-    setState(() => _isChecking = true);
-
-    // Simuler validation (à connecter au QRCodeValidator de sécurité)
-    await Future.delayed(const Duration(milliseconds: 800));
-
-    setState(() => _isChecking = false);
-
-    if (!mounted) return;
-
-    // Chercher l'invité par nom ou Thix ID
-    showDialog(
-      context: context,
-      builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: const BoxDecoration(
-                  gradient: _R.greenG,
-                  shape: BoxShape.circle,
+  
+// ── CORRIGÉ : Scanner Result Dialog ──────────────────────────────────
+Future<void> _validate(String code) async {
+  if (code.trim().isEmpty) return;
+  setState(() => _isChecking = true);
+  
+  await Future.delayed(const Duration(milliseconds: 800));
+  setState(() => _isChecking = false);
+  
+  if (!mounted) return;
+  
+  showDialog(
+    context: context,
+    builder: (_) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: const BoxDecoration(
+                gradient: _R.greenG,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.check_circle, color: Colors.white, size: 32),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'Code scanné',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: _R.surface,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                code,
+                style: const TextStyle(
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  color: _R.text,
+                  letterSpacing: 0.5,
                 ),
-                child: const Icon(Icons.check_circle, color: Colors.white, size: 32),
               ),
-              const SizedBox(height: 12),
-              Text(
-                'Code scanné',
-                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _R.surface,
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  code,
-                  style: GoogleFonts.robotoMono(
-  fontSize: 12,
-  fontWeight: FontWeight.w600,
-  color: _R.blue,
-)
-                ),
-              ),
-              const SizedBox(height: 16),
-              FilledButton(
-                onPressed: () => Navigator.pop(context),
-                style: FilledButton.styleFrom(backgroundColor: _R.blue),
-                child: const Text('OK'),
-              ),
-            ],
-          ),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              onPressed: () => Navigator.pop(context),
+              style: FilledButton.styleFrom(backgroundColor: _R.blue),
+              child: const Text('OK'),
+            ),
+          ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   @override
   void dispose() {
