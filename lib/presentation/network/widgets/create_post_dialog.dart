@@ -1,12 +1,14 @@
 // lib/presentation/network/widgets/create_post_dialog.dart
 // ============================================================================
-// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v6 STABLE
+// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v7
+// • 🎬 Vidéos : limite 50 Mo, TOUS les formats vidéo acceptés
+// • 👥 Tag @ : dès que l'on tape « @ », les suggestions de personnes
+//     s'affichent directement (mes connexions d'abord), puis filtrage en direct
 // • 🏷️ 10 badges premium (URGENT battant, FLASH, IMPORTANT...) encadrés en tête
 // • 🌍 100% localisé FR / EN / SW / AR — traductions intégrées (clés cp_*)
-//     → langue détectée depuis le système, repli FR, repli AppLocalizations
 // • ¶ Paragraphes conservés (\n\n) — sanitize corrigé
 // • Suggestions @/# • Sondages • Challenges • Tiers/quotas • Rollback
-// • ➕ BONUS : brouillon anti-perte, compteur anneau, emojis rapides,
+// • ➕ Brouillon anti-perte, compteur anneau, emojis rapides,
 //   taille médias (Mo), compte à rebours challenge + autofocus
 // ============================================================================
 import 'dart:async';
@@ -660,6 +662,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   Timer? _suggestDebounce;
   final Set<String> _mentionedIds = {};
 
+  /// ✅ Suggestions @ par défaut (affichées dès que l'on tape « @ »)
+  List<Map<String, dynamic>>? _defaultMentions;
+
   String? _authorName;
   String? _authorAvatar;
   bool _isPublic = true;
@@ -742,13 +747,17 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   static const int _freeAudioDailyLimit = 3;
 
   static const int _maxImageSizeMB = 10;
-  static const int _maxVideoSizeMB = 100;
+
+  /// ✅ Vidéos : 50 Mo max, tous formats acceptés (plus de liste d'extensions)
+  static const int _maxVideoSizeMB = 50;
   static const int _maxAudioSizeMB = 20;
   static const Set<String> _allowedImageExts = {'jpg', 'jpeg', 'png', 'webp', 'heic'};
-  static const Set<String> _allowedVideoExts = {'mp4', 'mov', 'avi', 'mkv', 'webm'};
   static const Set<String> _allowedAudioExts = {'m4a', 'mp3', 'wav', 'aac'};
   static const int _maxPollOptionLength = 100;
   static const Duration _uploadTimeout = Duration(seconds: 30);
+
+  /// ✅ 50 Mo en 30 s était trop court → 5 minutes pour les vidéos
+  static const Duration _videoUploadTimeout = Duration(minutes: 5);
   static const Duration _suggestTimeout = Duration(seconds: 8);
 
   @override
@@ -780,6 +789,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _contentFocusNode.requestFocus();
     });
+
+    // Précharge les suggestions @ pour qu'elles apparaissent instantanément
+    _loadDefaultMentions();
   }
 
   Future<void> _loadUserLimits() async {
@@ -916,13 +928,16 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     if (mounted) setState(() {});
   }
 
+  /// ✅ Détecte @ / # (lettres accentuées incluses) juste avant le curseur.
+  /// Dès que l'on tape « @ » seul, le token mention a une requête vide
+  /// → les suggestions par défaut s'affichent immédiatement.
   void _updateToken() {
     final text = _contentController.text;
     final sel = _contentController.selection;
     final cursor = sel.isValid ? math.min(math.max(sel.baseOffset, 0), text.length) : text.length;
     final before = text.substring(0, cursor);
 
-    final match = RegExp(r'([@#])([A-Za-z0-9_\.]{0,30})$').firstMatch(before);
+    final match = RegExp(r'(?<![\p{L}\p{N}_])([@#])([\p{L}\p{N}_\.]{0,30})$', unicode: true).firstMatch(before);
     if (match == null) {
       _closeSuggestions();
       return;
@@ -952,16 +967,21 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
     setState(() => _loadingSuggestions = true);
 
-    _suggestDebounce = Timer(const Duration(milliseconds: 250), () async {
+    // « @ » seul → affichage immédiat (aucun délai)
+    final instant = token.type == _TokenType.mention && token.query.isEmpty;
+
+    _suggestDebounce = Timer(instant ? Duration.zero : const Duration(milliseconds: 250), () async {
       if (!mounted || _token != token) return;
       try {
         if (token.type == _TokenType.mention) {
-          final users = token.query.isEmpty
-              ? <Map<String, dynamic>>[]
+          final List<Map<String, dynamic>> users = token.query.isEmpty
+              ? await _loadDefaultMentions()
               : await ref.read(networkServiceProvider).searchUsers(token.query).timeout(_suggestTimeout);
+          final myId = Supabase.instance.client.auth.currentUser?.id;
+          final filtered = users.where((u) => u['id']?.toString() != myId).toList();
           if (!mounted || _token != token) return;
           setState(() {
-            _mentionSuggestions = users.take(6).toList();
+            _mentionSuggestions = filtered.take(8).toList();
             _hashtagSuggestions = [];
             _showSuggestions = _mentionSuggestions.isNotEmpty;
             _loadingSuggestions = false;
@@ -981,6 +1001,49 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
         if (mounted) setState(() => _loadingSuggestions = false);
       }
     });
+  }
+
+  /// ✅ Personnes proposées quand on tape « @ » : mes connexions d'abord,
+  /// complétées par d'autres profils si besoin. Mis en cache.
+  Future<List<Map<String, dynamic>>> _loadDefaultMentions() async {
+    if (_defaultMentions != null) return _defaultMentions!;
+    final db = Supabase.instance.client;
+    final myId = db.auth.currentUser?.id;
+    const cols = 'id, display_name, full_name, avatar_url, thix_chat';
+    final list = <Map<String, dynamic>>[];
+    final seen = <String?>{};
+
+    try {
+      final ids = await ref.read(networkServiceProvider).getMyConnectionIds().timeout(_suggestTimeout);
+      final idList = ids.where((i) => i != myId).take(30).toList();
+      if (idList.isNotEmpty) {
+        final res = await db.from('profiles').select(cols).inFilter('id', idList).limit(8).timeout(_suggestTimeout);
+        for (final row in res as List) {
+          final m = Map<String, dynamic>.from(row as Map);
+          if (seen.add(m['id']?.toString())) list.add(m);
+        }
+      }
+    } catch (e) {
+      debugPrint('[Mentions] connections error: $e');
+    }
+
+    if (list.length < 8) {
+      try {
+        var q = db.from('profiles').select(cols);
+        if (myId != null) q = q.neq('id', myId);
+        final res = await q.limit(8).timeout(_suggestTimeout);
+        for (final row in res as List) {
+          final m = Map<String, dynamic>.from(row as Map);
+          if (seen.add(m['id']?.toString())) list.add(m);
+          if (list.length >= 8) break;
+        }
+      } catch (e) {
+        debugPrint('[Mentions] profiles error: $e');
+      }
+    }
+
+    if (list.isNotEmpty) _defaultMentions = list;
+    return list;
   }
 
   Future<List<_HashtagSuggestion>> _searchHashtags(String q) async {
@@ -1036,17 +1099,41 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     return list;
   }
 
-  void _applyMention(Map<String, dynamic> user) {
+  /// Handle de mention sans espaces (ex. « landry_yumba »), compatible avec
+  /// la détection @mention du PostCard.
+  String _handleOf(Map<String, dynamic> u) {
+    final raw = (u['thix_chat'] ?? u['username'] ?? '').toString().replaceAll('@', '').trim();
+    final base = raw.isNotEmpty ? raw : (u['display_name'] ?? u['full_name'] ?? '').toString().trim();
+    return base
+        .replaceAll(RegExp(r'\s+'), '_')
+        .replaceAll(RegExp(r'[^\p{L}\p{N}_]', unicode: true), '');
+  }
+
+  Future<void> _applyMention(Map<String, dynamic> user) async {
     final token = _token;
     if (token == null) return;
-    final name = user['display_name']?.toString() ?? user['full_name']?.toString() ?? '';
-    if (name.isEmpty) return;
 
     final id = user['id']?.toString();
     if (id != null) _mentionedIds.add(id);
 
-    final replacement = '@$name ';
-    _replaceToken(replacement);
+    var data = user;
+    if ((user['thix_chat'] ?? '').toString().isEmpty && id != null) {
+      try {
+        final r = await Supabase.instance.client
+            .from('profiles')
+            .select('thix_chat')
+            .eq('id', id)
+            .maybeSingle()
+            .timeout(const Duration(seconds: 3));
+        if (r != null) data = {...user, 'thix_chat': r['thix_chat']};
+      } catch (_) {}
+    }
+
+    if (!mounted || _token != token) return;
+    final handle = _handleOf(data);
+    if (handle.isEmpty) return;
+
+    _replaceToken('@$handle ');
     HapticFeedback.selectionClick();
   }
 
@@ -1067,6 +1154,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     );
     setState(() {
       _showSuggestions = false;
+      _loadingSuggestions = false;
       _token = null;
       _mentionSuggestions = [];
       _hashtagSuggestions = [];
@@ -1345,6 +1433,8 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     }
   }
 
+  /// ✅ Vidéos : tous les formats (le sélecteur FileType.video ne propose que
+  /// des vidéos), limite 50 Mo. Plus de liste d'extensions.
   Future<void> _pickVideos() async {
     if (_isUploading) return;
     if (!_canPostVideo) {
@@ -1356,16 +1446,13 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
       setState(() {
         _resetBgColorIfMediaAdded();
         for (final f in result.files) {
-          if (f.bytes == null) continue;
-          if (!_PostValidators.validateFileSize(f.bytes!.length, maxSizeMB: _maxVideoSizeMB)) {
+          final bytes = f.bytes;
+          if (bytes == null || bytes.isEmpty) continue;
+          if (!_PostValidators.validateFileSize(bytes.length, maxSizeMB: _maxVideoSizeMB)) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_t('cp_err_size', args: [f.name, '$_maxVideoSizeMB'])), backgroundColor: ThixPolicy.danger));
             continue;
           }
-          if (!_PostValidators.validateFileExtension(f.name, _allowedVideoExts)) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(_t('cp_err_vid_fmt', args: [f.name])), backgroundColor: ThixPolicy.danger));
-            continue;
-          }
-          _videos.add(_MediaItem(f.bytes!, f.name, isVideo: true));
+          _videos.add(_MediaItem(bytes, f.name, isVideo: true));
         }
       });
     }
@@ -1414,7 +1501,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // PUBLICATION — ✅ postBadge ajouté au NetworkPost optimiste
+  // PUBLICATION — postBadge inclus, vidéos : timeout 5 min + extension libre
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _publishPost() async {
     if (_isUploading || _isRecording) return;
@@ -1478,7 +1565,9 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
       for (final item in _videos) {
         try {
-          final url = await ns.uploadImageBytes(item.bytes, fileExtension: item.name.split('.').last, bucket: 'videos').timeout(_uploadTimeout);
+          // Extension libre : n'importe quel format vidéo (repli mp4 si absente)
+          final ext = item.name.contains('.') ? item.name.split('.').last.toLowerCase() : 'mp4';
+          final url = await ns.uploadImageBytes(item.bytes, fileExtension: ext, bucket: 'videos').timeout(_videoUploadTimeout);
           if (url != null && url.isNotEmpty) uploadedUrls.add(url);
         } catch (e) {
           debugPrint('[Upload] Video error: $e');
@@ -1797,14 +1886,18 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
     );
   }
 
+  /// ✅ Panneau de suggestions : s'ouvre dès « @ » (spinner pendant le chargement)
   Widget _suggestionPanel() {
-    if (!_showSuggestions || _token == null) return const SizedBox.shrink();
+    if (_token == null || !(_showSuggestions || _loadingSuggestions)) return const SizedBox.shrink();
+
+    final isMention = _token!.type == _TokenType.mention;
+    final isEmpty = isMention ? _mentionSuggestions.isEmpty : _hashtagSuggestions.isEmpty;
 
     return AnimatedSize(
       duration: const Duration(milliseconds: 180),
       child: Container(
         margin: const EdgeInsets.only(top: 8),
-        constraints: const BoxConstraints(maxHeight: 240),
+        constraints: const BoxConstraints(maxHeight: 280),
         decoration: BoxDecoration(
           color: ThixPolicy.card,
           borderRadius: BorderRadius.circular(ThixPolicy.rMd),
@@ -1815,21 +1908,31 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
           shrinkWrap: true,
           padding: const EdgeInsets.symmetric(vertical: 4),
           children: [
-            if (_token!.type == _TokenType.mention)
+            if (_loadingSuggestions && isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16),
+                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary))),
+              ),
+            if (isMention)
               for (final u in _mentionSuggestions)
                 ListTile(
                   dense: true,
                   leading: CircleAvatar(
-                    radius: 16,
+                    radius: 18,
                     backgroundColor: ThixPolicy.surfaceSoft,
                     backgroundImage: (u['avatar_url']?.toString() ?? '').isNotEmpty ? NetworkImage(u['avatar_url'].toString()) : null,
-                    child: (u['avatar_url']?.toString() ?? '').isEmpty ? const Icon(Icons.person, size: 16, color: ThixPolicy.textMuted) : null,
+                    child: (u['avatar_url']?.toString() ?? '').isEmpty ? const Icon(Icons.person, size: 18, color: ThixPolicy.textMuted) : null,
                   ),
-                  title: Text(u['display_name']?.toString() ?? u['full_name']?.toString() ?? '', style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold)),
-                  subtitle: Text('@${u['username']?.toString() ?? u['thix_id']?.toString() ?? u['display_name']?.toString() ?? ''}', style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
+                  title: Text(
+                    u['display_name']?.toString() ?? u['full_name']?.toString() ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: ThixPolicy.labelStyle.copyWith(fontWeight: ThixPolicy.semiBold),
+                  ),
+                  subtitle: Text('@${_handleOf(u)}', maxLines: 1, overflow: TextOverflow.ellipsis, style: ThixPolicy.captionStyle.copyWith(color: ThixPolicy.textMuted)),
                   onTap: () => _applyMention(u),
                 ),
-            if (_token!.type == _TokenType.hashtag)
+            if (!isMention)
               for (final h in _hashtagSuggestions)
                 ListTile(
                   dense: true,
@@ -2359,6 +2462,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
                                 padding: const EdgeInsets.only(top: 14),
                                 child: Wrap(
                                   spacing: 8,
+                                  runSpacing: 8,
                                   children: [
                                     for (int i = 0; i < _videos.length; i++)
                                       Stack(
