@@ -4,13 +4,12 @@
 //
 // Timeouts + retry sur erreurs 5xx
 // Logs structurés avec niveaux INFO/WARN/ERROR
-// Validation des inputs et données reçues
-// Throttling sur actions utilisateur
-// Protection contre race conditions
-// Error recovery robuste
-// Observabilité complète
-// ✅ Onglet "Pour vous" = flux chronologique (récents d'abord) + tri
-//    intelligent par page ; posts de plus de 14 jours masqués
+//  Validation des inputs et données reçues
+//  Throttling sur actions utilisateur
+//  Protection contre race conditions
+//  Error recovery robuste
+//  Observabilité complète
+//  Onglet "Pour vous" (foryou) branché sur le smart feed DB
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -30,13 +29,6 @@ const Duration _kNetworkTimeout = Duration(seconds: 15);
 const Duration _kRetryBaseDelay = Duration(milliseconds: 500);
 const Duration _kActionThrottle = Duration(milliseconds: 300);
 const Duration _kConnectionCacheTTL = Duration(minutes: 5);
-
-/// « Pour vous » : au-delà de ce nombre de jours, un post n'est plus affiché
-const int _kFreshWindowDays = 14;
-
-/// Si la 1re page a moins de posts récents que ça, on ne filtre pas
-/// (évite un feed vide quand l'app a peu de contenu)
-const int _kMinFreshPosts = 8;
 
 // ============================================================================
 // LOGGING
@@ -83,7 +75,9 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // NORMALISATION DU TYPE DE FEED
   // ════════════════════════════════════════════════════════════════════
 
-  /// "Pour vous" (foryou, for_you, smart, ...) → 'all'.
+  /// "Pour vous" (foryou, for_you, smart, ...) → 'all' = smart feed DB.
+  /// Avant : 'foryou' n'était pas reconnu, donc l'app lisait le feed
+  /// par date de création au lieu du smart feed.
   String _normalizeType(String type) {
     final t = type.trim().toLowerCase().replaceAll(' ', '').replaceAll('_', '');
     switch (t) {
@@ -119,9 +113,12 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
 
     try {
       final service = ref.read(networkServiceProvider);
-      _connectionIds = await service.getMyConnectionIds().timeout(_kNetworkTimeout);
+      _connectionIds = await service
+          .getMyConnectionIds()
+          .timeout(_kNetworkTimeout);
       _connectionsLastFetched = now;
-      _FeedLogger.info('Connections loaded', {'count': _connectionIds.length});
+      _FeedLogger.info('Connections loaded',
+          {'count': _connectionIds.length});
     } catch (e) {
       _FeedLogger.error('Connections load failed', {'error': '$e'});
       _connectionIds = {};
@@ -132,12 +129,11 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // RANKING
   // ════════════════════════════════════════════════════════════════════
 
-  /// « Pour vous » ('all') utilise le tri intelligent centré sur la récence.
   List<NetworkPost> _rank(List<NetworkPost> posts) {
     return FeedRanker.rank(
       posts: posts,
       connectionIds: _connectionIds,
-      feedType: _currentType == 'all' ? 'smart' : _currentType,
+      feedType: _currentType,
     );
   }
 
@@ -157,6 +153,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // VALIDATION
   // ════════════════════════════════════════════════════════════════════
 
+  /// Valide la structure d'un NetworkPost
   bool _isValidPost(NetworkPost? post) {
     if (post == null) return false;
     if (post.id.isEmpty) return false;
@@ -164,6 +161,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     return true;
   }
 
+  /// Filtre les posts invalides
   List<NetworkPost> _filterValidPosts(List<NetworkPost> posts) {
     final valid = posts.where(_isValidPost).toList();
     if (valid.length != posts.length) {
@@ -186,13 +184,15 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       try {
         if (attempt > 0) {
           final delay = _kRetryBaseDelay * attempt;
-          _FeedLogger.info('Retrying fetch', {'attempt': attempt, 'delay': '$delay'});
+          _FeedLogger.info('Retrying fetch',
+              {'attempt': attempt, 'delay': '$delay'});
           await Future.delayed(delay);
         }
         return await fetcher().timeout(_kNetworkTimeout);
       } catch (e) {
         lastError = e;
-        _FeedLogger.warn('Fetch attempt failed', {'attempt': attempt, 'error': '$e'});
+        _FeedLogger.warn('Fetch attempt failed',
+            {'attempt': attempt, 'error': '$e'});
 
         // Pas de retry sur erreurs client (4xx)
         if (e.toString().contains('400') ||
@@ -243,6 +243,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
 
       _hasMore = true;
       _lastPostDate = null;
+      // ✅ NOUVEAU seed à chaque refresh pour varier le contenu
       _feedSeed = Random().nextInt(1000000000);
 
       _FeedLogger.info('Loading feed',
@@ -287,6 +288,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // ════════════════════════════════════════════════════════════════════
 
   Future<void> loadMore() async {
+    // Protection contre appels concurrents
     if (!_hasMore || _isFetchingMore) {
       _FeedLogger.info('Load more skipped',
           {'hasMore': _hasMore, 'isFetchingMore': _isFetchingMore});
@@ -296,6 +298,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     final current = state.valueOrNull ?? [];
     if (current.isEmpty) return;
 
+    // Stop si limite mémoire atteinte
     if (current.length >= _kMaxPostsInMemory) {
       _FeedLogger.info('Memory limit reached, stopping pagination');
       _hasMore = false;
@@ -305,6 +308,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _isFetchingMore = true;
 
     try {
+      // ✅ MÊME seed que le refresh initial → pagination cohérente
       final more = await _fetch(offset: current.length);
 
       // Anti-doublon
@@ -331,16 +335,28 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     await _ensureConnections();
     final service = ref.read(networkServiceProvider);
 
-    final isForYou = _currentType == 'all';
-    final limit = isForYou ? 30 : 20;
+    // Limites dynamiques
+    final limit = _currentType == 'all' ? (offset == 0 ? 50 : 30) : 20;
 
-    // « Pour vous » = flux chronologique (récents d'abord) + tri intelligent
-    // par page. Les autres onglets restent inchangés.
-    final serviceType = isForYou ? 'recent' : _currentType;
+    if (_currentType == 'all') {
+      // ✅ SMART FEED : La DB s'occupe du tri
+      final posts = await _fetchWithRetry(
+        () => service.getFeedPosts(
+          feedType: 'all',
+          limit: limit,
+          offset: offset,
+          seed: _feedSeed,
+        ),
+      );
 
+      _hasMore = posts.length >= limit;
+      return _enforceMemoryLimit(_filterValidPosts(posts));
+    }
+
+    // ── Autres onglets ──
     final posts = await _fetchWithRetry(
       () => service.getFeedPosts(
-        feedType: serviceType,
+        feedType: _currentType,
         limit: limit,
         offset: offset,
         lastCreatedAt: _lastPostDate,
@@ -350,23 +366,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _hasMore = posts.length >= limit;
     if (posts.isNotEmpty) _lastPostDate = posts.last.createdAt;
 
-    var valid = _filterValidPosts(posts);
-
-    // ✅ Plus de posts anciens (> 14 jours) dans « Pour vous »
-    if (isForYou) {
-      final minDate =
-          DateTime.now().toUtc().subtract(const Duration(days: _kFreshWindowDays));
-      final fresh = valid.where((p) => p.createdAt.toUtc().isAfter(minDate)).toList();
-      if (fresh.length < valid.length) {
-        final tooFewOnFirstPage = offset == 0 && fresh.length < _kMinFreshPosts;
-        if (!tooFewOnFirstPage) {
-          valid = fresh;
-          _hasMore = false; // flux chronologique : la suite est encore plus ancienne
-        }
-      }
-    }
-
-    return _enforceMemoryLimit(_rank(valid));
+    return _enforceMemoryLimit(_rank(_filterValidPosts(posts)));
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -379,8 +379,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       return;
     }
 
+    // Throttling
     final now = DateTime.now();
-    if (_lastDeleteAction != null && now.difference(_lastDeleteAction!) < _kActionThrottle) {
+    if (_lastDeleteAction != null &&
+        now.difference(_lastDeleteAction!) < _kActionThrottle) {
       _FeedLogger.warn('Delete throttled', {'id': postId});
       return;
     }
@@ -397,10 +399,14 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _FeedLogger.info('Post deleted (optimistic)', {'id': postId});
 
     try {
-      await ref.read(networkServiceProvider).deletePost(postId).timeout(_kNetworkTimeout);
+      await ref
+          .read(networkServiceProvider)
+          .deletePost(postId)
+          .timeout(_kNetworkTimeout);
       _FeedLogger.info('Post deleted (confirmed)', {'id': postId});
     } catch (e) {
       _FeedLogger.error('Delete failed, rollback', {'id': postId, 'error': '$e'});
+      // Rollback
       state = AsyncData(current);
     }
   }
@@ -415,8 +421,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       return;
     }
 
+    // Throttling
     final now = DateTime.now();
-    if (_lastLikeAction != null && now.difference(_lastLikeAction!) < _kActionThrottle) {
+    if (_lastLikeAction != null &&
+        now.difference(_lastLikeAction!) < _kActionThrottle) {
       _FeedLogger.warn('Like throttled', {'id': postId});
       return;
     }
@@ -456,6 +464,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       _FeedLogger.info('Like confirmed', {'id': postId, 'liked': !wasLiked});
     } catch (e) {
       _FeedLogger.error('Like failed, rollback', {'id': postId, 'error': '$e'});
+      // Rollback
       state = AsyncData(current);
     }
   }
