@@ -9,6 +9,22 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 
+// ============================================================================
+// HELPER MONOSPACE (compatible Web/WASM)
+// ============================================================================
+const TextStyle _monoStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontFeatures: [FontFeature.tabularFigures()],
+  letterSpacing: 0.5,
+);
+
+TextStyle _mono({double? fontSize, FontWeight? fontWeight, Color? color}) {
+  return _monoStyle.copyWith(fontSize: fontSize, fontWeight: fontWeight, color: color);
+}
+
+// ============================================================================
+// DESIGN SYSTEM ROYAL
+// ============================================================================
 class _R {
   static const Color blue = Color(0xFF0B3B8F);
   static const Color purple = Color(0xFF6B46C1);
@@ -89,6 +105,9 @@ class _PayStatus {
 _PayStatus _getStatus(String? s) =>
     _STATUSES[s ?? ''] ?? _PayStatus(s ?? 'Inconnu', Icons.info_outline, _R.text2);
 
+// ============================================================================
+// PAGE PRINCIPALE
+// ============================================================================
 class PaymentDetailPage extends ConsumerWidget {
   final String weddingId;
   final String paymentId;
@@ -204,23 +223,21 @@ class _DetailAppBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Row(
-                        children: [
-                          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Icon(method.icon, color: Colors.white, size: 16)),
-                          const SizedBox(width: 8),
-                          Text('PAIEMENT', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.85), letterSpacing: 2)),
-                          const Spacer(),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(8)),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              Icon(status.icon, size: 12, color: Colors.white),
-                              const SizedBox(width: 4),
-                              Text(status.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
-                            ]),
-                          ),
-                        ],
-                      ),
+                      Row(children: [
+                        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Icon(method.icon, color: Colors.white, size: 16)),
+                        const SizedBox(width: 8),
+                        Text('PAIEMENT', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.85), letterSpacing: 2)),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(8)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            Icon(status.icon, size: 12, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(status.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                          ]),
+                        ),
+                      ]),
                       const SizedBox(height: 8),
                       Text('${_fmtMoney(payment.amount)} FCFA', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white)),
                       Text(payment.vendorName ?? payment.expenseTitle ?? 'Paiement sans liaison', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
@@ -252,24 +269,19 @@ class _AmountHero extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [BoxShadow(color: method.color.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
       ),
-      child: Row(
-        children: [
-          Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(16)), child: Icon(method.icon, color: Colors.white, size: 32)),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(method.label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
-                const SizedBox(height: 4),
-                Text(_fmtMoney(payment.amount), style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
-                Text('FCFA', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.85))),
-              ],
-            ),
-          ),
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), shape: BoxShape.circle), child: Icon(status.icon, color: Colors.white, size: 28)),
-        ],
-      ),
+      child: Row(children: [
+        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(16)), child: Icon(method.icon, color: Colors.white, size: 32)),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(method.label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
+            const SizedBox(height: 4),
+            Text(_fmtMoney(payment.amount), style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
+            Text('FCFA', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.85))),
+          ]),
+        ),
+        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), shape: BoxShape.circle), child: Icon(status.icon, color: Colors.white, size: 28)),
+      ]),
     );
   }
 }
@@ -284,58 +296,53 @@ class _ActionButtons extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isCompleted = payment.status == 'completed';
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 48,
-            decoration: BoxDecoration(
-              gradient: isCompleted ? null : _R.greenG,
-              color: isCompleted ? _R.green.withOpacity(0.1) : null,
+    return Row(children: [
+      Expanded(
+        child: Container(
+          height: 48,
+          decoration: BoxDecoration(
+            gradient: isCompleted ? null : _R.greenG,
+            color: isCompleted ? _R.green.withOpacity(0.1) : null,
+            borderRadius: BorderRadius.circular(14),
+            border: isCompleted ? Border.all(color: _R.green.withOpacity(0.3)) : null,
+          ),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: isCompleted ? null : () => _markCompleted(context, ref),
               borderRadius: BorderRadius.circular(14),
-              border: isCompleted ? Border.all(color: _R.green.withOpacity(0.3)) : null,
-            ),
-            child: Material(
-              color: Colors.transparent,
-              borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: isCompleted ? null : () => _markCompleted(context, ref),
-                borderRadius: BorderRadius.circular(14),
-                child: Center(
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(isCompleted ? Icons.verified : Icons.check_circle_outline, size: 18, color: isCompleted ? _R.green : Colors.white),
-                      const SizedBox(width: 8),
-                      Text(isCompleted ? 'Déjà complété' : 'Marquer complété', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: isCompleted ? _R.green : Colors.white)),
-                    ],
-                  ),
-                ),
+              child: Center(
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(isCompleted ? Icons.verified : Icons.check_circle_outline, size: 18, color: isCompleted ? _R.green : Colors.white),
+                  const SizedBox(width: 8),
+                  Text(isCompleted ? 'Déjà complété' : 'Marquer complété', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: isCompleted ? _R.green : Colors.white)),
+                ]),
               ),
             ),
           ),
         ),
-        if (payment.referenceCode != null && payment.referenceCode!.isNotEmpty) ...[
-          const SizedBox(width: 10),
-          Container(
-            height: 48,
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.border)),
-            child: Material(
-              color: Colors.transparent,
+      ),
+      if (payment.referenceCode != null && payment.referenceCode!.isNotEmpty) ...[
+        const SizedBox(width: 10),
+        Container(
+          height: 48,
+          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.border)),
+          child: Material(
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: () {
+                Clipboard.setData(ClipboardData(text: payment.referenceCode!));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Référence copiée ✓'), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+              },
               borderRadius: BorderRadius.circular(14),
-              child: InkWell(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: payment.referenceCode!));
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Référence copiée ✓'), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
-                },
-                borderRadius: BorderRadius.circular(14),
-                child: const Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: Icon(Icons.copy, size: 18, color: _R.blue)),
-              ),
+              child: const Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: Icon(Icons.copy, size: 18, color: _R.blue)),
             ),
           ),
-        ],
+        ),
       ],
-    );
+    ]);
   }
 
   Future<void> _markCompleted(BuildContext context, WidgetRef ref) async {
@@ -425,17 +432,15 @@ class _LinkTile extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(0.2))),
-      child: Row(
-        children: [
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 18, color: color)),
-          const SizedBox(width: 12),
-          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
-            const SizedBox(height: 2),
-            Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-          ])),
-        ],
-      ),
+      child: Row(children: [
+        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 18, color: color)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(label, style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
+          const SizedBox(height: 2),
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
+        ])),
+      ]),
     );
   }
 }
@@ -481,12 +486,10 @@ class _TimelineStep extends StatelessWidget {
         children: [
           SizedBox(
             width: 32,
-            child: Column(
-              children: [
-                Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: isActive ? color.withOpacity(0.15) : _R.border.withOpacity(0.3), shape: BoxShape.circle, border: Border.all(color: isActive ? color : _R.border, width: 2)), child: Icon(icon, size: 14, color: isActive ? color : _R.text2)),
-                if (showConnector) Expanded(child: Container(width: 2, color: isActive ? color.withOpacity(0.25) : _R.border)),
-              ],
-            ),
+            child: Column(children: [
+              Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: isActive ? color.withOpacity(0.15) : _R.border.withOpacity(0.3), shape: BoxShape.circle, border: Border.all(color: isActive ? color : _R.border, width: 2)), child: Icon(icon, size: 14, color: isActive ? color : _R.text2)),
+              if (showConnector) Expanded(child: Container(width: 2, color: isActive ? color.withOpacity(0.25) : _R.border)),
+            ]),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -586,22 +589,19 @@ class _DangerZone extends ConsumerWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Padding(
           padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(padding: const EdgeInsets.all(18), decoration: const BoxDecoration(gradient: _R.roseG, shape: BoxShape.circle), child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 36)),
-              const SizedBox(height: 18),
-              Text('Supprimer ce paiement ?', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
-              const SizedBox(height: 8),
-              Text('Le paiement de ${_fmtMoney(payment.amount)} FCFA sera définitivement supprimé.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
-              const SizedBox(height: 24),
-              Row(children: [
-                Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, false), style: OutlinedButton.styleFrom(foregroundColor: _R.text, side: const BorderSide(color: _R.border), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text('Annuler'))),
-                const SizedBox(width: 12),
-                Expanded(flex: 2, child: FilledButton.icon(onPressed: () => Navigator.pop(context, true), icon: const Icon(Icons.delete_outline, size: 18), label: const Text('Supprimer'), style: FilledButton.styleFrom(backgroundColor: _R.rose, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
-              ]),
-            ],
-          ),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Container(padding: const EdgeInsets.all(18), decoration: const BoxDecoration(gradient: _R.roseG, shape: BoxShape.circle), child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 36)),
+            const SizedBox(height: 18),
+            Text('Supprimer ce paiement ?', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
+            const SizedBox(height: 8),
+            Text('Le paiement de ${_fmtMoney(payment.amount)} FCFA sera définitivement supprimé.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
+            const SizedBox(height: 24),
+            Row(children: [
+              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, false), style: OutlinedButton.styleFrom(foregroundColor: _R.text, side: const BorderSide(color: _R.border), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text('Annuler'))),
+              const SizedBox(width: 12),
+              Expanded(flex: 2, child: FilledButton.icon(onPressed: () => Navigator.pop(context, true), icon: const Icon(Icons.delete_outline, size: 18), label: const Text('Supprimer'), style: FilledButton.styleFrom(backgroundColor: _R.rose, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
+            ]),
+          ]),
         ),
       ),
     );
@@ -636,7 +636,7 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ✅ WIDGET _InfoRow CORRIGÉ — Toutes les parenthèses sont correctement fermées
+// ✅ CORRIGÉ : utilisation de _mono() au lieu de fontFamily dans GoogleFonts.inter
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -680,14 +680,12 @@ class _InfoRow extends StatelessWidget {
                         decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(0.3))),
                         child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
                       )
+                    // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: ...)
                     : Text(
                         value,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: value == 'Non renseignée' ? _R.text2 : _R.text,
-                          fontFamily: mono ? 'monospace' : null,
-                        ),
+                        style: mono
+                            ? _mono(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseignée' ? _R.text2 : _R.text)
+                            : GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseignée' ? _R.text2 : _R.text),
                       ),
               ],
             ),
@@ -720,6 +718,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+// ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: ...)
 class _MetaRow extends StatelessWidget {
   final String label;
   final String value;
@@ -733,7 +732,8 @@ class _MetaRow extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(width: 90, child: Text(label, style: GoogleFonts.inter(fontSize: 10, color: _R.text2))),
-          Expanded(child: SelectableText(value, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: _R.text, fontFamily: 'monospace'))),
+          // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: 'monospace')
+          Expanded(child: SelectableText(value, style: _mono(fontSize: 10, fontWeight: FontWeight.w600, color: _R.text))),
         ],
       ),
     );
