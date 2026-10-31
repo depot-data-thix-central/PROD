@@ -1,9 +1,17 @@
 // lib/presentation/thix_weeding/pages/staff/services/thix_weeding_services.dart
+// ============================================================================
+// THIX WEDDING & EVENTS — SERVICES (PRODUCTION)
+// Tous les services CRUD + Upload Web-compatible + Méthodes manquantes
+// ⚠️ PAS de dart:io → uploadBinary uniquement pour compatibilité Web/WASM
+// ============================================================================
 import 'dart:typed_data';
 
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 
+// ============================================================================
+// WEDDING SERVICE
+// ============================================================================
 class WeddingService {
   final _c = Supabase.instance.client;
 
@@ -48,11 +56,20 @@ class WeddingService {
         .update({'invitation_published': true}).eq('id', id);
   }
 
+  Future<void> unpublish(String id) async {
+    await _c
+        .from('thix_weeding_weddings')
+        .update({'invitation_published': false}).eq('id', id);
+  }
+
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_weddings').delete().eq('id', id);
   }
 }
 
+// ============================================================================
+// GUEST SERVICE
+// ============================================================================
 class GuestService {
   final _c = Supabase.instance.client;
 
@@ -93,8 +110,31 @@ class GuestService {
         .from('thix_weeding_guests')
         .update({'is_present': v}).eq('id', id);
   }
+
+  Future<void> updateRsvp(String id, String status) async {
+    await _c
+        .from('thix_weeding_guests')
+        .update({'rsvp_status': status}).eq('id', id);
+  }
+
+  Future<void> assignTable(String id, int? tableNumber) async {
+    await _c
+        .from('thix_weeding_guests')
+        .update({'table_number': tableNumber}).eq('id', id);
+  }
+
+  Future<int> getCountByWedding(String weddingId) async {
+    final res = await _c
+        .from('thix_weeding_guests')
+        .select('id')
+        .eq('wedding_id', weddingId);
+    return (res as List).length;
+  }
 }
 
+// ============================================================================
+// VENDOR SERVICE
+// ============================================================================
 class VendorService {
   final _c = Supabase.instance.client;
 
@@ -132,8 +172,23 @@ class VendorService {
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_vendors').delete().eq('id', id);
   }
+
+  Future<void> toggleBooked(String id, bool booked) async {
+    await _c
+        .from('thix_weeding_vendors')
+        .update({'is_booked': booked}).eq('id', id);
+  }
+
+  Future<void> updateStatus(String id, String status) async {
+    await _c
+        .from('thix_weeding_vendors')
+        .update({'status': status}).eq('id', id);
+  }
 }
 
+// ============================================================================
+// CHECKLIST SERVICE — MIS À JOUR avec getById + nouvelles méthodes
+// ============================================================================
 class ChecklistService {
   final _c = Supabase.instance.client;
 
@@ -147,6 +202,16 @@ class ChecklistService {
     return List<Map<String, dynamic>>.from(res)
         .map((e) => ChecklistModel.fromJson(e))
         .toList();
+  }
+
+  /// ✅ AJOUTÉ — Manquait dans le code original
+  Future<ChecklistModel> getById(String id) async {
+    final res = await _c
+        .from('thix_weeding_checklist')
+        .select()
+        .eq('id', id)
+        .single();
+    return ChecklistModel.fromJson(Map<String, dynamic>.from(res));
   }
 
   Future<ChecklistModel> create(Map<String, dynamic> data) async {
@@ -168,8 +233,35 @@ class ChecklistService {
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_checklist').delete().eq('id', id);
   }
+
+  /// ✅ AJOUTÉ — Réordonner les tâches
+  Future<void> reorder(String id, int orderIndex) async {
+    await _c
+        .from('thix_weeding_checklist')
+        .update({'order_index': orderIndex}).eq('id', id);
+  }
+
+  /// ✅ AJOUTÉ — Compter les tâches par statut
+  Future<Map<String, int>> getStats(String weddingId) async {
+    final all = await getByWedding(weddingId);
+    final total = all.length;
+    final done = all.where((t) => t.isDone).length;
+    final overdue = all
+        .where((t) =>
+            !t.isDone && t.dueDate != null && t.dueDate!.isBefore(DateTime.now()))
+        .length;
+    return {
+      'total': total,
+      'done': done,
+      'pending': total - done,
+      'overdue': overdue,
+    };
+  }
 }
 
+// ============================================================================
+// GALLERY SERVICE — CORRIGÉ uploadBytes (interpolation + vidéos)
+// ============================================================================
 class GalleryService {
   final _c = Supabase.instance.client;
   static const _bucket = 'thix-weeding-gallery';
@@ -186,7 +278,7 @@ class GalleryService {
         .toList();
   }
 
-  /// Upload compatible Web + Mobile (pas de dart:io)
+  /// ✅ CORRIGÉ — Interpolation Dart correcte + support vidéo + Web compatible
   Future<String> uploadBytes({
     required String weddingId,
     required Uint8List bytes,
@@ -195,12 +287,32 @@ class GalleryService {
     final ext = fileName.contains('.')
         ? fileName.split('.').last.toLowerCase()
         : 'jpg';
-    final safeExt =
-        (ext == 'png' || ext == 'webp' || ext == 'jpg' || ext == 'jpeg')
-            ? ext
-            : 'jpg';
-    final path =
-        '\( weddingId/ \){DateTime.now().millisecondsSinceEpoch}.$safeExt';
+
+    // Extensions supportées
+    final imageExts = ['png', 'webp', 'jpg', 'jpeg'];
+    final videoExts = ['mp4', 'mov', 'avi', 'mkv'];
+    final allExts = [...imageExts, ...videoExts];
+
+    final safeExt = allExts.contains(ext) ? ext : 'jpg';
+    final isVideo = videoExts.contains(safeExt);
+
+    // ✅ CORRECTION CRITIQUE : interpolation Dart correcte
+    // AVANT (cassé) : '\( weddingId/ \){DateTime.now()...}'
+    // APRÈS (correct) : '$weddingId/${DateTime.now()...}'
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+    final path = '$weddingId/$timestamp.$safeExt';
+
+    // Content-Type correct selon le type de fichier
+    final String contentType;
+    if (isVideo) {
+      contentType = 'video/$safeExt';
+    } else if (safeExt == 'png') {
+      contentType = 'image/png';
+    } else if (safeExt == 'webp') {
+      contentType = 'image/webp';
+    } else {
+      contentType = 'image/jpeg';
+    }
 
     await _c.storage.from(_bucket).uploadBinary(
           path,
@@ -208,9 +320,7 @@ class GalleryService {
           fileOptions: FileOptions(
             cacheControl: '3600',
             upsert: false,
-            contentType: safeExt == 'png'
-                ? 'image/png'
-                : (safeExt == 'webp' ? 'image/webp' : 'image/jpeg'),
+            contentType: contentType,
           ),
         );
 
@@ -223,11 +333,49 @@ class GalleryService {
     return GalleryModel.fromJson(Map<String, dynamic>.from(res));
   }
 
+  Future<void> updateCaption(String id, String? caption) async {
+    await _c
+        .from('thix_weeding_gallery')
+        .update({'caption': caption}).eq('id', id);
+  }
+
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_gallery').delete().eq('id', id);
   }
+
+  /// ✅ AJOUTÉ — Supprimer le fichier du storage aussi
+  Future<void> deleteWithStorage(String id, String imageUrl) async {
+    // Extraire le path depuis l'URL publique
+    try {
+      final uri = Uri.parse(imageUrl);
+      final pathSegments = uri.pathSegments;
+      // Le path est typiquement: /storage/v1/object/public/thix-weeding-gallery/weddingId/timestamp.ext
+      final bucketIndex = pathSegments.indexOf(_bucket);
+      if (bucketIndex >= 0 && bucketIndex + 1 < pathSegments.length) {
+        final storagePath =
+            pathSegments.sublist(bucketIndex + 1).join('/');
+        await _c.storage.from(_bucket).remove([storagePath]);
+      }
+    } catch (_) {
+      // Ignorer les erreurs de suppression storage (le record DB sera quand même supprimé)
+    }
+
+    await _c.from('thix_weeding_gallery').delete().eq('id', id);
+  }
+
+  /// ✅ AJOUTÉ — Compter les médias
+  Future<int> getCount(String weddingId) async {
+    final res = await _c
+        .from('thix_weeding_gallery')
+        .select('id')
+        .eq('wedding_id', weddingId);
+    return (res as List).length;
+  }
 }
 
+// ============================================================================
+// GUESTBOOK SERVICE
+// ============================================================================
 class GuestbookService {
   final _c = Supabase.instance.client;
 
@@ -252,8 +400,20 @@ class GuestbookService {
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_guestbook').delete().eq('id', id);
   }
+
+  /// ✅ AJOUTÉ — Approuver tous les messages en attente
+  Future<void> approveAll(String weddingId) async {
+    await _c
+        .from('thix_weeding_guestbook')
+        .update({'is_approved': true})
+        .eq('wedding_id', weddingId)
+        .eq('is_approved', false);
+  }
 }
 
+// ============================================================================
+// MESSAGE SERVICE
+// ============================================================================
 class MessageService {
   final _c = Supabase.instance.client;
 
@@ -282,8 +442,28 @@ class MessageService {
         .eq('wedding_id', weddingId)
         .eq('is_read', false);
   }
+
+  /// ✅ AJOUTÉ — Marquer un seul message comme lu
+  Future<void> markAsRead(String id) async {
+    await _c
+        .from('thix_weeding_messages')
+        .update({'is_read': true}).eq('id', id);
+  }
+
+  /// ✅ AJOUTÉ — Compter les messages non lus
+  Future<int> getUnreadCount(String weddingId) async {
+    final res = await _c
+        .from('thix_weeding_messages')
+        .select('id')
+        .eq('wedding_id', weddingId)
+        .eq('is_read', false);
+    return (res as List).length;
+  }
 }
 
+// ============================================================================
+// PAYMENT SERVICE
+// ============================================================================
 class PaymentService {
   final _c = Supabase.instance.client;
 
@@ -321,8 +501,18 @@ class PaymentService {
   Future<void> delete(String id) async {
     await _c.from('thix_weeding_payments').delete().eq('id', id);
   }
+
+  /// ✅ AJOUTÉ — Mettre à jour le statut d'un paiement
+  Future<void> updateStatus(String id, String status) async {
+    await _c
+        .from('thix_weeding_payments')
+        .update({'status': status}).eq('id', id);
+  }
 }
 
+// ============================================================================
+// BUDGET SERVICE
+// ============================================================================
 class BudgetService {
   final _c = Supabase.instance.client;
 
@@ -360,5 +550,29 @@ class BudgetService {
     } catch (_) {
       return [];
     }
+  }
+
+  /// ✅ AJOUTÉ — Créer une dépense
+  Future<ExpenseModel> createExpense(Map<String, dynamic> data) async {
+    final res =
+        await _c.from('thix_weeding_expenses').insert(data).select().single();
+    return ExpenseModel.fromJson(Map<String, dynamic>.from(res));
+  }
+
+  /// ✅ AJOUTÉ — Supprimer une dépense
+  Future<void> deleteExpense(String id) async {
+    await _c.from('thix_weeding_expenses').delete().eq('id', id);
+  }
+
+  /// ✅ AJOUTÉ — Mettre à jour une dépense
+  Future<void> updateExpense(String id, Map<String, dynamic> data) async {
+    await _c.from('thix_weeding_expenses').update(data).eq('id', id);
+  }
+
+  /// ✅ AJOUTÉ — Toggle is_paid sur une dépense
+  Future<void> toggleExpensePaid(String id, bool isPaid) async {
+    await _c
+        .from('thix_weeding_expenses')
+        .update({'is_paid': isPaid}).eq('id', id);
   }
 }
