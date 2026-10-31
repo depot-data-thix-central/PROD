@@ -51,7 +51,6 @@ class EventService {
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
           .gte('start_date', cutoff); 
 
-      // 🟢 MODIFICATION : Prise en compte du plein air / catégorie optionnelle ou nulle
       if (category != null && category != 'all' && category != 'featured') {
         if (category.isEmpty || category == 'outdoor' || category == 'plein air') {
           query = query.or('category.eq.,category.is.null,category.ilike.%plein air%');
@@ -221,7 +220,6 @@ class EventService {
         'booking_date': DateTime.now().toIso8601String(),
       }).select().single());
       
-      // 🟢 Évite d'échouer si l'événement est illimité / plein air
       try { 
         await _supabase.rpc('decrement_remaining_tickets', params: {'e_id': eventId, 'qty': quantity}); 
       } catch (_) {}
@@ -243,10 +241,25 @@ class EventService {
 
   // ============ ADMIN ============
   Future<Event> createEvent({
-    required String title, required String description, String? category, String? subCategory,
-    required DateTime startDate, DateTime? endDate, required String location, String? address, double price = 0,
-    String priceCurrency = 'FC', bool? isFree, int? capacity, String? imageUrl, String? bannerUrl, String? city,
-    bool isFeatured = false, String? organizerName, String? contactPhone, String? contactEmail,
+    required String title, 
+    required String description, 
+    String? category, 
+    String? subCategory,
+    required DateTime startDate, 
+    DateTime? endDate, 
+    required String location, 
+    String? address, 
+    double price = 0,
+    String priceCurrency = 'FC', 
+    bool? isFree, 
+    int? capacity, 
+    String? imageUrl, 
+    String? bannerUrl, 
+    String? city,
+    bool isFeatured = false, 
+    String? organizerName, 
+    String? contactPhone, 
+    String? contactEmail,
   }) async {
     final finalCap = capacity ?? 0;
     final finalIsFree = isFree ?? (price == 0);
