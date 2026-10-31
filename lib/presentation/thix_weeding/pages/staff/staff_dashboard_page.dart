@@ -1,3 +1,11 @@
+// lib/presentation/thix_weeding/pages/staff/staff_dashboard_page.dart
+// ============================================================================
+// THIX WEDDING & EVENTS — STAFF DASHBOARD (PRODUCTION)
+// Hero banner couple + Countdown live + 12 modules + Stats RSVP/Budget
+// Branché sur les providers & routes EXISTANTS du dépôt (aucune modif requise)
+// ============================================================================
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,8 +14,81 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 
-/// Dashboard Staff ultra royal - Version Production
-/// Design premium avec animations, mode offline, et scanner QR intégré
+// ============================================================================
+// DESIGN SYSTEM ROYAL
+// ============================================================================
+class _Royal {
+  static const Color blue = Color(0xFF0B3B8F);
+  static const Color purple = Color(0xFF6B46C1);
+  static const Color gold = Color(0xFFD4AF37);
+  static const Color goldDark = Color(0xFFB8860B);
+  static const Color rose = Color(0xFFE31C4E);
+  static const Color roseSoft = Color(0xFFFFE4EC);
+  static const Color green = Color(0xFF059669);
+  static const Color amber = Color(0xFFD97706);
+  static const Color surface = Color(0xFFF8FAFC);
+  static const Color card = Colors.white;
+  static const Color text = Color(0xFF111827);
+  static const Color text2 = Color(0xFF6B7280);
+  static const Color border = Color(0xFFE5E7EB);
+
+  static const LinearGradient royal = LinearGradient(
+    colors: [blue, purple],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  static const LinearGradient goldG = LinearGradient(
+    colors: [gold, goldDark],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  static const LinearGradient roseG = LinearGradient(
+    colors: [rose, Color(0xFFFF6B9D)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  static const LinearGradient greenG = LinearGradient(
+    colors: [green, Color(0xFF10B981)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+
+  static BoxDecoration cardBox({double radius = 16}) => BoxDecoration(
+        color: card,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      );
+}
+
+// ============================================================================
+// ROUTES (exactes — cf. thix_weeding_routes.dart)
+// ============================================================================
+class _R {
+  static String base(String id) => '/thix-weeding/staff/$id';
+  static String invites(String id) => '$base(id)/invites';
+  static String invitation(String id) => '$base(id)/invitation';
+  static String prestataires(String id) => '$base(id)/prestataires';
+  static String planning(String id) => '$base(id)/planning';
+  static String checklist(String id) => '$base(id)/checklist';
+  static String budget(String id) => '$base(id)/budget';
+  static String paiements(String id) => '$base(id)/paiements';
+  static String galerie(String id) => '$base(id)/galerie';
+  static String livreOr(String id) => '$base(id)/livre-or';
+  static String messages(String id) => '$base(id)/messages';
+  static String parametres(String id) => '$base(id)/parametres';
+  static String myWeddings() => '/thix-weeding/staff/my-weddings';
+}
+
+// ============================================================================
+// PAGE PRINCIPALE
+// ============================================================================
 class StaffDashboardPage extends ConsumerStatefulWidget {
   final String weddingId;
   const StaffDashboardPage({super.key, required this.weddingId});
@@ -18,802 +99,646 @@ class StaffDashboardPage extends ConsumerStatefulWidget {
 
 class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
     with SingleTickerProviderStateMixin {
-  late AnimationController _animController;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
+  late final AnimationController _anim;
+  late final Animation<double> _fade;
 
   @override
   void initState() {
     super.initState();
-    _animController = AnimationController(
+    _anim = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 900),
     );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.2),
-      end: Offset.zero,
-    ).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
-    );
-    _animController.forward();
+    _fade = CurvedAnimation(parent: _anim, curve: Curves.easeOut);
+    _anim.forward();
   }
 
   @override
   void dispose() {
-    _animController.dispose();
+    _anim.dispose();
     super.dispose();
+  }
+
+  void _refresh() {
+    final id = widget.weddingId;
+    ref.invalidate(weddingProvider(id));
+    ref.invalidate(guestsProvider(id));
+    ref.invalidate(vendorsProvider(id));
+    ref.invalidate(checklistProvider(id));
+    ref.invalidate(galleryProvider(id));
+    ref.invalidate(guestbookProvider(id));
+    ref.invalidate(messagesProvider(id));
+    ref.invalidate(paymentsProvider(id));
+    ref.invalidate(budgetProvider(id));
+    ref.invalidate(expensesProvider(id));
+    ref.invalidate(dashboardStatsProvider(id));
+    ref.invalidate(paymentsSummaryProvider(id));
   }
 
   @override
   Widget build(BuildContext context) {
-    final weddingAsync = ref.watch(weddingProvider(widget.weddingId));
-    final statsAsync = ref.watch(dashboardStatsProvider(widget.weddingId));
-    final budgetAsync = ref.watch(paymentsSummaryProvider(widget.weddingId));
+    final id = widget.weddingId;
+    final weddingAsync = ref.watch(weddingProvider(id));
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        child: weddingAsync.when(
-          loading: () => const _RoyalLoadingView(),
-          error: (e, _) => _RoyalErrorView(
-            message: '$e',
-            onRetry: () {
-              ref.invalidate(weddingProvider(widget.weddingId));
-              ref.invalidate(dashboardStatsProvider(widget.weddingId));
-              ref.invalidate(paymentsSummaryProvider(widget.weddingId));
-            },
-          ),
-          data: (wedding) {
-            final stats = statsAsync.valueOrNull;
-            final budget = budgetAsync.valueOrNull;
+      backgroundColor: _Royal.surface,
+      body: weddingAsync.when(
+        loading: () => const _LoadingView(),
+        error: (e, _) => _ErrorView(message: '$e', onRetry: _refresh),
+        data: (wedding) {
+          final guests = ref.watch(guestsProvider(id)).valueOrNull ?? const [];
+          final vendors = ref.watch(vendorsProvider(id)).valueOrNull ?? const [];
+          final tasks = ref.watch(checklistProvider(id)).valueOrNull ?? const [];
+          final gallery = ref.watch(galleryProvider(id)).valueOrNull ?? const [];
+          final guestbook = ref.watch(guestbookProvider(id)).valueOrNull ?? const [];
+          final messages = ref.watch(messagesProvider(id)).valueOrNull ?? const [];
+          final payments = ref.watch(paymentsProvider(id)).valueOrNull ?? const [];
+          final summary = ref.watch(paymentsSummaryProvider(id)).valueOrNull;
 
-            int daysLeft = 0;
-            String dateLabel = 'Date à définir';
-            final d = wedding.weddingDate;
-            if (d != null) {
-              daysLeft = d.difference(DateTime.now()).inDays.clamp(0, 9999);
-              dateLabel =
-                  '${d.day.toString().padLeft(2, '0')}/'
-                  '${d.month.toString().padLeft(2, '0')}/'
-                  '${d.year}';
-            }
+          final unread = messages
+              .where((m) => !m.isRead && m.senderType == 'guest')
+              .length;
 
-            final totalBudget = budget?['budget'] ?? 0.0;
-            final totalSpent = budget?['spent'] ?? 0.0;
-
-            return RefreshIndicator(
-              color: const Color(0xFF0B3B8F),
-              onRefresh: () async {
-                ref.invalidate(weddingProvider(widget.weddingId));
-                ref.invalidate(dashboardStatsProvider(widget.weddingId));
-                ref.invalidate(paymentsSummaryProvider(widget.weddingId));
-              },
+          return FadeTransition(
+            opacity: _fade,
+            child: RefreshIndicator(
+              color: _Royal.blue,
+              onRefresh: () async => _refresh(),
               child: CustomScrollView(
                 physics: const BouncingScrollPhysics(),
                 slivers: [
-                  // AppBar Royal Premium
+                  // ── APP BAR ROYALE ────────────────────────────────────────
                   _RoyalAppBar(
-                    coupleNames: wedding.coupleNames,
-                    weddingId: widget.weddingId,
+                    wedding: wedding,
+                    unread: unread,
+                    onMessages: () => context.push(_R.messages(id)),
+                    onSettings: () => context.push(_R.parametres(id)),
                   ),
 
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                     sliver: SliverList(
                       delegate: SliverChildListDelegate([
-                        // Compte à rebours royal
-                        SlideTransition(
-                          position: _slideAnimation,
-                          child: _RoyalCountdownCard(
-                            coupleNames: wedding.coupleNames,
-                            venue: wedding.venue,
-                            dateLabel: dateLabel,
-                            daysLeft: daysLeft,
-                            eventDate: wedding.weddingDate,
-                          ),
+                        // ── HERO BANNER : PHOTO COUPLE + COUNTDOWN ──────────
+                        _HeroBanner(wedding: wedding, coverUrl: gallery.isNotEmpty ? gallery.first.imageUrl : null),
+                        const SizedBox(height: 16),
+
+                        // ── STATS TEMPS RÉEL ────────────────────────────────
+                        _StatsRow(guests: guests, vendors: vendors, tasks: tasks),
+                        const SizedBox(height: 16),
+
+                        // ── RSVP ────────────────────────────────────────────
+                        _RsvpCard(guests: guests),
+                        const SizedBox(height: 16),
+
+                        // ── BUDGET ──────────────────────────────────────────
+                        _BudgetCard(summary: summary),
+                        const SizedBox(height: 24),
+
+                        // ── MODULES (12 fonctionnalités) ────────────────────
+                        _SectionTitle('Tous les modules', icon: Icons.apps),
+                        const SizedBox(height: 12),
+                        _ModulesGrid(
+                          weddingId: id,
+                          wedding: wedding,
+                          guestsCount: guests.length,
+                          vendorsBooked: vendors.where((v) => v.isBooked).length,
+                          pendingTasks: tasks.where((t) => !t.isDone).length,
+                          photosCount: gallery.length,
+                          guestbookCount: guestbook.where((g) => g.isApproved).length,
+                          unreadMessages: unread,
                         ),
-                        const SizedBox(height: 20),
+                        const SizedBox(height: 24),
 
-                        // Bouton Scanner QR Premium
-                        _RoyalScannerButton(weddingId: widget.weddingId),
-                        const SizedBox(height: 20),
+                        // ── CHECKLIST PROGRESSION ───────────────────────────
+                        _SectionTitle('Checklist préparatifs', icon: Icons.checklist_outlined,
+                            actionLabel: 'Voir tout', onAction: () => context.push(_R.checklist(id))),
+                        const SizedBox(height: 12),
+                        _ChecklistCard(tasks: tasks, weddingId: id),
+                        const SizedBox(height: 24),
 
-                        // Stats en grille
-                        _RoyalStatsGrid(stats: stats),
-                        const SizedBox(height: 20),
+                        // ── GALERIE PREVIEW ─────────────────────────────────
+                        _SectionTitle('Galerie souvenirs', icon: Icons.photo_library_outlined,
+                            actionLabel: 'Gérer', onAction: () => context.push(_R.galerie(id))),
+                        const SizedBox(height: 12),
+                        _GalleryStrip(gallery: gallery, weddingId: id),
+                        const SizedBox(height: 24),
 
-                        // Budget royal
-                        _RoyalBudgetCard(
-                          totalBudget: totalBudget,
-                          totalSpent: totalSpent,
-                        ),
-                        const SizedBox(height: 20),
+                        // ── PRESTATAIRES ────────────────────────────────────
+                        _SectionTitle('Prestataires', icon: Icons.storefront_outlined,
+                            actionLabel: 'Voir tout', onAction: () => context.push(_R.prestataires(id))),
+                        const SizedBox(height: 12),
+                        _VendorsCard(vendors: vendors),
+                        const SizedBox(height: 24),
 
-                        // Actions rapides premium
-                        _RoyalQuickActions(weddingId: widget.weddingId),
+                        // ── PAIEMENTS RÉCENTS ───────────────────────────────
+                        _SectionTitle('Paiements récents', icon: Icons.payments_outlined,
+                            actionLabel: 'Voir tout', onAction: () => context.push(_R.paiements(id))),
+                        const SizedBox(height: 12),
+                        _PaymentsCard(payments: payments),
+                        const SizedBox(height: 24),
+
+                        // ── LIVRE D'OR ──────────────────────────────────────
+                        _SectionTitle("Livre d'or", icon: Icons.menu_book_outlined,
+                            actionLabel: 'Modérer', onAction: () => context.push(_R.livreOr(id))),
+                        const SizedBox(height: 12),
+                        _GuestbookCard(entries: guestbook),
                       ]),
                     ),
                   ),
                 ],
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
 }
 
-// AppBar Royal Premium avec dégradé
+// ============================================================================
+// APP BAR
+// ============================================================================
 class _RoyalAppBar extends StatelessWidget {
-  final String coupleNames;
-  final String weddingId;
+  final WeddingModel wedding;
+  final int unread;
+  final VoidCallback onMessages;
+  final VoidCallback onSettings;
 
   const _RoyalAppBar({
-    required this.coupleNames,
-    required this.weddingId,
+    required this.wedding,
+    required this.unread,
+    required this.onMessages,
+    required this.onSettings,
   });
 
   @override
   Widget build(BuildContext context) {
     return SliverAppBar(
-      expandedHeight: 140,
-      floating: false,
-      pinned: true,
+      floating: true,
+      snap: true,
       backgroundColor: Colors.white,
-      flexibleSpace: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            colors: [
-              const Color(0xFF0B3B8F),
-              const Color(0xFF6B46C1),
-            ],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
-          borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: Stack(
-          children: [
-            // Motifs décoratifs
-            Positioned(
-              right: -50,
-              top: -50,
-              child: Container(
-                width: 200,
-                height: 200,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white.withOpacity(0.1),
-                ),
-              ),
-            ),
-            Positioned(
-              right: 20,
-              bottom: -30,
-              child: Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: const Color(0xFFD4AF37).withOpacity(0.2),
-                ),
-              ),
-            ),
-            // Contenu
-            FlexibleSpaceBar(
-              background: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 50, 20, 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                'THIX EVENTS',
-                                style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.white.withOpacity(0.8),
-                                  letterSpacing: 2,
-                                ),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Staff Access',
-                                style: GoogleFonts.inter(
-                                  fontSize: 24,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            _RoyalIconButton(
-                              icon: Icons.notifications_outlined,
-                              onTap: () => context.push(
-                                  '/thix-weeding/staff/$weddingId/messages'),
-                            ),
-                            const SizedBox(width: 8),
-                            _RoyalIconButton(
-                              icon: Icons.qr_code_scanner,
-                              onTap: () => context.push(
-                                  '/thix-weeding/staff/$weddingId/scanner'),
-                              badge: 0,
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      coupleNames.isEmpty ? 'Événement' : coupleNames,
-                      style: GoogleFonts.inter(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
+      elevation: 0,
+      foregroundColor: _Royal.text,
+      title: Text(
+        'Dashboard',
+        style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _Royal.blue),
       ),
-    );
-  }
-}
-
-// Bouton icône royal
-class _RoyalIconButton extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback onTap;
-  final int badge;
-
-  const _RoyalIconButton({
-    required this.icon,
-    required this.onTap,
-    this.badge = 0,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Stack(
-      clipBehavior: Clip.none,
-      children: [
-        Material(
-          color: Colors.white.withOpacity(0.2),
-          borderRadius: BorderRadius.circular(12),
-          child: InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              child: Icon(icon, color: Colors.white, size: 22),
-            ),
+      actions: [
+        // Statut publication invitation
+        Container(
+          margin: const EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: wedding.invitationPublished
+                ? _Royal.green.withOpacity(0.1)
+                : _Royal.amber.withOpacity(0.1),
+            borderRadius: BorderRadius.circular(8),
           ),
-        ),
-        if (badge > 0)
-          Positioned(
-            right: -4,
-            top: -4,
-            child: Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: const Color(0xFFE31C4E),
-                shape: BoxShape.circle,
-                border: Border.all(color: Colors.white, width: 2),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                wedding.invitationPublished ? Icons.verified : Icons.hourglass_bottom,
+                size: 12,
+                color: wedding.invitationPublished ? _Royal.green : _Royal.amber,
               ),
-              child: Text(
-                '$badge',
+              const SizedBox(width: 4),
+              Text(
+                wedding.invitationPublished ? 'Publiée' : 'Brouillon',
                 style: GoogleFonts.inter(
                   fontSize: 10,
                   fontWeight: FontWeight.w700,
-                  color: Colors.white,
+                  color: wedding.invitationPublished ? _Royal.green : _Royal.amber,
                 ),
               ),
-            ),
+            ],
           ),
+        ),
+        Stack(
+          clipBehavior: Clip.none,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.chat_bubble_outline),
+              onPressed: onMessages,
+            ),
+            if (unread > 0)
+              Positioned(
+                right: 6,
+                top: 6,
+                child: Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: _Royal.rose,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: Text(
+                    '$unread',
+                    style: GoogleFonts.inter(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          onPressed: onSettings,
+        ),
+        const SizedBox(width: 4),
       ],
     );
   }
 }
 
-// Carte compte à rebours royal
-class _RoyalCountdownCard extends StatefulWidget {
-  final String coupleNames;
-  final String? venue;
-  final String dateLabel;
-  final int daysLeft;
-  final DateTime? eventDate;
+// ============================================================================
+// HERO BANNER — PHOTO COUPLE + COUNTDOWN LIVE
+// ============================================================================
+class _HeroBanner extends StatelessWidget {
+  final WeddingModel wedding;
+  final String? coverUrl;
 
-  const _RoyalCountdownCard({
-    required this.coupleNames,
-    this.venue,
-    required this.dateLabel,
-    required this.daysLeft,
-    this.eventDate,
-  });
+  const _HeroBanner({required this.wedding, this.coverUrl});
 
   @override
-  State<_RoyalCountdownCard> createState() => _RoyalCountdownCardState();
+  Widget build(BuildContext context) {
+    final date = wedding.weddingDate;
+
+    return Container(
+      height: 300,
+      decoration: _Royal.cardBox(radius: 24),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Photo du couple (1ère photo galerie) ou monogramme royal
+          if (coverUrl != null && coverUrl!.isNotEmpty)
+            Image.network(
+              coverUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const _MonogramFallback(),
+              loadingBuilder: (_, child, progress) =>
+                  progress == null ? child : const _MonogramFallback(),
+            )
+          else
+            const _MonogramFallback(),
+
+          // Dégradé de lisibilité
+          DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Colors.black.withOpacity(0.15),
+                  Colors.black.withOpacity(0.55),
+                  const Color(0xFF061F47).withOpacity(0.92),
+                ],
+                stops: const [0.0, 0.55, 1.0],
+              ),
+            ),
+          ),
+
+          // Contenu
+          Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                // Badge code unique mariage
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: _Royal.gold.withOpacity(0.25),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _Royal.gold.withOpacity(0.6)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.qr_code_2, size: 12, color: _Royal.gold),
+                          const SizedBox(width: 6),
+                          Text(
+                            wedding.uniqueCode,
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                              color: _Royal.gold,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Spacer(),
+                    if (date != null) _JBadge(date: date),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Noms du couple
+                Text(
+                  wedding.coupleNames.isEmpty ? 'Notre Mariage' : wedding.coupleNames,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    const Icon(Icons.place_outlined, size: 14, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        [
+                          if (wedding.venue != null && wedding.venue!.isNotEmpty) wedding.venue!,
+                          if (date != null) _fmtDate(date),
+                        ].join('  •  '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 12, color: Colors.white70),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // Countdown live
+                if (date != null) _LiveCountdown(target: date),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _fmtDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 }
 
-class _RoyalCountdownCardState extends State<_RoyalCountdownCard> {
-  late Stream<Duration> _countdownStream;
+/// Badge J-X / JOUR J / CÉLÉBRÉ
+class _JBadge extends StatelessWidget {
+  final DateTime date;
+  const _JBadge({required this.date});
+
+  @override
+  Widget build(BuildContext context) {
+    final days = date.difference(DateTime.now()).inDays;
+    final isToday = DateTime.now().day == date.day &&
+        DateTime.now().month == date.month &&
+        DateTime.now().year == date.year;
+    final isPast = date.isBefore(DateTime.now()) && !isToday;
+
+    final label = isPast ? 'CÉLÉBRÉ ✨' : (isToday ? "JOUR J 💍" : 'J − $days');
+    final gradient = isPast ? _Royal.greenG : (isToday ? _Royal.roseG : _Royal.goldG);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        gradient: gradient,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+      ),
+    );
+  }
+}
+
+/// Countdown temps réel (1s) — Jours / Heures / Min / Sec
+class _LiveCountdown extends StatefulWidget {
+  final DateTime target;
+  const _LiveCountdown({required this.target});
+
+  @override
+  State<_LiveCountdown> createState() => _LiveCountdownState();
+}
+
+class _LiveCountdownState extends State<_LiveCountdown> {
+  Timer? _timer;
+  late Duration _left;
 
   @override
   void initState() {
     super.initState();
-    if (widget.eventDate != null) {
-      _countdownStream = Stream.periodic(
-        const Duration(seconds: 1),
-        (_) => widget.eventDate!.difference(DateTime.now()),
+    _left = widget.target.difference(DateTime.now());
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _left = widget.target.difference(DateTime.now()));
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_left.isNegative) {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          gradient: _Royal.greenG,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Text(
+          '🎉 Mariage célébré — revivez les souvenirs',
+          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
+        ),
       );
     }
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final isEventDay = widget.daysLeft == 0;
-    final isPast = widget.eventDate?.isBefore(DateTime.now()) ?? false;
+    final d = _left.inDays;
+    final h = _left.inHours % 24;
+    final m = _left.inMinutes % 60;
+    final s = _left.inSeconds % 60;
 
-    return Container(
-      padding: const EdgeInsets.all(24),
-      decoration: BoxDecoration(
-        gradient: isEventDay
-            ? const LinearGradient(
-                colors: [Color(0xFFE31C4E), Color(0xFFFF6B9D)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              )
-            : isPast
-                ? LinearGradient(
-                    colors: [Colors.grey.shade600, Colors.grey.shade800],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                : const LinearGradient(
-                    colors: [Color(0xFFD4AF37), Color(0xFFB8860B)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFD4AF37).withOpacity(0.3),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                isEventDay ? Icons.celebration : Icons.timer,
-                color: Colors.white,
-                size: 28,
-              ),
-              const SizedBox(width: 8),
-              Text(
-                isEventDay
-                    ? "C'EST LE JOUR J !"
-                    : isPast
-                        ? 'ÉVÉNEMENT TERMINÉ'
-                        : 'COMPTE À REBOURS',
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: Colors.white,
-                  letterSpacing: 1.5,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Text(
-            widget.coupleNames.isEmpty ? 'Mariage' : widget.coupleNames,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              Icon(
-                Icons.place_outlined,
-                color: Colors.white.withOpacity(0.9),
-                size: 16,
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  [
-                    if (widget.venue != null && widget.venue!.isNotEmpty)
-                      widget.venue!,
-                    widget.dateLabel,
-                  ].join(' · '),
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    color: Colors.white.withOpacity(0.9),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          if (!isPast) ...[
-            const SizedBox(height: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: widget.eventDate != null
-                  ? StreamBuilder<Duration>(
-                      stream: _countdownStream,
-                      initialData: widget.eventDate!.difference(DateTime.now()),
-                      builder: (context, snapshot) {
-                        final countdown = snapshot.data ?? Duration.zero;
-                        final days = countdown.inDays;
-                        final hours = countdown.inHours % 24;
-                        final minutes = countdown.inMinutes % 60;
-                        final seconds = countdown.inSeconds % 60;
-
-                        return Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceAround,
-                          children: [
-                            _CountdownUnit(
-                              value: days,
-                              label: 'JOURS',
-                            ),
-                            _CountdownSeparator(),
-                            _CountdownUnit(
-                              value: hours,
-                              label: 'HEURES',
-                            ),
-                            _CountdownSeparator(),
-                            _CountdownUnit(
-                              value: minutes,
-                              label: 'MIN',
-                            ),
-                            _CountdownSeparator(),
-                            _CountdownUnit(
-                              value: seconds,
-                              label: 'SEC',
-                            ),
-                          ],
-                        );
-                      },
-                    )
-                  : Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _CountdownUnit(value: widget.daysLeft, label: 'JOURS'),
-                      ],
-                    ),
-            ),
-          ],
-        ],
-      ),
+    return Row(
+      children: [
+        _TimeCell(value: d, label: 'JOURS'),
+        _TimeSep(),
+        _TimeCell(value: h, label: 'HEURES'),
+        _TimeSep(),
+        _TimeCell(value: m, label: 'MIN'),
+        _TimeSep(),
+        _TimeCell(value: s, label: 'SEC'),
+      ],
     );
   }
 }
 
-class _CountdownUnit extends StatelessWidget {
+class _TimeCell extends StatelessWidget {
   final int value;
   final String label;
-
-  const _CountdownUnit({required this.value, required this.label});
+  const _TimeCell({required this.value, required this.label});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(
-          value.toString().padLeft(2, '0'),
-          style: GoogleFonts.inter(
-            fontSize: 28,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.14),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white.withOpacity(0.25)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value.toString().padLeft(2, '0'),
+            style: GoogleFonts.inter(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: Colors.white,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 10,
-            fontWeight: FontWeight.w600,
-            color: Colors.white.withOpacity(0.9),
-            letterSpacing: 1,
+          Text(
+            label,
+            style: GoogleFonts.inter(
+              fontSize: 8,
+              fontWeight: FontWeight.w700,
+              color: Colors.white70,
+              letterSpacing: 1,
+            ),
           ),
-        ),
-      ],
-    );
-  }
-}
-
-class _CountdownSeparator extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Text(
-      ':',
-      style: GoogleFonts.inter(
-        fontSize: 28,
-        fontWeight: FontWeight.w800,
-        color: Colors.white.withOpacity(0.6),
+        ],
       ),
     );
   }
 }
 
-// Bouton Scanner QR Premium
-class _RoyalScannerButton extends StatelessWidget {
-  final String weddingId;
+class _TimeSep extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Text(
+          ':',
+          style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white54),
+        ),
+      );
+}
 
-  const _RoyalScannerButton({required this.weddingId});
+/// Fallback royal si pas de photo : monogramme des mariés
+class _MonogramFallback extends ConsumerWidget {
+  const _MonogramFallback();
 
   @override
-  Widget build(BuildContext context) {
-    return Material(
-      borderRadius: BorderRadius.circular(20),
-      child: InkWell(
-        onTap: () =>
-            context.push('/thix-weeding/staff/$weddingId/scanner'),
-        borderRadius: BorderRadius.circular(20),
-        child: Container(
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFF0B3B8F), Color(0xFF6B46C1)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      decoration: const BoxDecoration(gradient: _Royal.royal),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(color: _Royal.gold.withOpacity(0.7), width: 2),
+              ),
+              child: const Icon(Icons.favorite, color: _Royal.gold, size: 40),
             ),
-            borderRadius: BorderRadius.circular(20),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF0B3B8F).withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+            const SizedBox(height: 10),
+            Text(
+              'THIX WEDDING',
+              style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: Colors.white54,
+                letterSpacing: 3,
               ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                child: const Icon(
-                  Icons.qr_code_scanner,
-                  color: Colors.white,
-                  size: 36,
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Scanner une invitation',
-                      style: GoogleFonts.inter(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Contrôle d\'accès rapide et sécurisé',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const Icon(
-                Icons.arrow_forward_ios,
-                color: Colors.white,
-                size: 20,
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-// Grille de statistiques royale
-class _RoyalStatsGrid extends StatelessWidget {
-  final Map<String, dynamic>? stats;
+// ============================================================================
+// STATS TEMPS RÉEL
+// ============================================================================
+class _StatsRow extends StatelessWidget {
+  final List<GuestModel> guests;
+  final List<VendorModel> vendors;
+  final List<ChecklistModel> tasks;
 
-  const _RoyalStatsGrid({this.stats});
+  const _StatsRow({required this.guests, required this.vendors, required this.tasks});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
+    final totalSeats = guests.fold<int>(0, (s, g) => s + g.guestsCount);
+    final present = guests.where((g) => g.isPresent).fold<int>(0, (s, g) => s + g.guestsCount);
+    final done = tasks.where((t) => t.isDone).length;
+
+    return Row(
       children: [
-        Row(
-          children: [
-            Expanded(
-              child: _RoyalStatCard(
-                label: 'Invités',
-                value: '${stats?['guests'] ?? '—'}',
-                icon: Icons.people,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF0B3B8F), Color(0xFF6B46C1)],
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _RoyalStatCard(
-                label: 'Présents',
-                value: '${stats?['present'] ?? '—'}',
-                icon: Icons.check_circle,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFF059669), Color(0xFF10B981)],
-                ),
-                trend: _calculatePercentage(),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _RoyalStatCard(
-                label: 'Prestataires',
-                value: '${stats?['vendors'] ?? '—'}',
-                icon: Icons.storefront,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFD4AF37), Color(0xFFB8860B)],
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _RoyalStatCard(
-                label: 'Tâches',
-                value: '${stats?['pendingTasks'] ?? '—'}',
-                icon: Icons.task_alt,
-                gradient: const LinearGradient(
-                  colors: [Color(0xFFE31C4E), Color(0xFFFF6B9D)],
-                ),
-              ),
-            ),
-          ],
-        ),
+        Expanded(child: _StatCard(label: 'Invités', value: '$totalSeats', icon: Icons.people, gradient: _Royal.royal)),
+        const SizedBox(width: 10),
+        Expanded(child: _StatCard(label: 'Présents', value: '$present', icon: Icons.check_circle, gradient: _Royal.greenG)),
+        const SizedBox(width: 10),
+        Expanded(child: _StatCard(label: 'Prestat.', value: '${vendors.length}', icon: Icons.storefront, gradient: _Royal.goldG)),
+        const SizedBox(width: 10),
+        Expanded(child: _StatCard(label: 'Tâches', value: '$done/${tasks.length}', icon: Icons.task_alt, gradient: _Royal.roseG)),
       ],
     );
   }
-
-  String? _calculatePercentage() {
-    if (stats == null) return null;
-    final guests = stats!['guests'] as int?;
-    final present = stats!['present'] as int?;
-    if (guests == null || present == null || guests == 0) return null;
-    final percentage = ((present / guests) * 100).toStringAsFixed(0);
-    return '$percentage%';
-  }
 }
 
-// Carte statistique royale
-class _RoyalStatCard extends StatelessWidget {
+class _StatCard extends StatelessWidget {
   final String label;
   final String value;
   final IconData icon;
   final LinearGradient gradient;
-  final String? trend;
 
-  const _RoyalStatCard({
+  const _StatCard({
     required this.label,
     required this.value,
     required this.icon,
     required this.gradient,
-    this.trend,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+      decoration: _Royal.cardBox(radius: 14),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient: gradient,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
-              if (trend != null)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF059669).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    trend!,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: const Color(0xFF059669),
-                    ),
-                  ),
-                ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(gradient: gradient, borderRadius: BorderRadius.circular(10)),
+            child: Icon(icon, color: Colors.white, size: 16),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           Text(
             value,
-            style: GoogleFonts.inter(
-              fontSize: 22,
-              fontWeight: FontWeight.w800,
-              color: const Color(0xFF111827),
-            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _Royal.text),
           ),
-          const SizedBox(height: 4),
           Text(
             label,
-            style: GoogleFonts.inter(
-              fontSize: 12,
-              color: const Color(0xFF6B7280),
-            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 10, color: _Royal.text2),
           ),
         ],
       ),
@@ -821,118 +746,51 @@ class _RoyalStatCard extends StatelessWidget {
   }
 }
 
-// Carte Budget Royale
-class _RoyalBudgetCard extends StatelessWidget {
-  final double totalBudget;
-  final double totalSpent;
-
-  const _RoyalBudgetCard({
-    required this.totalBudget,
-    required this.totalSpent,
-  });
+// ============================================================================
+// CARTE RSVP
+// ============================================================================
+class _RsvpCard extends StatelessWidget {
+  final List<GuestModel> guests;
+  const _RsvpCard({required this.guests});
 
   @override
   Widget build(BuildContext context) {
-    final percentage = totalBudget > 0 ? (totalSpent / totalBudget) : 0.0;
-    final remaining = totalBudget - totalSpent;
+    final confirmed = guests.where((g) => g.rsvpStatus == 'confirmed').length;
+    final declined = guests.where((g) => g.rsvpStatus == 'declined').length;
+    final pending = guests.length - confirmed - declined;
+    final total = guests.isEmpty ? 1 : guests.length;
 
     return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Budget',
-                style: GoogleFonts.inter(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                  color: const Color(0xFF111827),
-                ),
-              ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFD4AF37), Color(0xFFB8860B)],
-                  ),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${(percentage * 100).toStringAsFixed(0)}%',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
+              const Icon(Icons.mark_email_read_outlined, size: 18, color: _Royal.blue),
+              const SizedBox(width: 8),
+              Text('Confirmations RSVP', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700)),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              _BudgetAmount(
-                label: 'Dépensé',
-                amount: totalSpent,
-                color: const Color(0xFFE31C4E),
-              ),
-              _BudgetAmount(
-                label: 'Total',
-                amount: totalBudget,
-                color: const Color(0xFF0B3B8F),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
-              minHeight: 8,
-              value: percentage.clamp(0.0, 1.0),
-              backgroundColor: const Color(0xFFE5E7EB),
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                Color(0xFF059669),
-              ),
+              minHeight: 10,
+              value: confirmed / total,
+              backgroundColor: _Royal.rose.withOpacity(0.15),
+              valueColor: const AlwaysStoppedAnimation(_Royal.green),
             ),
           ),
           const SizedBox(height: 12),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                'Restant',
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  color: const Color(0xFF6B7280),
-                ),
-              ),
-              Text(
-                '${remaining.toStringAsFixed(0)}',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: remaining >= 0
-                      ? const Color(0xFF059669)
-                      : const Color(0xFFE31C4E),
-                ),
-              ),
+              _RsvpChip(label: 'Confirmés', count: confirmed, color: _Royal.green),
+              const SizedBox(width: 8),
+              _RsvpChip(label: 'En attente', count: pending, color: _Royal.amber),
+              const SizedBox(width: 8),
+              _RsvpChip(label: 'Déclinés', count: declined, color: _Royal.rose),
             ],
           ),
         ],
@@ -941,126 +799,197 @@ class _RoyalBudgetCard extends StatelessWidget {
   }
 }
 
-class _BudgetAmount extends StatelessWidget {
+class _RsvpChip extends StatelessWidget {
   final String label;
-  final double amount;
+  final int count;
   final Color color;
-
-  const _BudgetAmount({
-    required this.label,
-    required this.amount,
-    required this.color,
-  });
+  const _RsvpChip({required this.label, required this.count, required this.color});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            color: const Color(0xFF6B7280),
-          ),
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
         ),
-        const SizedBox(height: 4),
-        Text(
-          amount.toStringAsFixed(0),
-          style: GoogleFonts.inter(
-            fontSize: 20,
-            fontWeight: FontWeight.w800,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-// Actions rapides royales
-class _RoyalQuickActions extends StatelessWidget {
-  final String weddingId;
-
-  const _RoyalQuickActions({required this.weddingId});
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Actions Rapides',
-          style: GoogleFonts.inter(
-            fontWeight: FontWeight.w700,
-            fontSize: 16,
-            color: const Color(0xFF111827),
-          ),
-        ),
-        const SizedBox(height: 12),
-        GridView.count(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 1.4,
+        child: Column(
           children: [
-            _QuickActionCard(
-              icon: Icons.people_outline,
-              label: 'Liste invités',
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0B3B8F), Color(0xFF6B46C1)],
-              ),
-              onTap: () => context.push(
-                  '/thix-weeding/staff/$weddingId/invites'),
+            Text(
+              '$count',
+              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: color),
             ),
-            _QuickActionCard(
-              icon: Icons.storefront_outlined,
-              label: 'Prestataires',
-              gradient: const LinearGradient(
-                colors: [Color(0xFFD4AF37), Color(0xFFB8860B)],
-              ),
-              onTap: () => context.push(
-                  '/thix-weeding/staff/$weddingId/prestataires'),
-            ),
-            _QuickActionCard(
-              icon: Icons.checklist_outlined,
-              label: 'Checklist',
-              gradient: const LinearGradient(
-                colors: [Color(0xFFE31C4E), Color(0xFFFF6B9D)],
-              ),
-              onTap: () => context.push(
-                  '/thix-weeding/staff/$weddingId/checklist'),
-            ),
-            _QuickActionCard(
-              icon: Icons.payments_outlined,
-              label: 'Paiements',
-              gradient: const LinearGradient(
-                colors: [Color(0xFF059669), Color(0xFF10B981)],
-              ),
-              onTap: () => context.push(
-                  '/thix-weeding/staff/$weddingId/paiements'),
-            ),
+            Text(label, style: GoogleFonts.inter(fontSize: 10, color: color.withOpacity(0.9))),
           ],
         ),
-      ],
+      ),
     );
   }
 }
 
-class _QuickActionCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final LinearGradient gradient;
-  final VoidCallback onTap;
+// ============================================================================
+// CARTE BUDGET
+// ============================================================================
+class _BudgetCard extends StatelessWidget {
+  final Map<String, double>? summary;
+  const _BudgetCard({required this.summary});
 
-  const _QuickActionCard({
-    required this.icon,
-    required this.label,
-    required this.gradient,
-    required this.onTap,
+  @override
+  Widget build(BuildContext context) {
+    final budget = summary?['budget'] ?? 0.0;
+    final spent = summary?['spent'] ?? 0.0;
+    final paid = summary?['paid'] ?? 0.0;
+    final remaining = summary?['remaining'] ?? (budget - spent);
+    final ratio = budget > 0 ? (spent / budget).clamp(0.0, 1.0) : 0.0;
+    final over = spent > budget && budget > 0;
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.account_balance_wallet_outlined, size: 18, color: _Royal.blue),
+              const SizedBox(width: 8),
+              Text('Budget', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  gradient: over ? _Royal.roseG : _Royal.goldG,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  '${(ratio * 100).toStringAsFixed(0)}%',
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: LinearProgressIndicator(
+              minHeight: 10,
+              value: ratio.toDouble(),
+              backgroundColor: _Royal.border,
+              valueColor: AlwaysStoppedAnimation(over ? _Royal.rose : _Royal.green),
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              _MoneyCell(label: 'Dépensé', value: spent, color: _Royal.rose),
+              _MoneyCell(label: 'Payé', value: paid, color: _Royal.blue),
+              _MoneyCell(label: 'Restant', value: remaining, color: over ? _Royal.rose : _Royal.green),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MoneyCell extends StatelessWidget {
+  final String label;
+  final double value;
+  final Color color;
+  const _MoneyCell({required this.label, required this.value, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: GoogleFonts.inter(fontSize: 10, color: _Royal.text2)),
+          const SizedBox(height: 2),
+          Text(
+            _fmtMoney(value),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: color),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// GRILLE DES 12 MODULES
+// ============================================================================
+class _ModulesGrid extends StatelessWidget {
+  final String weddingId;
+  final WeddingModel wedding;
+  final int guestsCount;
+  final int vendorsBooked;
+  final int pendingTasks;
+  final int photosCount;
+  final int guestbookCount;
+  final int unreadMessages;
+
+  const _ModulesGrid({
+    required this.weddingId,
+    required this.wedding,
+    required this.guestsCount,
+    required this.vendorsBooked,
+    required this.pendingTasks,
+    required this.photosCount,
+    required this.guestbookCount,
+    required this.unreadMessages,
   });
+
+  @override
+  Widget build(BuildContext context) {
+    final id = weddingId;
+    final modules = <_Module>[
+      _Module('Invités', '$guestsCount', Icons.people_outline, _Royal.royal, _R.invites(id)),
+      _Module('Invitation', wedding.invitationPublished ? 'Publiée' : 'Brouillon', Icons.mail_outline, _Royal.roseG, _R.invitation(id)),
+      _Module('Prestataires', '$vendorsBooked réservés', Icons.storefront_outlined, _Royal.goldG, _R.prestataires(id)),
+      _Module('Planning', 'Jour J', Icons.schedule_outlined, _Royal.royal, _R.planning(id)),
+      _Module('Checklist', '$pendingTasks restantes', Icons.checklist_outlined, _Royal.greenG, _R.checklist(id), badge: pendingTasks),
+      _Module('Budget', 'Suivi', Icons.account_balance_wallet_outlined, _Royal.goldG, _R.budget(id)),
+      _Module('Paiements', 'Transactions', Icons.payments_outlined, _Royal.greenG, _R.paiements(id)),
+      _Module('Galerie', '$photosCount photos', Icons.photo_library_outlined, _Royal.roseG, _R.galerie(id)),
+      _Module("Livre d'or", '$guestbookCount msgs', Icons.menu_book_outlined, _Royal.goldG, _R.livreOr(id)),
+      _Module('Messages', unreadMessages > 0 ? '$unreadMessages nouveaux' : 'À jour', Icons.chat_bubble_outline, _Royal.royal, _R.messages(id), badge: unreadMessages),
+      _Module('Paramètres', 'Réglages', Icons.settings_outlined, LinearGradient(colors: [Colors.grey.shade600, Colors.grey.shade800]), _R.parametres(id)),
+      _Module('Mes mariages', 'Multi-événements', Icons.favorite_border, _Royal.roseG, _R.myWeddings()),
+    ];
+
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 0.92,
+      ),
+      itemCount: modules.length,
+      itemBuilder: (_, i) => _ModuleTile(module: modules[i]),
+    );
+  }
+}
+
+class _Module {
+  final String title;
+  final String subtitle;
+  final IconData icon;
+  final LinearGradient gradient;
+  final String route;
+  final int badge;
+
+  _Module(this.title, this.subtitle, this.icon, this.gradient, this.route, {this.badge = 0});
+}
+
+class _ModuleTile extends StatelessWidget {
+  final _Module module;
+  const _ModuleTile({required this.module});
 
   @override
   Widget build(BuildContext context) {
@@ -1068,41 +997,62 @@ class _QuickActionCard extends StatelessWidget {
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: onTap,
+        onTap: () => context.push(module.route),
         borderRadius: BorderRadius.circular(16),
         child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            border: Border.all(color: const Color(0xFFE5E7EB)),
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+          padding: const EdgeInsets.all(10),
+          decoration: _Royal.cardBox(radius: 16),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  gradient: gradient,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 22),
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      gradient: module.gradient,
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(module.icon, color: Colors.white, size: 18),
+                  ),
+                  if (module.badge > 0)
+                    Positioned(
+                      right: -5,
+                      top: -5,
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: _Royal.rose,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: Text(
+                          '${module.badge}',
+                          style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
+                      ),
+                    ),
+                ],
               ),
-              const SizedBox(height: 10),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: const Color(0xFF111827),
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    module.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _Royal.text),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    module.subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 9, color: _Royal.text2),
+                  ),
+                ],
               ),
             ],
           ),
@@ -1112,9 +1062,448 @@ class _QuickActionCard extends StatelessWidget {
   }
 }
 
-// Vue de chargement royale
-class _RoyalLoadingView extends StatelessWidget {
-  const _RoyalLoadingView();
+// ============================================================================
+// CHECKLIST
+// ============================================================================
+class _ChecklistCard extends StatelessWidget {
+  final List<ChecklistModel> tasks;
+  final String weddingId;
+  const _ChecklistCard({required this.tasks, required this.weddingId});
+
+  @override
+  Widget build(BuildContext context) {
+    final done = tasks.where((t) => t.isDone).length;
+    final ratio = tasks.isEmpty ? 0.0 : done / tasks.length;
+
+    final upcoming = [...tasks]
+      ..removeWhere((t) => t.isDone)
+      ..sort((a, b) {
+        final da = a.dueDate;
+        final db = b.dueDate;
+        if (da == null && db == null) return 0;
+        if (da == null) return 1;
+        if (db == null) return -1;
+        return da.compareTo(db);
+      });
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              SizedBox(
+                width: 44,
+                height: 44,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: CircularProgressIndicator(
+                        value: ratio,
+                        strokeWidth: 5,
+                        backgroundColor: _Royal.border,
+                        valueColor: const AlwaysStoppedAnimation(_Royal.green),
+                      ),
+                    ),
+                    Text(
+                      '${(ratio * 100).toStringAsFixed(0)}%',
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _Royal.text),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '$done / ${tasks.length} tâches accomplies',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
+                    ),
+                    Text(
+                      upcoming.isEmpty ? 'Tout est prêt 🎉' : 'Prochaine : ${upcoming.first.title}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, color: _Royal.text2),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (upcoming.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            ...upcoming.take(3).map((t) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: t.dueDate != null && t.dueDate!.isBefore(DateTime.now())
+                              ? _Royal.rose
+                              : _Royal.amber,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          t.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                      if (t.dueDate != null)
+                        Text(
+                          '${t.dueDate!.day.toString().padLeft(2, '0')}/${t.dueDate!.month.toString().padLeft(2, '0')}',
+                          style: GoogleFonts.inter(fontSize: 11, color: _Royal.text2),
+                        ),
+                    ],
+                  ),
+                )),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// GALERIE PREVIEW
+// ============================================================================
+class _GalleryStrip extends StatelessWidget {
+  final List<GalleryModel> gallery;
+  final String weddingId;
+  const _GalleryStrip({required this.gallery, required this.weddingId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (gallery.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(20),
+        decoration: _Royal.cardBox(),
+        child: Column(
+          children: [
+            Icon(Icons.photo_camera_outlined, size: 36, color: _Royal.text2),
+            const SizedBox(height: 8),
+            Text(
+              'Aucune photo pour le moment',
+              style: GoogleFonts.inter(fontSize: 13, color: _Royal.text2),
+            ),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: () => context.push(_R.galerie(weddingId)),
+              icon: const Icon(Icons.add_a_photo_outlined, size: 16),
+              label: const Text('Ajouter des photos'),
+              style: FilledButton.styleFrom(backgroundColor: _Royal.blue),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: 130,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: gallery.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) {
+          final g = gallery[i];
+          return ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: Image.network(
+              g.imageUrl,
+              width: 130,
+              height: 130,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(
+                width: 130,
+                height: 130,
+                color: _Royal.border,
+                child: const Icon(Icons.broken_image_outlined, color: _Royal.text2),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PRESTATAIRES
+// ============================================================================
+class _VendorsCard extends StatelessWidget {
+  final List<VendorModel> vendors;
+  const _VendorsCard({required this.vendors});
+
+  @override
+  Widget build(BuildContext context) {
+    if (vendors.isEmpty) {
+      return _EmptyCard(message: 'Aucun prestataire engagé', icon: Icons.storefront_outlined);
+    }
+
+    final booked = vendors.where((v) => v.isBooked).toList();
+    final shown = (booked + vendors.where((v) => !v.isBooked).toList()).take(3);
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        children: shown
+            .map((v) => Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          gradient: v.isBooked ? _Royal.greenG : _Royal.goldG,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Icon(
+                          v.isBooked ? Icons.verified : Icons.hourglass_bottom,
+                          color: Colors.white,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              v.name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700),
+                            ),
+                            Text(
+                              v.category,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(fontSize: 11, color: _Royal.text2),
+                            ),
+                          ],
+                        ),
+                      ),
+                      if (v.price != null)
+                        Text(
+                          _fmtMoney(v.price!),
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _Royal.blue),
+                        ),
+                    ],
+                  ),
+                ))
+            .toList(),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PAIEMENTS RÉCENTS
+// ============================================================================
+class _PaymentsCard extends StatelessWidget {
+  final List<PaymentModel> payments;
+  const _PaymentsCard({required this.payments});
+
+  @override
+  Widget build(BuildContext context) {
+    if (payments.isEmpty) {
+      return _EmptyCard(message: 'Aucun paiement enregistré', icon: Icons.payments_outlined);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        children: payments.take(3).map((p) {
+          final ok = p.status == 'completed';
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    color: (ok ? _Royal.green : _Royal.amber).withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Icon(
+                    ok ? Icons.check_circle_outline : Icons.schedule,
+                    color: ok ? _Royal.green : _Royal.amber,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        p.vendorName ?? p.expenseTitle ?? 'Paiement',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        '${p.method} • ${p.createdAt.day.toString().padLeft(2, '0')}/${p.createdAt.month.toString().padLeft(2, '0')}',
+                        style: GoogleFonts.inter(fontSize: 11, color: _Royal.text2),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  _fmtMoney(p.amount),
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: ok ? _Royal.green : _Royal.amber,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// LIVRE D'OR
+// ============================================================================
+class _GuestbookCard extends StatelessWidget {
+  final List<GuestbookModel> entries;
+  const _GuestbookCard({required this.entries});
+
+  @override
+  Widget build(BuildContext context) {
+    final approved = entries.where((e) => e.isApproved).toList();
+    if (approved.isEmpty) {
+      return _EmptyCard(message: 'Aucun message approuvé', icon: Icons.menu_book_outlined);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        children: approved.take(2).map((e) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(
+                    gradient: _Royal.roseG,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(Icons.format_quote, color: Colors.white, size: 16),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        e.message,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 13, fontStyle: FontStyle.italic),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '— ${e.guestName}',
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: _Royal.rose,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// WIDGETS UTILITAIRES
+// ============================================================================
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  const _SectionTitle(this.title, {required this.icon, this.actionLabel, this.onAction});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: _Royal.blue),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            title,
+            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _Royal.text),
+          ),
+        ),
+        if (actionLabel != null)
+          GestureDetector(
+            onTap: onAction,
+            child: Text(
+              actionLabel!,
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _Royal.blue),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+class _EmptyCard extends StatelessWidget {
+  final String message;
+  final IconData icon;
+  const _EmptyCard({required this.message, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: _Royal.cardBox(),
+      child: Column(
+        children: [
+          Icon(icon, size: 32, color: _Royal.text2),
+          const SizedBox(height: 8),
+          Text(message, style: GoogleFonts.inter(fontSize: 13, color: _Royal.text2)),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingView extends StatelessWidget {
+  const _LoadingView();
 
   @override
   Widget build(BuildContext context) {
@@ -1123,37 +1512,17 @@ class _RoyalLoadingView extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF0B3B8F), Color(0xFF6B46C1)],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.celebration,
-              color: Colors.white,
-              size: 40,
-            ),
+            padding: const EdgeInsets.all(18),
+            decoration: const BoxDecoration(gradient: _Royal.royal, shape: BoxShape.circle),
+            child: const Icon(Icons.favorite, color: _Royal.gold, size: 32),
           ),
-          const SizedBox(height: 20),
-          Text(
-            'Chargement...',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: const Color(0xFF111827),
-            ),
-          ),
-          const SizedBox(height: 12),
-          const SizedBox(
-            width: 200,
+          const SizedBox(height: 16),
+          SizedBox(
+            width: 160,
             child: LinearProgressIndicator(
-              backgroundColor: Color(0xFFE5E7EB),
-              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF0B3B8F)),
               minHeight: 4,
+              backgroundColor: _Royal.border,
+              valueColor: const AlwaysStoppedAnimation(_Royal.blue),
             ),
           ),
         ],
@@ -1162,12 +1531,10 @@ class _RoyalLoadingView extends StatelessWidget {
   }
 }
 
-// Vue d'erreur royale
-class _RoyalErrorView extends StatelessWidget {
+class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
-
-  const _RoyalErrorView({required this.message, required this.onRetry});
+  const _ErrorView({required this.message, required this.onRetry});
 
   @override
   Widget build(BuildContext context) {
@@ -1178,53 +1545,48 @@ class _RoyalErrorView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              padding: const EdgeInsets.all(20),
+              padding: const EdgeInsets.all(18),
               decoration: BoxDecoration(
-                color: const Color(0xFFE31C4E).withOpacity(0.1),
+                color: _Royal.rose.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
-                Icons.error_outline,
-                color: Color(0xFFE31C4E),
-                size: 48,
-              ),
+              child: const Icon(Icons.error_outline, color: _Royal.rose, size: 40),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 16),
             Text(
-              'Impossible de charger',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: const Color(0xFF111827),
-              ),
+              'Impossible de charger le mariage',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
             Text(
               message,
               textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: const Color(0xFF6B7280),
-              ),
+              style: GoogleFonts.inter(fontSize: 12, color: _Royal.text2),
             ),
-            const SizedBox(height: 24),
+            const SizedBox(height: 20),
             FilledButton.icon(
               onPressed: onRetry,
-              icon: const Icon(Icons.refresh),
+              icon: const Icon(Icons.refresh, size: 18),
               label: const Text('Réessayer'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF0B3B8F),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
+              style: FilledButton.styleFrom(backgroundColor: _Royal.blue),
             ),
           ],
         ),
       ),
     );
   }
+}
+
+/// Formatage milliers sans dépendance intl : 1250000 → "1 250 000"
+String _fmtMoney(double v) {
+  final neg = v < 0;
+  final s = v.round().abs().toString();
+  final buf = StringBuffer();
+  var c = 0;
+  for (var i = s.length - 1; i >= 0; i--) {
+    buf.write(s[i]);
+    c++;
+    if (c % 3 == 0 && i > 0) buf.write(' ');
+  }
+  return (neg ? '-' : '') + buf.toString().split('').reversed.join();
 }
