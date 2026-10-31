@@ -930,9 +930,9 @@ class _ChatListPageState extends ConsumerState<ChatListPage>
     }
     final type = '${m.mediaType ?? ''}';
     final unread = conv.unreadCount > 0;
-    if (type == 'system_screenshot') {
+        if (type == 'system_screenshot') {
       return ChatListPreview(
-        _s(ctx, 'chatlist_screenshot', fb: 'Capture d'écran effectuée'),
+        _s(ctx, 'chatlist_screenshot', fb: 'Capture d’écran effectuée'),
         icon: Icons.screenshot_rounded,
         color: Ct.warning,
       );
