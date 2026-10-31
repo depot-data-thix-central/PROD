@@ -16,6 +16,17 @@ import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_wee
 // ============================================================================
 // DESIGN SYSTEM ROYAL
 // ============================================================================
+// AJOUTER APRÈS LES IMPORTS, AVANT LA CLASSE _R :
+const TextStyle _monoStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontFeatures: [FontFeature.tabularFigures()],
+  letterSpacing: 0.5,
+);
+
+TextStyle _mono({double? fontSize, FontWeight? fontWeight, Color? color}) {
+  return _monoStyle.copyWith(fontSize: fontSize, fontWeight: fontWeight, color: color);
+}
+
 class _R {
   static const Color blue = Color(0xFF0B3B8F);
   static const Color purple = Color(0xFF6B46C1);
@@ -680,7 +691,7 @@ class _PaymentCard extends StatelessWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(color: _R.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(6)),
-                          child: Text('Ref: ${payment.referenceCode}', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w600, color: _R.blue, fontFamily: 'monospace')),
+                          child: Text('Ref: ${payment.referenceCode}', style: _mono(fontSize: 8, fontWeight: FontWeight.w600, color: _R.blue)),
                         ),
                     ]),
                   ],
