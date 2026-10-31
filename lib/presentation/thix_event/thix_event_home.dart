@@ -1,13 +1,12 @@
 // lib/presentation/thix_event/thix_event_home.dart
 //
-// ThixEventHome — DESIGN v3 (blanc épuré + glassmorphism léger)
+// ThixEventHome — DESIGN v4 (blanc épuré + glassmorphism léger)
 //
-// • Fond blanc très clair, panneaux en verre dépoli discret
-// • « Les plus attendus » : carrousel de cartes hautes
-// • « À la une / tous les événements » : cartes CÔTE À CÔTE (horizontal)
-// • Bannière Accès VIP : SUPPRIMÉE
-// • Navigation basse ATTACHÉE en bas (non flottante), hauteur réduite (54 px)
-// • Paddings réduits (16) pour maximiser visibilité et lisibilité
+// • Section « TOUS LES ÉVÉNEMENTS » (sans bouton Voir tout)
+//   → cartes DEUX PAR DEUX vers le bas (grille 2 colonnes)
+// • Cartes enrichies : ville, heure, organisateur
+// • Bannière Accès VIP : supprimée
+// • Navigation basse attachée (54 px)
 import 'dart:async';
 import 'dart:ui';
 
@@ -16,6 +15,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../l10n/app_localizations.dart';
@@ -27,7 +27,7 @@ import '../../providers/event_provider.dart';
 // ============================================================================
 
 class _C {
-  static const bg = Color(0xFFFBFBFD); // blanc très clair
+  static const bg = Color(0xFFFBFBFD);
   static const surface = Colors.white;
   static const ink = Color(0xFF101018);
   static const inkSoft = Color(0xFF71717E);
@@ -116,7 +116,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   final ScrollController _scrollController = ScrollController();
   final PageController _heroController = PageController();
   final ScrollController _recScrollController = ScrollController();
-  final ScrollController _allScrollController = ScrollController();
   final ValueNotifier<double> _scrollY = ValueNotifier<double>(0);
 
   Timer? _heroTimer;
@@ -130,7 +129,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    _allScrollController.addListener(_onAllScroll);
     _startHero();
     _startRec();
     _EventLogger.info('ThixEventHome initialized');
@@ -140,14 +138,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     final p = _scrollController.position;
     _scrollY.value = p.pixels;
     if (p.pixels > p.maxScrollExtent - 300) {
-      ref.read(eventListProvider.notifier).loadMore();
-    }
-  }
-
-  // Pagination horizontale pour la liste « tous les événements »
-  void _onAllScroll() {
-    final p = _allScrollController.position;
-    if (p.pixels > p.maxScrollExtent - 260) {
       ref.read(eventListProvider.notifier).loadMore();
     }
   }
@@ -217,7 +207,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     _scrollController.dispose();
     _heroController.dispose();
     _recScrollController.dispose();
-    _allScrollController.dispose();
     _scrollY.dispose();
     _heroTimer?.cancel();
     _recTimer?.cancel();
@@ -229,11 +218,28 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   // HELPERS
   // ════════════════════════════════════════════════════════════
 
+  /// Traduction avec repli français si la clé est absente
+  String _t(AppLocalizations l10n, String key, String fb) {
+    final v = l10n.t(key);
+    if (v.isEmpty || v == key) return fb;
+    return v;
+  }
+
   bool _isSoldOut(Event e) => (e.remainingTickets ?? 0) <= 0;
 
   bool _isLow(Event e) {
     final t = e.remainingTickets ?? 0;
     return t > 0 && t < 10;
+  }
+
+  String _timeOf(Event e) {
+    try {
+      return DateFormat(
+              'HH:mm', Localizations.localeOf(context).languageCode)
+          .format(e.startDate);
+    } catch (_) {
+      return DateFormat('HH:mm', 'fr').format(e.startDate);
+    }
   }
 
   void _openEvent(Event e, String logMsg) {
@@ -252,7 +258,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
           ),
         ),
         child: const Center(
-          child: Icon(Icons.confirmation_num_rounded, color: Colors.white24, size: 44),
+          child:
+              Icon(Icons.confirmation_num_rounded, color: Colors.white24, size: 40),
         ),
       );
 
@@ -304,14 +311,13 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
-  /// Pilule en verre dépoli (fond blanc translucide + blur)
-  Widget _glassPill({required Widget child, double radius = 16}) {
+  Widget _glassPill({required Widget child, double radius = 14}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.92),
             borderRadius: BorderRadius.circular(radius),
@@ -329,7 +335,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
         child: Container(
-          constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.6),
+          constraints:
+              BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.6),
           padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.2),
@@ -360,19 +367,24 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
     );
   }
 
-  Widget _miniMeta(IconData icon, String text, {Color iconColor = _C.accent}) {
+  Widget _miniMeta(
+    IconData icon,
+    String text, {
+    Color iconColor = _C.accent,
+    double fontSize = 11.5,
+  }) {
     return Row(
       children: [
-        Icon(icon, size: 13, color: iconColor),
+        Icon(icon, size: 12, color: iconColor),
         const SizedBox(width: 6),
         Expanded(
           child: Text(
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               color: _C.inkSoft,
-              fontSize: 11.5,
+              fontSize: fontSize,
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -495,32 +507,41 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                             itemBuilder: (_, i) => _tallCard(l10n, recommended[i]),
                           ),
                         ),
-                      const SizedBox(height: 22),
-                      _headerSection(l10n, l10n.t('event_featured')),
+                      const SizedBox(height: 24),
+                      // ── TITRE : TOUS LES ÉVÉNEMENTS (sans Voir tout) ──
+                      _headerSection(
+                        l10n,
+                        _t(l10n, 'event_all_events', 'Tous les événements'),
+                        showAction: false,
+                      ),
                       const SizedBox(height: 12),
                     ],
                   ),
                 ),
-                // ── TOUS LES ÉVÉNEMENTS : CARTES CÔTE À CÔTE ──
-                SliverToBoxAdapter(
-                  child: items.isEmpty
-                      ? Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 16),
-                          child: _emptyPanel(l10n),
-                        )
-                      : SizedBox(
-                          height: 280,
-                          child: ListView.separated(
-                            controller: _allScrollController,
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            padding: const EdgeInsets.symmetric(horizontal: 16),
-                            itemCount: items.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 14),
-                            itemBuilder: (_, i) => _sideCard(l10n, items[i]),
-                          ),
-                        ),
-                ),
+                // ── GRILLE 2 COLONNES : DEUX PAR DEUX VERS LE BAS ──
+                if (items.isEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: _emptyPanel(l10n),
+                    ),
+                  )
+                else
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverGrid(
+                      delegate: SliverChildBuilderDelegate(
+                        (_, i) => _gridCard(l10n, items[i]),
+                        childCount: items.length,
+                      ),
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 2,
+                        mainAxisSpacing: 12,
+                        crossAxisSpacing: 12,
+                        childAspectRatio: 0.62,
+                      ),
+                    ),
+                  ),
                 const SliverToBoxAdapter(child: SizedBox(height: 96)),
               ],
             ),
@@ -550,7 +571,7 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               const Icon(Icons.event_available_rounded, size: 40, color: _C.inkSoft),
               const SizedBox(height: 10),
               Text(
-                l10n.t('event_no_events'),
+                _t(l10n, 'event_no_events', 'Aucun événement pour le moment'),
                 style: const TextStyle(
                   color: _C.inkSoft,
                   fontSize: 13,
@@ -888,7 +909,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       label: l10n.t('event_book_now'),
                       enabled: !soldOut,
                       child: GestureDetector(
-                        onTap: soldOut ? null : () => _openEvent(e, 'Hero book tapped'),
+                        onTap:
+                            soldOut ? null : () => _openEvent(e, 'Hero book tapped'),
                         child: Container(
                           height: 50,
                           padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -998,13 +1020,17 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                     )
                   else
                     Icon(
-                      error ? Icons.error_outline_rounded : Icons.confirmation_num_rounded,
+                      error
+                          ? Icons.error_outline_rounded
+                          : Icons.confirmation_num_rounded,
                       size: 60,
                       color: Colors.white,
                     ),
                   const SizedBox(height: 16),
                   Text(
-                    error ? l10n.t('error_generic') : 'THIX ${l10n.t('event_tickets')}',
+                    error
+                        ? l10n.t('error_generic')
+                        : 'THIX ${l10n.t('event_tickets')}',
                     textAlign: TextAlign.center,
                     style: const TextStyle(
                       color: Colors.white,
@@ -1074,7 +1100,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               onTap: () {
                 if (!_throttle()) return;
                 HapticFeedback.lightImpact();
-                ref.read(eventCategoryProvider.notifier).state = f['value'] as String;
+                ref.read(eventCategoryProvider.notifier).state =
+                    f['value'] as String;
                 _EventLogger.info('Category filter changed', {'category': f['value']});
               },
               child: AnimatedContainer(
@@ -1155,7 +1182,8 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                       onTap: () {
                         if (!_throttle()) return;
                         HapticFeedback.lightImpact();
-                        ref.read(eventDateFilterProvider.notifier).state = f['value'] as String;
+                        ref.read(eventDateFilterProvider.notifier).state =
+                            f['value'] as String;
                         _EventLogger.info('Date filter changed', {'filter': f['value']});
                       },
                       child: AnimatedContainer(
@@ -1190,13 +1218,14 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // HEADER SECTION
+  // HEADER SECTION (showAction = false → pas de « Voir tout »)
   // ════════════════════════════════════════════════════════════
 
   Widget _headerSection(
     AppLocalizations l10n,
     String title, {
     bool isPremium = false,
+    bool showAction = true,
   }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1239,32 +1268,33 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
               ],
             ),
           ),
-          Semantics(
-            button: true,
-            label: l10n.t('event_view_all'),
-            child: GestureDetector(
-              onTap: () {
-                if (!_throttle()) return;
-                HapticFeedback.selectionClick();
-                _EventLogger.info('View all tapped');
-                context.push('/thix-event/recommended');
-              },
-              child: Row(
-                children: [
-                  Text(
-                    l10n.t('event_view_all'),
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                      color: _C.accent,
+          if (showAction)
+            Semantics(
+              button: true,
+              label: l10n.t('event_view_all'),
+              child: GestureDetector(
+                onTap: () {
+                  if (!_throttle()) return;
+                  HapticFeedback.selectionClick();
+                  _EventLogger.info('View all tapped');
+                  context.push('/thix-event/recommended');
+                },
+                child: Row(
+                  children: [
+                    Text(
+                      l10n.t('event_view_all'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: _C.accent,
+                      ),
                     ),
-                  ),
-                  const SizedBox(width: 3),
-                  const Icon(Icons.arrow_forward_rounded, size: 14, color: _C.accent),
-                ],
+                    const SizedBox(width: 3),
+                    const Icon(Icons.arrow_forward_rounded, size: 14, color: _C.accent),
+                  ],
+                ),
               ),
             ),
-          ),
         ],
       ),
     );
@@ -1341,7 +1371,6 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
                   top: 10,
                   child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
                 ),
-              // Panneau info en verre dépoli blanc
               Positioned(
                 left: 10,
                 right: 10,
@@ -1408,125 +1437,148 @@ class _ThixEventHomeState extends ConsumerState<ThixEventHome> {
   }
 
   // ════════════════════════════════════════════════════════════
-  // CARTE CÔTE À CÔTE (tous les événements)
+  // CARTE GRILLE (2 par 2) — ville, heure, organisateur
   // ════════════════════════════════════════════════════════════
 
-  Widget _sideCard(AppLocalizations l10n, Event e) {
+  Widget _gridCard(AppLocalizations l10n, Event e) {
     final soldOut = _isSoldOut(e);
     final low = _isLow(e);
+    final organizer = (e.organizerName ?? '').trim();
+    final city = (e.city ?? '').trim();
+    final location = (e.location ?? '').trim();
+    final place = city.isEmpty
+        ? location
+        : (location.isEmpty ? city : '$location • $city');
 
     return Semantics(
       button: true,
       label: '${e.title}, ${e.formattedPrice}',
       enabled: !soldOut,
       child: GestureDetector(
-        onTap: soldOut ? null : () => _openEvent(e, 'All-events card tapped'),
-        child: SizedBox(
-          width: 240,
-          child: Container(
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.85),
-              borderRadius: BorderRadius.circular(22),
-              border: Border.all(
-                color: soldOut ? _C.soldOut.withOpacity(0.35) : _C.line,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: _C.ink.withOpacity(0.07),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
+        onTap: soldOut ? null : () => _openEvent(e, 'Grid card tapped'),
+        child: Container(
+          clipBehavior: Clip.antiAlias,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.85),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: soldOut ? _C.soldOut.withOpacity(0.35) : _C.line,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Image
-                SizedBox(
-                  height: 140,
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      _img(e.imageUrl, cacheWidth: 700),
-                      if (!soldOut && low)
-                        Positioned(
-                          left: 10,
-                          top: 10,
-                          child: _pill(l10n.t('event_low_stock'), _C.lowStock, Colors.white),
-                        ),
-                      if (!soldOut)
-                        Positioned(
-                          right: 10,
-                          top: 10,
-                          child: _glassPill(
-                            radius: 14,
-                            child: Text(
-                              e.formattedPrice,
-                              style: const TextStyle(
-                                color: _C.ink,
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w900,
-                              ),
+            boxShadow: [
+              BoxShadow(
+                color: _C.ink.withOpacity(0.06),
+                blurRadius: 14,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // ── Image ─
+              SizedBox(
+                height: 118,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    _img(e.imageUrl, cacheWidth: 500),
+                    if (!soldOut && low)
+                      Positioned(
+                        left: 8,
+                        top: 8,
+                        child: _pill(
+                            l10n.t('event_low_stock'), _C.lowStock, Colors.white),
+                      ),
+                    if (!soldOut)
+                      Positioned(
+                        right: 8,
+                        top: 8,
+                        child: _glassPill(
+                          child: Text(
+                            e.formattedPrice,
+                            style: const TextStyle(
+                              color: _C.ink,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
-                      if (soldOut)
-                        Positioned.fill(
-                          child: Container(
-                            color: Colors.black.withOpacity(0.6),
-                            alignment: Alignment.center,
-                            child: Text(
-                              l10n.t('event_sold_out'),
-                              style: const TextStyle(
-                                color: _C.soldOut,
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                              ),
+                      ),
+                    if (soldOut)
+                      Positioned.fill(
+                        child: Container(
+                          color: Colors.black.withOpacity(0.6),
+                          alignment: Alignment.center,
+                          child: Text(
+                            l10n.t('event_sold_out'),
+                            style: const TextStyle(
+                              color: _C.soldOut,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
                             ),
                           ),
                         ),
-                    ],
-                  ),
+                      ),
+                  ],
                 ),
-                // Corps en verre dépoli blanc
-                Expanded(
-                  child: ClipRRect(
-                    child: BackdropFilter(
-                      filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                      child: Container(
-                        color: Colors.white.withOpacity(0.72),
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                e.title,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: soldOut ? _C.inkSoft : _C.ink,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w900,
-                                  height: 1.2,
-                                  letterSpacing: -0.3,
-                                ),
+              ),
+              // ── Corps en verre dépoli ──
+              Expanded(
+                child: ClipRRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                    child: Container(
+                      color: Colors.white.withOpacity(0.72),
+                      padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              e.title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: soldOut ? _C.inkSoft : _C.ink,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                                height: 1.2,
+                                letterSpacing: -0.3,
                               ),
                             ),
-                            const SizedBox(height: 6),
-                            _miniMeta(Icons.calendar_today_rounded, e.shortDate,
-                                iconColor: _C.amber),
-                            const SizedBox(height: 5),
-                            _miniMeta(Icons.location_on_rounded, e.location),
+                          ),
+                          const SizedBox(height: 4),
+                          // 🧑💼 Organisateur
+                          if (organizer.isNotEmpty) ...[
+                            _miniMeta(
+                              Icons.badge_rounded,
+                              organizer,
+                              iconColor: _C.accent,
+                              fontSize: 10.5,
+                            ),
+                            const SizedBox(height: 3),
                           ],
-                        ),
+                          // 📅 Date + 🕐 Heure
+                          _miniMeta(
+                            Icons.calendar_today_rounded,
+                            '${e.shortDate} • ${_timeOf(e)}',
+                            iconColor: _C.amber,
+                            fontSize: 10.5,
+                          ),
+                          const SizedBox(height: 3),
+                          // 📍 Lieu + 🏙️ Ville
+                          _miniMeta(
+                            Icons.location_on_rounded,
+                            place,
+                            fontSize: 10.5,
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
