@@ -238,20 +238,31 @@ class ExpenseModel {
       );
 }
 
+// ============================================================================
+// CHECKLIST MODEL — MIS À JOUR avec priority, category, description, orderIndex
+// ============================================================================
 class ChecklistModel {
   final String id;
   final String weddingId;
   final String title;
+  final String? description;
   final bool isDone;
   final DateTime? dueDate;
+  final String? category;
+  final String? priority;
+  final int? orderIndex;
   final DateTime createdAt;
 
   ChecklistModel({
     required this.id,
     required this.weddingId,
     required this.title,
+    this.description,
     this.isDone = false,
     this.dueDate,
+    this.category,
+    this.priority,
+    this.orderIndex,
     required this.createdAt,
   });
 
@@ -259,9 +270,14 @@ class ChecklistModel {
         id: j['id'],
         weddingId: j['wedding_id'],
         title: j['title'] ?? '',
+        description: j['description'],
         isDone: j['is_done'] ?? false,
-        dueDate:
-            j['due_date'] != null ? DateTime.parse(j['due_date']) : null,
+        dueDate: j['due_date'] != null ? DateTime.parse(j['due_date']) : null,
+        category: j['category'],
+        priority: j['priority'],
+        orderIndex: j['order_index'] is int
+            ? j['order_index'] as int
+            : int.tryParse('${j['order_index']}'),
         createdAt: DateTime.parse(j['created_at']),
       );
 }
