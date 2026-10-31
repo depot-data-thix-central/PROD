@@ -1,51 +1,122 @@
+// lib/presentation/thix_event/pages/event_ticket_page.dart
+//
+// EventTicketPage — DESIGN v2 (aligné homepage : blanc épuré + glassmorphism)
+//
+// • Billet clair premium : carte blanche, bordures hairline, ombres douces
+// • Filigrane « THIX » discret + voile holographique animé (propre, léger)
+// • Encoches latérales ALIGNÉES automatiquement sur la ligne pointillée
+// • Catégories dynamiques (Standard / VIP / VVIP / Early) adaptées au clair
+// • Grille d'infos : quantité, catégorie, prix, réservation + code-barres
+// • Sécurité PIN conservée, QR protégé, ID masqué
+import 'dart:math' as math;
 import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:intl/intl.dart';
 
-class _ThixColors {
-  static const bg = Color(0xFF050508);
-  static const surface = Color(0xFF0C0C12);
-  static const surfaceAlt = Color(0xFF111118);
-  static const cardBorder = Color(0x14FFFFFF);
-  static const primary = Color(0xFFFF0A54);
-  static const textMuted = Color(0x66FFFFFF);
-  static const textSecondary = Color(0x99FFFFFF);
+// ============================================================================
+// PALETTE — ALIGNÉE HOMEPAGE (blanc épuré)
+// ============================================================================
+
+class _C {
+  static const bg = Color(0xFFFBFBFD);
+  static const surface = Colors.white;
+  static const tile = Color(0xFFF7F7FB);
+  static const ink = Color(0xFF101018);
+  static const inkSoft = Color(0xFF71717E);
+  static const line = Color(0xFFECECF2);
+  static const accent = Color(0xFF5B3DF5);
+  static const amber = Color(0xFFFFB020);
+  static const success = Color(0xFF16A34A);
+  static const danger = Color(0xFFEF4444);
 }
 
 // ============================================================================
-// GESTION DES 4 CATÉGORIES DYNAMIQUES
+// CATÉGORIES DYNAMIQUES (adaptées au thème clair)
 // ============================================================================
+
 class TicketStyle {
-  final Color color;
+  final Color color; // accent fort
+  final Color soft; // fond teinté
   final String label;
 
-  TicketStyle(this.color, this.label);
+  const TicketStyle(this.color, this.soft, this.label);
 
   static TicketStyle fromCategory(String category) {
     final cat = category.toLowerCase();
-    if (cat.contains('vvip') || cat.contains('premium') || cat.contains('platine')) {
-      return TicketStyle(const Color(0xFFE5E4E2), category.toUpperCase()); // Platine/Argent
-    } else if (cat.contains('vip') || cat.contains('gold') || cat.contains('or')) {
-      return TicketStyle(const Color(0xFFFFD700), category.toUpperCase()); // Or
-    } else if (cat.contains('early') || cat.contains('promo')) {
-      return TicketStyle(const Color(0xFF00FA9A), category.toUpperCase()); // Émeraude/Vert
+    if (cat.contains('vvip') ||
+        cat.contains('platine') ||
+        cat.contains('premium')) {
+      return TicketStyle(
+          const Color(0xFF64748B), const Color(0x1464748B), category.toUpperCase());
     }
-    // Standard / Par défaut
-    return TicketStyle(_ThixColors.primary, category.toUpperCase()); // Thix Primary
+    if (cat.contains('vip') || cat.contains('gold') || cat.contains('or')) {
+      return TicketStyle(
+          const Color(0xFFD97706), const Color(0x14D97706), category.toUpperCase());
+    }
+    if (cat.contains('early') || cat.contains('promo')) {
+      return TicketStyle(
+          const Color(0xFF059669), const Color(0x14059669), category.toUpperCase());
+    }
+    return TicketStyle(
+        _C.accent, const Color(0x145B3DF5), category.toUpperCase());
   }
 }
+
+// ============================================================================
+// FILIGRANE « THIX » (peintre discret, diagonal)
+// ============================================================================
+
+class _WatermarkPainter extends CustomPainter {
+  final Color color;
+  _WatermarkPainter(this.color);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final tp = TextPainter(
+      text: TextSpan(
+        text: 'THIX',
+        style: TextStyle(
+          color: color,
+          fontSize: 17,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 5,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    canvas.save();
+    canvas.rotate(-0.32);
+    for (double y = -size.height * 0.35; y < size.height * 1.35; y += 92) {
+      for (double x = -size.width * 0.25; x < size.width * 1.25; x += 150) {
+        tp.paint(canvas, Offset(x, y));
+      }
+    }
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ============================================================================
+// PAGE
+// ============================================================================
 
 class EventTicketPage extends StatefulWidget {
   final String bookingId;
   const EventTicketPage({super.key, required this.bookingId});
+
   @override
   State<EventTicketPage> createState() => _EventTicketPageState();
 }
 
-class _EventTicketPageState extends State<EventTicketPage> with SingleTickerProviderStateMixin {
+class _EventTicketPageState extends State<EventTicketPage>
+    with SingleTickerProviderStateMixin {
   bool _loading = true;
   bool _qrVisible = false;
   Map<String, dynamic>? _booking;
@@ -55,74 +126,116 @@ class _EventTicketPageState extends State<EventTicketPage> with SingleTickerProv
   @override
   void initState() {
     super.initState();
-    // Contrôleur pour l'hologramme (durée du balayage : 2.5 secondes)
-    _holo = AnimationController(vsync: this, duration: const Duration(milliseconds: 2500))..repeat();
+    // Voile holographique : balayage lent et propre (3.5 s)
+    _holo = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 3500))
+      ..repeat();
     _fetch();
   }
 
   @override
-  void dispose() { 
-    _holo.dispose(); 
-    super.dispose(); 
+  void dispose() {
+    _holo.dispose();
+    super.dispose();
   }
 
-  // LOGIQUE STABLE CONSERVÉE INTACTE
+  // ── LOGIQUE STABLE CONSERVÉE ──
   Future<void> _fetch() async {
     try {
-      final res = await Supabase.instance.client.from("event_bookings").select("*, events(*)").eq("id", widget.bookingId).single();
-      if (mounted) setState(() { _booking = res; _event = res["events"]; _loading = false; });
-    } catch (_) { if (mounted) setState(() => _loading = false); }
+      final res = await Supabase.instance.client
+          .from("event_bookings")
+          .select("*, events(*)")
+          .eq("id", widget.bookingId)
+          .single();
+      if (mounted) {
+        setState(() {
+          _booking = res;
+          _event = res["events"];
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   void _askPin() {
     final ctrl = TextEditingController();
-    // Le PIN vient bien de la DB via Supabase
     final correct = _booking!["pin_code"]?.toString() ?? "";
     showDialog(
       context: context,
       builder: (_) => Dialog(
-        backgroundColor: _ThixColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: _ThixColors.cardBorder)),
+        backgroundColor: _C.surface,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(24),
+          side: const BorderSide(color: _C.line),
+        ),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.lock_outline_rounded, color: _ThixColors.primary, size: 32),
-            const SizedBox(height: 12),
-            const Text("Sécurité", style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
-            const SizedBox(height: 8),
-            const Text("Entrez votre code PIN pour afficher le QR", textAlign: TextAlign.center, style: TextStyle(color: _ThixColors.textSecondary, fontSize: 12)),
-            const SizedBox(height: 16),
-            TextField(
-              controller: ctrl, 
-              keyboardType: TextInputType.number, 
-              maxLength: 4, 
-              obscureText: true, 
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, letterSpacing: 8, fontSize: 24, fontWeight: FontWeight.bold), 
-              decoration: InputDecoration(
-                counterText: "", 
-                hintText: "••••",
-                hintStyle: const TextStyle(color: _ThixColors.textMuted, letterSpacing: 8),
-                filled: true, 
-                fillColor: _ThixColors.surfaceAlt, 
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none)
-              )
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _C.accent.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: const Icon(Icons.lock_outline_rounded,
+                  color: _C.accent, size: 26),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 14),
+            const Text("Sécurité",
+                style: TextStyle(
+                    color: _C.ink, fontSize: 17, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 6),
+            const Text("Entrez votre code PIN pour afficher le QR",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: _C.inkSoft, fontSize: 12, fontWeight: FontWeight.w600)),
+            const SizedBox(height: 18),
+            TextField(
+              controller: ctrl,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              obscureText: true,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                  color: _C.ink,
+                  letterSpacing: 8,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900),
+              decoration: InputDecoration(
+                  counterText: "",
+                  hintText: "••••",
+                  hintStyle: const TextStyle(
+                      color: _C.inkSoft, letterSpacing: 8, fontSize: 18),
+                  filled: true,
+                  fillColor: _C.tile,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: const BorderSide(color: _C.line))),
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               width: double.infinity,
               height: 48,
               child: ElevatedButton(
                 onPressed: () {
                   Navigator.pop(context);
-                  if (ctrl.text.trim() == correct) { 
-                    setState(() => _qrVisible = true); 
-                  } else { 
-                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("PIN incorrect"), backgroundColor: Colors.red)); 
+                  if (ctrl.text.trim() == correct) {
+                    setState(() => _qrVisible = true);
+                  } else {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                        content: Text("PIN incorrect"),
+                        backgroundColor: _C.danger));
                   }
                 },
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-                child: const Text("Confirmer", style: TextStyle(fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _C.ink,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14))),
+                child: const Text("Confirmer",
+                    style: TextStyle(fontWeight: FontWeight.w800)),
               ),
             ),
           ]),
@@ -131,206 +244,616 @@ class _EventTicketPageState extends State<EventTicketPage> with SingleTickerProv
     );
   }
 
+  // ── HELPERS UI ──
+  Widget _metaRow(IconData icon, String text, Color tint) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: tint,
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Icon(icon, size: 14, color: _C.ink),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+                color: _C.ink, fontSize: 12.5, fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _infoTile(String label, String value, IconData icon) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _C.tile,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _C.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(icon, size: 13, color: _C.accent),
+            const SizedBox(width: 6),
+            Text(label,
+                style: const TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w800,
+                    color: _C.inkSoft,
+                    letterSpacing: 0.6)),
+          ]),
+          const SizedBox(height: 6),
+          Text(value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                  fontSize: 13, fontWeight: FontWeight.w900, color: _C.ink)),
+        ],
+      ),
+    );
+  }
+
+  Widget _barcode(String seed) {
+    final codes = seed.codeUnits;
+    return SizedBox(
+      height: 32,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          for (int i = 0; i < codes.length && i < 44; i++)
+            Container(
+              width: codes[i] % 3 == 0
+                  ? 2.4
+                  : (codes[i] % 3 == 1 ? 1.1 : 1.7),
+              height: 32,
+              margin: const EdgeInsets.symmetric(horizontal: 1.1),
+              color: _C.ink.withOpacity(0.85),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _statusLabel(String? status) {
+    switch (status) {
+      case 'cancelled':
+        return 'ANNULÉ';
+      case 'used':
+      case 'checked_in':
+        return 'UTILISÉ';
+      default:
+        return 'CONFIRMÉ';
+    }
+  }
+
+  Color _statusColor(String? status) {
+    switch (status) {
+      case 'cancelled':
+        return _C.danger;
+      case 'used':
+      case 'checked_in':
+        return _C.inkSoft;
+      default:
+        return _C.success;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // BUILD
+  // ════════════════════════════════════════════════════════════
+
   @override
   Widget build(BuildContext context) {
-    if (_loading) return const Scaffold(backgroundColor: _ThixColors.bg, body: Center(child: CircularProgressIndicator(color: _ThixColors.primary)));
-    if (_booking == null || _event == null) return Scaffold(backgroundColor: _ThixColors.bg, appBar: AppBar(backgroundColor: Colors.transparent, leading: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => context.go("/thix-event"))), body: const Center(child: Text("Billet introuvable", style: TextStyle(color: Colors.white))));
+    if (_loading) {
+      return const Scaffold(
+        backgroundColor: _C.bg,
+        body: Center(child: CircularProgressIndicator(color: _C.accent)),
+      );
+    }
+
+    if (_booking == null || _event == null) {
+      return Scaffold(
+        backgroundColor: _C.bg,
+        appBar: AppBar(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          leading: IconButton(
+              icon: const Icon(Icons.close_rounded, color: _C.ink),
+              onPressed: () => context.go("/thix-event")),
+        ),
+        body: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            const Icon(Icons.confirmation_num_outlined,
+                size: 48, color: _C.inkSoft),
+            const SizedBox(height: 12),
+            const Text("Billet introuvable",
+                style: TextStyle(
+                    color: _C.inkSoft,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700)),
+          ]),
+        ),
+      );
+    }
 
     final title = _event!["title"] ?? "Événement";
     final dateStr = _event!["date"] ?? _event!["start_date"];
-    final dt = dateStr != null ? DateTime.tryParse(dateStr.toString()) ?? DateTime.now() : DateTime.now();
-    final dateFmt = DateFormat("dd MMM yyyy - HH:mm", "fr").format(dt);
-    final loc = _event!["location"] ?? "";
+    final dt = dateStr != null
+        ? DateTime.tryParse(dateStr.toString()) ?? DateTime.now()
+        : DateTime.now();
+    final dateFmt = DateFormat("dd MMM yyyy • HH:mm", "fr").format(dt);
+    final loc = (_event!["location"] ?? "").toString();
+    final city = (_event!["city"] ?? "").toString().trim();
+    final organizer = (_event!["organizer_name"] ?? "").toString().trim();
+    final place = city.isEmpty
+        ? loc
+        : (loc.isEmpty ? city : '$loc • $city');
     final img = _event!["image_url"];
     final qty = _booking!["ticket_quantity"] ?? 1;
-    final catRaw = _booking!["ticket_category"] ?? "Standard";
+    final catRaw = (_booking!["ticket_category"] ?? "Standard").toString();
     final pin = _booking!["pin_code"]?.toString() ?? "****";
     final qr = _booking!["id"].toString();
-    
-    // Détermination dynamique du style selon la catégorie
+    final status = _booking!["status"]?.toString();
+
+    final priceNum = (_booking!["total_price"] as num?)?.toDouble() ?? 0;
+    final cur = (_event!["price_currency"] ?? "FC").toString();
+    final priceStr = priceNum == 0
+        ? "Gratuit"
+        : "${priceNum.toStringAsFixed(priceNum % 1 == 0 ? 0 : 2)} $cur";
+
+    final bookedRaw = _booking!["booking_date"] ?? _booking!["created_at"];
+    final bookedDt =
+        bookedRaw != null ? DateTime.tryParse(bookedRaw.toString()) : null;
+    final bookedStr =
+        bookedDt != null ? DateFormat("dd MMM yyyy", "fr").format(bookedDt) : "—";
+
     final style = TicketStyle.fromCategory(catRaw);
+    final statusColor = _statusColor(status);
 
     final dash = "-";
-    final masked = "****-****-${qr.length >= 4 ? qr.substring(qr.length - 4).toUpperCase() : qr}";
-    final shortId = qr.contains(dash) ? qr.split(dash).first.toUpperCase() : qr.toUpperCase();
+    final masked =
+        "****-****-${qr.length >= 4 ? qr.substring(qr.length - 4).toUpperCase() : qr}";
+    final shortId = qr.contains(dash)
+        ? qr.split(dash).first.toUpperCase()
+        : qr.toUpperCase();
     final displayId = _qrVisible ? shortId : masked;
 
     return Scaffold(
-      backgroundColor: _ThixColors.bg,
+      backgroundColor: _C.bg,
       appBar: PreferredSize(
         preferredSize: const Size.fromHeight(52),
-        child: ClipRRect(
+        child: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
-            child: AppBar(
-              backgroundColor: _ThixColors.bg.withOpacity(0.85), 
-              elevation: 0, 
-              leading: IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => context.go("/thix-event")), 
-              title: const Text("Billet Sécurisé", style: TextStyle(color: Colors.white, fontSize: 14, fontWeight: FontWeight.w800)), 
-              centerTitle: true
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              decoration: const BoxDecoration(
+                color: Colors.white70,
+                border: Border(bottom: BorderSide(color: _C.line)),
+              ),
+              child: AppBar(
+                backgroundColor: Colors.transparent,
+                elevation: 0,
+                leading: IconButton(
+                    icon: const Icon(Icons.close_rounded, color: _C.ink),
+                    onPressed: () => context.go("/thix-event")),
+                title: const Text("Billet sécurisé",
+                    style: TextStyle(
+                        color: _C.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900)),
+                centerTitle: true,
+              ),
             ),
           ),
         ),
       ),
-      body: SingleChildScrollView(
-        physics: const BouncingScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-        child: Stack(
-          children: [
-            // LE BILLET PRINCIPAL
-            Container(
-              decoration: BoxDecoration(
-                color: _ThixColors.surface, 
-                borderRadius: BorderRadius.circular(24), 
-                border: Border.all(color: style.color.withOpacity(0.5), width: 1.5),
-                boxShadow: [
-                  BoxShadow(color: style.color.withOpacity(0.1), blurRadius: 20, spreadRadius: 5)
-                ]
-              ),
-              clipBehavior: Clip.hardEdge,
-              child: Stack(
+      body: Stack(
+        children: [
+          // Ambiance légère (halos discrets)
+          Positioned(
+              top: -80,
+              right: -60,
+              child: Container(
+                  width: 240,
+                  height: 240,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _C.accent.withOpacity(0.05)))),
+          Positioned(
+              bottom: 60,
+              left: -80,
+              child: Container(
+                  width: 260,
+                  height: 260,
+                  decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _C.amber.withOpacity(0.06)))),
+          SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            child: _ticketCard(
+              title: title,
+              dateFmt: dateFmt,
+              place: place,
+              organizer: organizer,
+              img: img,
+              qty: qty,
+              priceStr: priceStr,
+              bookedStr: bookedStr,
+              style: style,
+              statusLabel: _statusLabel(status),
+              statusColor: statusColor,
+              pin: pin,
+              qr: qr,
+              displayId: displayId,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // LE BILLET
+  // ════════════════════════════════════════════════════════════
+
+  Widget _ticketCard({
+    required String title,
+    required String dateFmt,
+    required String place,
+    required String organizer,
+    required dynamic img,
+    required int qty,
+    required String priceStr,
+    required String bookedStr,
+    required TicketStyle style,
+    required String statusLabel,
+    required Color statusColor,
+    required String pin,
+    required String qr,
+    required String displayId,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _C.surface,
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: _C.line, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+              color: _C.ink.withOpacity(0.07),
+              blurRadius: 28,
+              offset: const Offset(0, 12)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          Column(children: [
+            // ── Couverture ──
+            if (img != null)
+              Stack(
                 children: [
-                  // HOLOGRAMME MOBILE (Couche de fond animée)
-                  Positioned.fill(
-                    child: AnimatedBuilder(
-                      animation: _holo,
-                      builder: (context, child) {
-                        return Container(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment(-2.0 + (_holo.value * 4), -1.5),
-                              end: Alignment(0.0 + (_holo.value * 4), 1.5),
-                              colors: [
-                                Colors.transparent,
-                                Colors.white.withOpacity(0.1),
-                                Colors.cyanAccent.withOpacity(0.15),
-                                Colors.purpleAccent.withOpacity(0.15),
-                                Colors.yellowAccent.withOpacity(0.15),
-                                Colors.white.withOpacity(0.1),
-                                Colors.transparent,
-                              ],
-                              stops: const [0.0, 0.2, 0.4, 0.5, 0.6, 0.8, 1.0],
-                            ),
-                          ),
+                  Image.network(img,
+                      height: 190,
+                      width: double.infinity,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                          height: 190, color: _C.tile)),
+                  Container(
+                    height: 190,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          _C.surface.withOpacity(0.85),
+                          _C.surface,
+                        ],
+                        stops: const [0.35, 0.8, 1.0],
+                      ),
+                    ),
+                  ),
+                  Positioned(
+                    top: 14,
+                    left: 14,
+                    child: _chip(statusLabel, statusColor),
+                  ),
+                  Positioned(
+                    top: 14,
+                    right: 14,
+                    child: _chip(style.label, style.color),
+                  ),
+                ],
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.only(top: 14),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const SizedBox(width: 14),
+                    _chip(statusLabel, statusColor),
+                    Padding(
+                      padding: const EdgeInsets.only(right: 14),
+                      child: _chip(style.label, style.color),
+                    ),
+                  ],
+                ),
+              ),
+
+            // ── Infos principales ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: const TextStyle(
+                            fontSize: 21,
+                            fontWeight: FontWeight.w900,
+                            color: _C.ink,
+                            height: 1.2,
+                            letterSpacing: -0.5)),
+                    const SizedBox(height: 14),
+                    _metaRow(Icons.calendar_month_rounded, dateFmt,
+                        _C.amber.withOpacity(0.18)),
+                    const SizedBox(height: 8),
+                    _metaRow(Icons.location_on_rounded, place,
+                        _C.accent.withOpacity(0.12)),
+                    if (organizer.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      _metaRow(Icons.badge_rounded, organizer,
+                          style.soft),
+                    ],
+                    const SizedBox(height: 16),
+                    // Grille d'infos 2×2
+                    Row(children: [
+                      Expanded(
+                          child: _infoTile(
+                              "BILLETS", "$qty", Icons.confirmation_num_rounded)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: _infoTile(
+                              "TOTAL", priceStr, Icons.receipt_long_rounded)),
+                    ]),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(
+                          child: _infoTile("RÉSERVÉ LE", bookedStr,
+                              Icons.history_rounded)),
+                      const SizedBox(width: 10),
+                      Expanded(
+                          child: _infoTile("PIN", _qrVisible ? pin : "••••",
+                              Icons.key_rounded)),
+                    ]),
+                  ]),
+            ),
+
+            // ── Ligne pointillée + encoches ALIGNÉES ──
+            SizedBox(
+              height: 1,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 26),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        return Flex(
+                          direction: Axis.horizontal,
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: List.generate(
+                              (constraints.constrainWidth() / 10).floor(),
+                              (_) => const SizedBox(
+                                  width: 5,
+                                  height: 1.5,
+                                  child: DecoratedBox(
+                                      decoration:
+                                          BoxDecoration(color: _C.line)))),
                         );
                       },
                     ),
                   ),
-
-                  // CONTENU DU BILLET
-                  Column(children: [
-                    // Image de couverture avec overlay
-                    if (img != null) Stack(
-                      children: [
-                        Image.network(img, height: 180, width: double.infinity, fit: BoxFit.cover),
-                        Container(
-                          height: 180,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, _ThixColors.surface.withOpacity(0.9), _ThixColors.surface]
-                            )
-                          ),
-                        ),
-                        Positioned(
-                          top: 16, right: 16,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(color: style.color.withOpacity(0.2), borderRadius: BorderRadius.circular(8), border: Border.all(color: style.color)),
-                            child: Text(style.label, style: TextStyle(color: style.color, fontWeight: FontWeight.w900, fontSize: 10, letterSpacing: 1)),
-                          ),
-                        )
-                      ],
-                    ),
-                    
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        if (img == null) const SizedBox(height: 24),
-                        Text(title, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.white, height: 1.2)),
-                        const SizedBox(height: 16),
-                        Row(children: [
-                          const Icon(Icons.calendar_month_rounded, color: _ThixColors.textMuted, size: 16),
-                          const SizedBox(width: 8),
-                          Text(dateFmt, style: const TextStyle(color: _ThixColors.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
-                        ]),
-                        const SizedBox(height: 8),
-                        Row(children: [
-                          const Icon(Icons.location_on_rounded, color: _ThixColors.textMuted, size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(loc, style: const TextStyle(color: _ThixColors.textMuted, fontSize: 13))),
-                        ]),
-                        const SizedBox(height: 20),
-                        Container(
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(color: _ThixColors.surfaceAlt, borderRadius: BorderRadius.circular(12), border: Border.all(color: _ThixColors.cardBorder)),
-                          child: Row(children: [
-                            const Icon(Icons.confirmation_num_rounded, color: Colors.white, size: 18),
-                            const SizedBox(width: 8),
-                            Text("$qty Billet(s)", style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 14)),
-                            const Spacer(),
-                            Text(_qrVisible ? pin : "••••", style: TextStyle(color: style.color, fontWeight: FontWeight.w900, letterSpacing: 4, fontSize: 16)),
-                          ]),
-                        ),
-                      ]),
-                    ),
-                    
-                    // Ligne de séparation avec pointillées
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          return Flex(
-                            direction: Axis.horizontal,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: List.generate((constraints.constrainWidth() / 10).floor(), (_) => const SizedBox(width: 5, height: 1.5, child: DecoratedBox(decoration: BoxDecoration(color: _ThixColors.cardBorder)))),
-                          );
-                        },
-                      ),
-                    ),
-
-                    // Section QR Code
-                    Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Column(children: [
-                        _qrVisible
-                          ? Container(
-                              padding: const EdgeInsets.all(12), 
-                              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), boxShadow: [BoxShadow(color: style.color.withOpacity(0.5), blurRadius: 15)]), 
-                              child: QrImageView(data: qr, version: QrVersions.auto, size: 160, eyeStyle: const QrEyeStyle(eyeShape: QrEyeShape.square, color: Colors.black), dataModuleStyle: const QrDataModuleStyle(dataModuleShape: QrDataModuleShape.square, color: Colors.black))
-                            )
-                          : Container(
-                              height: 180, width: 180,
-                              decoration: BoxDecoration(color: _ThixColors.surfaceAlt, borderRadius: BorderRadius.circular(16), border: Border.all(color: style.color.withOpacity(0.3))), 
-                              child: Center(
-                                child: ElevatedButton.icon(
-                                  onPressed: _askPin, 
-                                  icon: const Icon(Icons.qr_code_scanner_rounded, size: 18), 
-                                  label: const Text("Afficher QR", style: TextStyle(fontWeight: FontWeight.bold)),
-                                  style: ElevatedButton.styleFrom(backgroundColor: style.color, foregroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)))
-                                )
-                              )
-                            ),
-                        const SizedBox(height: 16),
-                        Text("ID: $displayId", style: const TextStyle(color: _ThixColors.textMuted, fontSize: 11, letterSpacing: 2, fontFamily: 'monospace')),
-                      ]),
-                    ),
-                  ]),
+                  Positioned(
+                    left: -12,
+                    child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                            color: _C.bg, shape: BoxShape.circle)),
+                  ),
+                  Positioned(
+                    right: -12,
+                    child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: const BoxDecoration(
+                            color: _C.bg, shape: BoxShape.circle)),
+                  ),
                 ],
               ),
             ),
-            
-            // PERFORATIONS LATÉRALES (Design Billet Physique)
-            // Positionnées au niveau de la ligne de séparation (environ 340px du haut)
-            Positioned(
-              left: -12, top: 335,
-              child: Container(width: 24, height: 24, decoration: const BoxDecoration(color: _ThixColors.bg, shape: BoxShape.circle)),
+
+            // ── Section QR ──
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
+              child: Column(children: [
+                _qrVisible
+                    ? Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: _C.line),
+                          boxShadow: [
+                            BoxShadow(
+                                color: style.color.withOpacity(0.25),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8)),
+                          ],
+                        ),
+                        child: QrImageView(
+                          data: qr,
+                          version: QrVersions.auto,
+                          size: 168,
+                          eyeStyle: const QrEyeStyle(
+                              eyeShape: QrEyeShape.square, color: Colors.black),
+                          dataModuleStyle: const QrDataModuleStyle(
+                              dataModuleShape: QrDataModuleShape.square,
+                              color: Colors.black),
+                        ),
+                      )
+                    : Container(
+                        height: 196,
+                        width: double.infinity,
+                        decoration: BoxDecoration(
+                          color: _C.tile,
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                              color: style.color.withOpacity(0.35), width: 1.2),
+                        ),
+                        child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: style.soft,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.lock_rounded,
+                                    color: style.color, size: 26),
+                              ),
+                              const SizedBox(height: 10),
+                              const Text("QR code protégé par PIN",
+                                  style: TextStyle(
+                                      color: _C.inkSoft,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700)),
+                              const SizedBox(height: 14),
+                              ElevatedButton.icon(
+                                onPressed: _askPin,
+                                icon: const Icon(Icons.qr_code_2_rounded,
+                                    size: 17),
+                                label: const Text("Afficher le QR",
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w800)),
+                                style: ElevatedButton.styleFrom(
+                                    backgroundColor: style.color,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20, vertical: 12),
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(16))),
+                              ),
+                            ]),
+                      ),
+                const SizedBox(height: 18),
+                _barcode(qr),
+                const SizedBox(height: 10),
+                Text("ID: $displayId",
+                    style: const TextStyle(
+                        color: _C.inkSoft,
+                        fontSize: 11,
+                        letterSpacing: 2,
+                        fontFamily: 'monospace',
+                        fontWeight: FontWeight.w700)),
+                const SizedBox(height: 14),
+                if (_qrVisible)
+                  SizedBox(
+                    width: double.infinity,
+                    height: 44,
+                    child: OutlinedButton(
+                      onPressed: () => setState(() => _qrVisible = false),
+                      style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: _C.line),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14))),
+                      child: const Text("Masquer le QR",
+                          style: TextStyle(
+                              color: _C.inkSoft, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Billet personnel • Présentez le QR à l'entrée",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                      color: _C.inkSoft,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600),
+                ),
+              ]),
             ),
-            Positioned(
-              right: -12, top: 335,
-              child: Container(width: 24, height: 24, decoration: const BoxDecoration(color: _ThixColors.bg, shape: BoxShape.circle)),
+          ]),
+
+          // ── FILIGRANE discret ──
+          Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(painter: _WatermarkPainter(
+                  _C.ink.withOpacity(0.035))),
             ),
-          ],
+          ),
+
+          // ── VOILE HOLOGRAPHIQUE ANIMÉ (propre & léger) ──
+          Positioned.fill(
+            child: IgnorePointer(
+              child: AnimatedBuilder(
+                animation: _holo,
+                builder: (context, child) {
+                  final t = _holo.value;
+                  return Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment(-1.2 + 2.4 * t, -1.0),
+                        end: Alignment(-0.2 + 2.4 * t, 1.0),
+                        colors: [
+                          Colors.white.withOpacity(0.0),
+                          const Color(0xFF22D3EE).withOpacity(0.10),
+                          const Color(0xFFA78BFA).withOpacity(0.12),
+                          const Color(0xFFFFD36E).withOpacity(0.10),
+                          Colors.white.withOpacity(0.0),
+                        ],
+                        stops: const [0.0, 0.42, 0.5, 0.58, 1.0],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chip(String label, Color color) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(14),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: color.withOpacity(0.6)),
+          ),
+          child: Text(label,
+              style: TextStyle(
+                  color: color, fontWeight: FontWeight.w900, fontSize: 9.5, letterSpacing: 1)),
         ),
       ),
     );
