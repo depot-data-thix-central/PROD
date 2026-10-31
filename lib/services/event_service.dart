@@ -310,7 +310,8 @@ class EventService {
     return _supabase.storage.from('event_images').getPublicUrl(path);
   }
 
-  Future> getAdminStats() async {
+  // ✅ CORRECTION ICI : Ajout de <Map<String, int>>
+  Future<Map<String, int>> getAdminStats() async {
     try {
       final total = await _supabase.from('events').select('id').count(CountOption.exact);
       
