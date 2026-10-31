@@ -2,15 +2,12 @@
 //
 // ═══════════════════════════════════════════════════════════════════════════
 // THIX ID CENTRAL — "THIX HUB" · Roue orbitale radiale
-// Rupture totale : ni colonnes, ni grilles, ni barres.
-// Les 12 services gravitent sur un anneau rotatif (drag + snap + haptiques).
-// API publique IDENTIQUE à l'ancien widget → drop-in.
 //
 // ÉVOLutions :
-//  • Header : overline "THIX HUB" (titre "Services" supprimé).
-//  • Services suspendus (reservation / sante / wallet) → "Bientôt à disposition".
-//  • Thix Media devient "Thidia" (icône smart_display).
-//  • Badges intelligents : pulse adaptatif selon criticité de la section.
+//  • ✅ THIX WED remplace Thix Emploi (logo église+cœur line-art, route opérationnelle)
+//  • Header : overline "THIX HUB".
+//  • Services suspendus (sante / wallet) → "Bientôt à disposition".
+//  • Badges intelligents : pulse adaptatif selon criticité.
 // ═══════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
@@ -19,6 +16,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -32,6 +30,9 @@ const int _kMaxBadgeDisplay = 99;
 
 /// 🔒 Services temporairement suspendus → message "Bientôt à disposition".
 const Set<String> _kSuspended = {'thixSante', 'thixMoney'};
+
+/// 💍 Route du module mariage (THIX WED).
+const String _kWeddingRoute = '/thix-wedding';
 
 /// Durées d'animation des badges
 const Duration _kBadgePulseDuration = Duration(milliseconds: 900);
@@ -57,7 +58,8 @@ class _ServiceNodeData {
   final int? badge;
   final Color color;
   final ThixSection section;
-  final bool pulseBadge; // Badge animé si section critique
+  final bool pulseBadge;
+  final bool customLogo; // ✅ true → dessine le logo THIX WED (église+cœur)
 
   const _ServiceNodeData({
     required this.key,
@@ -67,7 +69,111 @@ class _ServiceNodeData {
     required this.section,
     this.badge,
     this.pulseBadge = false,
+    this.customLogo = false,
   });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LOGO THIX WED — église + cœur (line-art, fidèle au visuel fourni)
+// ═══════════════════════════════════════════════════════════════════════════
+class ThixWedLogo extends StatelessWidget {
+  final Color color;
+  final Color accent;
+  final double size;
+  final double stroke;
+
+  const ThixWedLogo({
+    super.key,
+    required this.color,
+    this.accent = const Color(0x408EC5F0),
+    this.size = 28,
+    this.stroke = 6,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: Size(size, size),
+      painter: _WedLogoPainter(color: color, accent: accent, stroke: stroke),
+    );
+  }
+}
+
+class _WedLogoPainter extends CustomPainter {
+  final Color color;
+  final Color accent;
+  final double stroke;
+
+  _WedLogoPainter({
+    required this.color,
+    required this.accent,
+    required this.stroke,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final s = size.width / 100.0;
+
+    // Halo doux derrière le cœur (pastille bleu clair du visuel)
+    canvas.drawCircle(
+      Offset(76 * s, 46 * s),
+      15 * s,
+      Paint()..color = accent,
+    );
+
+    final p = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke * s
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..color = color;
+
+    // ── Croix du clocher ──
+    canvas.drawLine(Offset(50 * s, 6 * s), Offset(50 * s, 20 * s), p);
+    canvas.drawLine(Offset(44 * s, 12 * s), Offset(56 * s, 12 * s), p);
+
+    // ── Toit de la tour ──
+    canvas.drawLine(Offset(50 * s, 20 * s), Offset(37 * s, 36 * s), p);
+    canvas.drawLine(Offset(50 * s, 20 * s), Offset(63 * s, 36 * s), p);
+
+    // ── Murs de la tour ──
+    canvas.drawLine(Offset(37 * s, 36 * s), Offset(37 * s, 88 * s), p);
+    canvas.drawLine(Offset(63 * s, 36 * s), Offset(63 * s, 88 * s), p);
+
+    // ── Fenêtre ronde ──
+    canvas.drawCircle(Offset(50 * s, 46 * s), 5.5 * s, p);
+
+    // ── Porte en arche ──
+    final door = Path()
+      ..moveTo(44 * s, 88 * s)
+      ..lineTo(44 * s, 76 * s)
+      ..arcToPoint(Offset(56 * s, 76 * s), radius: Radius.circular(6 * s))
+      ..lineTo(56 * s, 88 * s);
+    canvas.drawPath(door, p);
+
+    // ── Ailes latérales ──
+    canvas.drawLine(Offset(37 * s, 52 * s), Offset(20 * s, 62 * s), p);
+    canvas.drawLine(Offset(20 * s, 62 * s), Offset(20 * s, 88 * s), p);
+    canvas.drawLine(Offset(63 * s, 52 * s), Offset(80 * s, 62 * s), p);
+    canvas.drawLine(Offset(80 * s, 62 * s), Offset(80 * s, 88 * s), p);
+
+    // ── Socle ──
+    canvas.drawLine(Offset(20 * s, 88 * s), Offset(80 * s, 88 * s), p);
+
+    // ── Cœur (line-art) ──
+    final cx = 79 * s;
+    final cy = 28 * s;
+    final r = 11 * s;
+    final heart = Path()
+      ..moveTo(cx, cy + r * 0.9)
+      ..cubicTo(cx - r * 1.5, cy - r * 0.2, cx - r * 0.9, cy - r * 1.2, cx, cy - r * 0.4)
+      ..cubicTo(cx + r * 0.9, cy - r * 1.2, cx + r * 1.5, cy - r * 0.2, cx, cy + r * 0.9);
+    canvas.drawPath(heart, p);
+  }
+
+  @override
+  bool shouldRepaint(_WedLogoPainter old) =>
+      old.color != color || old.accent != accent || old.stroke != stroke;
 }
 
 // ── WIDGET PUBLIC (API inchangée) ───────────────────────────────────────────
@@ -108,6 +214,8 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   static const Color _colorNetwork = ThixPolicy.domainNetwork;
   static const Color _colorLearning = ThixPolicy.domainLearning;
   static const Color _colorEvent = ThixPolicy.warning;
+  // ✅ Rose discret du module mariage (cohérent avec l'ancien bouton)
+  static const Color _colorWedding = Color(0xFFD9667A);
 
   double _angle = -pi / 2 - (7 * _kStep);
   double _radius = 140;
@@ -207,6 +315,13 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
   // ── OUVERTURE / SUSPENSION ──
   void _open(String key) {
     HapticFeedback.lightImpact();
+
+    // ✅ THIX WED : navigation directe et opérationnelle
+    if (key == 'thixWed') {
+      if (mounted) context.push(_kWeddingRoute);
+      return;
+    }
+
     if (_kSuspended.contains(key)) {
       _showSoon();
       return;
@@ -250,7 +365,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
     widget.onProfileTap();
   }
 
-  /// ✅ Les 12 services avec leur section et flag pulse
+  /// ✅ Les 12 services — THIX WED remplace Thix Emploi (index 4)
   List<_ServiceNodeData> _nodes(AppLocalizations l10n) {
     final c = widget.counts;
     return [
@@ -261,7 +376,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.money,
         color: _colorMoney,
         section: ThixSection.money,
-        pulseBadge: true, // 💰 Transactions = urgence financière
+        pulseBadge: true,
       ),
       _ServiceNodeData(
         key: 'thixMarket',
@@ -270,7 +385,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.market,
         color: _colorMarket,
         section: ThixSection.market,
-        pulseBadge: true, // 🛒 Commandes = action requise
+        pulseBadge: true,
       ),
       _ServiceNodeData(
         key: 'thixMedia',
@@ -279,7 +394,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.media,
         color: _colorNetwork,
         section: ThixSection.media,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'reservation',
@@ -288,16 +402,15 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.reservation,
         color: _colorPrimary,
         section: ThixSection.reservation,
-        pulseBadge: false,
       ),
-      _ServiceNodeData(
-        key: 'emplois',
-        icon: Icons.work_rounded,
-        label: 'Thix ${l10n.t('svc_jobs')}',
-        badge: c.jobs,
-        color: _colorCorporate,
-        section: ThixSection.jobs,
-        pulseBadge: false,
+      // ✅ THIX WED (remplace emplois) — logo personnalisé opérationnel
+      const _ServiceNodeData(
+        key: 'thixWed',
+        icon: Icons.favorite_rounded, // fallback non utilisé (customLogo)
+        label: 'THIX WED',
+        color: _colorWedding,
+        section: ThixSection.events,
+        customLogo: true,
       ),
       _ServiceNodeData(
         key: 'formations',
@@ -306,7 +419,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.formations,
         color: _colorLearning,
         section: ThixSection.formations,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'opportunites',
@@ -315,7 +427,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.opportunities,
         color: _colorMoney,
         section: ThixSection.opportunities,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'reseauPro',
@@ -324,7 +435,7 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.network,
         color: _colorNetwork,
         section: ThixSection.network,
-        pulseBadge: true, // 👥 Interactions sociales = engagement
+        pulseBadge: true,
       ),
       _ServiceNodeData(
         key: 'monPays',
@@ -333,7 +444,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.monPays,
         color: _colorCorporate,
         section: ThixSection.monPays,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'thixInfo',
@@ -342,7 +452,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.info,
         color: _colorPrimary,
         section: ThixSection.info,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'evenements',
@@ -351,7 +460,6 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.events,
         color: _colorEvent,
         section: ThixSection.events,
-        pulseBadge: false,
       ),
       _ServiceNodeData(
         key: 'thixSante',
@@ -360,12 +468,12 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
         badge: c.health,
         color: _colorHealth,
         section: ThixSection.health,
-        pulseBadge: true, // 🚨 Santé = CRITIQUE
+        pulseBadge: true,
       ),
     ];
   }
 
-  // ── BUILD ──
+  // ── BUILD ─
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -439,10 +547,8 @@ class _HomeServicesConstellationState extends State<HomeServicesConstellation>
                 ),
                 const SizedBox(height: 8),
 
-                // ── INDICATEUR DE FOCale ──
                 _OrbitDots(index: _focus, color: focused.color),
 
-                // ── HINT (disparaît après 1ère interaction) ──
                 AnimatedOpacity(
                   opacity: _interacted ? 0 : 1,
                   duration: const Duration(milliseconds: 400),
@@ -523,10 +629,12 @@ class _OrbitNode extends StatelessWidget {
               ),
             ],
           ),
-          // ✅ Icône réduite : 20 → 18
-          child: Icon(node.icon, color: node.color, size: 18),
+          alignment: Alignment.center,
+          // ✅ Logo THIX WED ou icône standard
+          child: node.customLogo
+              ? ThixWedLogo(color: node.color, size: 30, stroke: 6)
+              : Icon(node.icon, color: node.color, size: 18),
         ),
-        // ✅ Badge intelligent avec pulse conditionnel
         if (node.badge != null && node.badge! > 0)
           Positioned(
             top: -3,
@@ -595,8 +703,15 @@ class _OrbitHub extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      // ✅ Icône hub réduite : 27 → 24
-                      Icon(node.icon, color: Colors.white, size: 24),
+                      // ✅ Logo THIX WED blanc dans le hub, ou icône standard
+                      node.customLogo
+                          ? ThixWedLogo(
+                              color: Colors.white,
+                              accent: Colors.white.withOpacity(0.22),
+                              size: 44,
+                              stroke: 5,
+                            )
+                          : Icon(node.icon, color: Colors.white, size: 24),
                       const SizedBox(height: 5),
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -615,7 +730,6 @@ class _OrbitHub extends StatelessWidget {
                     ],
                   ),
                 ),
-                // ✅ Badge du hub central avec pulse
                 if (hasBadge)
                   Positioned(
                     top: 4,
@@ -691,7 +805,6 @@ class _HubPulseWrapperState extends State<_HubPulseWrapper>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // Halo pulsant derrière le hub
             Positioned.fill(
               child: Container(
                 decoration: BoxDecoration(
@@ -792,10 +905,6 @@ class _OrbitDots extends StatelessWidget {
 }
 
 // ── SMART BADGE ──────────────────────────────────────────────────────────────
-/// Badge intelligent avec :
-/// - Limite 99+ pour les compteurs élevés
-/// - Pulse adaptatif selon criticité de la section
-/// - Couleur adaptative (pas toujours danger)
 enum _SmartBadgeSize { small, large }
 
 class _SmartBadge extends StatefulWidget {
@@ -822,19 +931,18 @@ class _SmartBadgeState extends State<_SmartBadge>
   late AnimationController? _pulseCtrl;
   late Animation<double>? _pulseAnim;
 
-  /// Couleur adaptative selon la section
   Color get _badgeColor {
     switch (widget.section) {
       case ThixSection.health:
-        return ThixPolicy.danger; // 🚨 Rouge urgence
+        return ThixPolicy.danger;
       case ThixSection.money:
-        return ThixPolicy.gold; // 💰 Or finance
+        return ThixPolicy.gold;
       case ThixSection.market:
-        return ThixPolicy.warning; // 🛒 Orange action
+        return ThixPolicy.warning;
       case ThixSection.messages:
-        return ThixPolicy.primary; // 💬 Bleu communication
+        return ThixPolicy.primary;
       default:
-        return widget.color; // Couleur du service par défaut
+        return widget.color;
     }
   }
 
@@ -865,7 +973,6 @@ class _SmartBadgeState extends State<_SmartBadge>
     return '${widget.count}';
   }
 
-  // ✅ Tailles réduites : small 16→15, large 20→18
   double get _minSize => widget.size == _SmartBadgeSize.large ? 18 : 15;
   double get _fontSize => widget.size == _SmartBadgeSize.large ? 9 : 8;
   double get _borderWidth => widget.size == _SmartBadgeSize.large ? 2 : 1.5;
