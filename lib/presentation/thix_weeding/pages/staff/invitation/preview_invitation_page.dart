@@ -2310,7 +2310,7 @@ class _ShareCard extends StatelessWidget {
   fontSize: 9,
   fontWeight: FontWeight.w700,
   color: Colors.white,
-),
+)
                   ),
                 ),
                 Material(
@@ -2521,10 +2521,11 @@ class _QrCodeCard extends StatelessWidget {
                   ),
                   child: Text(
                     'Code: ${wedding.uniqueCode}',
-                    style: GoogleFonts.inter(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w700,
-                      color: Colors.white,
+                    style: GoogleFonts.robotoMono(
+  fontSize: 9,
+  fontWeight: FontWeight.w700,
+  color: Colors.white,
+)
                       fontFamily: 'monospace',
                     ),
                   ),
