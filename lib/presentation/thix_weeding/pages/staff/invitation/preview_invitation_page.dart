@@ -2306,11 +2306,11 @@ class _ShareCard extends StatelessWidget {
                 Expanded(
                   child: SelectableText(
                     url,
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: _R.blue,
-                      fontFamily: 'monospace',
-                    ),
+                    style: GoogleFonts.robotoMono(
+  fontSize: 9,
+  fontWeight: FontWeight.w700,
+  color: Colors.white,
+),
                   ),
                 ),
                 Material(
@@ -3105,3 +3105,25 @@ class _ErrorView extends StatelessWidget {
 }
 
 // =====================================================================
+// ============================================================================
+// UTILITAIRES DE FORMATAGE (top-level)
+// ============================================================================
+String _fmtDate(DateTime dt) {
+  return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
+}
+
+String _fmtDateLong(DateTime dt) {
+  const months = [
+    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
+    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+  ];
+  return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+}
+
+String _fmtDateShort(DateTime dt) {
+  const months = [
+    'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
+    'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
+  ];
+  return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+}
