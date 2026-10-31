@@ -9,7 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 
