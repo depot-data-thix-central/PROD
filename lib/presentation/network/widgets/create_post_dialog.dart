@@ -1,7 +1,9 @@
 // lib/presentation/network/widgets/create_post_dialog.dart
 // ============================================================================
-// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v7
-// • 🎬 Vidéos : limite 50 Mo, TOUS les formats vidéo acceptés
+// CRÉATION DE POST — PLEIN ÉCRAN (enterprise) v8
+// • 🎬 Vidéos : envoi DIRECT dans Storage (bucket "videos"), 50 Mo max,
+//     TOUS les formats vidéo, type MIME correct (plus d'erreur
+//     « Format image non supporté : mp4 »)
 // • 👥 Tag @ : dès que l'on tape « @ », les suggestions de personnes
 //     s'affichent directement (mes connexions d'abord), puis filtrage en direct
 // • 🏷️ 10 badges premium (URGENT battant, FLASH, IMPORTANT...) encadrés en tête
@@ -1501,7 +1503,53 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
   }
 
   // ════════════════════════════════════════════════════════════════════════
-  // PUBLICATION — postBadge inclus, vidéos : timeout 5 min + extension libre
+  // 🎬 ENVOI VIDÉO DIRECT (bucket "videos") — tous formats
+  // ════════════════════════════════════════════════════════════════════════
+
+  /// Type MIME vidéo selon l'extension (n'importe quel format accepté)
+  String _videoMime(String ext) {
+    switch (ext) {
+      case 'mov':
+        return 'video/quicktime';
+      case 'webm':
+        return 'video/webm';
+      case 'mkv':
+        return 'video/x-matroska';
+      case 'avi':
+        return 'video/x-msvideo';
+      case '3gp':
+        return 'video/3gpp';
+      case 'flv':
+        return 'video/x-flv';
+      case 'wmv':
+        return 'video/x-ms-wmv';
+      default:
+        return 'video/mp4';
+    }
+  }
+
+  /// Envoi direct dans le bucket "videos" (contourne la vérification
+  /// « image » de uploadImageBytes → plus d'erreur « Format image non supporté »)
+  Future<String?> _uploadVideo(_MediaItem item) async {
+    final db = Supabase.instance.client;
+    final uid = db.auth.currentUser?.id ?? 'anon';
+    final ext = item.name.contains('.') ? item.name.split('.').last.toLowerCase() : 'mp4';
+    final path = '$uid/${DateTime.now().millisecondsSinceEpoch}_${math.Random().nextInt(99999)}.$ext';
+
+    await db.storage
+        .from('videos')
+        .uploadBinary(
+          path,
+          item.bytes,
+          fileOptions: FileOptions(contentType: _videoMime(ext), upsert: false),
+        )
+        .timeout(_videoUploadTimeout);
+
+    return db.storage.from('videos').getPublicUrl(path);
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // PUBLICATION — postBadge inclus, vidéos : envoi direct Storage
   // ════════════════════════════════════════════════════════════════════════
   Future<void> _publishPost() async {
     if (_isUploading || _isRecording) return;
@@ -1565,9 +1613,7 @@ class _CreatePostPageState extends ConsumerState<CreatePostPage> with TickerProv
 
       for (final item in _videos) {
         try {
-          // Extension libre : n'importe quel format vidéo (repli mp4 si absente)
-          final ext = item.name.contains('.') ? item.name.split('.').last.toLowerCase() : 'mp4';
-          final url = await ns.uploadImageBytes(item.bytes, fileExtension: ext, bucket: 'videos').timeout(_videoUploadTimeout);
+          final url = await _uploadVideo(item);
           if (url != null && url.isNotEmpty) uploadedUrls.add(url);
         } catch (e) {
           debugPrint('[Upload] Video error: $e');
