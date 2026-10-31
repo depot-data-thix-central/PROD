@@ -60,6 +60,7 @@ class _DropdownOption {
 }
 
 const List<_DropdownOption> _kCategories = [
+  _DropdownOption('', 'admin_event_cat_none'), // Option vide / aucune catégorie
   _DropdownOption('concert', 'admin_event_cat_concert'),
   _DropdownOption('conference', 'admin_event_cat_conference'),
   _DropdownOption('sport', 'admin_event_cat_sport'),
@@ -100,7 +101,8 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       _orgCtrl,
       _phoneCtrl,
       _emailCtrl;
-  late String _category, _currency, _status;
+  late String _currency, _status;
+  String? _category;
   late DateTime _startDate;
   DateTime? _endDate;
   DateTime? _ticketOpeningDate;
@@ -124,7 +126,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _orgCtrl = TextEditingController(text: e?.organizerName ?? '');
     _phoneCtrl = TextEditingController(text: e?.contactPhone ?? '');
     _emailCtrl = TextEditingController(text: e?.contactEmail ?? '');
-    _category = e?.category ?? 'concert';
+    _category = (e?.category == null || e!.category.isEmpty) ? null : e.category;
     _currency = e?.priceCurrency ?? 'FC';
     _status = e?.status ?? 'upcoming';
     _startDate = e?.startDate ?? DateTime.now().add(const Duration(days: 7));
@@ -143,9 +145,9 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     } else {
       _tiers = [
         {
-          'name': 'Standard',
+          'name': 'Accès Libre',
           'price': e?.price ?? 0.0,
-          'capacity': e?.capacity ?? 100
+          'capacity': e?.capacity ?? 0
         }
       ];
     }
@@ -208,7 +210,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     final l10n = AppLocalizations.of(context);
     final n = TextEditingController();
     final p = TextEditingController();
-    final ca = TextEditingController(); // Contrôleur de capacité activé
+    final ca = TextEditingController();
 
     showDialog(
       context: context,
@@ -242,7 +244,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               setState(() => _tiers.add({
                     'name': n.text.trim(),
                     'price': double.tryParse(p.text) ?? 0.0,
-                    'capacity': int.tryParse(ca.text) ?? 0 // Récupération correcte de la capacité saisie
+                    'capacity': int.tryParse(ca.text) ?? 0
                   }));
               Navigator.pop(ctx);
             },
@@ -261,10 +263,6 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       return;
     }
     if (!_formKey.currentState!.validate()) return;
-    if (_tiers.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('admin_event_err_min_tier')), backgroundColor: EventTheme.danger));
-      return;
-    }
 
     HapticFeedback.mediumImpact();
     setState(() => _saving = true);
@@ -272,14 +270,14 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
       final svc = ref.read(adminEventServiceProvider);
       final isFeatured = _publishSection == 'featured';
       final isRecommended = _publishSection == 'recommended';
-      final totalCap = _tiers.fold<int>(0, (s, t) => s + (t['capacity'] as int));
-      final minPrice = _tiers.map((t) => t['price'] as double).reduce((a, b) => a < b ? a : b);
+      final totalCap = _tiers.isNotEmpty ? _tiers.fold<int>(0, (s, t) => s + (t['capacity'] as int)) : 0;
+      final minPrice = _tiers.isNotEmpty ? _tiers.map((t) => t['price'] as double).reduce((a, b) => a < b ? a : b) : 0.0;
 
       final event = Event(
         id: widget.eventToEdit?.id ?? '',
         title: _titleCtrl.text.trim(),
         description: _descCtrl.text.trim(),
-        category: _category,
+        category: _category ?? '',
         subCategory: _subCatCtrl.text.trim().isEmpty ? null : _subCatCtrl.text.trim(),
         location: _locationCtrl.text.trim(),
         address: _addressCtrl.text.trim().isEmpty ? null : _addressCtrl.text.trim(),
@@ -289,7 +287,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         ticketOpeningDate: _ticketOpeningDate,
         price: minPrice,
         priceCurrency: _currency,
-        isFree: minPrice == 0 && _tiers.length == 1,
+        isFree: minPrice == 0,
         capacity: totalCap,
         remainingTickets: widget.eventToEdit == null ? totalCap : widget.eventToEdit?.remainingTickets,
         isFeatured: isFeatured,
@@ -398,13 +396,16 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
             Row(
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
+                  child: DropdownButtonFormField<String?>(
                     value: _category,
                     dropdownColor: EventTheme.surface,
                     style: TextStyle(color: EventTheme.textMain),
                     decoration: _deco(l10n.t('admin_event_category')),
-                    items: _kCategories.map((c) => DropdownMenuItem(value: c.value, child: Text(l10n.t(c.labelKey)))).toList(),
-                    onChanged: (v) => setState(() => _category = v!),
+                    items: _kCategories.map((c) => DropdownMenuItem(
+                      value: c.value.isEmpty ? null : c.value, 
+                      child: Text(c.value.isEmpty ? 'Aucune (Plein air / Libre)' : l10n.t(c.labelKey))
+                    )).toList(),
+                    onChanged: (v) => setState(() => _category = v),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -558,7 +559,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                     final t = e.value;
                     return ListTile(
                       title: Text(t['name'], style: TextStyle(color: EventTheme.textMain, fontWeight: FontWeight.w700, fontSize: 12)),
-                      subtitle: Text('${t['price']} $_currency • ${t['capacity']} places', style: TextStyle(color: EventTheme.textMuted, fontSize: 11)),
+                      subtitle: Text('${t['price']} $_currency • ${t['capacity'] == 0 ? 'Illimité / Plein air' : '${t['capacity']} places'}', style: TextStyle(color: EventTheme.textMuted, fontSize: 11)),
                       trailing: IconButton(
                         icon: const Icon(Icons.delete_outline_rounded, color: EventTheme.danger, size: 18),
                         onPressed: () => setState(() => _tiers.removeAt(e.key)),
