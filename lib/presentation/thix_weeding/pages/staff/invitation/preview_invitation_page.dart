@@ -1,7 +1,7 @@
 // lib/presentation/thix_weeding/pages/staff/invitation/preview_invitation_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — PREVIEW INVITATION (PRODUCTION COMPLÈTE)
-// 6 Templates Premium + QR unique + Multi-partage + Export + Plein écran
+// THIX WEDDING & EVENTS — PREVIEW INVITATION (PRODUCTION) — CORRIGÉ
+// 6 Templates Premium + QR unique + Multi-partage
 // ============================================================================
 import 'dart:async';
 
@@ -20,8 +20,7 @@ import 'package:thix_id/presentation/thix_weeding/pages/staff/services/thix_weed
 // ============================================================================
 // PROVIDER LOCAL
 // ============================================================================
-final weddingInvitationProvider =
-    FutureProvider.family<WeddingModel, String>((ref, weddingId) async {
+final weddingInvitationProvider = FutureProvider.family<WeddingModel, String>((ref, weddingId) async {
   final data = await Supabase.instance.client
       .from('thix_weeding_weddings')
       .select()
@@ -29,6 +28,29 @@ final weddingInvitationProvider =
       .single();
   return WeddingModel.fromJson(data);
 });
+
+// ============================================================================
+// STYLE MONOSPACE GLOBAL (compatible Web / WASM)
+// ============================================================================
+const TextStyle _monoStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontFeatures: [FontFeature.tabularFigures()],
+  letterSpacing: 0.5,
+);
+
+TextStyle _mono({
+  double? fontSize,
+  FontWeight? fontWeight,
+  Color? color,
+  double? letterSpacing,
+}) {
+  return _monoStyle.copyWith(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing ?? 0.5,
+  );
+}
 
 // ============================================================================
 // DESIGN SYSTEM ROYAL
@@ -48,8 +70,6 @@ class _R {
   static const Color text = Color(0xFF111827);
   static const Color text2 = Color(0xFF6B7280);
   static const Color border = Color(0xFFE5E7EB);
-  static const Color whatsapp = Color(0xFF25D366);
-  static const Color telegram = Color(0xFF0088CC);
 
   static const LinearGradient royal = LinearGradient(
     colors: [blue, purple],
@@ -108,6 +128,7 @@ class _Template {
   final Color accent;
   final Color background;
   final Color text;
+  final String? patternAsset;
   final bool isPremium;
 
   const _Template({
@@ -120,6 +141,7 @@ class _Template {
     required this.accent,
     required this.background,
     required this.text,
+    this.patternAsset,
     this.isPremium = false,
   });
 }
@@ -283,22 +305,17 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
         loading: () => const _LoadingView(),
         error: (e, _) => _ErrorView(
           message: '$e',
-          onRetry: () =>
-              ref.invalidate(weddingInvitationProvider(widget.weddingId)),
+          onRetry: () => ref.invalidate(weddingInvitationProvider(widget.weddingId)),
         ),
         data: (wedding) {
           final guests = guestsAsync.valueOrNull ?? const [];
           final gallery = galleryAsync.valueOrNull ?? const [];
           final confirmed = guests
-              .where((g) =>
-                  (g.rsvpStatus ?? '').toLowerCase() == 'confirmed' ||
+              .where((g) => (g.rsvpStatus ?? '').toLowerCase() == 'confirmed' ||
                   (g.rsvpStatus ?? '').toLowerCase() == 'accepted')
               .length;
-          final pending = guests
-              .where((g) =>
-                  (g.rsvpStatus ?? '').isEmpty ||
-                  (g.rsvpStatus ?? '').toLowerCase() == 'pending')
-              .length;
+          final pending = guests.where((g) => (g.rsvpStatus ?? '').isEmpty ||
+              (g.rsvpStatus ?? '').toLowerCase() == 'pending').length;
 
           return FadeTransition(
             opacity: _fadeAnim,
@@ -348,8 +365,7 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
                         icon: Icons.visibility_outlined,
                         color: _R.blue,
                         actionLabel: 'Plein écran',
-                        onAction: () =>
-                            _showFullScreenPreview(context, wedding),
+                        onAction: () => _showFullScreenPreview(context, wedding),
                       ),
                       const SizedBox(height: 12),
                       _InvitationPreview(
@@ -380,8 +396,7 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
                             const SizedBox(height: 12),
                             _ThemeSelector(
                               selected: _selectedTheme,
-                              onChanged: (t) =>
-                                  setState(() => _selectedTheme = t),
+                              onChanged: (t) => setState(() => _selectedTheme = t),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -395,15 +410,13 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
                             const SizedBox(height: 8),
                             _ColorPicker(
                               selected: _customAccent,
-                              onChanged: (c) =>
-                                  setState(() => _customAccent = c),
+                              onChanged: (c) => setState(() => _customAccent = c),
                             ),
                             if (gallery.isNotEmpty) ...[
                               const SizedBox(height: 16),
                               _PhotoToggle(
                                 enabled: _showPhoto,
-                                onChanged: (v) =>
-                                    setState(() => _showPhoto = v),
+                                onChanged: (v) => setState(() => _showPhoto = v),
                               ),
                             ],
                           ],
@@ -454,8 +467,7 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
                             ],
                           ),
                           borderRadius: BorderRadius.circular(12),
-                          border:
-                              Border.all(color: _R.blue.withOpacity(0.2)),
+                          border: Border.all(color: _R.blue.withOpacity(0.2)),
                         ),
                         child: Row(
                           children: [
@@ -524,12 +536,11 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
     }
   }
 
-  Future<void> _shareInvitation(
-      BuildContext context, WeddingModel wedding) async {
+  Future<void> _shareInvitation(BuildContext context, WeddingModel wedding) async {
     final url = 'https://thix.id/w/${widget.weddingId}';
-    final text = 'Vous êtes invités au mariage de ${wedding.brideName} & '
-        '${wedding.groomName}${wedding.weddingDate != null ? ' le ${_fmtDate(wedding.weddingDate!)}' : ''}'
-        '${wedding.venue != null ? ' à ${wedding.venue}' : ''}.\n\n$url';
+    final dateStr = wedding.weddingDate != null ? ' le ${_fmtDate(wedding.weddingDate!)}' : '';
+    final venueStr = wedding.venue != null ? ' à ${wedding.venue}' : '';
+    final text = 'Vous êtes invités au mariage de ${wedding.brideName} & ${wedding.groomName}$dateStr$venueStr.\n\n$url';
     await Share.share(text, subject: 'Invitation mariage');
   }
 
@@ -561,14 +572,12 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage>
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: const BoxDecoration(
-                  color: Colors.white24, shape: BoxShape.circle),
+              decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle),
               child: const Icon(Icons.check, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Text(msg,
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+              child: Text(msg, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -610,12 +619,9 @@ class _RoyalAppBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
-            boxShadow: [
-              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
-            ],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
           ),
-          child:
-              const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
+          child: const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
         ),
         onPressed: () => context.pop(),
       ),
@@ -776,21 +782,11 @@ class _RsvpStatsCard extends StatelessWidget {
       decoration: _R.card(),
       child: Row(
         children: [
+          _MiniStat(icon: Icons.people, label: 'Total', value: '$total', color: _R.blue),
           _MiniStat(
-              icon: Icons.people,
-              label: 'Total',
-              value: '$total',
-              color: _R.blue),
+              icon: Icons.check_circle, label: 'Confirmés', value: '$confirmed', color: _R.green),
           _MiniStat(
-              icon: Icons.check_circle,
-              label: 'Confirmés',
-              value: '$confirmed',
-              color: _R.green),
-          _MiniStat(
-              icon: Icons.hourglass_empty,
-              label: 'En attente',
-              value: '$pending',
-              color: _R.amber),
+              icon: Icons.hourglass_empty, label: 'En attente', value: '$pending', color: _R.amber),
         ],
       ),
     );
@@ -825,11 +821,9 @@ class _MiniStat extends StatelessWidget {
           const SizedBox(height: 4),
           Text(
             value,
-            style: GoogleFonts.inter(
-                fontSize: 15, fontWeight: FontWeight.w800, color: color),
+            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: color),
           ),
-          Text(label,
-              style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
+          Text(label, style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
         ],
       ),
     );
@@ -858,56 +852,61 @@ class _HeroBanner extends StatelessWidget {
           ),
         ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(Icons.workspace_premium,
-                color: Colors.white, size: 20),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'INVITATION PREMIUM',
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.workspace_premium,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'INVITATION PREMIUM',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white.withOpacity(0.9),
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    Text(
+                      '6 templates élégants',
+                      style: GoogleFonts.inter(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.25),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'PRO',
                   style: GoogleFonts.inter(
                     fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white.withOpacity(0.9),
-                    letterSpacing: 2,
-                  ),
-                ),
-                Text(
-                  '6 templates élégants',
-                  style: GoogleFonts.inter(
-                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
                   ),
                 ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.25),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              'PRO',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
               ),
-            ),
+            ],
           ),
         ],
       ),
@@ -937,62 +936,64 @@ class _SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-                colors: [color, color.withOpacity(0.7)]),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Icon(icon, color: Colors.white, size: 16),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: GoogleFonts.inter(
-                    fontSize: 15, fontWeight: FontWeight.w700),
-              ),
-              if (subtitle != null)
-                Text(
-                  subtitle!,
-                  style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
-                ),
-            ],
-          ),
-        ),
-        if (actionLabel != null && onAction != null)
-          GestureDetector(
-            onTap: onAction,
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
+                gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+              child: Icon(icon, color: Colors.white, size: 16),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    actionLabel!,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: color,
-                    ),
+                    title,
+                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700),
                   ),
-                  const SizedBox(width: 4),
-                  Icon(Icons.open_in_new, size: 12, color: color),
+                  if (subtitle != null)
+                    Text(
+                      subtitle!,
+                      style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
+                    ),
                 ],
               ),
             ),
-          ),
+            if (actionLabel != null)
+              GestureDetector(
+                onTap: onAction,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        actionLabel!,
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: color,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      Icon(Icons.open_in_new, size: 12, color: color),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
       ],
     );
   }
@@ -1043,6 +1044,7 @@ class _TemplateSelector extends StatelessWidget {
                 borderRadius: BorderRadius.circular(14),
                 child: Stack(
                   children: [
+                    // Preview mini
                     Container(
                       color: t.background,
                       child: Column(
@@ -1054,8 +1056,7 @@ class _TemplateSelector extends StatelessWidget {
                               gradient: t.gradient,
                               shape: BoxShape.circle,
                             ),
-                            child:
-                                Icon(t.icon, color: Colors.white, size: 24),
+                            child: Icon(t.icon, color: Colors.white, size: 24),
                           ),
                           const SizedBox(height: 10),
                           Text(
@@ -1085,6 +1086,7 @@ class _TemplateSelector extends StatelessWidget {
                         ],
                       ),
                     ),
+                    // Overlay info
                     Positioned(
                       left: 0,
                       right: 0,
@@ -1148,6 +1150,7 @@ class _TemplateSelector extends StatelessWidget {
                         ),
                       ),
                     ),
+                    // Badge sélection
                     if (isSelected)
                       Positioned(
                         top: 8,
@@ -1287,8 +1290,7 @@ class _RoyalGoldTemplate extends StatelessWidget {
       padding: const EdgeInsets.all(28),
       decoration: BoxDecoration(
         color: template.background,
-        border: Border.all(
-            color: template.accent.withOpacity(0.4), width: 2),
+        border: Border.all(color: template.accent.withOpacity(0.4), width: 2),
       ),
       child: Column(
         children: [
@@ -1297,8 +1299,7 @@ class _RoyalGoldTemplate extends StatelessWidget {
             children: [
               _Ornament(color: template.primary),
               const SizedBox(width: 8),
-              Icon(Icons.auto_awesome,
-                  color: template.primary, size: 16),
+              Icon(Icons.auto_awesome, color: template.primary, size: 16),
               const SizedBox(width: 8),
               _Ornament(color: template.primary),
             ],
@@ -1637,8 +1638,7 @@ class _RoseRomanceTemplate extends StatelessWidget {
               height: 120,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: template.primary.withOpacity(0.3), width: 3),
+                border: Border.all(color: template.primary.withOpacity(0.3), width: 3),
                 image: DecorationImage(
                   image: NetworkImage(coverPhoto!),
                   fit: BoxFit.cover,
@@ -1671,13 +1671,11 @@ class _RoseRomanceTemplate extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(12),
-              border:
-                  Border.all(color: template.primary.withOpacity(0.2)),
+              border: Border.all(color: template.primary.withOpacity(0.2)),
             ),
             child: Column(
               children: [
@@ -1733,8 +1731,7 @@ class _VintageClassicTemplate extends StatelessWidget {
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
         color: template.background,
-        border: Border.all(
-            color: template.primary.withOpacity(0.3), width: 1),
+        border: Border.all(color: template.primary.withOpacity(0.3), width: 1),
       ),
       child: Stack(
         children: [
@@ -1742,8 +1739,7 @@ class _VintageClassicTemplate extends StatelessWidget {
             child: Container(
               margin: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                border:
-                    Border.all(color: template.primary.withOpacity(0.2)),
+                border: Border.all(color: template.primary.withOpacity(0.2)),
               ),
             ),
           ),
@@ -1964,14 +1960,11 @@ class _FloralBotanicTemplate extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.local_florist,
-                  color: template.primary, size: 20),
+              Icon(Icons.local_florist, color: template.primary, size: 20),
               const SizedBox(width: 6),
-              Icon(Icons.eco,
-                  color: template.primary.withOpacity(0.6), size: 16),
+              Icon(Icons.eco, color: template.primary.withOpacity(0.6), size: 16),
               const SizedBox(width: 6),
-              Icon(Icons.local_florist,
-                  color: template.primary, size: 20),
+              Icon(Icons.local_florist, color: template.primary, size: 20),
             ],
           ),
           const SizedBox(height: 16),
@@ -1990,8 +1983,7 @@ class _FloralBotanicTemplate extends StatelessWidget {
               height: 110,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                border: Border.all(
-                    color: template.primary.withOpacity(0.3), width: 2),
+                border: Border.all(color: template.primary.withOpacity(0.3), width: 2),
                 image: DecorationImage(
                   image: NetworkImage(coverPhoto!),
                   fit: BoxFit.cover,
@@ -2026,14 +2018,12 @@ class _FloralBotanicTemplate extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              border:
-                  Border.all(color: template.primary.withOpacity(0.3)),
+              border: Border.all(color: template.primary.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Column(
               children: [
-                Icon(Icons.calendar_today,
-                    size: 14, color: template.primary),
+                Icon(Icons.calendar_today, size: 14, color: template.primary),
                 const SizedBox(height: 4),
                 Text(
                   wedding.weddingDate != null
@@ -2050,8 +2040,7 @@ class _FloralBotanicTemplate extends StatelessWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.place,
-                          size: 12, color: template.primary),
+                      Icon(Icons.place, size: 12, color: template.primary),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
@@ -2060,8 +2049,7 @@ class _FloralBotanicTemplate extends StatelessWidget {
                           style: GoogleFonts.cormorant(
                             fontSize: 11,
                             fontStyle: FontStyle.italic,
-                            color:
-                                template.primary.withOpacity(0.8),
+                            color: template.primary.withOpacity(0.8),
                           ),
                         ),
                       ),
@@ -2072,8 +2060,7 @@ class _FloralBotanicTemplate extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Icon(Icons.eco,
-              color: template.primary.withOpacity(0.6), size: 16),
+          Icon(Icons.eco, color: template.primary.withOpacity(0.6), size: 16),
         ],
       ),
     );
@@ -2115,8 +2102,7 @@ class _ThemeSelector extends StatelessWidget {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(t.icon,
-                          size: 16,
+                      Icon(t.icon, size: 16,
                           color: isSelected ? Colors.white : _R.blue),
                       const SizedBox(height: 3),
                       Text(
@@ -2201,9 +2187,7 @@ class _PhotoToggle extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
-        color: enabled
-            ? _R.green.withOpacity(0.08)
-            : Colors.grey.withOpacity(0.05),
+        color: enabled ? _R.green.withOpacity(0.08) : Colors.grey.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
           color: enabled ? _R.green : _R.border,
@@ -2226,13 +2210,10 @@ class _PhotoToggle extends StatelessWidget {
         secondary: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
-            color: enabled
-                ? _R.green.withOpacity(0.15)
-                : _R.border.withOpacity(0.5),
+            color: enabled ? _R.green.withOpacity(0.15) : _R.border.withOpacity(0.5),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(Icons.photo_camera,
-              size: 18, color: enabled ? _R.green : _R.text2),
+          child: Icon(Icons.photo_camera, size: 18, color: enabled ? _R.green : _R.text2),
         ),
         value: enabled,
         activeColor: _R.green,
@@ -2280,14 +2261,12 @@ class _ShareCard extends StatelessWidget {
                   gradient: _R.royal,
                   borderRadius: BorderRadius.all(Radius.circular(8)),
                 ),
-                child:
-                    const Icon(Icons.link, color: Colors.white, size: 16),
+                child: const Icon(Icons.link, color: Colors.white, size: 16),
               ),
               const SizedBox(width: 10),
               Text(
                 'Lien d\'invitation public',
-                style: GoogleFonts.inter(
-                    fontSize: 14, fontWeight: FontWeight.w700),
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -2306,11 +2285,10 @@ class _ShareCard extends StatelessWidget {
                 Expanded(
                   child: SelectableText(
                     url,
-                    style: GoogleFonts.robotoMono(
-  fontSize: 9,
-  fontWeight: FontWeight.w700,
-  color: Colors.white,
-)
+                    style: _mono(
+                      fontSize: 12,
+                      color: _R.blue,
+                    ),
                   ),
                 ),
                 Material(
@@ -2324,8 +2302,7 @@ class _ShareCard extends StatelessWidget {
                         color: _R.blue.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(6),
                       ),
-                      child: const Icon(Icons.copy,
-                          size: 14, color: _R.blue),
+                      child: const Icon(Icons.copy, size: 14, color: _R.blue),
                     ),
                   ),
                 ),
@@ -2339,15 +2316,11 @@ class _ShareCard extends StatelessWidget {
                 child: Container(
                   height: 48,
                   decoration: BoxDecoration(
-                    gradient: wedding.invitationPublished
-                        ? _R.greenG
-                        : _R.royal,
+                    gradient: wedding.invitationPublished ? _R.greenG : _R.royal,
                     borderRadius: BorderRadius.circular(12),
                     boxShadow: [
                       BoxShadow(
-                        color: (wedding.invitationPublished
-                                ? _R.green
-                                : _R.blue)
+                        color: (wedding.invitationPublished ? _R.green : _R.blue)
                             .withOpacity(0.3),
                         blurRadius: 10,
                         offset: const Offset(0, 4),
@@ -2456,8 +2429,7 @@ class _QrCodeCard extends StatelessWidget {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.qr_code_2,
-                    size: 52, color: Color(0xFF0B3B8F)),
+                const Icon(Icons.qr_code_2, size: 52, color: Color(0xFF0B3B8F)),
                 const SizedBox(height: 4),
                 Text(
                   'UNIQUE',
@@ -2478,8 +2450,7 @@ class _QrCodeCard extends StatelessWidget {
               children: [
                 Row(
                   children: [
-                    const Icon(Icons.fingerprint,
-                        color: Colors.white, size: 14),
+                    const Icon(Icons.fingerprint, color: Colors.white, size: 14),
                     const SizedBox(width: 6),
                     Text(
                       'QR CODES UNIQUES',
@@ -2511,22 +2482,18 @@ class _QrCodeCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withOpacity(0.25),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                        color: Colors.white.withOpacity(0.3)),
+                    border: Border.all(color: Colors.white.withOpacity(0.3)),
                   ),
                   child: Text(
                     'Code: ${wedding.uniqueCode}',
-                    style: GoogleFonts.robotoMono(
-  fontSize: 9,
-  fontWeight: FontWeight.w700,
-  color: Colors.white,
-)
-                      fontFamily: 'monospace',
+                    style: _mono(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
                   ),
                 ),
@@ -2540,7 +2507,7 @@ class _QrCodeCard extends StatelessWidget {
 }
 
 // ============================================================================
-// SHARE CHANNELS CARD (WhatsApp, SMS, Email, THIX Chat, Telegram, Plus)
+// SHARE CHANNELS
 // ============================================================================
 class _ShareChannelsCard extends StatelessWidget {
   final WeddingModel wedding;
@@ -2554,10 +2521,9 @@ class _ShareChannelsCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final url = 'https://thix.id/w/$weddingId';
-    final text =
-        'Vous êtes invités au mariage de ${wedding.brideName} & ${wedding.groomName}'
-        '${wedding.weddingDate != null ? ' le ${_fmtDate(wedding.weddingDate!)}' : ''}'
-        '${wedding.venue != null ? ' à ${wedding.venue}' : ''}.\n\n$url';
+    final dateStr = wedding.weddingDate != null ? ' le ${_fmtDate(wedding.weddingDate!)}' : '';
+    final venueStr = wedding.venue != null ? ' à ${wedding.venue}' : '';
+    final text = 'Vous êtes invités au mariage de ${wedding.brideName} & ${wedding.groomName}$dateStr$venueStr.\n\n$url';
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -2578,67 +2544,55 @@ class _ShareChannelsCard extends StatelessWidget {
               const SizedBox(width: 10),
               Text(
                 'Canaux de partage',
-                style: GoogleFonts.inter(
-                    fontSize: 14, fontWeight: FontWeight.w700),
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          GridView.count(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            crossAxisCount: 3,
-            mainAxisSpacing: 10,
-            crossAxisSpacing: 10,
-            childAspectRatio: 1.1,
+          Row(
             children: [
-              _ChannelTile(
-                label: 'WhatsApp',
-                icon: Icons.message,
-                color: _R.whatsapp,
-                onTap: () async {
-                  await Share.share(text, subject: 'Invitation mariage');
-                },
+              Expanded(
+                child: _ShareChip(
+                  label: 'WhatsApp',
+                  icon: Icons.message,
+                  color: const Color(0xFF25D366),
+                  onTap: () async {
+                    await Share.share(text);
+                  },
+                ),
               ),
-              _ChannelTile(
-                label: 'SMS',
-                icon: Icons.sms_outlined,
-                color: _R.blue,
-                onTap: () async {
-                  await Share.share(text);
-                },
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ShareChip(
+                  label: 'SMS',
+                  icon: Icons.sms,
+                  color: _R.blue,
+                  onTap: () async {
+                    await Share.share(text);
+                  },
+                ),
               ),
-              _ChannelTile(
-                label: 'Email',
-                icon: Icons.email_outlined,
-                color: _R.purple,
-                onTap: () async {
-                  await Share.share(text, subject: 'Invitation mariage');
-                },
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ShareChip(
+                  label: 'Email',
+                  icon: Icons.email,
+                  color: _R.purple,
+                  onTap: () async {
+                    await Share.share(text, subject: 'Invitation mariage');
+                  },
+                ),
               ),
-              _ChannelTile(
-                label: 'THIX Chat',
-                icon: Icons.chat_bubble_outline,
-                color: _R.rose,
-                onTap: () async {
-                  await Share.share(text);
-                },
-              ),
-              _ChannelTile(
-                label: 'Telegram',
-                icon: Icons.telegram,
-                color: _R.telegram,
-                onTap: () async {
-                  await Share.share(text);
-                },
-              ),
-              _ChannelTile(
-                label: 'Plus',
-                icon: Icons.more_horiz,
-                color: _R.text2,
-                onTap: () async {
-                  await Share.share(text, subject: 'Invitation mariage');
-                },
+              const SizedBox(width: 8),
+              Expanded(
+                child: _ShareChip(
+                  label: 'Plus',
+                  icon: Icons.more_horiz,
+                  color: _R.text2,
+                  onTap: () async {
+                    await Share.share(text, subject: 'Invitation mariage');
+                  },
+                ),
               ),
             ],
           ),
@@ -2648,13 +2602,12 @@ class _ShareChannelsCard extends StatelessWidget {
   }
 }
 
-class _ChannelTile extends StatelessWidget {
+class _ShareChip extends StatelessWidget {
   final String label;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
-
-  const _ChannelTile({
+  const _ShareChip({
     required this.label,
     required this.icon,
     required this.color,
@@ -2664,30 +2617,18 @@ class _ChannelTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: color.withOpacity(0.06),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.all(10),
-          decoration: BoxDecoration(
-            border: Border.all(color: color.withOpacity(0.3)),
-            borderRadius: BorderRadius.circular(12),
-            color: color.withOpacity(0.05),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 8),
+              Icon(icon, color: color, size: 20),
+              const SizedBox(height: 4),
               Text(
                 label,
                 style: GoogleFonts.inter(
@@ -2705,7 +2646,7 @@ class _ChannelTile extends StatelessWidget {
 }
 
 // ============================================================================
-// EXPORT CARD (PDF, Excel, Imprimer)
+// EXPORT CARD
 // ============================================================================
 class _ExportCard extends StatelessWidget {
   final WeddingModel wedding;
@@ -2729,14 +2670,12 @@ class _ExportCard extends StatelessWidget {
                   gradient: _R.greenG,
                   borderRadius: BorderRadius.all(Radius.circular(8)),
                 ),
-                child: const Icon(Icons.file_download_outlined,
-                    color: Colors.white, size: 16),
+                child: const Icon(Icons.file_download_outlined, color: Colors.white, size: 16),
               ),
               const SizedBox(width: 10),
               Text(
                 'Exporter l\'invitation',
-                style: GoogleFonts.inter(
-                    fontSize: 14, fontWeight: FontWeight.w700),
+                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700),
               ),
             ],
           ),
@@ -2746,7 +2685,6 @@ class _ExportCard extends StatelessWidget {
               Expanded(
                 child: _ExportTile(
                   label: 'PDF',
-                  subtitle: 'À imprimer',
                   icon: Icons.picture_as_pdf,
                   color: _R.rose,
                   onTap: () => _showExportSuccess(context, 'PDF généré'),
@@ -2756,7 +2694,6 @@ class _ExportCard extends StatelessWidget {
               Expanded(
                 child: _ExportTile(
                   label: 'Image',
-                  subtitle: 'JPG/PNG',
                   icon: Icons.image_outlined,
                   color: _R.blue,
                   onTap: () => _showExportSuccess(context, 'Image exportée'),
@@ -2766,7 +2703,6 @@ class _ExportCard extends StatelessWidget {
               Expanded(
                 child: _ExportTile(
                   label: 'Imprimer',
-                  subtitle: 'Direct',
                   icon: Icons.print_outlined,
                   color: _R.purple,
                   onTap: () => _showExportSuccess(context, 'Impression lancée'),
@@ -2797,14 +2733,12 @@ class _ExportCard extends StatelessWidget {
 
 class _ExportTile extends StatelessWidget {
   final String label;
-  final String subtitle;
   final IconData icon;
   final Color color;
   final VoidCallback onTap;
 
   const _ExportTile({
     required this.label,
-    required this.subtitle,
     required this.icon,
     required this.color,
     required this.onTap,
@@ -2813,43 +2747,24 @@ class _ExportTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white,
+      color: color.withOpacity(0.06),
       borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            border: Border.all(color: color.withOpacity(0.3)),
-            borderRadius: BorderRadius.circular(12),
-            color: color.withOpacity(0.05),
-          ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: color,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: Colors.white, size: 20),
-              ),
-              const SizedBox(height: 8),
+              Icon(icon, color: color, size: 20),
+              const SizedBox(height: 4),
               Text(
                 label,
                 style: GoogleFonts.inter(
                   fontSize: 12,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w700,
                   color: color,
-                ),
-              ),
-              Text(
-                subtitle,
-                style: GoogleFonts.inter(
-                  fontSize: 9,
-                  color: _R.text2,
                 ),
               ),
             ],
@@ -2861,7 +2776,7 @@ class _ExportTile extends StatelessWidget {
 }
 
 // ============================================================================
-// PUBLISH CTA (Bouton principal)
+// PUBLISH CTA
 // ============================================================================
 class _PublishCTA extends StatelessWidget {
   final WeddingModel wedding;
@@ -2878,19 +2793,17 @@ class _PublishCTA extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isPublished = wedding.invitationPublished;
-
     return Container(
       width: double.infinity,
-      height: 60,
+      height: 56,
       decoration: BoxDecoration(
-        gradient: isPublished ? _R.greenG : _R.goldG,
-        borderRadius: BorderRadius.circular(18),
+        gradient: wedding.invitationPublished ? _R.greenG : _R.goldG,
+        borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: (isPublished ? _R.green : _R.gold).withOpacity(0.35),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: (wedding.invitationPublished ? _R.green : _R.gold).withOpacity(0.3),
+            blurRadius: 12,
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -2898,31 +2811,28 @@ class _PublishCTA extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: isPublishing ? null : onPublish,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(16),
           child: Center(
             child: isPublishing
                 ? const SizedBox(
                     width: 24,
                     height: 24,
-                    child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: Colors.white),
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(
-                        isPublished ? Icons.check_circle : Icons.send,
+                        wedding.invitationPublished ? Icons.check_circle : Icons.public,
                         color: Colors.white,
-                        size: 22,
+                        size: 20,
                       ),
                       const SizedBox(width: 10),
                       Text(
-                        isPublished
-                            ? 'Invitation déjà publiée ✓'
-                            : 'Publier l\'invitation',
+                        wedding.invitationPublished ? 'Invitation publiée' : 'Publier l\'invitation',
                         style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w800,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
                           color: Colors.white,
                         ),
                       ),
@@ -2954,52 +2864,21 @@ class _FullScreenPreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.black87,
       appBar: AppBar(
-        backgroundColor: Colors.black,
-        foregroundColor: Colors.white,
+        backgroundColor: template.background,
+        foregroundColor: template.text,
         title: Text(
           template.name,
-          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: template.text),
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.share),
-            onPressed: () async {
-              await Share.share(
-                'Invitation de ${wedding.brideName} & ${wedding.groomName}',
-                subject: 'Invitation mariage',
-              );
-            },
-          ),
-        ],
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
-        child: Center(
-          child: Container(
-            constraints: const BoxConstraints(maxWidth: 500),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.5),
-                  blurRadius: 40,
-                  offset: const Offset(0, 20),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(20),
-              child: _InvitationPreview(
-                wedding: wedding,
-                template: template,
-                theme: theme,
-                accentColor: accentColor,
-                coverPhoto: null,
-              ),
-            ),
-          ),
+        child: _InvitationPreview(
+          wedding: wedding,
+          template: template,
+          theme: theme,
+          accentColor: accentColor,
         ),
       ),
     );
@@ -3022,27 +2901,13 @@ class _LoadingView extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(20),
-              decoration: const BoxDecoration(
-                  gradient: _R.goldG, shape: BoxShape.circle),
-              child: const Icon(Icons.mail_outline,
-                  color: Colors.white, size: 36),
+              decoration: const BoxDecoration(gradient: _R.goldG, shape: BoxShape.circle),
+              child: const Icon(Icons.mail_outline, color: Colors.white, size: 36),
             ),
             const SizedBox(height: 16),
             Text(
-              'Chargement de l\'invitation...',
-              style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                  color: _R.text2),
-            ),
-            const SizedBox(height: 16),
-            const SizedBox(
-              width: 160,
-              child: LinearProgressIndicator(
-                minHeight: 3,
-                backgroundColor: Color(0xFFE5E7EB),
-                valueColor: AlwaysStoppedAnimation<Color>(_R.gold),
-              ),
+              'Chargement...',
+              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2),
             ),
           ],
         ),
@@ -3073,29 +2938,25 @@ class _ErrorView extends StatelessWidget {
                   color: _R.rose.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(Icons.error_outline,
-                    color: _R.rose, size: 40),
+                child: const Icon(Icons.error_outline, color: _R.rose, size: 40),
               ),
               const SizedBox(height: 16),
               Text(
                 'Impossible de charger',
-                style: GoogleFonts.inter(
-                    fontSize: 16, fontWeight: FontWeight.w700),
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700),
               ),
               const SizedBox(height: 4),
               Text(
                 message,
                 textAlign: TextAlign.center,
-                style:
-                    GoogleFonts.inter(fontSize: 12, color: _R.text2),
+                style: GoogleFonts.inter(fontSize: 12, color: _R.text2),
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Réessayer'),
-                style:
-                    FilledButton.styleFrom(backgroundColor: _R.blue),
+                style: FilledButton.styleFrom(backgroundColor: _R.blue),
               ),
             ],
           ),
@@ -3105,9 +2966,8 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-// =====================================================================
 // ============================================================================
-// UTILITAIRES DE FORMATAGE (top-level)
+// UTILITAIRES DE FORMATAGE
 // ============================================================================
 String _fmtDate(DateTime dt) {
   return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
@@ -3115,16 +2975,36 @@ String _fmtDate(DateTime dt) {
 
 String _fmtDateLong(DateTime dt) {
   const months = [
-    'Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin',
-    'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre'
+    'Janvier',
+    'Février',
+    'Mars',
+    'Avril',
+    'Mai',
+    'Juin',
+    'Juillet',
+    'Août',
+    'Septembre',
+    'Octobre',
+    'Novembre',
+    'Décembre'
   ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
 }
 
 String _fmtDateShort(DateTime dt) {
   const months = [
-    'Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun',
-    'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'
+    'Jan',
+    'Fév',
+    'Mar',
+    'Avr',
+    'Mai',
+    'Jun',
+    'Jul',
+    'Aoû',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Déc'
   ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
 }
