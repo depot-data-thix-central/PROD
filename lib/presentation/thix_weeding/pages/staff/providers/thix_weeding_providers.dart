@@ -1,9 +1,17 @@
-// lib/presentation/thix_weeding/staff/providers/thix_weeding_providers.dart
+// lib/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart
+// ============================================================================
+// THIX WEDDING & EVENTS — PROVIDERS (PRODUCTION)
+// Tous les providers Riverpod + Summary + Stats + Detail providers
+// ⚠️ IMPORTS CORRIGÉS : chemin relatif depuis pages/staff/providers/
+// ============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../models/thix_weeding_models.dart';
 import '../services/thix_weeding_services.dart';
 
-// ================= SERVICES (Singleton) =================
+// ============================================================================
+// SERVICES (Singleton via Provider)
+// ============================================================================
 final weddingServiceProvider = Provider((ref) => WeddingService());
 final guestServiceProvider = Provider((ref) => GuestService());
 final vendorServiceProvider = Provider((ref) => VendorService());
@@ -14,74 +22,150 @@ final guestbookServiceProvider = Provider((ref) => GuestbookService());
 final messageServiceProvider = Provider((ref) => MessageService());
 final paymentServiceProvider = Provider((ref) => PaymentService());
 
-// ================= WEDDING =================
-final weddingProvider = FutureProvider.autoDispose.family<WeddingModel, String>((ref, weddingId) async {
+// ============================================================================
+// WEDDING
+// ============================================================================
+final weddingProvider =
+    FutureProvider.autoDispose.family<WeddingModel, String>((ref, weddingId) async {
   return ref.read(weddingServiceProvider).getById(weddingId);
 });
-final myWeddingsProvider = FutureProvider.autoDispose.family<List<WeddingModel>, String>((ref, ownerId) async {
+
+final myWeddingsProvider =
+    FutureProvider.autoDispose.family<List<WeddingModel>, String>((ref, ownerId) async {
   return ref.read(weddingServiceProvider).getByOwner(ownerId);
 });
 
-// ================= GUESTS =================
-final guestsProvider = FutureProvider.autoDispose.family<List<GuestModel>, String>((ref, weddingId) async {
+// ============================================================================
+// GUESTS
+// ============================================================================
+final guestsProvider =
+    FutureProvider.autoDispose.family<List<GuestModel>, String>((ref, weddingId) async {
   return ref.read(guestServiceProvider).getByWedding(weddingId);
 });
-final guestDetailProvider = FutureProvider.autoDispose.family<GuestModel, String>((ref, guestId) async {
+
+final guestDetailProvider =
+    FutureProvider.autoDispose.family<GuestModel, String>((ref, guestId) async {
   return ref.read(guestServiceProvider).getById(guestId);
 });
 
-// ================= VENDORS =================
-final vendorsProvider = FutureProvider.autoDispose.family<List<VendorModel>, String>((ref, weddingId) async {
+// ============================================================================
+// VENDORS
+// ============================================================================
+final vendorsProvider =
+    FutureProvider.autoDispose.family<List<VendorModel>, String>((ref, weddingId) async {
   return ref.read(vendorServiceProvider).getByWedding(weddingId);
 });
 
-// ================= BUDGET / EXPENSES =================
-final budgetProvider = FutureProvider.autoDispose.family<BudgetModel?, String>((ref, weddingId) async {
+/// ✅ AJOUTÉ — Détail d'un prestataire unique
+final vendorDetailProvider =
+    FutureProvider.autoDispose.family<VendorModel, String>((ref, vendorId) async {
+  return ref.read(vendorServiceProvider).getById(vendorId);
+});
+
+// ============================================================================
+// BUDGET / EXPENSES
+// ============================================================================
+final budgetProvider =
+    FutureProvider.autoDispose.family<BudgetModel?, String>((ref, weddingId) async {
   return ref.read(budgetServiceProvider).getBudget(weddingId);
 });
-final expensesProvider = FutureProvider.autoDispose.family<List<ExpenseModel>, String>((ref, weddingId) async {
+
+final expensesProvider =
+    FutureProvider.autoDispose.family<List<ExpenseModel>, String>((ref, weddingId) async {
   return ref.read(budgetServiceProvider).getExpenses(weddingId);
 });
 
-// ================= CHECKLIST =================
-final checklistProvider = FutureProvider.autoDispose.family<List<ChecklistModel>, String>((ref, weddingId) async {
+/// ✅ AJOUTÉ — Détail d'une dépense unique
+final expenseDetailProvider =
+    FutureProvider.autoDispose.family<ExpenseModel, String>((ref, expenseId) async {
+  final expenses = await ref.watch(expensesProvider).future;
+  // Chercher dans la liste locale ou requête directe
+  try {
+    final allExpenses = await ref.read(budgetServiceProvider).getExpenses('');
+    // Fallback: chercher par ID dans toutes les dépenses
+    for (final e in allExpenses) {
+      if (e.id == expenseId) return e;
+    }
+  } catch (_) {}
+  throw Exception('Dépense introuvable ($expenseId)');
+});
+
+// ============================================================================
+// CHECKLIST
+// ============================================================================
+final checklistProvider =
+    FutureProvider.autoDispose.family<List<ChecklistModel>, String>((ref, weddingId) async {
   return ref.read(checklistServiceProvider).getByWedding(weddingId);
 });
 
-// ================= GALLERY =================
-final galleryProvider = FutureProvider.autoDispose.family<List<GalleryModel>, String>((ref, weddingId) async {
+/// ✅ AJOUTÉ — Détail d'une tâche checklist unique
+final checklistDetailProvider =
+    FutureProvider.autoDispose.family<ChecklistModel, String>((ref, taskId) async {
+  return ref.read(checklistServiceProvider).getById(taskId);
+});
+
+// ============================================================================
+// GALLERY
+// ============================================================================
+final galleryProvider =
+    FutureProvider.autoDispose.family<List<GalleryModel>, String>((ref, weddingId) async {
   return ref.read(galleryServiceProvider).getByWedding(weddingId);
 });
 
-// ================= GUESTBOOK =================
-final guestbookProvider = FutureProvider.autoDispose.family<List<GuestbookModel>, String>((ref, weddingId) async {
+// ============================================================================
+// GUESTBOOK
+// ============================================================================
+final guestbookProvider =
+    FutureProvider.autoDispose.family<List<GuestbookModel>, String>((ref, weddingId) async {
   return ref.read(guestbookServiceProvider).getByWedding(weddingId);
 });
 
-// ================= MESSAGES =================
-final messagesProvider = FutureProvider.autoDispose.family<List<MessageModel>, String>((ref, weddingId) async {
+// ============================================================================
+// MESSAGES
+// ============================================================================
+final messagesProvider =
+    FutureProvider.autoDispose.family<List<MessageModel>, String>((ref, weddingId) async {
   return ref.read(messageServiceProvider).getByWedding(weddingId);
 });
 
-// ================= PAYMENTS =================
-final paymentsProvider = FutureProvider.autoDispose.family<List<PaymentModel>, String>((ref, weddingId) async {
+/// ✅ AJOUTÉ — Compteur de messages non lus
+final unreadMessagesCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
+  final messages = await ref.watch(messagesProvider(weddingId).future);
+  return messages.where((m) => !m.isRead && m.senderType == 'guest').length;
+});
+
+// ============================================================================
+// PAYMENTS
+// ============================================================================
+final paymentsProvider =
+    FutureProvider.autoDispose.family<List<PaymentModel>, String>((ref, weddingId) async {
   return ref.read(paymentServiceProvider).getByWedding(weddingId);
 });
-final paymentDetailProvider = FutureProvider.autoDispose.family<PaymentModel, String>((ref, paymentId) async {
+
+final paymentDetailProvider =
+    FutureProvider.autoDispose.family<PaymentModel, String>((ref, paymentId) async {
   return ref.read(paymentServiceProvider).getById(paymentId);
 });
 
-// ================= SUMMARY (PROD: 1 seul appel DB si possible, sinon calcul local) =================
-final paymentsSummaryProvider = FutureProvider.autoDispose.family<Map<String, double>, String>((ref, weddingId) async {
-  // on watch pour que ça se refresh quand payments/expenses/budget changent
+// ============================================================================
+// SUMMARY & STATS (Calculs agrégés)
+// ============================================================================
+
+/// Résumé financier : budget, dépensé, payé, restant
+final paymentsSummaryProvider =
+    FutureProvider.autoDispose.family<Map<String, double>, String>((ref, weddingId) async {
+  // watch pour refresh automatique quand les dépendances changent
   final budget = await ref.watch(budgetProvider(weddingId).future);
   final expenses = await ref.watch(expensesProvider(weddingId).future);
   final payments = await ref.watch(paymentsProvider(weddingId).future);
-  
+
   final totalBudget = budget?.totalBudget ?? 0.0;
   final totalSpent = expenses.fold<double>(0.0, (sum, e) => sum + e.amount);
-  final totalPaid = payments.where((p) => p.status == 'completed').fold<double>(0.0, (sum, p) => sum + p.amount);
-      
+  final totalPaid = payments
+      .where((p) => p.status == 'completed')
+      .fold<double>(0.0, (sum, p) => sum + p.amount);
+
   return {
     'budget': totalBudget,
     'spent': totalSpent,
@@ -90,15 +174,95 @@ final paymentsSummaryProvider = FutureProvider.autoDispose.family<Map<String, do
   };
 });
 
-final dashboardStatsProvider = FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
+/// Stats dashboard : invités, présents, prestataires, tâches en attente
+final dashboardStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
   final guests = await ref.watch(guestsProvider(weddingId).future);
   final vendors = await ref.watch(vendorsProvider(weddingId).future);
   final tasks = await ref.watch(checklistProvider(weddingId).future);
-  
+
   return {
     'guests': guests.length,
     'present': guests.where((g) => g.isPresent).length,
     'vendors': vendors.length,
     'pendingTasks': tasks.where((t) => !t.isDone).length,
+  };
+});
+
+/// ✅ AJOUTÉ — Stats RSVP détaillées
+final rsvpStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
+  final guests = await ref.watch(guestsProvider(weddingId).future);
+
+  final confirmed = guests
+      .where((g) =>
+          g.rsvpStatus.toLowerCase() == 'confirmed' ||
+          g.rsvpStatus.toLowerCase() == 'accepted')
+      .length;
+  final declined = guests
+      .where((g) =>
+          g.rsvpStatus.toLowerCase() == 'declined' ||
+          g.rsvpStatus.toLowerCase() == 'no')
+      .length;
+  final pending = guests
+      .where((g) =>
+          g.rsvpStatus.isEmpty ||
+          g.rsvpStatus.toLowerCase() == 'pending')
+      .length;
+  final maybe = guests
+      .where((g) => g.rsvpStatus.toLowerCase() == 'maybe')
+      .length;
+
+  return {
+    'total': guests.length,
+    'confirmed': confirmed,
+    'declined': declined,
+    'pending': pending,
+    'maybe': maybe,
+  };
+});
+
+/// ✅ AJOUTÉ — Stats checklist détaillées
+final checklistStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
+  final tasks = await ref.watch(checklistProvider(weddingId).future);
+  final now = DateTime.now();
+
+  final total = tasks.length;
+  final done = tasks.where((t) => t.isDone).length;
+  final overdue = tasks
+      .where((t) => !t.isDone && t.dueDate != null && t.dueDate!.isBefore(now))
+      .length;
+  final urgent = tasks
+      .where((t) => !t.isDone && t.priority == 'urgent')
+      .length;
+
+  return {
+    'total': total,
+    'done': done,
+    'pending': total - done,
+    'overdue': overdue,
+    'urgent': urgent,
+  };
+});
+
+/// ✅ AJOUTÉ — Stats galerie
+final galleryStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
+  final gallery = await ref.watch(galleryProvider(weddingId).future);
+  return {
+    'total': gallery.length,
+  };
+});
+
+/// ✅ AJOUTÉ — Stats guestbook
+final guestbookStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
+  final entries = await ref.watch(guestbookProvider(weddingId).future);
+  final approved = entries.where((e) => e.isApproved).length;
+  return {
+    'total': entries.length,
+    'approved': approved,
+    'pending': entries.length - approved,
   };
 });
