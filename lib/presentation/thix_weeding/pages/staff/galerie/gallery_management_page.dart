@@ -2,7 +2,6 @@
 // ============================================================================
 // THIX WEDDING & EVENTS — GALLERY MANAGEMENT (PRODUCTION)
 // Design royal + Upload multi + Viewer plein écran + Légendes + Suppression
-// Branché sur providers & services EXISTANTS du dépôt
 // ============================================================================
 import 'dart:typed_data';
 
@@ -12,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ← AJOUTER CET IMPORT
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
