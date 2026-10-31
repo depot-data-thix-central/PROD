@@ -109,7 +109,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
   String _publishSection = 'upcoming';
   Uint8List? _imgBytes, _bannerBytes;
   final _picker = ImagePicker();
-  List<Map<String, dynamic>> _tiers = [];
+  List> _tiers = [];
 
   @override
   void initState() {
@@ -129,7 +129,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     _status = e?.status ?? 'upcoming';
     _startDate = e?.startDate ?? DateTime.now().add(const Duration(days: 7));
     _endDate = e?.endDate;
-    _ticketOpeningDate = e?.ticketOpeningDate; // Corrigé grâce au modèle mis à jour
+    _ticketOpeningDate = e?.ticketOpeningDate;
     _enableWaitingQueue = e?.enableWaitingQueue ?? false;
     _publishSection = e?.isFeatured == true
         ? 'featured'
@@ -208,7 +208,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
     final l10n = AppLocalizations.of(context);
     final n = TextEditingController();
     final p = TextEditingController();
-    final ca = TextEditingController();
+    final ca = TextEditingController(); // Contrôleur de capacité activé
 
     showDialog(
       context: context,
@@ -242,7 +242,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
               setState(() => _tiers.add({
                     'name': n.text.trim(),
                     'price': double.tryParse(p.text) ?? 0.0,
-                    'capacity': int.tryParse(ca.text) ?? 0
+                    'capacity': int.tryParse(ca.text) ?? 0 // Récupération correcte de la capacité saisie
                   }));
               Navigator.pop(ctx);
             },
@@ -286,7 +286,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         city: _cityCtrl.text.trim(),
         startDate: _startDate,
         endDate: _endDate,
-        ticketOpeningDate: _ticketOpeningDate, // Corrigé
+        ticketOpeningDate: _ticketOpeningDate,
         price: minPrice,
         priceCurrency: _currency,
         isFree: minPrice == 0 && _tiers.length == 1,
@@ -457,7 +457,6 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
             ),
             const SizedBox(height: 18),
             
-            // 🟢 SECTION : DATE D'OUVERTURE DE LA BILLETTERIE (PRÉ-COMMANDE)
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -495,7 +494,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
                           Row(
                             children: [
                               if (_ticketOpeningDate != null)
-                                GestureDetector( // Corrigé (remplacement InkWell non valide par GestureDetector pour l'icône)
+                                GestureDetector(
                                   onTap: () => setState(() => _ticketOpeningDate = null),
                                   child: const Icon(Icons.clear_rounded, size: 16, color: Colors.redAccent),
                                 ),
@@ -669,7 +668,7 @@ class _EventCreateEditPageState extends ConsumerState<EventCreateEditPage> {
         fillColor: EventTheme.surface,
         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)),
-        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)), // Corrigé la coquille "ThixPieceBorder"
+        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: EventTheme.border)),
         focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(ThixPolicy.rMd), borderSide: const BorderSide(color: Colors.white24, width: 1.2)),
         errorStyle: TextStyle(color: EventTheme.danger, fontSize: 10),
       );
