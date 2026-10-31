@@ -32,7 +32,7 @@ const int _kMaxBadgeDisplay = 99;
 const Set<String> _kSuspended = {'thixSante', 'thixMoney'};
 
 /// 💍 Route du module mariage (THIX WED).
-const String _kWeddingRoute = '/thix-wedding';
+const String _kWeddingRoute = '/thix-weeding';
 
 /// Durées d'animation des badges
 const Duration _kBadgePulseDuration = Duration(milliseconds: 900);
