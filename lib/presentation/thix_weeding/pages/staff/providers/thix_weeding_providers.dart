@@ -1,10 +1,12 @@
 // lib/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — PROVIDERS (PRODUCTION) — CORRIGÉ
-// ✅ expensesProvider(weddingId) corrigé avec argument
-// ✅ Tous les providers family passent correctement le weddingId
+// THIX WEDDING & EVENTS — PROVIDERS (PRODUCTION) — CORRIGÉ RIVERPOD 2.6.1
+// ✅ ref.read(xxx.future) au lieu de ref.watch(xxx).future
+// ✅ Import supabase_flutter ajouté pour expenseDetailProvider
+// ✅ expensesProvider(weddingId) avec argument correct
 // ============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/thix_weeding_models.dart';
 import '../services/thix_weeding_services.dart';
@@ -76,8 +78,6 @@ final expensesProvider =
 
 final expenseDetailProvider =
     FutureProvider.autoDispose.family<ExpenseModel, String>((ref, expenseId) async {
-  // Recherche par ID dans toutes les dépenses du wedding
-  // Le provider est appelé avec l'expenseId, on cherche via Supabase direct
   try {
     final res = await Supabase.instance.client
         .from('thix_weeding_expenses')
@@ -127,9 +127,10 @@ final messagesProvider =
   return ref.read(messageServiceProvider).getByWedding(weddingId);
 });
 
+// ✅ CORRIGÉ : ref.read(xxx.future) au lieu de ref.watch(xxx).future
 final unreadMessagesCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
-  final messages = await ref.watch(messagesProvider(weddingId)).future;
+  final messages = await ref.read(messagesProvider(weddingId).future);
   return messages.where((m) => !m.isRead && m.senderType == 'guest').length;
 });
 
@@ -148,14 +149,15 @@ final paymentDetailProvider =
 
 // ============================================================================
 // SUMMARY & STATS
+// ✅ TOUS les .future corrigés en ref.read(xxx.future)
 // ============================================================================
 
-/// ✅ CORRIGÉ : expensesProvider(weddingId) au lieu de expensesProvider
 final paymentsSummaryProvider =
     FutureProvider.autoDispose.family<Map<String, double>, String>((ref, weddingId) async {
-  final budget = await ref.watch(budgetProvider(weddingId)).future;
-  final expenses = await ref.watch(expensesProvider(weddingId)).future;
-  final payments = await ref.watch(paymentsProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future) compatible Riverpod 2.6.1
+  final budget = await ref.read(budgetProvider(weddingId).future);
+  final expenses = await ref.read(expensesProvider(weddingId).future);
+  final payments = await ref.read(paymentsProvider(weddingId).future);
 
   final totalBudget = budget?.totalBudget ?? 0.0;
   final totalSpent = expenses.fold<double>(0.0, (sum, e) => sum + e.amount);
@@ -173,9 +175,10 @@ final paymentsSummaryProvider =
 
 final dashboardStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final guests = await ref.watch(guestsProvider(weddingId)).future;
-  final vendors = await ref.watch(vendorsProvider(weddingId)).future;
-  final tasks = await ref.watch(checklistProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future)
+  final guests = await ref.read(guestsProvider(weddingId).future);
+  final vendors = await ref.read(vendorsProvider(weddingId).future);
+  final tasks = await ref.read(checklistProvider(weddingId).future);
 
   return {
     'guests': guests.length,
@@ -187,7 +190,8 @@ final dashboardStatsProvider =
 
 final rsvpStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final guests = await ref.watch(guestsProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future)
+  final guests = await ref.read(guestsProvider(weddingId).future);
 
   final confirmed = guests
       .where((g) =>
@@ -218,7 +222,8 @@ final rsvpStatsProvider =
 
 final checklistStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final tasks = await ref.watch(checklistProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future)
+  final tasks = await ref.read(checklistProvider(weddingId).future);
   final now = DateTime.now();
 
   final total = tasks.length;
@@ -241,13 +246,15 @@ final checklistStatsProvider =
 
 final galleryStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final gallery = await ref.watch(galleryProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future)
+  final gallery = await ref.read(galleryProvider(weddingId).future);
   return {'total': gallery.length};
 });
 
 final guestbookStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final entries = await ref.watch(guestbookProvider(weddingId)).future;
+  // ✅ CORRIGÉ : ref.read(xxx.future)
+  final entries = await ref.read(guestbookProvider(weddingId).future);
   final approved = entries.where((e) => e.isApproved).length;
   return {
     'total': entries.length,
