@@ -1,14 +1,9 @@
 // lib/presentation/thix_weeding/pages/home/thix_weeding_home_page.dart
 //
-// ThixWeedingHomePage — DESIGN v3 (blanc éditorial + rose romance + glassmorphism)
+// ThixWeedingHomePage — DESIGN v3.1
 //
-// ÉVOLutions :
-//   • Hero carousel géant (62% hauteur) avec photos changeables
-//   • Fond crème très clair + glassmorphism hairline (pas opaque)
-//   • Catégories en petits ronds compacts (36px) — style iOS
-//   • AppBar transparent → blanc au scroll
-//   • Sections éditoriales : offres, prestataires, annonces, trust
-//   • Background ambient romantique ultra-léger (zéro blur GPU)
+// ✅ FIX : carte "Rejoindre un mariage" ANCRÉE SUR le hero (plus jamais cachée)
+// ✅ Champ de saisie amélioré : focus ring rose, bouton effacer, hint explicite
 //
 import 'dart:async';
 import 'dart:math' as math;
@@ -25,24 +20,24 @@ import '../../data/repositories/wedding_repository_impl.dart';
 import '../../domain/entities/wedding_entity.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE — BLANC CRÈME + ROSE ROMANCE + OR CHAUD
+// PALETTE
 // ═══════════════════════════════════════════════════════════════════════════
 class _W {
-  static const Color bg = Color(0xFFFBF7F5);          // Crème très clair
+  static const Color bg = Color(0xFFFBF7F5);
   static const Color surface = Colors.white;
-  static const Color tile = Color(0xFFFFF4F2);        // Rose ultra pâle
+  static const Color tile = Color(0xFFFFF4F2);
   static const Color ink = Color(0xFF1E1E28);
   static const Color inkSoft = Color(0xFF7A6B6E);
-  static const Color line = Color(0xFFEFDAD5);        // Hairline chaude
-  static const Color rose = Color(0xFFD9667A);        // Rose THIX (aligné constellation)
+  static const Color line = Color(0xFFEFDAD5);
+  static const Color rose = Color(0xFFD9667A);
   static const Color roseLight = Color(0xFFFF8A9B);
   static const Color peach = Color(0xFFFFB0A3);
-  static const Color gold = Color(0xFFD4A574);        // Or chaleureux
-  static const Color plum = Color(0xFF8B5CF6);        // Violet accents
+  static const Color gold = Color(0xFFD4A574);
+  static const Color plum = Color(0xFF8B5CF6);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROVIDERS MÉTIER (inchangés, logique conservée)
+// PROVIDERS MÉTIER
 // ═══════════════════════════════════════════════════════════════════════════
 final homePromoSlidesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   await Future.delayed(const Duration(milliseconds: 250));
@@ -87,11 +82,6 @@ final homeCategoriesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   ];
 });
 
-final homeStatsProvider = FutureProvider<Map<String, int>>((ref) async {
-  await Future.delayed(const Duration(milliseconds: 200));
-  return {'Prestataires': 312, 'Avis': 1840, 'Offres': 26, 'Mariages': 97};
-});
-
 final homeOffersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   await Future.delayed(const Duration(milliseconds: 250));
   return [
@@ -110,7 +100,6 @@ final homeProvidersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) a
       'category': 'Salle de fête',
       'zone': 'Kinshasa',
       'rating': 4.8,
-      'reviews': 128,
       'price': r'Dès 600$',
       'image': 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80',
     },
@@ -119,7 +108,6 @@ final homeProvidersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) a
       'category': 'Traiteur',
       'zone': 'Goma',
       'rating': 4.9,
-      'reviews': 96,
       'price': r'Dès 450$',
       'image': 'https://images.unsplash.com/photo-1555244162-803834f70033?w=600&q=80',
     },
@@ -128,7 +116,6 @@ final homeProvidersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) a
       'category': 'Photographe',
       'zone': 'Lubumbashi',
       'rating': 4.9,
-      'reviews': 215,
       'price': r'Dès 300$',
       'image': 'https://images.unsplash.com/photo-1511285560929-80b456fea0bc?w=600&q=80',
     },
@@ -137,7 +124,6 @@ final homeProvidersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) a
       'category': 'Décoration',
       'zone': 'Kinshasa',
       'rating': 4.7,
-      'reviews': 78,
       'price': r'Dès 250$',
       'image': 'https://images.unsplash.com/photo-1464366400600-7168b8af9bc3?w=600&q=80',
     },
@@ -265,15 +251,10 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         duration: const Duration(seconds: 2),
         content: Row(children: [
-          Icon(
-            error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
-            color: Colors.white,
-            size: 18,
-          ),
+          Icon(error ? Icons.error_outline_rounded : Icons.check_circle_outline_rounded,
+              color: Colors.white, size: 18),
           const SizedBox(width: 10),
-          Expanded(
-            child: Text(msg, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700)),
-          ),
+          Expanded(child: Text(msg, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700))),
         ]),
       ));
   }
@@ -289,17 +270,15 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     final announcementsAsync = ref.watch(homeAnnouncementsProvider);
     final promosAsync = ref.watch(homePromoSlidesProvider);
 
-    final topPad = MediaQuery.paddingOf(context).top;
+    final topPad = MediaQuery.paddingOf(context);
 
     return Scaffold(
       backgroundColor: _W.bg,
       extendBodyBehindAppBar: true,
       body: Stack(
         children: [
-          // ── BACKGROUND AMBIENT TRÈS LÉGER ──
           const Positioned.fill(child: _AmbientBackground()),
 
-          // ── SCROLL ──
           RefreshIndicator(
             color: _W.rose,
             backgroundColor: _W.surface,
@@ -316,40 +295,32 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               controller: _scrollController,
               physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
-                // ── HERO CAROUSEL GÉANT (62% de l'écran) ──
+                // ── HERO + CARTE REJOINDRE ANCRÉE DESSUS ──
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.62,
+                    height: MediaQuery.of(context).size.height * 0.68,
                     child: promosAsync.when(
-                      data: (slides) => _HeroCarousel(slides: slides, topPad: topPad),
+                      data: (slides) => _HeroCarousel(
+                        slides: slides,
+                        topPad: topPad.top,
+                        idController: _idController,
+                        focusNode: _focusNode,
+                        isSearching: _isSearching,
+                        onSearch: _onSearch,
+                        onScanQr: _onScanQr,
+                      ),
                       loading: () => Container(
                         color: _W.tile,
-                        child: const Center(child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5)),
+                        child: const Center(
+                            child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5)),
                       ),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
                   ),
                 ),
 
-                // ── RECHERCHE PAR ID (overlay glass) ──
-                SliverToBoxAdapter(
-                  child: Transform.translate(
-                    offset: const Offset(0, -36),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _JoinSearchCard(
-                        controller: _idController,
-                        focusNode: _focusNode,
-                        isLoading: _isSearching,
-                        onSearch: _onSearch,
-                        onScanQr: _onScanQr,
-                      ),
-                    ),
-                  ),
-                ),
-
-                // ── CATÉGORIES EN PETITS RONDS ──
-                const SliverToBoxAdapter(child: SizedBox(height: 8)),
+                // ── CATÉGORIES ──
+                const SliverToBoxAdapter(child: SizedBox(height: 20)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -363,11 +334,11 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 
                 const SliverToBoxAdapter(child: SizedBox(height: 28)),
 
-                // ── OFFRES DU MOMENT ──
+                // ── OFFRES ──
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Offres du moment', action: 'Voir tout'),
+                    child: _SectionHeader(title: 'Offres du moment'),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -381,11 +352,11 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
-                // ── PRESTATAIRES RECOMMANDÉS ──
+                // ── PRESTATAIRES ──
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Prestataires recommandés', action: 'Voir tout'),
+                    child: _SectionHeader(title: 'Prestataires recommandés'),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -406,7 +377,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Dernières annonces', action: 'Voir tout'),
+                    child: _SectionHeader(title: 'Dernières annonces'),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
@@ -420,7 +391,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
 
-                // ── TRUST BADGES ──
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
@@ -433,9 +403,8 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
             ),
           ),
 
-          // ── APP BAR (transparent → blanc au scroll) ──
           _GlassAppBar(
-            topPad: topPad,
+            topPad: topPad.top,
             scrollY: _scrollY,
             onNotifications: _onNotifications,
             onStaff: _onStaffAccess,
@@ -447,7 +416,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// APP BAR — TRANSPARENT → BLANC GLASS AU SCROLL
+// APP BAR
 // ═══════════════════════════════════════════════════════════════════════════
 class _GlassAppBar extends StatelessWidget {
   final double topPad;
@@ -473,19 +442,15 @@ class _GlassAppBar extends StatelessWidget {
         builder: (_, y, __) {
           final t = (y / 280).clamp(0.0, 1.0).toDouble();
           final fg = Color.lerp(Colors.white, _W.ink, t)!;
-          final bg = Colors.white.withOpacity(0.85 * t);
 
           return Container(
             padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
             decoration: BoxDecoration(
-              color: bg,
-              border: Border(
-                bottom: BorderSide(color: _W.line.withOpacity(t), width: 1),
-              ),
+              color: Colors.white.withOpacity(0.85 * t),
+              border: Border(bottom: BorderSide(color: _W.line.withOpacity(t), width: 1)),
             ),
             child: Row(
               children: [
-                // Logo carré
                 Container(
                   width: 36,
                   height: 36,
@@ -496,17 +461,8 @@ class _GlassAppBar extends StatelessWidget {
                       end: Alignment.bottomRight,
                     ),
                     borderRadius: BorderRadius.circular(11),
-                    boxShadow: [
-                      BoxShadow(
-                        color: _W.rose.withOpacity(0.25 * (1 - t)),
-                        blurRadius: 10,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
                   ),
-                  child: const Center(
-                    child: Icon(Icons.favorite_rounded, color: Colors.white, size: 18),
-                  ),
+                  child: const Center(child: Icon(Icons.favorite_rounded, color: Colors.white, size: 18)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -514,36 +470,26 @@ class _GlassAppBar extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(
+                        text: TextSpan(children: [
+                          TextSpan(
                               text: 'THIX ',
                               style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
-                                color: fg,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            TextSpan(
+                                  fontWeight: FontWeight.w900, fontSize: 15, color: fg, letterSpacing: -0.3)),
+                          const TextSpan(
                               text: 'WED',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
-                                color: _W.rose,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                          ],
-                        ),
+                              style: TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                  fontSize: 15,
+                                  color: _W.rose,
+                                  letterSpacing: -0.3)),
+                        ]),
                       ),
                       Text(
                         'L\'élégance de votre union',
                         style: TextStyle(
-                          fontSize: 10,
-                          color: Color.lerp(Colors.white70, _W.inkSoft, t)!,
-                          fontWeight: FontWeight.w600,
-                        ),
+                            fontSize: 10,
+                            color: Color.lerp(Colors.white70, _W.inkSoft, t)!,
+                            fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
@@ -566,12 +512,7 @@ class _AppBarBtn extends StatelessWidget {
   final VoidCallback onTap;
   final int badge;
 
-  const _AppBarBtn({
-    required this.icon,
-    required this.fg,
-    required this.onTap,
-    this.badge = 0,
-  });
+  const _AppBarBtn({required this.icon, required this.fg, required this.onTap, this.badge = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -614,13 +555,26 @@ class _AppBarBtn extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HERO CAROUSEL — PHOTOS CHANGEABLES
+// HERO CAROUSEL + CARTE REJOINDRE ANCRÉE EN BAS (AU PREMIER PLAN)
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> slides;
   final double topPad;
+  final TextEditingController idController;
+  final FocusNode focusNode;
+  final bool isSearching;
+  final VoidCallback onSearch;
+  final VoidCallback onScanQr;
 
-  const _HeroCarousel({required this.slides, required this.topPad});
+  const _HeroCarousel({
+    required this.slides,
+    required this.topPad,
+    required this.idController,
+    required this.focusNode,
+    required this.isSearching,
+    required this.onSearch,
+    required this.onScanQr,
+  });
 
   @override
   State<_HeroCarousel> createState() => _HeroCarouselState();
@@ -648,9 +602,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || widget.slides.length <= 1) return;
-      final next = (_current + 1) % widget.slides.length;
       _pageCtrl.animateToPage(
-        next,
+        (_current + 1) % widget.slides.length,
         duration: const Duration(milliseconds: 600),
         curve: Curves.easeOutCubic,
       );
@@ -658,7 +611,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   }
 
   void _onChangePhotos() {
-    // TODO: Ouvrir une galerie d'admin pour modifier les slides
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(
@@ -669,10 +621,8 @@ class _HeroCarouselState extends State<_HeroCarousel> {
           Icon(Icons.photo_library_outlined, color: Colors.white, size: 18),
           SizedBox(width: 10),
           Expanded(
-            child: Text(
-              'Gestion des photos disponible depuis l\'espace staff',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
+            child: Text('Gestion des photos disponible depuis l\'espace staff',
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
           ),
         ]),
       ));
@@ -681,6 +631,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   @override
   Widget build(BuildContext context) {
     final slides = widget.slides;
+
     return Stack(
       fit: StackFit.expand,
       children: [
@@ -700,11 +651,9 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   errorBuilder: (_, __, ___) => Container(
                     color: _W.tile,
                     child: const Center(
-                      child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48),
-                    ),
+                        child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48)),
                   ),
                 ),
-                // ── OVERLAY GRADIENT DOUX ──
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -713,11 +662,10 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                       colors: [
                         Colors.black.withOpacity(0.35),
                         Colors.transparent,
-                        Colors.black.withOpacity(0.15),
-                        _W.bg.withOpacity(0.85),
-                        _W.bg,
+                        Colors.black.withOpacity(0.25),
+                        Colors.black.withOpacity(0.45),
                       ],
-                      stops: const [0.0, 0.25, 0.55, 0.85, 1.0],
+                      stops: const [0.0, 0.3, 0.7, 1.0],
                     ),
                   ),
                 ),
@@ -726,18 +674,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
           },
         ),
 
-        // ── CONTENU TEXTUEL ──
-        Positioned(
-          left: 20,
-          right: 20,
-          bottom: 90,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: _HeroContent(key: ValueKey(_current), slide: slides[_current]),
-          ),
-        ),
-
-        // ── BOUTON CHANGER PHOTOS (en haut à droite) ──
+        // ── BOUTON CHANGER PHOTOS ──
         Positioned(
           top: widget.topPad + 70,
           right: 16,
@@ -755,32 +692,36 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 children: [
                   Icon(Icons.photo_library_outlined, size: 14, color: Colors.white),
                   SizedBox(width: 6),
-                  Text(
-                    'Changer',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
+                  Text('Changer',
+                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
                 ],
               ),
             ),
           ),
         ),
 
-        // ── PAGINATION DOTS ──
+        // ── CONTENU ÉDITORIAL (remonté au-dessus de la carte) ──
+        Positioned(
+          left: 20,
+          right: 20,
+          bottom: 200,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 400),
+            child: _HeroContent(key: ValueKey(_current), slide: slides[_current]),
+          ),
+        ),
+
+        // ── DOTS ──
         Positioned(
           left: 0,
           right: 0,
-          bottom: 54,
+          bottom: 178,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(slides.length, (i) {
               final active = i == _current;
               return AnimatedContainer(
                 duration: const Duration(milliseconds: 280),
-                curve: Curves.easeOut,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 width: active ? 22 : 6,
                 height: 6,
@@ -790,6 +731,20 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 ),
               );
             }),
+          ),
+        ),
+
+        // ── ✅ CARTE REJOINDRE — TOUJOURS AU PREMIER PLAN ──
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 14,
+          child: _JoinBar(
+            controller: widget.idController,
+            focusNode: widget.focusNode,
+            isLoading: widget.isSearching,
+            onSearch: widget.onSearch,
+            onScanQr: widget.onScanQr,
           ),
         ),
       ],
@@ -807,47 +762,30 @@ class _HeroContent extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        // Tag
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: _W.rose,
-            borderRadius: BorderRadius.circular(12),
-          ),
+          decoration: BoxDecoration(color: _W.rose, borderRadius: BorderRadius.circular(12)),
           child: Text(
             (slide['tag'] as String).toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 9.5,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-            ),
+            style: const TextStyle(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1),
           ),
         ),
         const SizedBox(height: 12),
-        // Titre
         Text(
           slide['title'] as String,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            color: Colors.white,
-            fontSize: 32,
-            fontWeight: FontWeight.w900,
-            height: 1.05,
-            letterSpacing: -1,
-          ),
+              color: Colors.white, fontSize: 30, fontWeight: FontWeight.w900, height: 1.05, letterSpacing: -1),
         ),
         const SizedBox(height: 8),
         Text(
           slide['subtitle'] as String,
-          style: TextStyle(
-            color: Colors.white.withOpacity(0.88),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
-          ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.w600, height: 1.3),
         ),
-        const SizedBox(height: 18),
-        // CTA
+        const SizedBox(height: 16),
         SizedBox(
           height: 44,
           child: ElevatedButton.icon(
@@ -861,10 +799,8 @@ class _HeroContent extends StatelessWidget {
               ));
             },
             icon: const Icon(Icons.arrow_forward_rounded, size: 16),
-            label: Text(
-              slide['cta'] as String,
-              style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13),
-            ),
+            label: Text(slide['cta'] as String,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: _W.ink,
@@ -880,16 +816,16 @@ class _HeroContent extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CARTE REJOINDRE (overlay glass après hero)
+// ✅ CARTE REJOINDRE — CHAMP DE SAISIE AMÉLIORÉ
 // ═══════════════════════════════════════════════════════════════════════════
-class _JoinSearchCard extends StatelessWidget {
+class _JoinBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool isLoading;
   final VoidCallback onSearch;
   final VoidCallback onScanQr;
 
-  const _JoinSearchCard({
+  const _JoinBar({
     required this.controller,
     required this.focusNode,
     required this.isLoading,
@@ -898,128 +834,199 @@ class _JoinSearchCard extends StatelessWidget {
   });
 
   @override
+  State<_JoinBar> createState() => _JoinBarState();
+}
+
+class _JoinBarState extends State<_JoinBar> {
+  bool _focused = false;
+  bool _hasText = false;
+
+  void _syncFocus() => setState(() => _focused = widget.focusNode.hasFocus);
+  void _syncText() => setState(() => _hasText = widget.controller.text.trim().isNotEmpty);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.focusNode.addListener(_syncFocus);
+    widget.controller.addListener(_syncText);
+    _syncText();
+  }
+
+  @override
+  void dispose() {
+    widget.focusNode.removeListener(_syncFocus);
+    widget.controller.removeListener(_syncText);
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+        color: Colors.white.withOpacity(0.96),
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: Colors.white),
         boxShadow: [
-          BoxShadow(color: _W.rose.withOpacity(0.08), blurRadius: 20, offset: const Offset(0, 8)),
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 2)),
+          BoxShadow(color: _W.rose.withOpacity(0.12), blurRadius: 24, offset: const Offset(0, 10)),
+          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 4)),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
+          // ── Titre ──
           Row(children: [
             Container(
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: _W.rose.withOpacity(0.12),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 18),
+              decoration: BoxDecoration(color: _W.rose.withOpacity(0.12), shape: BoxShape.circle),
+              child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 17),
             ),
             const SizedBox(width: 10),
             const Expanded(
               child: Text(
                 'Rejoindre un mariage',
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                  color: _W.ink,
-                  letterSpacing: -0.3,
-                ),
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3),
               ),
             ),
           ]),
-          const SizedBox(height: 6),
-          Text(
-            'Entrez l\'ID unique de l\'invitation ou scannez le QR Code.',
-            style: TextStyle(fontSize: 11.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.35),
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
+
+          // ── Champ + boutons ──
           Row(children: [
+            // Champ de saisie amélioré
             Expanded(
-              child: Container(
-                height: 46,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                height: 52,
                 decoration: BoxDecoration(
-                  color: _W.tile,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: _W.line),
-                ),
-                child: Row(children: [
-                  const SizedBox(width: 12),
-                  const Icon(Icons.search_rounded, size: 18, color: _W.inkSoft),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: TextField(
-                      controller: controller,
-                      focusNode: focusNode,
-                      textCapitalization: TextCapitalization.characters,
-                      style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _W.ink, letterSpacing: 1),
-                      decoration: const InputDecoration(
-                        isDense: true,
-                        hintText: 'ID du mariage...',
-                        hintStyle: TextStyle(fontSize: 12, color: _W.inkSoft, fontWeight: FontWeight.w500, letterSpacing: 0),
-                        border: InputBorder.none,
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                      onSubmitted: (_) => onSearch(),
-                    ),
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: _focused ? _W.rose : _W.line,
+                    width: _focused ? 1.6 : 1.2,
                   ),
-                ]),
+                  boxShadow: _focused
+                      ? [BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4))]
+                      : null,
+                ),
+                child: TextField(
+                  controller: widget.controller,
+                  focusNode: widget.focusNode,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.go,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: _W.ink,
+                    letterSpacing: 1.5,
+                  ),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    filled: true,
+                    fillColor: Colors.transparent,
+                    hintText: 'Ex : TEST2026',
+                    hintStyle: const TextStyle(
+                      fontSize: 13,
+                      color: _W.inkSoft,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1,
+                    ),
+                    prefixIcon: Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: _focused ? _W.rose : _W.inkSoft,
+                    ),
+                    suffixIcon: _hasText
+                        ? IconButton(
+                            icon: const Icon(Icons.cancel_rounded, size: 17, color: _W.inkSoft),
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              widget.controller.clear();
+                              widget.focusNode.requestFocus();
+                            },
+                          )
+                        : null,
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  onSubmitted: (_) => widget.onSearch(),
+                ),
               ),
             ),
             const SizedBox(width: 8),
-            _IconBtn(
-              icon: Icons.arrow_forward_rounded,
-              onTap: isLoading ? null : onSearch,
-              filled: true,
-              child: isLoading
-                  ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, valueColor: AlwaysStoppedAnimation(Colors.white)))
-                  : null,
+            // Bouton rejoindre
+            Tooltip(
+              message: 'Rejoindre',
+              child: InkWell(
+                onTap: widget.isLoading ? null : widget.onSearch,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    gradient: const LinearGradient(
+                      colors: [_W.rose, _W.roseLight],
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(color: _W.rose.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: widget.isLoading
+                      ? const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                        )
+                      : const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 21),
+                ),
+              ),
             ),
             const SizedBox(width: 6),
-            _IconBtn(icon: Icons.qr_code_scanner_rounded, onTap: onScanQr),
+            // Bouton QR
+            Tooltip(
+              message: 'Scanner le QR',
+              child: InkWell(
+                onTap: widget.onScanQr,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: _W.tile,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _W.line),
+                  ),
+                  child: const Icon(Icons.qr_code_scanner_rounded, size: 21, color: _W.ink),
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 8),
+
+          // ── Microcopy ──
+          Row(children: [
+            const Icon(Icons.info_outline_rounded, size: 12, color: _W.inkSoft),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'L\'ID figure sur l\'invitation envoyée par les mariés.',
+                style: TextStyle(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.3),
+              ),
+            ),
           ]),
         ],
-      ),
-    );
-  }
-}
-
-class _IconBtn extends StatelessWidget {
-  final IconData icon;
-  final VoidCallback? onTap;
-  final bool filled;
-  final Widget? child;
-
-  const _IconBtn({required this.icon, this.onTap, this.filled = false, this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(14),
-      child: Container(
-        width: 46,
-        height: 46,
-        decoration: BoxDecoration(
-          color: filled ? _W.rose : _W.tile,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: filled ? _W.rose : _W.line),
-        ),
-        child: child ?? Icon(icon, size: 20, color: filled ? Colors.white : _W.ink),
       ),
     );
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CATÉGORIES EN PETITS RONDS (36px) — HORIZONTAL
+// CATÉGORIES PETITS RONDS
 // ═══════════════════════════════════════════════════════════════════════════
 class _CategoryRow extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
@@ -1038,11 +1045,8 @@ class _CategoryRow extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (_, i) {
           final c = categories[i];
-          final label = c['label'] as String;
-          final icon = c['icon'] as IconData;
-
           return GestureDetector(
-            onTap: () => onTap(label),
+            onTap: () => onTap(c['label'] as String),
             child: SizedBox(
               width: 60,
               child: Column(
@@ -1059,20 +1063,15 @@ class _CategoryRow extends StatelessWidget {
                         BoxShadow(color: _W.rose.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 3)),
                       ],
                     ),
-                    child: Icon(icon, size: 20, color: _W.rose),
+                    child: Icon(c['icon'] as IconData, size: 20, color: _W.rose),
                   ),
                   const SizedBox(height: 6),
                   Text(
-                    label,
+                    c['label'] as String,
                     textAlign: TextAlign.center,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w700,
-                      color: _W.ink,
-                      letterSpacing: -0.1,
-                    ),
+                    style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _W.ink),
                   ),
                 ],
               ),
@@ -1085,13 +1084,11 @@ class _CategoryRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SECTION HEADER ÉDITORIAL
+// SECTION HEADER
 // ═══════════════════════════════════════════════════════════════════════════
 class _SectionHeader extends StatelessWidget {
   final String title;
-  final String action;
-
-  const _SectionHeader({required this.title, this.action = 'Voir tout'});
+  const _SectionHeader({required this.title});
 
   @override
   Widget build(BuildContext context) {
@@ -1107,29 +1104,15 @@ class _SectionHeader extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         Expanded(
-          child: Text(
-            title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: _W.ink,
-              letterSpacing: -0.4,
-            ),
-          ),
+          child: Text(title,
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4)),
         ),
         GestureDetector(
           onTap: () => HapticFeedback.selectionClick(),
-          child: Row(children: [
-            Text(
-              action,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: _W.rose,
-              ),
-            ),
-            const SizedBox(width: 2),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose),
+          child: const Row(children: [
+            Text('Voir tout', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _W.rose)),
+            SizedBox(width: 2),
+            Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose),
           ]),
         ),
       ],
@@ -1138,7 +1121,7 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// OFFRES DU MOMENT
+// OFFRES
 // ═══════════════════════════════════════════════════════════════════════════
 class _OffersRow extends StatelessWidget {
   final List<Map<String, dynamic>> offers;
@@ -1168,51 +1151,37 @@ class _OffersRow extends StatelessWidget {
                 color: _W.surface,
                 borderRadius: BorderRadius.circular(20),
                 border: Border.all(color: _W.line),
-                boxShadow: [
-                  BoxShadow(color: color.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 5)),
-                ],
+                boxShadow: [BoxShadow(color: color.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 5))],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      o['discount'] as String,
-                      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5),
-                    ),
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+                    child: Text(o['discount'] as String,
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
                   ),
                   const Spacer(),
                   Row(children: [
                     Container(
                       padding: const EdgeInsets.all(6),
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
+                      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
                       child: Icon(o['icon'] as IconData, size: 14, color: color),
                     ),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Text(
-                        o['title'] as String,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2),
-                      ),
+                      child: Text(o['title'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2)),
                     ),
                   ]),
                   const SizedBox(height: 3),
-                  Text(
-                    o['subtitle'] as String,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600),
-                  ),
+                  Text(o['subtitle'] as String,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -1224,7 +1193,7 @@ class _OffersRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRES (grille 2 colonnes)
+// PRESTATAIRES
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProvidersGrid extends StatelessWidget {
   final List<Map<String, dynamic>> providers;
@@ -1253,9 +1222,7 @@ class _ProvidersGrid extends StatelessWidget {
               color: _W.surface,
               borderRadius: BorderRadius.circular(22),
               border: Border.all(color: _W.line),
-              boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5)),
-              ],
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5))],
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(
@@ -1295,19 +1262,15 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        p['name'] as String,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3),
-                      ),
+                      Text(p['name'] as String,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
                       const SizedBox(height: 2),
-                      Text(
-                        '${p['category']} · ${p['zone']}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600),
-                      ),
+                      Text('${p['category']} · ${p['zone']}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1315,15 +1278,11 @@ class _ProvidersGrid extends StatelessWidget {
                           Row(children: [
                             const Icon(Icons.star_rounded, size: 13, color: _W.gold),
                             const SizedBox(width: 3),
-                            Text(
-                              '${p['rating']}',
-                              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink),
-                            ),
+                            Text('${p['rating']}',
+                                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
                           ]),
-                          Text(
-                            p['price'] as String,
-                            style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose),
-                          ),
+                          Text(p['price'] as String,
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose)),
                         ],
                       ),
                     ],
@@ -1367,9 +1326,7 @@ class _AnnouncementsRow extends StatelessWidget {
                 color: _W.surface,
                 borderRadius: BorderRadius.circular(22),
                 border: Border.all(color: _W.line),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5)),
-                ],
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5))],
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
@@ -1387,23 +1344,16 @@ class _AnnouncementsRow extends StatelessWidget {
                             end: Alignment.bottomRight,
                           ),
                         ),
-                        child: Center(
-                          child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7)),
-                        ),
+                        child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7))),
                       ),
                       Positioned(
                         top: 8,
                         left: 8,
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: _W.ink,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            (a['tag'] as String).toUpperCase(),
-                            style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6),
-                          ),
+                          decoration: BoxDecoration(color: _W.ink, borderRadius: BorderRadius.circular(8)),
+                          child: Text((a['tag'] as String).toUpperCase(),
+                              style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)),
                         ),
                       ),
                     ]),
@@ -1413,17 +1363,13 @@ class _AnnouncementsRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          a['title'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink),
-                        ),
+                        Text(a['title'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink)),
                         const Spacer(),
-                        Text(
-                          a['subtitle'] as String,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose),
-                        ),
+                        Text(a['subtitle'] as String,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose)),
                       ],
                     ),
                   ),
@@ -1458,9 +1404,7 @@ class _TrustRow extends StatelessWidget {
         color: _W.surface,
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _W.line),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 4)),
-        ],
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -1471,24 +1415,17 @@ class _TrustRow extends StatelessWidget {
               children: [
                 Container(
                   padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: _W.rose.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
+                  decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle),
                   child: Icon(e['icon'] as IconData, size: 18, color: _W.rose),
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  e['title'] as String,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2),
-                ),
+                Text(e['title'] as String,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2)),
                 const SizedBox(height: 1),
-                Text(
-                  e['subtitle'] as String,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2),
-                ),
+                Text(e['subtitle'] as String,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2)),
               ],
             ),
           );
@@ -1499,7 +1436,7 @@ class _TrustRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BACKGROUND AMBIENT — ROMANTIQUE LÉGER (ZÉRO BLUR GPU)
+// BACKGROUND AMBIENT
 // ═══════════════════════════════════════════════════════════════════════════
 class _AmbientBackground extends StatefulWidget {
   const _AmbientBackground();
@@ -1534,10 +1471,7 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
           height: h,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.all(Radius.elliptical(w, h)),
-            gradient: RadialGradient(
-              colors: [color, color.withOpacity(0.0)],
-              stops: const [0.1, 1.0],
-            ),
+            gradient: RadialGradient(colors: [color, color.withOpacity(0.0)], stops: const [0.1, 1.0]),
           ),
         ),
       ),
