@@ -1,8 +1,8 @@
 // lib/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — PROVIDERS (PRODUCTION)
-// Tous les providers Riverpod + Summary + Stats + Detail providers
-// ⚠️ IMPORTS CORRIGÉS : chemin relatif depuis pages/staff/providers/
+// THIX WEDDING & EVENTS — PROVIDERS (PRODUCTION) — CORRIGÉ
+// ✅ expensesProvider(weddingId) corrigé avec argument
+// ✅ Tous les providers family passent correctement le weddingId
 // ============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -56,7 +56,6 @@ final vendorsProvider =
   return ref.read(vendorServiceProvider).getByWedding(weddingId);
 });
 
-/// ✅ AJOUTÉ — Détail d'un prestataire unique
 final vendorDetailProvider =
     FutureProvider.autoDispose.family<VendorModel, String>((ref, vendorId) async {
   return ref.read(vendorServiceProvider).getById(vendorId);
@@ -75,19 +74,20 @@ final expensesProvider =
   return ref.read(budgetServiceProvider).getExpenses(weddingId);
 });
 
-/// ✅ AJOUTÉ — Détail d'une dépense unique
 final expenseDetailProvider =
     FutureProvider.autoDispose.family<ExpenseModel, String>((ref, expenseId) async {
-  final expenses = await ref.watch(expensesProvider).future;
-  // Chercher dans la liste locale ou requête directe
+  // Recherche par ID dans toutes les dépenses du wedding
+  // Le provider est appelé avec l'expenseId, on cherche via Supabase direct
   try {
-    final allExpenses = await ref.read(budgetServiceProvider).getExpenses('');
-    // Fallback: chercher par ID dans toutes les dépenses
-    for (final e in allExpenses) {
-      if (e.id == expenseId) return e;
-    }
-  } catch (_) {}
-  throw Exception('Dépense introuvable ($expenseId)');
+    final res = await Supabase.instance.client
+        .from('thix_weeding_expenses')
+        .select()
+        .eq('id', expenseId)
+        .single();
+    return ExpenseModel.fromJson(Map<String, dynamic>.from(res));
+  } catch (_) {
+    throw Exception('Dépense introuvable ($expenseId)');
+  }
 });
 
 // ============================================================================
@@ -98,7 +98,6 @@ final checklistProvider =
   return ref.read(checklistServiceProvider).getByWedding(weddingId);
 });
 
-/// ✅ AJOUTÉ — Détail d'une tâche checklist unique
 final checklistDetailProvider =
     FutureProvider.autoDispose.family<ChecklistModel, String>((ref, taskId) async {
   return ref.read(checklistServiceProvider).getById(taskId);
@@ -128,10 +127,9 @@ final messagesProvider =
   return ref.read(messageServiceProvider).getByWedding(weddingId);
 });
 
-/// ✅ AJOUTÉ — Compteur de messages non lus
 final unreadMessagesCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
-  final messages = await ref.watch(messagesProvider(weddingId).future);
+  final messages = await ref.watch(messagesProvider(weddingId)).future;
   return messages.where((m) => !m.isRead && m.senderType == 'guest').length;
 });
 
@@ -149,16 +147,15 @@ final paymentDetailProvider =
 });
 
 // ============================================================================
-// SUMMARY & STATS (Calculs agrégés)
+// SUMMARY & STATS
 // ============================================================================
 
-/// Résumé financier : budget, dépensé, payé, restant
+/// ✅ CORRIGÉ : expensesProvider(weddingId) au lieu de expensesProvider
 final paymentsSummaryProvider =
     FutureProvider.autoDispose.family<Map<String, double>, String>((ref, weddingId) async {
-  // watch pour refresh automatique quand les dépendances changent
-  final budget = await ref.watch(budgetProvider(weddingId).future);
-  final expenses = await ref.watch(expensesProvider(weddingId).future);
-  final payments = await ref.watch(paymentsProvider(weddingId).future);
+  final budget = await ref.watch(budgetProvider(weddingId)).future;
+  final expenses = await ref.watch(expensesProvider(weddingId)).future;
+  final payments = await ref.watch(paymentsProvider(weddingId)).future;
 
   final totalBudget = budget?.totalBudget ?? 0.0;
   final totalSpent = expenses.fold<double>(0.0, (sum, e) => sum + e.amount);
@@ -174,12 +171,11 @@ final paymentsSummaryProvider =
   };
 });
 
-/// Stats dashboard : invités, présents, prestataires, tâches en attente
 final dashboardStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final guests = await ref.watch(guestsProvider(weddingId).future);
-  final vendors = await ref.watch(vendorsProvider(weddingId).future);
-  final tasks = await ref.watch(checklistProvider(weddingId).future);
+  final guests = await ref.watch(guestsProvider(weddingId)).future;
+  final vendors = await ref.watch(vendorsProvider(weddingId)).future;
+  final tasks = await ref.watch(checklistProvider(weddingId)).future;
 
   return {
     'guests': guests.length,
@@ -189,10 +185,9 @@ final dashboardStatsProvider =
   };
 });
 
-/// ✅ AJOUTÉ — Stats RSVP détaillées
 final rsvpStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final guests = await ref.watch(guestsProvider(weddingId).future);
+  final guests = await ref.watch(guestsProvider(weddingId)).future;
 
   final confirmed = guests
       .where((g) =>
@@ -206,8 +201,7 @@ final rsvpStatsProvider =
       .length;
   final pending = guests
       .where((g) =>
-          g.rsvpStatus.isEmpty ||
-          g.rsvpStatus.toLowerCase() == 'pending')
+          g.rsvpStatus.isEmpty || g.rsvpStatus.toLowerCase() == 'pending')
       .length;
   final maybe = guests
       .where((g) => g.rsvpStatus.toLowerCase() == 'maybe')
@@ -222,10 +216,9 @@ final rsvpStatsProvider =
   };
 });
 
-/// ✅ AJOUTÉ — Stats checklist détaillées
 final checklistStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final tasks = await ref.watch(checklistProvider(weddingId).future);
+  final tasks = await ref.watch(checklistProvider(weddingId)).future;
   final now = DateTime.now();
 
   final total = tasks.length;
@@ -246,19 +239,15 @@ final checklistStatsProvider =
   };
 });
 
-/// ✅ AJOUTÉ — Stats galerie
 final galleryStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final gallery = await ref.watch(galleryProvider(weddingId).future);
-  return {
-    'total': gallery.length,
-  };
+  final gallery = await ref.watch(galleryProvider(weddingId)).future;
+  return {'total': gallery.length};
 });
 
-/// ✅ AJOUTÉ — Stats guestbook
 final guestbookStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  final entries = await ref.watch(guestbookProvider(weddingId).future);
+  final entries = await ref.watch(guestbookProvider(weddingId)).future;
   final approved = entries.where((e) => e.isApproved).length;
   return {
     'total': entries.length,
