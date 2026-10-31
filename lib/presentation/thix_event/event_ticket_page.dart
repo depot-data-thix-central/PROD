@@ -1,15 +1,9 @@
-// lib/presentation/thix_event/pages/event_ticket_page.dart
+// lib/presentation/thix_event/event_ticket_page.dart
 //
-// EventTicketPage — DESIGN v2 (aligné homepage : blanc épuré + glassmorphism)
+// EventTicketPage — DESIGN v2 (blanc épuré + glassmorphism)
 //
-// • Billet clair premium : carte blanche, bordures hairline, ombres douces
-// • Filigrane « THIX » discret + voile holographique animé (propre, léger)
-// • Encoches latérales ALIGNÉES automatiquement sur la ligne pointillée
-// • Catégories dynamiques (Standard / VIP / VVIP / Early) adaptées au clair
-// • Grille d'infos : quantité, catégorie, prix, réservation + code-barres
-// • Sécurité PIN conservée, QR protégé, ID masqué
 import 'dart:math' as math;
-import 'dart:ui';
+import 'dart:ui' as ui; // ✅ Import préfixé pour éviter le conflit TextDirection
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +12,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ============================================================================
-// PALETTE — ALIGNÉE HOMEPAGE (blanc épuré)
+// PALETTE
 // ============================================================================
 
 class _C {
@@ -35,12 +29,12 @@ class _C {
 }
 
 // ============================================================================
-// CATÉGORIES DYNAMIQUES (adaptées au thème clair)
+// CATÉGORIES DYNAMIQUES
 // ============================================================================
 
 class TicketStyle {
-  final Color color; // accent fort
-  final Color soft; // fond teinté
+  final Color color;
+  final Color soft;
   final String label;
 
   const TicketStyle(this.color, this.soft, this.label);
@@ -67,7 +61,7 @@ class TicketStyle {
 }
 
 // ============================================================================
-// FILIGRANE « THIX » (peintre discret, diagonal)
+// FILIGRANE « THIX »
 // ============================================================================
 
 class _WatermarkPainter extends CustomPainter {
@@ -75,7 +69,7 @@ class _WatermarkPainter extends CustomPainter {
   _WatermarkPainter(this.color);
 
   @override
-  void paint(Canvas canvas, Size size) {
+  void paint(ui.Canvas canvas, ui.Size size) { // ✅ ui. préfixe
     final tp = TextPainter(
       text: TextSpan(
         text: 'THIX',
@@ -86,14 +80,14 @@ class _WatermarkPainter extends CustomPainter {
           letterSpacing: 5,
         ),
       ),
-      textDirection: TextDirection.ltr,
+      textDirection: ui.TextDirection.ltr, // ✅ CORRECTION : ui.TextDirection
     )..layout();
 
     canvas.save();
     canvas.rotate(-0.32);
     for (double y = -size.height * 0.35; y < size.height * 1.35; y += 92) {
       for (double x = -size.width * 0.25; x < size.width * 1.25; x += 150) {
-        tp.paint(canvas, Offset(x, y));
+        tp.paint(canvas, ui.Offset(x, y)); // ✅ ui.Offset
       }
     }
     canvas.restore();
@@ -126,7 +120,6 @@ class _EventTicketPageState extends State<EventTicketPage>
   @override
   void initState() {
     super.initState();
-    // Voile holographique : balayage lent et propre (3.5 s)
     _holo = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 3500))
       ..repeat();
@@ -139,7 +132,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     super.dispose();
   }
 
-  // ── LOGIQUE STABLE CONSERVÉE ──
   Future<void> _fetch() async {
     try {
       final res = await Supabase.instance.client
@@ -244,7 +236,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     );
   }
 
-  // ── HELPERS UI ──
   Widget _metaRow(IconData icon, String text, Color tint) {
     return Row(
       children: [
@@ -347,10 +338,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     }
   }
 
-  // ════════════════════════════════════════════════════════════
-  // BUILD
-  // ════════════════════════════════════════════════════════════
-
   @override
   Widget build(BuildContext context) {
     if (_loading) {
@@ -433,7 +420,7 @@ class _EventTicketPageState extends State<EventTicketPage>
         preferredSize: const Size.fromHeight(52),
         child: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            filter: ui.ImageFilter.blur(sigmaX: 18, sigmaY: 18), // ✅ ui.
             child: Container(
               decoration: const BoxDecoration(
                 color: Colors.white70,
@@ -458,7 +445,6 @@ class _EventTicketPageState extends State<EventTicketPage>
       ),
       body: Stack(
         children: [
-          // Ambiance légère (halos discrets)
           Positioned(
               top: -80,
               right: -60,
@@ -502,10 +488,6 @@ class _EventTicketPageState extends State<EventTicketPage>
     );
   }
 
-  // ════════════════════════════════════════════════════════════
-  // LE BILLET
-  // ════════════════════════════════════════════════════════════
-
   Widget _ticketCard({
     required String title,
     required String dateFmt,
@@ -538,7 +520,6 @@ class _EventTicketPageState extends State<EventTicketPage>
       child: Stack(
         children: [
           Column(children: [
-            // ── Couverture ──
             if (img != null)
               Stack(
                 children: [
@@ -591,7 +572,6 @@ class _EventTicketPageState extends State<EventTicketPage>
                 ),
               ),
 
-            // ── Infos principales ──
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 4, 22, 20),
               child: Column(
@@ -616,7 +596,6 @@ class _EventTicketPageState extends State<EventTicketPage>
                           style.soft),
                     ],
                     const SizedBox(height: 16),
-                    // Grille d'infos 2×2
                     Row(children: [
                       Expanded(
                           child: _infoTile(
@@ -639,7 +618,6 @@ class _EventTicketPageState extends State<EventTicketPage>
                   ]),
             ),
 
-            // ── Ligne pointillée + encoches ALIGNÉES ──
             SizedBox(
               height: 1,
               child: Stack(
@@ -685,7 +663,6 @@ class _EventTicketPageState extends State<EventTicketPage>
               ),
             ),
 
-            // ── Section QR ──
             Padding(
               padding: const EdgeInsets.fromLTRB(22, 22, 22, 24),
               child: Column(children: [
@@ -799,7 +776,6 @@ class _EventTicketPageState extends State<EventTicketPage>
             ),
           ]),
 
-          // ── FILIGRANE discret ──
           Positioned.fill(
             child: IgnorePointer(
               child: CustomPaint(painter: _WatermarkPainter(
@@ -807,7 +783,6 @@ class _EventTicketPageState extends State<EventTicketPage>
             ),
           ),
 
-          // ── VOILE HOLOGRAPHIQUE ANIMÉ (propre & léger) ──
           Positioned.fill(
             child: IgnorePointer(
               child: AnimatedBuilder(
@@ -843,7 +818,7 @@ class _EventTicketPageState extends State<EventTicketPage>
     return ClipRRect(
       borderRadius: BorderRadius.circular(14),
       child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        filter: ui.ImageFilter.blur(sigmaX: 10, sigmaY: 10), // ✅ ui.
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
