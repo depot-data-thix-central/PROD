@@ -1,8 +1,7 @@
 // lib/presentation/thix_weeding/pages/staff/invités/add_guest_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION)
+// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION) — CORRIGÉ WEB/WASM
 // Design royal + Recherche globale Thix ID / Nom + QR unique auto-généré
-// Branché sur providers EXISTANTS du dépôt
 // ============================================================================
 import 'dart:async';
 
@@ -15,6 +14,29 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
+
+// ============================================================================
+// STYLE MONOSPACE GLOBAL (compatible Web / WASM)
+// ============================================================================
+const TextStyle _monoStyle = TextStyle(
+  fontFamily: 'monospace',
+  fontFeatures: [FontFeature.tabularFigures()],
+  letterSpacing: 0.5,
+);
+
+TextStyle _mono({
+  double? fontSize,
+  FontWeight? fontWeight,
+  Color? color,
+  double? letterSpacing,
+}) {
+  return _monoStyle.copyWith(
+    fontSize: fontSize,
+    fontWeight: fontWeight,
+    color: color,
+    letterSpacing: letterSpacing ?? 0.5,
+  );
+}
 
 // ============================================================================
 // DESIGN SYSTEM ROYAL
@@ -91,17 +113,14 @@ class _Group {
 // ============================================================================
 // PROVIDER LOCAL : recherche globale dans Thix ID
 // ============================================================================
-/// Recherche un compte Thix par nom ou Thix ID dans la base centrale
-/// Table utilisée : `profiles` (ajuster si votre table est différente)
 final globalSearchProvider =
     FutureProvider.autoDispose.family<List<_ThixAccount>, String>((ref, query) async {
   if (query.trim().length < 2) return [];
 
   try {
     final supa = Supabase.instance.client;
-    // Recherche flexible sur name OU thix_id
     final results = await supa
-        .from('profiles') // ← adapter si vous utilisez `thix_id_accounts` ou autre
+        .from('profiles')
         .select('id, full_name, email, phone, thix_id')
         .or('full_name.ilike.%$query%,thix_id.ilike.%$query%,email.ilike.%$query%')
         .limit(10);
@@ -140,7 +159,6 @@ class _ThixAccount {
 // GÉNÉRATEUR DE THIX ID UNIQUE POUR INVITÉ
 // ============================================================================
 class _ThixIdGenerator {
-  /// Génère un Thix ID unique au format THIX-GST-XXXXXXXX-YYYY
   static String generate() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final random = DateTime.now().microsecondsSinceEpoch % 9999;
@@ -149,7 +167,6 @@ class _ThixIdGenerator {
     return 'THIX-GST-$part1-$part2';
   }
 
-  /// Génère un checksum MD5-like (4 caractères)
   static String checksum(String payload) {
     var hash = 0;
     for (var i = 0; i < payload.length; i++) {
@@ -174,7 +191,6 @@ class AddGuestPage extends ConsumerStatefulWidget {
 
 class _AddGuestPageState extends ConsumerState<AddGuestPage>
     with SingleTickerProviderStateMixin {
-  // Form controllers
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
@@ -184,7 +200,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   final _notesCtrl = TextEditingController();
   final _tableCtrl = TextEditingController();
 
-  // State
   String _group = 'amis';
   int _count = 1;
   bool _isVip = false;
@@ -193,7 +208,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   bool _isInitLoading = false;
   _ThixAccount? _linkedAccount;
 
-  // Search debounce
   Timer? _debounce;
   String _searchQuery = '';
 
@@ -205,7 +219,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     if (_isEdit) {
       _loadEdit();
     } else {
-      // Générer un Thix ID unique pour le nouvel invité
       _thixIdCtrl.text = _ThixIdGenerator.generate();
     }
   }
@@ -223,9 +236,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     super.dispose();
   }
 
-  // ============================================================================
-  // DATA
-  // ============================================================================
   Future<void> _loadEdit() async {
     setState(() => _isInitLoading = true);
     try {
@@ -383,9 +393,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
       ));
   }
 
-  // ============================================================================
-  // UI
-  // ============================================================================
   @override
   Widget build(BuildContext context) {
     if (_isInitLoading) {
@@ -399,18 +406,15 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // ── APP BAR ────────────────────────────────────────────────────
             _FormAppBar(
               isEdit: _isEdit,
               onSave: _save,
               isLoading: _isLoading,
             ),
-
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // ── RECHERCHE GLOBALE THIX ──────────────────────────────
                   if (!_isEdit) _GlobalSearchSection(
                     controller: _searchCtrl,
                     query: _searchQuery,
@@ -419,7 +423,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   if (!_isEdit) const SizedBox(height: 16),
 
-                  // ── COMPTE LIÉ ──────────────────────────────────────────
                   if (_linkedAccount != null && !_isEdit) ...[
                     _LinkedAccountCard(
                       account: _linkedAccount!,
@@ -428,7 +431,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                     const SizedBox(height: 16),
                   ],
 
-                  // ── IDENTITÉ ────────────────────────────────────────────
                   _SectionCard(
                     title: 'Identité',
                     icon: Icons.person_outline,
@@ -470,7 +472,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── THIX ID UNIQUE ──────────────────────────────────────
                   _ThixIdCard(
                     controller: _thixIdCtrl,
                     onRegenerate: () => setState(
@@ -479,7 +480,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── GROUPE ──────────────────────────────────────────────
                   _SectionCard(
                     title: 'Groupe',
                     icon: Icons.group_outlined,
@@ -493,7 +493,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── NOMBRE + TABLE + VIP ────────────────────────────────
                   _SectionCard(
                     title: 'Présence',
                     icon: Icons.event_seat_outlined,
@@ -537,7 +536,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── NOTES ───────────────────────────────────────────────
                   _SectionCard(
                     title: 'Notes (optionnel)',
                     icon: Icons.notes_outlined,
@@ -554,14 +552,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 24),
 
-                  // ── QR CODE PREVIEW ─────────────────────────────────────
                   _QrPreviewCard(
                     thixId: _thixIdCtrl.text,
                     guestName: _nameCtrl.text,
                   ),
                   const SizedBox(height: 24),
 
-                  // ── SUBMIT ──────────────────────────────────────────────
                   _SubmitButton(
                     isEdit: _isEdit,
                     isLoading: _isLoading,
@@ -684,7 +680,6 @@ class _GlobalSearchSection extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header
           Row(
             children: [
               Container(
@@ -718,8 +713,6 @@ class _GlobalSearchSection extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 14),
-
-          // Search field
           TextField(
             controller: controller,
             onChanged: onChanged,
@@ -747,8 +740,6 @@ class _GlobalSearchSection extends ConsumerWidget {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Results
           if (query.length >= 2)
             searchAsync.when(
               loading: () => const Padding(
@@ -854,7 +845,7 @@ class _SearchResultTile extends StatelessWidget {
 }
 
 // ============================================================================
-// CARTE COMPTE LIÉ
+// CARTE COMPTE LIÉ (CORRIGÉ : monospace via _mono())
 // ============================================================================
 class _LinkedAccountCard extends StatelessWidget {
   final _ThixAccount account;
@@ -904,10 +895,10 @@ class _LinkedAccountCard extends StatelessWidget {
                 if (account.thixId != null)
                   Text(
                     account.thixId!,
-                    style: GoogleFonts.inter(
+                    style: _mono(
                       fontSize: 10,
                       color: Colors.white.withOpacity(0.85),
-                      fontFamily: 'monospace',
+                      letterSpacing: 1,
                     ),
                   ),
               ],
@@ -931,7 +922,7 @@ class _LinkedAccountCard extends StatelessWidget {
 }
 
 // ============================================================================
-// CARTE THIX ID UNIQUE
+// CARTE THIX ID UNIQUE (CORRIGÉ : monospace via _mono())
 // ============================================================================
 class _ThixIdCard extends StatelessWidget {
   final TextEditingController controller;
@@ -1018,11 +1009,10 @@ class _ThixIdCard extends StatelessWidget {
             child: TextField(
               controller: controller,
               readOnly: true,
-              style: GoogleFonts.inter(
+              style: _mono(
                 fontSize: 14,
                 fontWeight: FontWeight.w800,
                 color: Colors.white,
-                fontFamily: 'monospace',
                 letterSpacing: 1.2,
               ),
               decoration: const InputDecoration(
@@ -1357,7 +1347,7 @@ class _ToggleRow extends StatelessWidget {
 }
 
 // ============================================================================
-// QR CODE PREVIEW
+// QR CODE PREVIEW (CORRIGÉ : monospace via _mono())
 // ============================================================================
 class _QrPreviewCard extends StatelessWidget {
   final String thixId;
@@ -1384,7 +1374,6 @@ class _QrPreviewCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          // QR Placeholder (à remplacer par qr_flutter si installé)
           Container(
             width: 100,
             height: 100,
@@ -1400,11 +1389,11 @@ class _QrPreviewCard extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   checksum,
-                  style: GoogleFonts.inter(
+                  style: _mono(
                     fontSize: 10,
                     fontWeight: FontWeight.w800,
                     color: _R.blue,
-                    fontFamily: 'monospace',
+                    letterSpacing: 1,
                   ),
                 ),
               ],
@@ -1453,11 +1442,11 @@ class _QrPreviewCard extends StatelessWidget {
                           thixId,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
+                          style: _mono(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             color: Colors.white,
-                            fontFamily: 'monospace',
+                            letterSpacing: 1,
                           ),
                         ),
                       ),
