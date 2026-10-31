@@ -51,9 +51,15 @@ class EventService {
           .or('status.eq.upcoming,status.eq.ongoing,status.is.null')
           .gte('start_date', cutoff); 
 
+      // 🟢 MODIFICATION : Prise en compte du plein air / catégorie optionnelle ou nulle
       if (category != null && category != 'all' && category != 'featured') {
-        query = query.eq('category', category);
+        if (category.isEmpty || category == 'outdoor' || category == 'plein air') {
+          query = query.or('category.eq.,category.is.null,category.ilike.%plein air%');
+        } else {
+          query = query.eq('category', category);
+        }
       }
+
       if (city != null && city != 'all') {
         query = query.eq('city', city);
       }
@@ -195,7 +201,7 @@ class EventService {
     } catch (_) { return []; }
   }
 
-  // ============ RESERVATION (AVEC GESTION D'ERREUR EXPLICITE) ============
+  // ============ RESERVATION ============
   Future<EventBooking?> bookTicket({required String eventId, required int quantity, required double totalPrice, String? paymentMethod}) async {
     final uid = currentUserId; 
     if (uid.isEmpty) throw Exception('Non connecté');
@@ -208,19 +214,21 @@ class EventService {
         'ticket_quantity': quantity, 
         'total_price': totalPrice,
         'payment_method': paymentMethod, 
-        'payment_status': 'paid', 
+        'payment_status': totalPrice == 0 ? 'free' : 'paid', 
         'ticket_code': code, 
         'qr_code': code, 
         'status': 'confirmed', 
         'booking_date': DateTime.now().toIso8601String(),
       }).select().single());
       
-      try { await _supabase.rpc('decrement_remaining_tickets', params: {'e_id': eventId, 'qty': quantity}); } catch (_) {}
+      // 🟢 Évite d'échouer si l'événement est illimité / plein air
+      try { 
+        await _supabase.rpc('decrement_remaining_tickets', params: {'e_id': eventId, 'qty': quantity}); 
+      } catch (_) {}
       
       return EventBooking.fromJson(Map<String, dynamic>.from((res as Map).cast<String, dynamic>()));
     } catch (e) { 
       debugPrint('❌ bookTicket error: $e'); 
-      // ⚠️ On relance l'erreur pour la voir en vrai dans l'appli !
       throw Exception('Erreur DB: $e'); 
     }
   }
@@ -235,20 +243,41 @@ class EventService {
 
   // ============ ADMIN ============
   Future<Event> createEvent({
-    required String title, required String description, required String category, String? subCategory,
+    required String title, required String description, String? category, String? subCategory,
     required DateTime startDate, DateTime? endDate, required String location, String? address, double price = 0,
-    String priceCurrency = 'FC', bool isFree = false, int? capacity, String? imageUrl, String? bannerUrl, String? city,
+    String priceCurrency = 'FC', bool? isFree, int? capacity, String? imageUrl, String? bannerUrl, String? city,
     bool isFeatured = false, String? organizerName, String? contactPhone, String? contactEmail,
   }) async {
+    final finalCap = capacity ?? 0;
+    final finalIsFree = isFree ?? (price == 0);
+
     final res = await _supabase.from('events').insert({
-      'title': title, 'description': description, 'category': category, if (subCategory != null) 'sub_category': subCategory,
-      'start_date': startDate.toIso8601String(), if (endDate != null) 'end_date': endDate.toIso8601String(),
-      'location': location, 'city': city, if (address != null) 'address': address, 'price': price, 'price_currency': priceCurrency,
-      'is_free': isFree, 'capacity': capacity, 'remaining_tickets': capacity, 'image_url': imageUrl, 'banner_url': bannerUrl,
-      'is_featured': isFeatured, 'status': startDate.isAfter(DateTime.now()) ? 'upcoming' : 'ongoing',
-      'organizer_id': currentUserId, 'organizer_name': organizerName, 'contact_phone': contactPhone, 'contact_email': contactEmail,
-      'created_at': DateTime.now().toIso8601String(), 'updated_at': DateTime.now().toIso8601String(),
+      'title': title, 
+      'description': description, 
+      'category': category ?? '', 
+      if (subCategory != null) 'sub_category': subCategory,
+      'start_date': startDate.toIso8601String(), 
+      if (endDate != null) 'end_date': endDate.toIso8601String(),
+      'location': location, 
+      'city': city, 
+      if (address != null) 'address': address, 
+      'price': price, 
+      'price_currency': priceCurrency,
+      'is_free': finalIsFree, 
+      'capacity': finalCap, 
+      'remaining_tickets': finalCap, 
+      'image_url': imageUrl, 
+      'banner_url': bannerUrl,
+      'is_featured': isFeatured, 
+      'status': startDate.isAfter(DateTime.now()) ? 'upcoming' : 'ongoing',
+      'organizer_id': currentUserId, 
+      'organizer_name': organizerName, 
+      'contact_phone': contactPhone, 
+      'contact_email': contactEmail,
+      'created_at': DateTime.now().toIso8601String(), 
+      'updated_at': DateTime.now().toIso8601String(),
     }).select().single();
+    
     return Event.fromJson(Map<String, dynamic>.from((res as Map).cast<String, dynamic>()));
   }
 
@@ -268,7 +297,7 @@ class EventService {
     return _supabase.storage.from('event_images').getPublicUrl(path);
   }
 
-  Future<Map<String, dynamic>> getAdminStats() async {
+  Future> getAdminStats() async {
     try {
       final total = await _supabase.from('events').select('id').count(CountOption.exact);
       
