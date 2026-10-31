@@ -1,7 +1,9 @@
 // lib/presentation/home/widgets/home_personalised.dart
+//
+// ✅ Le bouton Wedding a été DÉPLACÉ vers la constellation (THIX WED).
+//    La personnalisation conserve 3 actions : acheter, sécuriser, retirer.
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:go_router/go_router.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 
@@ -11,8 +13,6 @@ const double _kCircleSize = 54.0;
 const double _kIconSize = 22.0;
 const double _kLabelFontSize = 10.5;
 const int _kMaxLabelLength = 15;
-
-enum _ActionVariant { defaultStyle, wedding }
 
 class HomePersonalised extends StatelessWidget {
   const HomePersonalised({super.key});
@@ -48,10 +48,18 @@ class HomePersonalised extends StatelessWidget {
             ),
             child: Row(
               children: [
-                _cell(_MiniRoundAction(icon: Icons.favorite_rounded, label: l10n.t('home_mini_wedding'), variant: _ActionVariant.wedding, onTap: () => _navigateWedding(context))),
-                _cell(_MiniRoundAction(icon: Icons.shopping_cart_rounded, label: l10n.t('home_mini_buy'), variant: _ActionVariant.defaultStyle, onTap: () => _showComingSoon(context, l10n.t('home_mini_buy')))),
-                _cell(_MiniRoundAction(icon: Icons.shield_rounded, label: l10n.t('home_mini_secure'), variant: _ActionVariant.defaultStyle, onTap: () => _showComingSoon(context, l10n.t('home_mini_secure')))),
-                _cell(_MiniRoundAction(icon: Icons.local_atm_rounded, label: l10n.t('home_mini_cash_out'), variant: _ActionVariant.defaultStyle, onTap: () => _showComingSoon(context, l10n.t('home_mini_cash_out')))),
+                _cell(_MiniRoundAction(
+                    icon: Icons.shopping_cart_rounded,
+                    label: l10n.t('home_mini_buy'),
+                    onTap: () => _showComingSoon(context, l10n.t('home_mini_buy')))),
+                _cell(_MiniRoundAction(
+                    icon: Icons.shield_rounded,
+                    label: l10n.t('home_mini_secure'),
+                    onTap: () => _showComingSoon(context, l10n.t('home_mini_secure')))),
+                _cell(_MiniRoundAction(
+                    icon: Icons.local_atm_rounded,
+                    label: l10n.t('home_mini_cash_out'),
+                    onTap: () => _showComingSoon(context, l10n.t('home_mini_cash_out')))),
               ],
             ),
           ),
@@ -60,13 +68,8 @@ class HomePersonalised extends StatelessWidget {
     );
   }
 
-  Widget _cell(Widget child) => Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: child));
-
-  void _navigateWedding(BuildContext context) {
-    if (!context.mounted) return;
-    HapticFeedback.lightImpact();
-    context.push('/thix-wedding');
-  }
+  Widget _cell(Widget child) => Expanded(
+      child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4), child: child));
 
   void _showComingSoon(BuildContext context, String feature) {
     if (!context.mounted) return;
@@ -88,9 +91,8 @@ class HomePersonalised extends StatelessWidget {
 class _MiniRoundAction extends StatefulWidget {
   final IconData icon;
   final String label;
-  final _ActionVariant variant;
   final VoidCallback onTap;
-  const _MiniRoundAction({required this.icon, required this.label, required this.variant, required this.onTap});
+  const _MiniRoundAction({required this.icon, required this.label, required this.onTap});
 
   @override
   State<_MiniRoundAction> createState() => _MiniRoundActionState();
@@ -112,9 +114,6 @@ class _MiniRoundActionState extends State<_MiniRoundAction> {
 
   @override
   Widget build(BuildContext context) {
-    final isWedding = widget.variant == _ActionVariant.wedding;
-    // Seul accent chaud : le mariage (très discret). Le reste = bleu ciel.
-    final accent = isWedding ? const Color(0xFFD9667A) : HomeTheme.skyDeep;
     final safeLabel = _sanitizeLabel(widget.label);
 
     return Semantics(
@@ -138,17 +137,18 @@ class _MiniRoundActionState extends State<_MiniRoundAction> {
                 height: _kCircleSize,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isWedding ? accent.withOpacity(0.10) : HomeTheme.skySoft,
-                  border: Border.all(color: accent.withOpacity(0.25), width: 1.2),
+                  color: HomeTheme.skySoft,
+                  border: Border.all(
+                      color: HomeTheme.skyDeep.withOpacity(0.25), width: 1.2),
                 ),
                 alignment: Alignment.center,
-                child: Icon(widget.icon, size: _kIconSize, color: accent),
+                child: Icon(widget.icon, size: _kIconSize, color: HomeTheme.skyDeep),
               ),
               const SizedBox(height: 8),
               Text(
                 safeLabel,
-                style: TextStyle(
-                  color: isWedding ? accent : HomeTheme.ink,
+                style: const TextStyle(
+                  color: HomeTheme.ink,
                   fontSize: _kLabelFontSize,
                   fontWeight: FontWeight.w700,
                   letterSpacing: -0.2,
