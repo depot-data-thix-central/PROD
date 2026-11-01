@@ -6,6 +6,10 @@ import 'package:riverpod_annotation/riverpod_annotation.dart';
 import '../../core/failure.dart';
 import '../../providers/wedding_provider.dart';
 import '../../providers/countdown_provider.dart';
+import '../../data/repositories/wedding_repository_impl.dart';
+import '../../domain/entities/wedding_entity.dart';
+import '../staff/providers/thix_weeding_providers.dart';
+import '../staff/models/thix_weeding_models.dart';
 
 part 'guest_home_page.g.dart';
 
@@ -82,33 +86,38 @@ const List<_GuestMenuItem> _kGuestMenu = [
 ];
 
 // ============================================================
-// PROVIDERS COMPLEMENTAIRES
+// PROVIDERS COMPLEMENTAIRES (SYNCHRONISES BACKEND / STAFF)
 // ============================================================
 @riverpod
 Future<Map<String, int>> guestEventStats(GuestEventStatsRef ref, String weddingId) async {
-  await Future.delayed(const Duration(milliseconds: 200));
-  return {'Invités confirmés': 84, 'En attente': 12, 'Cadeaux reçus': 19, 'Photos partagées': 56};
+  final guests = await ref.watch(guestsProvider(weddingId).future);
+  final gallery = await ref.watch(galleryProvider(weddingId).future);
+  final repo = ref.read(weddingRepositoryProvider);
+  final gifts = await repo.getGifts(weddingId);
+
+  final confirmed = guests.where((g) => g.rsvpStatus.toLowerCase() == 'yes' || g.rsvpStatus.toLowerCase() == 'confirmed').length;
+  final pending = guests.where((g) => g.rsvpStatus.toLowerCase() == 'pending' || g.rsvpStatus.toLowerCase() == 'waiting').length;
+  final giftsReceived = gifts.where((g) => g.isReserved).length;
+  final photosShared = gallery.length;
+
+  return {
+    'Invités confirmés': confirmed,
+    'En attente': pending,
+    'Cadeaux reçus': giftsReceived,
+    'Photos partagées': photosShared,
+  };
 }
 
 @riverpod
-Future<List<Map<String, dynamic>>> guestVendors(GuestVendorsRef ref, String weddingId) async {
-  await Future.delayed(const Duration(milliseconds: 250));
-  return [
-    {'name': 'Salle Émeraude', 'category': 'Lieu de réception', 'zone': 'Gombe', 'rating': 4.8, 'icon': Icons.villa_outlined},
-    {'name': 'Chef Amani', 'category': 'Traiteur', 'zone': 'Limete', 'rating': 4.7, 'icon': Icons.restaurant_outlined},
-    {'name': 'Studio Lumière', 'category': 'Photographe', 'zone': 'Kintambo', 'rating': 4.9, 'icon': Icons.camera_alt_outlined},
-    {'name': 'Fleurs de Kin', 'category': 'Décoration', 'zone': 'Ngaliema', 'rating': 4.8, 'icon': Icons.local_florist_outlined},
-  ];
+Future<List<VendorModel>> guestVendors(GuestVendorsRef ref, String weddingId) async {
+  return ref.watch(vendorsProvider(weddingId).future);
 }
 
 @riverpod
-Future<List<Map<String, dynamic>>> guestUpdates(GuestUpdatesRef ref, String weddingId) async {
-  await Future.delayed(const Duration(milliseconds: 200));
-  return [
-    {'tag': 'PARKING', 'title': 'Parking disponible', 'subtitle': 'À partir de 15h', 'icon': Icons.local_parking_outlined},
-    {'tag': 'DRESS CODE', 'title': 'Tenue élégante', 'subtitle': 'Couleurs pastel conseillées', 'icon': Icons.checkroom_outlined},
-    {'tag': 'TRANSPORT', 'title': 'Navette gratuite', 'subtitle': 'Départ 15h30, Place Victoire', 'icon': Icons.directions_bus_outlined},
-  ];
+Future<List<MessageModel>> guestUpdates(GuestUpdatesRef ref, String weddingId) async {
+  final messages = await ref.watch(messagesProvider(weddingId).future);
+  // On ne remonte que les communications officielles de l'organisation (staff)
+  return messages.where((m) => m.senderType.toLowerCase() == 'staff').toList();
 }
 
 // ============================================================
@@ -125,11 +134,19 @@ class GuestHomePage extends ConsumerStatefulWidget {
 class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   Future<void> _onRefresh() async {
     ref.invalidate(guestWeddingProvider(widget.weddingId));
+    ref.invalidate(guestEventStatsProvider(widget.weddingId));
+    ref.invalidate(guestVendorsProvider(widget.weddingId));
+    ref.invalidate(guestUpdatesProvider(widget.weddingId));
     await ref.read(guestWeddingProvider(widget.weddingId).future);
   }
 
-  void _onTapGeneric(String label) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$label bientôt disponible')));
+  void _onTapGeneric(dynamic item) {
+    final label = item is VendorModel 
+        ? item.name 
+        : (item is MessageModel ? 'Annonce officielle' : 'Information');
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Détail $label bientôt disponible')),
+    );
   }
 
   @override
@@ -249,7 +266,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                 const SliverToBoxAdapter(
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Infos pratiques'),
+                    child: _SectionHeader(title: 'Infos pratiques & Annonces'),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -668,12 +685,29 @@ class _DotBadge extends StatelessWidget {
 // NOS PRESTATAIRES
 // ============================================================
 class _VendorsList extends StatelessWidget {
-  final List<Map<String, dynamic>> vendors;
-  final void Function(String) onTap;
+  final List<VendorModel> vendors;
+  final void Function(dynamic) onTap;
   const _VendorsList({required this.vendors, required this.onTap});
+
+  IconData _vendorIcon(String cat) {
+    final c = cat.toLowerCase();
+    if (c.contains('salle') || c.contains('lieu')) return Icons.villa_outlined;
+    if (c.contains('traiteur') || c.contains('restau')) return Icons.restaurant_outlined;
+    if (c.contains('photo') || c.contains('video')) return Icons.camera_alt_outlined;
+    if (c.contains('deco') || c.contains('fleur')) return Icons.local_florist_outlined;
+    if (c.contains('musique') || c.contains('dj')) return Icons.music_note_outlined;
+    if (c.contains('robe') || c.contains('tenue')) return Icons.checkroom_outlined;
+    return Icons.store_outlined;
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (vendors.isEmpty) {
+      return const SizedBox(
+        height: 120, 
+        child: Center(child: Text('Aucun prestataire enregistré', style: TextStyle(color: _P.inkSoft))),
+      );
+    }
     return SizedBox(
       height: 220,
       child: ListView.separated(
@@ -684,7 +718,7 @@ class _VendorsList extends StatelessWidget {
         itemBuilder: (context, i) {
           final v = vendors[i];
           return InkWell(
-            onTap: () => onTap(v['name'] as String),
+            onTap: () => onTap(v),
             borderRadius: BorderRadius.circular(18),
             child: Container(
               width: 170,
@@ -698,28 +732,29 @@ class _VendorsList extends StatelessWidget {
                       children: [
                         Container(
                           width: double.infinity,
-                          decoration: const BoxDecoration(
+                          decoration: BoxDecoration(
                             gradient: _P.gradPrimary,
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
                           ),
-                          child: Center(child: Icon(v['icon'] as IconData, size: 36, color: Colors.white38)),
+                          child: Center(child: Icon(_vendorIcon(v.category), size: 36, color: Colors.white38)),
                         ),
-                        Positioned(
-                          top: 12,
-                          left: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(6)),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.star_rounded, size: 12, color: _P.accent),
-                                const SizedBox(width: 4),
-                                Text('${v['rating']}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _P.ink)),
-                              ],
+                        if (v.isBooked)
+                          Positioned(
+                            top: 12,
+                            left: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(6)),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.check_circle_rounded, size: 12, color: Colors.green),
+                                  SizedBox(width: 4),
+                                  Text('Réservé', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _P.ink)),
+                                ],
+                              ),
                             ),
                           ),
-                        ),
                       ],
                     ),
                   ),
@@ -728,15 +763,15 @@ class _VendorsList extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(v['name'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _P.ink)),
+                        Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _P.ink)),
                         const SizedBox(height: 2),
-                        Text(v['category'] as String, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w600)),
+                        Text(v.category, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w600)),
                         const SizedBox(height: 8),
                         Row(
                           children: [
-                            const Icon(Icons.place_outlined, size: 12, color: _P.inkSoft),
+                            const Icon(Icons.info_outline, size: 12, color: _P.inkSoft),
                             const SizedBox(width: 4),
-                            Expanded(child: Text(v['zone'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _P.inkSoft))),
+                            Expanded(child: Text(v.contactName ?? 'Contact à venir', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _P.inkSoft))),
                           ],
                         ),
                       ],
@@ -756,12 +791,38 @@ class _VendorsList extends StatelessWidget {
 // INFOS PRATIQUES
 // ============================================================
 class _UpdatesList extends StatelessWidget {
-  final List<Map<String, dynamic>> items;
-  final void Function(String) onTap;
+  final List<MessageModel> items;
+  final void Function(dynamic) onTap;
   const _UpdatesList({required this.items, required this.onTap});
+
+  IconData _messageIcon(String content) {
+    final c = content.toLowerCase();
+    if (c.contains('parking')) return Icons.local_parking_outlined;
+    if (c.contains('tenue') || c.contains('dress')) return Icons.checkroom_outlined;
+    if (c.contains('transport') || c.contains('navette')) return Icons.directions_bus_outlined;
+    if (c.contains('urgent') || c.contains('important')) return Icons.warning_amber_rounded;
+    return Icons.campaign_outlined;
+  }
+
+  String _extractTag(String content) {
+    final match = RegExp(r'^\[([A-Z0-9\s]+)\]').firstMatch(content);
+    if (match != null) return match.group(1)!.trim();
+    final c = content.toLowerCase();
+    if (c.contains('parking')) return 'PARKING';
+    if (c.contains('tenue') || c.contains('dress')) return 'DRESS CODE';
+    if (c.contains('transport')) return 'TRANSPORT';
+    if (c.contains('urgent')) return 'URGENT';
+    return 'INFO';
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (items.isEmpty) {
+      return const SizedBox(
+        height: 100, 
+        child: Center(child: Text('Aucune annonce pour le moment', style: TextStyle(color: _P.inkSoft))),
+      );
+    }
     return SizedBox(
       height: 160,
       child: ListView.separated(
@@ -771,8 +832,9 @@ class _UpdatesList extends StatelessWidget {
         separatorBuilder: (_, __) => const SizedBox(width: 16),
         itemBuilder: (context, i) {
           final a = items[i];
+          final tag = _extractTag(a.content);
           return InkWell(
-            onTap: () => onTap(a['title'] as String),
+            onTap: () => onTap(a),
             borderRadius: BorderRadius.circular(18),
             child: Container(
               width: 150,
@@ -787,7 +849,7 @@ class _UpdatesList extends StatelessWidget {
                         Container(
                           width: double.infinity,
                           decoration: const BoxDecoration(color: _P.accentSoft, borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
-                          child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _P.accent)),
+                          child: Center(child: Icon(_messageIcon(a.content), size: 28, color: _P.accent)),
                         ),
                         Positioned(
                           top: 12,
@@ -795,7 +857,7 @@ class _UpdatesList extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                             decoration: BoxDecoration(color: _P.ink, borderRadius: BorderRadius.circular(4)),
-                            child: Text(a['tag'] as String, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 0.5)),
+                            child: Text(tag, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 0.5)),
                           ),
                         ),
                       ],
@@ -806,9 +868,9 @@ class _UpdatesList extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(a['title'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink, height: 1.2)),
+                        Text(a.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), ''), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink, height: 1.2)),
                         const Spacer(),
-                        Text(a['subtitle'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w800)),
+                        Text(a.senderName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w800)),
                       ],
                     ),
                   ),
@@ -994,7 +1056,12 @@ class _ErrorView extends ConsumerWidget {
         const SizedBox(height: 16),
         FilledButton(
           style: FilledButton.styleFrom(backgroundColor: _P.primary),
-          onPressed: () => ref.invalidate(guestWeddingProvider(weddingId)),
+          onPressed: () {
+            ref.invalidate(guestWeddingProvider(weddingId));
+            ref.invalidate(guestEventStatsProvider(weddingId));
+            ref.invalidate(guestVendorsProvider(weddingId));
+            ref.invalidate(guestUpdatesProvider(weddingId));
+          },
           child: const Text('Réessayer'),
         ),
       ],
