@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PALETTE v4.0
@@ -256,6 +257,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     final providersAsync = ref.watch(homeProvidersProvider);
     final announcementsAsync = ref.watch(homeAnnouncementsProvider);
     final promosAsync = ref.watch(homePromoSlidesProvider);
+    final activeInvitesAsync = ref.watch(myActiveInvitationsProvider);
     final topPad = MediaQuery.paddingOf(context);
 
     return Scaffold(
@@ -274,6 +276,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ref.invalidate(homeOffersProvider);
               ref.invalidate(homeProvidersProvider);
               ref.invalidate(homeAnnouncementsProvider);
+              ref.invalidate(myActiveInvitationsProvider);
               await Future.delayed(const Duration(milliseconds: 400));
             },
             child: CustomScrollView(
@@ -359,6 +362,27 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ],
             ),
           ),
+
+          // ── Invitations actives (glass + rose animé) ───────────────────
+          activeInvitesAsync.when(
+            data: (invites) {
+              if (invites.isEmpty) return const SizedBox.shrink();
+              return Positioned(
+                right: 14,
+                bottom: MediaQuery.of(context).size.height * 0.68 - 62,
+                child: _ActiveInvitesOrb(
+                  invites: invites,
+                  onTap: (weddingId) {
+                    HapticFeedback.mediumImpact();
+                    context.push('/thix-weeding/guest/$weddingId');
+                  },
+                ),
+              );
+            },
+            loading: () => const SizedBox.shrink(),
+            error: (_, __) => const SizedBox.shrink(),
+          ),
+
           _GlassAppBar(topPad: topPad.top, scrollY: _scrollY, onNotifications: _onNotifications, onStaff: _onStaffAccess),
         ],
       ),
@@ -1178,3 +1202,347 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
     );
   }
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIVE INVITES ORB — Glass / Rose / Animé (ultra pro)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ActiveInvitesOrb extends StatefulWidget {
+  final List<Map<String, dynamic>> invites;
+  final void Function(String weddingId) onTap;
+
+  const _ActiveInvitesOrb({required this.invites, required this.onTap});
+
+  @override
+  State<_ActiveInvitesOrb> createState() => _ActiveInvitesOrbState();
+}
+
+class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb>
+    with TickerProviderStateMixin {
+  late final AnimationController _pulse;
+  late final AnimationController _shimmer;
+  late final AnimationController _enter;
+  bool _expanded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))
+      ..repeat(reverse: true);
+    _shimmer = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))
+      ..repeat();
+    _enter = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))
+      ..forward();
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    _shimmer.dispose();
+    _enter.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final count = widget.invites.length;
+    final first = widget.invites.first;
+    final couple = '${first['bride_name'] ?? ''} & ${first['groom_name'] ?? ''}'.trim();
+    final label = couple.isEmpty || couple == '&' ? 'Invitation' : couple;
+
+    return FadeTransition(
+      opacity: CurvedAnimation(parent: _enter, curve: Curves.easeOut),
+      child: ScaleTransition(
+        scale: Tween<double>(begin: 0.82, end: 1.0).animate(
+          CurvedAnimation(parent: _enter, curve: Curves.easeOutBack),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.end,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Expanded list (glass cards)
+            AnimatedSize(
+              duration: const Duration(milliseconds: 280),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.bottomRight,
+              child: _expanded && count > 1
+                  ? Padding(
+                      padding: const EdgeInsets.only(bottom: 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: widget.invites.skip(1).take(3).map((inv) {
+                          final c = '${inv['bride_name'] ?? ''} & ${inv['groom_name'] ?? ''}'.trim();
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: _GlassInviteChip(
+                              title: c.isEmpty || c == '&' ? 'Invitation' : c,
+                              onTap: () => widget.onTap(inv['wedding_id'] as String),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+
+            // Main orb
+            GestureDetector(
+              onTap: () {
+                if (count == 1) {
+                  widget.onTap(first['wedding_id'] as String);
+                } else {
+                  setState(() => _expanded = !_expanded);
+                  if (!_expanded) {
+                    // second tap after collapse goes to first
+                  }
+                }
+              },
+              onLongPress: () => widget.onTap(first['wedding_id'] as String),
+              child: AnimatedBuilder(
+                animation: Listenable.merge([_pulse, _shimmer]),
+                builder: (_, __) {
+                  final p = 0.55 + 0.45 * _pulse.value;
+                  final glow = 10.0 + 10.0 * _pulse.value;
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      // Soft outer glow
+                      Container(
+                        width: 64 + 6 * _pulse.value,
+                        height: 64 + 6 * _pulse.value,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: _W.rose.withOpacity(0.28 * p),
+                              blurRadius: glow,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Glass disc
+                      Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Colors.white.withOpacity(0.92),
+                              Colors.white.withOpacity(0.72),
+                              _W.roseLight.withOpacity(0.35),
+                            ],
+                            stops: const [0.0, 0.55, 1.0],
+                          ),
+                          border: Border.all(
+                            color: Colors.white.withOpacity(0.95),
+                            width: 1.6,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 16,
+                              offset: const Offset(0, 6),
+                            ),
+                            BoxShadow(
+                              color: _W.rose.withOpacity(0.18),
+                              blurRadius: 12,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            // Inner rose ring
+                            Container(
+                              width: 42,
+                              height: 42,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [
+                                    _W.rose.withOpacity(0.95),
+                                    _W.roseLight.withOpacity(0.9),
+                                  ],
+                                ),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: _W.rose.withOpacity(0.35 * p),
+                                    blurRadius: 8,
+                                  ),
+                                ],
+                              ),
+                              child: const Icon(
+                                Icons.favorite_rounded,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                            // Shimmer sweep
+                            Positioned.fill(
+                              child: ClipOval(
+                                child: Transform.translate(
+                                  offset: Offset((-40 + 100 * _shimmer.value), 0),
+                                  child: Container(
+                                    width: 28,
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [
+                                          Colors.transparent,
+                                          Colors.white.withOpacity(0.35),
+                                          Colors.transparent,
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Red notification dot
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: Container(
+                          width: 16,
+                          height: 16,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFFF3B4A), Color(0xFFE31C4E)],
+                            ),
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFFFF3B4A).withOpacity(0.45 * p),
+                                blurRadius: 6,
+                              ),
+                            ],
+                          ),
+                          child: Text(
+                            count > 9 ? '9+' : '$count',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w900,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+
+            // Caption under orb
+            const SizedBox(height: 6),
+            GestureDetector(
+              onTap: () => widget.onTap(first['wedding_id'] as String),
+              child: Container(
+                constraints: const BoxConstraints(maxWidth: 140),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.88),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.white),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.06),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: _W.ink,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GlassInviteChip extends StatelessWidget {
+  final String title;
+  final VoidCallback onTap;
+
+  const _GlassInviteChip({required this.title, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.9),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: Colors.white),
+            boxShadow: [
+              BoxShadow(
+                color: _W.rose.withOpacity(0.12),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 22,
+                height: 22,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(colors: [_W.rose, _W.roseLight]),
+                ),
+                child: const Icon(Icons.favorite_rounded, size: 11, color: Colors.white),
+              ),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: _W.ink,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
