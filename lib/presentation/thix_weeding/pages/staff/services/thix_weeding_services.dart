@@ -51,9 +51,10 @@ class WeddingService {
   }
 
   Future<void> publish(String id) async {
-    await _c
-        .from('thix_weeding_weddings')
-        .update({'invitation_published': true}).eq('id', id);
+    await _c.from('thix_weeding_weddings').update({
+      'invitation_published': true,
+      'invitation_activated_at': DateTime.now().toIso8601String(),
+    }).eq('id', id);
   }
 
   Future<void> unpublish(String id) async {
@@ -574,5 +575,99 @@ class BudgetService {
     await _c
         .from('thix_weeding_expenses')
         .update({'is_paid': isPaid}).eq('id', id);
+  }
+}
+
+// ============================================================================
+// SEATING SERVICE — Plan de table 3D
+// Tables: thix_weeding_tables + thix_weeding_seating_layout
+// ============================================================================
+class SeatingService {
+  final _c = Supabase.instance.client;
+
+  Future<List<SeatingTableModel>> getTables(String weddingId) async {
+    final res = await _c
+        .from('thix_weeding_tables')
+        .select()
+        .eq('wedding_id', weddingId)
+        .order('order_index');
+    return List<Map<String, dynamic>>.from(res)
+        .map((e) => SeatingTableModel.fromJson(e))
+        .toList();
+  }
+
+  Future<SeatingLayoutModel> getLayout(String weddingId) async {
+    final tables = await getTables(weddingId);
+    final row = await _c
+        .from('thix_weeding_seating_layout')
+        .select()
+        .eq('wedding_id', weddingId)
+        .maybeSingle();
+    if (row == null) {
+      return SeatingLayoutModel(weddingId: weddingId, tables: tables);
+    }
+    return SeatingLayoutModel.fromJson(Map<String, dynamic>.from(row), tables);
+  }
+
+  Future<SeatingTableModel> createTable(Map<String, dynamic> data) async {
+    final res =
+        await _c.from('thix_weeding_tables').insert(data).select().single();
+    return SeatingTableModel.fromJson(Map<String, dynamic>.from(res));
+  }
+
+  Future<void> updateTable(String id, Map<String, dynamic> data) async {
+    await _c.from('thix_weeding_tables').update(data).eq('id', id);
+  }
+
+  Future<void> deleteTable(String id) async {
+    await _c.from('thix_weeding_tables').delete().eq('id', id);
+  }
+
+  Future<void> saveLayout(String weddingId, Map<String, dynamic> data) async {
+    final existing = await _c
+        .from('thix_weeding_seating_layout')
+        .select('id')
+        .eq('wedding_id', weddingId)
+        .maybeSingle();
+    final payload = {...data, 'wedding_id': weddingId};
+    if (existing == null) {
+      await _c.from('thix_weeding_seating_layout').insert(payload);
+    } else {
+      await _c
+          .from('thix_weeding_seating_layout')
+          .update(payload)
+          .eq('wedding_id', weddingId);
+    }
+  }
+
+  Future<void> assignGuestToTable({
+    required String guestId,
+    required int? tableNumber,
+    String? seatId,
+  }) async {
+    await _c.from('thix_weeding_guests').update({
+      'table_number': tableNumber,
+      'seat_id': seatId,
+    }).eq('id', guestId);
+  }
+}
+
+// ============================================================================
+// PROFILE / THIX HUB SEARCH
+// ============================================================================
+class ThixProfileService {
+  final _c = Supabase.instance.client;
+
+  Future<ThixProfileLite?> findByThixId(String thixId) async {
+    final clean = thixId.trim().toUpperCase();
+    if (clean.length < 4) return null;
+    final res = await _c
+        .from('profiles')
+        .select(
+            'id, thix_id, display_name, full_name, contact_phone, phone_number, avatar_url, photo_url, username')
+        .eq('thix_id', clean)
+        .maybeSingle();
+    if (res == null) return null;
+    return ThixProfileLite.fromJson(Map<String, dynamic>.from(res));
   }
 }
