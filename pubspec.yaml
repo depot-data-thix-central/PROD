@@ -92,6 +92,7 @@ dependencies:
   wakelock_plus: ^1.2.8
   connectivity_plus: ^6.1.0
   gal: ^2.3.0
+  image_gallery_saver_plus: ^3.0.4
   screenshot_callback: ^3.0.1
   # ═══════════════════════════════════════════════════════════════════════
   # IDENTIFICATION & SCANNING
