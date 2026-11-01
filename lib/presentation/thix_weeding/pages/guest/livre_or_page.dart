@@ -2,11 +2,10 @@
 // ============================================================================
 // LIVRE D'OR — Feed social élégant (Web + Mobile)
 // ✅ Modèles de vœux prêts à poster
-// ✅ Enregistrement / upload vidéo ≤ 50 min AVEC PREVIEW lecteur intégré
+// ✅ Enregistrement / upload vidéo ≤ 50 min AVEC PREVIEWlecteur intégré
 // ✅ Feed type réseau social SANS commentaires (réactions ❤️ uniquement)
 // ✅ Temps réel Supabase (nouvelles publications / modération staff)
 // ============================================================================
-import 'dart:io' as io show File;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -88,7 +87,8 @@ class GuestbookFeed extends _$GuestbookFeed {
             filter: 'wedding_id=eq.$weddingId',
             callback: (payload) {
               final current = state.valueOrNull ?? const [];
-              final post = GuestbookPost.fromJson(Map<String, dynamic>.from(payload.newRecord));
+              final post = GuestbookPost.fromJson(
+                  Map<String, dynamic>.from(payload.newRecord));
               if (current.any((p) => p.id == post.id)) return;
               state = AsyncData([post, ...current]);
             },
@@ -691,7 +691,7 @@ class _ComposerSheet extends ConsumerStatefulWidget {
 class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
   final _nameCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
-  final _picker = ImagePicker(); // 👈 CORRIGÉ : const retiré ici
+  final _picker = ImagePicker();
 
   XFile? _video;
   Duration? _videoDuration;
@@ -709,8 +709,8 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
 
   /// Controller de preview compatible Web (blob) + Mobile (fichier)
   Future<VideoPlayerController> _newPreviewController(XFile x) async {
-    if (kIsWeb) return VideoPlayerController.networkUrl(Uri.parse(x.path));
-    return VideoPlayerController.file(io.File(x.path));
+    // Web + mobile: networkUrl works for picker paths / blob URLs
+    return VideoPlayerController.networkUrl(Uri.parse(x.path));
   }
 
   Future<void> _pickVideo({required bool camera}) async {
