@@ -1,5 +1,5 @@
 // lib/presentation/thix_weeding/pages/guest/cadeaux_page.dart
-// Seul le NOM est obligatoire — type, description, photo, montant optionnels
+// Guest : SIGNALER un cadeau (pas contribution financière)
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -37,7 +37,11 @@ final _guestGiftsProvider =
       .eq('wedding_id', weddingId)
       .order('created_at', ascending: false);
   return List<Map<String, dynamic>>.from(res)
-      .where((e) => (e['status'] as String?) != 'rejected')
+      .where((e) {
+        final st = e['status'] as String? ?? '';
+        // Invité voit ses propositions + validés (pas les rejetés)
+        return st != 'rejected';
+      })
       .toList();
 });
 
@@ -64,9 +68,9 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
       ),
       floatingActionButton: FloatingActionButton.extended(
         backgroundColor: _R.rose,
-        onPressed: () => _openPropose(asGroup: false),
+        onPressed: _openSignal,
         icon: const Icon(Icons.add),
-        label: const Text('Proposer un cadeau'),
+        label: const Text('Signaler un cadeau'),
       ),
       body: async.when(
         loading: () => const Center(child: CircularProgressIndicator(color: _R.rose)),
@@ -83,25 +87,23 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
           color: _R.rose,
           onRefresh: () async => ref.invalidate(_guestGiftsProvider(widget.weddingId)),
           child: CustomScrollView(slivers: [
+           
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Offrez un présent à votre manière',
-                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900)),
+                    Text(
+                      'Signaler un cadeau',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900),
+                    ),
                     const SizedBox(height: 6),
                     Text(
-                      'Proposez un cadeau ou lancez une collecte entre invités. Seul le nom est requis.',
-                      style: GoogleFonts.inter(fontSize: 13, color: _R.soft),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: () => _openPropose(asGroup: true),
-                      icon: const Icon(Icons.groups_outlined, size: 18),
-                      label: const Text('Collecte de groupe'),
-                      style: OutlinedButton.styleFrom(foregroundColor: _R.rose),
+                      'Indiquez un cadeau que vous offrez ou souhaitez offrir. '
+                      'L’organisation validera votre signalement. '
+                      'Seul le nom est obligatoire.',
+                      style: GoogleFonts.inter(fontSize: 13, color: _R.soft, height: 1.4),
                     ),
                   ],
                 ),
@@ -110,23 +112,14 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
             if (gifts.isEmpty)
               const SliverFillRemaining(
                 hasScrollBody: false,
-                child: Center(child: Text('Aucun cadeau pour le moment')),
+                child: Center(child: Text('Aucun cadeau signalé pour le moment')),
               )
             else
               SliverPadding(
                 padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
-                sliver: SliverGrid(
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    mainAxisSpacing: 12,
-                    crossAxisSpacing: 12,
-                    childAspectRatio: 0.72,
-                  ),
+                sliver: SliverList(
                   delegate: SliverChildBuilderDelegate(
-                    (_, i) {
-                      final g = gifts[i];
-                      return _Tile(gift: g, onTap: () => _contribute(g));
-                    },
+                    (_, i) => _SignalTile(gift: gifts[i]),
                     childCount: gifts.length,
                   ),
                 ),
@@ -137,14 +130,13 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
     );
   }
 
-  Future<void> _openPropose({required bool asGroup}) async {
+  Future<void> _openSignal() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
     final priceCtrl = TextEditingController();
     final whoCtrl = TextEditingController();
     String? giftType;
     Uint8List? photoBytes;
-    String? photoName;
     bool saving = false;
 
     await showModalBottomSheet(
@@ -165,18 +157,12 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    asGroup ? 'Collecte de groupe' : 'Proposer un cadeau',
-                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900),
-                  ),
+                  Text('Signaler un cadeau',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900)),
                   const SizedBox(height: 4),
-                  Text(
-                    'Seul le nom du cadeau est obligatoire',
-                    style: GoogleFonts.inter(fontSize: 12, color: _R.soft),
-                  ),
+                  Text('Ce n’est pas une contribution financière — juste un signalement.',
+                      style: GoogleFonts.inter(fontSize: 12, color: _R.soft)),
                   const SizedBox(height: 14),
-
-                  // NOM * obligatoire
                   TextField(
                     controller: nameCtrl,
                     textCapitalization: TextCapitalization.sentences,
@@ -186,12 +172,10 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // TYPE (choix) optionnel
                   DropdownButtonFormField<String>(
                     value: giftType,
                     decoration: const InputDecoration(
-                      labelText: 'Type de cadeau (optionnel)',
+                      labelText: 'Nature / type (optionnel)',
                       border: OutlineInputBorder(),
                     ),
                     items: _giftTypes
@@ -200,61 +184,47 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                     onChanged: (v) => setModal(() => giftType = v),
                   ),
                   const SizedBox(height: 10),
-
-                  // DESCRIPTION optionnelle
                   TextField(
                     controller: descCtrl,
                     maxLines: 3,
-                    textCapitalization: TextCapitalization.sentences,
                     decoration: const InputDecoration(
                       labelText: 'Description (optionnel)',
                       border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // MONTANT optionnel
                   TextField(
                     controller: priceCtrl,
                     keyboardType: TextInputType.number,
                     decoration: const InputDecoration(
-                      labelText: 'Montant indicatif FCFA (optionnel)',
+                      labelText: 'Valeur indicative FCFA (optionnel)',
                       border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 10),
-
-                  // VOTRE NOM optionnel
                   TextField(
                     controller: whoCtrl,
-                    textCapitalization: TextCapitalization.words,
                     decoration: const InputDecoration(
                       labelText: 'Votre nom (optionnel)',
                       border: OutlineInputBorder(),
                     ),
                   ),
                   const SizedBox(height: 12),
-
-                  // PHOTO optionnelle
                   Row(
                     children: [
                       OutlinedButton.icon(
                         onPressed: () async {
-                          final picker = ImagePicker();
-                          final x = await picker.pickImage(
+                          final x = await ImagePicker().pickImage(
                             source: ImageSource.gallery,
                             maxWidth: 1600,
                             imageQuality: 85,
                           );
                           if (x == null) return;
                           final bytes = await x.readAsBytes();
-                          setModal(() {
-                            photoBytes = bytes;
-                            photoName = x.name;
-                          });
+                          setModal(() => photoBytes = bytes);
                         },
                         icon: const Icon(Icons.photo_outlined, size: 18),
-                        label: Text(photoBytes == null ? 'Ajouter une photo' : 'Changer la photo'),
+                        label: Text(photoBytes == null ? 'Photo (optionnel)' : 'Changer photo'),
                       ),
                       if (photoBytes != null) ...[
                         const SizedBox(width: 10),
@@ -266,7 +236,6 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                     ],
                   ),
                   const SizedBox(height: 18),
-
                   SizedBox(
                     width: double.infinity,
                     height: 50,
@@ -278,7 +247,7 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                               final name = nameCtrl.text.trim();
                               if (name.length < 2) {
                                 ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(content: Text('Indiquez au moins le nom du cadeau')),
+                                  const SnackBar(content: Text('Indiquez le nom du cadeau')),
                                 );
                                 return;
                               }
@@ -286,8 +255,8 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                               try {
                                 String? imageUrl;
                                 if (photoBytes != null) {
-                                  final ts = DateTime.now().millisecondsSinceEpoch;
-                                  final path = '${widget.weddingId}/gifts/$ts.jpg';
+                                  final path =
+                                      '${widget.weddingId}/gifts/${DateTime.now().millisecondsSinceEpoch}.jpg';
                                   await Supabase.instance.client.storage
                                       .from('thix-weeding-gallery')
                                       .uploadBinary(
@@ -313,10 +282,9 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                                   'name': name,
                                   'price': price,
                                   'contributed': 0,
-                                  'status': asGroup ? 'group_active' : 'proposed',
-                                  'is_group_collect': asGroup,
+                                  'status': 'proposed',
+                                  'is_group_collect': false,
                                 };
-
                                 final desc = descCtrl.text.trim();
                                 if (desc.isNotEmpty) payload['description'] = desc;
                                 if (giftType != null) payload['gift_type'] = giftType;
@@ -325,32 +293,27 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                                 }
                                 if (imageUrl != null) payload['image_url'] = imageUrl;
 
-                                Future<void> tryInsert(Map<String, dynamic> data) async {
+                                try {
                                   await Supabase.instance.client
                                       .from('thix_weeding_gifts')
-                                      .insert(data);
-                                }
-
-                                try {
-                                  await tryInsert(payload);
+                                      .insert(payload);
                                 } catch (e) {
-                                  // Colonnes optionnelles absentes → strip et réessaie
                                   final soft = Map<String, dynamic>.from(payload)
                                     ..remove('description')
                                     ..remove('gift_type')
                                     ..remove('image_url')
                                     ..remove('proposed_by_name')
                                     ..remove('is_group_collect');
-                                  await tryInsert(soft);
+                                  await Supabase.instance.client
+                                      .from('thix_weeding_gifts')
+                                      .insert(soft);
                                 }
 
                                 ref.invalidate(_guestGiftsProvider(widget.weddingId));
                                 if (ctx.mounted) Navigator.pop(ctx);
                                 if (mounted) {
-                                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                                    content: Text(asGroup
-                                        ? 'Collecte lancée'
-                                        : 'Proposition envoyée à l\'organisation'),
+                                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                                    content: Text('Cadeau signalé — en attente de validation'),
                                     backgroundColor: _R.green,
                                   ));
                                 }
@@ -368,7 +331,7 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
                               height: 22,
                               child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
                             )
-                          : Text(asGroup ? 'Lancer la collecte' : 'Envoyer'),
+                          : const Text('Envoyer le signalement'),
                     ),
                   ),
                 ],
@@ -379,187 +342,92 @@ class _CadeauxPageState extends ConsumerState<CadeauxPage> {
       },
     );
   }
-
-  Future<void> _contribute(Map<String, dynamic> gift) async {
-    final status = gift['status'] as String? ?? '';
-    if (status == 'proposed' || status == 'rejected') {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('En attente de validation par l\'organisation')),
-      );
-      return;
-    }
-    final amountCtrl = TextEditingController();
-    final nameCtrl = TextEditingController();
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(22))),
-      builder: (ctx) => Padding(
-        padding: EdgeInsets.only(
-          left: 16,
-          right: 16,
-          top: 16,
-          bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(gift['name']?.toString() ?? 'Cadeau',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 18)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: nameCtrl,
-              decoration: const InputDecoration(labelText: 'Votre nom', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: amountCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: 'Montant FCFA', border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton(
-                style: FilledButton.styleFrom(backgroundColor: _R.rose),
-                onPressed: () async {
-                  final amount = double.tryParse(amountCtrl.text.replaceAll(' ', '')) ?? 0;
-                  final who = nameCtrl.text.trim().isEmpty ? 'Anonyme' : nameCtrl.text.trim();
-                  if (amount <= 0) return;
-                  try {
-                    final id = gift['id'] as String;
-                    await Supabase.instance.client.from('thix_weeding_gift_contributions').insert({
-                      'gift_id': id,
-                      'amount': amount,
-                      'contributor_name': who,
-                    });
-                    final cur = (gift['contributed'] as num?)?.toDouble() ?? 0;
-                    final price = (gift['price'] as num?)?.toDouble() ?? 0;
-                    final next = cur + amount;
-                    final patch = <String, dynamic>{'contributed': next};
-                    if (price > 0 && next >= price) {
-                      patch['status'] = 'completed';
-                      patch['is_reserved'] = true;
-                    }
-                    await Supabase.instance.client.from('thix_weeding_gifts').update(patch).eq('id', id);
-                    ref.invalidate(_guestGiftsProvider(widget.weddingId));
-                    if (ctx.mounted) Navigator.pop(ctx);
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e')));
-                  }
-                },
-                child: const Text('Contribuer'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
-class _Tile extends StatelessWidget {
+class _SignalTile extends StatelessWidget {
   final Map<String, dynamic> gift;
-  final VoidCallback onTap;
-  const _Tile({required this.gift, required this.onTap});
+  const _SignalTile({required this.gift});
 
   @override
   Widget build(BuildContext context) {
     final name = gift['name']?.toString() ?? '';
-    final price = (gift['price'] as num?)?.toDouble() ?? 0;
-    final contributed = (gift['contributed'] as num?)?.toDouble() ?? 0;
+    final type = gift['gift_type']?.toString() ?? '';
     final status = gift['status']?.toString() ?? '';
-    final type = gift['gift_type']?.toString();
-    final pct = price > 0 ? (contributed / price).clamp(0.0, 1.0) : 0.0;
     final img = gift['image_url']?.toString() ?? '';
+    final by = gift['proposed_by_name']?.toString() ?? '';
+    final price = (gift['price'] as num?)?.toDouble() ?? 0;
+    final desc = gift['description']?.toString() ?? '';
 
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(16),
-      child: InkWell(
-        onTap: onTap,
+    final (label, color) = switch (status) {
+      'proposed' => ('En attente', _R.amber),
+      'approved' || 'wishlist' => ('Accepté', _R.green),
+      'completed' => ('Déposé', _R.green),
+      _ => (status, _R.soft),
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _R.border),
+        border: Border.all(color: _R.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ClipRRect(
+            borderRadius: BorderRadius.circular(12),
+            child: img.isNotEmpty
+                ? Image.network(img, width: 64, height: 64, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => _ph())
+                : _ph(),
           ),
-          clipBehavior: Clip.antiAlias,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Stack(
-                  fit: StackFit.expand,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    img.isNotEmpty
-                        ? Image.network(
-                            img,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) => Container(
-                              color: _R.roseSoft,
-                              child: const Icon(Icons.card_giftcard, color: _R.rose),
-                            ),
-                          )
-                        : Container(
-                            color: _R.roseSoft,
-                            child: const Icon(Icons.card_giftcard, color: _R.rose, size: 36),
-                          ),
-                    if (status == 'group_active')
-                      Positioned(top: 8, left: 8, child: _badge('Groupe', _R.green)),
-                    if (status == 'proposed')
-                      Positioned(top: 8, left: 8, child: _badge('Attente', _R.amber)),
-                    if (type != null && type.isNotEmpty)
-                      Positioned(bottom: 8, left: 8, child: _badge(type, _R.ink)),
-                  ],
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.all(10),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
+                    Expanded(
+                      child: Text(name,
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 14)),
                     ),
-                    if (price > 0)
-                      Text(
-                        '${price.toStringAsFixed(0)} FCFA',
-                        style: GoogleFonts.inter(color: _R.rose, fontWeight: FontWeight.w800, fontSize: 12),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(0.12),
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                    if (price > 0) ...[
-                      const SizedBox(height: 6),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: pct,
-                          minHeight: 5,
-                          backgroundColor: _R.border,
-                          color: _R.rose,
-                        ),
-                      ),
-                    ],
+                      child: Text(label,
+                          style: GoogleFonts.inter(
+                              fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+                    ),
                   ],
                 ),
-              ),
-            ],
+                if (type.isNotEmpty)
+                  Text(type, style: GoogleFonts.inter(fontSize: 12, color: _R.rose, fontWeight: FontWeight.w600)),
+                if (desc.isNotEmpty)
+                  Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, color: _R.soft)),
+                if (price > 0)
+                  Text('${price.toStringAsFixed(0)} FCFA',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _R.rose, fontSize: 12)),
+                if (by.isNotEmpty)
+                  Text('Par $by', style: GoogleFonts.inter(fontSize: 11, color: _R.soft)),
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _badge(String t, Color c) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-        decoration: BoxDecoration(color: c, borderRadius: BorderRadius.circular(8)),
-        child: Text(
-          t,
-          style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w800),
-        ),
+  Widget _ph() => Container(
+        width: 64,
+        height: 64,
+        color: _R.roseSoft,
+        child: const Icon(Icons.card_giftcard, color: _R.rose),
       );
 }
