@@ -1,53 +1,119 @@
 // lib/presentation/thix_weeding/pages/home/thix_weeding_home_page.dart
 // ============================================================================
-// THIX WEDDING HOME PAGE — DESIGN v5.0 GLASSMORPHISM (PRODUCTION)
-// ✅ Design premium glassmorphism blanc/rose
-// ✅ Bouton Espace Prestataire dans l'appbar
-// ✅ Vrais prestataires depuis Supabase (Gold/Platinum)
-// ✅ Bannière promotionnelle Espace Prestataire
-// ✅ FIX : Color green ajoutée à _W
+// THIX WEDDING HOME PAGE — DESIGN v6.0 PREMIUM GLASS (PRODUCTION)
+// ✅ Hero : jusqu'à 12 photos uploadées, défilement automatique (Ken Burns)
+// ✅ Bouton « Photos du hero » visible UNIQUEMENT pour le rôle Admin
+// ✅ Mise à jour en direct du hero (realtime) chez tous les utilisateurs
+// ✅ Verre dépoli : appbar, barre « Rejoindre », catégories, offres
+// ✅ Vrais prestataires Gold/Platinum, bannière Espace Prestataire
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
+import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE v5.0 GLASSMORPHISM
+// PALETTE v6.0
 // ═══════════════════════════════════════════════════════════════════════════
 class _W {
-  static const Color bg = Color(0xFFFAFAFA);
+  static const Color bg = Color(0xFFFFFBFC);
   static const Color surface = Colors.white;
-  static const Color glass = Color(0xFFF5F5F5);
-  static const Color tile = Color(0xFFFFF4F2);
+  static const Color tile = Color(0xFFFFF4F7);
   static const Color ink = Color(0xFF1A1A2E);
   static const Color inkSoft = Color(0xFF6B7280);
-  static const Color line = Color(0xFFE5E7EB);
+  static const Color line = Color(0xFFF1E3E8);
 
-  static const Color rose = Color(0xFFFF4D6D);
-  static const Color roseLight = Color(0xFFFF85A1);
-  static const Color roseSoft = Color(0xFFFFF0F3);
+  static const Color rose = Color(0xFFD81B60);
+  static const Color roseDark = Color(0xFFAD1457);
+  static const Color roseLight = Color(0xFFFF6F9C);
+  static const Color roseSoft = Color(0xFFFCE4EC);
 
   static const Color peach = Color(0xFFFFB8A8);
   static const Color gold = Color(0xFFFFD700);
   static const Color plum = Color(0xFFA855F7);
-
-  // ✅ AJOUTÉ : green pour le badge CERTIFIÉ
   static const Color green = Color(0xFF10B981);
+
+  static const LinearGradient roseG = LinearGradient(
+    colors: [Color(0xFFE91E78), Color(0xFFC2185B)],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
 }
 
+const int kHeroMax = 12;
+const String _kHeroBucket = 'thix-weeding-hero';
+const String _kHeroTable = 'thix_weeding_home_hero';
+
 // ═══════════════════════════════════════════════════════════════════════════
-// PROVIDERS
+// MODÈLE + PROVIDERS
 // ═══════════════════════════════════════════════════════════════════════════
+class HomeHeroPhoto {
+  final String id;
+  final String url;
+  final String? path;
+  final String? title;
+  final String? subtitle;
+  final int position;
+
+  const HomeHeroPhoto({
+    required this.id,
+    required this.url,
+    this.path,
+    this.title,
+    this.subtitle,
+    required this.position,
+  });
+
+  factory HomeHeroPhoto.fromJson(Map<String, dynamic> j) => HomeHeroPhoto(
+        id: j['id'].toString(),
+        url: (j['image_url'] as String?) ?? '',
+        path: j['storage_path'] as String?,
+        title: j['title'] as String?,
+        subtitle: j['subtitle'] as String?,
+        position: (j['position'] as num?)?.toInt() ?? 0,
+      );
+}
+
+final homeHeroPhotosProvider = FutureProvider<List<HomeHeroPhoto>>((ref) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from(_kHeroTable)
+        .select()
+        .order('position', ascending: true)
+        .limit(kHeroMax);
+    return (rows as List)
+        .map((e) => HomeHeroPhoto.fromJson(Map<String, dynamic>.from(e as Map)))
+        .where((p) => p.url.isNotEmpty)
+        .toList();
+  } catch (_) {
+    return [];
+  }
+});
+
+/// true uniquement si l'utilisateur connecté est dans thix_weeding_app_admins
+final homeIsAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
+  final supa = Supabase.instance.client;
+  if (supa.auth.currentUser == null) return false;
+  try {
+    final r = await supa.rpc('thix_weeding_is_admin');
+    return r == true;
+  } catch (_) {
+    return false;
+  }
+});
+
 final homePromoSlidesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   await Future.delayed(const Duration(milliseconds: 250));
   return [
@@ -95,9 +161,9 @@ final homeOffersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) asyn
   await Future.delayed(const Duration(milliseconds: 250));
   return [
     <String, dynamic>{'title': 'Salles de fête', 'subtitle': 'Réservez la salle idéale', 'discount': '−30%', 'icon': Icons.villa_outlined, 'color': _W.rose},
-    <String, dynamic>{'title': 'Traiteurs', 'subtitle': 'Menus spéciaux mariage', 'discount': '−20%', 'icon': Icons.restaurant_outlined, 'color': _W.gold},
+    <String, dynamic>{'title': 'Traiteurs', 'subtitle': 'Menus spéciaux mariage', 'discount': '−20%', 'icon': Icons.restaurant_outlined, 'color': Color(0xFFD4AF37)},
     <String, dynamic>{'title': 'Photographe', 'subtitle': 'Package complet', 'discount': 'OFFERT', 'icon': Icons.camera_alt_outlined, 'color': _W.plum},
-    <String, dynamic>{'title': 'Décoration', 'subtitle': 'Ambiances inoubliables', 'discount': '−15%', 'icon': Icons.local_florist_outlined, 'color': _W.peach},
+    <String, dynamic>{'title': 'Décoration', 'subtitle': 'Ambiances inoubliables', 'discount': '−15%', 'icon': Icons.local_florist_outlined, 'color': Color(0xFFFF8A75)},
   ];
 });
 
@@ -139,16 +205,39 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
   final ValueNotifier<double> _scrollY = ValueNotifier<double>(0);
   bool _isSearching = false;
 
+  RealtimeChannel? _heroChannel;
+  StreamSubscription<AuthState>? _authSub;
+
   @override
   void initState() {
     super.initState();
     _idController = TextEditingController();
     _focusNode = FocusNode();
     _scrollController.addListener(_onScroll);
+
+    // Hero en direct : si un admin change les photos, tout le monde voit le changement
+    _heroChannel = Supabase.instance.client
+        .channel('home-hero')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: _kHeroTable,
+          callback: (_) {
+            if (mounted) ref.invalidate(homeHeroPhotosProvider);
+          },
+        )
+        .subscribe();
+
+    // Rôle admin recalculé à chaque connexion / déconnexion
+    _authSub = Supabase.instance.client.auth.onAuthStateChange.listen((_) {
+      if (mounted) ref.invalidate(homeIsAdminProvider);
+    });
   }
 
   @override
   void dispose() {
+    _authSub?.cancel();
+    if (_heroChannel != null) Supabase.instance.client.removeChannel(_heroChannel!);
     _idController.dispose();
     _focusNode.dispose();
     _scrollController.dispose();
@@ -247,11 +336,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     _snack('Scanner QR bientôt disponible');
   }
 
-  void _onNotifications() {
-    HapticFeedback.lightImpact();
-    _snack('Notifications bientôt disponibles');
-  }
-
   void _onTapGeneric(String label) {
     HapticFeedback.selectionClick();
     _snack('$label — bientôt disponible');
@@ -264,6 +348,18 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     } else {
       context.push('/thix-weeding/provider/catalog');
     }
+  }
+
+  void _openHeroManager() {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => _HeroManagerSheet(
+        onChanged: () => ref.invalidate(homeHeroPhotosProvider),
+      ),
+    );
   }
 
   void _snack(String msg, {bool error = false}) {
@@ -294,6 +390,29 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
       ));
   }
 
+  /// Fusionne les photos uploadées avec les textes promo (photo = image, texte = titre/sous-titre/CTA)
+  List<Map<String, dynamic>> _mergeSlides(
+    List<Map<String, dynamic>> promos,
+    List<HomeHeroPhoto> photos,
+  ) {
+    if (photos.isEmpty) return promos;
+    final out = <Map<String, dynamic>>[];
+    for (var i = 0; i < photos.length; i++) {
+      final p = photos[i];
+      final base = promos.isEmpty ? const <String, dynamic>{} : promos[i % promos.length];
+      final hasTitle = (p.title ?? '').trim().isNotEmpty;
+      final hasSub = (p.subtitle ?? '').trim().isNotEmpty;
+      out.add(<String, dynamic>{
+        'tag': hasTitle ? 'THIX WEDDING' : (base['tag'] ?? 'THIX WEDDING'),
+        'title': hasTitle ? p.title!.trim() : (base['title'] ?? "L'élégance de votre union"),
+        'subtitle': hasSub ? p.subtitle!.trim() : (base['subtitle'] ?? 'Organisez le plus beau jour de votre vie'),
+        'cta': base['cta'] ?? 'Découvrir',
+        'imageUrl': p.url,
+      });
+    }
+    return out;
+  }
+
   @override
   Widget build(BuildContext context) {
     final catsAsync = ref.watch(homeCategoriesProvider);
@@ -301,8 +420,11 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     final providersAsync = ref.watch(homeProvidersProvider);
     final announcementsAsync = ref.watch(homeAnnouncementsProvider);
     final promosAsync = ref.watch(homePromoSlidesProvider);
+    final heroAsync = ref.watch(homeHeroPhotosProvider);
     final activeInvitesAsync = ref.watch(myActiveInvitationsProvider);
+    final isAdmin = ref.watch(homeIsAdminProvider).value ?? false;
     final topPad = MediaQuery.paddingOf(context);
+    final heroH = MediaQuery.of(context).size.height * 0.68;
 
     return Scaffold(
       backgroundColor: _W.bg,
@@ -313,9 +435,12 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
           RefreshIndicator(
             color: _W.rose,
             backgroundColor: _W.surface,
+            edgeOffset: topPad.top + 70,
             onRefresh: () async {
               HapticFeedback.mediumImpact();
               ref.invalidate(homePromoSlidesProvider);
+              ref.invalidate(homeHeroPhotosProvider);
+              ref.invalidate(homeIsAdminProvider);
               ref.invalidate(homeCategoriesProvider);
               ref.invalidate(homeOffersProvider);
               ref.invalidate(homeProvidersProvider);
@@ -329,17 +454,31 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               slivers: [
                 SliverToBoxAdapter(
                   child: SizedBox(
-                    height: MediaQuery.of(context).size.height * 0.68,
+                    height: heroH,
                     child: promosAsync.when(
-                      data: (slides) => _HeroCarousel(
-                        slides: slides,
-                        topPad: topPad.top,
-                        idController: _idController,
-                        focusNode: _focusNode,
-                        isSearching: _isSearching,
-                        onSearch: _onSearch,
-                        onScanQr: _onScanQr,
-                      ),
+                      data: (promos) {
+                        if (heroAsync.isLoading && !heroAsync.hasValue) {
+                          return Container(
+                            color: _W.tile,
+                            child: const Center(
+                              child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5),
+                            ),
+                          );
+                        }
+                        final photos = heroAsync.value ?? const <HomeHeroPhoto>[];
+                        return _HeroCarousel(
+                          slides: _mergeSlides(promos, photos),
+                          topPad: topPad.top,
+                          idController: _idController,
+                          focusNode: _focusNode,
+                          isSearching: _isSearching,
+                          onSearch: _onSearch,
+                          onScanQr: _onScanQr,
+                          isAdmin: isAdmin,
+                          photoCount: photos.length,
+                          onManage: _openHeroManager,
+                        );
+                      },
                       loading: () => Container(
                         color: _W.tile,
                         child: const Center(child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5)),
@@ -348,13 +487,13 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                     ),
                   ),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 20)),
+                const SliverToBoxAdapter(child: SizedBox(height: 22)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: catsAsync.when(
                       data: (cats) => _CategoryRow(categories: cats, onTap: _onCategoryTap),
-                      loading: () => const SizedBox(height: 88),
+                      loading: () => const SizedBox(height: 96),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
                   ),
@@ -429,7 +568,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
           _GlassAppBar(
             topPad: topPad.top,
             scrollY: _scrollY,
-            onNotifications: _onNotifications,
             onStaff: _onStaffAccess,
             onProvider: _onProviderAccess,
           ),
@@ -440,19 +578,17 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// APP BAR GLASSMORPHISM
+// APP BAR VERRE DÉPOLI
 // ═══════════════════════════════════════════════════════════════════════════
 class _GlassAppBar extends StatelessWidget {
   final double topPad;
   final ValueNotifier<double> scrollY;
-  final VoidCallback onNotifications;
   final VoidCallback onStaff;
   final VoidCallback onProvider;
 
   const _GlassAppBar({
     required this.topPad,
     required this.scrollY,
-    required this.onNotifications,
     required this.onStaff,
     required this.onProvider,
   });
@@ -467,48 +603,65 @@ class _GlassAppBar extends StatelessWidget {
         valueListenable: scrollY,
         builder: (_, y, __) {
           final t = (y / 280).clamp(0.0, 1.0).toDouble();
-          final fg = Color.lerp(Colors.white, _W.ink, t)!;
-          return Container(
-            padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.85 * t),
-              border: Border(bottom: BorderSide(color: _W.line.withOpacity(t), width: 1)),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                    borderRadius: BorderRadius.circular(11),
-                  ),
-                  child: const Center(child: Icon(Icons.favorite_rounded, color: Colors.white, size: 18)),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      RichText(
-                        text: TextSpan(
-                          children: [
-                            TextSpan(text: 'THIX ', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: fg, letterSpacing: -0.3)),
-                            const TextSpan(text: 'WED', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: _W.rose, letterSpacing: -0.3)),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        "L'élégance de votre union",
-                        style: TextStyle(fontSize: 10, color: Color.lerp(Colors.white70, _W.inkSoft, t)!, fontWeight: FontWeight.w600),
-                      ),
-                    ],
+          return ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+              child: Container(
+                padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.30 + 0.45 * t),
+                  border: Border(
+                    bottom: BorderSide(color: Colors.white.withOpacity(0.75), width: 1.2),
                   ),
                 ),
-                _AppBarBtn(icon: Icons.store_outlined, fg: fg, onTap: onProvider),
-                const SizedBox(width: 8),
-                _AppBarBtn(icon: Icons.account_circle_outlined, fg: fg, onTap: onStaff),
-              ],
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        gradient: _W.roseG,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(color: _W.rose.withOpacity(0.35), blurRadius: 14, offset: const Offset(0, 5)),
+                        ],
+                      ),
+                      child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'THIX WEDDING',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                              fontSize: 16.5,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: 2,
+                              color: const Color(0xFF3B3B44).withOpacity(0.78),
+                            ),
+                          ),
+                          Text(
+                            "L'élégance de votre union",
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              color: _W.ink.withOpacity(0.55),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    _AppBarBtn(icon: Icons.store_outlined, onTap: onProvider),
+                    const SizedBox(width: 8),
+                    _AppBarBtn(icon: Icons.account_circle_outlined, onTap: onStaff),
+                  ],
+                ),
+              ),
             ),
           );
         },
@@ -519,11 +672,9 @@ class _GlassAppBar extends StatelessWidget {
 
 class _AppBarBtn extends StatelessWidget {
   final IconData icon;
-  final Color fg;
   final VoidCallback onTap;
-  final int badge;
 
-  const _AppBarBtn({required this.icon, required this.fg, required this.onTap, this.badge = 0});
+  const _AppBarBtn({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -533,26 +684,23 @@ class _AppBarBtn extends StatelessWidget {
         onTap();
       },
       child: Container(
-        width: 38,
-        height: 38,
-        decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.3))),
-        child: Stack(
-          alignment: Alignment.center,
-          children: [
-            Icon(icon, size: 19, color: fg),
-            if (badge > 0)
-              Positioned(
-                top: 6,
-                right: 6,
-                child: Container(width: 8, height: 8, decoration: BoxDecoration(color: _W.rose, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5))),
-              ),
-          ],
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.55),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
+          boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.10), blurRadius: 10, offset: const Offset(0, 4))],
         ),
+        child: Icon(icon, size: 20, color: _W.rose),
       ),
     );
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// BANNIÈRE ESPACE PRESTATAIRE
+// ═══════════════════════════════════════════════════════════════════════════
 class _ProviderBanner extends StatelessWidget {
   const _ProviderBanner();
 
@@ -566,31 +714,44 @@ class _ProviderBanner extends StatelessWidget {
           context.push('/thix-weeding/provider/auth');
         },
         child: Container(
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.fromLTRB(20, 22, 18, 22),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+            gradient: const LinearGradient(
+              colors: [Color(0xFFD81B60), Color(0xFFB0124F)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 12))],
           ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
-                child: const Icon(Icons.store_outlined, color: Colors.white, size: 28),
-              ),
-              const SizedBox(width: 16),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Espace Prestataire', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.3)),
+                    Text('Vous êtes un professionnel ?',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.8))),
                     const SizedBox(height: 4),
-                    Text('Rejoignez +300 professionnels vérifiés', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
+                    Text('Espace Prestataire',
+                        style: GoogleFonts.playfairDisplay(fontSize: 26, fontWeight: FontWeight.w700, color: Colors.white, height: 1.1)),
+                    const SizedBox(height: 6),
+                    Text('Gérez vos services, réservations et tâches.',
+                        style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w500, color: Colors.white.withOpacity(0.88))),
                   ],
                 ),
               ),
-              const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+              const SizedBox(width: 12),
+              Container(
+                width: 52,
+                height: 52,
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.22),
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.white.withOpacity(0.4)),
+                ),
+                child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+              ),
             ],
           ),
         ),
@@ -599,6 +760,9 @@ class _ProviderBanner extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// HERO : PHOTOS EN DÉFILEMENT AUTOMATIQUE
+// ═══════════════════════════════════════════════════════════════════════════
 class _HeroCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> slides;
   final double topPad;
@@ -607,6 +771,9 @@ class _HeroCarousel extends StatefulWidget {
   final bool isSearching;
   final VoidCallback onSearch;
   final VoidCallback onScanQr;
+  final bool isAdmin;
+  final int photoCount;
+  final VoidCallback onManage;
 
   const _HeroCarousel({
     required this.slides,
@@ -616,6 +783,9 @@ class _HeroCarousel extends StatefulWidget {
     required this.isSearching,
     required this.onSearch,
     required this.onScanQr,
+    required this.isAdmin,
+    required this.photoCount,
+    required this.onManage,
   });
 
   @override
@@ -623,7 +793,7 @@ class _HeroCarousel extends StatefulWidget {
 }
 
 class _HeroCarouselState extends State<_HeroCarousel> {
-  final PageController _pageCtrl = PageController();
+  PageController _pageCtrl = PageController();
   int _current = 0;
   Timer? _timer;
 
@@ -631,6 +801,15 @@ class _HeroCarouselState extends State<_HeroCarousel> {
   void initState() {
     super.initState();
     _startAuto();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroCarousel old) {
+    super.didUpdateWidget(old);
+    if (_current >= widget.slides.length) {
+      _current = 0;
+      if (_pageCtrl.hasClients) _pageCtrl.jumpToPage(0);
+    }
   }
 
   @override
@@ -642,81 +821,163 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 
   void _startAuto() {
     _timer?.cancel();
-    _timer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!mounted || widget.slides.length <= 1) return;
-      _pageCtrl.animateToPage((_current + 1) % widget.slides.length, duration: const Duration(milliseconds: 600), curve: Curves.easeOutCubic);
+    _timer = Timer.periodic(const Duration(milliseconds: 4500), (_) {
+      if (!mounted || widget.slides.length <= 1 || !_pageCtrl.hasClients) return;
+      _pageCtrl.animateToPage(
+        (_current + 1) % widget.slides.length,
+        duration: const Duration(milliseconds: 700),
+        curve: Curves.easeInOutCubic,
+      );
     });
   }
 
   @override
   Widget build(BuildContext context) {
     final slides = widget.slides;
+    if (slides.isEmpty) {
+      return Container(color: _W.tile);
+    }
+    final cur = _current.clamp(0, slides.length - 1);
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        PageView.builder(
-          controller: _pageCtrl,
-          itemCount: slides.length,
-          onPageChanged: (i) => setState(() => _current = i),
-          itemBuilder: (_, i) {
-            final slide = slides[i];
-            return Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(slide['imageUrl'] as String, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Center(child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48)))),
-                DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.black.withOpacity(0.35), Colors.transparent, Colors.black.withOpacity(0.25), Colors.black.withOpacity(0.45)],
-                      stops: const [0.0, 0.3, 0.7, 1.0],
+        // Photos (le doigt remet le minuteur à zéro)
+        Listener(
+          onPointerDown: (_) => _startAuto(),
+          child: PageView.builder(
+            controller: _pageCtrl,
+            itemCount: slides.length,
+            onPageChanged: (i) => setState(() => _current = i),
+            itemBuilder: (_, i) {
+              final slide = slides[i];
+              return Stack(
+                fit: StackFit.expand,
+                children: [
+                  TweenAnimationBuilder<double>(
+                    key: ValueKey('kb-$i-${slide['imageUrl']}'),
+                    tween: Tween(begin: 1.0, end: 1.09),
+                    duration: const Duration(seconds: 7),
+                    curve: Curves.easeOut,
+                    builder: (_, s, child) => Transform.scale(scale: s, child: child),
+                    child: Image.network(
+                      slide['imageUrl'] as String,
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      frameBuilder: (ctx, child, frame, sync) => AnimatedOpacity(
+                        opacity: (frame != null || sync) ? 1 : 0,
+                        duration: const Duration(milliseconds: 450),
+                        child: child,
+                      ),
+                      errorBuilder: (_, __, ___) => Container(
+                        color: _W.tile,
+                        child: const Center(child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48)),
+                      ),
                     ),
                   ),
-                ),
-              ],
-            );
-          },
-        ),
-        Positioned(
-          top: widget.topPad + 70,
-          right: 16,
-          child: GestureDetector(
-            onTap: () {
-              ScaffoldMessenger.of(context)
-                ..hideCurrentSnackBar()
-                ..showSnackBar(SnackBar(
-                  behavior: SnackBarBehavior.floating,
-                  backgroundColor: _W.ink,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  content: Row(children: [
-                    const Icon(Icons.photo_library_outlined, color: Colors.white, size: 18),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('Gestion des photos disponible depuis l\'espace staff', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
-                  ]),
-                ));
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.black.withOpacity(0.20),
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.30),
+                          Colors.black.withOpacity(0.55),
+                        ],
+                        stops: const [0.0, 0.3, 0.7, 1.0],
+                      ),
+                    ),
+                  ),
+                ],
+              );
             },
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
-              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.photo_library_outlined, size: 14, color: Colors.white), SizedBox(width: 6), Text('Changer', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))]),
-            ),
           ),
         ),
-        Positioned(left: 20, right: 20, bottom: 200, child: AnimatedSwitcher(duration: const Duration(milliseconds: 400), child: _HeroContent(key: ValueKey(_current), slide: slides[_current]))),
+
+        // Bouton ADMIN uniquement
+        if (widget.isAdmin)
+          Positioned(
+            top: widget.topPad + 80,
+            right: 16,
+            child: GestureDetector(
+              onTap: widget.onManage,
+              child: ThixGlass(
+                radius: 22,
+                blur: 14,
+                opacity: 0.42,
+                borderColor: Colors.white.withOpacity(0.8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.add_photo_alternate_rounded, size: 16, color: _W.rose),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Photos du hero ${widget.photoCount}/$kHeroMax',
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w900, color: _W.ink),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: _W.rose, borderRadius: BorderRadius.circular(6)),
+                      child: Text('ADMIN',
+                          style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
+        // Texte
+        Positioned(
+          left: 20,
+          right: 20,
+          bottom: 214,
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 450),
+            child: _HeroContent(key: ValueKey(cur), slide: slides[cur]),
+          ),
+        ),
+
+        // Indicateurs (max 12)
         Positioned(
           left: 0,
           right: 0,
-          bottom: 178,
+          bottom: 190,
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(slides.length, (i) {
-              final active = i == _current;
-              return AnimatedContainer(duration: const Duration(milliseconds: 280), margin: const EdgeInsets.symmetric(horizontal: 3), width: active ? 22 : 6, height: 6, decoration: BoxDecoration(color: active ? _W.rose : Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(3)));
+              final active = i == cur;
+              return AnimatedContainer(
+                duration: const Duration(milliseconds: 280),
+                margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                width: active ? 22 : 6,
+                height: 6,
+                decoration: BoxDecoration(
+                  color: active ? _W.rose : Colors.white.withOpacity(0.55),
+                  borderRadius: BorderRadius.circular(3),
+                ),
+              );
             }),
           ),
         ),
-        Positioned(left: 16, right: 16, bottom: 14, child: _JoinBar(controller: widget.idController, focusNode: widget.focusNode, isLoading: widget.isSearching, onSearch: widget.onSearch, onScanQr: widget.onScanQr)),
+
+        // Barre « Rejoindre un mariage »
+        Positioned(
+          left: 16,
+          right: 16,
+          bottom: 14,
+          child: _JoinBar(
+            controller: widget.idController,
+            focusNode: widget.focusNode,
+            isLoading: widget.isSearching,
+            onSearch: widget.onSearch,
+            onScanQr: widget.onScanQr,
+          ),
+        ),
       ],
     );
   }
@@ -733,25 +994,62 @@ class _HeroContent extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(color: _W.rose, borderRadius: BorderRadius.circular(12)),
-          child: Text((slide['tag'] as String).toUpperCase(), style: GoogleFonts.inter(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1)),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+          decoration: BoxDecoration(gradient: _W.roseG, borderRadius: BorderRadius.circular(12)),
+          child: Text(
+            (slide['tag'] as String).toUpperCase(),
+            style: GoogleFonts.inter(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1),
+          ),
         ),
         const SizedBox(height: 12),
-        Text(slide['title'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.playfairDisplay(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700, height: 1.05, fontStyle: FontStyle.italic)),
+        Text(
+          slide['title'] as String,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.playfairDisplay(
+            color: Colors.white,
+            fontSize: 30,
+            fontWeight: FontWeight.w700,
+            height: 1.05,
+            fontStyle: FontStyle.italic,
+            shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 14)],
+          ),
+        ),
         const SizedBox(height: 8),
-        Text(slide['subtitle'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(color: Colors.white.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.w600, height: 1.3)),
-        const SizedBox(height: 16),
+        Text(
+          slide['subtitle'] as String,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.inter(
+            color: Colors.white.withOpacity(0.95),
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            height: 1.3,
+            shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 10)],
+          ),
+        ),
+        const SizedBox(height: 14),
         SizedBox(
-          height: 44,
+          height: 42,
           child: ElevatedButton.icon(
             onPressed: () {
               HapticFeedback.mediumImpact();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, backgroundColor: _W.ink, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), content: Text('Fonctionnalité en cours de déploiement', style: GoogleFonts.inter(color: Colors.white))));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                behavior: SnackBarBehavior.floating,
+                backgroundColor: _W.ink,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                content: Text('Fonctionnalité en cours de déploiement', style: GoogleFonts.inter(color: Colors.white)),
+              ));
             },
             icon: const Icon(Icons.arrow_forward_rounded, size: 16),
             label: Text(slide['cta'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 13)),
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: _W.ink, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)), padding: const EdgeInsets.symmetric(horizontal: 22)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.white,
+              foregroundColor: _W.ink,
+              elevation: 0,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+              padding: const EdgeInsets.symmetric(horizontal: 22),
+            ),
           ),
         ),
       ],
@@ -759,6 +1057,9 @@ class _HeroContent extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// BARRE « REJOINDRE UN MARIAGE » (verre dépoli)
+// ═══════════════════════════════════════════════════════════════════════════
 class _JoinBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -766,7 +1067,13 @@ class _JoinBar extends StatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onScanQr;
 
-  const _JoinBar({required this.controller, required this.focusNode, required this.isLoading, required this.onSearch, required this.onScanQr});
+  const _JoinBar({
+    required this.controller,
+    required this.focusNode,
+    required this.isLoading,
+    required this.onSearch,
+    required this.onScanQr,
+  });
 
   @override
   State<_JoinBar> createState() => _JoinBarState();
@@ -796,26 +1103,27 @@ class _JoinBarState extends State<_JoinBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return ThixGlass(
+      radius: 28,
+      blur: 22,
+      opacity: 0.58,
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.96),
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: Colors.white),
-        boxShadow: [
-          BoxShadow(color: _W.rose.withOpacity(0.12), blurRadius: 24, offset: const Offset(0, 10)),
-          BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 12, offset: const Offset(0, 4)),
-        ],
-      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
-              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _W.rose.withOpacity(0.12), shape: BoxShape.circle), child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 17)),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: _W.rose.withOpacity(0.12), shape: BoxShape.circle),
+                child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 17),
+              ),
               const SizedBox(width: 10),
-              Expanded(child: Text('Rejoindre un mariage', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3))),
+              Expanded(
+                child: Text('Rejoindre un mariage',
+                    style: GoogleFonts.inter(fontSize: 15.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
+              ),
             ],
           ),
           const SizedBox(height: 12),
@@ -826,10 +1134,12 @@ class _JoinBarState extends State<_JoinBar> {
                   duration: const Duration(milliseconds: 180),
                   height: 52,
                   decoration: BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.circular(16),
+                    color: Colors.white.withOpacity(0.75),
+                    borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: _focused ? _W.rose : _W.line, width: _focused ? 1.6 : 1.2),
-                    boxShadow: _focused ? [BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4))] : null,
+                    boxShadow: _focused
+                        ? [BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4))]
+                        : null,
                   ),
                   child: TextField(
                     controller: widget.controller,
@@ -866,17 +1176,20 @@ class _JoinBarState extends State<_JoinBar> {
                 message: 'Rejoindre',
                 child: InkWell(
                   onTap: widget.isLoading ? null : widget.onSearch,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   child: Container(
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
+                      gradient: _W.roseG,
+                      borderRadius: BorderRadius.circular(18),
+                      boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.32), blurRadius: 12, offset: const Offset(0, 5))],
                     ),
                     child: widget.isLoading
-                        ? const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Colors.white)))
+                        ? const Padding(
+                            padding: EdgeInsets.all(16),
+                            child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Colors.white)),
+                          )
                         : const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 21),
                   ),
                 ),
@@ -886,11 +1199,15 @@ class _JoinBarState extends State<_JoinBar> {
                 message: 'Scanner le QR',
                 child: InkWell(
                   onTap: widget.onScanQr,
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(18),
                   child: Container(
                     width: 52,
                     height: 52,
-                    decoration: BoxDecoration(color: _W.tile, borderRadius: BorderRadius.circular(16), border: Border.all(color: _W.line)),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.7),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _W.line),
+                    ),
                     child: const Icon(Icons.qr_code_scanner_rounded, size: 21, color: _W.ink),
                   ),
                 ),
@@ -916,6 +1233,443 @@ class _JoinBarState extends State<_JoinBar> {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FEUILLE ADMIN : GÉRER LES 12 PHOTOS DU HERO
+// ═══════════════════════════════════════════════════════════════════════════
+class _HeroManagerSheet extends StatefulWidget {
+  final VoidCallback onChanged;
+  const _HeroManagerSheet({required this.onChanged});
+
+  @override
+  State<_HeroManagerSheet> createState() => _HeroManagerSheetState();
+}
+
+class _HeroManagerSheetState extends State<_HeroManagerSheet> {
+  final _supa = Supabase.instance.client;
+  List<HomeHeroPhoto> _photos = [];
+  bool _loading = true;
+  bool _busy = false;
+  String _msg = '';
+  bool _msgError = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _reload();
+  }
+
+  void _say(String m, {bool error = false}) {
+    if (!mounted) return;
+    setState(() {
+      _msg = m;
+      _msgError = error;
+    });
+  }
+
+  Future<void> _reload() async {
+    try {
+      final rows = await _supa.from(_kHeroTable).select().order('position', ascending: true);
+      if (!mounted) return;
+      setState(() {
+        _photos = (rows as List)
+            .map((e) => HomeHeroPhoto.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _loading = false);
+      _say('Chargement impossible : $e', error: true);
+    }
+  }
+
+  String _mime(String ext) {
+    switch (ext) {
+      case 'png':
+        return 'image/png';
+      case 'webp':
+        return 'image/webp';
+      default:
+        return 'image/jpeg';
+    }
+  }
+
+  Future<void> _add() async {
+    final remaining = kHeroMax - _photos.length;
+    if (remaining <= 0) {
+      _say('Maximum $kHeroMax photos atteint. Supprimez-en une d\'abord.', error: true);
+      return;
+    }
+    List<XFile> picked;
+    try {
+      picked = await ImagePicker().pickMultiImage(maxWidth: 1800, imageQuality: 82);
+    } catch (e) {
+      _say('Galerie inaccessible : $e', error: true);
+      return;
+    }
+    if (picked.isEmpty) return;
+
+    final toSend = picked.take(remaining).toList();
+    final skipped = picked.length - toSend.length;
+    setState(() => _busy = true);
+
+    var basePos = _photos.isEmpty
+        ? 0
+        : _photos.map((p) => p.position).reduce(math.max) + 1;
+    var ok = 0;
+
+    for (var i = 0; i < toSend.length; i++) {
+      _say('Envoi ${i + 1}/${toSend.length}…');
+      String? path;
+      try {
+        final x = toSend[i];
+        final bytes = await x.readAsBytes();
+        var ext = x.name.contains('.') ? x.name.split('.').last.toLowerCase() : 'jpg';
+        if (!['jpg', 'jpeg', 'png', 'webp'].contains(ext)) ext = 'jpg';
+        path = 'hero/${DateTime.now().millisecondsSinceEpoch}_$i.$ext';
+        await _supa.storage.from(_kHeroBucket).uploadBinary(
+              path,
+              bytes,
+              fileOptions: FileOptions(contentType: _mime(ext), upsert: false),
+            );
+        final url = _supa.storage.from(_kHeroBucket).getPublicUrl(path);
+        await _supa.from(_kHeroTable).insert({
+          'image_url': url,
+          'storage_path': path,
+          'position': basePos + i,
+        });
+        ok++;
+      } catch (e) {
+        if (path != null) {
+          try {
+            await _supa.storage.from(_kHeroBucket).remove([path]);
+          } catch (_) {}
+        }
+        _say('Échec : $e', error: true);
+      }
+    }
+
+    await _reload();
+    widget.onChanged();
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (ok > 0) {
+      _say(
+        '$ok photo(s) ajoutée(s)${skipped > 0 ? ' — $skipped ignorée(s) (limite de $kHeroMax)' : ''}',
+      );
+    }
+  }
+
+  Future<void> _delete(HomeHeroPhoto p) async {
+    setState(() => _busy = true);
+    try {
+      if (p.path != null && p.path!.isNotEmpty) {
+        try {
+          await _supa.storage.from(_kHeroBucket).remove([p.path!]);
+        } catch (_) {}
+      }
+      await _supa.from(_kHeroTable).delete().eq('id', p.id);
+      await _reload();
+      widget.onChanged();
+      _say('Photo supprimée');
+    } catch (e) {
+      _say('Suppression impossible : $e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _move(int i, int dir) async {
+    final j = i + dir;
+    if (j < 0 || j >= _photos.length) return;
+    setState(() => _busy = true);
+    try {
+      final a = _photos[i];
+      final b = _photos[j];
+      await _supa.from(_kHeroTable).update({'position': j}).eq('id', a.id);
+      await _supa.from(_kHeroTable).update({'position': i}).eq('id', b.id);
+      await _reload();
+      widget.onChanged();
+    } catch (e) {
+      _say('Réorganisation impossible : $e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _edit(HomeHeroPhoto p) async {
+    final tCtrl = TextEditingController(text: p.title ?? '');
+    final sCtrl = TextEditingController(text: p.subtitle ?? '');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        title: Text('Texte de la photo', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: tCtrl,
+              maxLength: 60,
+              decoration: const InputDecoration(labelText: 'Titre (optionnel)'),
+            ),
+            TextField(
+              controller: sCtrl,
+              maxLength: 110,
+              maxLines: 2,
+              decoration: const InputDecoration(labelText: 'Sous-titre (optionnel)'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: _W.rose),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    final title = tCtrl.text.trim();
+    final sub = sCtrl.text.trim();
+    tCtrl.dispose();
+    sCtrl.dispose();
+    if (ok != true) return;
+    setState(() => _busy = true);
+    try {
+      await _supa.from(_kHeroTable).update({
+        'title': title.isEmpty ? null : title,
+        'subtitle': sub.isEmpty ? null : sub,
+      }).eq('id', p.id);
+      await _reload();
+      widget.onChanged();
+    } catch (e) {
+      _say('Modification impossible : $e', error: true);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final full = _photos.length >= kHeroMax;
+    return Padding(
+      padding: const EdgeInsets.all(12),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.86),
+        child: ThixGlass(
+          radius: 30,
+          opacity: 0.78,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(color: _W.inkSoft.withOpacity(0.35), borderRadius: BorderRadius.circular(2)),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: const BoxDecoration(gradient: _W.roseG, shape: BoxShape.circle),
+                    child: const Icon(Icons.photo_library_rounded, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Photos du hero',
+                            style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900, color: _W.ink)),
+                        Text('${_photos.length}/$kHeroMax · défilement automatique',
+                            style: GoogleFonts.inter(fontSize: 11.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ],
+              ),
+              if (_msg.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                  decoration: BoxDecoration(
+                    color: (_msgError ? _W.rose : _W.green).withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: (_msgError ? _W.rose : _W.green).withOpacity(0.4)),
+                  ),
+                  child: Text(_msg,
+                      style: GoogleFonts.inter(
+                          fontSize: 12, fontWeight: FontWeight.w700, color: _msgError ? _W.rose : _W.green)),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Flexible(
+                child: _loading
+                    ? const Padding(
+                        padding: EdgeInsets.all(30),
+                        child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5),
+                      )
+                    : GridView.builder(
+                        shrinkWrap: true,
+                        itemCount: _photos.length + (full ? 0 : 1),
+                        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                          crossAxisCount: 3,
+                          mainAxisSpacing: 10,
+                          crossAxisSpacing: 10,
+                          childAspectRatio: 0.78,
+                        ),
+                        itemBuilder: (_, i) {
+                          if (i == _photos.length) {
+                            return GestureDetector(
+                              onTap: _busy ? null : _add,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: _W.roseSoft.withOpacity(0.6),
+                                  borderRadius: BorderRadius.circular(18),
+                                  border: Border.all(color: _W.rose.withOpacity(0.5), width: 1.6),
+                                ),
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Icon(Icons.add_photo_alternate_rounded, color: _W.rose, size: 30),
+                                    const SizedBox(height: 6),
+                                    Text('Ajouter',
+                                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose)),
+                                    Text('${kHeroMax - _photos.length} restante(s)',
+                                        style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft)),
+                                  ],
+                                ),
+                              ),
+                            );
+                          }
+                          final p = _photos[i];
+                          return ClipRRect(
+                            borderRadius: BorderRadius.circular(18),
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Image.network(
+                                  p.url,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) => Container(
+                                    color: _W.tile,
+                                    child: const Icon(Icons.broken_image_outlined, color: _W.inkSoft),
+                                  ),
+                                ),
+                                DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    gradient: LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Colors.transparent, Colors.black.withOpacity(0.55)],
+                                      stops: const [0.5, 1],
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 6,
+                                  left: 6,
+                                  child: Container(
+                                    width: 22,
+                                    height: 22,
+                                    alignment: Alignment.center,
+                                    decoration: const BoxDecoration(color: _W.rose, shape: BoxShape.circle),
+                                    child: Text('${i + 1}',
+                                        style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w900)),
+                                  ),
+                                ),
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: GestureDetector(
+                                    onTap: _busy ? null : () => _delete(p),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(5),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(0.9),
+                                        shape: BoxShape.circle,
+                                      ),
+                                      child: const Icon(Icons.delete_outline_rounded, size: 16, color: _W.rose),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  left: 2,
+                                  right: 2,
+                                  bottom: 2,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                    children: [
+                                      _tinyBtn(Icons.chevron_left_rounded, i > 0 && !_busy ? () => _move(i, -1) : null),
+                                      _tinyBtn(Icons.edit_rounded, _busy ? null : () => _edit(p)),
+                                      _tinyBtn(Icons.chevron_right_rounded,
+                                          i < _photos.length - 1 && !_busy ? () => _move(i, 1) : null),
+                                    ],
+                                  ),
+                                ),
+                                if ((p.title ?? '').trim().isNotEmpty)
+                                  Positioned(
+                                    left: 8,
+                                    right: 8,
+                                    bottom: 30,
+                                    child: Text(
+                                      p.title!,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.inter(
+                                          fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          );
+                        },
+                      ),
+              ),
+              if (_busy)
+                const Padding(
+                  padding: EdgeInsets.only(top: 12),
+                  child: LinearProgressIndicator(color: _W.rose, backgroundColor: _W.roseSoft, minHeight: 3),
+                ),
+              const SizedBox(height: 10),
+              Text(
+                'Formats JPG, PNG, WebP · 8 Mo max par photo · l\'ordre = l\'ordre de défilement.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, height: 1.35),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tinyBtn(IconData icon, VoidCallback? onTap) => GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(onTap == null ? 0.25 : 0.85),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 16, color: onTap == null ? Colors.white54 : _W.ink),
+        ),
+      );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CATÉGORIES (boutons ronds premium)
+// ═══════════════════════════════════════════════════════════════════════════
 class _CategoryRow extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
   final void Function(ProviderCategory?) onTap;
@@ -925,8 +1679,9 @@ class _CategoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 88,
+      height: 98,
       child: ListView.separated(
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         itemCount: categories.length,
@@ -936,23 +1691,33 @@ class _CategoryRow extends StatelessWidget {
           return GestureDetector(
             onTap: () => onTap(c['category'] as ProviderCategory?),
             child: SizedBox(
-              width: 60,
+              width: 66,
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Container(
-                    width: 44,
-                    height: 44,
+                    width: 60,
+                    height: 60,
                     decoration: BoxDecoration(
-                      color: _W.surface,
                       shape: BoxShape.circle,
-                      border: Border.all(color: _W.line, width: 1.2),
-                      boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.08), blurRadius: 10, offset: const Offset(0, 3))],
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [Colors.white, Color(0xFFFFEFF4)],
+                      ),
+                      border: Border.all(color: Colors.white, width: 1.6),
+                      boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.16), blurRadius: 16, offset: const Offset(0, 7))],
                     ),
-                    child: Icon(c['icon'] as IconData, size: 20, color: _W.rose),
+                    child: Icon(c['icon'] as IconData, size: 25, color: _W.rose),
                   ),
-                  const SizedBox(height: 6),
-                  Text(c['label'] as String, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700, color: _W.ink)),
+                  const SizedBox(height: 7),
+                  Text(
+                    c['label'] as String,
+                    textAlign: TextAlign.center,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _W.ink),
+                  ),
                 ],
               ),
             ),
@@ -972,15 +1737,26 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(width: 3, height: 18, decoration: BoxDecoration(gradient: const LinearGradient(colors: [_W.rose, _W.roseLight]), borderRadius: BorderRadius.circular(2))),
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(gradient: _W.roseG, borderRadius: BorderRadius.circular(2)),
+        ),
         const SizedBox(width: 10),
-        Expanded(child: Text(title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4))),
+        Expanded(
+          child: Text(title,
+              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4)),
+        ),
         GestureDetector(
           onTap: () {
             HapticFeedback.selectionClick();
             context.push('/thix-weeding/provider/catalog');
           },
-          child: Row(children: [Text('Voir tout', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.rose)), const SizedBox(width: 2), const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose)]),
+          child: Row(children: [
+            Text('Voir tout', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.rose)),
+            const SizedBox(width: 2),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose),
+          ]),
         ),
       ],
     );
@@ -996,9 +1772,10 @@ class _OffersRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 118,
+      height: 126,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 16),
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         itemCount: offers.length,
@@ -1008,32 +1785,44 @@ class _OffersRow extends StatelessWidget {
           final color = o['color'] as Color;
           return GestureDetector(
             onTap: () => onTap(o['title'] as String),
-            child: Container(
-              width: 160,
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _W.surface,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: _W.line),
-                boxShadow: [BoxShadow(color: color.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 5))],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-                    child: Text(o['discount'] as String, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
-                  ),
-                  const Spacer(),
-                  Row(children: [
-                    Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)), child: Icon(o['icon'] as IconData, size: 14, color: color)),
-                    const SizedBox(width: 8),
-                    Expanded(child: Text(o['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2))),
-                  ]),
-                  const SizedBox(height: 3),
-                  Text(o['subtitle'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
-                ],
+            child: SizedBox(
+              width: 164,
+              child: ThixGlass(
+                radius: 22,
+                opacity: 0.6,
+                borderColor: color.withOpacity(0.25),
+                padding: const EdgeInsets.all(14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+                      child: Text(o['discount'] as String,
+                          style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
+                    ),
+                    const Spacer(),
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(color: color.withOpacity(0.14), borderRadius: BorderRadius.circular(9)),
+                        child: Icon(o['icon'] as IconData, size: 14, color: color),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(o['title'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2)),
+                      ),
+                    ]),
+                    const SizedBox(height: 3),
+                    Text(o['subtitle'] as String,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
+                  ],
+                ),
               ),
             ),
           );
@@ -1051,15 +1840,18 @@ class _ProvidersGrid extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (providers.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(40),
-        decoration: BoxDecoration(color: _W.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _W.line)),
-        child: Column(
-          children: [
-            Icon(Icons.store_outlined, size: 48, color: _W.inkSoft),
-            const SizedBox(height: 12),
-            Text('Aucun prestataire disponible', style: GoogleFonts.inter(fontSize: 14, color: _W.inkSoft)),
-          ],
+      return ThixGlass(
+        radius: 22,
+        opacity: 0.55,
+        padding: const EdgeInsets.all(36),
+        child: Center(
+          child: Column(
+            children: [
+              const Icon(Icons.store_outlined, size: 48, color: _W.inkSoft),
+              const SizedBox(height: 12),
+              Text('Aucun prestataire disponible', style: GoogleFonts.inter(fontSize: 14, color: _W.inkSoft)),
+            ],
+          ),
         ),
       );
     }
@@ -1068,10 +1860,17 @@ class _ProvidersGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: providers.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 0.72),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 14,
+        childAspectRatio: 0.72,
+      ),
       itemBuilder: (_, i) {
         final p = providers[i];
-        final coverImage = p.galleryUrls.isNotEmpty ? p.galleryUrls.first : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
+        final coverImage = p.galleryUrls.isNotEmpty
+            ? p.galleryUrls.first
+            : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
 
         return GestureDetector(
           onTap: () {
@@ -1081,9 +1880,9 @@ class _ProvidersGrid extends StatelessWidget {
           child: Container(
             decoration: BoxDecoration(
               color: _W.surface,
-              borderRadius: BorderRadius.circular(22),
+              borderRadius: BorderRadius.circular(24),
               border: Border.all(color: _W.line),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5))],
+              boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 7))],
             ),
             clipBehavior: Clip.antiAlias,
             child: Column(
@@ -1093,7 +1892,14 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(coverImage, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft))),
+                      Image.network(
+                        coverImage,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: _W.tile,
+                          child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft),
+                        ),
+                      ),
                       if (p.level == TrackingLevel.platinum)
                         Positioned(
                           top: 10,
@@ -1110,7 +1916,8 @@ class _ProvidersGrid extends StatelessWidget {
                               children: [
                                 const Icon(Icons.workspace_premium, color: Colors.white, size: 12),
                                 const SizedBox(width: 4),
-                                Text('PREMIUM', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
+                                Text('PREMIUM',
+                                    style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
                               ],
                             ),
                           ),
@@ -1138,7 +1945,11 @@ class _ProvidersGrid extends StatelessWidget {
                         child: Container(
                           width: 32,
                           height: 32,
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, border: Border.all(color: Colors.white)),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.9),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.white),
+                          ),
                           child: const Icon(Icons.favorite_border_rounded, size: 15, color: _W.rose),
                         ),
                       ),
@@ -1150,9 +1961,15 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(p.businessName, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
+                      Text(p.businessName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
                       const SizedBox(height: 2),
-                      Text('${p.category.displayName} · ${p.city ?? 'RDC'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
+                      Text('${p.category.displayName} · ${p.city ?? 'RDC'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1161,7 +1978,8 @@ class _ProvidersGrid extends StatelessWidget {
                             children: [
                               const Icon(Icons.star_rounded, size: 13, color: _W.gold),
                               const SizedBox(width: 3),
-                              Text(p.rating.toStringAsFixed(1), style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
+                              Text(p.rating.toStringAsFixed(1),
+                                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
                             ],
                           ),
                           if (p.minPrice != null)
@@ -1170,7 +1988,8 @@ class _ProvidersGrid extends StatelessWidget {
                               style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose),
                             )
                           else
-                            Text('Sur devis', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _W.inkSoft)),
+                            Text('Sur devis',
+                                style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _W.inkSoft)),
                         ],
                       ),
                     ],
@@ -1194,9 +2013,10 @@ class _AnnouncementsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 160,
+      height: 164,
       child: ListView.separated(
         padding: const EdgeInsets.symmetric(horizontal: 16),
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         physics: const BouncingScrollPhysics(),
         itemCount: items.length,
@@ -1206,12 +2026,12 @@ class _AnnouncementsRow extends StatelessWidget {
           return GestureDetector(
             onTap: () => onTap(a['title'] as String),
             child: Container(
-              width: 160,
+              width: 164,
               decoration: BoxDecoration(
                 color: _W.surface,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(24),
                 border: Border.all(color: _W.line),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 5))],
+                boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.07), blurRadius: 14, offset: const Offset(0, 6))],
               ),
               clipBehavior: Clip.antiAlias,
               child: Column(
@@ -1223,8 +2043,14 @@ class _AnnouncementsRow extends StatelessWidget {
                       children: [
                         Container(
                           width: double.infinity,
-                          decoration: const BoxDecoration(gradient: LinearGradient(colors: [_W.tile, Color(0xFFFFE8E3)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
-                          child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7))),
+                          decoration: const BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [_W.tile, Color(0xFFFFE3EA)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                          ),
+                          child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.75))),
                         ),
                         Positioned(
                           top: 8,
@@ -1232,7 +2058,8 @@ class _AnnouncementsRow extends StatelessWidget {
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                             decoration: BoxDecoration(color: _W.ink, borderRadius: BorderRadius.circular(8)),
-                            child: Text((a['tag'] as String).toUpperCase(), style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)),
+                            child: Text((a['tag'] as String).toUpperCase(),
+                                style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)),
                           ),
                         ),
                       ],
@@ -1243,9 +2070,13 @@ class _AnnouncementsRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(a['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink)),
-                        const Spacer(),
-                        Text(a['subtitle'] as String, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose)),
+                        Text(a['title'] as String,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink)),
+                        const SizedBox(height: 14),
+                        Text(a['subtitle'] as String,
+                            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.rose)),
                       ],
                     ),
                   ),
@@ -1271,14 +2102,11 @@ class _TrustRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 8),
-      decoration: BoxDecoration(
-        color: _W.surface,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _W.line),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 12, offset: const Offset(0, 4))],
-      ),
+    return ThixGlass(
+      radius: 24,
+      opacity: 0.55,
+      borderColor: _W.rose.withOpacity(0.14),
+      padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 8),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: _items.map((e) {
@@ -1286,11 +2114,19 @@ class _TrustRow extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle), child: Icon(e['icon'] as IconData, size: 18, color: _W.rose)),
+                Container(
+                  padding: const EdgeInsets.all(9),
+                  decoration: BoxDecoration(color: _W.rose.withOpacity(0.10), shape: BoxShape.circle),
+                  child: Icon(e['icon'] as IconData, size: 18, color: _W.rose),
+                ),
                 const SizedBox(height: 6),
-                Text(e['title'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2)),
+                Text(e['title'] as String,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2)),
                 const SizedBox(height: 1),
-                Text(e['subtitle'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2)),
+                Text(e['subtitle'] as String,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2)),
               ],
             ),
           );
@@ -1300,6 +2136,9 @@ class _TrustRow extends StatelessWidget {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// FOND AMBIANT
+// ═══════════════════════════════════════════════════════════════════════════
 class _AmbientBackground extends StatefulWidget {
   const _AmbientBackground();
 
@@ -1352,8 +2191,8 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
             return Stack(
               children: [
                 Positioned.fill(child: Container(color: _W.bg)),
-                _orb(s.width * 0.2, s.height * 0.15 + math.sin(t * 0.8) * 20, 520, 480, _W.roseLight.withOpacity(0.09), t * 0.2),
-                _orb(s.width * 0.85, s.height * 0.5 + math.cos(t * 0.6) * 25, 600, 540, _W.peach.withOpacity(0.08), -t * 0.15),
+                _orb(s.width * 0.2, s.height * 0.15 + math.sin(t * 0.8) * 20, 520, 480, _W.roseLight.withOpacity(0.10), t * 0.2),
+                _orb(s.width * 0.85, s.height * 0.5 + math.cos(t * 0.6) * 25, 600, 540, _W.peach.withOpacity(0.09), -t * 0.15),
                 _orb(s.width * 0.3, s.height * 0.85 + math.sin(t * 0.7) * 15, 480, 420, _W.gold.withOpacity(0.05), t * 0.25),
               ],
             );
@@ -1364,6 +2203,9 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ORBE « MES INVITATIONS » (inchangé)
+// ═══════════════════════════════════════════════════════════════════════════
 class _ActiveInvitesOrb extends StatefulWidget {
   final List<Map<String, dynamic>> invites;
   final void Function(String weddingId) onTap;
@@ -1424,7 +2266,10 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                           final c = '${inv['bride_name'] ?? ''} & ${inv['groom_name'] ?? ''}'.trim();
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: _GlassInviteChip(title: c.isEmpty || c == '&' ? 'Invitation' : c, onTap: () => widget.onTap(inv['wedding_id'] as String)),
+                            child: _GlassInviteChip(
+                              title: c.isEmpty || c == '&' ? 'Invitation' : c,
+                              onTap: () => widget.onTap(inv['wedding_id'] as String),
+                            ),
                           );
                         }).toList(),
                       ),
@@ -1452,7 +2297,10 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                       Container(
                         width: 64 + 6 * _pulse.value,
                         height: 64 + 6 * _pulse.value,
-                        decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.28 * p), blurRadius: glow, spreadRadius: 1)]),
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.28 * p), blurRadius: glow, spreadRadius: 1)],
+                        ),
                       ),
                       Container(
                         width: 58,
@@ -1479,7 +2327,11 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                               height: 42,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_W.rose.withOpacity(0.95), _W.roseLight.withOpacity(0.9)]),
+                                gradient: LinearGradient(
+                                  begin: Alignment.topLeft,
+                                  end: Alignment.bottomRight,
+                                  colors: [_W.rose.withOpacity(0.95), _W.roseLight.withOpacity(0.9)],
+                                ),
                                 boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.35 * p), blurRadius: 8)],
                               ),
                               child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
@@ -1490,7 +2342,11 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                                   offset: Offset((-40 + 100 * _shimmer.value), 0),
                                   child: Container(
                                     width: 28,
-                                    decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.white.withOpacity(0.35), Colors.transparent])),
+                                    decoration: BoxDecoration(
+                                      gradient: LinearGradient(
+                                        colors: [Colors.transparent, Colors.white.withOpacity(0.35), Colors.transparent],
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -1534,7 +2390,13 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                   border: Border.all(color: Colors.white),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
                 ),
-                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _W.ink, letterSpacing: -0.2)),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _W.ink, letterSpacing: -0.2),
+                ),
               ),
             ),
           ],
@@ -1572,12 +2434,15 @@ class _GlassInviteChip extends StatelessWidget {
               Container(
                 width: 22,
                 height: 22,
-                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [_W.rose, _W.roseLight])),
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: _W.roseG),
                 child: const Icon(Icons.favorite_rounded, size: 11, color: Colors.white),
               ),
               const SizedBox(width: 8),
               Flexible(
-                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
+                child: Text(title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
               ),
             ],
           ),
