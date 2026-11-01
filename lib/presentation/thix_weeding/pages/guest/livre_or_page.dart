@@ -603,7 +603,8 @@ class _ComposerSheet extends ConsumerStatefulWidget {
 class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
   final _nameCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
-  final _picker = const ImagePicker();
+  final _picker = ImagePicker();
+
 
   File? _video;
   Duration? _videoDuration;
