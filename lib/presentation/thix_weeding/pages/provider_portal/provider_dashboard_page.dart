@@ -4,7 +4,8 @@
 // ✅ Stats temps réel (Revenus, Réservations, Tâches)
 // ✅ Design glassmorphism blanc/rose premium
 // ✅ Actions rapides et alertes de validation
-// ✅ FIX : Ajout du widget _VerificationBadge
+// ✅ FIX : IconData au lieu de Icon dans _VerificationBadge
+// ✅ FIX : SliverToBoxAdapter correct pour _EmptyState des tâches
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -92,7 +93,9 @@ class ProviderDashboardPage extends ConsumerWidget {
               child: reservationsAsync.when(
                 data: (reservations) {
                   final upcoming = reservations
-                      .where((r) => r.status == ReservationStatus.confirmed || r.status == ReservationStatus.pending)
+                      .where((r) =>
+                          r.status == ReservationStatus.confirmed ||
+                          r.status == ReservationStatus.pending)
                       .take(5)
                       .toList();
                   if (upcoming.isEmpty) {
@@ -106,7 +109,8 @@ class ProviderDashboardPage extends ConsumerWidget {
                     itemBuilder: (_, i) => _ReservationCard(reservation: upcoming[i]),
                   );
                 },
-                loading: () => const Center(child: CircularProgressIndicator(color: _P.rose)),
+                loading: () =>
+                    const Center(child: CircularProgressIndicator(color: _P.rose)),
                 error: (e, _) => Center(child: Text('Erreur: $e')),
               ),
             ),
@@ -123,10 +127,17 @@ class ProviderDashboardPage extends ConsumerWidget {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             sliver: tasksAsync.when(
               data: (tasks) {
-                final activeTasks = tasks.where((t) => t.status != TaskStatus.completed).take(5).toList();
+                final activeTasks = tasks
+                    .where((t) => t.status != TaskStatus.completed)
+                    .take(5)
+                    .toList();
                 if (activeTasks.isEmpty) {
-                  return SliverToBoxAdapter(
-                    child: const _EmptyState(message: 'Aucune tâche en cours').toSliver,
+                  // ✅ FIX : retour direct d'un SliverToBoxAdapter (pas de .toSliver)
+                  return const SliverToBoxAdapter(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 24),
+                      child: _EmptyState(message: 'Aucune tâche en cours'),
+                    ),
                   );
                 }
                 return SliverList(
@@ -142,7 +153,8 @@ class ProviderDashboardPage extends ConsumerWidget {
               loading: () => const SliverToBoxAdapter(
                 child: Center(child: CircularProgressIndicator(color: _P.rose)),
               ),
-              error: (e, _) => SliverToBoxAdapter(child: Center(child: Text('Erreur: $e'))),
+              error: (e, _) =>
+                  SliverToBoxAdapter(child: Center(child: Text('Erreur: $e'))),
             ),
           ),
 
@@ -187,17 +199,28 @@ class _DashboardHeader extends StatelessWidget {
                 children: [
                   Text(
                     'Bonjour 👋',
-                    style: GoogleFonts.inter(color: Colors.white.withOpacity(0.9), fontSize: 14, fontWeight: FontWeight.w500),
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     provider.businessName,
-                    style: GoogleFonts.inter(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: -0.5),
+                    style: GoogleFonts.inter(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
                   ),
                 ],
               ),
-              // ✅ WIDGET AJOUTÉ : Badge de vérification
-              _VerificationBadge(level: provider.level, status: provider.verificationStatus),
+              _VerificationBadge(
+                level: provider.level,
+                status: provider.verificationStatus,
+              ),
             ],
           ),
           const SizedBox(height: 20),
@@ -217,11 +240,20 @@ class _DashboardHeader extends StatelessWidget {
                   children: [
                     Text(
                       'Votre Code Unique',
-                      style: GoogleFonts.inter(color: Colors.white.withOpacity(0.9), fontSize: 11, fontWeight: FontWeight.w600),
+                      style: GoogleFonts.inter(
+                        color: Colors.white.withOpacity(0.9),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     Text(
                       provider.uniqueCode,
-                      style: GoogleFonts.inter(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w900, letterSpacing: 1),
+                      style: GoogleFonts.inter(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1,
+                      ),
                     ),
                   ],
                 ),
@@ -235,19 +267,20 @@ class _DashboardHeader extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ WIDGET AJOUTÉ : BADGE DE VÉRIFICATION
+// BADGE DE VÉRIFICATION
 // ═══════════════════════════════════════════════════════════════════════════
 class _VerificationBadge extends StatelessWidget {
   final TrackingLevel level;
   final ProviderVerificationStatus status;
-  
+
   const _VerificationBadge({required this.level, required this.status});
 
   @override
   Widget build(BuildContext context) {
     String label = level.displayName;
     Color bgColor = Colors.white.withOpacity(0.2);
-    Icon icon = Icons.verified_outlined;
+    // ✅ FIX : IconData (et non Icon)
+    IconData icon = Icons.verified_outlined;
 
     if (status == ProviderVerificationStatus.pending) {
       label = 'En attente';
@@ -356,7 +389,11 @@ class _StatCard extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
         border: Border.all(color: _P.line),
       ),
@@ -416,7 +453,11 @@ class _ReservationCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isPending ? _P.amber : _P.line),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
         ],
       ),
       child: Column(
@@ -424,11 +465,19 @@ class _ReservationCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(Icons.calendar_today, size: 16, color: isPending ? _P.amber : _P.green),
+              Icon(
+                Icons.calendar_today,
+                size: 16,
+                color: isPending ? _P.amber : _P.green,
+              ),
               const SizedBox(width: 6),
               Text(
                 dateStr,
-                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink),
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: _P.ink,
+                ),
               ),
             ],
           ),
@@ -437,7 +486,11 @@ class _ReservationCard extends StatelessWidget {
             reservation.clientName,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink),
+            style: GoogleFonts.inter(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: _P.ink,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
@@ -480,7 +533,11 @@ class _TaskCard extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _P.line),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2)),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
         ],
       ),
       child: Row(
@@ -507,7 +564,11 @@ class _TaskCard extends StatelessWidget {
                   task.title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: _P.ink),
+                  style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: _P.ink,
+                  ),
                 ),
                 const SizedBox(height: 4),
                 Text(
@@ -544,7 +605,11 @@ class _ValidationAlertCard extends StatelessWidget {
               color: const Color(0xFFFEF3C7),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: const Icon(Icons.pending_actions, color: Color(0xFFD97706), size: 20),
+            child: const Icon(
+              Icons.pending_actions,
+              color: Color(0xFFD97706),
+              size: 20,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -553,11 +618,18 @@ class _ValidationAlertCard extends StatelessWidget {
               children: [
                 Text(
                   'Validation en cours',
-                  style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: const Color(0xFF92400E)),
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF92400E),
+                  ),
                 ),
                 Text(
                   'Votre dossier est en cours de vérification par notre équipe.',
-                  style: GoogleFonts.inter(fontSize: 11, color: const Color(0xFFB45309)),
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: const Color(0xFFB45309),
+                  ),
                 ),
               ],
             ),
@@ -581,10 +653,22 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           title,
-          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink, letterSpacing: -0.3),
+          style: GoogleFonts.inter(
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+            color: _P.ink,
+            letterSpacing: -0.3,
+          ),
         ),
         const Spacer(),
-        Text('Voir tout', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: _P.rose)),
+        Text(
+          'Voir tout',
+          style: GoogleFonts.inter(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: _P.rose,
+          ),
+        ),
       ],
     );
   }
@@ -602,14 +686,12 @@ class _EmptyState extends StatelessWidget {
         children: [
           Icon(Icons.inbox_outlined, size: 48, color: _P.line),
           const SizedBox(height: 8),
-          Text(message, style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14)),
+          Text(
+            message,
+            style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14),
+          ),
         ],
       ),
     );
   }
-}
-
-// Helper pour convertir Widget en Sliver (usage interne simple)
-extension WidgetToSliver on Widget {
-  Widget get toSliver => SliverToBoxAdapter(child: this);
 }
