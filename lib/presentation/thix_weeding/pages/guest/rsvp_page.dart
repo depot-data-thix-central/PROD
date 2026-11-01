@@ -395,20 +395,22 @@ class _RsvpPageState extends ConsumerState<RsvpPage> {
                             color: _count > 1 ? _R.rose : _R.inkSoft,
                           ),
                         ),
-                        Container(
-                          minWidth: 36,
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: _R.roseSoft,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          alignment: Alignment.center,
-                          child: Text(
-                            '$_count',
-                            style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 16,
-                              color: _R.rose,
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(minWidth: 36),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: _R.roseSoft,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '$_count',
+                              style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                color: _R.rose,
+                              ),
                             ),
                           ),
                         ),
