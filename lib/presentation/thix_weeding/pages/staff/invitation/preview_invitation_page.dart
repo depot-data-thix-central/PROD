@@ -1,10 +1,9 @@
 // lib/presentation/thix_weeding/pages/staff/invitation/preview_invitation_page.dart
 // ============================================================================
-// THIX WEDDING — INVITATION STUDIO v4.0 (PRODUCTION)
-// ✅ Éditeur complet + Aperçu Live
-// ✅ 10 Templates Premium distincts (Royale, Botanique, Moderne, Vintage...)
-// ✅ Upload Photo Hero via Supabase Storage
-// ✅ Sauvegarde Config JSONB
+// THIX WEDDING — INVITATION STUDIO v4.1 (PRODUCTION - CORRIGÉ)
+// ✅ Fix compilation errors (Haptics, GoogleFonts, BoxDecoration)
+// ✅ 10 Templates Premium distincts
+// ✅ Éditeur Live + Sauvegarde JSONB Supabase
 // ============================================================================
 import 'dart:convert';
 import 'dart:io';
@@ -271,7 +270,7 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
       ref.invalidate(weddingInvitationProvider(widget.weddingId));
       
       if(mounted) {
-         HapticFeedback.successImpact();
+         HapticFeedback.heavyImpact(); // ✅ CORRECTION : successImpact n'existe pas
          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
            content: Text('Design enregistré ✓', style: TextStyle(fontWeight: FontWeight.bold)),
            backgroundColor: _R.green,
@@ -312,17 +311,13 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
         loading: () => const Center(child: CircularProgressIndicator()),
         error: (e, _) => Center(child: Text('Erreur: $e')),
         data: (wedding) {
-          // Initialiser les valeurs si premier chargement ou changement de template
-          // Note: On ne réinitialise pas les ctrl.text ici pour ne pas écraser la saisie utilisateur
-          // mais on synchronise la config globale si elle changeait côté serveur (rare)
-          
           return SingleChildScrollView(
             padding: const EdgeInsets.only(bottom: 40),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 
-                // ── APERÇU LIVE (LE CŒUR DU DESIGN) ───────────────────
+                // ── APERÇU LIVE ───────────────────────────────────────
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                   decoration: BoxDecoration(
@@ -331,14 +326,14 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
                   ),
                   clipBehavior: Clip.antiAlias,
                   child: AspectRatio(
-                    aspectRatio: 0.75, // Ratio portrait type carte postale
+                    aspectRatio: 0.75,
                     child: _buildSelectedTemplate(wedding),
                   ),
                 ),
                 
                 const SizedBox(height: 10),
 
-                // ── SÉLECTEUR DE TEMPLATE (GRILLE) ────────────────────
+                // ── SÉLECTEUR DE TEMPLATE ─────────────────────────────
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16),
                   child: Column(
@@ -358,7 +353,6 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
                           return GestureDetector(
                             onTap: () {
                               setState(() => _selectedTemplate = type);
-                              // Optionnel : changer les couleurs par défaut selon le thème
                               if(type == TemplateType.darkElegant) {
                                 _config.bgColor = const Color(0xFF1A1A2E);
                                 _config.primaryColor = const Color(0xFFD4AF37);
@@ -386,7 +380,7 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
                                   Icon(type.icon, size: 24, color: isSelected ? _R.blue : _R.text2),
                                   const SizedBox(height: 4),
                                   Text(
-                                    type.name.split(' ').first, // Nom court
+                                    type.name.split(' ').first,
                                     textAlign: TextAlign.center,
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
@@ -447,7 +441,6 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
                     ),
                     const SizedBox(height: 16),
                     
-                    // Bouton Upload Photo
                     OutlinedButton.icon(
                       onPressed: _isUploadingPhoto ? null : _uploadHeroImage,
                       icon: _isUploadingPhoto 
@@ -478,7 +471,6 @@ class _PreviewInvitationPageState extends ConsumerState<PreviewInvitationPage> {
     );
   }
 
-  // Routeur dynamique vers les 10 templates
   Widget _buildSelectedTemplate(WeddingModel wedding) {
     switch (_selectedTemplate) {
       case TemplateType.royalGold: return _TplRoyalGold(config: _config, wedding: wedding);
@@ -604,10 +596,10 @@ class _ColorPickerTile extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LES 10 TEMPLATES PREMIUM (DESIGN CODE À LA MAIN)
+// LES 10 TEMPLATES PREMIUM
 // ═══════════════════════════════════════════════════════════════════════════
 
-// --- 1. ROYAL GOLD (Classique, Or, Bordures doubles) ---
+// --- 1. ROYAL GOLD ---
 class _TplRoyalGold extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -620,7 +612,6 @@ class _TplRoyalGold extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       child: Stack(
         children: [
-          // Cadre extérieur
           Positioned.fill(
             child: Container(
               decoration: BoxDecoration(
@@ -629,7 +620,6 @@ class _TplRoyalGold extends StatelessWidget {
               ),
             ),
           ),
-          // Cadre intérieur
           Positioned.fill(
             child: Padding(
               padding: const EdgeInsets.all(6),
@@ -641,7 +631,6 @@ class _TplRoyalGold extends StatelessWidget {
               ),
             ),
           ),
-          // Contenu
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -667,7 +656,7 @@ class _TplRoyalGold extends StatelessWidget {
   }
 }
 
-// --- 2. BOTANICAL LEAF (Vert nature, Feuilles décoratives) ---
+// --- 2. BOTANICAL LEAF ---
 class _TplBotanicalLeaf extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -679,9 +668,7 @@ class _TplBotanicalLeaf extends StatelessWidget {
       color: config.bgColor,
       child: Stack(
         children: [
-          // Décor coin haut gauche
           Positioned(top: -20, left: -20, child: Transform.rotate(angle: 0.5, child: Icon(Icons.eco, size: 100, color: config.primaryColor.withOpacity(0.1)))),
-          // Décor coin bas droite
           Positioned(bottom: -20, right: -20, child: Transform.rotate(angle: 0.5, child: Icon(Icons.local_florist, size: 100, color: config.primaryColor.withOpacity(0.1)))),
           
           Center(
@@ -709,7 +696,7 @@ class _TplBotanicalLeaf extends StatelessWidget {
   }
 }
 
-// --- 3. MODERN BOLD (Typographie massive, Noir & Blanc) ---
+// --- 3. MODERN BOLD ---
 class _TplModernBold extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -739,7 +726,7 @@ class _TplModernBold extends StatelessWidget {
   }
 }
 
-// --- 4. VINTAGE PAPER (Kraft/Sépia, Tampon postal) ---
+// --- 4. VINTAGE PAPER (CORRIGÉ GOOGLE FONTS) ---
 class _TplVintagePaper extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -748,10 +735,9 @@ class _TplVintagePaper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFFDFBF7), // Couleur papier vieilli
+      color: const Color(0xFFFDFBF7),
       child: Stack(
         children: [
-          // Texture subtile simulée par opacité
           Positioned.fill(child: Container(color: Colors.orange.shade50.withOpacity(0.1))),
           
           Center(
@@ -760,14 +746,16 @@ class _TplVintagePaper extends StatelessWidget {
               children: [
                 Text('SAVE THE DATE', style: GoogleFonts.specialElite(fontSize: 14, color: const Color(0xFF5C4A3A), letterSpacing: 2)),
                 const SizedBox(height: 10),
-                Text('~ ${wedding.brideName} ~', style: GoogleFonts.spectralMedium(fontSize: 24, color: const Color(0xFF3D2F1F), fontStyle: FontStyle.italic)),
-                Text('AND', style: GoogleFonts.spectralSmallCaps(fontSize: 12, color: const Color(0xFF8B7355))),
-                Text('~ ${wedding.groomName} ~', style: GoogleFonts.spectralMedium(fontSize: 24, color: const Color(0xFF3D2F1F), fontStyle: FontStyle.italic)),
+                // ✅ CORRECTION : spectralMedium -> spectral + fontWeight w500
+                Text('~ ${wedding.brideName} ~', style: GoogleFonts.spectral(fontSize: 24, fontWeight: FontWeight.w500, color: const Color(0xFF3D2F1F), fontStyle: FontStyle.italic)),
+                // ✅ CORRECTION : spectralSmallCaps -> spectral + uppercase + letterSpacing
+                Text('AND', style: GoogleFonts.spectral(fontSize: 12, letterSpacing: 2, color: const Color(0xFF8B7355)).copyWith(fontFeatures: [FontFeature.smallCaps()])),
+                Text('~ ${wedding.groomName} ~', style: GoogleFonts.spectral(fontSize: 24, fontWeight: FontWeight.w500, color: const Color(0xFF3D2F1F), fontStyle: FontStyle.italic)),
                 const SizedBox(height: 15),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                   decoration: BoxDecoration(border: Border.all(color: const Color(0xFF8B7355))),
-                  child: Text(_fmtDate(wedding.weddingDate), style: GoogleFonts.spectralSmallCaps(fontSize: 10, color: const Color(0xFF5C4A3A))),
+                  child: Text(_fmtDate(wedding.weddingDate).toUpperCase(), style: GoogleFonts.spectral(fontSize: 10, letterSpacing: 1.5, color: const Color(0xFF5C4A3A))),
                 ),
               ],
             ),
@@ -778,7 +766,7 @@ class _TplVintagePaper extends StatelessWidget {
   }
 }
 
-// --- 5. FLORAL PINK (Romantique, Doux, Rose) ---
+// --- 5. FLORAL PINK ---
 class _TplFloralPink extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -790,7 +778,6 @@ class _TplFloralPink extends StatelessWidget {
       color: const Color(0xFFFFF0F5),
       child: Stack(
         children: [
-          // Fleurs corners
           Positioned(top: 10, left: 10, child: Icon(Icons.favorite, color: Colors.pink.shade200, size: 40)),
           Positioned(bottom: 10, right: 10, child: Icon(Icons.favorite, color: Colors.pink.shade200, size: 40)),
           
@@ -822,7 +809,7 @@ class _TplFloralPink extends StatelessWidget {
   }
 }
 
-// --- 6. DARK ELEGANT (Luxueux, Fond sombre, Or) ---
+// --- 6. DARK ELEGANT ---
 class _TplDarkElegant extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -851,7 +838,7 @@ class _TplDarkElegant extends StatelessWidget {
   }
 }
 
-// --- 7. WATERCOLOR ART (Artistique, Flou, Pastel) ---
+// --- 7. WATERCOLOR ART ---
 class _TplWatercolorArt extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -867,7 +854,6 @@ class _TplWatercolorArt extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-             // Simuler un effet aquarelle avec des cercles flous
              Stack(
                alignment: Alignment.center,
                children: [
@@ -886,7 +872,7 @@ class _TplWatercolorArt extends StatelessWidget {
   }
 }
 
-// --- 8. GEOMETRIC LINE (Minimaliste, Lignes droites) ---
+// --- 8. GEOMETRIC LINE ---
 class _TplGeometricLine extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -917,7 +903,6 @@ class _TplGeometricLine extends StatelessWidget {
   }
 }
 
-// Painter pour lignes géométriques
 class _GeoPainter extends CustomPainter {
   final Color lineColor;
   _GeoPainter({required this.lineColor});
@@ -925,10 +910,8 @@ class _GeoPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..color = lineColor.withOpacity(0.2)..strokeWidth = 1;
-    // Diagonales subtiles
     canvas.drawLine(Offset.zero, Offset(size.width, size.height), paint);
     canvas.drawLine(Offset(size.width, 0), Offset(0, size.height), paint);
-    // Cercle central
     canvas.drawCircle(Offset(size.width/2, size.height/2), size.width * 0.3, paint);
   }
 
@@ -936,7 +919,7 @@ class _GeoPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-// --- 9. SCRIPT CLASSIC (Manuscrit ancien, Encre bleue/noire) ---
+// --- 9. SCRIPT CLASSIC ---
 class _TplScriptClassic extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -945,7 +928,7 @@ class _TplScriptClassic extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      color: const Color(0xFFFAF9F6), // Blanc cassé
+      color: const Color(0xFFFAF9F6),
       padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -965,7 +948,7 @@ class _TplScriptClassic extends StatelessWidget {
   }
 }
 
-// --- 10. PHOTO FRAME (Grande image, Cadre fin) ---
+// --- 10. PHOTO FRAME (CORRIGÉ BOXDECORATION) ---
 class _TplPhotoFrame extends StatelessWidget {
   final InvitationConfig config;
   final WeddingModel wedding;
@@ -987,7 +970,11 @@ class _TplPhotoFrame extends StatelessWidget {
             flex: 1,
             child: Container(
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(borderTop: Border.all(color: config.primaryColor, width: 2)),
+              // ✅ CORRECTION : borderTop invalide dans BoxDecoration
+              // Remplacé par Border(top: BorderSide(...))
+              decoration: BoxDecoration(
+                border: Border(top: BorderSide(color: config.primaryColor, width: 2)),
+              ),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
