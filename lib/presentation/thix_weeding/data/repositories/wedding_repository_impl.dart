@@ -103,14 +103,18 @@ class WeddingRepositoryImpl implements WeddingRepository {
     try {
       final res = await Supabase.instance.client
           .from('thix_weeding_gallery')
-          .select('url, image_url')
+          .select()
           .eq('wedding_id', weddingId)
           .order('created_at', ascending: false)
           .range(from, to);
 
       final list = <String>[];
       for (final row in List<Map<String, dynamic>>.from(res)) {
-        final u = (row['url'] as String?) ?? (row['image_url'] as String?) ?? '';
+        final u = (row['image_url'] as String?) ??
+            (row['url'] as String?) ??
+            (row['photo_url'] as String?) ??
+            (row['path'] as String?) ??
+            '';
         if (u.trim().isNotEmpty) list.add(u.trim());
       }
       return list;
