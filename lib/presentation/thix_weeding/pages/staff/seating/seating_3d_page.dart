@@ -1,13 +1,6 @@
 // lib/presentation/thix_weeding/pages/staff/seating/seating_3d_page.dart
 // ============================================================================
-// THIX WEDDING — PLAN DE SALLE 3D (PRODUCTION v3 — MANIABILITÉ AMÉLIORÉE)
-// ✅ Tout le code 3D existant préservé
-// ✅ AJOUT : Joystick flottant directionnel quand élément sélectionné
-// ✅ AJOUT : Rotation individuelle par slider + bouton
-// ✅ AJOUT : Focus caméra sur élément sélectionné
-// ✅ AJOUT : Grille magnétique visible pendant le drag
-// ✅ AJOUT : 4 nouveaux décors (Photobooth, Arbre à vœux, Fontaine, Arche)
-// ✅ AJOUT : Animations fluides (AnimatedPositioned)
+// THIX WEDDING — PLAN DE SALLE 3D (PRODUCTION v4 — FULLSCREEN GAME UI)
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -30,9 +23,7 @@ const double _roomH = 800;
 const double _wallH = 300;
 const double _seatGap = 13;
 
-/// Pas de déplacement par joystick (pixels dans l'espace 3D)
 const double _kMoveStep = 20.0;
-/// Pas de rotation par joystick (radians)
 const double _kRotateStep = 0.08;
 
 class _C {
@@ -85,7 +76,6 @@ enum _Kind {
   entrance,
   vip,
   plant,
-  // NOUVEAUTÉS v3 — plus d'histoires dans la salle
   photobooth,
   wishingTree,
   fountain,
@@ -449,7 +439,8 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   ({double t, double r, double z}) _camA = (t: 0.95, r: 0.0, z: 1.0);
   ({double t, double r, double z}) _camB = (t: 0.95, r: 0.0, z: 1.0);
 
-  // NOUVEAUTÉS v3 — maniabilité
+  // Mode Fullscreen / Jeu
+  bool _showPanel = true;
   bool _precisionMode = false;
   bool _showGrid = false;
 
@@ -801,10 +792,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     if (id != null) _markDirty(id);
   }
 
-  // ═════════════════════════════════════════════════════════════════════════
-  // NOUVEAUTÉS v3 — MOUVEMENTS PAR JOYSTICK / CLAVIER
-  // ═════════════════════════════════════════════════════════════════════════
-
+  // ───────────────────────── MOUVEMENTS ─────────────────────────
   void _moveSelectedBy(double dx, double dy) {
     final sel = _selected;
     if (sel == null || sel.locked) return;
@@ -1054,107 +1042,124 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     }
   }
 
-  // ───────────────────────── BUILD ─────────────────────────
+  // ═════════════════════════════════════════════════════════════════════════
+  // BUILD FULLSCREEN (Style Jeu / HUD)
+  // ═════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     if (!_loaded) {
       return const Scaffold(
-        backgroundColor: Color(0xFFF7F9FC),
+        backgroundColor: Color(0xFF1B1F3B),
         body: Center(child: CircularProgressIndicator(color: _C.gold)),
       );
     }
+
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    final panelHeight = MediaQuery.of(context).size.height * 0.40;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F9FC),
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        foregroundColor: _C.ink,
-        title: Text('Plan de salle 3D',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 17)),
-        actions: [
-          IconButton(
-            tooltip: 'Ajouter un élément',
-            icon: const Icon(Icons.add_circle_outline, color: _C.goldDark),
-            onPressed: _openAddSheet,
+      backgroundColor: const Color(0xFF1B1F3B), // Fond sombre
+      body: Stack(
+        children: [
+          // 1. LA VUE 3D PREND TOUT L'ÉCRAN
+          Positioned.fill(
+            child: _viewport(),
           ),
-          IconButton(
-            tooltip: 'Réglages & placement auto',
-            icon: const Icon(Icons.tune_rounded, color: _C.blue),
-            onPressed: _openSettings,
-          ),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: ThixGlassBackdrop(
-        child: SafeArea(
-          top: false,
-          child: Stack(
-            children: [
-              Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-                    child: _toolbar(),
-                  ),
-                  Expanded(
-                    flex: 6,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: _viewport(),
-                    ),
-                  ),
-                  Expanded(
-                    flex: 5,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                      child: ThixGlass(
-                        radius: 24,
-                        padding: EdgeInsets.zero,
-                        child: _selected == null ? _guestsPanel() : _itemPanel(_selected!),
-                      ),
-                    ),
-                  ),
-                ],
+
+          // 2. LA BARRE D'OUTILS FLOTTANTE (Haut)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              bottom: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: _toolbar(),
               ),
-              if (_selected != null)
-                Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 12,
-                  child: _SelectionJoystick(
-                    item: _selected!,
-                    precision: _precisionMode,
-                    onPrecisionToggle: () => setState(() => _precisionMode = !_precisionMode),
-                    onMove: _moveSelectedBy,
-                    onRotate: _rotateSelectedBy,
-                    onFocus: _focusSelected,
-                    onDuplicate: _duplicateSelected,
-                    onDeselect: () => _select(null),
-                  ),
-                ),
-            ],
+            ),
           ),
-        ),
+
+          // 3. BOUTON POUR AFFICHER/MASQUER LE PANNEAU
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 70,
+            right: 12,
+            child: FloatingActionButton.small(
+              backgroundColor: _showPanel ? _C.rose : _C.blue,
+              onPressed: () => setState(() => _showPanel = !_showPanel),
+              child: Icon(_showPanel ? Icons.close : Icons.tune, color: Colors.white),
+            ),
+          ),
+
+          // 4. LE PANNEAU DE CONFIGURATION FLOTTANT
+          if (_showPanel)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12 + bottomInset,
+              height: panelHeight,
+              child: ThixGlass(
+                radius: 24,
+                padding: EdgeInsets.zero,
+                child: _selected == null ? _guestsPanel() : _itemPanel(_selected!),
+              ),
+            ),
+
+          // 5. LE JOYSTICK (remonte si le panneau est ouvert)
+          if (_selected != null)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: _showPanel
+                  ? panelHeight + 24 + bottomInset
+                  : 12 + bottomInset,
+              child: _SelectionJoystick(
+                item: _selected!,
+                precision: _precisionMode,
+                onPrecisionToggle: () => setState(() => _precisionMode = !_precisionMode),
+                onMove: _moveSelectedBy,
+                onRotate: _rotateSelectedBy,
+                onFocus: _focusSelected,
+                onDuplicate: _duplicateSelected,
+                onDeselect: () => _select(null),
+              ),
+            ),
+        ],
       ),
     );
   }
 
-  // ───────────────────────── TOOLBAR ─────────────────────────
+  // ───────────────────────── TOOLBAR (HUD Sombre) ─────────────────────────
   Widget _toolbar() {
-    return ThixGlass(
-      radius: 20,
-      padding: const EdgeInsets.fromLTRB(10, 8, 10, 2),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.65),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white.withOpacity(0.15)),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             children: [
+              // Bouton Retour
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 18),
+                onPressed: () => Navigator.maybePop(context),
+              ),
+              const SizedBox(width: 4),
               _Pill(
                 label: 'Éditer',
                 icon: Icons.open_with_rounded,
                 selected: !_visit,
                 onTap: () => setState(() => _visit = false),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 4),
               _Pill(
                 label: 'Visiter',
                 icon: Icons.explore_outlined,
@@ -1162,59 +1167,86 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                 onTap: () => setState(() => _visit = true),
               ),
               const Spacer(),
-              _Pill(icon: Icons.grid_view_rounded, onTap: () => _animateCam(tilt: 0, rot: 0, zoom: 1)),
-              const SizedBox(width: 4),
-              _Pill(icon: Icons.view_in_ar_rounded, onTap: () => _animateCam(tilt: 0.95, rot: 0, zoom: 1)),
-              const SizedBox(width: 4),
-              _Pill(icon: Icons.meeting_room_outlined, onTap: () => _animateCam(tilt: 1.12, rot: math.pi, zoom: 1.15)),
-              const SizedBox(width: 4),
-              _Pill(
-                icon: _tour ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                selected: _tour,
-                onTap: _toggleTour,
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.grid_view_rounded, color: Colors.white70, size: 20),
+                onPressed: () => _animateCam(tilt: 0, rot: 0, zoom: 1),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.view_in_ar_rounded, color: Colors.white70, size: 20),
+                onPressed: () => _animateCam(tilt: 0.95, rot: 0, zoom: 1),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: Icon(_tour ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _tour ? _C.gold : Colors.white70, size: 20),
+                onPressed: _toggleTour,
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.add_circle_outline, color: _C.gold, size: 22),
+                onPressed: _openAddSheet,
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.tune_rounded, color: _C.blue, size: 22),
+                onPressed: _openSettings,
               ),
             ],
           ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.height_rounded, size: 16, color: _C.ink2),
-                Expanded(
+          // Sliders compacts
+          Row(
+            children: [
+              const SizedBox(width: 8),
+              const Icon(Icons.height_rounded, size: 14, color: Colors.white54),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                  ),
                   child: Slider(
                     value: _tilt.clamp(0.0, 1.3).toDouble(),
                     min: 0,
                     max: 1.3,
-                    activeColor: _C.blue,
+                    activeColor: _C.gold,
+                    inactiveColor: Colors.white24,
                     onChanged: (v) => setState(() => _tilt = v),
                   ),
                 ),
-                const Icon(Icons.threesixty_rounded, size: 16, color: _C.ink2),
-                Expanded(
+              ),
+              const Icon(Icons.threesixty_rounded, size: 14, color: Colors.white54),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 2,
+                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
+                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
+                  ),
                   child: Slider(
                     value: _rotN.clamp(-math.pi, math.pi).toDouble(),
                     min: -math.pi,
                     max: math.pi,
-                    activeColor: _C.goldDark,
+                    activeColor: _C.gold,
+                    inactiveColor: Colors.white24,
                     onChanged: (v) => setState(() => _rot = v),
                   ),
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 8),
+            ],
           ),
         ],
       ),
     );
   }
 
-  // ───────────────────────── VIEWPORT 3D ─────────────────────────
+  // ───────────────────────── VIEWPORT ─────────────────────────
   Widget _viewport() {
     return LayoutBuilder(builder: (context, c) {
-      final fit = math.min(c.maxWidth / _roomW, c.maxHeight / (_roomH * 0.8));
+      // On réduit le fit global pour que la pièce ne soit pas coupée si le panneau est ouvert
+      final fit = math.min(c.maxWidth / _roomW, c.maxHeight / (_roomH * 1.2));
       final s = fit * _zoom;
       final m = Matrix4.identity()
         ..setEntry(3, 2, 0.001)
@@ -1226,12 +1258,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         onScaleStart: _visit ? _camStart : null,
         onScaleUpdate: _visit ? _camUpdate : null,
         child: Container(
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.4),
+          decoration: const BoxDecoration(
+            // Plus de bordure arrondie pour le plein écran
           ),
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(23),
             child: Stack(
               children: [
                 Positioned.fill(
@@ -1263,9 +1293,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                     ),
                   ),
                 ),
+                // Bannière de placement
                 if (_assigning != null)
                   Positioned(
-                    top: 10,
+                    top: 90,
                     left: 10,
                     right: 60,
                     child: ThixGlass(
@@ -1279,7 +1310,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Placer ${_assigning!.name} (${_assigning!.count} pers.) — touchez une chaise libre',
+                              'Placer ${_assigning!.name} (${_assigning!.count} pers.) — touchez une chaise',
                               style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700),
                             ),
                           ),
@@ -1292,8 +1323,9 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                       ),
                     ),
                   ),
+                // Zoom
                 Positioned(
-                  top: 10,
+                  top: 90,
                   right: 10,
                   child: ThixGlass(
                     radius: 16,
@@ -1320,9 +1352,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                     ),
                   ),
                 ),
+                // Stats + aide
                 Positioned(
                   left: 10,
-                  bottom: 10,
+                  bottom: _showPanel ? 16 : 80, // Remonte si le panneau est fermé
                   child: ThixGlass(
                     radius: 14,
                     blur: 14,
@@ -1332,7 +1365,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          '$_seatedPersons/$_totalPersons invités placés · $_totalSeats chaises',
+                          '$_seatedPersons/$_totalPersons placés · $_totalSeats chaises',
                           style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _C.ink),
                         ),
                         Text(
@@ -1834,7 +1867,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         padding: const EdgeInsets.all(12),
         child: ThixGlass(
           radius: 26,
-          opacity: 0.7,
+          opacity: 0.9,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1890,7 +1923,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
           padding: const EdgeInsets.all(12),
           child: ThixGlass(
             radius: 26,
-            opacity: 0.7,
+            opacity: 0.9,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1985,7 +2018,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// JOYSTICK FLOTTANT
+// JOYSTICK (Dark Mode HUD)
 // ═══════════════════════════════════════════════════════════════════════════
 class _SelectionJoystick extends StatelessWidget {
   final _Item item;
@@ -2014,20 +2047,22 @@ class _SelectionJoystick extends StatelessWidget {
       duration: const Duration(milliseconds: 280),
       curve: Curves.easeOutCubic,
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.92),
+        color: Colors.black.withOpacity(0.75),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: _C.gold, width: 2),
+        border: Border.all(color: _C.gold, width: 1.5),
         boxShadow: [
           BoxShadow(
-            color: _C.gold.withOpacity(0.35),
-            blurRadius: 18,
-            offset: const Offset(0, 6),
+            color: Colors.black.withOpacity(0.5),
+            blurRadius: 15,
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
+          // Indicateur
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2040,71 +2075,41 @@ class _SelectionJoystick extends StatelessWidget {
                   style: GoogleFonts.inter(
                     fontWeight: FontWeight.w800,
                     fontSize: 13,
-                    color: _C.ink,
+                    color: Colors.white,
                   ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  precision ? 'Mode précis (5 px)' : 'Mode normal (20 px)',
-                  style: GoogleFonts.inter(fontSize: 10, color: _C.ink2),
+                  precision ? 'Précis (5 px)' : 'Normal (20 px)',
+                  style: GoogleFonts.inter(fontSize: 10, color: Colors.white54),
                 ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
+          // D-pad
           _DPad(onMove: onMove),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
+          // Actions
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _JoyButton(
-                    icon: Icons.rotate_left_rounded,
-                    onTap: () => onRotate(-_kRotateStep),
-                    color: _C.blue,
-                  ),
+                  _JoyButton(icon: Icons.rotate_left_rounded, onTap: () => onRotate(-_kRotateStep), color: _C.blue),
                   const SizedBox(width: 4),
-                  _JoyButton(
-                    icon: Icons.rotate_right_rounded,
-                    onTap: () => onRotate(_kRotateStep),
-                    color: _C.blue,
-                  ),
+                  _JoyButton(icon: Icons.rotate_right_rounded, onTap: () => onRotate(_kRotateStep), color: _C.blue),
                 ],
               ),
               const SizedBox(height: 4),
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _JoyButton(
-                    icon: Icons.center_focus_strong_rounded,
-                    tooltip: 'Centrer caméra',
-                    onTap: onFocus,
-                    color: _C.gold,
-                  ),
+                  _JoyButton(icon: Icons.center_focus_strong_rounded, tooltip: 'Centrer', onTap: onFocus, color: _C.gold),
                   const SizedBox(width: 4),
-                  _JoyButton(
-                    icon: Icons.copy_rounded,
-                    tooltip: 'Dupliquer',
-                    onTap: onDuplicate,
-                    color: _C.purple,
-                  ),
+                  _JoyButton(icon: Icons.precision_manufacturing_rounded, tooltip: 'Précis', onTap: onPrecisionToggle, color: precision ? _C.green : Colors.white54, filled: precision),
                   const SizedBox(width: 4),
-                  _JoyButton(
-                    icon: Icons.precision_manufacturing_rounded,
-                    tooltip: 'Mode précis',
-                    onTap: onPrecisionToggle,
-                    color: precision ? _C.green : _C.ink2,
-                    filled: precision,
-                  ),
-                  const SizedBox(width: 4),
-                  _JoyButton(
-                    icon: Icons.close_rounded,
-                    tooltip: 'Désélectionner',
-                    onTap: onDeselect,
-                    color: _C.rose,
-                  ),
+                  _JoyButton(icon: Icons.close_rounded, tooltip: 'Fermer', onTap: onDeselect, color: _C.rose),
                 ],
               ),
             ],
@@ -2121,44 +2126,44 @@ class _DPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sz = 38.0;
+    const sz = 34.0; // Réduit pour s'adapter au HUD
     return SizedBox(
-      width: sz * 3 + 8,
-      height: sz * 3 + 8,
+      width: sz * 3 + 6,
+      height: sz * 3 + 6,
       child: Stack(
         children: [
           Positioned(
-            left: sz + 4,
+            left: sz + 3,
             top: 0,
             child: _DPadButton(icon: Icons.arrow_upward_rounded, onTap: () => onMove(0, -1)),
           ),
           Positioned(
-            left: sz + 4,
+            left: sz + 3,
             bottom: 0,
             child: _DPadButton(icon: Icons.arrow_downward_rounded, onTap: () => onMove(0, 1)),
           ),
           Positioned(
             left: 0,
-            top: sz + 4,
+            top: sz + 3,
             child: _DPadButton(icon: Icons.arrow_back_rounded, onTap: () => onMove(-1, 0)),
           ),
           Positioned(
             right: 0,
-            top: sz + 4,
+            top: sz + 3,
             child: _DPadButton(icon: Icons.arrow_forward_rounded, onTap: () => onMove(1, 0)),
           ),
           Positioned(
-            left: sz + 4,
-            top: sz + 4,
+            left: sz + 3,
+            top: sz + 3,
             child: Container(
               width: sz,
               height: sz,
               decoration: BoxDecoration(
                 color: _C.gold.withOpacity(0.15),
                 shape: BoxShape.circle,
-                border: Border.all(color: _C.gold, width: 1.5),
+                border: Border.all(color: _C.gold, width: 1.2),
               ),
-              child: const Icon(Icons.open_with_rounded, size: 16, color: _C.gold),
+              child: const Icon(Icons.open_with_rounded, size: 14, color: _C.gold),
             ),
           ),
         ],
@@ -2202,14 +2207,12 @@ class _DPadButtonState extends State<_DPadButton> {
       onTapUp: (_) => _stop(),
       onTapCancel: _stop,
       child: Container(
-        width: 38,
-        height: 38,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
-          color: _C.blue,
-          borderRadius: BorderRadius.circular(10),
-          boxShadow: [
-            BoxShadow(color: _C.blue.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2)),
-          ],
+          color: Colors.white.withOpacity(0.15), // HUD style
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.white24),
         ),
         child: Icon(widget.icon, color: Colors.white, size: 18),
       ),
@@ -2235,21 +2238,19 @@ class _JoyButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final btn = InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(8),
       child: Container(
-        width: 34,
-        height: 34,
+        width: 30,
+        height: 30,
         decoration: BoxDecoration(
-          color: filled ? color : color.withOpacity(0.12),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(filled ? 1 : 0.5), width: 1.2),
+          color: filled ? color : color.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: color.withOpacity(filled ? 1 : 0.5), width: 1),
         ),
         child: Icon(icon, size: 16, color: filled ? Colors.white : color),
       ),
     );
-    return tooltip != null
-        ? Tooltip(message: tooltip!, child: btn)
-        : btn;
+    return tooltip != null ? Tooltip(message: tooltip!, child: btn) : btn;
   }
 }
 
@@ -2277,7 +2278,7 @@ class _GridPainter extends CustomPainter {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PAINTERS — mur, sol, piste de danse (AJOUTÉS — manquaient dans le fichier)
+// PAINTERS — mur, sol, piste de danse
 // ═══════════════════════════════════════════════════════════════════════════
 class _WallPainter extends CustomPainter {
   final bool evening;
@@ -2288,7 +2289,6 @@ class _WallPainter extends CustomPainter {
     final w = size.width, h = size.height;
     final rect = Rect.fromLTWH(0, 0, w, h);
 
-    // Fond du mur
     final wallPaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topCenter,
@@ -2299,13 +2299,11 @@ class _WallPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, wallPaint);
 
-    // Plinthe dorée en bas
     canvas.drawRect(
       Rect.fromLTWH(0, h - 18, w, 18),
       Paint()..color = const Color(0xFFB8860B),
     );
 
-    // Fenêtres / panneaux
     const windowCount = 5;
     final panelW = w / (windowCount * 2 + 1);
     for (var i = 0; i < windowCount; i++) {
@@ -2340,7 +2338,6 @@ class _WallPainter extends CustomPainter {
       canvas.drawLine(Offset(r.left, r.center.dy), Offset(r.right, r.center.dy), barPaint);
     }
 
-    // Guirlande lumineuse en soirée
     if (evening) {
       final lightPaint = Paint()..color = const Color(0xFFFFF3A0);
       for (var x = 20.0; x < w; x += 60) {
@@ -2365,7 +2362,6 @@ class _FloorPainter extends CustomPainter {
     final w = size.width, h = size.height;
     final rect = Rect.fromLTWH(0, 0, w, h);
 
-    // Sol
     final basePaint = Paint()
       ..shader = LinearGradient(
         begin: Alignment.topLeft,
@@ -2376,7 +2372,6 @@ class _FloorPainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, basePaint);
 
-    // Parquet
     final parquetPaint = Paint()
       ..color = evening ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.06)
       ..strokeWidth = 1;
@@ -2390,7 +2385,6 @@ class _FloorPainter extends CustomPainter {
       }
     }
 
-    // Bord doré
     canvas.drawRRect(
       RRect.fromRectAndRadius(rect.deflate(3), const Radius.circular(8)),
       Paint()
@@ -2399,7 +2393,6 @@ class _FloorPainter extends CustomPainter {
         ..strokeWidth = 6,
     );
 
-    // Halos des tables
     final glowPaint = Paint()
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
     for (final g in glows) {
@@ -2432,7 +2425,6 @@ class _DancePainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(rrect);
 
-    // Base sombre
     final basePaint = Paint()
       ..shader = LinearGradient(
         colors: evening
@@ -2441,7 +2433,6 @@ class _DancePainter extends CustomPainter {
       ).createShader(rect);
     canvas.drawRect(rect, basePaint);
 
-    // Damier
     const tile = 30.0;
     final lightPaint = Paint()
       ..color = evening
@@ -2457,7 +2448,6 @@ class _DancePainter extends CustomPainter {
       }
     }
 
-    // Bord néon
     final neonPaint = Paint()
       ..shader = const LinearGradient(
         colors: [Color(0xFFE31C4E), Color(0xFFD4AF37), Color(0xFF6B46C1), Color(0xFFE31C4E)],
@@ -2466,7 +2456,6 @@ class _DancePainter extends CustomPainter {
       ..strokeWidth = 4;
     canvas.drawRRect(rrect, neonPaint);
 
-    // Halos néon
     final glowPaint = Paint()
       ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
     for (var i = 0; i < 3; i++) {
@@ -2504,23 +2493,23 @@ class _Pill extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
-        padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 12, vertical: 8),
+        padding: EdgeInsets.symmetric(horizontal: label == null ? 9 : 12, vertical: 6),
         decoration: BoxDecoration(
-          color: selected ? _C.blue : Colors.white.withOpacity(0.55),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: selected ? _C.blue : Colors.white.withOpacity(0.9)),
+          color: selected ? _C.blue : Colors.white.withOpacity(0.15),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: selected ? _C.blue : Colors.white.withOpacity(0.3)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 16, color: selected ? Colors.white : _C.ink),
+            Icon(icon, size: 14, color: selected ? Colors.white : Colors.white70),
             if (label != null) ...[
               const SizedBox(width: 6),
               Text(label!,
                   style: GoogleFonts.inter(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : _C.ink)),
+                      color: selected ? Colors.white : Colors.white70)),
             ],
           ],
         ),
@@ -3249,7 +3238,6 @@ class _DecorView extends StatelessWidget {
     ];
   }
 
-  // ─── NOUVEAUTÉS v3 — méthodes manquantes restaurées ───────────────
   List<Widget> _photobooth(Size b, double up, double st) {
     return [
       _shadow(b.width + 4, b.height + 4),
