@@ -270,7 +270,7 @@ class _GuestContent extends StatelessWidget {
       await Supabase.instance.client
           .from('thix_weeding_guests')
           .delete()
-          .eq('id', guestId);
+          .eq('id', guest.id);
       if (context.mounted) context.pop();
     } catch (e) {
       if (context.mounted) _showError(context, 'Erreur: $e');
@@ -842,7 +842,6 @@ class _QrCard extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
                     color: Colors.white,
-                    fontFamily: 'monospace',
                     letterSpacing: 0.8,
                   ),
                 ),
@@ -1146,7 +1145,6 @@ class _InfoRow extends StatelessWidget {
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
                     color: valueColor,
-                    fontFamily: monospace ? 'monospace' : null,
                   ),
                 ),
               ],
@@ -1536,7 +1534,7 @@ class _ShareSection extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 12,
                       color: _R.rose,
-                      fontFamily: 'monospace',
+                      
                     ),
                   ),
                 ),
