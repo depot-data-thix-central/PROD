@@ -1,8 +1,10 @@
 // lib/presentation/thix_weeding/pages/staff/budget/expense_form_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — EXPENSE FORM (PRODUCTION)
-// Design royal + 12 catégories + paiements partiels + upload justificatif
-// Branché sur providers EXISTANTS du dépôt
+// THIX WEDDING & EVENTS — EXPENSE FORM (PRODUCTION v2 — USD + ÉQUILIBRÉ)
+// ✅ Devise USD ($) partout (décimal autorisé)
+// ✅ Les paiements partiels créent un PaymentModel → équilibre le budget
+// ✅ Invalidation de balancedSummaryProvider (comptabilité temps réel)
+// ✅ Mode édition : recharge les paiements existants
 // ============================================================================
 import 'dart:typed_data';
 
@@ -64,7 +66,7 @@ class _R {
       );
 }
 
-// 12 catégories du cahier des charges
+// 12 catégories
 const List<_Cat> _CATEGORIES = [
   _Cat('salle', 'Salle', Icons.place_outlined, Color(0xFF0B3B8F)),
   _Cat('decoration', 'Décoration', Icons.auto_awesome, Color(0xFFFF6B9D)),
@@ -89,6 +91,19 @@ class _Cat {
 
   static _Cat find(String key) =>
       _CATEGORIES.firstWhere((c) => c.key == key, orElse: () => _CATEGORIES.last);
+}
+
+/// Formatter décimal USD : autorise chiffres + 1 point décimal + 2 décimales max
+class _UsdInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue, TextEditingValue newValue) {
+    final t = newValue.text.replaceAll(',', '.');
+    // Autorise vide, chiffres, et un seul point
+    if (t.isEmpty) return newValue.copyWith(text: t);
+    if (!RegExp(r'^\d*\.?\d{0,2}$').hasMatch(t)) return oldValue;
+    return newValue.copyWith(text: t);
+  }
 }
 
 // ============================================================================
@@ -120,6 +135,9 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
   DateTime _expenseDate = DateTime.now();
   Uint8List? _receiptImage;
   String? _receiptFileName;
+
+  // Paiements déjà enregistrés pour cette dépense (en mode édition)
+  double _existingPayments = 0.0;
 
   bool _isLoading = false;
   bool _isInitLoading = false;
@@ -154,15 +172,29 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
           .single();
       final expense = ExpenseModel.fromJson(data);
       _titleCtrl.text = expense.title;
-      _amountCtrl.text = expense.amount.toStringAsFixed(0);
+      _amountCtrl.text = expense.amount.toString();
       _vendorId = expense.vendorId;
       _category = expense.category.isNotEmpty ? expense.category : 'divers';
       _isPaid = expense.isPaid;
+
+      // Charger paiements déjà enregistrés pour cette dépense
+      try {
+        final existing = await Supabase.instance.client
+            .from('thix_weeding_payments')
+            .select('amount, status')
+            .eq('expense_id', expense.id);
+        _existingPayments = List<Map<String, dynamic>>.from(existing)
+            .where((p) => p['status'] == 'completed')
+            .fold<double>(0, (s, p) => s + (p['amount'] as num).toDouble());
+        if (_existingPayments > 0) {
+          _partialPayment = true;
+          _paidAmountCtrl.text = _existingPayments.toString();
+        }
+      } catch (_) {}
+
       setState(() {});
     } catch (e) {
-      if (mounted) {
-        _showError('Erreur chargement: $e');
-      }
+      if (mounted) _showError('Erreur chargement: $e');
     } finally {
       if (mounted) setState(() => _isInitLoading = false);
     }
@@ -174,9 +206,9 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
     setState(() => _isLoading = true);
 
     try {
-      final totalAmount = double.parse(_amountCtrl.text);
+      final totalAmount = double.parse(_amountCtrl.text.replaceAll(',', '.'));
       final paidAmount = _partialPayment && _paidAmountCtrl.text.isNotEmpty
-          ? double.parse(_paidAmountCtrl.text)
+          ? double.parse(_paidAmountCtrl.text.replaceAll(',', '.'))
           : (_isPaid ? totalAmount : 0.0);
 
       final data = {
@@ -185,33 +217,58 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
         'title': _titleCtrl.text.trim(),
         'amount': totalAmount,
         'category': _category,
-        'is_paid': _isPaid,
+        'is_paid': paidAmount >= totalAmount,
         'notes': _notesCtrl.text.trim().isEmpty ? null : _notesCtrl.text.trim(),
         'expense_date': _expenseDate.toIso8601String().split('T')[0],
       };
 
-      // Upload justificatif si présent
       String? receiptUrl;
       if (_receiptImage != null) {
         receiptUrl = await _uploadReceipt();
         data['receipt_url'] = receiptUrl;
       }
 
+      String expenseId;
       if (!_isEdit) {
-        await ref.read(budgetServiceProvider).createExpense(data);
-        _showSuccess('Dépense créée avec succès');
+        final created = await Supabase.instance.client
+            .from('thix_weeding_expenses')
+            .insert(data)
+            .select()
+            .single();
+        expenseId = created['id'] as String;
       } else {
         await Supabase.instance.client
             .from('thix_weeding_expenses')
             .update(data)
             .eq('id', widget.editExpenseId!);
-        _showSuccess('Dépense mise à jour');
+        expenseId = widget.editExpenseId!;
       }
 
-      // Refresh providers
+      // ─── Création/mise à jour du PaymentModel (équilibrage comptable) ───
+      if (paidAmount > 0) {
+        await _upsertPayment(
+          expenseId: expenseId,
+          title: _titleCtrl.text.trim(),
+          amount: paidAmount,
+          vendorId: _vendorId,
+        );
+      } else if (_isEdit && _existingPayments > 0) {
+        // Si l'utilisateur passe de payée → impayée, on supprime les paiements
+        await Supabase.instance.client
+            .from('thix_weeding_payments')
+            .delete()
+            .eq('expense_id', expenseId);
+      }
+
+      // Refresh providers (incluant le nouveau balancedSummaryProvider)
       ref.invalidate(expensesProvider(widget.weddingId));
+      ref.invalidate(paymentsProvider(widget.weddingId));
       ref.invalidate(budgetProvider(widget.weddingId));
-      ref.invalidate(paymentsSummaryProvider(widget.weddingId));
+      ref.invalidate(balancedSummaryProvider(widget.weddingId));
+
+      _showSuccess(_isEdit
+          ? 'Dépense mise à jour (${_fmtUsd(paidAmount)} payé)'
+          : 'Dépense créée — ${_fmtUsd(paidAmount)} décaissé');
 
       if (mounted) context.pop();
     } catch (e) {
@@ -221,12 +278,48 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
     }
   }
 
+  /// Crée ou met à jour un PaymentModel lié à la dépense
+  /// → Le balancedSummaryProvider le compte dans "Payé"
+  Future<void> _upsertPayment({
+    required String expenseId,
+    required String title,
+    required double amount,
+    String? vendorId,
+  }) async {
+    // Cherche un paiement existant pour cette dépense
+    final existing = await Supabase.instance.client
+        .from('thix_weeding_payments')
+        .select('id')
+        .eq('expense_id', expenseId)
+        .maybeSingle();
+
+    final row = {
+      'wedding_id': widget.weddingId,
+      'title': 'Paiement : $title',
+      'amount': amount,
+      'status': 'completed',
+      'method': 'cash',
+      'expense_id': expenseId,
+      'vendor_id': vendorId,
+      'created_at': DateTime.now().toIso8601String(),
+    };
+
+    if (existing == null) {
+      await Supabase.instance.client.from('thix_weeding_payments').insert(row);
+    } else {
+      await Supabase.instance.client
+          .from('thix_weeding_payments')
+          .update(row)
+          .eq('id', existing['id']);
+    }
+  }
+
   Future<String?> _uploadReceipt() async {
     if (_receiptImage == null) return null;
     try {
       final fileName =
           '${widget.weddingId}/${DateTime.now().millisecondsSinceEpoch}_receipt.jpg';
-      await Supabase.instance.storage.from('thix-weeding-receipts').uploadBinary(
+      await Supabase.instance.storage.from('thix-wedding-receipts').uploadBinary(
             fileName,
             _receiptImage!,
             fileOptions: const FileOptions(
@@ -235,7 +328,9 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
               contentType: 'image/jpeg',
             ),
           );
-      return Supabase.instance.storage.from('thix-weeding-receipts').getPublicUrl(fileName);
+      return Supabase.instance.storage
+          .from('thix-wedding-receipts')
+          .getPublicUrl(fileName);
     } catch (e) {
       _showError('Erreur upload justificatif: $e');
       return null;
@@ -320,6 +415,22 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
     );
   }
 
+  /// Format USD simple (pour toasts/retours)
+  String _fmtUsd(double v) {
+    final neg = v < 0;
+    final abs = v.abs();
+    final whole = abs.floor();
+    final cents = ((abs - whole) * 100).round();
+    final s = whole.toString();
+    final buf = StringBuffer();
+    for (var i = 0; i < s.length; i++) {
+      if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
+      buf.write(s[i]);
+    }
+    final cStr = cents > 0 ? '.${cents.toString().padLeft(2, '0')}' : '';
+    return '${neg ? '-' : ''}\$$buf$cStr';
+  }
+
   // ============================================================================
   // UI
   // ============================================================================
@@ -327,9 +438,7 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
   Widget build(BuildContext context) {
     final vendorsAsync = ref.watch(vendorsProvider(widget.weddingId));
 
-    if (_isInitLoading) {
-      return const _LoadingView();
-    }
+    if (_isInitLoading) return const _LoadingView();
 
     return Scaffold(
       backgroundColor: _R.surface,
@@ -338,18 +447,12 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
         child: CustomScrollView(
           physics: const BouncingScrollPhysics(),
           slivers: [
-            // ── APP BAR ROYALE ──────────────────────────────────────────────
-            _FormAppBar(
-              isEdit: _isEdit,
-              onSave: _save,
-              isLoading: _isLoading,
-            ),
-
+            _FormAppBar(isEdit: _isEdit, onSave: _save, isLoading: _isLoading),
             SliverPadding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // ── SECTION INFORMATIONS ────────────────────────────────
+                  // ── INFORMATIONS ────────────────────────────────────────
                   _SectionCard(
                     title: 'Informations',
                     icon: Icons.info_outline,
@@ -360,33 +463,33 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                         label: 'Titre de la dépense',
                         hint: 'Ex: Acompte traiteur',
                         icon: Icons.title_outlined,
-                        validator: (v) => v == null || v.trim().isEmpty ? 'Titre requis' : null,
+                        validator: (v) =>
+                            v == null || v.trim().isEmpty ? 'Titre requis' : null,
                       ),
                       const SizedBox(height: 16),
                       _RoyalTextField(
                         controller: _amountCtrl,
-                        label: 'Montant total',
-                        hint: '350000',
+                        label: 'Montant total (USD)',
+                        hint: '3500.00',
                         icon: Icons.payments_outlined,
-                        keyboard: TextInputType.number,
-                        suffix: 'FCFA',
-                        formatter: FilteringTextInputFormatter.digitsOnly,
+                        keyboard: const TextInputType.numberWithOptions(decimal: true),
+                        suffix: 'USD \$',
+                        formatter: _UsdInputFormatter(),
                         validator: (v) {
                           if (v == null || v.isEmpty) return 'Montant requis';
-                          if (double.tryParse(v) == null) return 'Nombre invalide';
+                          final parsed = double.tryParse(v.replaceAll(',', '.'));
+                          if (parsed == null) return 'Nombre invalide';
+                          if (parsed <= 0) return 'Montant doit être > 0';
                           return null;
                         },
                       ),
                       const SizedBox(height: 16),
-                      _DatePickerField(
-                        date: _expenseDate,
-                        onTap: _pickDate,
-                      ),
+                      _DatePickerField(date: _expenseDate, onTap: _pickDate),
                     ],
                   ),
                   const SizedBox(height: 16),
 
-                  // ── SECTION CATÉGORIE ───────────────────────────────────
+                  // ── CATÉGORIE ───────────────────────────────────────────
                   _SectionCard(
                     title: 'Catégorie',
                     icon: Icons.category_outlined,
@@ -400,7 +503,7 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── SECTION PRESTATAIRE ─────────────────────────────────
+                  // ── PRESTATAIRE ─────────────────────────────────────────
                   _SectionCard(
                     title: 'Prestataire',
                     icon: Icons.storefront_outlined,
@@ -415,7 +518,7 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── SECTION PAIEMENT ────────────────────────────────────
+                  // ── PAIEMENT ────────────────────────────────────────────
                   _SectionCard(
                     title: 'Statut de paiement',
                     icon: Icons.account_balance_wallet_outlined,
@@ -423,7 +526,10 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                     children: [
                       _PaymentToggle(
                         isPaid: _isPaid,
-                        onChanged: (v) => setState(() => _isPaid = v),
+                        onChanged: (v) => setState(() {
+                          _isPaid = v;
+                          if (!v) _paidAmountCtrl.clear();
+                        }),
                       ),
                       if (_isPaid) ...[
                         const SizedBox(height: 16),
@@ -438,19 +544,20 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                           const SizedBox(height: 16),
                           _RoyalTextField(
                             controller: _paidAmountCtrl,
-                            label: 'Montant payé',
-                            hint: '200000',
+                            label: 'Montant déjà payé (USD)',
+                            hint: '2000.00',
                             icon: Icons.check_circle_outline,
-                            keyboard: TextInputType.number,
-                            suffix: 'FCFA',
-                            formatter: FilteringTextInputFormatter.digitsOnly,
+                            keyboard: const TextInputType.numberWithOptions(decimal: true),
+                            suffix: 'USD \$',
+                            formatter: _UsdInputFormatter(),
                             validator: (v) {
                               if (_partialPayment && (v == null || v.isEmpty)) {
                                 return 'Montant payé requis';
                               }
                               if (v != null && v.isNotEmpty) {
-                                final paid = double.tryParse(v);
-                                final total = double.tryParse(_amountCtrl.text);
+                                final paid = double.tryParse(v.replaceAll(',', '.'));
+                                final total =
+                                    double.tryParse(_amountCtrl.text.replaceAll(',', '.'));
                                 if (paid == null) return 'Nombre invalide';
                                 if (total != null && paid > total) {
                                   return 'Montant payé > montant total';
@@ -459,13 +566,69 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                               return null;
                             },
                           ),
+                          // Indicateur visuel du pourcentage payé
+                          if (_paidAmountCtrl.text.isNotEmpty &&
+                              _amountCtrl.text.isNotEmpty)
+                            Builder(builder: (_) {
+                              final paid = double.tryParse(
+                                      _paidAmountCtrl.text.replaceAll(',', '.')) ??
+                                  0;
+                              final total = double.tryParse(
+                                      _amountCtrl.text.replaceAll(',', '.')) ??
+                                  1;
+                              final ratio = (paid / total).clamp(0.0, 1.0);
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 10),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('Progression',
+                                            style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: _R.text2)),
+                                        Text('${(ratio * 100).toStringAsFixed(1)}%',
+                                            style: GoogleFonts.inter(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w800,
+                                                color: _R.blue)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 4),
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(4),
+                                      child: LinearProgressIndicator(
+                                        minHeight: 5,
+                                        value: ratio,
+                                        backgroundColor: _R.border,
+                                        valueColor:
+                                            const AlwaysStoppedAnimation(_R.green),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'Reste à payer : ${_fmtUsd((total - paid).clamp(0, double.infinity))}',
+                                      style: GoogleFonts.inter(
+                                        fontSize: 11,
+                                        color: _R.rose,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
                         ],
                       ],
                     ],
                   ),
                   const SizedBox(height: 16),
 
-                  // ── SECTION JUSTIFICATIF ────────────────────────────────
+                  // ── JUSTIFICATIF ────────────────────────────────────────
                   _SectionCard(
                     title: 'Justificatif',
                     icon: Icons.receipt_long_outlined,
@@ -484,7 +647,7 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                   ),
                   const SizedBox(height: 16),
 
-                  // ── SECTION NOTES ───────────────────────────────────────
+                  // ── NOTES ───────────────────────────────────────────────
                   _SectionCard(
                     title: 'Notes (optionnel)',
                     icon: Icons.notes_outlined,
@@ -501,7 +664,6 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
                   ),
                   const SizedBox(height: 32),
 
-                  // ── BOUTON SOUMETTRE ────────────────────────────────────
                   _SubmitButton(
                     isEdit: _isEdit,
                     isLoading: _isLoading,
@@ -541,7 +703,8 @@ class _FormAppBar extends StatelessWidget {
       foregroundColor: _R.text,
       title: Text(
         isEdit ? 'Modifier dépense' : 'Nouvelle dépense',
-        style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _R.blue, fontSize: 18),
+        style: GoogleFonts.inter(
+            fontWeight: FontWeight.w800, color: _R.blue, fontSize: 18),
       ),
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_ios_new, size: 18),
@@ -562,7 +725,8 @@ class _FormAppBar extends StatelessWidget {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -678,7 +842,8 @@ class _RoyalTextField extends StatelessWidget {
         hintStyle: GoogleFonts.inter(color: _R.text2.withOpacity(0.6), fontSize: 13),
         prefixIcon: Icon(icon, color: _R.blue, size: 20),
         suffixText: suffix,
-        suffixStyle: GoogleFonts.inter(color: _R.text2, fontWeight: FontWeight.w600, fontSize: 12),
+        suffixStyle: GoogleFonts.inter(
+            color: _R.text2, fontWeight: FontWeight.w600, fontSize: 12),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
           borderSide: const BorderSide(color: _R.border),
@@ -755,7 +920,7 @@ class _DatePickerField extends StatelessWidget {
 }
 
 // ============================================================================
-// CATEGORY SELECTOR (Grid)
+// CATEGORY SELECTOR
 // ============================================================================
 class _CategorySelector extends StatelessWidget {
   final String selected;
@@ -882,7 +1047,8 @@ class _VendorDropdown extends StatelessWidget {
           items: [
             DropdownMenuItem<String>(
               value: null,
-              child: Text('Sans prestataire', style: GoogleFonts.inter(color: _R.text2)),
+              child: Text('Sans prestataire',
+                  style: GoogleFonts.inter(color: _R.text2)),
             ),
             ...vendors.map((v) => DropdownMenuItem<String>(
                   value: v.id,
@@ -935,7 +1101,9 @@ class _PaymentToggle extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          isPaid ? 'Sera compté dans le total dépensé' : 'Reste à payer (dette)',
+          isPaid
+              ? 'Sera compté dans le total décaissé'
+              : 'Reste à payer (dette prestataire)',
           style: GoogleFonts.inter(
             fontSize: 12,
             color: isPaid ? _R.green : _R.amber,
@@ -978,7 +1146,7 @@ class _PartialPaymentToggle extends StatelessWidget {
           ),
         ),
         subtitle: Text(
-          'Spécifier le montant déjà payé',
+          'Précisez le montant déjà versé (créera un enregistrement de paiement)',
           style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
         ),
         value: enabled,
@@ -1029,7 +1197,8 @@ class _ReceiptUploader extends StatelessWidget {
                     color: _R.rose.withOpacity(0.1),
                     shape: BoxShape.circle,
                   ),
-                  child: const Icon(Icons.add_photo_alternate_outlined, color: _R.rose, size: 32),
+                  child: const Icon(Icons.add_photo_alternate_outlined,
+                      color: _R.rose, size: 32),
                 ),
                 const SizedBox(height: 12),
                 Text(
@@ -1136,16 +1305,14 @@ class _SubmitButton extends StatelessWidget {
                 ? const SizedBox(
                     width: 24,
                     height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
+                    child:
+                        CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                   )
                 : Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(
-                        isEdit ? Icons.check : Icons.add,
-                        color: Colors.white,
-                        size: 22,
-                      ),
+                      Icon(isEdit ? Icons.check : Icons.add,
+                          color: Colors.white, size: 22),
                       const SizedBox(width: 10),
                       Text(
                         isEdit ? 'Mettre à jour la dépense' : 'Créer la dépense',
@@ -1186,7 +1353,8 @@ class _LoadingView extends StatelessWidget {
             const SizedBox(height: 16),
             Text(
               'Chargement...',
-              style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2),
+              style: GoogleFonts.inter(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2),
             ),
           ],
         ),
