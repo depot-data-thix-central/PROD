@@ -232,48 +232,76 @@ class _DashboardHeader extends StatelessWidget {
   }
 }
 
-class _VerificationBadge extends StatelessWidget {
-  final TrackingLevel level;
+class _VerificationStatusCard extends StatelessWidget {
   final ProviderVerificationStatus status;
-  const _VerificationBadge({required this.level, required this.status});
+  final TrackingLevel level;
+
+  const _VerificationStatusCard({required this.status, required this.level});
 
   @override
   Widget build(BuildContext context) {
-    String label = level.displayName;
-    Color bgColor = Colors.white.withOpacity(0.2);
-    Icon icon = Icons.verified_outlined;
+    Color bgColor;
+    Color iconColor;
+    IconData iconData; // ✅ CORRIGÉ : IconData au lieu de Icon
+    String title;
+    String subtitle;
 
-    if (status == ProviderVerificationStatus.pending) {
-      label = 'En attente';
-      bgColor = Colors.amber.withOpacity(0.8);
-      icon = Icons.hourglass_empty;
-    } else if (status == ProviderVerificationStatus.rejected) {
-      label = 'Rejeté';
-      bgColor = Colors.red.withOpacity(0.8);
-      icon = Icons.error_outline;
-    } else if (level == TrackingLevel.platinum) {
-      bgColor = Colors.white.withOpacity(0.9);
-      icon = Icons.workspace_premium;
+    switch (status) {
+      case ProviderVerificationStatus.pending:
+        bgColor = const Color(0xFFFFFBEB);
+        iconColor = const Color(0xFFD97706);
+        iconData = Icons.hourglass_empty;
+        title = 'Validation en cours';
+        subtitle = 'Notre équipe examine votre dossier (24-48h)';
+        break;
+      case ProviderVerificationStatus.verified:
+        bgColor = const Color(0xFFECFDF5);
+        iconColor = const Color(0xFF059669);
+        iconData = Icons.verified;
+        title = 'Compte ${level.displayName}';
+        subtitle = 'Votre profil est vérifié et visible';
+        break;
+      case ProviderVerificationStatus.rejected:
+        bgColor = const Color(0xFFFEF2F2);
+        iconColor = const Color(0xFFDC2626);
+        iconData = Icons.error_outline;
+        title = 'Dossier rejeté';
+        subtitle = 'Veuillez mettre à jour vos documents';
+        break;
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: bgColor,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.5)),
+        border: Border.all(color: iconColor.withOpacity(0.2)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: Colors.white, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(iconData, color: iconColor, size: 22), // ✅ Utilisation correcte
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: iconColor),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: GoogleFonts.inter(fontSize: 12, color: iconColor.withOpacity(0.8)),
+                ),
+              ],
             ),
           ),
         ],
@@ -281,7 +309,6 @@ class _VerificationBadge extends StatelessWidget {
     );
   }
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // STATS GRID
 // ═══════════════════════════════════════════════════════════════════════════
