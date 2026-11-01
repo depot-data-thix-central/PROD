@@ -6,6 +6,7 @@
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
 // ✅ Sécurité + Rate limiting
+// ✅ FIX : Ordre des filtres Supabase (filtres AVANT order/range)
 // ============================================================================
 
 import 'dart:math';
@@ -51,6 +52,7 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER TOUS LES PRESTATAIRES (PAGINÉ)
+  // ✅ FIX : Filtres appliqués AVANT order() et range()
   // ═══════════════════════════════════════════════════════════════════════════
   Future<List<ThixProviderModel>> getAllProviders({
     int page = 1,
@@ -62,12 +64,10 @@ class ProviderService {
     String? search,
   }) async {
     try {
-      var query = _client
-          .from('thix_wedding_providers')
-          .select('*')
-          .order('created_at', ascending: false)
-          .range((page - 1) * limit, page * limit - 1);
+      // ✅ CONSTRUIRE la requête avec TOUS les filtres d'abord
+      var query = _client.from('thix_wedding_providers').select('*');
       
+      // ✅ Appliquer les filtres (retournent PostgrestFilterBuilder)
       if (category != null) {
         query = query.eq('category', category.name);
       }
@@ -84,7 +84,11 @@ class ProviderService {
         query = query.or('business_name.ilike.%$search%,description.ilike.%$search%');
       }
       
-      final response = await query;
+      // ✅ ENSUITE appliquer order et range (retournent PostgrestTransformBuilder)
+      final response = await query
+          .order('created_at', ascending: false)
+          .range((page - 1) * limit, page * limit - 1);
+      
       return response
           .map((json) => ThixProviderModel.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -368,22 +372,26 @@ class ProviderService {
   }
 
   /// Récupérer les réservations d'un prestataire
+  /// ✅ FIX : Filtre status appliqué AVANT order()
   Future<List<ProviderReservationModel>> getProviderReservations(
     String providerId, {
     ReservationStatus? status,
   }) async {
     try {
+      // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
           .from('thix_wedding_provider_reservations')
           .select('*')
-          .eq('provider_id', providerId)
-          .order('event_date', ascending: true);
+          .eq('provider_id', providerId);
       
+      // ✅ Appliquer le filtre status optionnel AVANT order
       if (status != null) {
         query = query.eq('status', status.name);
       }
       
-      final response = await query;
+      // ✅ ENSUITE appliquer order
+      final response = await query.order('event_date', ascending: true);
+      
       return response
           .map((json) => ProviderReservationModel.fromJson(json as Map<String, dynamic>))
           .toList();
@@ -457,22 +465,26 @@ class ProviderService {
   }
 
   /// Récupérer les tâches d'un prestataire
+  /// ✅ FIX : Filtre status appliqué AVANT order()
   Future<List<ProviderTaskModel>> getProviderTasks(
     String providerId, {
     TaskStatus? status,
   }) async {
     try {
+      // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
           .from('thix_wedding_provider_tasks')
           .select('*')
-          .eq('provider_id', providerId)
-          .order('due_datetime', ascending: true);
+          .eq('provider_id', providerId);
       
+      // ✅ Appliquer le filtre status optionnel AVANT order
       if (status != null) {
         query = query.eq('status', status.name);
       }
       
-      final response = await query;
+      // ✅ ENSUITE appliquer order
+      final response = await query.order('due_datetime', ascending: true);
+      
       return response
           .map((json) => ProviderTaskModel.fromJson(json as Map<String, dynamic>))
           .toList();
