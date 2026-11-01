@@ -1,8 +1,9 @@
 // lib/presentation/thix_weeding/pages/staff/parametres/settings_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — SETTINGS (PRODUCTION) — CORRIGÉ
-// Design royal + Code organisateur + Suppression sécurisée + Navigation
-// ✅ Tous les fontFamily: 'monospace' remplacés par _mono()
+// THIX WEDDING & EVENTS — SETTINGS (PRODUCTION v2)
+// ✅ Code d'accès THIX-W-JJMM-XXXYY intégré
+// ✅ Labels harmonisés avec la home page
+// ✅ _mono() helper pour tous les textes monospace
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -161,6 +162,7 @@ class _SettingsContent extends StatelessWidget {
               // ── ACCÈS & PARTAGE ────────────────────────────────────
               _SectionHeader(title: 'Accès & Partage', icon: Icons.share_outlined, color: _R.gold),
               const SizedBox(height: 12),
+              // ✅ MIS À JOUR : Titre et description harmonisés avec le nouveau format
               _CodeAccessCard(uniqueCode: wedding.uniqueCode, weddingId: weddingId),
               const SizedBox(height: 8),
               _SettingsTile(
@@ -240,6 +242,7 @@ class _SettingsContent extends StatelessWidget {
               child: const Icon(Icons.qr_code_2, color: Colors.white, size: 32),
             ),
             const SizedBox(height: 16),
+            // ✅ MIS À JOUR : Label cohérent avec le nouveau format
             Text('QR Code Événement', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
             Text(wedding.coupleNames.isEmpty ? 'Mon Mariage' : wedding.coupleNames,
@@ -258,13 +261,18 @@ class _SettingsContent extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: _R.gold.withOpacity(0.3)),
               ),
-              // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: 'monospace')
               child: Text(
                 'Code: ${wedding.uniqueCode}',
-                style: _mono(fontSize: 12, fontWeight: FontWeight.w700, color: _R.goldDark, letterSpacing: 1),
+                style: _mono(fontSize: 13, fontWeight: FontWeight.w700, color: _R.goldDark, letterSpacing: 1.2),
               ),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
+            // ✅ AJOUTÉ : Format expliqué sous le code
+            Text(
+              'Format: THIX-W-JJMM-XXXYY',
+              style: GoogleFonts.inter(fontSize: 10, color: _R.text2, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.pop(context),
               style: FilledButton.styleFrom(backgroundColor: _R.blue, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
@@ -350,7 +358,7 @@ class _SettingsContent extends StatelessWidget {
             style: FilledButton.styleFrom(backgroundColor: _R.rose, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               if (confirmCtrl.text.trim().toUpperCase() == 'SUPPRIMER') {
-                Navigator.pop(dialogContext, true);
+                Navigator.pop(dialogDialogContext, true);
               } else {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: const Text('Veuillez taper "SUPPRIMER" pour confirmer'), backgroundColor: _R.amber, behavior: SnackBarBehavior.floating));
               }
@@ -476,7 +484,6 @@ class _WeddingHeroCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(6)),
-              // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: 'monospace')
               child: Text(
                 'ID: ${wedding.id.substring(0, 8)}',
                 style: _mono(fontSize: 9, fontWeight: FontWeight.w700, color: Colors.white),
@@ -490,7 +497,7 @@ class _WeddingHeroCard extends StatelessWidget {
 }
 
 // ============================================================================
-// CODE ACCESS CARD
+// CODE ACCESS CARD — ✅ MIS À JOUR : Nouveau format + labels harmonisés
 // ============================================================================
 class _CodeAccessCard extends StatelessWidget {
   final String uniqueCode;
@@ -508,8 +515,10 @@ class _CodeAccessCard extends StatelessWidget {
           Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(gradient: _R.goldG, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.key_outlined, color: Colors.white, size: 16)),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('Code organisateur', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
-            Text('Partagez ce code pour donner accès au staff', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
+            // ✅ MIS À JOUR : Titre harmonisé avec la home page
+            Text('Code d\'accès au mariage', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
+            // ✅ MIS À JOUR : Description clarifiée pour les invités
+            Text('Partagez ce code avec vos invités pour rejoindre l\'événement', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
           ])),
         ]),
         const SizedBox(height: 14),
@@ -524,10 +533,9 @@ class _CodeAccessCard extends StatelessWidget {
             const Icon(Icons.fingerprint, size: 20, color: _R.goldDark),
             const SizedBox(width: 12),
             Expanded(
-              // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: 'monospace')
               child: SelectableText(
                 uniqueCode.isNotEmpty ? uniqueCode : 'Non généré',
-                style: _mono(fontSize: 18, fontWeight: FontWeight.w800, color: _R.goldDark, letterSpacing: 2),
+                style: _mono(fontSize: 18, fontWeight: FontWeight.w800, color: _R.goldDark, letterSpacing: 1.5),
               ),
             ),
             Material(
@@ -536,7 +544,8 @@ class _CodeAccessCard extends StatelessWidget {
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: uniqueCode));
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Row(children: [const Icon(Icons.check_circle, color: Colors.white, size: 16), const SizedBox(width: 8), const Text('Code copié ✓')]),
+                    // ✅ MIS À JOUR : Message cohérent avec le nouveau label
+                    content: Row(children: [const Icon(Icons.check_circle, color: Colors.white, size: 16), const SizedBox(width: 8), const Text('Code d\'accès copié ✓')]),
                     backgroundColor: _R.green,
                     behavior: SnackBarBehavior.floating,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
@@ -552,6 +561,16 @@ class _CodeAccessCard extends StatelessWidget {
             ),
           ]),
         ),
+        // ✅ AJOUTÉ : Indication du format sous la carte
+        const SizedBox(height: 8),
+        Row(children: [
+          const Icon(Icons.info_outline_rounded, size: 12, color: _R.text2),
+          const SizedBox(width: 6),
+          Text(
+            'Format: THIX-W-JJMM-XXXYY',
+            style: GoogleFonts.inter(fontSize: 10, color: _R.text2, fontWeight: FontWeight.w500),
+          ),
+        ]),
       ]),
     );
   }
