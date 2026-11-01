@@ -1,4 +1,11 @@
 // lib/presentation/thix_weeding/pages/staff/paiements/payment_detail_page.dart
+// ============================================================================
+// THIX WEDDING & EVENTS — PAYMENT DETAIL (PRODUCTION v2 — USD + ÉQUILIBRÉ)
+// ✅ Devise USD ($) partout (centimes si nécessaires)
+// ✅ Synchronisation avec balancedSummaryProvider + budget + expenses
+// ✅ Auto-update is_paid de la dépense liée (solde / re-ouverture)
+// ✅ Helper _mono() compatible Web/WASM
+// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +15,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
+import 'package:thix_id/presentation/thix_weeding/pages/staff/budget/budget_page.dart'
+    show balancedSummaryProvider;
 
 // ============================================================================
 // HELPER MONOSPACE (compatible Web/WASM)
@@ -19,7 +28,8 @@ const TextStyle _monoStyle = TextStyle(
 );
 
 TextStyle _mono({double? fontSize, FontWeight? fontWeight, Color? color}) {
-  return _monoStyle.copyWith(fontSize: fontSize, fontWeight: fontWeight, color: color);
+  return _monoStyle.copyWith(
+      fontSize: fontSize, fontWeight: fontWeight, color: color);
 }
 
 // ============================================================================
@@ -65,14 +75,19 @@ class _R {
         borderRadius: BorderRadius.circular(r),
         border: Border.all(color: border),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 10,
+              offset: const Offset(0, 4)),
         ],
       );
 }
 
 const Map<String, _PayMethod> _METHODS = {
-  'mobile_money': _PayMethod('Mobile Money', Icons.phone_android, Color(0xFFD97706)),
+  'mobile_money':
+      _PayMethod('Mobile Money', Icons.phone_android, Color(0xFFD97706)),
   'cash': _PayMethod('Espèces', Icons.money, Color(0xFF059669)),
+  'bank_transfer': _PayMethod('Virement', Icons.account_balance, Color(0xFF0B3B8F)),
   'bank': _PayMethod('Virement', Icons.account_balance, Color(0xFF0B3B8F)),
   'card': _PayMethod('Carte', Icons.credit_card, Color(0xFF6B46C1)),
   'check': _PayMethod('Chèque', Icons.receipt_long, Color(0xFF78716C)),
@@ -85,8 +100,8 @@ class _PayMethod {
   const _PayMethod(this.label, this.icon, this.color);
 }
 
-_PayMethod _getMethod(String? m) =>
-    _METHODS[m ?? ''] ?? _PayMethod(m ?? 'Autre', Icons.payments_outlined, _R.text2);
+_PayMethod _getMethod(String? m) => _METHODS[m ?? ''] ??
+    _PayMethod(m ?? 'Autre', Icons.payments_outlined, _R.text2);
 
 const Map<String, _PayStatus> _STATUSES = {
   'pending': _PayStatus('En attente', Icons.pending, Color(0xFFD97706)),
@@ -102,8 +117,8 @@ class _PayStatus {
   const _PayStatus(this.label, this.icon, this.color);
 }
 
-_PayStatus _getStatus(String? s) =>
-    _STATUSES[s ?? ''] ?? _PayStatus(s ?? 'Inconnu', Icons.info_outline, _R.text2);
+_PayStatus _getStatus(String? s) => _STATUSES[s ?? ''] ??
+    _PayStatus(s ?? 'Inconnu', Icons.info_outline, _R.text2);
 
 // ============================================================================
 // PAGE PRINCIPALE
@@ -112,7 +127,8 @@ class PaymentDetailPage extends ConsumerWidget {
   final String weddingId;
   final String paymentId;
 
-  const PaymentDetailPage({super.key, required this.weddingId, required this.paymentId});
+  const PaymentDetailPage(
+      {super.key, required this.weddingId, required this.paymentId});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -162,7 +178,10 @@ class _PaymentDetailContent extends StatelessWidget {
             delegate: SliverChildListDelegate([
               _AmountHero(payment: payment, status: status, method: method),
               const SizedBox(height: 16),
-              _ActionButtons(payment: payment, weddingId: weddingId, paymentId: paymentId),
+              _ActionButtons(
+                  payment: payment,
+                  weddingId: weddingId,
+                  paymentId: paymentId),
               const SizedBox(height: 16),
               _InfoSection(payment: payment, method: method, status: status),
               const SizedBox(height: 16),
@@ -172,7 +191,10 @@ class _PaymentDetailContent extends StatelessWidget {
               const SizedBox(height: 16),
               _MetaCard(payment: payment),
               const SizedBox(height: 16),
-              _DangerZone(weddingId: weddingId, paymentId: paymentId, payment: payment),
+              _DangerZone(
+                  weddingId: weddingId,
+                  paymentId: paymentId,
+                  payment: payment),
             ]),
           ),
         ),
@@ -186,7 +208,8 @@ class _DetailAppBar extends StatelessWidget {
   final _PayStatus status;
   final _PayMethod method;
 
-  const _DetailAppBar({required this.payment, required this.status, required this.method});
+  const _DetailAppBar(
+      {required this.payment, required this.status, required this.method});
 
   @override
   Widget build(BuildContext context) {
@@ -201,7 +224,9 @@ class _DetailAppBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
+            ],
           ),
           child: const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
         ),
@@ -209,12 +234,23 @@ class _DetailAppBar extends StatelessWidget {
       ),
       flexibleSpace: Container(
         decoration: BoxDecoration(
-          gradient: LinearGradient(colors: [status.color, status.color.withOpacity(0.7)]),
-          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24)),
+          gradient: LinearGradient(
+              colors: [status.color, status.color.withOpacity(0.7)]),
+          borderRadius: const BorderRadius.only(
+              bottomLeft: Radius.circular(24),
+              bottomRight: Radius.circular(24)),
         ),
         child: Stack(
           children: [
-            Positioned(right: -60, top: -60, child: Container(width: 220, height: 220, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.08)))),
+            Positioned(
+                right: -60,
+                top: -60,
+                child: Container(
+                    width: 220,
+                    height: 220,
+                    decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withOpacity(0.08)))),
             FlexibleSpaceBar(
               background: SafeArea(
                 child: Padding(
@@ -224,23 +260,53 @@ class _DetailAppBar extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Row(children: [
-                        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: Icon(method.icon, color: Colors.white, size: 16)),
+                        Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(8)),
+                            child: Icon(method.icon,
+                                color: Colors.white, size: 16)),
                         const SizedBox(width: 8),
-                        Text('PAIEMENT', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.85), letterSpacing: 2)),
+                        Text('PAIEMENT',
+                            style: GoogleFonts.inter(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white.withOpacity(0.85),
+                                letterSpacing: 2)),
                         const Spacer(),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(8)),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(8)),
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
                             Icon(status.icon, size: 12, color: Colors.white),
                             const SizedBox(width: 4),
-                            Text(status.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                            Text(status.label,
+                                style: GoogleFonts.inter(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white)),
                           ]),
                         ),
                       ]),
                       const SizedBox(height: 8),
-                      Text('${_fmtMoney(payment.amount)} FCFA', style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w800, color: Colors.white)),
-                      Text(payment.vendorName ?? payment.expenseTitle ?? 'Paiement sans liaison', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
+                      Text(_fmtUsd(payment.amount),
+                          style: GoogleFonts.inter(
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white)),
+                      Text(
+                          payment.vendorName ??
+                              payment.expenseTitle ??
+                              'Paiement sans liaison',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: Colors.white.withOpacity(0.9))),
                     ],
                   ),
                 ),
@@ -258,29 +324,57 @@ class _AmountHero extends StatelessWidget {
   final _PayStatus status;
   final _PayMethod method;
 
-  const _AmountHero({required this.payment, required this.status, required this.method});
+  const _AmountHero(
+      {required this.payment, required this.status, required this.method});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: [method.color, method.color.withOpacity(0.7)]),
+        gradient: LinearGradient(
+            colors: [method.color, method.color.withOpacity(0.7)]),
         borderRadius: BorderRadius.circular(24),
-        boxShadow: [BoxShadow(color: method.color.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 8))],
+        boxShadow: [
+          BoxShadow(
+              color: method.color.withOpacity(0.3),
+              blurRadius: 20,
+              offset: const Offset(0, 8))
+        ],
       ),
       child: Row(children: [
-        Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), borderRadius: BorderRadius.circular(16)), child: Icon(method.icon, color: Colors.white, size: 32)),
+        Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.25),
+                borderRadius: BorderRadius.circular(16)),
+            child: Icon(method.icon, color: Colors.white, size: 32)),
         const SizedBox(width: 16),
         Expanded(
           child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(method.label, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
+            Text(method.label,
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withOpacity(0.9))),
             const SizedBox(height: 4),
-            Text(_fmtMoney(payment.amount), style: GoogleFonts.inter(fontSize: 28, fontWeight: FontWeight.w800, color: Colors.white)),
-            Text('FCFA', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.85))),
+            Text(_fmtUsd(payment.amount),
+                style: GoogleFonts.inter(
+                    fontSize: 28,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white)),
+            Text('USD',
+                style: GoogleFonts.inter(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white.withOpacity(0.85))),
           ]),
         ),
-        Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.white.withOpacity(0.25), shape: BoxShape.circle), child: Icon(status.icon, color: Colors.white, size: 28)),
+        Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.25), shape: BoxShape.circle),
+            child: Icon(status.icon, color: Colors.white, size: 28)),
       ]),
     );
   }
@@ -291,7 +385,11 @@ class _ActionButtons extends ConsumerWidget {
   final String weddingId;
   final String paymentId;
 
-  const _ActionButtons({required this.payment, required this.weddingId, required this.paymentId});
+  const _ActionButtons({
+    required this.payment,
+    required this.weddingId,
+    required this.paymentId,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -304,40 +402,66 @@ class _ActionButtons extends ConsumerWidget {
             gradient: isCompleted ? null : _R.greenG,
             color: isCompleted ? _R.green.withOpacity(0.1) : null,
             borderRadius: BorderRadius.circular(14),
-            border: isCompleted ? Border.all(color: _R.green.withOpacity(0.3)) : null,
+            border: isCompleted
+                ? Border.all(color: _R.green.withOpacity(0.3))
+                : null,
           ),
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
-              onTap: isCompleted ? null : () => _markCompleted(context, ref),
+              onTap:
+                  isCompleted ? null : () => _markCompleted(context, ref),
               borderRadius: BorderRadius.circular(14),
               child: Center(
                 child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Icon(isCompleted ? Icons.verified : Icons.check_circle_outline, size: 18, color: isCompleted ? _R.green : Colors.white),
+                  Icon(
+                      isCompleted
+                          ? Icons.verified
+                          : Icons.check_circle_outline,
+                      size: 18,
+                      color: isCompleted ? _R.green : Colors.white),
                   const SizedBox(width: 8),
-                  Text(isCompleted ? 'Déjà complété' : 'Marquer complété', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: isCompleted ? _R.green : Colors.white)),
+                  Text(
+                      isCompleted ? 'Déjà complété' : 'Marquer complété',
+                      style: GoogleFonts.inter(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color:
+                              isCompleted ? _R.green : Colors.white)),
                 ]),
               ),
             ),
           ),
         ),
       ),
-      if (payment.referenceCode != null && payment.referenceCode!.isNotEmpty) ...[
+      if (payment.referenceCode != null &&
+          payment.referenceCode!.isNotEmpty) ...[
         const SizedBox(width: 10),
         Container(
           height: 48,
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.border)),
+          decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _R.border)),
           child: Material(
             color: Colors.transparent,
             borderRadius: BorderRadius.circular(14),
             child: InkWell(
               onTap: () {
-                Clipboard.setData(ClipboardData(text: payment.referenceCode!));
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Référence copiée ✓'), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))));
+                Clipboard.setData(
+                    ClipboardData(text: payment.referenceCode!));
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: const Text('Référence copiée ✓'),
+                    backgroundColor: _R.green,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10))));
               },
               borderRadius: BorderRadius.circular(14),
-              child: const Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: Icon(Icons.copy, size: 18, color: _R.blue)),
+              child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 14),
+                  child: Icon(Icons.copy, size: 18, color: _R.blue)),
             ),
           ),
         ),
@@ -347,20 +471,87 @@ class _ActionButtons extends ConsumerWidget {
 
   Future<void> _markCompleted(BuildContext context, WidgetRef ref) async {
     try {
-      await Supabase.instance.client.from('thix_weeding_payments').update({'status': 'completed'}).eq('id', paymentId);
-      ref.invalidate(paymentDetailProvider(paymentId));
-      ref.invalidate(paymentsProvider(weddingId));
-      ref.invalidate(paymentsSummaryProvider(weddingId));
+      await Supabase.instance.client
+          .from('thix_weeding_payments')
+          .update({'status': 'completed'})
+          .eq('id', paymentId);
+
+      // Synchronisation comptable complète
+      _invalidateAll(ref);
+
+      // Si dépense liée → re-vérifier is_paid
+      if (payment.expenseId != null) {
+        await _resyncExpenseIsPaid(payment.expenseId!);
+      }
+
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Row(children: [Container(padding: const EdgeInsets.all(6), decoration: const BoxDecoration(color: Colors.white24, shape: BoxShape.circle), child: const Icon(Icons.check, color: Colors.white, size: 16)), const SizedBox(width: 10), const Text('Paiement complété ✓')]),
-          backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: const EdgeInsets.all(16),
+          content: Row(children: [
+            Container(
+                padding: const EdgeInsets.all(6),
+                decoration: const BoxDecoration(
+                    color: Colors.white24, shape: BoxShape.circle),
+                child: const Icon(Icons.check,
+                    color: Colors.white, size: 16)),
+            const SizedBox(width: 10),
+            Text('Paiement complété ✓ Budget mis à jour',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w600))
+          ]),
+          backgroundColor: _R.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.all(16),
         ));
       }
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose, behavior: SnackBarBehavior.floating));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: _R.rose,
+            behavior: SnackBarBehavior.floating));
+      }
     }
   }
+}
+
+/// Re-vérifie is_paid d'une dépense après modification d'un paiement lié
+Future<void> _resyncExpenseIsPaid(String expenseId) async {
+  try {
+    final expense = await Supabase.instance.client
+        .from('thix_weeding_expenses')
+        .select('id, amount')
+        .eq('id', expenseId)
+        .maybeSingle();
+    if (expense == null) return;
+
+    final totalAmount = (expense['amount'] as num).toDouble();
+
+    final payments = await Supabase.instance.client
+        .from('thix_weeding_payments')
+        .select('amount, status')
+        .eq('expense_id', expenseId);
+
+    final totalPaid = List<Map<String, dynamic>>.from(payments)
+        .where((p) => p['status'] == 'completed')
+        .fold<double>(0, (s, p) => s + (p['amount'] as num).toDouble());
+
+    final shouldBePaid = totalPaid >= totalAmount - 0.001;
+    await Supabase.instance.client
+        .from('thix_weeding_expenses')
+        .update({'is_paid': shouldBePaid})
+        .eq('id', expenseId);
+  } catch (_) {}
+}
+
+/// Invalidation globale pour synchroniser dashboard + budget
+void _invalidateAll(WidgetRef ref) {
+  // Tous les providers comptables
+  ref.invalidate(paymentsSummaryProvider(ref.read(currentWeddingIdProvider)));
+  ref.invalidate(budgetProvider(ref.read(currentWeddingIdProvider)));
+  ref.invalidate(balancedSummaryProvider(ref.read(currentWeddingIdProvider)));
+  ref.invalidate(paymentsProvider(ref.read(currentWeddingIdProvider)));
+  ref.invalidate(expensesProvider(ref.read(currentWeddingIdProvider)));
 }
 
 class _InfoSection extends StatelessWidget {
@@ -368,7 +559,10 @@ class _InfoSection extends StatelessWidget {
   final _PayMethod method;
   final _PayStatus status;
 
-  const _InfoSection({required this.payment, required this.method, required this.status});
+  const _InfoSection(
+      {required this.payment,
+      required this.method,
+      required this.status});
 
   @override
   Widget build(BuildContext context) {
@@ -378,13 +572,40 @@ class _InfoSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Informations', icon: Icons.info_outline, color: _R.blue),
+          _SectionHeader(
+              title: 'Informations',
+              icon: Icons.info_outline,
+              color: _R.blue),
           const SizedBox(height: 14),
-          _InfoRow(icon: Icons.fingerprint_outlined, label: 'ID Paiement', value: payment.id.substring(0, 12), mono: true, color: _R.blue),
-          _InfoRow(icon: method.icon, label: 'Méthode', value: method.label, color: method.color),
-          _InfoRow(icon: status.icon, label: 'Statut', value: status.label, color: status.color, badge: true),
-          _InfoRow(icon: Icons.tag_outlined, label: 'Référence', value: payment.referenceCode ?? 'Non renseignée', color: payment.referenceCode != null ? _R.purple : _R.text2, mono: payment.referenceCode != null, copyable: payment.referenceCode),
-          _InfoRow(icon: Icons.calendar_today_outlined, label: 'Date de création', value: _fmtDateTime(payment.createdAt), color: _R.gold),
+          _InfoRow(
+              icon: Icons.fingerprint_outlined,
+              label: 'ID Paiement',
+              value: payment.id.substring(0, 12),
+              mono: true,
+              color: _R.blue),
+          _InfoRow(
+              icon: method.icon,
+              label: 'Méthode',
+              value: method.label,
+              color: method.color),
+          _InfoRow(
+              icon: status.icon,
+              label: 'Statut',
+              value: status.label,
+              color: status.color,
+              badge: true),
+          _InfoRow(
+              icon: Icons.tag_outlined,
+              label: 'Référence',
+              value: payment.referenceCode ?? 'Non renseignée',
+              color: payment.referenceCode != null ? _R.purple : _R.text2,
+              mono: payment.referenceCode != null,
+              copyable: payment.referenceCode),
+          _InfoRow(
+              icon: Icons.calendar_today_outlined,
+              label: 'Date de création',
+              value: _fmtDateTime(payment.createdAt),
+              color: _R.gold),
         ],
       ),
     );
@@ -397,8 +618,10 @@ class _LinksSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final hasVendor = payment.vendorName != null || payment.vendorId != null;
-    final hasExpense = payment.expenseTitle != null || payment.expenseId != null;
+    final hasVendor =
+        payment.vendorName != null || payment.vendorId != null;
+    final hasExpense =
+        payment.expenseTitle != null || payment.expenseId != null;
     if (!hasVendor && !hasExpense) return const SizedBox.shrink();
 
     return Container(
@@ -407,13 +630,24 @@ class _LinksSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Liaisons', icon: Icons.link_outlined, color: _R.purple),
+          _SectionHeader(
+              title: 'Liaisons',
+              icon: Icons.link_outlined,
+              color: _R.purple),
           const SizedBox(height: 14),
           if (hasVendor)
-            _LinkTile(icon: Icons.storefront_outlined, label: 'Prestataire', value: payment.vendorName ?? payment.vendorId!, color: _R.purple),
+            _LinkTile(
+                icon: Icons.storefront_outlined,
+                label: 'Prestataire',
+                value: payment.vendorName ?? payment.vendorId!,
+                color: _R.purple),
           if (hasVendor && hasExpense) const SizedBox(height: 10),
           if (hasExpense)
-            _LinkTile(icon: Icons.receipt_long_outlined, label: 'Dépense liée', value: payment.expenseTitle ?? payment.expenseId!, color: _R.amber),
+            _LinkTile(
+                icon: Icons.receipt_long_outlined,
+                label: 'Dépense liée',
+                value: payment.expenseTitle ?? payment.expenseId!,
+                color: _R.amber),
         ],
       ),
     );
@@ -425,21 +659,44 @@ class _LinkTile extends StatelessWidget {
   final String label;
   final String value;
   final Color color;
-  const _LinkTile({required this.icon, required this.label, required this.value, required this.color});
+  const _LinkTile(
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: color.withOpacity(0.06), borderRadius: BorderRadius.circular(12), border: Border.all(color: color.withOpacity(0.2))),
+      decoration: BoxDecoration(
+          color: color.withOpacity(0.06),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.2))),
       child: Row(children: [
-        Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 18, color: color)),
+        Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, size: 18, color: color)),
         const SizedBox(width: 12),
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(label, style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
-          const SizedBox(height: 2),
-          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: color)),
-        ])),
+        Expanded(
+            child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+              Text(label,
+                  style:
+                      GoogleFonts.inter(fontSize: 10, color: _R.text2)),
+              const SizedBox(height: 2),
+              Text(value,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: color)),
+            ])),
       ]),
     );
   }
@@ -459,10 +716,29 @@ class _TimelineSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Historique', icon: Icons.history_outlined, color: _R.gold),
+          _SectionHeader(
+              title: 'Historique',
+              icon: Icons.history_outlined,
+              color: _R.gold),
           const SizedBox(height: 14),
-          _TimelineStep(icon: Icons.add_circle_outline, title: 'Paiement créé', subtitle: _fmtDateTime(payment.createdAt), color: _R.blue, isActive: true, showConnector: true),
-          _TimelineStep(icon: isCompleted ? Icons.check_circle : Icons.hourglass_empty, title: isCompleted ? 'Paiement complété' : 'En attente', subtitle: isCompleted ? 'Montant réglé' : 'En attente de validation', color: isCompleted ? _R.green : _R.amber, isActive: isCompleted, showConnector: false),
+          _TimelineStep(
+              icon: Icons.add_circle_outline,
+              title: 'Paiement créé',
+              subtitle: _fmtDateTime(payment.createdAt),
+              color: _R.blue,
+              isActive: true,
+              showConnector: true),
+          _TimelineStep(
+              icon: isCompleted
+                  ? Icons.check_circle
+                  : Icons.hourglass_empty,
+              title: isCompleted ? 'Paiement complété' : 'En attente',
+              subtitle: isCompleted
+                  ? 'Montant réglé en ${_fmtUsd(payment.amount)}'
+                  : 'En attente de validation',
+              color: isCompleted ? _R.green : _R.amber,
+              isActive: isCompleted,
+              showConnector: false),
         ],
       ),
     );
@@ -476,7 +752,14 @@ class _TimelineStep extends StatelessWidget {
   final Color color;
   final bool isActive;
   final bool showConnector;
-  const _TimelineStep({required this.icon, required this.title, required this.subtitle, required this.color, required this.isActive, required this.showConnector});
+  const _TimelineStep({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.isActive,
+    required this.showConnector,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -487,19 +770,43 @@ class _TimelineStep extends StatelessWidget {
           SizedBox(
             width: 32,
             child: Column(children: [
-              Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: isActive ? color.withOpacity(0.15) : _R.border.withOpacity(0.3), shape: BoxShape.circle, border: Border.all(color: isActive ? color : _R.border, width: 2)), child: Icon(icon, size: 14, color: isActive ? color : _R.text2)),
-              if (showConnector) Expanded(child: Container(width: 2, color: isActive ? color.withOpacity(0.25) : _R.border)),
+              Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                      color: isActive
+                          ? color.withOpacity(0.15)
+                          : _R.border.withOpacity(0.3),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: isActive ? color : _R.border, width: 2)),
+                  child: Icon(icon,
+                      size: 14, color: isActive ? color : _R.text2)),
+              if (showConnector)
+                Expanded(
+                    child: Container(
+                        width: 2,
+                        color: isActive
+                            ? color.withOpacity(0.25)
+                            : _R.border)),
             ]),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.only(bottom: 16),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(title, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: isActive ? color : _R.text2)),
-                const SizedBox(height: 2),
-                Text(subtitle, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
-              ]),
+              child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: isActive ? color : _R.text2)),
+                    const SizedBox(height: 2),
+                    Text(subtitle,
+                        style: GoogleFonts.inter(
+                            fontSize: 11, color: _R.text2)),
+                  ]),
             ),
           ),
         ],
@@ -516,20 +823,35 @@ class _MetaCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: _R.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.border)),
+      decoration: BoxDecoration(
+          color: _R.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _R.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: _R.text2.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: const Icon(Icons.data_object, size: 14, color: _R.text2)),
+            Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                    color: _R.text2.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(6)),
+                child: const Icon(Icons.data_object,
+                    size: 14, color: _R.text2)),
             const SizedBox(width: 8),
-            Text('Données techniques', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _R.text2)),
+            Text('Données techniques',
+                style: GoogleFonts.inter(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: _R.text2)),
           ]),
           const SizedBox(height: 12),
           _MetaRow(label: 'UUID complet', value: payment.id),
           _MetaRow(label: 'Wedding ID', value: payment.weddingId),
-          if (payment.vendorId != null) _MetaRow(label: 'Vendor ID', value: payment.vendorId!),
-          if (payment.expenseId != null) _MetaRow(label: 'Expense ID', value: payment.expenseId!),
+          if (payment.vendorId != null)
+            _MetaRow(label: 'Vendor ID', value: payment.vendorId!),
+          if (payment.expenseId != null)
+            _MetaRow(label: 'Expense ID', value: payment.expenseId!),
         ],
       ),
     );
@@ -540,25 +862,44 @@ class _DangerZone extends ConsumerWidget {
   final String weddingId;
   final String paymentId;
   final PaymentModel payment;
-  const _DangerZone({required this.weddingId, required this.paymentId, required this.payment});
+  const _DangerZone({
+    required this.weddingId,
+    required this.paymentId,
+    required this.payment,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return Container(
       padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(color: _R.rose.withOpacity(0.04), borderRadius: BorderRadius.circular(16), border: Border.all(color: _R.rose.withOpacity(0.2))),
+      decoration: BoxDecoration(
+          color: _R.rose.withOpacity(0.04),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _R.rose.withOpacity(0.2))),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
-            Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(gradient: _R.roseG, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.warning_amber_outlined, color: Colors.white, size: 16)),
+            Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    gradient: _R.roseG,
+                    borderRadius: BorderRadius.circular(8)),
+                child: const Icon(Icons.warning_amber_outlined,
+                    color: Colors.white, size: 16)),
             const SizedBox(width: 10),
-            Text('Zone de danger', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700, color: _R.rose)),
+            Text('Zone de danger',
+                style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: _R.rose)),
           ]),
           const SizedBox(height: 14),
           Container(
             width: double.infinity,
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.rose.withOpacity(0.3))),
+            decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _R.rose.withOpacity(0.3))),
             child: Material(
               color: Colors.transparent,
               borderRadius: BorderRadius.circular(14),
@@ -567,10 +908,16 @@ class _DangerZone extends ConsumerWidget {
                 borderRadius: BorderRadius.circular(14),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(vertical: 16),
-                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                    const Icon(Icons.delete_forever_outlined, color: _R.rose, size: 20),
+                  child:
+                      Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Icon(Icons.delete_forever_outlined,
+                        color: _R.rose, size: 20),
                     const SizedBox(width: 8),
-                    Text('Supprimer ce paiement', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: _R.rose)),
+                    Text('Supprimer ce paiement',
+                        style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _R.rose)),
                   ]),
                 ),
               ),
@@ -586,20 +933,52 @@ class _DangerZone extends ConsumerWidget {
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       builder: (_) => Dialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(padding: const EdgeInsets.all(18), decoration: const BoxDecoration(gradient: _R.roseG, shape: BoxShape.circle), child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 36)),
+            Container(
+                padding: const EdgeInsets.all(18),
+                decoration: const BoxDecoration(
+                    gradient: _R.roseG, shape: BoxShape.circle),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 36)),
             const SizedBox(height: 18),
-            Text('Supprimer ce paiement ?', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
+            Text('Supprimer ce paiement ?',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(
+                    fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 8),
-            Text('Le paiement de ${_fmtMoney(payment.amount)} FCFA sera définitivement supprimé.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
+            Text(
+                'Le paiement de ${_fmtUsd(payment.amount)} sera définitivement supprimé et la comptabilité recalculée.',
+                textAlign: TextAlign.center,
+                style:
+                    GoogleFonts.inter(fontSize: 13, color: _R.text2)),
             const SizedBox(height: 24),
             Row(children: [
-              Expanded(child: OutlinedButton(onPressed: () => Navigator.pop(context, false), style: OutlinedButton.styleFrom(foregroundColor: _R.text, side: const BorderSide(color: _R.border), padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))), child: const Text('Annuler'))),
+              Expanded(
+                  child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      style: OutlinedButton.styleFrom(
+                          foregroundColor: _R.text,
+                          side: const BorderSide(color: _R.border),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))),
+                      child: const Text('Annuler'))),
               const SizedBox(width: 12),
-              Expanded(flex: 2, child: FilledButton.icon(onPressed: () => Navigator.pop(context, true), icon: const Icon(Icons.delete_outline, size: 18), label: const Text('Supprimer'), style: FilledButton.styleFrom(backgroundColor: _R.rose, padding: const EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))))),
+              Expanded(
+                  flex: 2,
+                  child: FilledButton.icon(
+                      onPressed: () => Navigator.pop(context, true),
+                      icon: const Icon(Icons.delete_outline, size: 18),
+                      label: const Text('Supprimer'),
+                      style: FilledButton.styleFrom(
+                          backgroundColor: _R.rose,
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12))))),
             ]),
           ]),
         ),
@@ -607,15 +986,41 @@ class _DangerZone extends ConsumerWidget {
     );
     if (ok != true) return;
     try {
-      await Supabase.instance.client.from('thix_weeding_payments').delete().eq('id', paymentId);
-      ref.invalidate(paymentsProvider(weddingId));
-      ref.invalidate(paymentsSummaryProvider(weddingId));
+      final linkedExpenseId = payment.expenseId;
+
+      await Supabase.instance.client
+          .from('thix_weeding_payments')
+          .delete()
+          .eq('id', paymentId);
+
+      _invalidateAll(ref);
+
+      // Re-ouvrir la dépense liée si nécessaire
+      if (linkedExpenseId != null) {
+        await _resyncExpenseIsPaid(linkedExpenseId);
+      }
+
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Row(children: [const Icon(Icons.check_circle, color: Colors.white, size: 18), const SizedBox(width: 10), const Text('Paiement supprimé ✓')]), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Row(children: [
+              const Icon(Icons.check_circle,
+                  color: Colors.white, size: 18),
+              const SizedBox(width: 10),
+              const Text('Paiement supprimé ✓ Budget mis à jour')
+            ]),
+            backgroundColor: _R.green,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12))));
         context.pop();
       }
     } catch (e) {
-      if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose, behavior: SnackBarBehavior.floating));
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erreur: $e'),
+            backgroundColor: _R.rose,
+            behavior: SnackBarBehavior.floating));
+      }
     }
   }
 }
@@ -624,19 +1029,27 @@ class _SectionHeader extends StatelessWidget {
   final String title;
   final IconData icon;
   final Color color;
-  const _SectionHeader({required this.title, required this.icon, required this.color});
+  const _SectionHeader(
+      {required this.title, required this.icon, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Row(children: [
-      Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: Colors.white, size: 16)),
+      Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+              gradient: LinearGradient(
+                  colors: [color, color.withOpacity(0.7)]),
+              borderRadius: BorderRadius.circular(8)),
+          child: Icon(icon, color: Colors.white, size: 16)),
       const SizedBox(width: 10),
-      Text(title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700)),
+      Text(title,
+          style: GoogleFonts.inter(
+              fontSize: 15, fontWeight: FontWeight.w700)),
     ]);
   }
 }
 
-// ✅ CORRIGÉ : utilisation de _mono() au lieu de fontFamily dans GoogleFonts.inter
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -664,7 +1077,9 @@ class _InfoRow extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            decoration: BoxDecoration(
+                color: color.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8)),
             child: Icon(icon, size: 16, color: color),
           ),
           const SizedBox(width: 12),
@@ -672,20 +1087,40 @@ class _InfoRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
+                Text(label,
+                    style: GoogleFonts.inter(
+                        fontSize: 11, color: _R.text2)),
                 const SizedBox(height: 2),
                 badge
                     ? Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(0.3))),
-                        child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                                color: color.withOpacity(0.3))),
+                        child: Text(value,
+                            style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: color)),
                       )
-                    // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: ...)
                     : Text(
                         value,
                         style: mono
-                            ? _mono(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseignée' ? _R.text2 : _R.text)
-                            : GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseignée' ? _R.text2 : _R.text),
+                            ? _mono(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: value == 'Non renseignée'
+                                    ? _R.text2
+                                    : _R.text)
+                            : GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: value == 'Non renseignée'
+                                    ? _R.text2
+                                    : _R.text),
                       ),
               ],
             ),
@@ -696,19 +1131,19 @@ class _InfoRow extends StatelessWidget {
               child: InkWell(
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: copyable!));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: const Text('Copié ✓'),
-                      backgroundColor: _R.green,
-                      behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    ),
-                  );
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: const Text('Copié ✓'),
+                    backgroundColor: _R.green,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8)),
+                  ));
                 },
                 borderRadius: BorderRadius.circular(6),
                 child: Container(
                   padding: const EdgeInsets.all(6),
-                  child: const Icon(Icons.copy, size: 14, color: _R.text2),
+                  child: const Icon(Icons.copy,
+                      size: 14, color: _R.text2),
                 ),
               ),
             ),
@@ -718,7 +1153,6 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: ...)
 class _MetaRow extends StatelessWidget {
   final String label;
   final String value;
@@ -731,9 +1165,17 @@ class _MetaRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 90, child: Text(label, style: GoogleFonts.inter(fontSize: 10, color: _R.text2))),
-          // ✅ CORRIGÉ : _mono() au lieu de GoogleFonts.inter(fontFamily: 'monospace')
-          Expanded(child: SelectableText(value, style: _mono(fontSize: 10, fontWeight: FontWeight.w600, color: _R.text))),
+          SizedBox(
+              width: 90,
+              child: Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 10, color: _R.text2))),
+          Expanded(
+              child: SelectableText(value,
+                  style: _mono(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _R.text))),
         ],
       ),
     );
@@ -748,9 +1190,18 @@ class _LoadingView extends StatelessWidget {
       backgroundColor: _R.surface,
       body: Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(gradient: _R.greenG, shape: BoxShape.circle), child: const Icon(Icons.payments_outlined, color: Colors.white, size: 36)),
+          Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(
+                  gradient: _R.greenG, shape: BoxShape.circle),
+              child: const Icon(Icons.payments_outlined,
+                  color: Colors.white, size: 36)),
           const SizedBox(height: 16),
-          Text('Chargement...', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2)),
+          Text('Chargement...',
+              style: GoogleFonts.inter(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _R.text2)),
         ]),
       ),
     );
@@ -770,13 +1221,28 @@ class _ErrorView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: _R.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline, color: _R.rose, size: 40)),
+            Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    color: _R.rose.withOpacity(0.1), shape: BoxShape.circle),
+                child: const Icon(Icons.error_outline,
+                    color: _R.rose, size: 40)),
             const SizedBox(height: 16),
-            Text('Impossible de charger', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text('Impossible de charger',
+                style: GoogleFonts.inter(
+                    fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text(message, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style:
+                    GoogleFonts.inter(fontSize: 12, color: _R.text2)),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Réessayer'), style: FilledButton.styleFrom(backgroundColor: _R.blue)),
+            FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Réessayer'),
+                style:
+                    FilledButton.styleFrom(backgroundColor: _R.blue)),
           ]),
         ),
       ),
@@ -784,19 +1250,30 @@ class _ErrorView extends StatelessWidget {
   }
 }
 
-String _fmtMoney(double v) {
-  final s = v.round().toString();
+// ============================================================================
+// UTILITAIRES USD
+// ============================================================================
+
+/// Format USD : $2,000 ou $1,234.56 (centimes si nécessaires)
+String _fmtUsd(double v) {
+  final neg = v < 0;
+  final abs = v.abs();
+  final whole = abs.floor();
+  final cents = ((abs - whole) * 100).round();
+  final s = whole.toString();
   final buf = StringBuffer();
-  var c = 0;
-  for (var i = s.length - 1; i >= 0; i--) {
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
     buf.write(s[i]);
-    c++;
-    if (c % 3 == 0 && i > 0) buf.write(' ');
   }
-  return buf.toString().split('').reversed.join();
+  final c = cents > 0 ? '.${cents.toString().padLeft(2, '0')}' : '';
+  return '${neg ? '-' : ''}\$$buf$c';
 }
 
 String _fmtDateTime(DateTime dt) {
-  const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+  const months = [
+    'jan', 'fév', 'mar', 'avr', 'mai', 'jun',
+    'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'
+  ];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year} à ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
 }
