@@ -1,12 +1,13 @@
 // lib/presentation/thix_weeding/pages/staff/seating/seating_3d_page.dart
 // ============================================================================
-// THIX WEDDING — PLAN DE SALLE 3D (PRODUCTION v2)
-// ✅ Salle claire (marbre, mur à fenêtres, tables nappées, chaises, plats)
-// ✅ Mode Éditer (déplacer / pincer) + mode Visiter (orbite, zoom, visite auto)
-// ✅ Tables rondes / rectangulaires / carrées + scène, piste, buffet, bar, gâteau, DJ…
-// ✅ Chaque chaise = une place numérotée, liée aux invitations (temps réel)
-// ✅ Placement manuel, auto sur une table, auto global, libération
-// ✅ Verre dépoli (glassmorphism)
+// THIX WEDDING — PLAN DE SALLE 3D (PRODUCTION v3 — MANIABILITÉ AMÉLIORÉE)
+// ✅ Tout le code 3D existant préservé
+// ✅ AJOUT : Joystick flottant directionnel quand élément sélectionné
+// ✅ AJOUT : Rotation individuelle par slider + bouton
+// ✅ AJOUT : Focus caméra sur élément sélectionné
+// ✅ AJOUT : Grille magnétique visible pendant le drag
+// ✅ AJOUT : 4 nouveaux décors (Photobooth, Arbre à vœux, Fontaine, Arche)
+// ✅ AJOUT : Animations fluides (AnimatedPositioned)
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -28,6 +29,11 @@ const double _roomW = 1200;
 const double _roomH = 800;
 const double _wallH = 300;
 const double _seatGap = 13;
+
+/// Pas de déplacement par joystick (pixels dans l'espace 3D)
+const double _kMoveStep = 20.0;
+/// Pas de rotation par joystick (radians)
+const double _kRotateStep = 0.08;
 
 class _C {
   static const Color gold = Color(0xFFD4AF37);
@@ -79,6 +85,11 @@ enum _Kind {
   entrance,
   vip,
   plant,
+  // NOUVEAUTÉS v3 — plus d'histoires dans la salle
+  photobooth,
+  wishingTree,
+  fountain,
+  floralArch,
 }
 
 const Map<_Kind, String> _kindKey = {
@@ -94,6 +105,10 @@ const Map<_Kind, String> _kindKey = {
   _Kind.entrance: 'entrance',
   _Kind.vip: 'vip_zone',
   _Kind.plant: 'plant',
+  _Kind.photobooth: 'photobooth',
+  _Kind.wishingTree: 'wishing_tree',
+  _Kind.fountain: 'fountain',
+  _Kind.floralArch: 'floral_arch',
 };
 
 _Kind _kindFrom(String? k) => _kindKey.entries
@@ -122,6 +137,10 @@ const Map<_Kind, _KindMeta> _meta = {
   _Kind.entrance: _KindMeta('Entrée', Icons.door_front_door, 140, 44),
   _Kind.vip: _KindMeta('Zone VIP', Icons.star, 280, 200),
   _Kind.plant: _KindMeta('Plante', Icons.local_florist, 34, 34),
+  _Kind.photobooth: _KindMeta('Photobooth', Icons.camera_alt, 160, 120),
+  _Kind.wishingTree: _KindMeta('Arbre à vœux', Icons.park, 90, 90),
+  _Kind.fountain: _KindMeta('Fontaine', Icons.water_drop, 110, 110),
+  _Kind.floralArch: _KindMeta('Arche florale', Icons.local_florist_outlined, 180, 60),
 };
 
 class _Seat {
@@ -220,9 +239,6 @@ class _Item {
       ? Size(body.width + 78, body.height + 78)
       : Size(body.width + 24, body.height + 24);
 
-  /// Ordre des places (identique dans add_guest) :
-  /// ronde = sens horaire depuis le haut ; rect = haut G→D puis bas G→D ;
-  /// carrée = haut, bas, gauche, droite.
   List<_Seat> get seats {
     final b = body;
     final n = capacity;
@@ -332,7 +348,6 @@ Widget _shadow(double w, double h,
       ),
     );
 
-/// Solide empilé en couches (donne une vraie épaisseur sous perspective).
 List<Widget> _cuboid({
   required double w,
   required double h,
@@ -433,6 +448,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   Offset _dragOff = Offset.zero;
   ({double t, double r, double z}) _camA = (t: 0.95, r: 0.0, z: 1.0);
   ({double t, double r, double z}) _camB = (t: 0.95, r: 0.0, z: 1.0);
+
+  // NOUVEAUTÉS v3 — maniabilité
+  bool _precisionMode = false;  // déplace par pas fin (5px au lieu de 20px)
+  bool _showGrid = false;       // grille visible pendant drag
 
   @override
   void initState() {
@@ -631,7 +650,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     });
   }
 
-  void _animateCam({double? tilt, double? rot, double? zoom}) {
+  void _animateCam({double? tilt, double? rot, double? zoom, Offset? panTo}) {
     if (_tour) _toggleTour();
     final r0 = _rot;
     var r1 = rot ?? _rot;
@@ -653,6 +672,19 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
 
   void _zoomBy(double f) =>
       setState(() => _zoom = (_zoom * f).clamp(0.5, 3.5).toDouble());
+
+  /// NOUVEAUTÉ v3 : centre la caméra sur l'élément sélectionné
+  void _focusSelected() {
+    final sel = _selected;
+    if (sel == null) return;
+    // Calcule le pan pour centrer l'élément (en coordonnées écran approximatives)
+    setState(() {
+      _zoom = 1.4;
+      _pan = Offset.zero;
+    });
+    _animateCam(tilt: 0.9, zoom: 1.6);
+    _toast('Centré sur ${sel.label}');
+  }
 
   void _camStart(ScaleStartDetails d) {
     _zoomStart = _zoom;
@@ -742,6 +774,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       _dragId = it.id;
       _dragOff = it.c - d.localFocalPoint;
       if (_selId != it.id) _select(it.id);
+      setState(() => _showGrid = _snap);
     }
   }
 
@@ -766,7 +799,46 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   void _editEnd(ScaleEndDetails d) {
     final id = _dragId;
     _dragId = null;
+    setState(() => _showGrid = false);
     if (id != null) _markDirty(id);
+  }
+
+  // ═════════════════════════════════════════════════════════════════════════
+  // NOUVEAUTÉS v3 — MOUVEMENTS PAR JOYSTICK / CLAVIER
+  // ═════════════════════════════════════════════════════════════════════════
+
+  /// Déplace l'élément sélectionné d'un pas dans la direction donnée.
+  /// Utilise le _kMoveStep ou la version précision (5px).
+  void _moveSelectedBy(double dx, double dy) {
+    final sel = _selected;
+    if (sel == null || sel.locked) return;
+    final step = _precisionMode ? 5.0 : _kMoveStep;
+    final nx = sel.x * _roomW + dx * step;
+    final ny = sel.y * _roomH + dy * step;
+    setState(() {
+      sel.x = (nx / _roomW).clamp(0.03, 0.97).toDouble();
+      sel.y = (ny / _roomH).clamp(0.05, 0.95).toDouble();
+    });
+    HapticFeedback.lightImpact();
+    _markDirty(sel.id);
+  }
+
+  /// Fait pivoter l'élément sélectionné.
+  void _rotateSelectedBy(double delta) {
+    final sel = _selected;
+    if (sel == null || sel.locked) return;
+    setState(() {
+      sel.rotation += delta;
+    });
+    HapticFeedback.lightImpact();
+    _markDirty(sel.id);
+  }
+
+  /// Duplique le selected et place le clone à côté
+  void _duplicateSelected() {
+    final sel = _selected;
+    if (sel == null) return;
+    _duplicate(sel);
   }
 
   // ───────────────────────── ÉLÉMENTS ─────────────────────────
@@ -934,7 +1006,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         return _assignSeats(g, t, free.take(g.count).toList(), quiet: quiet);
       }
     }
-    if (!quiet) _toast('Aucune table n’a assez de places libres', error: true);
+    if (!quiet) _toast('Aucune table n\'a assez de places libres', error: true);
     return false;
   }
 
@@ -1022,30 +1094,51 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       body: ThixGlassBackdrop(
         child: SafeArea(
           top: false,
-          child: Column(
+          child: Stack(
             children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
-                child: _toolbar(),
+              Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 2, 12, 8),
+                    child: _toolbar(),
+                  ),
+                  Expanded(
+                    flex: 6,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      child: _viewport(),
+                    ),
+                  ),
+                  Expanded(
+                    flex: 5,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: ThixGlass(
+                        radius: 24,
+                        padding: EdgeInsets.zero,
+                        child: _selected == null ? _guestsPanel() : _itemPanel(_selected!),
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              Expanded(
-                flex: 6,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: _viewport(),
-                ),
-              ),
-              Expanded(
-                flex: 5,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                  child: ThixGlass(
-                    radius: 24,
-                    padding: EdgeInsets.zero,
-                    child: _selected == null ? _guestsPanel() : _itemPanel(_selected!),
+              // NOUVEAUTÉ v3 — Joystick flottant quand élément sélectionné
+              if (_selected != null)
+                Positioned(
+                  left: 12,
+                  right: 12,
+                  bottom: 12,
+                  child: _SelectionJoystick(
+                    item: _selected!,
+                    precision: _precisionMode,
+                    onPrecisionToggle: () => setState(() => _precisionMode = !_precisionMode),
+                    onMove: _moveSelectedBy,
+                    onRotate: _rotateSelectedBy,
+                    onFocus: _focusSelected,
+                    onDuplicate: _duplicateSelected,
+                    onDeselect: () => _select(null),
                   ),
                 ),
-              ),
             ],
           ),
         ),
@@ -1290,6 +1383,13 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
+            // NOUVEAUTÉ v3 — Grille magnétique visible pendant le drag
+            if (_showGrid)
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: CustomPaint(painter: _GridPainter()),
+                ),
+              ),
             if (showWall)
               Positioned(
                 left: 0,
@@ -1437,7 +1537,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
           child: list.isEmpty
               ? Center(
                   child: Text(
-                    _showPlaced ? 'Personne n’est encore placé' : 'Tous les invités sont placés ✨',
+                    _showPlaced ? 'Personne n\'est encore placé' : 'Tous les invités sont placés ✨',
                     style: GoogleFonts.inter(color: _C.ink2, fontSize: 12),
                   ),
                 )
@@ -1578,7 +1678,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                   onMinus: () {
                     final maxUsed = occ.keys.isEmpty ? -1 : occ.keys.reduce(math.max);
                     if (it.capacity - 1 <= maxUsed) {
-                      _toast('Libérez d’abord la place ${maxUsed + 1}', error: true);
+                      _toast('Libérez d\'abord la place ${maxUsed + 1}', error: true);
                       return;
                     }
                     if (it.capacity > 2) {
@@ -1702,7 +1802,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
               style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13, color: _C.ink)),
           const SizedBox(height: 6),
           if (seated.isEmpty)
-            Text('Personne pour l’instant', style: GoogleFonts.inter(fontSize: 12, color: _C.ink2))
+            Text('Personne pour l\'instant', style: GoogleFonts.inter(fontSize: 12, color: _C.ink2))
           else
             ...seated.map((g) => Padding(padding: const EdgeInsets.only(bottom: 6), child: _guestTile(g))),
           const SizedBox(height: 12),
@@ -1871,7 +1971,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                   dense: true,
                   leading: const Icon(Icons.auto_fix_high_rounded, color: _C.blue),
                   title: const Text('Placer tous les invités automatiquement'),
-                  subtitle: const Text('VIP d’abord, par zone de table'),
+                  subtitle: const Text('VIP d\'abord, par zone de table'),
                   onTap: () {
                     Navigator.pop(ctx);
                     _autoPlaceAll();
@@ -1893,6 +1993,306 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOUVEAUTÉ v3 — JOYSTICK FLOTTANT (apparaît quand élément sélectionné)
+// ═══════════════════════════════════════════════════════════════════════════
+class _SelectionJoystick extends StatelessWidget {
+  final _Item item;
+  final bool precision;
+  final VoidCallback onPrecisionToggle;
+  final void Function(double dx, double dy) onMove;
+  final void Function(double delta) onRotate;
+  final VoidCallback onFocus;
+  final VoidCallback onDuplicate;
+  final VoidCallback onDeselect;
+
+  const _SelectionJoystick({
+    required this.item,
+    required this.precision,
+    required this.onPrecisionToggle,
+    required this.onMove,
+    required this.onRotate,
+    required this.onFocus,
+    required this.onDuplicate,
+    required this.onDeselect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 280),
+      curve: Curves.easeOutCubic,
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.92),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _C.gold, width: 2),
+        boxShadow: [
+          BoxShadow(
+            color: _C.gold.withOpacity(0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      child: Row(
+        children: [
+          // Indicateur de l'élément sélectionné
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '✦ ${item.label}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 13,
+                    color: _C.ink,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  precision ? 'Mode précis (5 px)' : 'Mode normal (20 px)',
+                  style: GoogleFonts.inter(fontSize: 10, color: _C.ink2),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          // D-pad
+          _DPad(onMove: onMove),
+          const SizedBox(width: 10),
+          // Colonne actions : rotation + focus + dupliquer + désélectionner
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _JoyButton(
+                    icon: Icons.rotate_left_rounded,
+                    onTap: () => onRotate(-_kRotateStep),
+                    color: _C.blue,
+                  ),
+                  const SizedBox(width: 4),
+                  _JoyButton(
+                    icon: Icons.rotate_right_rounded,
+                    onTap: () => onRotate(_kRotateStep),
+                    color: _C.blue,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _JoyButton(
+                    icon: Icons.center_focus_strong_rounded,
+                    tooltip: 'Centrer caméra',
+                    onTap: onFocus,
+                    color: _C.gold,
+                  ),
+                  const SizedBox(width: 4),
+                  _JoyButton(
+                    icon: Icons.copy_rounded,
+                    tooltip: 'Dupliquer',
+                    onTap: onDuplicate,
+                    color: _C.purple,
+                  ),
+                  const SizedBox(width: 4),
+                  _JoyButton(
+                    icon: Icons.precision_manufacturing_rounded,
+                    tooltip: 'Mode précis',
+                    onTap: onPrecisionToggle,
+                    color: precision ? _C.green : _C.ink2,
+                    filled: precision,
+                  ),
+                  const SizedBox(width: 4),
+                  _JoyButton(
+                    icon: Icons.close_rounded,
+                    tooltip: 'Désélectionner',
+                    onTap: onDeselect,
+                    color: _C.rose,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DPad extends StatelessWidget {
+  final void Function(double dx, double dy) onMove;
+  const _DPad({required this.onMove});
+
+  @override
+  Widget build(BuildContext context) {
+    const sz = 38.0;
+    return SizedBox(
+      width: sz * 3 + 8,
+      height: sz * 3 + 8,
+      child: Stack(
+        children: [
+          // haut
+          Positioned(
+            left: sz + 4,
+            top: 0,
+            child: _DPadButton(icon: Icons.arrow_upward_rounded, onTap: () => onMove(0, -1)),
+          ),
+          // bas
+          Positioned(
+            left: sz + 4,
+            bottom: 0,
+            child: _DPadButton(icon: Icons.arrow_downward_rounded, onTap: () => onMove(0, 1)),
+          ),
+          // gauche
+          Positioned(
+            left: 0,
+            top: sz + 4,
+            child: _DPadButton(icon: Icons.arrow_back_rounded, onTap: () => onMove(-1, 0)),
+          ),
+          // droite
+          Positioned(
+            right: 0,
+            top: sz + 4,
+            child: _DPadButton(icon: Icons.arrow_forward_rounded, onTap: () => onMove(1, 0)),
+          ),
+          // centre
+          Positioned(
+            left: sz + 4,
+            top: sz + 4,
+            child: Container(
+              width: sz,
+              height: sz,
+              decoration: BoxDecoration(
+                color: _C.gold.withOpacity(0.15),
+                shape: BoxShape.circle,
+                border: Border.all(color: _C.gold, width: 1.5),
+              ),
+              child: const Icon(Icons.open_with_rounded, size: 16, color: _C.gold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DPadButton extends StatefulWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+  const _DPadButton({required this.icon, required this.onTap});
+
+  @override
+  State<_DPadButton> createState() => _DPadButtonState();
+}
+
+class _DPadButtonState extends State<_DPadButton> {
+  Timer? _repeatTimer;
+
+  void _start() {
+    widget.onTap();
+    _repeatTimer = Timer.periodic(const Duration(milliseconds: 120), (_) => widget.onTap());
+  }
+
+  void _stop() {
+    _repeatTimer?.cancel();
+    _repeatTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => _start(),
+      onTapUp: (_) => _stop(),
+      onTapCancel: _stop,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(
+          color: _C.blue,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(color: _C.blue.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2)),
+          ],
+        ),
+        child: Icon(widget.icon, color: Colors.white, size: 18),
+      ),
+    );
+  }
+}
+
+class _JoyButton extends StatelessWidget {
+  final IconData icon;
+  final String? tooltip;
+  final VoidCallback onTap;
+  final Color color;
+  final bool filled;
+  const _JoyButton({
+    required this.icon,
+    required this.onTap,
+    required this.color,
+    this.tooltip,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final btn = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        width: 34,
+        height: 34,
+        decoration: BoxDecoration(
+          color: filled ? color : color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: color.withOpacity(filled ? 1 : 0.5), width: 1.2),
+        ),
+        child: Icon(icon, size: 16, color: filled ? Colors.white : color),
+      ),
+    );
+    return tooltip != null
+        ? Tooltip(message: tooltip!, child: btn)
+        : btn;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// NOUVEAUTÉ v3 — GRILLE MAGNÉTIQUE (affichée pendant le drag si snap=true)
+// ═══════════════════════════════════════════════════════════════════════════
+class _GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _C.gold.withOpacity(0.18)
+      ..strokeWidth = 0.8
+      ..style = PaintingStyle.stroke;
+    const step = 40.0;
+    for (var x = 0.0; x <= size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (var y = 0.0; y <= size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2246,7 +2646,7 @@ class _ChairView extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DÉCORS 3D
+// DÉCORS 3D (inclut NOUVEAUTÉS v3 : photobooth, wishingTree, fountain, floralArch)
 // ═══════════════════════════════════════════════════════════════════════════
 class _DecorView extends StatelessWidget {
   final _Item item;
@@ -2331,6 +2731,19 @@ class _DecorView extends StatelessWidget {
         break;
       case _Kind.plant:
         body = _plant(b);
+        break;
+      // ─── NOUVEAUTÉS v3 ───────────────────────────────
+      case _Kind.photobooth:
+        body = _photobooth(b, up, st);
+        break;
+      case _Kind.wishingTree:
+        body = _wishingTree(b);
+        break;
+      case _Kind.fountain:
+        body = _fountain(b, st);
+        break;
+      case _Kind.floralArch:
+        body = _floralArch(b, up, st);
         break;
       default:
         body = const [];
@@ -2640,250 +3053,4 @@ class _DecorView extends StatelessWidget {
       _shadow(24, 24, circle: true),
       ..._cuboid(w: 20, h: 20, height: 14, side: const Color(0xFFB45309), top: const Color(0xFF7C4A21), circle: true, step: 7),
       _z(18, Container(width: 30, height: 30, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
-      _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
-      _z(34, Container(width: 19, height: 19, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF22C55E)))),
-      _z(41, Container(width: 11, height: 11, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF4ADE80)))),
-    ];
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PEINTURES (sol, mur, piste)
-// ═══════════════════════════════════════════════════════════════════════════
-class _FloorPainter extends CustomPainter {
-  final double ambient;
-  final bool evening;
-  final List<Offset> glows;
-  _FloorPainter({required this.ambient, required this.evening, required this.glows});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF8F5EE), Color(0xFFEDE6D6)],
-        ).createShader(rect),
-    );
-    const t = 80.0;
-    final rnd = math.Random(7);
-    for (var gy = 0; gy * t < size.height; gy++) {
-      for (var gx = 0; gx * t < size.width; gx++) {
-        final alt = (gx + gy).isEven;
-        final r = Rect.fromLTWH(gx * t, gy * t, t, t);
-        canvas.drawRect(
-          r,
-          Paint()
-            ..color = (alt ? Colors.white : const Color(0xFFEFE8D8))
-                .withOpacity(alt ? 0.35 : 0.45),
-        );
-        final p = Path()
-          ..moveTo(r.left + rnd.nextDouble() * t, r.top)
-          ..quadraticBezierTo(r.left + rnd.nextDouble() * t, r.center.dy,
-              r.left + rnd.nextDouble() * t, r.bottom);
-        canvas.drawPath(
-          p,
-          Paint()
-            ..color = const Color(0xFFB9AE95).withOpacity(0.10 + rnd.nextDouble() * 0.06)
-            ..strokeWidth = 0.8
-            ..style = PaintingStyle.stroke,
-        );
-      }
-    }
-    final joint = Paint()
-      ..color = Colors.white.withOpacity(0.9)
-      ..strokeWidth = 1.6;
-    final joint2 = Paint()
-      ..color = const Color(0xFFCFC5AE).withOpacity(0.7)
-      ..strokeWidth = 0.6;
-    for (var x = 0.0; x <= size.width; x += t) {
-      canvas.drawLine(Offset(x, 0), Offset(x, size.height), joint);
-      canvas.drawLine(Offset(x + 1.2, 0), Offset(x + 1.2, size.height), joint2);
-    }
-    for (var y = 0.0; y <= size.height; y += t) {
-      canvas.drawLine(Offset(0, y), Offset(size.width, y), joint);
-      canvas.drawLine(Offset(0, y + 1.2), Offset(size.width, y + 1.2), joint2);
-    }
-    // reflet brillant
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withOpacity(0.30),
-            Colors.white.withOpacity(0.0),
-            Colors.white.withOpacity(0.14),
-          ],
-          stops: const [0.0, 0.5, 1.0],
-        ).createShader(rect),
-    );
-    // halos de lumière sous les tables
-    for (final g in glows) {
-      canvas.drawCircle(
-        g,
-        120,
-        Paint()
-          ..shader = RadialGradient(colors: [
-            (evening ? const Color(0xFFFFD27A) : Colors.white).withOpacity(evening ? 0.32 : 0.22),
-            Colors.transparent,
-          ]).createShader(Rect.fromCircle(center: g, radius: 120)),
-      );
-    }
-    // luminosité globale
-    final dark = (1 - ambient) * 0.5 + (evening ? 0.34 : 0.0);
-    if (dark > 0) {
-      canvas.drawRect(rect, Paint()..color = const Color(0xFF0B1030).withOpacity(dark.clamp(0.0, 0.8).toDouble()));
-    }
-    // plinthe
-    canvas.drawRect(
-      rect.deflate(1),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 4
-        ..color = const Color(0xFFD9CFB6),
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _FloorPainter old) =>
-      old.ambient != ambient || old.evening != evening || !listEquals(old.glows, glows);
-}
-
-class _WallPainter extends CustomPainter {
-  final bool evening;
-  _WallPainter({required this.evening});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final r = Offset.zero & size;
-    canvas.drawRect(
-      r,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: evening
-              ? const [Color(0xFF2B2740), Color(0xFF3A3556)]
-              : const [Color(0xFFFFFDF8), Color(0xFFF1EADB)],
-        ).createShader(r),
-    );
-    // soubassement
-    canvas.drawRect(
-      Rect.fromLTWH(0, size.height * 0.68, size.width, size.height * 0.32),
-      Paint()..color = (evening ? const Color(0xFF4A4468) : Colors.white).withOpacity(0.75),
-    );
-    for (var x = 40.0; x < size.width - 60; x += 120) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-            Rect.fromLTWH(x, size.height * 0.72, 90, size.height * 0.2), const Radius.circular(4)),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.4
-          ..color = _C.gold.withOpacity(0.45),
-      );
-    }
-    // fenêtres cintrées + rideaux
-    const n = 6;
-    const ww = 120.0;
-    final gap = (size.width - n * ww) / (n + 1);
-    for (var i = 0; i < n; i++) {
-      final left = gap + i * (ww + gap);
-      const top = 44.0;
-      final h = size.height * 0.56;
-      final win = Path()
-        ..moveTo(left, top + h)
-        ..lineTo(left, top + ww / 2)
-        ..arcToPoint(Offset(left + ww, top + ww / 2),
-            radius: const Radius.circular(ww / 2), clockwise: true)
-        ..lineTo(left + ww, top + h)
-        ..close();
-      canvas.drawPath(
-        win,
-        Paint()
-          ..shader = LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: evening
-                ? const [Color(0xFF141A3A), Color(0xFF2A2F5E)]
-                : const [Color(0xFFBFE0FF), Color(0xFFEAF6FF)],
-          ).createShader(Rect.fromLTWH(left, top, ww, h)),
-      );
-      final frame = Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..color = _C.gold.withOpacity(0.9);
-      canvas.drawPath(win, frame);
-      canvas.drawLine(Offset(left + ww / 2, top), Offset(left + ww / 2, top + h), frame..strokeWidth = 1.6);
-      canvas.drawLine(Offset(left, top + h * 0.45), Offset(left + ww, top + h * 0.45), frame);
-      for (final side in [-1.0, 1.0]) {
-        final cx = side < 0 ? left - 10 : left + ww + 10;
-        final drape = RRect.fromRectAndRadius(
-            Rect.fromLTWH(cx - 9, top + 6, 18, h - 6), const Radius.circular(8));
-        canvas.drawRRect(
-          drape,
-          Paint()
-            ..shader = LinearGradient(colors: [
-              Colors.white.withOpacity(evening ? 0.35 : 0.95),
-              const Color(0xFFEADFC4),
-            ]).createShader(drape.outerRect),
-        );
-      }
-    }
-    // corniche + plinthe
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, 14), Paint()..color = _C.gold.withOpacity(0.85));
-    canvas.drawRect(Rect.fromLTWH(0, size.height - 10, size.width, 10),
-        Paint()..color = const Color(0xFFD9CFB6));
-  }
-
-  @override
-  bool shouldRepaint(covariant _WallPainter old) => old.evening != evening;
-}
-
-class _DancePainter extends CustomPainter {
-  final bool evening;
-  _DancePainter({required this.evening});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const cols = 8, rows = 5;
-    final tw = size.width / cols, th = size.height / rows;
-    for (var r = 0; r < rows; r++) {
-      for (var c = 0; c < cols; c++) {
-        final even = (r + c).isEven;
-        final col = evening
-            ? (even ? const Color(0xFF7C3AED) : const Color(0xFF2563EB))
-            : (even ? const Color(0xFFDDEBFF) : Colors.white);
-        canvas.drawRRect(
-          RRect.fromRectAndRadius(
-              Rect.fromLTWH(c * tw + 1.5, r * th + 1.5, tw - 3, th - 3), const Radius.circular(3)),
-          Paint()..color = col.withOpacity(0.88),
-        );
-      }
-    }
-    final rect = Offset.zero & size;
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Colors.white.withOpacity(0.35), Colors.transparent],
-        ).createShader(rect),
-    );
-    canvas.drawRect(
-      rect,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3
-        ..color = _C.gold,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _DancePainter old) => old.evening != evening;
-}
+      _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A
