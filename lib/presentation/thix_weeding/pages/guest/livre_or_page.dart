@@ -1,14 +1,25 @@
 // lib/presentation/thix_weeding/pages/guest/livre_or_page.dart
-import 'dart:io';
+// ============================================================================
+// LIVRE D'OR — Feed social élégant (Web + Mobile)
+// ✅ Modèles de vœux prêts à poster
+// ✅ Enregistrement / upload vidéo ≤ 50 min AVEC PREVIEWlecteur intégré
+// ✅ Feed type réseau social SANS commentaires (réactions ❤️ uniquement)
+// ✅ Temps réel Supabase (nouvelles publications / modération staff)
+// ============================================================================
+import 'dart:io' as io show File;
+import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../core/failure.dart';
+import '../../providers/wedding_provider.dart';
 import 'guestbook_repository.dart';
 
 part 'livre_or_page.g.dart';
@@ -38,7 +49,7 @@ class _P {
 }
 
 // ============================================================
-// MODÈLES DE VŒUX (templates prêts à poster)
+// MODÈLES DE VŒUX
 // ============================================================
 const List<String> _kWishTemplates = [
   'Félicitations pour votre union ! Que cette journée soit le début d\'une vie pleine de bonheur. ❤️',
@@ -51,7 +62,7 @@ const List<String> _kWishTemplates = [
 // ============================================================
 // PROVIDERS
 // ============================================================
-/// TODO: à brancher sur l'auth THIX Hub (profiles.thix_id)
+/// TODO: brancher sur l'auth THIX Hub (profiles.thix_id)
 @riverpod
 String currentThixId(CurrentThixIdRef ref) => 'THIX_GUEST_001';
 
@@ -60,7 +71,47 @@ class GuestbookFeed extends _$GuestbookFeed {
   @override
   Future<List<GuestbookPost>> build(String weddingId) async {
     final repo = ref.read(guestbookRepositoryProvider);
-    return repo.getPosts(weddingId, ref.read(currentThixIdProvider));
+    final posts = await repo.getPosts(weddingId, ref.read(currentThixIdProvider));
+    _subscribeRealtime(weddingId);
+    return posts;
+  }
+
+  /// Temps réel : nouvelles publications + modération staff
+  void _subscribeRealtime(String weddingId) {
+    try {
+      final channel = Supabase.instance.client.channel('gb_$weddingId');
+      channel
+          .onPostgresChanges(
+            filter: PostgresChangeFilter(
+              type: PostgresChangeType.insert,
+              schema: 'public',
+              table: 'thix_weeding_guestbook',
+              filter: 'wedding_id=eq.$weddingId',
+            ),
+            callback: (payload) {
+              final current = state.valueOrNull ?? const [];
+              final post = GuestbookPost.fromJson(Map<String, dynamic>.from(payload.newRecord));
+              if (current.any((p) => p.id == post.id)) return;
+              state = AsyncData([post, ...current]);
+            },
+          )
+          .onPostgresChanges(
+            filter: PostgresChangeFilter(
+              type: PostgresChangeType.delete,
+              schema: 'public',
+              table: 'thix_weeding_guestbook',
+              filter: 'wedding_id=eq.$weddingId',
+            ),
+            callback: (payload) {
+              final current = state.valueOrNull ?? const [];
+              final old = payload.oldRecord['id'] as String?;
+              if (old == null) return;
+              state = AsyncData(current.where((p) => p.id != old).toList());
+            },
+          )
+          .subscribe();
+      ref.onDispose(() => Supabase.instance.client.removeChannel(channel));
+    } catch (_) {}
   }
 
   Future<void> refresh() async {
@@ -68,7 +119,7 @@ class GuestbookFeed extends _$GuestbookFeed {
     await future;
   }
 
-  /// Réaction ❤️ optimiste (rollback si erreur réseau)
+  /// Réaction ❤️ optimiste (rollback si erreur)
   Future<void> toggleLike(String postId) async {
     final current = state.valueOrNull;
     if (current == null) return;
@@ -76,12 +127,11 @@ class GuestbookFeed extends _$GuestbookFeed {
     if (idx < 0) return;
 
     final post = current[idx];
-    final optimistic = [...current]
+    state = AsyncData([...current]
       ..[idx] = post.copyWith(
         likedByMe: !post.likedByMe,
         likesCount: post.likesCount + (post.likedByMe ? -1 : 1),
-      );
-    state = AsyncData(optimistic);
+      ));
 
     try {
       await ref.read(guestbookRepositoryProvider).toggleLike(
@@ -104,7 +154,8 @@ class GuestbookComposer extends _$GuestbookComposer {
     required String weddingId,
     required String authorName,
     required String message,
-    File? video,
+    Uint8List? videoBytes,
+    String? videoFileName,
   }) async {
     state = const AsyncLoading();
     state = await AsyncValue.guard(() async {
@@ -112,10 +163,10 @@ class GuestbookComposer extends _$GuestbookComposer {
             weddingId: weddingId,
             authorName: authorName,
             message: message,
-            video: video,
+            videoBytes: videoBytes,
+            videoFileName: videoFileName,
             guestThixId: ref.read(currentThixIdProvider),
           );
-      // Insertion en tête de feed (optimiste serveur-confirmé)
       final current = ref.read(guestbookFeedProvider(weddingId)).valueOrNull ?? const [];
       ref.read(guestbookFeedProvider(weddingId).notifier).state = AsyncData([post, ...current]);
     });
@@ -140,7 +191,8 @@ class LivreOrPage extends ConsumerWidget {
         backgroundColor: _P.surface,
         foregroundColor: _P.ink,
         elevation: 0,
-        title: const Text('Livre d\'Or', style: TextStyle(fontFamily: 'Serif', fontStyle: FontStyle.italic, fontWeight: FontWeight.w700, fontSize: 22)),
+        title: const Text('Livre d\'Or',
+            style: TextStyle(fontFamily: 'Serif', fontStyle: FontStyle.italic, fontWeight: FontWeight.w700, fontSize: 22)),
         leading: IconButton(icon: const Icon(Icons.arrow_back_rounded), onPressed: () => context.pop()),
       ),
       body: feedAsync.when(
@@ -150,14 +202,11 @@ class LivreOrPage extends ConsumerWidget {
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
             children: [
-              const _Banner(),
+              _Banner(weddingId: weddingId),
               const SizedBox(height: 16),
-              _ComposerTeaser(onTap: () => _openComposer(context, ref)),
+              _ComposerTeaser(onTap: () => _openComposer(context)),
               const SizedBox(height: 24),
-              if (posts.isEmpty)
-                const _EmptyView()
-              else
-                ...posts.map((p) => _PostCard(post: p, weddingId: weddingId)),
+              if (posts.isEmpty) const _EmptyView() else ...posts.map((p) => _PostCard(post: p, weddingId: weddingId)),
             ],
           ),
         ),
@@ -170,7 +219,8 @@ class LivreOrPage extends ConsumerWidget {
               children: [
                 const Icon(Icons.error_outline_rounded, size: 56, color: _P.inkSoft),
                 const SizedBox(height: 12),
-                Text(e is Failure ? e.message : 'Erreur de chargement', textAlign: TextAlign.center, style: const TextStyle(color: _P.ink)),
+                Text(e is Failure ? e.message : 'Erreur de chargement',
+                    textAlign: TextAlign.center, style: const TextStyle(color: _P.ink)),
                 const SizedBox(height: 16),
                 FilledButton.icon(
                   onPressed: () => ref.invalidate(guestbookFeedProvider(weddingId)),
@@ -183,16 +233,30 @@ class LivreOrPage extends ConsumerWidget {
           ),
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _openComposer(context, ref),
-        backgroundColor: _P.primary,
-        icon: const Icon(Icons.edit_note_rounded, color: Colors.white),
-        label: const Text('Écrire un vœu', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+      floatingActionButton: InkWell(
+        onTap: () => _openComposer(context),
+        borderRadius: BorderRadius.circular(28),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+          decoration: BoxDecoration(
+            gradient: _P.gradPrimary,
+            borderRadius: BorderRadius.circular(28),
+            boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.edit_note_rounded, color: Colors.white, size: 20),
+              SizedBox(width: 8),
+              Text('Écrire un vœu', maxLines: 1, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14)),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  void _openComposer(BuildContext context, WidgetRef ref) {
+  void _openComposer(BuildContext context) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -203,13 +267,16 @@ class LivreOrPage extends ConsumerWidget {
 }
 
 // ============================================================
-// BANNIÈRE ÉLÉGANTE (inspirée des visuels Livre d'Or)
+// BANNIÈRE
 // ============================================================
-class _Banner extends StatelessWidget {
-  const _Banner();
+class _Banner extends ConsumerWidget {
+  final String weddingId;
+  const _Banner({required this.weddingId});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final couple = ref.watch(guestWeddingProvider(weddingId)).valueOrNull?.coupleNames;
+
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
       decoration: BoxDecoration(
@@ -219,22 +286,23 @@ class _Banner extends StatelessWidget {
         boxShadow: _P.shadow,
       ),
       child: Stack(
-        alignment: Alignment.center,
         children: [
-          // Décor floral discret
           Positioned(top: 0, right: 0, child: Icon(Icons.local_florist_rounded, size: 54, color: _P.primary.withOpacity(0.08))),
           Positioned(bottom: 0, left: 0, child: Icon(Icons.local_florist_rounded, size: 54, color: _P.accent.withOpacity(0.10))),
           Column(
             children: [
               const Text('NOTRE LIVRE D\'OR', style: TextStyle(fontSize: 10, letterSpacing: 2.4, color: _P.inkSoft, fontWeight: FontWeight.w700)),
               const SizedBox(height: 10),
-              const Text(
-                'Livre d\'Or',
-                style: TextStyle(fontFamily: 'Serif', fontStyle: FontStyle.italic, fontSize: 34, color: _P.ink, fontWeight: FontWeight.w600, height: 1.1),
-              ),
+              const Text('Livre d\'Or',
+                  style: TextStyle(fontFamily: 'Serif', fontStyle: FontStyle.italic, fontSize: 34, color: _P.ink, fontWeight: FontWeight.w600, height: 1.1)),
               const SizedBox(height: 10),
               Container(width: 56, height: 1.5, color: _P.accent),
               const SizedBox(height: 12),
+              if (couple != null && couple.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text('de $couple', style: const TextStyle(fontFamily: 'Serif', fontStyle: FontStyle.italic, fontSize: 15, color: _P.accent)),
+                ),
               const Text(
                 'Un vœu, une pensée, un souvenir vidéo…\nLaissez-nous un peu de vous, merci du fond du cœur.',
                 textAlign: TextAlign.center,
@@ -249,7 +317,7 @@ class _Banner extends StatelessWidget {
 }
 
 // ============================================================
-// TEASER COMPOSER (faux champ façon réseau social)
+// TEASER COMPOSER
 // ============================================================
 class _ComposerTeaser extends StatelessWidget {
   final VoidCallback onTap;
@@ -289,7 +357,7 @@ class _ComposerTeaser extends StatelessWidget {
 }
 
 // ============================================================
-// CARTE DE PUBLICATION (feed social, sans commentaires)
+// CARTE DE PUBLICATION
 // ============================================================
 class _PostCard extends ConsumerWidget {
   final GuestbookPost post;
@@ -305,7 +373,6 @@ class _PostCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // En-tête : avatar + nom + heure
           Row(
             children: [
               Container(
@@ -313,10 +380,8 @@ class _PostCard extends ConsumerWidget {
                 height: 44,
                 alignment: Alignment.center,
                 decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
-                child: Text(
-                  post.authorName.isNotEmpty ? post.authorName[0].toUpperCase() : '?',
-                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18),
-                ),
+                child: Text(post.authorName.isNotEmpty ? post.authorName[0].toUpperCase() : '?',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 18)),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -357,24 +422,19 @@ class _PostCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Message
           Text(post.message, style: const TextStyle(fontSize: 14, color: _P.ink, height: 1.5)),
           const SizedBox(height: 12),
-
-          // Vidéo intégrée
           if (post.hasVideo) ...[
             _FeedVideo(url: post.mediaUrl!),
             const SizedBox(height: 12),
           ],
-
-          // Barre de réaction (❤️ uniquement — pas de commentaires)
           Row(
             children: [
               InkWell(
                 onTap: () => ref.read(guestbookFeedProvider(weddingId).notifier).toggleLike(post.id),
                 borderRadius: BorderRadius.circular(20),
-                child: Container(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: BoxDecoration(
                     color: post.likedByMe ? _P.primarySoft : Colors.transparent,
@@ -384,7 +444,11 @@ class _PostCard extends ConsumerWidget {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(post.likedByMe ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 17, color: _P.primary),
+                      AnimatedScale(
+                        scale: post.likedByMe ? 1.15 : 1.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: Icon(post.likedByMe ? Icons.favorite_rounded : Icons.favorite_border_rounded, size: 17, color: _P.primary),
+                      ),
                       const SizedBox(width: 6),
                       Text('${post.likesCount}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.primary)),
                     ],
@@ -410,7 +474,7 @@ class _PostCard extends ConsumerWidget {
 }
 
 // ============================================================
-// LECTEUR VIDÉO INLINE + PLEIN ÉCRAN
+// LECTEUR VIDÉO INLINE (preview 1ère image + play + plein écran)
 // ============================================================
 class _FeedVideo extends StatefulWidget {
   final String url;
@@ -423,16 +487,21 @@ class _FeedVideo extends StatefulWidget {
 class _FeedVideoState extends State<_FeedVideo> {
   VideoPlayerController? _ctrl;
   bool _initFailed = false;
+  bool _initializing = false;
 
-  Future<void> _ensureInit() async {
-    if (_ctrl != null || _initFailed) return;
+  Future<void> _ensureInit({bool autoplay = false}) async {
+    if (_ctrl != null || _initFailed || _initializing) return;
+    setState(() => _initializing = true);
     final c = VideoPlayerController.networkUrl(Uri.parse(widget.url));
     try {
       await c.initialize();
       c.addListener(() => setState(() {}));
+      if (autoplay) await c.play();
       if (mounted) setState(() => _ctrl = c);
     } catch (_) {
       if (mounted) setState(() => _initFailed = true);
+    } finally {
+      if (mounted) setState(() => _initializing = false);
     }
   }
 
@@ -455,16 +524,18 @@ class _FeedVideoState extends State<_FeedVideo> {
               ? const Center(child: Icon(Icons.videocam_off_rounded, color: Colors.white54, size: 40))
               : c == null || !c.value.isInitialized
                   ? InkWell(
-                      onTap: _ensureInit,
-                      child: const Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 56),
-                            SizedBox(height: 6),
-                            Text('Lire le souvenir', style: TextStyle(color: Colors.white70, fontSize: 12)),
-                          ],
-                        ),
+                      onTap: () => _ensureInit(),
+                      child: Center(
+                        child: _initializing
+                            ? const CircularProgressIndicator(color: _P.primary)
+                            : const Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 56),
+                                  SizedBox(height: 6),
+                                  Text('Lire le souvenir vidéo', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                                ],
+                              ),
                       ),
                     )
                   : Stack(
@@ -477,19 +548,21 @@ class _FeedVideoState extends State<_FeedVideo> {
                             onPressed: () => c.play(),
                           )
                         else
-                          GestureDetector(
-                            onTap: () => c.pause(),
-                            child: const SizedBox.expand(),
+                          GestureDetector(onTap: () => c.pause(), child: const SizedBox.expand()),
+                        Positioned(
+                          right: 4,
+                          top: 4,
+                          child: IconButton(
+                            icon: Icon(c.value.volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: Colors.white, size: 20),
+                            onPressed: () => c.setVolume(c.value.volume == 0 ? 1 : 0),
                           ),
+                        ),
                         Positioned(
                           right: 8,
                           bottom: 8,
                           child: IconButton(
                             icon: const Icon(Icons.fullscreen_rounded, color: Colors.white, size: 26),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(builder: (_) => _FullscreenVideoPage(url: widget.url)),
-                            ),
+                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => _FullscreenVideoPage(url: widget.url))),
                           ),
                         ),
                         if (c.value.isPlaying && c.value.duration.inSeconds > 0)
@@ -507,6 +580,9 @@ class _FeedVideoState extends State<_FeedVideo> {
   }
 }
 
+// ============================================================
+// PLEIN ÉCRAN
+// ============================================================
 class _FullscreenVideoPage extends StatefulWidget {
   final String url;
   const _FullscreenVideoPage({required this.url});
@@ -541,6 +617,8 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
     super.dispose();
   }
 
+  String _fmt(Duration d) => '${d.inMinutes.toString().padLeft(2, '0')}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -554,10 +632,7 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                     ? const CircularProgressIndicator(color: _P.primary)
                     : AspectRatio(aspectRatio: _ctrl.value.aspectRatio, child: VideoPlayer(_ctrl)),
           ),
-          GestureDetector(
-            onTap: () => _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play(),
-            child: const SizedBox.expand(),
-          ),
+          GestureDetector(onTap: () => _ctrl.value.isPlaying ? _ctrl.pause() : _ctrl.play(), child: const SizedBox.expand()),
           Positioned(
             top: 0,
             left: 0,
@@ -567,6 +642,11 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
                 children: [
                   IconButton(icon: const Icon(Icons.close_rounded, color: Colors.white), onPressed: () => Navigator.pop(context)),
                   const Spacer(),
+                  if (_ready)
+                    IconButton(
+                      icon: Icon(_ctrl.value.volume == 0 ? Icons.volume_off_rounded : Icons.volume_up_rounded, color: Colors.white),
+                      onPressed: () => _ctrl.setVolume(_ctrl.value.volume == 0 ? 1 : 0),
+                    ),
                   if (_ready)
                     IconButton(
                       icon: Icon(_ctrl.value.isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded, color: Colors.white),
@@ -581,7 +661,19 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
               left: 16,
               right: 16,
               bottom: 24,
-              child: VideoProgressIndicator(_ctrl, allowScrubbing: true),
+              child: Column(
+                children: [
+                  VideoProgressIndicator(_ctrl, allowScrubbing: true),
+                  const SizedBox(height: 6),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(_fmt(_ctrl.value.position), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                      Text(_fmt(_ctrl.value.duration), style: const TextStyle(color: Colors.white70, fontSize: 11)),
+                    ],
+                  ),
+                ],
+              ),
             ),
         ],
       ),
@@ -590,7 +682,7 @@ class _FullscreenVideoPageState extends State<_FullscreenVideoPage> {
 }
 
 // ============================================================
-// COMPOSER — vœu + modèles + vidéo ≤ 50 min
+// COMPOSER — vœu + modèles + vidéo ≤ 50 min AVEC PREVIEW
 // ============================================================
 class _ComposerSheet extends ConsumerStatefulWidget {
   final String weddingId;
@@ -603,11 +695,11 @@ class _ComposerSheet extends ConsumerStatefulWidget {
 class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
   final _nameCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
-  final _picker = ImagePicker();
+  final _picker = const ImagePicker();
 
-
-  File? _video;
+  XFile? _video;
   Duration? _videoDuration;
+  VideoPlayerController? _previewCtrl;
   String? _videoError;
   bool _probing = false;
 
@@ -615,7 +707,14 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
   void dispose() {
     _nameCtrl.dispose();
     _msgCtrl.dispose();
+    _previewCtrl?.dispose();
     super.dispose();
+  }
+
+  /// Controller de preview compatible Web (blob) + Mobile (fichier)
+  Future<VideoPlayerController> _newPreviewController(XFile x) async {
+    if (kIsWeb) return VideoPlayerController.networkUrl(Uri.parse(x.path));
+    return VideoPlayerController.file(io.File(x.path));
   }
 
   Future<void> _pickVideo({required bool camera}) async {
@@ -629,30 +728,45 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
           : await _picker.pickVideo(source: ImageSource.gallery);
       if (picked == null) return;
 
-      // Vérification de durée (surtout pour la galerie)
-      final probe = VideoPlayerController.file(File(picked.path));
+      final ctrl = await _newPreviewController(picked);
       try {
-        await probe.initialize();
-        final dur = probe.value.duration;
-        if (dur > GuestbookRepository.maxVideoDuration) {
-          setState(() => _videoError = 'Vidéo trop longue (${_fmt(dur)}). Maximum 50 minutes.');
-          return;
-        }
-        setState(() {
-          _video = File(picked.path);
-          _videoDuration = dur;
-        });
-      } finally {
-        await probe.dispose();
+        await ctrl.initialize();
+      } catch (_) {
+        await ctrl.dispose();
+        setState(() => _videoError = 'Impossible de lire cette vidéo.');
+        return;
       }
-    } catch (e) {
+
+      final dur = ctrl.value.duration;
+      if (dur > GuestbookRepository.maxVideoDuration) {
+        await ctrl.dispose();
+        setState(() => _videoError = 'Vidéo trop longue (${GuestbookRepository.formatDuration(dur)}). Maximum 50 minutes.');
+        return;
+      }
+
+      ctrl.addListener(() => setState(() {}));
+      await _previewCtrl?.dispose();
+      setState(() {
+        _video = picked;
+        _videoDuration = dur;
+        _previewCtrl = ctrl;
+      });
+    } catch (_) {
       setState(() => _videoError = 'Impossible de lire cette vidéo.');
     } finally {
       if (mounted) setState(() => _probing = false);
     }
   }
 
-  String _fmt(Duration d) => d.inHours > 0 ? '${d.inHours}h ${d.inMinutes % 60}min' : '${d.inMinutes}min ${d.inSeconds % 60}s';
+  void _removeVideo() {
+    _previewCtrl?.dispose();
+    setState(() {
+      _video = null;
+      _videoDuration = null;
+      _previewCtrl = null;
+      _videoError = null;
+    });
+  }
 
   Future<void> _publish() async {
     final name = _nameCtrl.text.trim();
@@ -661,20 +775,32 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Nom (min 2) et message (min 3) requis')));
       return;
     }
+
+    Uint8List? bytes;
+    String? fname;
+    if (_video != null) {
+      bytes = await _video!.readAsBytes();
+      fname = _video!.name;
+    }
+
     final ok = await ref.read(guestbookComposerProvider.notifier).publish(
           weddingId: widget.weddingId,
           authorName: name,
           message: msg,
-          video: _video,
+          videoBytes: bytes,
+          videoFileName: fname,
         );
     if (!mounted) return;
+
     if (ok) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_video != null ? '🎬 Souvenir vidéo publié !' : '❤️ Vœu publié, merci !')),
+        SnackBar(content: Text(bytes != null ? '🎬 Souvenir vidéo publié !' : '❤️ Vœu publié, merci !')),
       );
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Échec de publication. Réessayez.')));
+      final err = ref.read(guestbookComposerProvider).error;
+      final msgErr = err is PostgrestException ? 'Supabase : ${err.message}' : (err?.toString() ?? 'Échec de publication.');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msgErr), duration: const Duration(seconds: 6)));
     }
   }
 
@@ -711,7 +837,6 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
             ),
             const SizedBox(height: 12),
 
-            // Modèles de vœux
             const Text('Modèles de vœux', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.inkSoft)),
             const SizedBox(height: 8),
             SizedBox(
@@ -744,7 +869,7 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
             ),
             const SizedBox(height: 4),
 
-            // Pièce jointe vidéo
+            // ---- SECTION VIDÉO + PREVIEW ----
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.primarySoft)),
@@ -780,32 +905,69 @@ class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
                             ),
                           ],
                         ),
+                        if (_probing) ...[
+                          const SizedBox(height: 10),
+                          const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
+                        ],
                         if (_videoError != null) ...[
                           const SizedBox(height: 8),
                           Text(_videoError!, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w600)),
                         ],
                       ],
                     )
-                  : Row(
+                  : Column(
                       children: [
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(color: _P.primarySoft, borderRadius: BorderRadius.circular(10)),
-                          child: const Icon(Icons.videocam_rounded, color: _P.primary, size: 22),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text('Vidéo prête à publier', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: _P.ink)),
-                              Text(_videoDuration != null ? 'Durée : ${_fmt(_videoDuration!)}' : '', style: const TextStyle(fontSize: 11, color: _P.inkSoft)),
-                            ],
+                        // PREVIEW VIDÉO RÉELLE
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(12),
+                          child: AspectRatio(
+                            aspectRatio: 16 / 9,
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                if (_previewCtrl != null && _previewCtrl!.value.isInitialized)
+                                  VideoPlayer(_previewCtrl!)
+                                else
+                                  Container(color: Colors.black87, child: const Center(child: CircularProgressIndicator(color: _P.primary))),
+                                if (_previewCtrl != null && _previewCtrl!.value.isInitialized && !_previewCtrl!.value.isPlaying)
+                                  IconButton(
+                                    icon: const Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 52),
+                                    onPressed: () => _previewCtrl!.play(),
+                                  ),
+                                if (_previewCtrl != null && _previewCtrl!.value.isPlaying)
+                                  GestureDetector(onTap: () => _previewCtrl!.pause(), child: const SizedBox.expand()),
+                                Positioned(
+                                  left: 8,
+                                  top: 8,
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(8)),
+                                    child: Text(
+                                      _videoDuration != null ? GuestbookRepository.formatDuration(_videoDuration!) : '',
+                                      style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.w700),
+                                    ),
+                                  ),
+                                ),
+                                Positioned(
+                                  right: 4,
+                                  top: 4,
+                                  child: IconButton(
+                                    icon: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
+                                    onPressed: _removeVideo,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close_rounded, color: _P.primary, size: 20),
-                          onPressed: () => setState(() => _video = null),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded, color: Color(0xFF2E7D32), size: 16),
+                            const SizedBox(width: 6),
+                            Expanded(child: Text('Vidéo prête à publier', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink))),
+                            TextButton(onPressed: () => _pickVideo(camera: false), child: const Text('Changer', style: TextStyle(fontSize: 12))),
+                          ],
                         ),
                       ],
                     ),
