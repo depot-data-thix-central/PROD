@@ -471,6 +471,7 @@ class BudgetModel {
       );
 }
 
+
 class ExpenseModel {
   final String id;
   final String weddingId;
@@ -478,6 +479,8 @@ class ExpenseModel {
   final double amount;
   final String? category;
   final DateTime createdAt;
+  final bool isPaid;
+  final String? vendorId;
 
   ExpenseModel({
     required this.id,
@@ -486,6 +489,8 @@ class ExpenseModel {
     required this.amount,
     this.category,
     required this.createdAt,
+    this.isPaid = false,
+    this.vendorId,
   });
 
   factory ExpenseModel.fromJson(Map<String, dynamic> j) => ExpenseModel(
@@ -493,9 +498,20 @@ class ExpenseModel {
         weddingId: j['wedding_id'],
         title: j['title'] ?? '',
         amount: (j['amount'] as num).toDouble(),
-        category: j['category'],
+        category: j['category'] as String?,
         createdAt: DateTime.parse(j['created_at'].toString()),
+        isPaid: (j['is_paid'] as bool?) ?? false,
+        vendorId: j['vendor_id'] as String?,
       );
+
+  Map<String, dynamic> toJson() => {
+        'wedding_id': weddingId,
+        'title': title,
+        'amount': amount,
+        'category': category,
+        'is_paid': isPaid,
+        'vendor_id': vendorId,
+      };
 }
 
 class ChecklistModel {
@@ -504,6 +520,9 @@ class ChecklistModel {
   final String title;
   final bool isDone;
   final int orderIndex;
+  final DateTime? dueDate;
+  final String priority;
+  final String? category;
 
   ChecklistModel({
     required this.id,
@@ -511,6 +530,9 @@ class ChecklistModel {
     required this.title,
     this.isDone = false,
     this.orderIndex = 0,
+    this.dueDate,
+    this.priority = 'normal',
+    this.category,
   });
 
   factory ChecklistModel.fromJson(Map<String, dynamic> j) => ChecklistModel(
@@ -519,7 +541,22 @@ class ChecklistModel {
         title: j['title'] ?? '',
         isDone: j['is_done'] ?? false,
         orderIndex: j['order_index'] ?? 0,
+        dueDate: j['due_date'] != null
+            ? DateTime.tryParse(j['due_date'].toString())
+            : null,
+        priority: (j['priority'] as String?) ?? 'normal',
+        category: j['category'] as String?,
       );
+
+  Map<String, dynamic> toJson() => {
+        'wedding_id': weddingId,
+        'title': title,
+        'is_done': isDone,
+        'order_index': orderIndex,
+        'due_date': dueDate?.toIso8601String(),
+        'priority': priority,
+        'category': category,
+      };
 }
 
 class GalleryModel {
@@ -527,19 +564,29 @@ class GalleryModel {
   final String weddingId;
   final String url;
   final String? caption;
+  final DateTime? createdAt;
 
   GalleryModel({
     required this.id,
     required this.weddingId,
     required this.url,
     this.caption,
+    this.createdAt,
   });
+
+  /// Alias utilisé dans le dashboard / galerie
+  String get imageUrl => url;
 
   factory GalleryModel.fromJson(Map<String, dynamic> j) => GalleryModel(
         id: j['id'],
         weddingId: j['wedding_id'],
-        url: j['url'] ?? j['image_url'] ?? '',
-        caption: j['caption'],
+        url: (j['url'] as String?) ??
+            (j['image_url'] as String?) ??
+            '',
+        caption: j['caption'] as String?,
+        createdAt: j['created_at'] != null
+            ? DateTime.tryParse(j['created_at'].toString())
+            : null,
       );
 }
 
@@ -560,10 +607,15 @@ class GuestbookModel {
     required this.createdAt,
   });
 
+  /// Alias UI (dashboard / livre d'or)
+  String get guestName => authorName;
+
   factory GuestbookModel.fromJson(Map<String, dynamic> j) => GuestbookModel(
         id: j['id'],
         weddingId: j['wedding_id'],
-        authorName: j['author_name'] ?? '',
+        authorName: (j['author_name'] as String?) ??
+            (j['guest_name'] as String?) ??
+            '',
         message: j['message'] ?? '',
         isApproved: j['is_approved'] ?? false,
         createdAt: DateTime.parse(j['created_at'].toString()),
@@ -610,6 +662,12 @@ class PaymentModel {
   final double amount;
   final String status;
   final DateTime createdAt;
+  final String? method;
+  final String? referenceCode;
+  final String? vendorId;
+  final String? expenseId;
+  final String? vendorName;
+  final String? expenseTitle;
 
   PaymentModel({
     required this.id,
@@ -618,14 +676,45 @@ class PaymentModel {
     required this.amount,
     this.status = 'pending',
     required this.createdAt,
+    this.method,
+    this.referenceCode,
+    this.vendorId,
+    this.expenseId,
+    this.vendorName,
+    this.expenseTitle,
   });
 
-  factory PaymentModel.fromJson(Map<String, dynamic> j) => PaymentModel(
-        id: j['id'],
-        weddingId: j['wedding_id'],
-        title: j['title'] ?? '',
-        amount: (j['amount'] as num).toDouble(),
-        status: j['status'] ?? 'pending',
-        createdAt: DateTime.parse(j['created_at'].toString()),
-      );
+  factory PaymentModel.fromJson(Map<String, dynamic> j) {
+    // Jointures optionnelles
+    String? vendorName;
+    final v = j['thix_weeding_vendors'];
+    if (v is Map) {
+      vendorName = v['name'] as String?;
+    } else {
+      vendorName = j['vendor_name'] as String?;
+    }
+
+    String? expenseTitle;
+    final e = j['thix_weeding_expenses'];
+    if (e is Map) {
+      expenseTitle = e['title'] as String?;
+    } else {
+      expenseTitle = j['expense_title'] as String?;
+    }
+
+    return PaymentModel(
+      id: j['id'],
+      weddingId: j['wedding_id'],
+      title: (j['title'] as String?) ?? '',
+      amount: (j['amount'] as num).toDouble(),
+      status: (j['status'] as String?) ?? 'pending',
+      createdAt: DateTime.parse(j['created_at'].toString()),
+      method: j['method'] as String?,
+      referenceCode: j['reference_code'] as String?,
+      vendorId: j['vendor_id'] as String?,
+      expenseId: j['expense_id'] as String?,
+      vendorName: vendorName,
+      expenseTitle: expenseTitle,
+    );
+  }
 }
