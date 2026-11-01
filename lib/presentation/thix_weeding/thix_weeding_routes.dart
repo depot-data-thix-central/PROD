@@ -1,4 +1,12 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
+// ============================================================================
+// THIX WEDDING ROUTES — v3.0 (PRODUCTION ENTERPRISE)
+// ✅ FIX 404 : staff/:id/invitation/preview  → PreviewInvitationPage
+// ✅ FIX 404 : staff/:id/budget/add          → ExpenseFormPage (existait déjà !)
+// ✅ FIX 404 : staff/:id/budget/:eid/edit    → ExpenseFormPage (mode édition)
+// ✅ FIX 404 : staff/:id/planning/add        → TaskFormPage
+// ✅ NOUVEAU : Espace Prestataire complet (auth, register, dashboard + onglets)
+// ============================================================================
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -31,18 +39,23 @@ import 'pages/staff/prestataires/add_vendor_page.dart';
 import 'pages/staff/messages/staff_messages_page.dart';
 import 'pages/staff/messages/chat_detail_page.dart';
 import 'pages/staff/budget/budget_page.dart';
+import 'pages/staff/budget/expense_form_page.dart'; // ✅ FIX 404 budget/add
 import 'pages/staff/paiements/payments_page.dart';
 import 'pages/staff/paiements/add_payment_page.dart';
 import 'pages/staff/paiements/payment_detail_page.dart';
 import 'pages/staff/checklist/checklist_page.dart';
 import 'pages/staff/planning/planning_page.dart';
-import 'pages/staff/planning/task_form_page.dart';
+import 'pages/staff/planning/task_form_page.dart'; // ✅ FIX 404 planning/add
 import 'pages/staff/galerie/gallery_management_page.dart';
 import 'pages/staff/livre_or/guestbook_management_page.dart';
-import 'pages/staff/invitation/preview_invitation_page.dart';
+import 'pages/staff/invitation/preview_invitation_page.dart'; // ✅ FIX 404 invitation/preview
 import 'pages/staff/parametres/settings_page.dart';
 import 'pages/staff/seating/seating_3d_page.dart';
 import 'pages/staff/cadeaux/gifts_management_page.dart';
+
+// ✅ NOUVEAU — ESPACE PRESTATAIRE
+import 'pages/provider_portal/provider_portal_shell.dart';
+import 'pages/provider_portal/provider_auth_pages.dart';
 
 class ThixWeedingRoutes {
   static const String home = '/thix-weeding';
@@ -61,19 +74,32 @@ class ThixWeedingRoutes {
   static const String staffMessages = 'staffMessages';
   static const String staffChatDetail = 'staffChatDetail';
   static const String staffBudget = 'staffBudget';
+  static const String staffBudgetAdd = 'staffBudgetAdd'; // ✅ NOUVEAU
+  static const String staffBudgetEdit = 'staffBudgetEdit'; // ✅ NOUVEAU
   static const String staffPaiements = 'staffPaiements';
   static const String staffAddPaiement = 'staffAddPaiement';
   static const String staffPaiementDetail = 'staffPaiementDetail';
   static const String staffChecklist = 'staffChecklist';
   static const String staffAddTask = 'staffAddTask';
   static const String staffPlanning = 'staffPlanning';
+  static const String staffPlanningAdd = 'staffPlanningAdd'; // ✅ NOUVEAU
   static const String staffGalerie = 'staffGalerie';
   static const String staffLivreOr = 'staffLivreOr';
   static const String staffInvitation = 'staffInvitation';
+  static const String staffInvitationPreview = 'staffInvitationPreview'; // ✅ NOUVEAU
   static const String staffSettings = 'staffSettings';
   static const String staffSeating = 'staffSeating';
   static const String staffCadeaux = 'staffCadeaux';
   static const String myWeddingsList = 'myWeddingsList';
+
+  // --- ✅ NOUVEAU : NAMES ESPACE PRESTATAIRE ---
+  static const String providerAuth = 'providerAuth';
+  static const String providerRegister = 'providerRegister';
+  static const String providerDashboard = 'providerDashboard';
+  static const String providerGallery = 'providerGallery';
+  static const String providerReservations = 'providerReservations';
+  static const String providerTasks = 'providerTasks';
+  static const String providerProfile = 'providerProfile';
 
   static List<RouteBase> get routes => [
         GoRoute(
@@ -88,11 +114,53 @@ class ThixWeedingRoutes {
               builder: (c, s) => const CreateWeddingPage(),
             ),
 
-            // ================= LISTE DES MARIAGES (AVANT :weddingId) =================
+            // ================= LISTE DES MARIAGES =================
             GoRoute(
               path: 'staff/my-weddings',
               name: myWeddingsList,
               builder: (c, s) => const MyWeddingsPage(),
+            ),
+
+            // ================================================================
+            // ✅ NOUVEAU — ESPACE PRESTATAIRE (B2B)
+            // ================================================================
+            GoRoute(
+              path: 'provider/auth',
+              name: providerAuth,
+              builder: (c, s) => const ProviderLoginPage(),
+            ),
+            GoRoute(
+              path: 'provider/register',
+              name: providerRegister,
+              builder: (c, s) => const ProviderRegisterPage(),
+            ),
+            GoRoute(
+              path: 'provider/dashboard',
+              name: providerDashboard,
+              builder: (c, s) => const ProviderPortalShell(),
+              routes: [
+                // Deep-links vers les onglets du shell
+                GoRoute(
+                  path: 'galerie',
+                  name: providerGallery,
+                  builder: (c, s) => const ProviderPortalShell(initialTab: 1),
+                ),
+                GoRoute(
+                  path: 'reservations',
+                  name: providerReservations,
+                  builder: (c, s) => const ProviderPortalShell(initialTab: 2),
+                ),
+                GoRoute(
+                  path: 'taches',
+                  name: providerTasks,
+                  builder: (c, s) => const ProviderPortalShell(initialTab: 3),
+                ),
+                GoRoute(
+                  path: 'profil',
+                  name: providerProfile,
+                  builder: (c, s) => const ProviderPortalShell(initialTab: 4),
+                ),
+              ],
             ),
 
             // ================= ESPACE INVITÉ =================
@@ -190,7 +258,6 @@ class ThixWeedingRoutes {
                       builder: (c, s) => AddGuestPage(
                           weddingId: s.pathParameters['weddingId']!),
                     ),
-                    // Détail invité (URL: .../invites/:guestId)
                     GoRoute(
                       path: ':guestId',
                       name: staffGuestDetail,
@@ -212,7 +279,7 @@ class ThixWeedingRoutes {
                   ],
                 ),
 
-                // 3. PRESTATAIRES
+                // 3. PRESTATAIRES (staff)
                 GoRoute(
                   path: 'prestataires',
                   name: staffPrestataires,
@@ -254,12 +321,28 @@ class ThixWeedingRoutes {
                   ],
                 ),
 
-                // 5. BUDGET
+                // 5. BUDGET — ✅ FIX 404 : add + edit maintenant routés
                 GoRoute(
                   path: 'budget',
                   name: staffBudget,
                   builder: (c, s) =>
                       BudgetPage(weddingId: s.pathParameters['weddingId']!),
+                  routes: [
+                    GoRoute(
+                      path: 'add',
+                      name: staffBudgetAdd,
+                      builder: (c, s) => ExpenseFormPage(
+                          weddingId: s.pathParameters['weddingId']!),
+                    ),
+                    GoRoute(
+                      path: ':expenseId/edit',
+                      name: staffBudgetEdit,
+                      builder: (c, s) => ExpenseFormPage(
+                        weddingId: s.pathParameters['weddingId']!,
+                        editExpenseId: s.pathParameters['expenseId'],
+                      ),
+                    ),
+                  ],
                 ),
 
                 // 6. PAIEMENTS
@@ -302,12 +385,20 @@ class ThixWeedingRoutes {
                   ],
                 ),
 
-                // 8. PLANNING (manquait → 404)
+                // 8. PLANNING — ✅ FIX 404 : planning/add maintenant routé
                 GoRoute(
                   path: 'planning',
                   name: staffPlanning,
                   builder: (c, s) => PlanningPage(
                       weddingId: s.pathParameters['weddingId']!),
+                  routes: [
+                    GoRoute(
+                      path: 'add',
+                      name: staffPlanningAdd,
+                      builder: (c, s) => TaskFormPage(
+                          weddingId: s.pathParameters['weddingId']!),
+                    ),
+                  ],
                 ),
 
                 // 9. GALERIE
@@ -326,12 +417,20 @@ class ThixWeedingRoutes {
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
-                // 11. INVITATION STUDIO
+                // 11. INVITATION STUDIO — ✅ FIX 404 : invitation/preview routé
                 GoRoute(
                   path: 'invitation',
                   name: staffInvitation,
                   builder: (c, s) => PreviewInvitationPage(
                       weddingId: s.pathParameters['weddingId']!),
+                  routes: [
+                    GoRoute(
+                      path: 'preview',
+                      name: staffInvitationPreview,
+                      builder: (c, s) => PreviewInvitationPage(
+                          weddingId: s.pathParameters['weddingId']!),
+                    ),
+                  ],
                 ),
 
                 // 12. PLAN DE TABLE 3D
