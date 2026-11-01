@@ -1,9 +1,9 @@
 // lib/presentation/thix_weeding/pages/home/thix_weeding_home_page.dart
 // ============================================================================
-// THIX WEDDING HOME PAGE — DESIGN v3.2 (PRODUCTION) — PARENTHÈSES VÉRIFIÉES
-// ✅ ValueListenableBuilder au lieu de AnimatedBuilder
-// ✅ Tous les widgets formatés multi-lignes pour éviter les erreurs de parenthèses
-// ✅ Imports autonomes (Supabase direct, GoogleFonts)
+// THIX WEDDING HOME PAGE — DESIGN v4.0 (PRODUCTION)
+// ✅ Nouveau format code unique THIX-W-JJMM-XXXYY
+// ✅ Design premium retravaillé + Typographie améliorée
+// ✅ ValueListenableBuilder + Parenthèses vérifiées
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -16,7 +16,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE
+// PALETTE v4.0
 // ═══════════════════════════════════════════════════════════════════════════
 class _W {
   static const Color bg = Color(0xFFFBF7F5);
@@ -48,7 +48,7 @@ final homePromoSlidesProvider = FutureProvider<List<Map<String, dynamic>>>((ref)
     <String, dynamic>{
       'tag': 'NOUVEAU',
       'title': 'Votre site de mariage',
-      'subtitle': 'Créé en 5 minutes — ID unique + invitations',
+      'subtitle': 'Créé en 5 minutes — Code unique + invitations',
       'cta': 'Commencer',
       'imageUrl': 'https://images.unsplash.com/photo-1519741497674-611481863552?w=1200&q=80',
     },
@@ -188,7 +188,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
           .maybeSingle();
       if (!mounted) return;
       if (res == null) {
-        _snack('ID "$code" introuvable. Vérifiez et réessayez.', error: true);
+        _snack('Code "$code" introuvable. Vérifiez et réessayez.', error: true);
         return;
       }
       final weddingId = res['id'] as String;
@@ -241,11 +241,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
             Expanded(
               child: Text(
                 msg,
-                style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
+                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
               ),
             ),
           ],
@@ -282,9 +278,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
             },
             child: CustomScrollView(
               controller: _scrollController,
-              physics: const BouncingScrollPhysics(
-                parent: AlwaysScrollableScrollPhysics(),
-              ),
+              physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
               slivers: [
                 SliverToBoxAdapter(
                   child: SizedBox(
@@ -301,12 +295,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                       ),
                       loading: () => Container(
                         color: _W.tile,
-                        child: const Center(
-                          child: CircularProgressIndicator(
-                            color: _W.rose,
-                            strokeWidth: 2.5,
-                          ),
-                        ),
+                        child: const Center(child: CircularProgressIndicator(color: _W.rose, strokeWidth: 2.5)),
                       ),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
@@ -317,10 +306,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: catsAsync.when(
-                      data: (cats) => _CategoryRow(
-                        categories: cats,
-                        onTap: _onTapGeneric,
-                      ),
+                      data: (cats) => _CategoryRow(categories: cats, onTap: _onTapGeneric),
                       loading: () => const SizedBox(height: 88),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
@@ -328,38 +314,26 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 28)),
                 const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Offres du moment'),
-                  ),
+                  child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: _SectionHeader(title: 'Offres du moment')),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 SliverToBoxAdapter(
                   child: offersAsync.when(
-                    data: (offers) => _OffersRow(
-                      offers: offers,
-                      onTap: _onTapGeneric,
-                    ),
+                    data: (offers) => _OffersRow(offers: offers, onTap: _onTapGeneric),
                     loading: () => const SizedBox(height: 120),
                     error: (_, __) => const SizedBox.shrink(),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Prestataires recommandés'),
-                  ),
+                  child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: _SectionHeader(title: 'Prestataires recommandés')),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: providersAsync.when(
-                      data: (providers) => _ProvidersGrid(
-                        providers: providers,
-                        onTap: _onTapGeneric,
-                      ),
+                      data: (providers) => _ProvidersGrid(providers: providers, onTap: _onTapGeneric),
                       loading: () => const SizedBox(height: 280),
                       error: (_, __) => const SizedBox.shrink(),
                     ),
@@ -367,39 +341,25 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Dernières annonces'),
-                  ),
+                  child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: _SectionHeader(title: 'Dernières annonces')),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 12)),
                 SliverToBoxAdapter(
                   child: announcementsAsync.when(
-                    data: (ann) => _AnnouncementsRow(
-                      items: ann,
-                      onTap: _onTapGeneric,
-                    ),
+                    data: (ann) => _AnnouncementsRow(items: ann, onTap: _onTapGeneric),
                     loading: () => const SizedBox(height: 160),
                     error: (_, __) => const SizedBox.shrink(),
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _TrustRow(),
-                  ),
+                  child: Padding(padding: EdgeInsets.symmetric(horizontal: 16), child: _TrustRow()),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 80)),
               ],
             ),
           ),
-          _GlassAppBar(
-            topPad: topPad.top,
-            scrollY: _scrollY,
-            onNotifications: _onNotifications,
-            onStaff: _onStaffAccess,
-          ),
+          _GlassAppBar(topPad: topPad.top, scrollY: _scrollY, onNotifications: _onNotifications, onStaff: _onStaffAccess),
         ],
       ),
     );
@@ -407,7 +367,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// APP BAR
+// APP BAR GLASSMORPHISM
 // ═══════════════════════════════════════════════════════════════════════════
 class _GlassAppBar extends StatelessWidget {
   final double topPad;
@@ -415,12 +375,7 @@ class _GlassAppBar extends StatelessWidget {
   final VoidCallback onNotifications;
   final VoidCallback onStaff;
 
-  const _GlassAppBar({
-    required this.topPad,
-    required this.scrollY,
-    required this.onNotifications,
-    required this.onStaff,
-  });
+  const _GlassAppBar({required this.topPad, required this.scrollY, required this.onNotifications, required this.onStaff});
 
   @override
   Widget build(BuildContext context) {
@@ -437,9 +392,7 @@ class _GlassAppBar extends StatelessWidget {
             padding: EdgeInsets.fromLTRB(16, topPad + 10, 16, 10),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.85 * t),
-              border: Border(
-                bottom: BorderSide(color: _W.line.withOpacity(t), width: 1),
-              ),
+              border: Border(bottom: BorderSide(color: _W.line.withOpacity(t), width: 1)),
             ),
             child: Row(
               children: [
@@ -447,16 +400,10 @@ class _GlassAppBar extends StatelessWidget {
                   width: 36,
                   height: 36,
                   decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [_W.rose, _W.roseLight],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
+                    gradient: const LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                     borderRadius: BorderRadius.circular(11),
                   ),
-                  child: const Center(
-                    child: Icon(Icons.favorite_rounded, color: Colors.white, size: 18),
-                  ),
+                  child: const Center(child: Icon(Icons.favorite_rounded, color: Colors.white, size: 18)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -466,50 +413,21 @@ class _GlassAppBar extends StatelessWidget {
                       RichText(
                         text: TextSpan(
                           children: [
-                            TextSpan(
-                              text: 'THIX ',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
-                                color: fg,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            const TextSpan(
-                              text: 'WED',
-                              style: TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 15,
-                                color: _W.rose,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
+                            TextSpan(text: 'THIX ', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: fg, letterSpacing: -0.3)),
+                            const TextSpan(text: 'WED', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 15, color: _W.rose, letterSpacing: -0.3)),
                           ],
                         ),
                       ),
                       Text(
                         "L'élégance de votre union",
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: Color.lerp(Colors.white70, _W.inkSoft, t)!,
-                          fontWeight: FontWeight.w600,
-                        ),
+                        style: TextStyle(fontSize: 10, color: Color.lerp(Colors.white70, _W.inkSoft, t)!, fontWeight: FontWeight.w600),
                       ),
                     ],
                   ),
                 ),
-                _AppBarBtn(
-                  icon: Icons.notifications_none_rounded,
-                  fg: fg,
-                  onTap: onNotifications,
-                  badge: 3,
-                ),
+                _AppBarBtn(icon: Icons.notifications_none_rounded, fg: fg, onTap: onNotifications, badge: 3),
                 const SizedBox(width: 8),
-                _AppBarBtn(
-                  icon: Icons.account_circle_outlined,
-                  fg: fg,
-                  onTap: onStaff,
-                ),
+                _AppBarBtn(icon: Icons.account_circle_outlined, fg: fg, onTap: onStaff),
               ],
             ),
           );
@@ -525,12 +443,7 @@ class _AppBarBtn extends StatelessWidget {
   final VoidCallback onTap;
   final int badge;
 
-  const _AppBarBtn({
-    required this.icon,
-    required this.fg,
-    required this.onTap,
-    this.badge = 0,
-  });
+  const _AppBarBtn({required this.icon, required this.fg, required this.onTap, this.badge = 0});
 
   @override
   Widget build(BuildContext context) {
@@ -542,11 +455,7 @@ class _AppBarBtn extends StatelessWidget {
       child: Container(
         width: 38,
         height: 38,
-        decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15),
-          shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.3)),
-        ),
+        decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), shape: BoxShape.circle, border: Border.all(color: Colors.white.withOpacity(0.3))),
         child: Stack(
           alignment: Alignment.center,
           children: [
@@ -555,15 +464,7 @@ class _AppBarBtn extends StatelessWidget {
               Positioned(
                 top: 6,
                 right: 6,
-                child: Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: _W.rose,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                ),
+                child: Container(width: 8, height: 8, decoration: BoxDecoration(color: _W.rose, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5))),
               ),
           ],
         ),
@@ -620,11 +521,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 5), (_) {
       if (!mounted || widget.slides.length <= 1) return;
-      _pageCtrl.animateToPage(
-        (_current + 1) % widget.slides.length,
-        duration: const Duration(milliseconds: 600),
-        curve: Curves.easeOutCubic,
-      );
+      _pageCtrl.animateToPage((_current + 1) % widget.slides.length, duration: const Duration(milliseconds: 600), curve: Curves.easeOutCubic);
     });
   }
 
@@ -634,7 +531,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // Photos
         PageView.builder(
           controller: _pageCtrl,
           itemCount: slides.length,
@@ -647,24 +543,14 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                 Image.network(
                   slide['imageUrl'] as String,
                   fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    color: _W.tile,
-                    child: const Center(
-                      child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48),
-                    ),
-                  ),
+                  errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Center(child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48))),
                 ),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.black.withOpacity(0.35),
-                        Colors.transparent,
-                        Colors.black.withOpacity(0.25),
-                        Colors.black.withOpacity(0.45),
-                      ],
+                      colors: [Colors.black.withOpacity(0.35), Colors.transparent, Colors.black.withOpacity(0.25), Colors.black.withOpacity(0.45)],
                       stops: const [0.0, 0.3, 0.7, 1.0],
                     ),
                   ),
@@ -673,7 +559,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             );
           },
         ),
-        // Bouton changer photos
         Positioned(
           top: widget.topPad + 70,
           right: 16,
@@ -685,49 +570,21 @@ class _HeroCarouselState extends State<_HeroCarousel> {
                   behavior: SnackBarBehavior.floating,
                   backgroundColor: _W.ink,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  content: Row(
-                    children: [
-                      const Icon(Icons.photo_library_outlined, color: Colors.white, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'Gestion des photos disponible depuis l\'espace staff',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white),
-                        ),
-                      ),
-                    ],
-                  ),
+                  content: Row(children: [
+                    const Icon(Icons.photo_library_outlined, color: Colors.white, size: 18),
+                    const SizedBox(width: 10),
+                    Expanded(child: Text('Gestion des photos disponible depuis l\'espace staff', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: Colors.white))),
+                  ]),
                 ));
             },
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.4),
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.white.withOpacity(0.3)),
-              ),
-              child: const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.photo_library_outlined, size: 14, color: Colors.white),
-                  SizedBox(width: 6),
-                  Text('Changer', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
-                ],
-              ),
+              decoration: BoxDecoration(color: Colors.black.withOpacity(0.4), borderRadius: BorderRadius.circular(20), border: Border.all(color: Colors.white.withOpacity(0.3))),
+              child: const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.photo_library_outlined, size: 14, color: Colors.white), SizedBox(width: 6), Text('Changer', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800))]),
             ),
           ),
         ),
-        // Contenu éditorial
-        Positioned(
-          left: 20,
-          right: 20,
-          bottom: 200,
-          child: AnimatedSwitcher(
-            duration: const Duration(milliseconds: 400),
-            child: _HeroContent(key: ValueKey(_current), slide: slides[_current]),
-          ),
-        ),
-        // Dots
+        Positioned(left: 20, right: 20, bottom: 200, child: AnimatedSwitcher(duration: const Duration(milliseconds: 400), child: _HeroContent(key: ValueKey(_current), slide: slides[_current]))),
         Positioned(
           left: 0,
           right: 0,
@@ -736,32 +593,11 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(slides.length, (i) {
               final active = i == _current;
-              return AnimatedContainer(
-                duration: const Duration(milliseconds: 280),
-                margin: const EdgeInsets.symmetric(horizontal: 3),
-                width: active ? 22 : 6,
-                height: 6,
-                decoration: BoxDecoration(
-                  color: active ? _W.rose : Colors.white.withOpacity(0.5),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              );
+              return AnimatedContainer(duration: const Duration(milliseconds: 280), margin: const EdgeInsets.symmetric(horizontal: 3), width: active ? 22 : 6, height: 6, decoration: BoxDecoration(color: active ? _W.rose : Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(3)));
             }),
           ),
         ),
-        // Carte rejoindre ancrée
-        Positioned(
-          left: 16,
-          right: 16,
-          bottom: 14,
-          child: _JoinBar(
-            controller: widget.idController,
-            focusNode: widget.focusNode,
-            isLoading: widget.isSearching,
-            onSearch: widget.onSearch,
-            onScanQr: widget.onScanQr,
-          ),
-        ),
+        Positioned(left: 16, right: 16, bottom: 14, child: _JoinBar(controller: widget.idController, focusNode: widget.focusNode, isLoading: widget.isSearching, onSearch: widget.onSearch, onScanQr: widget.onScanQr)),
       ],
     );
   }
@@ -769,7 +605,6 @@ class _HeroCarouselState extends State<_HeroCarousel> {
 
 class _HeroContent extends StatelessWidget {
   final Map<String, dynamic> slide;
-
   const _HeroContent({super.key, required this.slide});
 
   @override
@@ -781,58 +616,23 @@ class _HeroContent extends StatelessWidget {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(color: _W.rose, borderRadius: BorderRadius.circular(12)),
-          child: Text(
-            (slide['tag'] as String).toUpperCase(),
-            style: GoogleFonts.inter(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1),
-          ),
+          child: Text((slide['tag'] as String).toUpperCase(), style: GoogleFonts.inter(color: Colors.white, fontSize: 9.5, fontWeight: FontWeight.w900, letterSpacing: 1)),
         ),
         const SizedBox(height: 12),
-        Text(
-          slide['title'] as String,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.playfairDisplay(
-            color: Colors.white,
-            fontSize: 30,
-            fontWeight: FontWeight.w700,
-            height: 1.05,
-            fontStyle: FontStyle.italic,
-          ),
-        ),
+        Text(slide['title'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.playfairDisplay(color: Colors.white, fontSize: 30, fontWeight: FontWeight.w700, height: 1.05, fontStyle: FontStyle.italic)),
         const SizedBox(height: 8),
-        Text(
-          slide['subtitle'] as String,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.inter(
-            color: Colors.white.withOpacity(0.9),
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            height: 1.3,
-          ),
-        ),
+        Text(slide['subtitle'] as String, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(color: Colors.white.withOpacity(0.9), fontSize: 13, fontWeight: FontWeight.w600, height: 1.3)),
         const SizedBox(height: 16),
         SizedBox(
           height: 44,
           child: ElevatedButton.icon(
             onPressed: () {
               HapticFeedback.mediumImpact();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                behavior: SnackBarBehavior.floating,
-                backgroundColor: _W.ink,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                content: Text('Fonctionnalité en cours de déploiement', style: GoogleFonts.inter(color: Colors.white)),
-              ));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(behavior: SnackBarBehavior.floating, backgroundColor: _W.ink, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)), content: Text('Fonctionnalité en cours de déploiement', style: GoogleFonts.inter(color: Colors.white))));
             },
             icon: const Icon(Icons.arrow_forward_rounded, size: 16),
             label: Text(slide['cta'] as String, style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 13)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: _W.ink,
-              elevation: 0,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-              padding: const EdgeInsets.symmetric(horizontal: 22),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.white, foregroundColor: _W.ink, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)), padding: const EdgeInsets.symmetric(horizontal: 22)),
           ),
         ),
       ],
@@ -841,7 +641,7 @@ class _HeroContent extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// JOIN BAR
+// JOIN BAR — ✅ HINTTEXT MIS À JOUR + MICROCOPY MIS À JOUR
 // ═══════════════════════════════════════════════════════════════════════════
 class _JoinBar extends StatefulWidget {
   final TextEditingController controller;
@@ -850,13 +650,7 @@ class _JoinBar extends StatefulWidget {
   final VoidCallback onSearch;
   final VoidCallback onScanQr;
 
-  const _JoinBar({
-    required this.controller,
-    required this.focusNode,
-    required this.isLoading,
-    required this.onSearch,
-    required this.onScanQr,
-  });
+  const _JoinBar({required this.controller, required this.focusNode, required this.isLoading, required this.onSearch, required this.onScanQr});
 
   @override
   State<_JoinBar> createState() => _JoinBarState();
@@ -901,25 +695,14 @@ class _JoinBarState extends State<_JoinBar> {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Titre
           Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(color: _W.rose.withOpacity(0.12), shape: BoxShape.circle),
-                child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 17),
-              ),
+              Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _W.rose.withOpacity(0.12), shape: BoxShape.circle), child: const Icon(Icons.mark_email_read_rounded, color: _W.rose, size: 17)),
               const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Rejoindre un mariage',
-                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3),
-                ),
-              ),
+              Expanded(child: Text('Rejoindre un mariage', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3))),
             ],
           ),
           const SizedBox(height: 12),
-          // Champ + boutons
           Row(
             children: [
               Expanded(
@@ -929,13 +712,8 @@ class _JoinBarState extends State<_JoinBar> {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: _focused ? _W.rose : _W.line,
-                      width: _focused ? 1.6 : 1.2,
-                    ),
-                    boxShadow: _focused
-                        ? [BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4))]
-                        : null,
+                    border: Border.all(color: _focused ? _W.rose : _W.line, width: _focused ? 1.6 : 1.2),
+                    boxShadow: _focused ? [BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 14, offset: const Offset(0, 4))] : null,
                   ),
                   child: TextField(
                     controller: widget.controller,
@@ -947,8 +725,9 @@ class _JoinBarState extends State<_JoinBar> {
                       isDense: true,
                       filled: true,
                       fillColor: Colors.transparent,
-                      hintText: 'Ex : TEST2026',
-                      hintStyle: GoogleFonts.inter(fontSize: 13, color: _W.inkSoft, fontWeight: FontWeight.w500, letterSpacing: 1),
+                      // ✅ MIS À JOUR : Nouveau format de code unique
+                      hintText: 'Ex: THIX-W-1510-482AB',
+                      hintStyle: GoogleFonts.inter(fontSize: 12, color: _W.inkSoft, fontWeight: FontWeight.w500, letterSpacing: 0.8),
                       prefixIcon: Icon(Icons.search_rounded, size: 18, color: _focused ? _W.rose : _W.inkSoft),
                       suffixIcon: _hasText
                           ? IconButton(
@@ -977,19 +756,12 @@ class _JoinBarState extends State<_JoinBar> {
                     width: 52,
                     height: 52,
                     decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_W.rose, _W.roseLight],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
+                      gradient: const LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
                     ),
                     child: widget.isLoading
-                        ? const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Colors.white)),
-                          )
+                        ? const Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2.2, valueColor: AlwaysStoppedAnimation(Colors.white)))
                         : const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 21),
                   ),
                 ),
@@ -1003,11 +775,7 @@ class _JoinBarState extends State<_JoinBar> {
                   child: Container(
                     width: 52,
                     height: 52,
-                    decoration: BoxDecoration(
-                      color: _W.tile,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: _W.line),
-                    ),
+                    decoration: BoxDecoration(color: _W.tile, borderRadius: BorderRadius.circular(16), border: Border.all(color: _W.line)),
                     child: const Icon(Icons.qr_code_scanner_rounded, size: 21, color: _W.ink),
                   ),
                 ),
@@ -1015,14 +783,14 @@ class _JoinBarState extends State<_JoinBar> {
             ],
           ),
           const SizedBox(height: 8),
-          // Microcopy
+          // ✅ MIS À JOUR : Microcopy avec le nouveau format
           Row(
             children: [
               const Icon(Icons.info_outline_rounded, size: 12, color: _W.inkSoft),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
-                  "L'ID figure sur l'invitation envoyée par les mariés.",
+                  "Le code figure sur l'invitation (format: THIX-W-JJMM-XXXYY)",
                   style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.3),
                 ),
               ),
@@ -1073,13 +841,7 @@ class _CategoryRow extends StatelessWidget {
                     child: Icon(c['icon'] as IconData, size: 20, color: _W.rose),
                   ),
                   const SizedBox(height: 6),
-                  Text(
-                    c['label'] as String,
-                    textAlign: TextAlign.center,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700, color: _W.ink),
-                  ),
+                  Text(c['label'] as String, textAlign: TextAlign.center, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700, color: _W.ink)),
                 ],
               ),
             ),
@@ -1102,30 +864,12 @@ class _SectionHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [
-        Container(
-          width: 3,
-          height: 18,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(colors: [_W.rose, _W.roseLight]),
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
+        Container(width: 3, height: 18, decoration: BoxDecoration(gradient: const LinearGradient(colors: [_W.rose, _W.roseLight]), borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            title,
-            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4),
-          ),
-        ),
+        Expanded(child: Text(title, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4))),
         GestureDetector(
           onTap: () => HapticFeedback.selectionClick(),
-          child: Row(
-            children: [
-              Text('Voir tout', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.rose)),
-              const SizedBox(width: 2),
-              const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose),
-            ],
-          ),
+          child: Row(children: [Text('Voir tout', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.rose)), const SizedBox(width: 2), const Icon(Icons.arrow_forward_ios_rounded, size: 11, color: _W.rose)]),
         ),
       ],
     );
@@ -1171,37 +915,16 @@ class _OffersRow extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
-                    child: Text(
-                      o['discount'] as String,
-                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5),
-                    ),
+                    child: Text(o['discount'] as String, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
                   ),
                   const Spacer(),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
-                        child: Icon(o['icon'] as IconData, size: 14, color: color),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          o['title'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2),
-                        ),
-                      ),
-                    ],
-                  ),
+                  Row(children: [
+                    Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)), child: Icon(o['icon'] as IconData, size: 14, color: color)),
+                    const SizedBox(width: 8),
+                    Expanded(child: Text(o['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.2))),
+                  ]),
                   const SizedBox(height: 3),
-                  Text(
-                    o['subtitle'] as String,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600),
-                  ),
+                  Text(o['subtitle'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                 ],
               ),
             ),
@@ -1213,7 +936,7 @@ class _OffersRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROVIDERS GRID — ✅ FORMATÉ MULTI-LIGNES
+// PROVIDERS GRID
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProvidersGrid extends StatelessWidget {
   final List<Map<String, dynamic>> providers;
@@ -1227,12 +950,7 @@ class _ProvidersGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: providers.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: 0.72,
-      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 0.72),
       itemBuilder: (_, i) {
         final p = providers[i];
         return GestureDetector(
@@ -1252,28 +970,8 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        p['image'] as String,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: _W.tile,
-                          child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft),
-                        ),
-                      ),
-                      Positioned(
-                        top: 10,
-                        right: 10,
-                        child: Container(
-                          width: 32,
-                          height: 32,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white),
-                          ),
-                          child: const Icon(Icons.favorite_border_rounded, size: 15, color: _W.rose),
-                        ),
-                      ),
+                      Image.network(p['image'] as String, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft))),
+                      Positioned(top: 10, right: 10, child: Container(width: 32, height: 32, decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, border: Border.all(color: Colors.white)), child: const Icon(Icons.favorite_border_rounded, size: 15, color: _W.rose))),
                     ],
                   ),
                 ),
@@ -1282,34 +980,15 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        p['name'] as String,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3),
-                      ),
+                      Text(p['name'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
                       const SizedBox(height: 2),
-                      Text(
-                        '${p['category']} · ${p['zone']}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600),
-                      ),
+                      Text('${p['category']} · ${p['zone']}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.star_rounded, size: 13, color: _W.gold),
-                              const SizedBox(width: 3),
-                              Text('${p['rating']}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
-                            ],
-                          ),
-                          Text(
-                            p['price'] as String,
-                            style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose),
-                          ),
+                          Row(children: [const Icon(Icons.star_rounded, size: 13, color: _W.gold), const SizedBox(width: 3), Text('${p['rating']}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink))]),
+                          Text(p['price'] as String, style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose)),
                         ],
                       ),
                     ],
@@ -1325,7 +1004,7 @@ class _ProvidersGrid extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ANNOUNCEMENTS ROW — ✅ FORMATÉ MULTI-LIGNES
+// ANNOUNCEMENTS ROW
 // ═══════════════════════════════════════════════════════════════════════════
 class _AnnouncementsRow extends StatelessWidget {
   final List<Map<String, dynamic>> items;
@@ -1363,31 +1042,8 @@ class _AnnouncementsRow extends StatelessWidget {
                     height: 78,
                     child: Stack(
                       children: [
-                        Container(
-                          width: double.infinity,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [_W.tile, Color(0xFFFFE8E3)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7)),
-                          ),
-                        ),
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(color: _W.ink, borderRadius: BorderRadius.circular(8)),
-                            child: Text(
-                              (a['tag'] as String).toUpperCase(),
-                              style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6),
-                            ),
-                          ),
-                        ),
+                        Container(width: double.infinity, decoration: const BoxDecoration(gradient: LinearGradient(colors: [_W.tile, Color(0xFFFFE8E3)], begin: Alignment.topLeft, end: Alignment.bottomRight)), child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7)))),
+                        Positioned(top: 8, left: 8, child: Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: _W.ink, borderRadius: BorderRadius.circular(8)), child: Text((a['tag'] as String).toUpperCase(), style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)))),
                       ],
                     ),
                   ),
@@ -1396,17 +1052,9 @@ class _AnnouncementsRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          a['title'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink),
-                        ),
+                        Text(a['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink)),
                         const Spacer(),
-                        Text(
-                          a['subtitle'] as String,
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose),
-                        ),
+                        Text(a['subtitle'] as String, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose)),
                       ],
                     ),
                   ),
@@ -1421,7 +1069,7 @@ class _AnnouncementsRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TRUST ROW — ✅ FORMATÉ MULTI-LIGNES (parenthèses vérifiées)
+// TRUST ROW
 // ═══════════════════════════════════════════════════════════════════════════
 class _TrustRow extends StatelessWidget {
   const _TrustRow();
@@ -1450,23 +1098,11 @@ class _TrustRow extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle),
-                  child: Icon(e['icon'] as IconData, size: 18, color: _W.rose),
-                ),
+                Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle), child: Icon(e['icon'] as IconData, size: 18, color: _W.rose)),
                 const SizedBox(height: 6),
-                Text(
-                  e['title'] as String,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2),
-                ),
+                Text(e['title'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2)),
                 const SizedBox(height: 1),
-                Text(
-                  e['subtitle'] as String,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2),
-                ),
+                Text(e['subtitle'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2)),
               ],
             ),
           );
@@ -1477,7 +1113,7 @@ class _TrustRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AMBIENT BACKGROUND — ✅ ValueListenableBuilder
+// AMBIENT BACKGROUND
 // ═══════════════════════════════════════════════════════════════════════════
 class _AmbientBackground extends StatefulWidget {
   const _AmbientBackground();
