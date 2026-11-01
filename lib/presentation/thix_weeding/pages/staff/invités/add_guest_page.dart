@@ -1,7 +1,9 @@
-
 // lib/presentation/thix_weeding/pages/staff/invités/add_guest_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v4)
+// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v5 — SYNC)
+// ✅ Mode Manuel + Recherche THIX Hub (profiles.thix_id)
+// ✅ Pré-remplissage auto + user_id
+// ✅ THIX ID guest + invitation chat
 // ============================================================================
 import 'dart:async';
 
@@ -15,9 +17,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// STYLE MONOSPACE GLOBAL
-// ═══════════════════════════════════════════════════════════════════════════
 const TextStyle _monoStyle = TextStyle(
   fontFamily: 'monospace',
   fontFeatures: [FontFeature.tabularFigures()],
@@ -38,9 +37,6 @@ TextStyle _mono({
   );
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// DESIGN SYSTEM ROYAL
-// ═══════════════════════════════════════════════════════════════════════════
 class _R {
   static const Color blue = Color(0xFF0B3B8F);
   static const Color purple = Color(0xFF6B46C1);
@@ -66,16 +62,6 @@ class _R {
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  static const LinearGradient roseG = LinearGradient(
-    colors: [rose, Color(0xFFFF6B9D)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
-  static const LinearGradient greenG = LinearGradient(
-    colors: [green, greenSoft],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
 
   static BoxDecoration card({double r = 16}) => BoxDecoration(
         color: Colors.white,
@@ -91,7 +77,6 @@ class _R {
       );
 }
 
-// Groupes
 const List<_Group> _GROUPS = [
   _Group('famille_marié', 'Famille du marié', Icons.family_restroom, Color(0xFF0B3B8F)),
   _Group('famille_mariée', 'Famille de la mariée', Icons.favorite, Color(0xFFE31C4E)),
@@ -108,9 +93,6 @@ class _Group {
   const _Group(this.key, this.label, this.icon, this.color);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// GÉNÉRATEUR DE THIX ID UNIQUE
-// ═══════════════════════════════════════════════════════════════════════════
 class _ThixIdGenerator {
   static String generate() {
     final timestamp = DateTime.now().millisecondsSinceEpoch;
@@ -119,19 +101,8 @@ class _ThixIdGenerator {
     final part2 = random.toString().padLeft(4, '0');
     return 'THIX-GST-$part1-$part2';
   }
-
-  static String checksum(String payload) {
-    var hash = 0;
-    for (var i = 0; i < payload.length; i++) {
-      hash = ((hash << 5) - hash + payload.codeUnitAt(i)) & 0xFFFFFFFF;
-    }
-    return (hash.abs() % 0xFFFF).toRadixString(16).toUpperCase().padLeft(4, '0');
-  }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGE PRINCIPALE
-// ═══════════════════════════════════════════════════════════════════════════
 class AddGuestPage extends ConsumerStatefulWidget {
   final String weddingId;
   final String? editGuestId;
@@ -142,8 +113,7 @@ class AddGuestPage extends ConsumerStatefulWidget {
   ConsumerState<AddGuestPage> createState() => _AddGuestPageState();
 }
 
-class _AddGuestPageState extends ConsumerState<AddGuestPage>
-    with SingleTickerProviderStateMixin {
+class _AddGuestPageState extends ConsumerState<AddGuestPage> {
   final _formKey = GlobalKey<FormState>();
 
   final _nameCtrl = TextEditingController();
@@ -151,9 +121,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   final _emailCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _tableCtrl = TextEditingController();
+  final _thixSearchCtrl = TextEditingController();
 
   late String _publicThixId;
   String? _dbGuestId;
+  String? _linkedUserId;
+  ThixProfileLite? _linkedProfile;
 
   String _group = 'amis';
   int _count = 1;
@@ -162,13 +135,14 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   bool _isLoading = false;
   bool _isInitLoading = false;
   bool _sendViaChat = true;
+  bool _searchingThix = false;
+  bool _useThixSearch = true; // mode par défaut: recherche Hub
 
   bool get _isEdit => widget.editGuestId != null;
 
   @override
   void initState() {
     super.initState();
-
     if (_isEdit) {
       _dbGuestId = widget.editGuestId;
       _publicThixId = _ThixIdGenerator.generate();
@@ -186,6 +160,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     _emailCtrl.dispose();
     _notesCtrl.dispose();
     _tableCtrl.dispose();
+    _thixSearchCtrl.dispose();
     super.dispose();
   }
 
@@ -210,12 +185,55 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
       _tableCtrl.text = g.tableNumber?.toString() ?? '';
       _notesCtrl.text = g.notes ?? '';
       _publicThixId = g.thixId ?? _ThixIdGenerator.generate();
+      _linkedUserId = g.userId;
 
       setState(() {});
     } catch (e) {
       _showError('Erreur chargement: $e');
     } finally {
       if (mounted) setState(() => _isInitLoading = false);
+    }
+  }
+
+  Future<void> _searchThixProfile() async {
+    final code = _thixSearchCtrl.text.trim().toUpperCase();
+    if (code.length < 4) {
+      _showError('Saisissez un Thix ID valide');
+      return;
+    }
+    setState(() => _searchingThix = true);
+    try {
+      final res = await Supabase.instance.client
+          .from('profiles')
+          .select(
+              'id, thix_id, display_name, full_name, contact_phone, phone_number, avatar_url, photo_url, username')
+          .eq('thix_id', code)
+          .maybeSingle();
+
+      if (res == null) {
+        _showError('Aucun profil THIX Hub trouvé pour "$code"');
+        setState(() {
+          _linkedProfile = null;
+          _linkedUserId = null;
+        });
+        return;
+      }
+
+      final profile = ThixProfileLite.fromJson(Map<String, dynamic>.from(res));
+      _nameCtrl.text = profile.bestName;
+      _phoneCtrl.text = profile.phone ?? '';
+      _emailCtrl.text = ''; // profiles n'a pas email public standard
+      _linkedUserId = profile.id;
+      _linkedProfile = profile;
+      // On conserve le thix_id public du guest (accès invitation) distinct
+      // du thix_id profil — mais on peut aussi le lier
+      setState(() {});
+      HapticFeedback.mediumImpact();
+      _showSuccess('Profil trouvé : ${profile.bestName}');
+    } catch (e) {
+      _showError('Erreur recherche: $e');
+    } finally {
+      if (mounted) setState(() => _searchingThix = false);
     }
   }
 
@@ -239,6 +257,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
         'is_vip': _isVip,
         'is_companion': _isCompanion,
         'thix_id': _publicThixId,
+        'user_id': _linkedUserId,
       };
 
       String? savedDbId;
@@ -265,10 +284,11 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
 
       ref.invalidate(guestsProvider(widget.weddingId));
       ref.invalidate(dashboardStatsProvider(widget.weddingId));
+      ref.invalidate(myActiveInvitationsProvider);
 
       if (mounted) {
         _showSuccess(
-          _isEdit ? 'Invité mis à jour ✓' : 'Invité créé & invitation envoyée ✓',
+          _isEdit ? 'Invité mis à jour ✓' : 'Invité créé ✓',
         );
         context.pop();
       }
@@ -279,7 +299,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     }
   }
 
-  /// ✅ CORRIGÉ — null-safety : extraction des valeurs AVANT interpolation
   Future<void> _sendInvitationMessage(
     SupabaseClient supa,
     String dbGuestId,
@@ -335,10 +354,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              msg,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
+            child: Text(msg, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ]),
         backgroundColor: _R.green,
@@ -364,10 +380,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              msg,
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
+            child: Text(msg, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
           ),
         ]),
         backgroundColor: _R.rose,
@@ -393,6 +406,171 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
+                  // ── MODE DE SAISIE ──────────────────────────────────
+                  if (!_isEdit) ...[
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: _R.card(),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Comment ajouter ?',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ModeChip(
+                                  label: 'Via Thix ID',
+                                  icon: Icons.qr_code_2_rounded,
+                                  selected: _useThixSearch,
+                                  onTap: () => setState(() => _useThixSearch = true),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _ModeChip(
+                                  label: 'Manuel',
+                                  icon: Icons.edit_outlined,
+                                  selected: !_useThixSearch,
+                                  onTap: () => setState(() => _useThixSearch = false),
+                                ),
+                              ),
+                            ],
+                          ),
+                          if (_useThixSearch) ...[
+                            const SizedBox(height: 14),
+                            Text(
+                              'Recherche dans THIX Hub (table profiles)',
+                              style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _thixSearchCtrl,
+                                    textCapitalization: TextCapitalization.characters,
+                                    style: _mono(fontSize: 13, fontWeight: FontWeight.w700),
+                                    decoration: InputDecoration(
+                                      hintText: 'Ex: THIX-XXXX-...',
+                                      prefixIcon: const Icon(Icons.search, color: _R.blue),
+                                      border: OutlineInputBorder(
+                                        borderRadius: BorderRadius.circular(12),
+                                      ),
+                                      contentPadding: const EdgeInsets.symmetric(
+                                        horizontal: 14,
+                                        vertical: 14,
+                                      ),
+                                    ),
+                                    onSubmitted: (_) => _searchThixProfile(),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Material(
+                                  color: _R.blue,
+                                  borderRadius: BorderRadius.circular(12),
+                                  child: InkWell(
+                                    onTap: _searchingThix ? null : _searchThixProfile,
+                                    borderRadius: BorderRadius.circular(12),
+                                    child: Container(
+                                      width: 52,
+                                      height: 52,
+                                      alignment: Alignment.center,
+                                      child: _searchingThix
+                                          ? const SizedBox(
+                                              width: 20,
+                                              height: 20,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(Icons.person_search, color: Colors.white),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (_linkedProfile != null) ...[
+                              const SizedBox(height: 12),
+                              Container(
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: _R.green.withOpacity(0.08),
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: _R.green.withOpacity(0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    CircleAvatar(
+                                      radius: 22,
+                                      backgroundColor: _R.blue.withOpacity(0.15),
+                                      backgroundImage: _linkedProfile!.avatarUrl != null
+                                          ? NetworkImage(_linkedProfile!.avatarUrl!)
+                                          : null,
+                                      child: _linkedProfile!.avatarUrl == null
+                                          ? Text(
+                                              _linkedProfile!.bestName.isNotEmpty
+                                                  ? _linkedProfile!.bestName[0].toUpperCase()
+                                                  : '?',
+                                              style: const TextStyle(
+                                                fontWeight: FontWeight.w800,
+                                                color: _R.blue,
+                                              ),
+                                            )
+                                          : null,
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            _linkedProfile!.bestName,
+                                            style: GoogleFonts.inter(
+                                              fontWeight: FontWeight.w700,
+                                              fontSize: 14,
+                                            ),
+                                          ),
+                                          Text(
+                                            _linkedProfile!.thixId,
+                                            style: _mono(fontSize: 11, color: _R.text2),
+                                          ),
+                                          Text(
+                                            'Lié au compte THIX Hub',
+                                            style: GoogleFonts.inter(
+                                              fontSize: 11,
+                                              color: _R.green,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(Icons.close, size: 18),
+                                      onPressed: () => setState(() {
+                                        _linkedProfile = null;
+                                        _linkedUserId = null;
+                                      }),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
                   _SectionCard(
                     title: 'Identité',
                     icon: Icons.person_outline,
@@ -557,7 +735,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                           ]),
                           const SizedBox(height: 8),
                           Text(
-                            'Le message sera envoyé directement dans la messagerie Thix de l\'invité.',
+                            'Le message sera envoyé dans la messagerie Thix de l\'invité.',
                             style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
                           ),
                         ],
@@ -584,6 +762,54 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
 // ═══════════════════════════════════════════════════════════════════════════
 // WIDGETS
 // ═══════════════════════════════════════════════════════════════════════════
+
+class _ModeChip extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final VoidCallback onTap;
+
+  const _ModeChip({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: selected ? _R.blue : Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: selected ? _R.blue : _R.border),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: selected ? Colors.white : _R.blue),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: selected ? Colors.white : _R.text,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
 
 class _ThixIdGlobalCard extends StatelessWidget {
   final String thixId;
@@ -629,7 +855,7 @@ class _ThixIdGlobalCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'THIX ID GLOBAL (PUBLIC)',
+                    'THIX ID INVITÉ (PUBLIC)',
                     style: GoogleFonts.inter(
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
@@ -638,7 +864,7 @@ class _ThixIdGlobalCard extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    'Identifiant unique utilisé pour la connexion et le QR Code',
+                    'Code d\'accès invitation & QR',
                     style: GoogleFonts.inter(
                       fontSize: 11,
                       color: Colors.white.withOpacity(0.85),
@@ -732,7 +958,7 @@ class _LiveInvitationPreview extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Text(
-            'Aperçu de l\'invitation numérique',
+            'Aperçu invitation numérique',
             style: GoogleFonts.inter(
               fontSize: 13,
               fontWeight: FontWeight.w700,
@@ -778,29 +1004,12 @@ class _LiveInvitationPreview extends StatelessWidget {
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 const Icon(Icons.qr_code_scanner, size: 14, color: _R.blue),
                 const SizedBox(width: 6),
-                Text(
-                  'Code Accès : ',
-                  style: GoogleFonts.inter(fontSize: 10, color: _R.text2),
-                ),
+                Text('Code Accès : ', style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
                 Text(
                   thixId,
-                  style: _mono(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: _R.blue,
-                  ),
+                  style: _mono(fontSize: 11, fontWeight: FontWeight.bold, color: _R.blue),
                 ),
               ]),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Scannez ou tapez ce code pour rejoindre la fête 💍',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                color: _R.text2,
-                height: 1.4,
-              ),
             ),
           ]),
         ),
@@ -855,10 +1064,7 @@ class _FormAppBar extends StatelessWidget {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.white,
-                        ),
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                       )
                     : Row(
                         mainAxisSize: MainAxisSize.min,
@@ -909,18 +1115,13 @@ class _SectionCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(8),
               decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [color, color.withOpacity(0.7)],
-                ),
+                gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, color: Colors.white, size: 16),
             ),
             const SizedBox(width: 10),
-            Text(
-              title,
-              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700),
-            ),
+            Text(title, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w700)),
           ]),
           const SizedBox(height: 16),
           ...children,
@@ -963,10 +1164,7 @@ class _RoyalTextField extends StatelessWidget {
         labelText: label,
         hintText: hint,
         labelStyle: GoogleFonts.inter(color: _R.text2, fontSize: 13),
-        hintStyle: GoogleFonts.inter(
-          color: _R.text2.withOpacity(0.6),
-          fontSize: 13,
-        ),
+        hintStyle: GoogleFonts.inter(color: _R.text2.withOpacity(0.6), fontSize: 13),
         prefixIcon: Icon(icon, color: _R.blue, size: 20),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
@@ -1020,11 +1218,7 @@ class _GroupSelector extends StatelessWidget {
                 ),
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(
-                  g.icon,
-                  size: 16,
-                  color: isSelected ? Colors.white : g.color,
-                ),
+                Icon(g.icon, size: 16, color: isSelected ? Colors.white : g.color),
                 const SizedBox(width: 6),
                 Text(
                   g.label,
@@ -1072,28 +1266,16 @@ class _CounterRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                label,
-                style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700),
-              ),
-              Text(
-                'Personnes confirmées',
-                style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
-              ),
+              Text(label, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700)),
+              Text('Personnes confirmées', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
             ],
           ),
         ),
-        _CounterBtn(
-          icon: Icons.remove,
-          onTap: value > min ? () => onChanged(value - 1) : null,
-        ),
+        _CounterBtn(icon: Icons.remove, onTap: value > min ? () => onChanged(value - 1) : null),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 10),
           padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-          decoration: BoxDecoration(
-            gradient: _R.royal,
-            borderRadius: BorderRadius.circular(10),
-          ),
+          decoration: BoxDecoration(gradient: _R.royal, borderRadius: BorderRadius.circular(10)),
           child: Text(
             '$value',
             style: GoogleFonts.inter(
@@ -1104,10 +1286,7 @@ class _CounterRow extends StatelessWidget {
             ),
           ),
         ),
-        _CounterBtn(
-          icon: Icons.add,
-          onTap: value < max ? () => onChanged(value + 1) : null,
-        ),
+        _CounterBtn(icon: Icons.add, onTap: value < max ? () => onChanged(value + 1) : null),
       ]),
     );
   }
@@ -1116,7 +1295,6 @@ class _CounterRow extends StatelessWidget {
 class _CounterBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback? onTap;
-
   const _CounterBtn({required this.icon, required this.onTap});
 
   @override
@@ -1129,11 +1307,7 @@ class _CounterBtn extends StatelessWidget {
         onTap: onTap,
         child: Container(
           padding: const EdgeInsets.all(10),
-          child: Icon(
-            icon,
-            size: 18,
-            color: onTap == null ? _R.text2 : _R.blue,
-          ),
+          child: Icon(icon, size: 18, color: onTap == null ? _R.text2 : _R.blue),
         ),
       ),
     );
@@ -1164,10 +1338,7 @@ class _ToggleRow extends StatelessWidget {
       decoration: BoxDecoration(
         color: value ? color.withOpacity(0.08) : Colors.grey.withOpacity(0.05),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: value ? color : _R.border,
-          width: 1.5,
-        ),
+        border: Border.all(color: value ? color : _R.border, width: 1.5),
       ),
       child: SwitchListTile(
         title: Text(
@@ -1178,21 +1349,14 @@ class _ToggleRow extends StatelessWidget {
             color: value ? color : _R.text,
           ),
         ),
-        subtitle: Text(
-          subtitle,
-          style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
-        ),
+        subtitle: Text(subtitle, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
         secondary: Container(
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             color: value ? color.withOpacity(0.15) : _R.border.withOpacity(0.5),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Icon(
-            icon,
-            size: 18,
-            color: value ? color : _R.text2,
-          ),
+          child: Icon(icon, size: 18, color: value ? color : _R.text2),
         ),
         value: value,
         activeColor: color,
@@ -1242,17 +1406,10 @@ class _SubmitButton extends StatelessWidget {
                 ? const SizedBox(
                     width: 24,
                     height: 24,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2.5,
-                      color: Colors.white,
-                    ),
+                    child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white),
                   )
                 : Row(mainAxisSize: MainAxisSize.min, children: [
-                    Icon(
-                      isEdit ? Icons.check : Icons.person_add,
-                      color: Colors.white,
-                      size: 22,
-                    ),
+                    Icon(isEdit ? Icons.check : Icons.person_add, color: Colors.white, size: 22),
                     const SizedBox(width: 10),
                     Text(
                       isEdit ? 'Enregistrer modifications' : 'Créer l\'invité',
@@ -1281,20 +1438,13 @@ class _LoadingView extends StatelessWidget {
         child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
             padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              gradient: _R.goldG,
-              shape: BoxShape.circle,
-            ),
+            decoration: const BoxDecoration(gradient: _R.goldG, shape: BoxShape.circle),
             child: const Icon(Icons.hourglass_empty, color: Colors.white, size: 36),
           ),
           const SizedBox(height: 16),
           Text(
             'Chargement...',
-            style: GoogleFonts.inter(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: _R.text2,
-            ),
+            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2),
           ),
         ]),
       ),
