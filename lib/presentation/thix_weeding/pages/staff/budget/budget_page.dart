@@ -599,7 +599,7 @@ class _CategoryBreakdown extends StatelessWidget {
     // Agrégation par catégorie
     final Map<String, double> totals = {};
     for (final e in expenses) {
-      final key = e.category.isNotEmpty ? e.category : 'divers';
+      final key = (e.category != null && e.category!.isNotEmpty) ? e.category! : 'divers';
       totals[key] = (totals[key] ?? 0) + e.amount;
     }
     final grandTotal = totals.values.fold<double>(0, (a, b) => a + b);
@@ -871,7 +871,7 @@ class _ExpenseTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final cat = _Cat.find(expense.category);
+    final cat = _Cat.find(expense.category ?? 'divers');
     final vendor = expense.vendorId != null
         ? vendors.where((v) => v.id == expense.vendorId).firstOrNull
         : null;
