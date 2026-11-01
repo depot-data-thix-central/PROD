@@ -1,6 +1,7 @@
+
 // lib/presentation/thix_weeding/pages/staff/invités/add_guest_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v3)
+// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v4)
 // ============================================================================
 import 'dart:async';
 
@@ -49,7 +50,7 @@ class _R {
   static const Color green = Color(0xFF059669);
   static const Color greenSoft = Color(0xFF10B981);
   static const Color amber = Color(0xFFD97706);
-  static const Color cream = Color(0xFFFFF8E7); // ✅ AJOUT — utilisé dans _LiveInvitationPreview
+  static const Color cream = Color(0xFFFFF8E7);
   static const Color surface = Color(0xFFF8FAFC);
   static const Color text = Color(0xFF111827);
   static const Color text2 = Color(0xFF6B7280);
@@ -90,7 +91,7 @@ class _R {
       );
 }
 
-// Groupes du cahier des charges
+// Groupes
 const List<_Group> _GROUPS = [
   _Group('famille_marié', 'Famille du marié', Icons.family_restroom, Color(0xFF0B3B8F)),
   _Group('famille_mariée', 'Famille de la mariée', Icons.favorite, Color(0xFFE31C4E)),
@@ -108,7 +109,7 @@ class _Group {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GÉNÉRATEUR DE THIX ID UNIQUE (GLOBAL PUBLIC)
+// GÉNÉRATEUR DE THIX ID UNIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 class _ThixIdGenerator {
   static String generate() {
@@ -145,14 +146,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
 
-  // Champs UI
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _notesCtrl = TextEditingController();
   final _tableCtrl = TextEditingController();
 
-  // ⚠️ Séparation des IDs
   late String _publicThixId;
   String? _dbGuestId;
 
@@ -172,7 +171,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
 
     if (_isEdit) {
       _dbGuestId = widget.editGuestId;
-      _publicThixId = _ThixIdGenerator.generate(); // sera écrasé par _loadEditData
+      _publicThixId = _ThixIdGenerator.generate();
       _loadEditData();
     } else {
       _publicThixId = _ThixIdGenerator.generate();
@@ -280,7 +279,11 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
     }
   }
 
-  Future<void> _sendInvitationMessage(SupabaseClient supa, String dbGuestId) async {
+  /// ✅ CORRIGÉ — null-safety : extraction des valeurs AVANT interpolation
+  Future<void> _sendInvitationMessage(
+    SupabaseClient supa,
+    String dbGuestId,
+  ) async {
     try {
       final wedding = await supa
           .from('thix_weeding_weddings')
@@ -290,10 +293,13 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
 
       final brideName = wedding?['bride_name'] ?? '';
       final groomName = wedding?['groom_name'] ?? '';
-      final dateStr = wedding?['wedding_date'] != null
-          ? ' le ${_fmtDateLong(DateTime.parse(wedding['wedding_date']))}'
+      final weddingDateRaw = wedding?['wedding_date'];
+      final venueRaw = wedding?['venue'];
+
+      final dateStr = weddingDateRaw != null
+          ? ' le ${_fmtDateLong(DateTime.parse(weddingDateRaw.toString()))}'
           : '';
-      final venueStr = wedding?['venue'] != null ? ' à ${wedding['venue']}' : '';
+      final venueStr = venueRaw != null ? ' à $venueRaw' : '';
 
       final msg = "Bonjour ${_nameCtrl.text.trim()} ! 🎉\n\n"
           "Vous êtes invité(e) au mariage de $brideName & $groomName$dateStr$venueStr.\n\n"
@@ -387,7 +393,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  // ── IDENTITÉ ────────────────────────────────────
                   _SectionCard(
                     title: 'Identité',
                     icon: Icons.person_outline,
@@ -427,7 +432,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── THIX ID GLOBAL ─────────────────────────────
                   _ThixIdGlobalCard(
                     thixId: _publicThixId,
                     onRegenerate: () => setState(
@@ -437,7 +441,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── GROUPE ──────────────────────────────────────
                   _SectionCard(
                     title: 'Catégorie',
                     icon: Icons.group_outlined,
@@ -451,7 +454,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── PRÉSENCE & TABLE ────────────────────────────
                   _SectionCard(
                     title: 'Placement',
                     icon: Icons.event_seat_outlined,
@@ -495,7 +497,6 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 16),
 
-                  // ── NOTES ───────────────────────────────────────
                   _SectionCard(
                     title: 'Notes internes',
                     icon: Icons.notes_outlined,
@@ -512,14 +513,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
                   ),
                   const SizedBox(height: 24),
 
-                  // ── APERÇU INVITATION ───────────────────────────
                   _LiveInvitationPreview(
                     name: _nameCtrl.text.isNotEmpty ? _nameCtrl.text : 'Nouvel Invité',
                     thixId: _publicThixId,
                   ),
                   const SizedBox(height: 24),
 
-                  // ── ENVOI CHAT ──────────────────────────────────
                   if (!_isEdit) ...[
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -746,9 +745,7 @@ class _LiveInvitationPreview extends StatelessWidget {
           width: double.infinity,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [_R.cream, Colors.white], // ✅ _R.cream défini
-            ),
+            gradient: const LinearGradient(colors: [_R.cream, Colors.white]),
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: _R.gold.withOpacity(0.3)),
           ),
@@ -812,9 +809,6 @@ class _LiveInvitationPreview extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ FIX PRINCIPAL — _FormAppBar avec parenthèses correctes + formaté
-// ═══════════════════════════════════════════════════════════════════════════
 class _FormAppBar extends StatelessWidget {
   final bool isEdit;
   final VoidCallback onSave;
