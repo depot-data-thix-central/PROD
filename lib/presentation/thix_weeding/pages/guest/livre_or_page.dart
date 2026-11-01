@@ -84,11 +84,11 @@ class GuestbookFeed extends _$GuestbookFeed {
             event: PostgresChangeEvent.insert,
             schema: 'public',
             table: 'thix_weeding_guestbook',
-            filter: 'wedding_id=eq.$weddingId',
             callback: (payload) {
+              final row = Map<String, dynamic>.from(payload.newRecord);
+              if (row['wedding_id']?.toString() != weddingId) return;
               final current = state.valueOrNull ?? const [];
-              final post = GuestbookPost.fromJson(
-                  Map<String, dynamic>.from(payload.newRecord));
+              final post = GuestbookPost.fromJson(row);
               if (current.any((p) => p.id == post.id)) return;
               state = AsyncData([post, ...current]);
             },
@@ -97,7 +97,6 @@ class GuestbookFeed extends _$GuestbookFeed {
             event: PostgresChangeEvent.delete,
             schema: 'public',
             table: 'thix_weeding_guestbook',
-            filter: 'wedding_id=eq.$weddingId',
             callback: (payload) {
               final current = state.valueOrNull ?? const [];
               final old = payload.oldRecord['id'] as String?;
