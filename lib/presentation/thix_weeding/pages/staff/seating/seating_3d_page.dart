@@ -3053,4 +3053,6 @@ class _DecorView extends StatelessWidget {
       _shadow(24, 24, circle: true),
       ..._cuboid(w: 20, h: 20, height: 14, side: const Color(0xFFB45309), top: const Color(0xFF7C4A21), circle: true, step: 7),
       _z(18, Container(width: 30, height: 30, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
-      _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A
+      _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
+    ];
+  }
