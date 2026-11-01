@@ -358,7 +358,7 @@ class _SettingsContent extends StatelessWidget {
             style: FilledButton.styleFrom(backgroundColor: _R.rose, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
             onPressed: () {
               if (confirmCtrl.text.trim().toUpperCase() == 'SUPPRIMER') {
-                Navigator.pop(dialogDialogContext, true);
+                Navigator.pop(dialogContext, true);
               } else {
                 ScaffoldMessenger.of(dialogContext).showSnackBar(SnackBar(content: const Text('Veuillez taper "SUPPRIMER" pour confirmer'), backgroundColor: _R.amber, behavior: SnackBarBehavior.floating));
               }
