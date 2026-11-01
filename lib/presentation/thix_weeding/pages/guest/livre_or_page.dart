@@ -2,7 +2,7 @@
 // ============================================================================
 // LIVRE D'OR — Feed social élégant (Web + Mobile)
 // ✅ Modèles de vœux prêts à poster
-// ✅ Enregistrement / upload vidéo ≤ 50 min AVEC PREVIEWlecteur intégré
+// ✅ Enregistrement / upload vidéo ≤ 50 min AVEC PREVIEW lecteur intégré
 // ✅ Feed type réseau social SANS commentaires (réactions ❤️ uniquement)
 // ✅ Temps réel Supabase (nouvelles publications / modération staff)
 // ============================================================================
@@ -82,12 +82,10 @@ class GuestbookFeed extends _$GuestbookFeed {
       final channel = Supabase.instance.client.channel('gb_$weddingId');
       channel
           .onPostgresChanges(
-            filter: PostgresChangeFilter(
-              type: PostgresChangeType.insert,
-              schema: 'public',
-              table: 'thix_weeding_guestbook',
-              filter: 'wedding_id=eq.$weddingId',
-            ),
+            event: PostgresChangeEvent.insert,
+            schema: 'public',
+            table: 'thix_weeding_guestbook',
+            filter: 'wedding_id=eq.$weddingId',
             callback: (payload) {
               final current = state.valueOrNull ?? const [];
               final post = GuestbookPost.fromJson(Map<String, dynamic>.from(payload.newRecord));
@@ -96,12 +94,10 @@ class GuestbookFeed extends _$GuestbookFeed {
             },
           )
           .onPostgresChanges(
-            filter: PostgresChangeFilter(
-              type: PostgresChangeType.delete,
-              schema: 'public',
-              table: 'thix_weeding_guestbook',
-              filter: 'wedding_id=eq.$weddingId',
-            ),
+            event: PostgresChangeEvent.delete,
+            schema: 'public',
+            table: 'thix_weeding_guestbook',
+            filter: 'wedding_id=eq.$weddingId',
             callback: (payload) {
               final current = state.valueOrNull ?? const [];
               final old = payload.oldRecord['id'] as String?;
@@ -695,7 +691,7 @@ class _ComposerSheet extends ConsumerStatefulWidget {
 class _ComposerSheetState extends ConsumerState<_ComposerSheet> {
   final _nameCtrl = TextEditingController();
   final _msgCtrl = TextEditingController();
-  final _picker = const ImagePicker();
+  final _picker = ImagePicker(); // 👈 CORRIGÉ : const retiré ici
 
   XFile? _video;
   Duration? _videoDuration;
