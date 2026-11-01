@@ -671,3 +671,106 @@ class ThixProfileService {
     return ThixProfileLite.fromJson(Map<String, dynamic>.from(res));
   }
 }
+
+
+// ============================================================================
+// GIFT SERVICE — Cadeaux & propositions invités
+// ============================================================================
+class GiftService {
+  final _c = Supabase.instance.client;
+
+  /// Catalogue public + approuvés (pas les group_active pour staff "vue simple")
+  Future<List<Map<String, dynamic>>> listForStaff(String weddingId, {bool hideGroupActive = true}) async {
+    var q = _c.from('thix_weeding_gifts').select().eq('wedding_id', weddingId).order('created_at', ascending: false);
+    final res = await q;
+    final list = List<Map<String, dynamic>>.from(res);
+    if (hideGroupActive) {
+      return list.where((e) {
+        final st = e['status'] as String? ?? '';
+        final group = e['is_group_collect'] as bool? ?? false;
+        // Staff ne voit pas les collectes de groupe EN COURS
+        if (st == 'group_active' || (group && st != 'completed' && st != 'approved' && st != 'proposed' && st != 'rejected')) {
+          return false;
+        }
+        if (st == 'group_active') return false;
+        return true;
+      }).toList();
+    }
+    return list;
+  }
+
+  /// Côté invité : wishlist + approved + ses propres propositions + collectes auxquelles il peut joindre
+  Future<List<Map<String, dynamic>>> listForGuest(String weddingId) async {
+    final res = await _c
+        .from('thix_weeding_gifts')
+        .select()
+        .eq('wedding_id', weddingId)
+        .inFilter('status', ['wishlist', 'approved', 'group_active', 'completed', 'proposed'])
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
+  Future<Map<String, dynamic>> propose({
+    required String weddingId,
+    required String name,
+    String? description,
+    required double price,
+    String? imageUrl,
+    String? guestId,
+    String? guestName,
+    bool asGroup = false,
+  }) async {
+    final payload = {
+      'wedding_id': weddingId,
+      'name': name,
+      'description': description,
+      'price': price,
+      'image_url': imageUrl ?? '',
+      'contributed': 0,
+      'status': asGroup ? 'group_active' : 'proposed',
+      'is_group_collect': asGroup,
+      'proposed_by_guest_id': guestId,
+      'proposed_by_name': guestName,
+      'group_leader_guest_id': asGroup ? guestId : null,
+    };
+    final res = await _c.from('thix_weeding_gifts').insert(payload).select().single();
+    return Map<String, dynamic>.from(res);
+  }
+
+  Future<void> setStatus(String giftId, String status) async {
+    await _c.from('thix_weeding_gifts').update({'status': status}).eq('id', giftId);
+  }
+
+  Future<void> contribute({
+    required String giftId,
+    required double amount,
+    required String contributorName,
+    String? guestId,
+  }) async {
+    await _c.from('thix_weeding_gift_contributions').insert({
+      'gift_id': giftId,
+      'amount': amount,
+      'contributor_name': contributorName,
+      'guest_id': guestId,
+    });
+    // incrément contributed
+    final row = await _c.from('thix_weeding_gifts').select('contributed, price').eq('id', giftId).single();
+    final next = ((row['contributed'] as num?)?.toDouble() ?? 0) + amount;
+    final price = (row['price'] as num?)?.toDouble() ?? 0;
+    final patch = <String, dynamic>{'contributed': next};
+    if (next >= price && price > 0) {
+      patch['status'] = 'completed';
+      patch['is_reserved'] = true;
+    }
+    await _c.from('thix_weeding_gifts').update(patch).eq('id', giftId);
+  }
+
+  Future<List<Map<String, dynamic>>> contributions(String giftId) async {
+    final res = await _c
+        .from('thix_weeding_gift_contributions')
+        .select()
+        .eq('gift_id', giftId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  }
+}
