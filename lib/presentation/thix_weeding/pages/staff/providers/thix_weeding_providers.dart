@@ -4,6 +4,7 @@
 // ✅ ref.read(xxx.future) au lieu de ref.watch(xxx).future
 // ✅ Import supabase_flutter ajouté pour expenseDetailProvider
 // ✅ expensesProvider(weddingId) avec argument correct
+// ✅ Seating 3D + invitations actives (badge home) + recherche profiles THIX Hub
 // ============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,6 +24,8 @@ final galleryServiceProvider = Provider((ref) => GalleryService());
 final guestbookServiceProvider = Provider((ref) => GuestbookService());
 final messageServiceProvider = Provider((ref) => MessageService());
 final paymentServiceProvider = Provider((ref) => PaymentService());
+final seatingServiceProvider = Provider((ref) => SeatingService());
+final thixProfileServiceProvider = Provider((ref) => ThixProfileService());
 
 // ============================================================================
 // WEDDING
@@ -127,7 +130,6 @@ final messagesProvider =
   return ref.read(messageServiceProvider).getByWedding(weddingId);
 });
 
-// ✅ CORRIGÉ : ref.read(xxx.future) au lieu de ref.watch(xxx).future
 final unreadMessagesCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
   final messages = await ref.read(messagesProvider(weddingId).future);
@@ -149,12 +151,10 @@ final paymentDetailProvider =
 
 // ============================================================================
 // SUMMARY & STATS
-// ✅ TOUS les .future corrigés en ref.read(xxx.future)
 // ============================================================================
 
 final paymentsSummaryProvider =
     FutureProvider.autoDispose.family<Map<String, double>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future) compatible Riverpod 2.6.1
   final budget = await ref.read(budgetProvider(weddingId).future);
   final expenses = await ref.read(expensesProvider(weddingId).future);
   final payments = await ref.read(paymentsProvider(weddingId).future);
@@ -175,7 +175,6 @@ final paymentsSummaryProvider =
 
 final dashboardStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future)
   final guests = await ref.read(guestsProvider(weddingId).future);
   final vendors = await ref.read(vendorsProvider(weddingId).future);
   final tasks = await ref.read(checklistProvider(weddingId).future);
@@ -190,7 +189,6 @@ final dashboardStatsProvider =
 
 final rsvpStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future)
   final guests = await ref.read(guestsProvider(weddingId).future);
 
   final confirmed = guests
@@ -222,7 +220,6 @@ final rsvpStatsProvider =
 
 final checklistStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future)
   final tasks = await ref.read(checklistProvider(weddingId).future);
   final now = DateTime.now();
 
@@ -246,14 +243,12 @@ final checklistStatsProvider =
 
 final galleryStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future)
   final gallery = await ref.read(galleryProvider(weddingId).future);
   return {'total': gallery.length};
 });
 
 final guestbookStatsProvider =
     FutureProvider.autoDispose.family<Map<String, int>, String>((ref, weddingId) async {
-  // ✅ CORRIGÉ : ref.read(xxx.future)
   final entries = await ref.read(guestbookProvider(weddingId).future);
   final approved = entries.where((e) => e.isApproved).length;
   return {
@@ -261,4 +256,85 @@ final guestbookStatsProvider =
     'approved': approved,
     'pending': entries.length - approved,
   };
+});
+
+// ============================================================================
+// SEATING / PLAN DE TABLE 3D
+// ============================================================================
+final seatingTablesProvider =
+    FutureProvider.autoDispose.family<List<SeatingTableModel>, String>((ref, weddingId) async {
+  return ref.read(seatingServiceProvider).getTables(weddingId);
+});
+
+final seatingLayoutProvider =
+    FutureProvider.autoDispose.family<SeatingLayoutModel, String>((ref, weddingId) async {
+  return ref.read(seatingServiceProvider).getLayout(weddingId);
+});
+
+// ============================================================================
+// INVITATIONS ACTIVES POUR L'UTILISATEUR CONNECTÉ (badge home)
+// Guests liés via user_id + invitation publiée + jusqu'à J+14
+// ============================================================================
+final myActiveInvitationsProvider =
+    FutureProvider.autoDispose<List<Map<String, dynamic>>>((ref) async {
+  final user = Supabase.instance.client.auth.currentUser;
+  if (user == null) return [];
+
+  final res = await Supabase.instance.client
+      .from('thix_weeding_guests')
+      .select('''
+        id,
+        wedding_id,
+        name,
+        thix_id,
+        thix_weeding_weddings!inner (
+          id,
+          bride_name,
+          groom_name,
+          wedding_date,
+          invitation_published,
+          unique_code,
+          invitation_activated_at
+        )
+      ''')
+      .eq('user_id', user.id)
+      .eq('thix_weeding_weddings.invitation_published', true);
+
+  final now = DateTime.now();
+  final list = <Map<String, dynamic>>[];
+
+  for (final row in List<Map<String, dynamic>>.from(res)) {
+    final wRaw = row['thix_weeding_weddings'];
+    if (wRaw is! Map) continue;
+    final w = Map<String, dynamic>.from(wRaw);
+
+    final dateStr = w['wedding_date'];
+    if (dateStr != null) {
+      final weddingDate = DateTime.tryParse(dateStr.toString());
+      if (weddingDate != null) {
+        final limit = weddingDate.add(const Duration(days: 14));
+        if (now.isAfter(limit)) continue;
+      }
+    }
+
+    list.add({
+      'guest_id': row['id'],
+      'wedding_id': row['wedding_id'],
+      'guest_name': row['name'],
+      'bride_name': w['bride_name'],
+      'groom_name': w['groom_name'],
+      'wedding_date': w['wedding_date'],
+      'unique_code': w['unique_code'],
+    });
+  }
+
+  return list;
+});
+
+// ============================================================================
+// RECHERCHE PROFIL THIX HUB (table profiles)
+// ============================================================================
+final thixProfileSearchProvider =
+    FutureProvider.autoDispose.family<ThixProfileLite?, String>((ref, thixId) async {
+  return ref.read(thixProfileServiceProvider).findByThixId(thixId);
 });
