@@ -450,8 +450,8 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   ({double t, double r, double z}) _camB = (t: 0.95, r: 0.0, z: 1.0);
 
   // NOUVEAUTÉS v3 — maniabilité
-  bool _precisionMode = false;  // déplace par pas fin (5px au lieu de 20px)
-  bool _showGrid = false;       // grille visible pendant drag
+  bool _precisionMode = false;
+  bool _showGrid = false;
 
   @override
   void initState() {
@@ -673,11 +673,9 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   void _zoomBy(double f) =>
       setState(() => _zoom = (_zoom * f).clamp(0.5, 3.5).toDouble());
 
-  /// NOUVEAUTÉ v3 : centre la caméra sur l'élément sélectionné
   void _focusSelected() {
     final sel = _selected;
     if (sel == null) return;
-    // Calcule le pan pour centrer l'élément (en coordonnées écran approximatives)
     setState(() {
       _zoom = 1.4;
       _pan = Offset.zero;
@@ -807,8 +805,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   // NOUVEAUTÉS v3 — MOUVEMENTS PAR JOYSTICK / CLAVIER
   // ═════════════════════════════════════════════════════════════════════════
 
-  /// Déplace l'élément sélectionné d'un pas dans la direction donnée.
-  /// Utilise le _kMoveStep ou la version précision (5px).
   void _moveSelectedBy(double dx, double dy) {
     final sel = _selected;
     if (sel == null || sel.locked) return;
@@ -823,7 +819,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     _markDirty(sel.id);
   }
 
-  /// Fait pivoter l'élément sélectionné.
   void _rotateSelectedBy(double delta) {
     final sel = _selected;
     if (sel == null || sel.locked) return;
@@ -834,7 +829,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     _markDirty(sel.id);
   }
 
-  /// Duplique le selected et place le clone à côté
   void _duplicateSelected() {
     final sel = _selected;
     if (sel == null) return;
@@ -1122,7 +1116,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                   ),
                 ],
               ),
-              // NOUVEAUTÉ v3 — Joystick flottant quand élément sélectionné
               if (_selected != null)
                 Positioned(
                   left: 12,
@@ -1270,7 +1263,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                     ),
                   ),
                 ),
-                // Bannière de placement
                 if (_assigning != null)
                   Positioned(
                     top: 10,
@@ -1300,7 +1292,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                       ),
                     ),
                   ),
-                // Zoom
                 Positioned(
                   top: 10,
                   right: 10,
@@ -1329,7 +1320,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                     ),
                   ),
                 ),
-                // Stats + aide
                 Positioned(
                   left: 10,
                   bottom: 10,
@@ -1383,7 +1373,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // NOUVEAUTÉ v3 — Grille magnétique visible pendant le drag
             if (_showGrid)
               Positioned.fill(
                 child: IgnorePointer(
@@ -1996,7 +1985,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NOUVEAUTÉ v3 — JOYSTICK FLOTTANT (apparaît quand élément sélectionné)
+// JOYSTICK FLOTTANT
 // ═══════════════════════════════════════════════════════════════════════════
 class _SelectionJoystick extends StatelessWidget {
   final _Item item;
@@ -2039,7 +2028,6 @@ class _SelectionJoystick extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         children: [
-          // Indicateur de l'élément sélectionné
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2064,10 +2052,8 @@ class _SelectionJoystick extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 8),
-          // D-pad
           _DPad(onMove: onMove),
           const SizedBox(width: 10),
-          // Colonne actions : rotation + focus + dupliquer + désélectionner
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2141,31 +2127,26 @@ class _DPad extends StatelessWidget {
       height: sz * 3 + 8,
       child: Stack(
         children: [
-          // haut
           Positioned(
             left: sz + 4,
             top: 0,
             child: _DPadButton(icon: Icons.arrow_upward_rounded, onTap: () => onMove(0, -1)),
           ),
-          // bas
           Positioned(
             left: sz + 4,
             bottom: 0,
             child: _DPadButton(icon: Icons.arrow_downward_rounded, onTap: () => onMove(0, 1)),
           ),
-          // gauche
           Positioned(
             left: 0,
             top: sz + 4,
             child: _DPadButton(icon: Icons.arrow_back_rounded, onTap: () => onMove(-1, 0)),
           ),
-          // droite
           Positioned(
             right: 0,
             top: sz + 4,
             child: _DPadButton(icon: Icons.arrow_forward_rounded, onTap: () => onMove(1, 0)),
           ),
-          // centre
           Positioned(
             left: sz + 4,
             top: sz + 4,
@@ -2273,7 +2254,7 @@ class _JoyButton extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// NOUVEAUTÉ v3 — GRILLE MAGNÉTIQUE (affichée pendant le drag si snap=true)
+// GRILLE MAGNÉTIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 class _GridPainter extends CustomPainter {
   @override
@@ -2293,6 +2274,218 @@ class _GridPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PAINTERS — mur, sol, piste de danse (AJOUTÉS — manquaient dans le fichier)
+// ═══════════════════════════════════════════════════════════════════════════
+class _WallPainter extends CustomPainter {
+  final bool evening;
+  _WallPainter({required this.evening});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final rect = Rect.fromLTWH(0, 0, w, h);
+
+    // Fond du mur
+    final wallPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: evening
+            ? const [Color(0xFF1B1F3B), Color(0xFF3B2A63), Color(0xFF4B3A7A)]
+            : const [Color(0xFFFFF7E6), Color(0xFFFBF3DD), Color(0xFFF5E6C4)],
+      ).createShader(rect);
+    canvas.drawRect(rect, wallPaint);
+
+    // Plinthe dorée en bas
+    canvas.drawRect(
+      Rect.fromLTWH(0, h - 18, w, 18),
+      Paint()..color = const Color(0xFFB8860B),
+    );
+
+    // Fenêtres / panneaux
+    const windowCount = 5;
+    final panelW = w / (windowCount * 2 + 1);
+    for (var i = 0; i < windowCount; i++) {
+      final x = panelW * (i * 2 + 1);
+      final r = Rect.fromLTWH(x, h * 0.18, panelW, h * 0.55);
+
+      final framePaint = Paint()
+        ..color = const Color(0xFFD4AF37)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3;
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r, const Radius.circular(8)),
+        framePaint,
+      );
+
+      final glowPaint = Paint()
+        ..shader = RadialGradient(
+          colors: evening
+              ? [const Color(0xFFFFE9A8).withOpacity(0.7), const Color(0xFFFFD060).withOpacity(0.1)]
+              : [Colors.white.withOpacity(0.9), Colors.white.withOpacity(0.3)],
+        ).createShader(r);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(r.deflate(4), const Radius.circular(6)),
+        glowPaint,
+      );
+
+      final barPaint = Paint()
+        ..color = const Color(0xFFD4AF37)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2;
+      canvas.drawLine(Offset(r.center.dx, r.top), Offset(r.center.dx, r.bottom), barPaint);
+      canvas.drawLine(Offset(r.left, r.center.dy), Offset(r.right, r.center.dy), barPaint);
+    }
+
+    // Guirlande lumineuse en soirée
+    if (evening) {
+      final lightPaint = Paint()..color = const Color(0xFFFFF3A0);
+      for (var x = 20.0; x < w; x += 60) {
+        canvas.drawCircle(Offset(x, h * 0.05), 4, lightPaint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WallPainter oldDelegate) => oldDelegate.evening != evening;
+}
+
+class _FloorPainter extends CustomPainter {
+  final double ambient;
+  final bool evening;
+  final List<Offset> glows;
+
+  _FloorPainter({required this.ambient, required this.evening, required this.glows});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final rect = Rect.fromLTWH(0, 0, w, h);
+
+    // Sol
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: evening
+            ? const [Color(0xFF2A1B14), Color(0xFF3D2A1E), Color(0xFF4B3626)]
+            : const [Color(0xFFF5E6C4), Color(0xFFEEDDB5), Color(0xFFE0CDA0)],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    // Parquet
+    final parquetPaint = Paint()
+      ..color = evening ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.06)
+      ..strokeWidth = 1;
+    const plankW = 60.0;
+    const plankH = 20.0;
+    for (var y = 0.0; y < h; y += plankH) {
+      canvas.drawLine(Offset(0, y), Offset(w, y), parquetPaint);
+      final off = (y ~/ plankH).isEven ? 0.0 : plankW / 2;
+      for (var x = off; x < w; x += plankW) {
+        canvas.drawLine(Offset(x, y), Offset(x, y + plankH), parquetPaint);
+      }
+    }
+
+    // Bord doré
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect.deflate(3), const Radius.circular(8)),
+      Paint()
+        ..color = _C.gold
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6,
+    );
+
+    // Halos des tables
+    final glowPaint = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
+    for (final g in glows) {
+      glowPaint.shader = RadialGradient(
+        colors: evening
+            ? [const Color(0xFFFFD700).withOpacity(0.35 * ambient), Colors.transparent]
+            : [Colors.white.withOpacity(0.5 * ambient), Colors.transparent],
+      ).createShader(Rect.fromCircle(center: g, radius: 90));
+      canvas.drawCircle(g, 90, glowPaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _FloorPainter oldDelegate) =>
+      oldDelegate.ambient != ambient ||
+      oldDelegate.evening != evening ||
+      !listEquals(oldDelegate.glows, glows);
+}
+
+class _DancePainter extends CustomPainter {
+  final bool evening;
+  _DancePainter({required this.evening});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width, h = size.height;
+    final rect = Rect.fromLTWH(0, 0, w, h);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(14));
+
+    canvas.save();
+    canvas.clipRRect(rrect);
+
+    // Base sombre
+    final basePaint = Paint()
+      ..shader = LinearGradient(
+        colors: evening
+            ? const [Color(0xFF1A1A2E), Color(0xFF16213E)]
+            : const [Color(0xFF2B2D42), Color(0xFF3A3D5C)],
+      ).createShader(rect);
+    canvas.drawRect(rect, basePaint);
+
+    // Damier
+    const tile = 30.0;
+    final lightPaint = Paint()
+      ..color = evening
+          ? const Color(0xFF4A3F8C).withOpacity(0.5)
+          : Colors.white.withOpacity(0.08);
+    for (var y = 0.0; y < h; y += tile) {
+      for (var x = 0.0; x < w; x += tile) {
+        final col = (x ~/ tile).toInt();
+        final row = (y ~/ tile).toInt();
+        if ((col + row).isEven) {
+          canvas.drawRect(Rect.fromLTWH(x, y, tile, tile), lightPaint);
+        }
+      }
+    }
+
+    // Bord néon
+    final neonPaint = Paint()
+      ..shader = const LinearGradient(
+        colors: [Color(0xFFE31C4E), Color(0xFFD4AF37), Color(0xFF6B46C1), Color(0xFFE31C4E)],
+      ).createShader(rect)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4;
+    canvas.drawRRect(rrect, neonPaint);
+
+    // Halos néon
+    final glowPaint = Paint()
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
+    for (var i = 0; i < 3; i++) {
+      final cx = w * (0.25 + i * 0.25);
+      glowPaint.shader = RadialGradient(
+        colors: [
+          [const Color(0xFFE31C4E), const Color(0xFFD4AF37), const Color(0xFF6B46C1)][i]
+              .withOpacity(evening ? 0.6 : 0.25),
+          Colors.transparent,
+        ],
+      ).createShader(Rect.fromCircle(center: Offset(cx, h / 2), radius: 70));
+      canvas.drawCircle(Offset(cx, h / 2), 70, glowPaint);
+    }
+
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _DancePainter oldDelegate) => oldDelegate.evening != evening;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2646,7 +2839,7 @@ class _ChairView extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DÉCORS 3D (inclut NOUVEAUTÉS v3 : photobooth, wishingTree, fountain, floralArch)
+// DÉCORS 3D
 // ═══════════════════════════════════════════════════════════════════════════
 class _DecorView extends StatelessWidget {
   final _Item item;
@@ -2732,7 +2925,6 @@ class _DecorView extends StatelessWidget {
       case _Kind.plant:
         body = _plant(b);
         break;
-      // ─── NOUVEAUTÉS v3 ───────────────────────────────
       case _Kind.photobooth:
         body = _photobooth(b, up, st);
         break;
@@ -3048,12 +3240,215 @@ class _DecorView extends StatelessWidget {
     ];
   }
 
-      List<Widget> _plant(Size b) {
+  List<Widget> _plant(Size b) {
     return [
       _shadow(24, 24, circle: true),
       ..._cuboid(w: 20, h: 20, height: 14, side: const Color(0xFFB45309), top: const Color(0xFF7C4A21), circle: true, step: 7),
       _z(18, Container(width: 30, height: 30, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
       _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
+    ];
+  }
+
+  // ─── NOUVEAUTÉS v3 — méthodes manquantes restaurées ───────────────
+  List<Widget> _photobooth(Size b, double up, double st) {
+    return [
+      _shadow(b.width + 4, b.height + 4),
+      ..._cuboid(
+        w: b.width,
+        h: b.height,
+        height: 80,
+        side: const Color(0xFF7C2D12),
+        top: const Color(0xFF111827),
+        radius: 10,
+        step: st * 4,
+      ),
+      _z(
+        40,
+        Container(
+          width: b.width * 0.6,
+          height: b.height * 0.9,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE11D48), Color(0xFF9F1239), Color(0xFFE11D48)],
+            ),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: _C.gold, width: 1.5),
+          ),
+        ),
+      ),
+      _z(
+        80,
+        Container(
+          width: 18,
+          height: 14,
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(3),
+            border: Border.all(color: _C.gold, width: 1),
+          ),
+        ),
+      ),
+      _z(80, _upright('PHOTOBOOTH', angle: up, size: 8, color: _C.gold, ls: 1.5)),
+    ];
+  }
+
+  List<Widget> _wishingTree(Size b) {
+    return [
+      _shadow(b.width, b.width, circle: true),
+      ..._cuboid(
+        w: 30,
+        h: 30,
+        height: 14,
+        side: const Color(0xFF7C4A21),
+        top: const Color(0xFFB45309),
+        circle: true,
+        step: 7,
+      ),
+      ..._cuboid(
+        w: 8,
+        h: 8,
+        height: 26,
+        base: 14,
+        side: const Color(0xFF78350F),
+        top: const Color(0xFF92400E),
+        radius: 3,
+        step: 8,
+      ),
+      _z(40, Container(width: 50, height: 50, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
+      _z(48, Container(width: 42, height: 42, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
+      _z(56, Container(width: 34, height: 34, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF22C55E)))),
+      for (var i = 0; i < 6; i++)
+        _z(
+          60,
+          Transform.translate(
+            offset: Offset(
+              math.cos(i * math.pi / 3) * 22,
+              math.sin(i * math.pi / 3) * 22,
+            ),
+            child: Container(
+              width: 5,
+              height: 5,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _C.gold,
+                boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.9), blurRadius: 8)],
+              ),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _fountain(Size b, double st) {
+    return [
+      _shadow(b.width, b.width, circle: true),
+      ..._cuboid(
+        w: b.width,
+        h: b.width,
+        height: 16,
+        side: const Color(0xFFCBD5E1),
+        top: const Color(0xFFE2E8F0),
+        circle: true,
+        step: st * 2,
+        rim: _C.blue.withOpacity(0.5),
+      ),
+      _z(
+        16.5,
+        Container(
+          width: b.width - 20,
+          height: b.width - 20,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            gradient: RadialGradient(colors: [
+              const Color(0xFF60A5FA).withOpacity(0.85),
+              const Color(0xFF3B82F6).withOpacity(0.55),
+            ]),
+            border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
+          ),
+        ),
+      ),
+      ..._cuboid(
+        w: 14,
+        h: 14,
+        height: 32,
+        base: 16,
+        side: const Color(0xFF94A3B8),
+        top: const Color(0xFFE2E8F0),
+        circle: true,
+        step: st * 3,
+      ),
+      _z(50, Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF93C5FD)))),
+      for (var i = 0; i < 8; i++)
+        _z(
+          48,
+          Transform.translate(
+            offset: Offset(math.cos(i * math.pi / 4) * 12, math.sin(i * math.pi / 4) * 12),
+            child: Container(
+              width: 3,
+              height: 3,
+              decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF93C5FD)),
+            ),
+          ),
+        ),
+    ];
+  }
+
+  List<Widget> _floralArch(Size b, double up, double st) {
+    Widget post(double dx) => Transform.translate(
+          offset: Offset(dx, 0),
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: _cuboid(
+              w: 10,
+              h: 10,
+              height: 90,
+              side: const Color(0xFF15803D),
+              top: const Color(0xFF22C55E),
+              radius: 4,
+              step: st * 4,
+            ),
+          ),
+        );
+    return [
+      _shadow(b.width, b.height, radius: 10),
+      post(-b.width / 2 + 5),
+      post(b.width / 2 - 5),
+      _z(
+        90,
+        Container(
+          width: b.width,
+          height: 10,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFFE11D48), Color(0xFFF472B6), Color(0xFFE11D48)],
+            ),
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: _C.gold, width: 1.5),
+          ),
+        ),
+      ),
+      for (var i = 0; i < 6; i++)
+        _z(
+          92,
+          Transform.translate(
+            offset: Offset(-b.width / 2 + b.width * i / 5, 0),
+            child: Container(
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: [
+                  const Color(0xFFE11D48),
+                  const Color(0xFFF472B6),
+                  const Color(0xFFFBBF24),
+                  const Color(0xFFF472B6),
+                ][i % 4],
+                boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.5), blurRadius: 4)],
+              ),
+            ),
+          ),
+        ),
     ];
   }
 }
