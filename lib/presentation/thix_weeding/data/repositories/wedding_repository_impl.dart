@@ -95,11 +95,28 @@ class WeddingRepositoryImpl implements WeddingRepository {
 
   @override
   Future<List<String>> getGallery(String weddingId, {int page = 1}) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    return List.generate(
-      20,
-      (i) => 'https://picsum.photos/400/400?random=${page * 20 + i}',
-    );
+    // Photos réelles uploadées par le staff (table thix_weeding_gallery)
+    const pageSize = 30;
+    final from = (page - 1) * pageSize;
+    final to = from + pageSize - 1;
+
+    try {
+      final res = await Supabase.instance.client
+          .from('thix_weeding_gallery')
+          .select('url, image_url')
+          .eq('wedding_id', weddingId)
+          .order('created_at', ascending: false)
+          .range(from, to);
+
+      final list = <String>[];
+      for (final row in List<Map<String, dynamic>>.from(res)) {
+        final u = (row['url'] as String?) ?? (row['image_url'] as String?) ?? '';
+        if (u.trim().isNotEmpty) list.add(u.trim());
+      }
+      return list;
+    } catch (e) {
+      throw Failure('Galerie: ${e.toString()}');
+    }
   }
 
   @override
@@ -118,23 +135,24 @@ class WeddingRepositoryImpl implements WeddingRepository {
 
   @override
   Future<List<GiftItem>> getGifts(String weddingId) async {
-    await Future.delayed(const Duration(milliseconds: 400));
-    return [
-      const GiftItem(
-        id: '1',
-        name: 'Lune de miel',
-        imageUrl: 'https://picsum.photos/200',
-        price: 500000,
-        contributed: 150000,
-      ),
-      const GiftItem(
-        id: '2',
-        name: 'Service à vaisselle',
-        imageUrl: 'https://picsum.photos/200',
-        price: 200000,
-        contributed: 200000,
-      ),
-    ];
+    try {
+      final res = await Supabase.instance.client
+          .from('thix_weeding_gifts')
+          .select()
+          .eq('wedding_id', weddingId)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res).map((e) {
+        return GiftItem(
+          id: e['id']?.toString() ?? '',
+          name: e['name']?.toString() ?? '',
+          imageUrl: (e['image_url'] as String?) ?? '',
+          price: (e['price'] as num?)?.toDouble() ?? 0,
+          contributed: (e['contributed'] as num?)?.toDouble() ?? 0,
+        );
+      }).toList();
+    } catch (e) {
+      throw Failure('Cadeaux: ${e.toString()}');
+    }
   }
 
   @override
