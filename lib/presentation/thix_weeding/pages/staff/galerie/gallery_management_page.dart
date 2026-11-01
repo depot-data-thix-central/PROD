@@ -1261,7 +1261,7 @@ class _FullScreenViewerState extends State<_FullScreenViewer> {
                           ),
                           const SizedBox(width: 10),
                           Text(
-                            _fmtDate(currentMedia.createdAt),
+                            _fmtDate(currentMedia.createdAt ?? DateTime.now()),
                             style: GoogleFonts.inter(
                               fontSize: 11,
                               color: Colors.white70,
