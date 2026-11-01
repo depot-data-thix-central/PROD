@@ -6,7 +6,7 @@
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
 // ✅ Sécurité + Rate limiting
-// ✅ FIX : Ordre des filtres Supabase (filtres AVANT order/range)
+// ✅ FIX : Correction du nom des tables (weeding au lieu de wedding)
 // ============================================================================
 
 import 'dart:math';
@@ -39,7 +39,7 @@ class ProviderService {
       
       // Vérifier si le code existe déjà
       final result = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .select('id')
           .eq('unique_code', code)
           .maybeSingle();
@@ -65,7 +65,7 @@ class ProviderService {
   }) async {
     try {
       // ✅ CONSTRUIRE la requête avec TOUS les filtres d'abord
-      var query = _client.from('thix_wedding_providers').select('*');
+      var query = _client.from('thix_weeding_providers').select('*'); // ✅ FIX: weeding
       
       // ✅ Appliquer les filtres (retournent PostgrestFilterBuilder)
       if (category != null) {
@@ -103,7 +103,7 @@ class ProviderService {
   Future<ThixProviderModel?> getProviderById(String id) async {
     try {
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .select('*')
           .eq('id', id)
           .maybeSingle();
@@ -122,7 +122,7 @@ class ProviderService {
   Future<ThixProviderModel?> getProviderByCode(String code) async {
     try {
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .select('*')
           .eq('unique_code', code.toUpperCase())
           .maybeSingle();
@@ -140,7 +140,7 @@ class ProviderService {
   Future<ThixProviderModel?> getProviderByUserId(String userId) async {
     try {
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .select('*')
           .eq('user_id', userId)
           .maybeSingle();
@@ -202,7 +202,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .insert(data)
           .select()
           .single();
@@ -262,7 +262,7 @@ class ProviderService {
       if (requirements != null) data['requirements'] = requirements;
       
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .update(data)
           .eq('id', id)
           .select()
@@ -301,7 +301,7 @@ class ProviderService {
       }
       
       final response = await _client
-          .from('thix_wedding_providers')
+          .from('thix_weeding_providers') // ✅ FIX: weeding
           .update(data)
           .eq('id', id)
           .select()
@@ -318,7 +318,7 @@ class ProviderService {
   // ═══════════════════════════════════════════════════════════════════════════
   Future<void> deleteProvider(String id) async {
     try {
-      await _client.from('thix_wedding_providers').delete().eq('id', id);
+      await _client.from('thix_weeding_providers').delete().eq('id', id); // ✅ FIX: weeding
     } catch (e) {
       throw Exception('Erreur lors de la suppression du prestataire: $e');
     }
@@ -360,7 +360,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_wedding_provider_reservations')
+          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
           .insert(data)
           .select()
           .single();
@@ -380,7 +380,7 @@ class ProviderService {
     try {
       // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
-          .from('thix_wedding_provider_reservations')
+          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
           .select('*')
           .eq('provider_id', providerId);
       
@@ -412,7 +412,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_wedding_provider_reservations')
+          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
           .update(data)
           .eq('id', reservationId)
           .select()
@@ -453,7 +453,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_wedding_provider_tasks')
+          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
           .insert(data)
           .select()
           .single();
@@ -473,7 +473,7 @@ class ProviderService {
     try {
       // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
-          .from('thix_wedding_provider_tasks')
+          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
           .select('*')
           .eq('provider_id', providerId);
       
@@ -508,7 +508,7 @@ class ProviderService {
       }
       
       final response = await _client
-          .from('thix_wedding_provider_tasks')
+          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
           .update(data)
           .eq('id', taskId)
           .select()
@@ -528,12 +528,12 @@ class ProviderService {
   Future<Map<String, dynamic>> getProviderStats(String providerId) async {
     try {
       final reservations = await _client
-          .from('thix_wedding_provider_reservations')
+          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
           .select('status, total_price')
           .eq('provider_id', providerId);
       
       final tasks = await _client
-          .from('thix_wedding_provider_tasks')
+          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
           .select('status')
           .eq('provider_id', providerId);
       
