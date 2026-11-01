@@ -1,8 +1,29 @@
 // lib/presentation/thix_weeding/pages/guest/guest_home_page.dart
+// ============================================================================
+// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v2)
+// ✅ Entête verre dépoli + photo plein écran + feuille blanche arrondie
+// ✅ Synchronisé en direct avec le staff (mariage, invité, table, places, annonces)
+// ✅ Carte "Ma place" + état de l'invitation (désactivée = bannière)
+// ✅ Nouveaux boutons : Menu, Playlist, Ma table, Navette, Dress code
+// ✅ Design premium rose + glassflou
+// ============================================================================
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show
+        Supabase,
+        RealtimeChannel,
+        PostgresChangeEvent,
+        PostgresChangeFilter,
+        PostgresChangeFilterType;
+
 import '../../core/failure.dart';
 import '../../providers/wedding_provider.dart';
 import '../../providers/countdown_provider.dart';
@@ -10,43 +31,45 @@ import '../../data/repositories/wedding_repository_impl.dart';
 import '../../domain/entities/wedding_entity.dart';
 import '../staff/providers/thix_weeding_providers.dart';
 import '../staff/models/thix_weeding_models.dart';
+import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 
 part 'guest_home_page.g.dart';
 
 // ============================================================
-// PALETTE — Charte THIX MARIAGE (Amour & Élégance / Lumineux)
+// PALETTE — Charte THIX WEDDING (rose premium / verre dépoli)
 // ============================================================
 class _P {
-  static const bg = Color(0xFFFFFBFC); // Blanc légèrement rosé, très lumineux
+  static const bg = Color(0xFFFFFBFC);
   static const surface = Colors.white;
-  static const primary = Color(0xFFE31C4E); // Rouge passion / Rose profond
-  static const primarySoft = Color(0xFFFFE3EA); // Rose pâle très clair
-  static const secondary = Color(0xFFFF7A9C); // Rose vif complémentaire
-  static const accent = Color(0xFFD4AF37); // Or premium / Champagne
+  static const primary = Color(0xFFD81B60);
+  static const primaryDark = Color(0xFFAD1457);
+  static const primarySoft = Color(0xFFFCE4EC);
+  static const rosePale = Color(0xFFFFF5F8);
+  static const accent = Color(0xFFD4AF37);
   static const accentSoft = Color(0xFFFDF6E3);
 
-  static const ink = Color(0xFF241521); // Texte principal, brun-noir chaleureux
-  static const inkSoft = Color(0xFF8A7580); // Texte secondaire rosé-gris
-  static const border = Color(0xFFF3E1E6); // Bordures très douces
+  static const ink = Color(0xFF241521);
+  static const inkSoft = Color(0xFF8A7580);
+  static const border = Color(0xFFF3E1E6);
+  static const green = Color(0xFF059669);
 
   static const gradPrimary = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFE31C4E), Color(0xFFFF6B8B)],
+    colors: [Color(0xFFE91E78), Color(0xFFC2185B)],
   );
 
-  // Ombre douce, lumineuse, "flottante"
   static final shadow = [
     BoxShadow(
-      color: const Color(0xFFE31C4E).withOpacity(0.06),
-      blurRadius: 16,
-      offset: const Offset(0, 6),
+      color: const Color(0xFFD81B60).withOpacity(0.10),
+      blurRadius: 18,
+      offset: const Offset(0, 8),
     )
   ];
 }
 
 // ============================================================
-// MODELE STATIQUE DES TUILES DU MENU INVITE
+// MODELE DES TUILES DU MENU INVITÉ
 // ============================================================
 enum _BadgeType { none, alert, count, live }
 
@@ -54,35 +77,42 @@ class _GuestMenuItem {
   final String title;
   final String subtitle;
   final IconData icon;
-  final Color color;
   final String route;
   final _BadgeType badgeType;
-  final int? badgeCount;
 
   const _GuestMenuItem({
     required this.title,
     required this.subtitle,
     required this.icon,
-    required this.color,
     required this.route,
     this.badgeType = _BadgeType.none,
-    this.badgeCount,
   });
 }
 
+// 16 boutons = 4 lignes de 4
 const List<_GuestMenuItem> _kGuestMenu = [
-  _GuestMenuItem(title: 'Invitation', subtitle: 'Voir les détails', icon: Icons.mail_outline_rounded, color: _P.primary, route: 'invitation'),
-  _GuestMenuItem(title: 'Programme', subtitle: 'Déroulé de la journée', icon: Icons.event_note_outlined, color: _P.primary, route: 'programme'),
-  _GuestMenuItem(title: 'Lieu & Accès', subtitle: 'Itinéraire & infos', icon: Icons.location_on_outlined, color: _P.primary, route: 'lieu'),
-  _GuestMenuItem(title: 'RSVP', subtitle: 'Confirmer présence', icon: Icons.people_alt_outlined, color: _P.primary, route: 'rsvp', badgeType: _BadgeType.alert),
-  _GuestMenuItem(title: 'Cadeaux', subtitle: 'Voir & contribuer', icon: Icons.card_giftcard_outlined, color: _P.primary, route: 'cadeaux'),
-  _GuestMenuItem(title: 'Galerie', subtitle: 'Photos & vidéos', icon: Icons.photo_library_outlined, color: _P.primary, route: 'galerie'),
-  _GuestMenuItem(title: 'Livre d\'or', subtitle: 'Laisser un message', icon: Icons.edit_outlined, color: _P.primary, route: 'livre-or'),
-  _GuestMenuItem(title: 'Live', subtitle: 'Suivre en direct', icon: Icons.podcasts_outlined, color: _P.primary, route: 'live', badgeType: _BadgeType.live),
-  _GuestMenuItem(title: 'Annonces', subtitle: 'Infos importantes', icon: Icons.campaign_outlined, color: _P.primary, route: 'annonces', badgeType: _BadgeType.count, badgeCount: 3),
-  _GuestMenuItem(title: 'FAQ', subtitle: 'Vos questions', icon: Icons.help_outline_rounded, color: _P.primary, route: 'faq'),
-  _GuestMenuItem(title: 'Remerciements', subtitle: 'Un mot pour vous', icon: Icons.volunteer_activism_outlined, color: _P.primary, route: 'remerciements'),
-  _GuestMenuItem(title: 'Plus', subtitle: 'Autres options', icon: Icons.more_horiz_rounded, color: _P.primary, route: 'plus'),
+  _GuestMenuItem(title: 'Invitation', subtitle: 'Votre carte & QR code', icon: Icons.mail_outline_rounded, route: 'invitation'),
+  _GuestMenuItem(title: 'Programme', subtitle: 'Déroulé de la journée', icon: Icons.event_note_outlined, route: 'programme'),
+  _GuestMenuItem(title: 'Lieu & Accès', subtitle: 'Itinéraire & infos', icon: Icons.location_on_outlined, route: 'lieu'),
+  _GuestMenuItem(title: 'RSVP', subtitle: 'Confirmer votre présence', icon: Icons.people_alt_outlined, route: 'rsvp', badgeType: _BadgeType.alert),
+  _GuestMenuItem(title: 'Menu', subtitle: 'Repas & boissons', icon: Icons.restaurant_menu_rounded, route: 'menu'),
+  _GuestMenuItem(title: 'Playlist', subtitle: 'Proposer vos titres', icon: Icons.queue_music_rounded, route: 'playlist'),
+  _GuestMenuItem(title: 'Ma table', subtitle: 'Votre table & voisins', icon: Icons.table_restaurant_outlined, route: 'ma-table'),
+  _GuestMenuItem(title: 'Cadeaux', subtitle: 'Voir & contribuer', icon: Icons.card_giftcard_outlined, route: 'cadeaux'),
+  _GuestMenuItem(title: 'Galerie', subtitle: 'Photos & vidéos', icon: Icons.photo_library_outlined, route: 'galerie'),
+  _GuestMenuItem(title: 'Livre d\'or', subtitle: 'Laisser un message', icon: Icons.menu_book_outlined, route: 'livre-or'),
+  _GuestMenuItem(title: 'Live', subtitle: 'Suivre en direct', icon: Icons.podcasts_outlined, route: 'live', badgeType: _BadgeType.live),
+  _GuestMenuItem(title: 'Annonces', subtitle: 'Infos importantes', icon: Icons.campaign_outlined, route: 'annonces', badgeType: _BadgeType.count),
+  _GuestMenuItem(title: 'Navette', subtitle: 'Transport & horaires', icon: Icons.directions_bus_outlined, route: 'navette'),
+  _GuestMenuItem(title: 'Dress code', subtitle: 'Tenue souhaitée', icon: Icons.checkroom_outlined, route: 'dress-code'),
+  _GuestMenuItem(title: 'FAQ', subtitle: 'Vos questions', icon: Icons.help_outline_rounded, route: 'faq'),
+  _GuestMenuItem(title: 'Plus', subtitle: 'Autres options', icon: Icons.grid_view_rounded, route: 'plus'),
+];
+
+// Rubriques supplémentaires (feuille « Plus »)
+const List<_GuestMenuItem> _kExtraMenu = [
+  _GuestMenuItem(title: 'Remerciements', subtitle: 'Un mot pour vous', icon: Icons.volunteer_activism_outlined, route: 'remerciements'),
+  _GuestMenuItem(title: 'Prestataires', subtitle: 'Ceux qui font la fête', icon: Icons.storefront_outlined, route: 'prestataires'),
 ];
 
 // ============================================================
@@ -132,345 +162,811 @@ class GuestHomePage extends ConsumerStatefulWidget {
 }
 
 class _GuestHomePageState extends ConsumerState<GuestHomePage> {
+  final _scroll = ScrollController();
+
+  // Invité connecté (lié au compte)
+  Map<String, dynamic>? _guest;
+  String _hallLabel = '';
+  List<int> _seats = [];
+
+  // Temps réel
+  RealtimeChannel? _channel;
+  Timer? _debounce;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGuest();
+    _subscribe();
+  }
+
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    if (_channel != null) Supabase.instance.client.removeChannel(_channel!);
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  // ───────────────────────── DONNÉES INVITÉ ─────────────────────────
+  Future<void> _loadGuest() async {
+    try {
+      final supa = Supabase.instance.client;
+      final user = supa.auth.currentUser;
+      if (user == null) return;
+      final g = await supa
+          .from('thix_weeding_guests')
+          .select(
+              'id, name, guests_count, is_vip, group_name, table_number, hall_table_id, seat_indices, invitation_active, rsvp_status')
+          .eq('wedding_id', widget.weddingId)
+          .eq('user_id', user.id)
+          .maybeSingle();
+      if (g == null) {
+        if (mounted) setState(() => _guest = null);
+        return;
+      }
+      final guest = Map<String, dynamic>.from(g);
+      var label = '';
+      final hid = guest['hall_table_id'];
+      if (hid != null) {
+        final t = await supa
+            .from('thix_weeding_hall_items')
+            .select('label')
+            .eq('id', hid)
+            .maybeSingle();
+        label = (t?['label'] as String?) ?? '';
+      }
+      final seats = ((guest['seat_indices'] as List?) ?? const [])
+          .map((e) => (e as num).toInt())
+          .toList()
+        ..sort();
+      if (!mounted) return;
+      setState(() {
+        _guest = guest;
+        _hallLabel = label;
+        _seats = seats;
+      });
+    } catch (_) {
+      // on garde l'affichage actuel
+    }
+  }
+
+  void _subscribe() {
+    final supa = Supabase.instance.client;
+    PostgresChangeFilter byWedding(String col) => PostgresChangeFilter(
+          type: PostgresChangeFilterType.eq,
+          column: col,
+          value: widget.weddingId,
+        );
+    _channel = supa
+        .channel('guest-home-${widget.weddingId}')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'thix_weeding_weddings',
+          filter: byWedding('id'),
+          callback: (_) => _scheduleRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'thix_weeding_guests',
+          filter: byWedding('wedding_id'),
+          callback: (_) => _scheduleRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'thix_weeding_hall_items',
+          filter: byWedding('wedding_id'),
+          callback: (_) => _scheduleRefresh(),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'thix_weeding_messages',
+          filter: byWedding('wedding_id'),
+          callback: (_) => _scheduleRefresh(),
+        )
+        .subscribe();
+  }
+
+  void _scheduleRefresh() {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 700), () {
+      if (!mounted) return;
+      _invalidateAll();
+      _loadGuest();
+    });
+  }
+
+  void _invalidateAll() {
+    final id = widget.weddingId;
+    ref.invalidate(guestWeddingProvider(id));
+    ref.invalidate(guestEventStatsProvider(id));
+    ref.invalidate(guestVendorsProvider(id));
+    ref.invalidate(guestUpdatesProvider(id));
+    ref.invalidate(guestsProvider(id));
+    ref.invalidate(messagesProvider(id));
+  }
+
   Future<void> _onRefresh() async {
-    ref.invalidate(guestWeddingProvider(widget.weddingId));
-    ref.invalidate(guestEventStatsProvider(widget.weddingId));
-    ref.invalidate(guestVendorsProvider(widget.weddingId));
-    ref.invalidate(guestUpdatesProvider(widget.weddingId));
+    _invalidateAll();
+    await _loadGuest();
     await ref.read(guestWeddingProvider(widget.weddingId).future);
   }
 
-  void _onTapGeneric(dynamic item) {
-    final label = item is VendorModel 
-        ? item.name 
-        : (item is MessageModel ? 'Annonce officielle' : 'Information');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Détail $label bientôt disponible')),
-    );
+  // ───────────────────────── GETTERS ─────────────────────────
+  bool get _invitationActive => _guest == null || _guest!['invitation_active'] != false;
+
+  bool get _rsvpPending {
+    final s = ((_guest?['rsvp_status'] as String?) ?? '').toLowerCase();
+    return s.isEmpty || s == 'pending' || s == 'waiting';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final weddingAsync = ref.watch(guestWeddingProvider(widget.weddingId));
-    final statsAsync = ref.watch(guestEventStatsProvider(widget.weddingId));
-    final vendorsAsync = ref.watch(guestVendorsProvider(widget.weddingId));
-    final updatesAsync = ref.watch(guestUpdatesProvider(widget.weddingId));
+  String get _firstName {
+    final n = ((_guest?['name'] as String?) ?? '').trim();
+    if (n.isEmpty) return 'Invité(e)';
+    return n.split(' ').first;
+  }
 
-    return Scaffold(
-      backgroundColor: _P.bg,
-      body: RefreshIndicator(
-        color: _P.primary,
-        onRefresh: _onRefresh,
-        child: weddingAsync.when(
-          data: (wedding) {
-            final countdownState = ref.watch(countdownProvider(wedding.date)).value;
+  String get _tableName {
+    if (_hallLabel.isNotEmpty) return _hallLabel;
+    final tn = _guest?['table_number'];
+    return tn != null ? 'Table $tn' : '';
+  }
 
-            return CustomScrollView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              slivers: [
-                // HEADER — Bonjour Invité / menu / langue / avatar
-                SliverToBoxAdapter(
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                      child: _GuestHeader(),
-                    ),
+  void _go(String route) {
+    HapticFeedback.selectionClick();
+    if (route == 'plus') {
+      _openMore();
+      return;
+    }
+    context.push('/thix-weeding/guest/${widget.weddingId}/$route');
+  }
+
+  // ───────────────────────── SHEETS ─────────────────────────
+  void _openMore() {
+    final all = [..._kGuestMenu.where((e) => e.route != 'plus'), ..._kExtraMenu];
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(12),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.78),
+          child: ThixGlass(
+            radius: 30,
+            opacity: 0.72,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 42,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: _P.inkSoft.withOpacity(0.35),
+                    borderRadius: BorderRadius.circular(2),
                   ),
                 ),
-
-                // HERO COUPLE
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: _CoupleHero(
-                      coupleNames: wedding.coupleNames,
-                      welcomeMessage: wedding.welcomeMessage,
-                      coverImageUrl: wedding.coverImageUrl,
-                      countdownState: countdownState,
-                    ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text('Toutes les rubriques',
+                      style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w800, color: _P.ink)),
+                ),
+                const SizedBox(height: 6),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: all.length,
+                    itemBuilder: (_, i) {
+                      final it = all[i];
+                      return ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        leading: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: const BoxDecoration(color: _P.primarySoft, shape: BoxShape.circle),
+                          child: Icon(it.icon, color: _P.primary, size: 22),
+                        ),
+                        title: Text(it.title,
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: _P.ink, fontSize: 14)),
+                        subtitle: Text(it.subtitle,
+                            style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft)),
+                        trailing: const Icon(Icons.chevron_right_rounded, color: _P.primary),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          _go(it.route);
+                        },
+                      );
+                    },
                   ),
                 ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // EN UN COUP D'OEIL
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'En un coup d\'œil'),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                SliverToBoxAdapter(
-                  child: statsAsync.when(
-                    data: (stats) => _StatsRow(stats: stats),
-                    loading: () => const SizedBox(height: 90),
-                    error: (_, __) => const SizedBox(),
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // GRILLE MENU — Style petits boutons ronds (4 colonnes)
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Toutes les rubriques'),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  sliver: SliverGrid(
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 4,
-                      mainAxisSpacing: 20,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 0.8, // Ratio adapté pour laisser de la place au texte en dessous
-                    ),
-                    delegate: SliverChildBuilderDelegate(
-                      (context, index) {
-                        final item = _kGuestMenu[index];
-                        return _GuestMenuTile(
-                          item: item,
-                          onTap: () => context.push('/thix-weeding/guest/${widget.weddingId}/${item.route}'),
-                        );
-                      },
-                      childCount: _kGuestMenu.length,
-                    ),
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // NOS PRESTATAIRES
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Nos prestataires'),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                SliverToBoxAdapter(
-                  child: vendorsAsync.when(
-                    data: (vendors) => _VendorsList(vendors: vendors, onTap: _onTapGeneric),
-                    loading: () => const SizedBox(height: 220, child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary))),
-                    error: (_, __) => const SizedBox(),
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // INFOS PRATIQUES
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _SectionHeader(title: 'Infos pratiques & Annonces'),
-                  ),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                SliverToBoxAdapter(
-                  child: updatesAsync.when(
-                    data: (items) => _UpdatesList(items: items, onTap: _onTapGeneric),
-                    loading: () => const SizedBox(height: 160, child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary))),
-                    error: (_, __) => const SizedBox(),
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 32)),
-
-                // BANDEAU ANNONCE PRINCIPALE
-                if (wedding.hasAnnouncement) ...[
-                  SliverToBoxAdapter(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: _NewsBanner(text: wedding.announcement),
-                    ),
-                  ),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                ],
-
-                // BANDEAU DE CONFIANCE
-                const SliverToBoxAdapter(
-                  child: Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 16),
-                    child: _TrustRow(),
-                  ),
-                ),
-
-                const SliverToBoxAdapter(child: SizedBox(height: 100)),
               ],
-            );
-          },
-          loading: () => const CustomScrollView(
-            slivers: [SliverFillRemaining(child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)))],
-          ),
-          error: (e, _) => CustomScrollView(
-            slivers: [SliverFillRemaining(child: Center(child: _ErrorView(error: e, weddingId: widget.weddingId)))],
+            ),
           ),
         ),
       ),
-      bottomNavigationBar: _GuestBottomNav(),
     );
   }
-}
 
-// ============================================================
-// HEADER
-// ============================================================
-class _GuestHeader extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        _RoundIconButton(icon: Icons.menu_rounded, onTap: () {}),
-        const SizedBox(width: 12),
-        const Expanded(
+  void _showDetail(dynamic item) {
+    String title = 'Information';
+    String subtitle = '';
+    String body = '';
+    IconData icon = Icons.info_outline_rounded;
+    if (item is VendorModel) {
+      title = item.name;
+      subtitle = item.category;
+      body = item.contactName ?? 'Contact à venir';
+      icon = Icons.storefront_outlined;
+    } else if (item is MessageModel) {
+      title = 'Annonce officielle';
+      subtitle = item.senderName;
+      body = item.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), '');
+      icon = Icons.campaign_outlined;
+    }
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(12),
+        child: ThixGlass(
+          radius: 28,
+          opacity: 0.72,
+          padding: const EdgeInsets.all(20),
           child: Column(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Bonjour 👋', style: TextStyle(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w500)),
-              Text('Invité(e)', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _P.ink)),
-            ],
-          ),
-        ),
-        _RoundIconButton(
-          onTap: () {},
-          child: const Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.language_rounded, size: 16, color: _P.primary),
-              Text('FR', style: TextStyle(fontSize: 9, fontWeight: FontWeight.w700, color: _P.primary)),
-            ],
-          ),
-        ),
-        const SizedBox(width: 12),
-        Stack(
-          clipBehavior: Clip.none,
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(shape: BoxShape.circle, color: _P.surface, boxShadow: _P.shadow),
-              child: const Icon(Icons.person_rounded, color: _P.inkSoft, size: 22),
-            ),
-            Positioned(
-              top: -2,
-              right: -2,
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(color: _P.accent, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 2)),
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(11),
+                    decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
+                    child: Icon(icon, color: Colors.white, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(title,
+                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
+                        if (subtitle.isNotEmpty)
+                          Text(subtitle,
+                              style: GoogleFonts.inter(fontSize: 12, color: _P.primary, fontWeight: FontWeight.w700)),
+                      ],
+                    ),
+                  ),
+                ],
               ),
+              const SizedBox(height: 14),
+              Text(body, style: GoogleFonts.inter(fontSize: 14, color: _P.ink, height: 1.45)),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────── BUILD ─────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final weddingAsync = ref.watch(guestWeddingProvider(widget.weddingId));
+    final statsAsync = ref.watch(guestStatsAsync);
+    final vendorsAsync = ref.watch(guestVendorsProvider(widget.weddingId));
+    final updatesAsync = ref.watch(guestUpdatesProvider(widget.weddingId));
+    final bottom = MediaQuery.of(context).padding.bottom;
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: weddingAsync.when(
+              data: (wedding) {
+                final countdown = ref.watch(countdownProvider(wedding.date)).value;
+                return _content(
+                  wedding: wedding,
+                  countdown: countdown,
+                  statsAsync: statsAsync,
+                  vendorsAsync: vendorsAsync,
+                  updatesAsync: updatesAsync,
+                );
+              },
+              loading: () => const Center(
+                child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary),
+              ),
+              error: (e, _) => Center(child: _ErrorView(error: e, onRetry: _invalidateAll)),
             ),
-          ],
+          ),
+          Positioned(top: 0, left: 0, right: 0, child: _glassHeader(context)),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 12 + bottom,
+            child: _GlassNav(
+              onHome: () => _scroll.animateTo(0,
+                  duration: const Duration(milliseconds: 380), curve: Curves.easeOut),
+              onAgenda: () => _go('programme'),
+              onHeart: () => _go('invitation'),
+              onMessages: () => _go('annonces'),
+              onProfile: _openMore,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ProviderListenable<AsyncValue<Map<String, int>>> get guestStatsAsync =>
+      guestEventStatsProvider(widget.weddingId);
+
+  // ───────────────────────── ENTÊTE VERRE DÉPOLI ─────────────────────────
+  Widget _glassHeader(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top;
+    return ClipRect(
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+        child: Container(
+          padding: EdgeInsets.only(top: top),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.38),
+            border: Border(
+              bottom: BorderSide(color: Colors.white.withOpacity(0.75), width: 1.2),
+            ),
+          ),
+          child: SizedBox(
+            height: 74,
+            child: Row(
+              children: [
+                const SizedBox(width: 14),
+                Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: _P.gradPrimary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(
+                        color: _P.primary.withOpacity(0.35),
+                        blurRadius: 14,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
+                  child: const Icon(Icons.favorite, color: Colors.white, size: 26),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    'THIX WEDDING',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 2.2,
+                      color: const Color(0xFF3B3B44).withOpacity(0.68),
+                    ),
+                  ),
+                ),
+                _GlassCircleBtn(
+                  onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Langue : Français (autres langues bientôt)'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.language_rounded, size: 15, color: _P.primary),
+                      Text('FR',
+                          style: GoogleFonts.inter(
+                              fontSize: 8.5, fontWeight: FontWeight.w900, color: _P.primary)),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _GlassCircleBtn(
+                  onTap: _openMore,
+                  child: const Icon(Icons.menu_rounded, size: 21, color: _P.primary),
+                ),
+                const SizedBox(width: 14),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ───────────────────────── CONTENU ─────────────────────────
+  Widget _content({
+    required WeddingEntity wedding,
+    required CountdownState? countdown,
+    required AsyncValue<Map<String, int>> statsAsync,
+    required AsyncValue<List<VendorModel>> vendorsAsync,
+    required AsyncValue<List<MessageModel>> updatesAsync,
+  }) {
+    final mq = MediaQuery.of(context);
+    final headerH = mq.padding.top + 74;
+    final contentH = (mq.size.height * 0.52).clamp(400.0, 540.0).toDouble();
+    final photoH = contentH + 44;
+    final annCount = updatesAsync.value?.length ?? 0;
+
+    return Stack(
+      children: [
+        // PHOTO PLEIN ÉCRAN (fixe)
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: photoH,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              Image.network(
+                wedding.coverImageUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(gradient: _P.gradPrimary),
+                  child: Center(
+                    child: Icon(Icons.favorite, size: 90, color: Colors.white.withOpacity(0.2)),
+                  ),
+                ),
+              ),
+              DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.white.withOpacity(0.10),
+                      Colors.transparent,
+                      const Color(0xFF3A0A18).withOpacity(0.55),
+                    ],
+                    stops: const [0.0, 0.4, 1.0],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // CONTENU QUI DÉFILE
+        RefreshIndicator(
+          color: _P.primary,
+          edgeOffset: headerH,
+          onRefresh: _onRefresh,
+          child: ListView(
+            controller: _scroll,
+            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+            padding: EdgeInsets.zero,
+            children: [
+              SizedBox(
+                height: contentH,
+                child: Padding(
+                  padding: EdgeInsets.fromLTRB(18, headerH + 12, 18, 6),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _GreetingChip(
+                        name: _firstName,
+                        vip: _guest?['is_vip'] == true,
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        wedding.coupleNames,
+                        style: GoogleFonts.playfairDisplay(
+                          fontSize: 34,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          height: 1.1,
+                          shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 14)],
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        wedding.welcomeMessage,
+                        maxLines: 3,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                          color: Colors.white,
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w500,
+                          shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 10)],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      _CountdownCard(state: countdown),
+                    ],
+                  ),
+                ),
+              ),
+
+              // FEUILLE BLANCHE ARRONDIE
+              Container(
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.white, _P.rosePale],
+                  ),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.12),
+                      blurRadius: 26,
+                      offset: const Offset(0, -6),
+                    ),
+                  ],
+                ),
+                padding: EdgeInsets.fromLTRB(16, 26, 16, 130 + mq.padding.bottom),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (!_invitationActive) ...[
+                      _DisabledBanner(),
+                      const SizedBox(height: 16),
+                    ],
+                    _placeCard(),
+                    if (_guest != null) const SizedBox(height: 26),
+
+                    const _SectionHeader(title: 'En un coup d\'œil'),
+                    const SizedBox(height: 14),
+                    statsAsync.when(
+                      data: (stats) => _StatsRow(stats: stats),
+                      loading: () => const SizedBox(height: 96),
+                      error: (_, __) => const SizedBox(),
+                    ),
+
+                    const SizedBox(height: 28),
+                    const _SectionHeader(title: 'Toutes les rubriques'),
+                    const SizedBox(height: 16),
+                    GridView.builder(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _kGuestMenu.length,
+                      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4,
+                        mainAxisSpacing: 18,
+                        crossAxisSpacing: 8,
+                        childAspectRatio: 0.78,
+                      ),
+                      itemBuilder: (context, index) {
+                        final item = _kGuestMenu[index];
+                        var type = item.badgeType;
+                        int? count;
+                        if (item.route == 'rsvp') {
+                          type = _rsvpPending ? _BadgeType.alert : _BadgeType.none;
+                        } else if (item.route == 'annonces') {
+                          count = annCount;
+                          type = annCount > 0 ? _BadgeType.count : _BadgeType.none;
+                        }
+                        return _GuestMenuTile(
+                          item: item,
+                          badge: type,
+                          badgeCount: count,
+                          onTap: () => _go(item.route),
+                        );
+                      },
+                    ),
+
+                    const SizedBox(height: 28),
+                    const _SectionHeader(title: 'Nos prestataires'),
+                    const SizedBox(height: 14),
+                    vendorsAsync.when(
+                      data: (vendors) => _VendorsList(vendors: vendors, onTap: _showDetail),
+                      loading: () => const SizedBox(
+                        height: 220,
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
+                      ),
+                      error: (_, __) => const SizedBox(),
+                    ),
+
+                    const SizedBox(height: 28),
+                    const _SectionHeader(title: 'Infos pratiques & Annonces'),
+                    const SizedBox(height: 14),
+                    updatesAsync.when(
+                      data: (items) => _UpdatesList(items: items, onTap: _showDetail),
+                      loading: () => const SizedBox(
+                        height: 160,
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
+                      ),
+                      error: (_, __) => const SizedBox(),
+                    ),
+
+                    if (wedding.hasAnnouncement) ...[
+                      const SizedBox(height: 22),
+                      _NewsBanner(text: wedding.announcement),
+                    ],
+
+                    const SizedBox(height: 24),
+                    _HelpCard(onTap: () => _go('faq')),
+                    const SizedBox(height: 20),
+                    const _TrustRow(),
+                  ],
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );
   }
-}
 
-class _RoundIconButton extends StatelessWidget {
-  final IconData? icon;
-  final Widget? child;
-  final VoidCallback onTap;
-  const _RoundIconButton({this.icon, this.child, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(color: _P.surface, shape: BoxShape.circle, boxShadow: _P.shadow),
-        child: Center(child: child ?? Icon(icon, size: 20, color: _P.primary)),
+  // ───────────────────────── CARTE "MA PLACE" ─────────────────────────
+  Widget _placeCard() {
+    final g = _guest;
+    if (g == null || !_invitationActive) return const SizedBox.shrink();
+    final has = _tableName.isNotEmpty;
+    final persons = (g['guests_count'] as num?)?.toInt() ?? 1;
+    return ThixGlass(
+      radius: 26,
+      opacity: 0.55,
+      borderColor: _P.primary.withOpacity(0.22),
+      padding: const EdgeInsets.all(16),
+      onTap: () => _go('invitation'),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(
+                  gradient: _P.gradPrimary,
+                  borderRadius: BorderRadius.circular(15),
+                  boxShadow: [
+                    BoxShadow(color: _P.primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 5)),
+                  ],
+                ),
+                child: const Icon(Icons.event_seat_rounded, color: Colors.white, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('VOTRE PLACE',
+                        style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.8,
+                            color: _P.inkSoft)),
+                    const SizedBox(height: 2),
+                    Text(
+                      has ? _tableName : 'En cours d\'attribution',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink),
+                    ),
+                    Text('$persons personne${persons > 1 ? 's' : ''}',
+                        style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: _P.primarySoft,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.qr_code_2_rounded, size: 18, color: _P.primary),
+                    const SizedBox(width: 4),
+                    Text('QR',
+                        style: GoogleFonts.inter(
+                            fontSize: 11, fontWeight: FontWeight.w900, color: _P.primary)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (has && _seats.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: _seats
+                  .map((s) => Container(
+                        width: 38,
+                        height: 38,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.85),
+                          shape: BoxShape.circle,
+                          border: Border.all(color: _P.primary, width: 2),
+                          boxShadow: [
+                            BoxShadow(color: _P.primary.withOpacity(0.22), blurRadius: 8, offset: const Offset(0, 3)),
+                          ],
+                        ),
+                        child: Text('${s + 1}',
+                            style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w900, fontSize: 14, color: _P.primary)),
+                      ))
+                  .toList(),
+            ),
+          ] else if (!has)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Votre table et votre place apparaîtront ici dès que les mariés les auront choisies.',
+                style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4),
+              ),
+            ),
+        ],
       ),
     );
   }
 }
 
 // ============================================================
-// HERO COUPLE + COUNTDOWN
+// PETITS WIDGETS D'ENTÊTE
 // ============================================================
-class _CoupleHero extends StatelessWidget {
-  final String coupleNames;
-  final String welcomeMessage;
-  final String coverImageUrl;
-  final CountdownState? countdownState;
-
-  const _CoupleHero({
-    required this.coupleNames,
-    required this.welcomeMessage,
-    required this.coverImageUrl,
-    required this.countdownState,
-  });
+class _GlassCircleBtn extends StatelessWidget {
+  final Widget child;
+  final VoidCallback onTap;
+  const _GlassCircleBtn({required this.child, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(28),
-      child: Stack(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 42,
+        height: 42,
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.55),
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
+          boxShadow: _P.shadow,
+        ),
+        child: Center(child: child),
+      ),
+    );
+  }
+}
+
+class _GreetingChip extends StatelessWidget {
+  final String name;
+  final bool vip;
+  const _GreetingChip({required this.name, required this.vip});
+
+  @override
+  Widget build(BuildContext context) {
+    return ThixGlass(
+      radius: 22,
+      blur: 14,
+      opacity: 0.26,
+      borderColor: Colors.white.withOpacity(0.55),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          AspectRatio(
-            aspectRatio: 0.95,
-            child: Image.network(
-              coverImageUrl,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(color: _P.primarySoft),
+          const Text('👋', style: TextStyle(fontSize: 14)),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(
+              'Bonjour $name',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
             ),
           ),
-          // Dégradé rosé chaleureux plutôt que noir pur
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    const Color(0xFF3A0A18).withOpacity(0.35),
-                    Colors.transparent,
-                    const Color(0xFF3A0A18).withOpacity(0.55),
-                  ],
-                  stops: const [0.0, 0.45, 1.0],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            top: 24,
-            left: 20,
-            right: 90,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  coupleNames,
-                  style: const TextStyle(fontFamily: 'Serif', fontSize: 32, color: Colors.white, fontWeight: FontWeight.w600, height: 1.1),
-                ),
-                const SizedBox(height: 8),
-                Text(welcomeMessage, style: const TextStyle(color: Colors.white, fontSize: 13, height: 1.35, fontWeight: FontWeight.w500)),
-              ],
-            ),
-          ),
-          Positioned(
-            top: 20,
-            right: 16,
-            child: FilledButton.tonalIcon(
-              onPressed: () {},
-              style: FilledButton.styleFrom(
-                backgroundColor: _P.surface.withOpacity(0.92),
-                foregroundColor: _P.primary,
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-              ),
-              icon: const Icon(Icons.ios_share_rounded, size: 16),
-              label: const Text('Partager', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
-            ),
-          ),
-          Positioned(left: 12, right: 12, bottom: 14, child: _CountdownCard(state: countdownState)),
+          if (vip) ...[
+            const SizedBox(width: 8),
+            const Icon(Icons.star_rounded, size: 16, color: _P.accent),
+          ],
         ],
       ),
     );
@@ -484,13 +980,12 @@ class _CountdownCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (state == null) return const SizedBox(height: 84);
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
-      decoration: BoxDecoration(
-        color: _P.surface.withOpacity(0.96),
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: _P.shadow,
-      ),
+    return ThixGlass(
+      radius: 24,
+      blur: 18,
+      opacity: 0.40,
+      borderColor: Colors.white.withOpacity(0.7),
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
       child: Row(
         children: [
           Container(
@@ -499,12 +994,17 @@ class _CountdownCard extends StatelessWidget {
             decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
             child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 20),
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('JOUR J DANS', style: TextStyle(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w700, letterSpacing: 0.8)),
+                Text('JOUR J DANS',
+                    style: GoogleFonts.inter(
+                        fontSize: 10,
+                        color: _P.ink.withOpacity(0.7),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.2)),
                 const SizedBox(height: 4),
                 Row(
                   children: [
@@ -533,8 +1033,10 @@ class _CountItem extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text('$value', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: _P.primary)),
-          Text(label, style: const TextStyle(fontSize: 9, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+          Text('$value',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 20, color: _P.primaryDark)),
+          Text(label,
+              style: GoogleFonts.inter(fontSize: 9.5, color: _P.ink.withOpacity(0.65), fontWeight: FontWeight.w700)),
         ],
       ),
     );
@@ -551,68 +1053,127 @@ class _SectionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: _P.ink, letterSpacing: -0.3)),
-        InkWell(
-          onTap: () {},
-          child: const Padding(
-            padding: EdgeInsets.symmetric(vertical: 4),
-            child: Row(
-              children: [
-                Text('Voir tout', style: TextStyle(fontSize: 12, color: _P.primary, fontWeight: FontWeight.w700)),
-                Icon(Icons.chevron_right_rounded, size: 16, color: _P.primary),
-              ],
-            ),
-          ),
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(2)),
         ),
+        const SizedBox(width: 10),
+        Text(title,
+            style: GoogleFonts.inter(
+                fontWeight: FontWeight.w800, fontSize: 18, color: _P.ink, letterSpacing: -0.3)),
       ],
     );
   }
 }
 
 // ============================================================
-// STATS ROW (Floating Cards)
+// BANNIÈRE INVITATION DÉSACTIVÉE
 // ============================================================
-class _StatsRow extends StatelessWidget {
-  final Map<String, int> stats;
-  const _StatsRow({required this.stats});
-
+class _DisabledBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final entries = stats.entries.toList();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+    return ThixGlass(
+      radius: 22,
+      tint: const Color(0xFFFFE4E8),
+      borderColor: _P.primary.withOpacity(0.45),
+      padding: const EdgeInsets.all(14),
       child: Row(
-        children: List.generate(entries.length, (i) {
-          final e = entries[i];
-          return Expanded(
-            child: Container(
-              margin: EdgeInsets.only(right: i == entries.length - 1 ? 0 : 12),
-              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 6),
-              decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
-              child: Column(
-                children: [
-                  Text('${e.value}', style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: _P.primary)),
-                  const SizedBox(height: 4),
-                  Text(e.key.toUpperCase(), textAlign: TextAlign.center, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 8.5, color: _P.inkSoft, fontWeight: FontWeight.w600, height: 1.2, letterSpacing: 0.5)),
-                ],
-              ),
+        children: [
+          const Icon(Icons.block_rounded, color: _P.primary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Invitation désactivée',
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _P.primary, fontSize: 14)),
+                Text(
+                  'Votre QR code n\'est plus valide. Contactez les mariés pour plus d\'informations.',
+                  style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft, height: 1.35),
+                ),
+              ],
             ),
-          );
-        }),
+          ),
+        ],
       ),
     );
   }
 }
 
 // ============================================================
-// TUILE DE MENU — Style Petits Boutons
+// STATS ROW
+// ============================================================
+class _StatsRow extends StatelessWidget {
+  final Map<String, int> stats;
+  const _StatsRow({required this.stats});
+
+  IconData _icon(String k) {
+    final s = k.toLowerCase();
+    if (s.contains('confirm')) return Icons.how_to_reg_rounded;
+    if (s.contains('attente')) return Icons.hourglass_top_rounded;
+    if (s.contains('cadeau')) return Icons.card_giftcard_rounded;
+    return Icons.photo_camera_rounded;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entries = stats.entries.toList();
+    return Row(
+      children: List.generate(entries.length, (i) {
+        final e = entries[i];
+        return Expanded(
+          child: Padding(
+            padding: EdgeInsets.only(right: i == entries.length - 1 ? 0 : 8),
+            child: ThixGlass(
+              radius: 20,
+              opacity: 0.55,
+              borderColor: _P.primary.withOpacity(0.15),
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
+              child: Column(
+                children: [
+                  Icon(_icon(e.key), size: 18, color: _P.primary.withOpacity(0.75)),
+                  const SizedBox(height: 6),
+                  Text('${e.value}',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 19, color: _P.primary)),
+                  const SizedBox(height: 4),
+                  Text(
+                    e.key.toUpperCase(),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(
+                        fontSize: 8,
+                        color: _P.inkSoft,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                        letterSpacing: 0.4),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      }),
+    );
+  }
+}
+
+// ============================================================
+// TUILE DE MENU — bouton rond premium
 // ============================================================
 class _GuestMenuTile extends StatelessWidget {
   final _GuestMenuItem item;
+  final _BadgeType badge;
+  final int? badgeCount;
   final VoidCallback onTap;
-  const _GuestMenuTile({required this.item, required this.onTap});
+  const _GuestMenuTile({
+    required this.item,
+    required this.badge,
+    required this.badgeCount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -626,38 +1187,61 @@ class _GuestMenuTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: 60,
-                height: 60,
+                width: 62,
+                height: 62,
                 decoration: BoxDecoration(
-                  color: _P.primarySoft,
                   shape: BoxShape.circle,
-                  boxShadow: _P.shadow, // Ombre douce pour le côté premium
+                  gradient: const LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.white, Color(0xFFFFEFF4)],
+                  ),
+                  border: Border.all(color: Colors.white, width: 1.6),
+                  boxShadow: [
+                    BoxShadow(
+                      color: _P.primary.withOpacity(0.16),
+                      blurRadius: 18,
+                      offset: const Offset(0, 8),
+                    ),
+                  ],
                 ),
-                child: Icon(item.icon, color: _P.primary, size: 26),
+                child: Icon(item.icon, color: _P.primary, size: 27),
               ),
-              if (item.badgeType == _BadgeType.alert)
-                Positioned(top: 0, right: 0, child: _DotBadge(child: const Text('!', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800)))),
-              if (item.badgeType == _BadgeType.count)
-                Positioned(top: 0, right: 0, child: _DotBadge(child: Text('${item.badgeCount}', style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800)))),
-              if (item.badgeType == _BadgeType.live)
+              if (badge == _BadgeType.alert)
+                const Positioned(
+                  top: 0,
+                  right: 0,
+                  child: _DotBadge(child: Text('!', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800))),
+                ),
+              if (badge == _BadgeType.count)
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: _DotBadge(
+                    child: Text('${badgeCount ?? 0}',
+                        style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              if (badge == _BadgeType.live)
                 Positioned(
                   top: -4,
                   right: -12,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(6)),
-                    child: const Text('LIVE', style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                    child: const Text('LIVE',
+                        style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 9),
           Text(
             item.title,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 10.5, color: _P.ink, height: 1.1),
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11, color: _P.ink, height: 1.1),
           ),
         ],
       ),
@@ -672,10 +1256,14 @@ class _DotBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 18,
-      height: 18,
+      width: 19,
+      height: 19,
       alignment: Alignment.center,
-      decoration: const BoxDecoration(color: _P.primary, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: _P.primary,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 1.6),
+      ),
       child: child,
     );
   }
@@ -703,26 +1291,34 @@ class _VendorsList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (vendors.isEmpty) {
-      return const SizedBox(
-        height: 120, 
-        child: Center(child: Text('Aucun prestataire enregistré', style: TextStyle(color: _P.inkSoft))),
+      return SizedBox(
+        height: 110,
+        child: Center(
+          child: Text('Aucun prestataire enregistré',
+              style: GoogleFonts.inter(color: _P.inkSoft)),
+        ),
       );
     }
     return SizedBox(
-      height: 220,
+      height: 222,
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         itemCount: vendors.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
           final v = vendors[i];
           return InkWell(
             onTap: () => onTap(v),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(22),
             child: Container(
-              width: 170,
-              decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
+              width: 172,
+              decoration: BoxDecoration(
+                color: _P.surface,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: _P.shadow,
+                border: Border.all(color: _P.border),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -732,25 +1328,28 @@ class _VendorsList extends StatelessWidget {
                       children: [
                         Container(
                           width: double.infinity,
-                          decoration: BoxDecoration(
+                          decoration: const BoxDecoration(
                             gradient: _P.gradPrimary,
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
                           ),
-                          child: Center(child: Icon(_vendorIcon(v.category), size: 36, color: Colors.white38)),
+                          child: Center(child: Icon(_vendorIcon(v.category), size: 38, color: Colors.white54)),
                         ),
                         if (v.isBooked)
                           Positioned(
-                            top: 12,
-                            left: 12,
-                            child: Container(
+                            top: 10,
+                            left: 10,
+                            child: ThixGlass(
+                              radius: 10,
+                              blur: 10,
+                              opacity: 0.55,
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(6)),
-                              child: const Row(
+                              child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.check_circle_rounded, size: 12, color: Colors.green),
-                                  SizedBox(width: 4),
-                                  Text('Réservé', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: _P.ink)),
+                                  const Icon(Icons.check_circle_rounded, size: 12, color: _P.green),
+                                  const SizedBox(width: 4),
+                                  Text('Réservé',
+                                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.ink)),
                                 ],
                               ),
                             ),
@@ -763,15 +1362,24 @@ class _VendorsList extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(v.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: _P.ink)),
+                        Text(v.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
                         const SizedBox(height: 2),
-                        Text(v.category, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w600)),
+                        Text(v.category,
+                            style: GoogleFonts.inter(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w700)),
                         const SizedBox(height: 8),
                         Row(
                           children: [
                             const Icon(Icons.info_outline, size: 12, color: _P.inkSoft),
                             const SizedBox(width: 4),
-                            Expanded(child: Text(v.contactName ?? 'Contact à venir', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _P.inkSoft))),
+                            Expanded(
+                              child: Text(v.contactName ?? 'Contact à venir',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft)),
+                            ),
                           ],
                         ),
                       ],
@@ -788,7 +1396,7 @@ class _VendorsList extends StatelessWidget {
 }
 
 // ============================================================
-// INFOS PRATIQUES
+// INFOS PRATIQUES / ANNONCES
 // ============================================================
 class _UpdatesList extends StatelessWidget {
   final List<MessageModel> items;
@@ -818,46 +1426,59 @@ class _UpdatesList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
-      return const SizedBox(
-        height: 100, 
-        child: Center(child: Text('Aucune annonce pour le moment', style: TextStyle(color: _P.inkSoft))),
+      return SizedBox(
+        height: 90,
+        child: Center(
+          child: Text('Aucune annonce pour le moment',
+              style: GoogleFonts.inter(color: _P.inkSoft)),
+        ),
       );
     }
     return SizedBox(
-      height: 160,
+      height: 168,
       child: ListView.separated(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 16),
+        separatorBuilder: (_, __) => const SizedBox(width: 14),
         itemBuilder: (context, i) {
           final a = items[i];
           final tag = _extractTag(a.content);
           return InkWell(
             onTap: () => onTap(a),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(22),
             child: Container(
-              width: 150,
-              decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
+              width: 156,
+              decoration: BoxDecoration(
+                color: _P.surface,
+                borderRadius: BorderRadius.circular(22),
+                boxShadow: _P.shadow,
+                border: Border.all(color: _P.border),
+              ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    height: 80,
+                    height: 78,
                     child: Stack(
                       children: [
                         Container(
                           width: double.infinity,
-                          decoration: const BoxDecoration(color: _P.accentSoft, borderRadius: BorderRadius.vertical(top: Radius.circular(18))),
+                          decoration: const BoxDecoration(
+                            color: _P.accentSoft,
+                            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                          ),
                           child: Center(child: Icon(_messageIcon(a.content), size: 28, color: _P.accent)),
                         ),
                         Positioned(
-                          top: 12,
-                          left: 12,
+                          top: 10,
+                          left: 10,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                            decoration: BoxDecoration(color: _P.ink, borderRadius: BorderRadius.circular(4)),
-                            child: Text(tag, style: const TextStyle(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white, letterSpacing: 0.5)),
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                            decoration: BoxDecoration(color: _P.ink, borderRadius: BorderRadius.circular(6)),
+                            child: Text(tag,
+                                style: const TextStyle(
+                                    fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.5)),
                           ),
                         ),
                       ],
@@ -868,9 +1489,17 @@ class _UpdatesList extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(a.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), ''), maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink, height: 1.2)),
-                        const Spacer(),
-                        Text(a.senderName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w800)),
+                        Text(
+                          a.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), ''),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink, height: 1.25),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(a.senderName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w800)),
                       ],
                     ),
                   ),
@@ -895,27 +1524,94 @@ class _NewsBanner extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
+      decoration: BoxDecoration(
+        gradient: _P.gradPrimary,
+        borderRadius: BorderRadius.circular(22),
+        boxShadow: _P.shadow,
+      ),
       child: Row(
         children: [
           Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(color: Colors.white.withOpacity(0.18), shape: BoxShape.circle),
-            child: const Icon(Icons.campaign_rounded, color: Colors.white, size: 20),
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+            child: const Icon(Icons.campaign_rounded, color: Colors.white, size: 21),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text('INFORMATION', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w700, fontSize: 10, letterSpacing: 0.8)),
+                Text('INFORMATION',
+                    style: GoogleFonts.inter(
+                        color: Colors.white70, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 1)),
                 const SizedBox(height: 2),
-                Text(text, style: const TextStyle(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600)),
+                Text(text,
+                    style: GoogleFonts.inter(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600, height: 1.35)),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================
+// CARTE ROSE "BESOIN D'AIDE" (style Espace Prestataire)
+// ============================================================
+class _HelpCard extends StatelessWidget {
+  final VoidCallback onTap;
+  const _HelpCard({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFD81B60), Color(0xFFB0124F)],
+          ),
+          borderRadius: BorderRadius.circular(28),
+          boxShadow: [
+            BoxShadow(color: _P.primary.withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 12)),
+          ],
+        ),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Une question ?',
+                      style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text('Contacter les mariés',
+                      style: GoogleFonts.playfairDisplay(
+                          fontSize: 25, color: Colors.white, fontWeight: FontWeight.w700, height: 1.1)),
+                  const SizedBox(height: 6),
+                  Text('FAQ, messages et aide pour le jour J.',
+                      style: GoogleFonts.inter(fontSize: 12.5, color: Colors.white.withOpacity(0.85))),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 52,
+              height: 52,
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.22),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white.withOpacity(0.4)),
+              ),
+              child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -935,9 +1631,11 @@ class _TrustRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 20),
-      decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
+    return ThixGlass(
+      radius: 22,
+      opacity: 0.5,
+      borderColor: _P.primary.withOpacity(0.12),
+      padding: const EdgeInsets.symmetric(vertical: 18),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: _items.map((e) {
@@ -946,7 +1644,9 @@ class _TrustRow extends StatelessWidget {
             children: [
               Icon(e['icon'] as IconData, size: 22, color: _P.primary),
               const SizedBox(height: 8),
-              Text(e['label'] as String, textAlign: TextAlign.center, style: const TextStyle(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w500)),
+              Text(e['label'] as String,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w600)),
             ],
           );
         }).toList(),
@@ -956,27 +1656,60 @@ class _TrustRow extends StatelessWidget {
 }
 
 // ============================================================
-// BOTTOM NAV
+// BARRE DE NAVIGATION FLOTTANTE EN VERRE DÉPOLI
 // ============================================================
-class _GuestBottomNav extends StatelessWidget {
+class _GlassNav extends StatelessWidget {
+  final VoidCallback onHome;
+  final VoidCallback onAgenda;
+  final VoidCallback onHeart;
+  final VoidCallback onMessages;
+  final VoidCallback onProfile;
+  const _GlassNav({
+    required this.onHome,
+    required this.onAgenda,
+    required this.onHeart,
+    required this.onMessages,
+    required this.onProfile,
+  });
+
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        color: _P.surface,
-        boxShadow: [BoxShadow(color: const Color(0xFFE31C4E).withOpacity(0.08), blurRadius: 20, offset: const Offset(0, -4))],
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          height: 52,
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(30),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+        child: Container(
+          height: 66,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.62),
+            borderRadius: BorderRadius.circular(30),
+            border: Border.all(color: Colors.white.withOpacity(0.85), width: 1.2),
+            boxShadow: [
+              BoxShadow(color: _P.primary.withOpacity(0.14), blurRadius: 24, offset: const Offset(0, 10)),
+            ],
+          ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              const _NavItem(icon: Icons.home_rounded, label: 'Accueil', selected: true),
-              const _NavItem(icon: Icons.event_outlined, label: 'Agenda'),
-              _HeartNavButton(onTap: () {}),
-              const _NavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Messages'),
-              const _NavItem(icon: Icons.person_outline_rounded, label: 'Profil'),
+              _NavItem(icon: Icons.home_rounded, label: 'Accueil', selected: true, onTap: onHome),
+              _NavItem(icon: Icons.event_outlined, label: 'Agenda', onTap: onAgenda),
+              GestureDetector(
+                onTap: onHeart,
+                child: Container(
+                  width: 50,
+                  height: 50,
+                  decoration: BoxDecoration(
+                    gradient: _P.gradPrimary,
+                    shape: BoxShape.circle,
+                    boxShadow: [
+                      BoxShadow(color: _P.primary.withOpacity(0.4), blurRadius: 14, offset: const Offset(0, 5)),
+                    ],
+                  ),
+                  child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 24),
+                ),
+              ),
+              _NavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Annonces', onTap: onMessages),
+              _NavItem(icon: Icons.grid_view_rounded, label: 'Plus', onTap: onProfile),
             ],
           ),
         ),
@@ -989,45 +1722,28 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
-  const _NavItem({required this.icon, required this.label, this.selected = false});
+  final VoidCallback onTap;
+  const _NavItem({required this.icon, required this.label, this.selected = false, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final color = selected ? _P.primary : _P.inkSoft;
     return InkWell(
-      onTap: () {},
-      borderRadius: BorderRadius.circular(8),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 20, color: color),
-          const SizedBox(height: 2),
-          Text(label, style: TextStyle(fontSize: 9, color: color, fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
-        ],
-      ),
-    );
-  }
-}
-
-class _HeartNavButton extends StatelessWidget {
-  final VoidCallback onTap;
-  const _HeartNavButton({required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(22),
-      child: Container(
-        width: 44,
-        height: 44,
-        decoration: BoxDecoration(
-          gradient: _P.gradPrimary, // Rouge/rose pour rester dans la charte mariage
-          shape: BoxShape.circle,
-          boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 3))],
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 22, color: color),
+            const SizedBox(height: 2),
+            Text(label,
+                style: GoogleFonts.inter(
+                    fontSize: 9.5, color: color, fontWeight: selected ? FontWeight.w800 : FontWeight.w500)),
+          ],
         ),
-        child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
       ),
     );
   }
@@ -1036,35 +1752,38 @@ class _HeartNavButton extends StatelessWidget {
 // ============================================================
 // ERREUR
 // ============================================================
-class _ErrorView extends ConsumerWidget {
+class _ErrorView extends StatelessWidget {
   final Object error;
-  final String weddingId;
-  const _ErrorView({required this.error, required this.weddingId});
+  final VoidCallback onRetry;
+  const _ErrorView({required this.error, required this.onRetry});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        const Icon(Icons.error_outline_rounded, size: 44, color: _P.inkSoft),
-        const SizedBox(height: 12),
-        Text(
-          error is Failure ? (error as Failure).message : 'Erreur de chargement',
-          textAlign: TextAlign.center,
-          style: const TextStyle(color: _P.inkSoft),
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 100, 24, 24),
+      child: ThixGlass(
+        radius: 28,
+        opacity: 0.55,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline_rounded, size: 44, color: _P.primary),
+            const SizedBox(height: 12),
+            Text(
+              error is Failure ? (error as Failure).message : 'Erreur de chargement',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.inter(color: _P.inkSoft),
+            ),
+            const SizedBox(height: 16),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: _P.primary),
+              onPressed: onRetry,
+              child: const Text('Réessayer'),
+            ),
+          ],
         ),
-        const SizedBox(height: 16),
-        FilledButton(
-          style: FilledButton.styleFrom(backgroundColor: _P.primary),
-          onPressed: () {
-            ref.invalidate(guestWeddingProvider(weddingId));
-            ref.invalidate(guestEventStatsProvider(weddingId));
-            ref.invalidate(guestVendorsProvider(weddingId));
-            ref.invalidate(guestUpdatesProvider(weddingId));
-          },
-          child: const Text('Réessayer'),
-        ),
-      ],
+      ),
     );
   }
 }
