@@ -5,7 +5,7 @@
 // ✅ Bouton Espace Prestataire dans l'appbar
 // ✅ Vrais prestataires depuis Supabase (Gold/Platinum)
 // ✅ Bannière promotionnelle Espace Prestataire
-// ✅ Logique préservée (cartes, annonces, hero carousel, etc.)
+// ✅ FIX : Color green ajoutée à _W
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -33,7 +33,6 @@ class _W {
   static const Color inkSoft = Color(0xFF6B7280);
   static const Color line = Color(0xFFE5E7EB);
 
-  // Rose premium très rose
   static const Color rose = Color(0xFFFF4D6D);
   static const Color roseLight = Color(0xFFFF85A1);
   static const Color roseSoft = Color(0xFFFFF0F3);
@@ -41,6 +40,9 @@ class _W {
   static const Color peach = Color(0xFFFFB8A8);
   static const Color gold = Color(0xFFFFD700);
   static const Color plum = Color(0xFFA855F7);
+
+  // ✅ AJOUTÉ : green pour le badge CERTIFIÉ
+  static const Color green = Color(0xFF10B981);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -99,17 +101,13 @@ final homeOffersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) asyn
   ];
 });
 
-// ✅ NOUVEAU : Vrais prestataires depuis Supabase (Gold/Platinum uniquement)
 final homeProvidersProvider = FutureProvider<List<ThixProviderModel>>((ref) async {
   final service = ref.watch(providerServiceProvider);
   try {
-    final providers = await service.getAllProviders(
-      limit: 10,
-      isAvailable: true,
-    );
-    // Filtrer uniquement Gold et Platinum
-    return providers.where((p) =>
-        p.level == TrackingLevel.gold || p.level == TrackingLevel.platinum).toList();
+    final providers = await service.getAllProviders(limit: 10, isAvailable: true);
+    return providers
+        .where((p) => p.level == TrackingLevel.gold || p.level == TrackingLevel.platinum)
+        .toList();
   } catch (e) {
     return [];
   }
@@ -187,7 +185,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     }
   }
 
-  // ✅ NOUVEAU : Accès Espace Prestataire
   Future<void> _onProviderAccess() async {
     HapticFeedback.mediumImpact();
     final user = Supabase.instance.client.auth.currentUser;
@@ -195,11 +192,9 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
       context.push('/thix-weeding/provider/auth');
       return;
     }
-
     try {
       final provider = await ref.read(providerServiceProvider).getProviderByUserId(user.id);
       if (!mounted) return;
-
       if (provider != null) {
         context.push('/thix-weeding/provider/dashboard');
       } else {
@@ -392,7 +387,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
-                // ✅ NOUVEAU : Bannière Espace Prestataire
                 const SliverToBoxAdapter(child: _ProviderBanner()),
                 const SliverToBoxAdapter(child: SizedBox(height: 32)),
                 const SliverToBoxAdapter(
@@ -414,7 +408,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ],
             ),
           ),
-
           activeInvitesAsync.when(
             data: (invites) {
               if (invites.isEmpty) return const SizedBox.shrink();
@@ -433,7 +426,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
             loading: () => const SizedBox.shrink(),
             error: (_, __) => const SizedBox.shrink(),
           ),
-
           _GlassAppBar(
             topPad: topPad.top,
             scrollY: _scrollY,
@@ -513,7 +505,6 @@ class _GlassAppBar extends StatelessWidget {
                     ],
                   ),
                 ),
-                // ✅ NOUVEAU : Bouton Espace Prestataire (remplace notifications)
                 _AppBarBtn(icon: Icons.store_outlined, fg: fg, onTap: onProvider),
                 const SizedBox(width: 8),
                 _AppBarBtn(icon: Icons.account_circle_outlined, fg: fg, onTap: onStaff),
@@ -562,7 +553,6 @@ class _AppBarBtn extends StatelessWidget {
   }
 }
 
-// ✅ NOUVEAU : Bannière Espace Prestataire
 class _ProviderBanner extends StatelessWidget {
   const _ProviderBanner();
 
@@ -578,28 +568,15 @@ class _ProviderBanner extends StatelessWidget {
         child: Container(
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
-            gradient: LinearGradient(
-              colors: [_W.rose, _W.roseLight],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
+            gradient: LinearGradient(colors: [_W.rose, _W.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
             borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: _W.rose.withOpacity(0.3),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
           ),
           child: Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(16),
-                ),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(16)),
                 child: const Icon(Icons.store_outlined, color: Colors.white, size: 28),
               ),
               const SizedBox(width: 16),
@@ -607,24 +584,9 @@ class _ProviderBanner extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      'Espace Prestataire',
-                      style: GoogleFonts.inter(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: -0.3,
-                      ),
-                    ),
+                    Text('Espace Prestataire', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.3)),
                     const SizedBox(height: 4),
-                    Text(
-                      'Rejoignez +300 professionnels vérifiés',
-                      style: GoogleFonts.inter(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
+                    Text('Rejoignez +300 professionnels vérifiés', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.9))),
                   ],
                 ),
               ),
@@ -637,9 +599,6 @@ class _ProviderBanner extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// HERO CAROUSEL
-// ═══════════════════════════════════════════════════════════════════════════
 class _HeroCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> slides;
   final double topPad;
@@ -704,11 +663,7 @@ class _HeroCarouselState extends State<_HeroCarousel> {
             return Stack(
               fit: StackFit.expand,
               children: [
-                Image.network(
-                  slide['imageUrl'] as String,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Center(child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48))),
-                ),
+                Image.network(slide['imageUrl'] as String, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Center(child: Icon(Icons.broken_image_outlined, color: _W.inkSoft, size: 48)))),
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -804,9 +759,6 @@ class _HeroContent extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// JOIN BAR
-// ═══════════════════════════════════════════════════════════════════════════
 class _JoinBar extends StatefulWidget {
   final TextEditingController controller;
   final FocusNode focusNode;
@@ -964,9 +916,6 @@ class _JoinBarState extends State<_JoinBar> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CATEGORY ROW
-// ═══════════════════════════════════════════════════════════════════════════
 class _CategoryRow extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
   final void Function(ProviderCategory?) onTap;
@@ -1014,9 +963,6 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SECTION HEADER
-// ═══════════════════════════════════════════════════════════════════════════
 class _SectionHeader extends StatelessWidget {
   final String title;
 
@@ -1041,9 +987,6 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// OFFERS ROW
-// ═══════════════════════════════════════════════════════════════════════════
 class _OffersRow extends StatelessWidget {
   final List<Map<String, dynamic>> offers;
   final void Function(String) onTap;
@@ -1100,9 +1043,6 @@ class _OffersRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PROVIDERS GRID — Vrais prestataires depuis Supabase
-// ═══════════════════════════════════════════════════════════════════════════
 class _ProvidersGrid extends StatelessWidget {
   final List<ThixProviderModel> providers;
 
@@ -1113,19 +1053,12 @@ class _ProvidersGrid extends StatelessWidget {
     if (providers.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(40),
-        decoration: BoxDecoration(
-          color: _W.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _W.line),
-        ),
+        decoration: BoxDecoration(color: _W.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _W.line)),
         child: Column(
           children: [
             Icon(Icons.store_outlined, size: 48, color: _W.inkSoft),
             const SizedBox(height: 12),
-            Text(
-              'Aucun prestataire disponible',
-              style: GoogleFonts.inter(fontSize: 14, color: _W.inkSoft),
-            ),
+            Text('Aucun prestataire disponible', style: GoogleFonts.inter(fontSize: 14, color: _W.inkSoft)),
           ],
         ),
       );
@@ -1135,17 +1068,10 @@ class _ProvidersGrid extends StatelessWidget {
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       itemCount: providers.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 14,
-        crossAxisSpacing: 14,
-        childAspectRatio: 0.72,
-      ),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 14, crossAxisSpacing: 14, childAspectRatio: 0.72),
       itemBuilder: (_, i) {
         final p = providers[i];
-        final coverImage = p.galleryUrls.isNotEmpty
-            ? p.galleryUrls.first
-            : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
+        final coverImage = p.galleryUrls.isNotEmpty ? p.galleryUrls.first : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
 
         return GestureDetector(
           onTap: () {
@@ -1167,15 +1093,7 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Stack(
                     fit: StackFit.expand,
                     children: [
-                      Image.network(
-                        coverImage,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: _W.tile,
-                          child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft),
-                        ),
-                      ),
-                      // Badge PREMIUM pour les Platinum
+                      Image.network(coverImage, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _W.tile, child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft))),
                       if (p.level == TrackingLevel.platinum)
                         Positioned(
                           top: 10,
@@ -1185,56 +1103,31 @@ class _ProvidersGrid extends StatelessWidget {
                             decoration: BoxDecoration(
                               gradient: const LinearGradient(colors: [_W.gold, Color(0xFFFFA500)]),
                               borderRadius: BorderRadius.circular(8),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: _W.gold.withOpacity(0.4),
-                                  blurRadius: 6,
-                                  offset: const Offset(0, 2),
-                                ),
-                              ],
+                              boxShadow: [BoxShadow(color: _W.gold.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2))],
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(Icons.workspace_premium, color: Colors.white, size: 12),
                                 const SizedBox(width: 4),
-                                Text(
-                                  'PREMIUM',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                    letterSpacing: 0.5,
-                                  ),
-                                ),
+                                Text('PREMIUM', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.5)),
                               ],
                             ),
                           ),
                         )
-                      // Badge CERTIFIÉ pour les Gold
                       else if (p.level == TrackingLevel.gold)
                         Positioned(
                           top: 10,
                           left: 10,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _W.green,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
+                            decoration: BoxDecoration(color: _W.green, borderRadius: BorderRadius.circular(8)),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 const Icon(Icons.verified, color: Colors.white, size: 12),
                                 const SizedBox(width: 4),
-                                Text(
-                                  'CERTIFIÉ',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w900,
-                                    color: Colors.white,
-                                  ),
-                                ),
+                                Text('CERTIFIÉ', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                               ],
                             ),
                           ),
@@ -1245,11 +1138,7 @@ class _ProvidersGrid extends StatelessWidget {
                         child: Container(
                           width: 32,
                           height: 32,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.white),
-                          ),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle, border: Border.all(color: Colors.white)),
                           child: const Icon(Icons.favorite_border_rounded, size: 15, color: _W.rose),
                         ),
                       ),
@@ -1261,28 +1150,9 @@ class _ProvidersGrid extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        p.businessName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                          color: _W.ink,
-                          letterSpacing: -0.3,
-                        ),
-                      ),
+                      Text(p.businessName, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
                       const SizedBox(height: 2),
-                      Text(
-                        '${p.category.displayName} · ${p.city ?? 'RDC'}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 10.5,
-                          color: _W.inkSoft,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
+                      Text('${p.category.displayName} · ${p.city ?? 'RDC'}', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _W.inkSoft, fontWeight: FontWeight.w600)),
                       const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -1291,34 +1161,16 @@ class _ProvidersGrid extends StatelessWidget {
                             children: [
                               const Icon(Icons.star_rounded, size: 13, color: _W.gold),
                               const SizedBox(width: 3),
-                              Text(
-                                p.rating.toStringAsFixed(1),
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: _W.ink,
-                                ),
-                              ),
+                              Text(p.rating.toStringAsFixed(1), style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
                             ],
                           ),
                           if (p.minPrice != null)
                             Text(
                               'Dès ${p.minPrice!.toStringAsFixed(0)}${p.currency == 'USD' ? r'$' : p.currency}',
-                              style: GoogleFonts.inter(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w900,
-                                color: _W.rose,
-                              ),
+                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w900, color: _W.rose),
                             )
                           else
-                            Text(
-                              'Sur devis',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: _W.inkSoft,
-                              ),
-                            ),
+                            Text('Sur devis', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _W.inkSoft)),
                         ],
                       ),
                     ],
@@ -1331,14 +1183,8 @@ class _ProvidersGrid extends StatelessWidget {
       },
     );
   }
-
-  // Couleur verte pour le badge CERTIFIÉ
-  static const Color green = Color(0xFF10B981);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ANNOUNCEMENTS ROW
-// ═══════════════════════════════════════════════════════════════════════════
 class _AnnouncementsRow extends StatelessWidget {
   final List<Map<String, dynamic>> items;
   final void Function(String) onTap;
@@ -1377,35 +1223,16 @@ class _AnnouncementsRow extends StatelessWidget {
                       children: [
                         Container(
                           width: double.infinity,
-                          decoration: const BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [_W.tile, Color(0xFFFFE8E3)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                          ),
-                          child: Center(
-                            child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7)),
-                          ),
+                          decoration: const BoxDecoration(gradient: LinearGradient(colors: [_W.tile, Color(0xFFFFE8E3)], begin: Alignment.topLeft, end: Alignment.bottomRight)),
+                          child: Center(child: Icon(a['icon'] as IconData, size: 28, color: _W.rose.withOpacity(0.7))),
                         ),
                         Positioned(
                           top: 8,
                           left: 8,
                           child: Container(
                             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: _W.ink,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              (a['tag'] as String).toUpperCase(),
-                              style: GoogleFonts.inter(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: 0.6,
-                              ),
-                            ),
+                            decoration: BoxDecoration(color: _W.ink, borderRadius: BorderRadius.circular(8)),
+                            child: Text((a['tag'] as String).toUpperCase(), style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.6)),
                           ),
                         ),
                       ],
@@ -1416,25 +1243,9 @@ class _AnnouncementsRow extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          a['title'] as String,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w800,
-                            color: _W.ink,
-                          ),
-                        ),
+                        Text(a['title'] as String, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _W.ink)),
                         const Spacer(),
-                        Text(
-                          a['subtitle'] as String,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                            color: _W.rose,
-                          ),
-                        ),
+                        Text(a['subtitle'] as String, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _W.rose)),
                       ],
                     ),
                   ),
@@ -1448,9 +1259,6 @@ class _AnnouncementsRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// TRUST ROW
-// ═══════════════════════════════════════════════════════════════════════════
 class _TrustRow extends StatelessWidget {
   const _TrustRow();
 
@@ -1478,23 +1286,11 @@ class _TrustRow extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle),
-                  child: Icon(e['icon'] as IconData, size: 18, color: _W.rose),
-                ),
+                Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: _W.rose.withOpacity(0.1), shape: BoxShape.circle), child: Icon(e['icon'] as IconData, size: 18, color: _W.rose)),
                 const SizedBox(height: 6),
-                Text(
-                  e['title'] as String,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2),
-                ),
+                Text(e['title'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 11, color: _W.ink, fontWeight: FontWeight.w800, height: 1.2)),
                 const SizedBox(height: 1),
-                Text(
-                  e['subtitle'] as String,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2),
-                ),
+                Text(e['subtitle'] as String, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 9.5, color: _W.inkSoft, fontWeight: FontWeight.w600, height: 1.2)),
               ],
             ),
           );
@@ -1504,9 +1300,6 @@ class _TrustRow extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// AMBIENT BACKGROUND
-// ═══════════════════════════════════════════════════════════════════════════
 class _AmbientBackground extends StatefulWidget {
   const _AmbientBackground();
 
@@ -1571,9 +1364,6 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// ACTIVE INVITES ORB
-// ═══════════════════════════════════════════════════════════════════════════
 class _ActiveInvitesOrb extends StatefulWidget {
   final List<Map<String, dynamic>> invites;
   final void Function(String weddingId) onTap;
@@ -1593,12 +1383,9 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))
-      ..repeat(reverse: true);
-    _shimmer = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))
-      ..repeat();
-    _enter = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))
-      ..forward();
+    _pulse = AnimationController(vsync: this, duration: const Duration(milliseconds: 1600))..repeat(reverse: true);
+    _shimmer = AnimationController(vsync: this, duration: const Duration(milliseconds: 2400))..repeat();
+    _enter = AnimationController(vsync: this, duration: const Duration(milliseconds: 700))..forward();
   }
 
   @override
@@ -1619,9 +1406,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
     return FadeTransition(
       opacity: CurvedAnimation(parent: _enter, curve: Curves.easeOut),
       child: ScaleTransition(
-        scale: Tween<double>(begin: 0.82, end: 1.0).animate(
-          CurvedAnimation(parent: _enter, curve: Curves.easeOutBack),
-        ),
+        scale: Tween<double>(begin: 0.82, end: 1.0).animate(CurvedAnimation(parent: _enter, curve: Curves.easeOutBack)),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.end,
           mainAxisSize: MainAxisSize.min,
@@ -1639,17 +1424,13 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                           final c = '${inv['bride_name'] ?? ''} & ${inv['groom_name'] ?? ''}'.trim();
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 8),
-                            child: _GlassInviteChip(
-                              title: c.isEmpty || c == '&' ? 'Invitation' : c,
-                              onTap: () => widget.onTap(inv['wedding_id'] as String),
-                            ),
+                            child: _GlassInviteChip(title: c.isEmpty || c == '&' ? 'Invitation' : c, onTap: () => widget.onTap(inv['wedding_id'] as String)),
                           );
                         }).toList(),
                       ),
                     )
                   : const SizedBox.shrink(),
             ),
-
             GestureDetector(
               onTap: () {
                 if (count == 1) {
@@ -1671,16 +1452,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                       Container(
                         width: 64 + 6 * _pulse.value,
                         height: 64 + 6 * _pulse.value,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          boxShadow: [
-                            BoxShadow(
-                              color: _W.rose.withOpacity(0.28 * p),
-                              blurRadius: glow,
-                              spreadRadius: 1,
-                            ),
-                          ],
-                        ),
+                        decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.28 * p), blurRadius: glow, spreadRadius: 1)]),
                       ),
                       Container(
                         width: 58,
@@ -1690,28 +1462,13 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                           gradient: LinearGradient(
                             begin: Alignment.topLeft,
                             end: Alignment.bottomRight,
-                            colors: [
-                              Colors.white.withOpacity(0.92),
-                              Colors.white.withOpacity(0.72),
-                              _W.roseLight.withOpacity(0.35),
-                            ],
+                            colors: [Colors.white.withOpacity(0.92), Colors.white.withOpacity(0.72), _W.roseLight.withOpacity(0.35)],
                             stops: const [0.0, 0.55, 1.0],
                           ),
-                          border: Border.all(
-                            color: Colors.white.withOpacity(0.95),
-                            width: 1.6,
-                          ),
+                          border: Border.all(color: Colors.white.withOpacity(0.95), width: 1.6),
                           boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.08),
-                              blurRadius: 16,
-                              offset: const Offset(0, 6),
-                            ),
-                            BoxShadow(
-                              color: _W.rose.withOpacity(0.18),
-                              blurRadius: 12,
-                              offset: const Offset(0, 2),
-                            ),
+                            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 16, offset: const Offset(0, 6)),
+                            BoxShadow(color: _W.rose.withOpacity(0.18), blurRadius: 12, offset: const Offset(0, 2)),
                           ],
                         ),
                         child: Stack(
@@ -1722,26 +1479,10 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                               height: 42,
                               decoration: BoxDecoration(
                                 shape: BoxShape.circle,
-                                gradient: LinearGradient(
-                                  begin: Alignment.topLeft,
-                                  end: Alignment.bottomRight,
-                                  colors: [
-                                    _W.rose.withOpacity(0.95),
-                                    _W.roseLight.withOpacity(0.9),
-                                  ],
-                                ),
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: _W.rose.withOpacity(0.35 * p),
-                                    blurRadius: 8,
-                                  ),
-                                ],
+                                gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [_W.rose.withOpacity(0.95), _W.roseLight.withOpacity(0.9)]),
+                                boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.35 * p), blurRadius: 8)],
                               ),
-                              child: const Icon(
-                                Icons.favorite_rounded,
-                                color: Colors.white,
-                                size: 20,
-                              ),
+                              child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 20),
                             ),
                             Positioned.fill(
                               child: ClipOval(
@@ -1749,15 +1490,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                                   offset: Offset((-40 + 100 * _shimmer.value), 0),
                                   child: Container(
                                     width: 28,
-                                    decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [
-                                          Colors.transparent,
-                                          Colors.white.withOpacity(0.35),
-                                          Colors.transparent,
-                                        ],
-                                      ),
-                                    ),
+                                    decoration: BoxDecoration(gradient: LinearGradient(colors: [Colors.transparent, Colors.white.withOpacity(0.35), Colors.transparent])),
                                   ),
                                 ),
                               ),
@@ -1774,25 +1507,13 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                           alignment: Alignment.center,
                           decoration: BoxDecoration(
                             shape: BoxShape.circle,
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFFF3B4A), Color(0xFFE31C4E)],
-                            ),
+                            gradient: const LinearGradient(colors: [Color(0xFFFF3B4A), Color(0xFFE31C4E)]),
                             border: Border.all(color: Colors.white, width: 2),
-                            boxShadow: [
-                              BoxShadow(
-                                color: const Color(0xFFFF3B4A).withOpacity(0.45 * p),
-                                blurRadius: 6,
-                              ),
-                            ],
+                            boxShadow: [BoxShadow(color: const Color(0xFFFF3B4A).withOpacity(0.45 * p), blurRadius: 6)],
                           ),
                           child: Text(
                             count > 9 ? '9+' : '$count',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w900,
-                              height: 1,
-                            ),
+                            style: const TextStyle(color: Colors.white, fontSize: 8.5, fontWeight: FontWeight.w900, height: 1),
                           ),
                         ),
                       ),
@@ -1801,7 +1522,6 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                 },
               ),
             ),
-
             const SizedBox(height: 6),
             GestureDetector(
               onTap: () => widget.onTap(first['wedding_id'] as String),
@@ -1812,26 +1532,9 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                   color: Colors.white.withOpacity(0.88),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(color: Colors.white),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.06),
-                      blurRadius: 10,
-                      offset: const Offset(0, 3),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 10, offset: const Offset(0, 3))],
                 ),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: _W.ink,
-                    letterSpacing: -0.2,
-                  ),
-                ),
+                child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _W.ink, letterSpacing: -0.2)),
               ),
             ),
           ],
@@ -1861,13 +1564,7 @@ class _GlassInviteChip extends StatelessWidget {
             color: Colors.white.withOpacity(0.9),
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: Colors.white),
-            boxShadow: [
-              BoxShadow(
-                color: _W.rose.withOpacity(0.12),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.12), blurRadius: 12, offset: const Offset(0, 4))],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
@@ -1875,24 +1572,12 @@ class _GlassInviteChip extends StatelessWidget {
               Container(
                 width: 22,
                 height: 22,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [_W.rose, _W.roseLight]),
-                ),
+                decoration: const BoxDecoration(shape: BoxShape.circle, gradient: LinearGradient(colors: [_W.rose, _W.roseLight])),
                 child: const Icon(Icons.favorite_rounded, size: 11, color: Colors.white),
               ),
               const SizedBox(width: 8),
               Flexible(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: _W.ink,
-                  ),
-                ),
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _W.ink)),
               ),
             ],
           ),
