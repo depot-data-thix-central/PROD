@@ -5,6 +5,7 @@
 // ✅ Synchronisation avec balancedSummaryProvider + budget + expenses
 // ✅ Auto-update is_paid de la dépense liée (solde / re-ouverture)
 // ✅ Helper _mono() compatible Web/WASM
+// ✅ weddingId passé en paramètre à _invalidateAll (correction compilation Web)
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -87,7 +88,8 @@ const Map<String, _PayMethod> _METHODS = {
   'mobile_money':
       _PayMethod('Mobile Money', Icons.phone_android, Color(0xFFD97706)),
   'cash': _PayMethod('Espèces', Icons.money, Color(0xFF059669)),
-  'bank_transfer': _PayMethod('Virement', Icons.account_balance, Color(0xFF0B3B8F)),
+  'bank_transfer':
+      _PayMethod('Virement', Icons.account_balance, Color(0xFF0B3B8F)),
   'bank': _PayMethod('Virement', Icons.account_balance, Color(0xFF0B3B8F)),
   'card': _PayMethod('Carte', Icons.credit_card, Color(0xFF6B46C1)),
   'check': _PayMethod('Chèque', Icons.receipt_long, Color(0xFF78716C)),
@@ -228,7 +230,8 @@ class _DetailAppBar extends StatelessWidget {
               BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)
             ],
           ),
-          child: const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
+          child: const Icon(Icons.arrow_back_ios_new,
+              size: 14, color: _R.text),
         ),
         onPressed: () => context.pop(),
       ),
@@ -477,7 +480,7 @@ class _ActionButtons extends ConsumerWidget {
           .eq('id', paymentId);
 
       // Synchronisation comptable complète
-      _invalidateAll(ref);
+      _invalidateAll(ref, weddingId);
 
       // Si dépense liée → re-vérifier is_paid
       if (payment.expenseId != null) {
@@ -545,13 +548,12 @@ Future<void> _resyncExpenseIsPaid(String expenseId) async {
 }
 
 /// Invalidation globale pour synchroniser dashboard + budget
-void _invalidateAll(WidgetRef ref) {
-  // Tous les providers comptables
-  ref.invalidate(paymentsSummaryProvider(ref.read(currentWeddingIdProvider)));
-  ref.invalidate(budgetProvider(ref.read(currentWeddingIdProvider)));
-  ref.invalidate(balancedSummaryProvider(ref.read(currentWeddingIdProvider)));
-  ref.invalidate(paymentsProvider(ref.read(currentWeddingIdProvider)));
-  ref.invalidate(expensesProvider(ref.read(currentWeddingIdProvider)));
+void _invalidateAll(WidgetRef ref, String weddingId) {
+  ref.invalidate(paymentsSummaryProvider(weddingId));
+  ref.invalidate(budgetProvider(weddingId));
+  ref.invalidate(balancedSummaryProvider(weddingId));
+  ref.invalidate(paymentsProvider(weddingId));
+  ref.invalidate(expensesProvider(weddingId));
 }
 
 class _InfoSection extends StatelessWidget {
@@ -993,7 +995,7 @@ class _DangerZone extends ConsumerWidget {
           .delete()
           .eq('id', paymentId);
 
-      _invalidateAll(ref);
+      _invalidateAll(ref, weddingId);
 
       // Re-ouvrir la dépense liée si nécessaire
       if (linkedExpenseId != null) {
