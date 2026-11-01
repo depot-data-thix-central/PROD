@@ -70,6 +70,12 @@ class GuestModel {
   final int? tableNumber;
   final DateTime createdAt;
 
+  // ✅ NOUVEAUX CHAMPS
+  final bool isVip;
+  final bool isCompanion;
+  final String? notes;
+  final String? thixId;
+
   GuestModel({
     required this.id,
     required this.weddingId,
@@ -82,6 +88,11 @@ class GuestModel {
     this.isPresent = false,
     this.tableNumber,
     required this.createdAt,
+    // ✅ NOUVEAUX CHAMPS
+    this.isVip = false,
+    this.isCompanion = false,
+    this.notes,
+    this.thixId,
   });
 
   // --- Alias UI ---
@@ -101,7 +112,31 @@ class GuestModel {
         isPresent: j['is_present'] ?? false,
         tableNumber: j['table_number'],
         createdAt: DateTime.parse(j['created_at']),
+        // ✅ NOUVEAUX CHAMPS
+        isVip: (j['is_vip'] as bool?) ?? false,
+        isCompanion: (j['is_companion'] as bool?) ?? false,
+        notes: j['notes'] as String?,
+        thixId: j['thix_id'] as String?,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'wedding_id': weddingId,
+        'name': name,
+        'email': email,
+        'phone': phone,
+        'group_name': groupName,
+        'guests_count': guestsCount,
+        'rsvp_status': rsvpStatus,
+        'is_present': isPresent,
+        'table_number': tableNumber,
+        'created_at': createdAt.toIso8601String(),
+        // ✅ NOUVEAUX CHAMPS
+        'is_vip': isVip,
+        'is_companion': isCompanion,
+        'notes': notes,
+        'thix_id': thixId,
+      };
 }
 
 class VendorPackageModel {
@@ -239,7 +274,7 @@ class ExpenseModel {
 }
 
 // ============================================================================
-// CHECKLIST MODEL — MIS À JOUR avec priority, category, description, orderIndex
+// CHECKLIST MODEL
 // ============================================================================
 class ChecklistModel {
   final String id;
