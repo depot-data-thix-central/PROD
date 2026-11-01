@@ -1,3 +1,4 @@
+// lib/presentation/thix_weeding/pages/staff/staff_shell_page.dart
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -20,10 +21,12 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
   int _index = 0;
 
   void _onTap(int i) {
+    // Le bouton central (index 2) ouvre une modale mais ne change pas l'onglet actif
     if (i == 2) {
       _showAddSheet();
-      return; // ne change JAMAIS l'index vers 2
+      return;
     }
+    
     setState(() => _index = i);
   }
 
@@ -49,7 +52,7 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
               ),
             ),
             ListTile(
-              leading: const Icon(Icons.person_add_outlined),
+              leading: const Icon(Icons.person_add_outlined, color: Color(0xFF0B3B8F)),
               title: const Text('Ajouter un invité'),
               onTap: () {
                 Navigator.pop(context);
@@ -57,7 +60,7 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.store_outlined),
+              leading: const Icon(Icons.store_outlined, color: Color(0xFFD4AF37)),
               title: const Text('Ajouter un prestataire'),
               onTap: () {
                 Navigator.pop(context);
@@ -65,7 +68,7 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.task_alt_outlined),
+              leading: const Icon(Icons.task_alt_outlined, color: Color(0xFF059669)),
               title: const Text('Ajouter une tâche'),
               onTap: () {
                 Navigator.pop(context);
@@ -73,7 +76,7 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
               },
             ),
             ListTile(
-              leading: const Icon(Icons.payments_outlined),
+              leading: const Icon(Icons.payments_outlined, color: Color(0xFFE31C4E)),
               title: const Text('Ajouter un paiement'),
               onTap: () {
                 Navigator.pop(context);
@@ -89,6 +92,7 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
 
   @override
   Widget build(BuildContext context) {
+    // Calcul du nombre de messages non lus pour le badge
     final unread = ref.watch(messagesProvider(widget.weddingId)).maybeWhen(
           data: (msgs) => msgs
               .where((m) => !m.isRead && m.senderType == 'guest')
@@ -103,12 +107,16 @@ class _StaffShellPageState extends ConsumerState<StaffShellPage> {
         children: [
           // 0 Dashboard
           StaffDashboardPage(weddingId: widget.weddingId),
+          
           // 1 Invités
           GuestListPage(weddingId: widget.weddingId),
-          // 2 placeholder (jamais affiché)
+          
+          // 2 Placeholder (Jamais affiché car on intercepte le tap)
           const SizedBox.shrink(),
+          
           // 3 Messages
           StaffMessagesPage(weddingId: widget.weddingId),
+          
           // 4 Paramètres
           SettingsPage(weddingId: widget.weddingId),
         ],
