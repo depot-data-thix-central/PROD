@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:http/http.dart' as http;
-import 'package:image_gallery_saver_plus/image_gallery_saver_plus.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:cross_file/cross_file.dart';
@@ -429,45 +428,23 @@ class _GalleryViewerState extends State<_GalleryViewer> {
   Future<void> _downloadCurrent() async {
     final photo = widget.photos[_currentIndex];
     setState(() => _downloading = true);
-
     try {
       final response = await http.get(Uri.parse(photo.imageUrl));
       if (response.statusCode != 200) throw Exception('Téléchargement échoué');
-
-      final Uint8List bytes = response.bodyBytes;
-      if (kIsWeb) {
-        // Sur web: partage / téléchargement navigateur via share
-        final xfile = XFile.fromData(
-          bytes,
-          mimeType: 'image/jpeg',
-          name: 'thix_wedding_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      final bytes = response.bodyBytes;
+      final xfile = XFile.fromData(
+        bytes,
+        mimeType: 'image/jpeg',
+        name: 'thix_wedding_${DateTime.now().millisecondsSinceEpoch}.jpg',
+      );
+      await Share.shareXFiles([xfile], text: 'Photo du mariage');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Photo prête à enregistrer / partager'),
+            backgroundColor: Color(0xFF2E7D32),
+          ),
         );
-        await Share.shareXFiles([xfile], text: 'Photo du mariage');
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Photo prête à être enregistrée / partagée'),
-              backgroundColor: Color(0xFF2E7D32),
-            ),
-          );
-        }
-      } else {
-        final result = await ImageGallerySaverPlus.saveImage(
-          bytes,
-          quality: 100,
-          name: 'thix_wedding_${DateTime.now().millisecondsSinceEpoch}',
-        );
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(result['isSuccess'] == true
-                  ? '✅ Photo enregistrée dans votre galerie'
-                  : '❌ Échec de l\'enregistrement'),
-              backgroundColor:
-                  result['isSuccess'] == true ? const Color(0xFF2E7D32) : _P.primary,
-            ),
-          );
-        }
       }
     } catch (e) {
       if (mounted) {
