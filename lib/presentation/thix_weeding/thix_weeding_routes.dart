@@ -1,4 +1,3 @@
-
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +17,7 @@ import 'pages/guest/livre_or_page.dart';
 import 'pages/guest/infos_page.dart';
 
 // STAFF - CORE & SHELL
-import 'pages/staff/staff_shell_page.dart'; // Le conteneur principal du dashboard staff
+import 'pages/staff/staff_shell_page.dart'; 
 import 'pages/staff/staff_dashboard_page.dart';
 import 'pages/staff/my_weddings/my_weddings_page.dart';
 import 'pages/staff/my_weddings/create_wedding_page.dart';
@@ -66,7 +65,7 @@ class ThixWeedingRoutes {
   static const String staffLivreOr = 'staffLivreOr';
   static const String staffInvitation = 'staffInvitation';
   static const String staffSettings = 'staffSettings';
-  static const String staffSettingsInfos = 'staffSettingsInfos'; // Nouvelle route spécifique
+  static const String myWeddingsList = 'myWeddingsList'; // Nouvelle constante explicite
 
   static List<RouteBase> get routes => [
         GoRoute(
@@ -74,11 +73,21 @@ class ThixWeedingRoutes {
           name: 'thixWeedingHome',
           builder: (context, state) => const ThixWeedingHomePage(),
           routes: [
+            
             // ================= CRÉATION MARIAGE =================
             GoRoute(
               path: 'create',
               name: 'createWedding',
               builder: (c, s) => const CreateWeddingPage(),
+            ),
+
+            // ================= LISTE DES MARIAGES UTILISATEUR =================
+            // ⚠️ IMPORTANT : Définir cette route STATIQUE AVANT la route DYNAMIQUE
+            // pour éviter que "my-weddings" ne soit capturé par ":weddingId"
+            GoRoute(
+              path: 'staff/my-weddings', 
+              name: myWeddingsList,
+              builder: (c, s) => const MyWeddingsPage(),
             ),
 
             // ================= ESPACE INVITÉ (GUEST) =================
@@ -106,26 +115,24 @@ class ThixWeedingRoutes {
               ],
             ),
 
-            // ================= MES MARIAGES (LISTE) =================
-            GoRoute(
-              path: 'my-weddings',
-              name: 'staffMyWeddings',
-              builder: (c, s) => const MyWeddingsPage(),
-            ),
-
-            // ================= DASHBOARD STAFF (SHELL + ROUTES FILS) =================
-            // Cette route sert de conteneur principal pour tout l'espace admin
+            // ================= DASHBOARD STAFF SPÉCIFIQUE =================
             GoRoute(
               path: 'staff/:weddingId',
               name: staffShell,
               redirect: (context, state) {
                 final id = state.pathParameters['weddingId'] ?? '';
+                
+                // Sécurité supplémentaire si quelqu'un force l'URL /staff/my-weddings
+                // Bien que la route statique ci-dessus devrait déjà capter ce cas.
+                if (id == 'my-weddings') {
+                   return '/$home/staff/my-weddings'; 
+                }
+                
                 if (id.trim().length < 4) return home;
                 return null;
               },
               builder: (context, state) {
                 final weddingId = state.pathParameters['weddingId']!;
-                // StaffShellPage gère la BottomNavigationBar et affiche le contenu via Navigator/Cascade
                 return StaffShellPage(weddingId: weddingId);
               },
               routes: [
@@ -143,13 +150,11 @@ class ThixWeedingRoutes {
                   name: staffInvites,
                   builder: (c, s) => GuestListPage(weddingId: s.pathParameters['weddingId']!),
                   routes: [
-                    // Ajouter un invité
                     GoRoute(
                       path: 'add',
                       name: staffAddInvite,
                       builder: (c, s) => AddGuestPage(weddingId: s.pathParameters['weddingId']!),
                     ),
-                    // Modifier un invité existant
                     GoRoute(
                       path: ':guestId/edit',
                       name: staffEditInvite,
@@ -269,15 +274,6 @@ class ThixWeedingRoutes {
                   path: 'parametres',
                   name: staffSettings,
                   builder: (c, s) => SettingsPage(weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    // Sous-route pour modifier les infos générales si nécessaire
-                    // Sinon, SettingsPage gère tout en interne
-                    GoRoute(
-                      path: 'infos',
-                      name: staffSettingsInfos,
-                      builder: (c, s) => SettingsPage(weddingId: s.pathParameters['weddingId']!),
-                    ),
-                  ],
                 ),
               ],
             ),
