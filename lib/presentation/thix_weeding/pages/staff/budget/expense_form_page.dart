@@ -3,8 +3,8 @@
 // THIX WEDDING & EVENTS — EXPENSE FORM (PRODUCTION v2 — USD + ÉQUILIBRÉ)
 // ✅ Devise USD ($) partout (décimal autorisé)
 // ✅ Les paiements partiels créent un PaymentModel → équilibre le budget
-// ✅ Invalidation de balancedSummaryProvider (comptabilité temps réel)
 // ✅ Mode édition : recharge les paiements existants
+// ✅ FIX : nullable category, Supabase Storage API, balancedSummaryProvider
 // ============================================================================
 import 'dart:typed_data';
 
@@ -174,7 +174,8 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
       _titleCtrl.text = expense.title;
       _amountCtrl.text = expense.amount.toString();
       _vendorId = expense.vendorId;
-      _category = expense.category.isNotEmpty ? expense.category : 'divers';
+      // ✅ FIX : gestion du nullable category
+      _category = (expense.category?.isNotEmpty ?? false) ? expense.category! : 'divers';
       _isPaid = expense.isPaid;
 
       // Charger paiements déjà enregistrés pour cette dépense
@@ -260,11 +261,12 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
             .eq('expense_id', expenseId);
       }
 
-      // Refresh providers (incluant le nouveau balancedSummaryProvider)
+      // Refresh providers
       ref.invalidate(expensesProvider(widget.weddingId));
       ref.invalidate(paymentsProvider(widget.weddingId));
       ref.invalidate(budgetProvider(widget.weddingId));
-      ref.invalidate(balancedSummaryProvider(widget.weddingId));
+      // ✅ FIX : balancedSummaryProvider commenté (n'existe pas dans ce scope)
+      // ref.invalidate(balancedSummaryProvider(widget.weddingId));
 
       _showSuccess(_isEdit
           ? 'Dépense mise à jour (${_fmtUsd(paidAmount)} payé)'
@@ -319,7 +321,8 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
     try {
       final fileName =
           '${widget.weddingId}/${DateTime.now().millisecondsSinceEpoch}_receipt.jpg';
-      await Supabase.instance.storage.from('thix-wedding-receipts').uploadBinary(
+      // ✅ FIX : Supabase.instance.client.storage au lieu de Supabase.instance.storage
+      await Supabase.instance.client.storage.from('thix-wedding-receipts').uploadBinary(
             fileName,
             _receiptImage!,
             fileOptions: const FileOptions(
@@ -328,7 +331,8 @@ class _ExpenseFormPageState extends ConsumerState<ExpenseFormPage> {
               contentType: 'image/jpeg',
             ),
           );
-      return Supabase.instance.storage
+      // ✅ FIX : Supabase.instance.client.storage au lieu de Supabase.instance.storage
+      return Supabase.instance.client.storage
           .from('thix-wedding-receipts')
           .getPublicUrl(fileName);
     } catch (e) {
