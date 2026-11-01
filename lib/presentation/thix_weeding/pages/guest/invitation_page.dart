@@ -14,6 +14,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 
 class _R {
   static const Color rose = Color(0xFFE31C4E);
@@ -61,6 +62,10 @@ class _InvitationPageState extends ConsumerState<InvitationPage> {
   bool _rsvpSaving = false;
   final _nameCtrl = TextEditingController();
   int _guestsCount = 1;
+  String _guestDisplayName = '';
+  String _guestThixId = '';
+  int? _tableNumber;
+  String _templateId = '';
 
   @override
   void initState() {
@@ -137,6 +142,7 @@ class _InvitationPageState extends ConsumerState<InvitationPage> {
             ? cfg['place_text'] as String
             : _venue;
         _heroUrl = (cfg['hero_image_url'] as String?) ?? '';
+        _templateId = (cfg['template_id'] as String?) ?? '';
         _accent = parseHex(cfg['primary_color'], _accent);
         _bg = parseHex(cfg['background_color'], _bg);
       } else {
@@ -148,14 +154,18 @@ class _InvitationPageState extends ConsumerState<InvitationPage> {
       if (user != null) {
         final guest = await Supabase.instance.client
             .from('thix_weeding_guests')
-            .select('id, name, rsvp_status, guests_count')
+            .select('id, name, rsvp_status, guests_count, thix_id, table_number')
             .eq('wedding_id', widget.weddingId)
             .eq('user_id', user.id)
             .maybeSingle();
         if (guest != null) {
           _nameCtrl.text = (guest['name'] as String?) ?? '';
+          _guestDisplayName = (guest['name'] as String?) ?? '';
+          _guestThixId = (guest['thix_id'] as String?) ?? '';
           _rsvpStatus = guest['rsvp_status'] as String?;
           _guestsCount = (guest['guests_count'] as int?) ?? 1;
+          final tn = guest['table_number'];
+          _tableNumber = tn is int ? tn : int.tryParse('$tn');
         }
       }
 
@@ -428,6 +438,16 @@ class _InvitationPageState extends ConsumerState<InvitationPage> {
                             accent: _accent,
                             bg: _bg,
                             uniqueCode: _uniqueCode,
+                            guestName: _guestDisplayName.isNotEmpty
+                                ? _guestDisplayName
+                                : (_nameCtrl.text.trim().isNotEmpty
+                                    ? _nameCtrl.text.trim()
+                                    : null),
+                            guestAccessCode: _guestThixId.isNotEmpty
+                                ? _guestThixId
+                                : _uniqueCode,
+                            tableNumber: _tableNumber,
+                            templateId: _templateId,
                           ),
                           const SizedBox(height: 20),
 
@@ -685,6 +705,10 @@ class _StudioInviteCard extends StatelessWidget {
   final Color accent;
   final Color bg;
   final String uniqueCode;
+  final String? guestName;
+  final String guestAccessCode;
+  final int? tableNumber;
+  final String templateId;
 
   const _StudioInviteCard({
     required this.title,
@@ -697,159 +721,273 @@ class _StudioInviteCard extends StatelessWidget {
     required this.accent,
     required this.bg,
     required this.uniqueCode,
+    this.guestName,
+    required this.guestAccessCode,
+    this.tableNumber,
+    this.templateId = '',
   });
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
-      child: AspectRatio(
-        aspectRatio: 0.72,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (heroUrl.isNotEmpty)
-              Image.network(
-                heroUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(color: bg),
-              )
-            else
-              Container(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [Color.lerp(bg, accent, 0.18)!, bg],
-                  ),
-                ),
-              ),
-            DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    Colors.black.withOpacity(0.28),
-                    Colors.black.withOpacity(0.12),
-                    Colors.black.withOpacity(0.82),
-                  ],
-                  stops: const [0.0, 0.35, 1.0],
-                ),
-              ),
-            ),
-            Positioned.fill(
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    border: Border.all(color: accent.withOpacity(0.7), width: 1.2),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(22, 36, 22, 24),
-              child: Column(
-                children: [
-                  Text(
-                    title.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.cinzel(
-                      fontSize: 11,
-                      letterSpacing: 3.2,
-                      fontWeight: FontWeight.w600,
-                      color: accent,
+    // Layout type Studio : photo en haut + carte blanche (lisible)
+    // évite le texte en désordre sur la photo
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: accent.withOpacity(0.35)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Photo ──────────────────────────────────────────
+          AspectRatio(
+            aspectRatio: 1.05,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (heroUrl.isNotEmpty)
+                  Image.network(
+                    heroUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(color: bg),
+                  )
+                else
+                  Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [Color.lerp(bg, accent, 0.2)!, bg],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
                     ),
                   ),
-                  const SizedBox(height: 14),
+                // léger voile bas pour transition
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: 48,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.white.withOpacity(0.95),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                if (tableNumber != null)
+                  Positioned(
+                    top: 12,
+                    right: 12,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 8,
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.table_restaurant_rounded, size: 16, color: accent),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Table $tableNumber',
+                            style: GoogleFonts.inter(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 13,
+                              color: _R.ink,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+
+          // ── Contenu texte ordonné ──────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+            child: Column(
+              children: [
+                Text(
+                  title.toUpperCase(),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cinzel(
+                    fontSize: 11,
+                    letterSpacing: 2.5,
+                    fontWeight: FontWeight.w600,
+                    color: accent,
+                  ),
+                ),
+                if (guestName != null && guestName!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
                   Text(
-                    intro,
+                    'Cher(e)',
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 13,
+                      fontStyle: FontStyle.italic,
+                      color: _R.inkSoft,
+                    ),
+                  ),
+                  Text(
+                    guestName!,
                     textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.playfairDisplay(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: _R.ink,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Text(
+                  intro,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 14,
+                    fontStyle: FontStyle.italic,
+                    color: _R.inkSoft,
+                    height: 1.35,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  couple,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.greatVibes(
+                    fontSize: 34,
+                    color: accent,
+                    height: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Container(width: 48, height: 1.5, color: accent.withOpacity(0.5)),
+                const SizedBox(height: 12),
+                Text(
+                  whenLine.toUpperCase(),
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.cinzel(
+                    fontSize: 12,
+                    letterSpacing: 1.2,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+                if (place.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    place,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 15,
+                      color: _R.ink,
+                    ),
+                  ),
+                ],
+                if (outro.trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    outro,
+                    textAlign: TextAlign.center,
                     style: GoogleFonts.cormorantGaramond(
                       fontSize: 13,
                       fontStyle: FontStyle.italic,
-                      color: Colors.white.withOpacity(0.88),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Text(
-                    couple,
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.greatVibes(
-                      fontSize: 36,
-                      color: accent,
-                      height: 1.1,
-                    ),
-                  ),
-                  const Spacer(),
-                  Text(
-                    whenLine.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.cinzel(
-                      fontSize: 12,
-                      letterSpacing: 1.4,
-                      fontWeight: FontWeight.w600,
                       color: accent,
                     ),
                   ),
-                  if (place.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(
-                      place,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.cormorantGaramond(
-                        fontSize: 14,
-                        color: Colors.white.withOpacity(0.9),
-                      ),
-                    ),
-                  ],
-                  if (outro.trim().isNotEmpty) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      outro,
-                      textAlign: TextAlign.center,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.cormorantGaramond(
-                        fontSize: 13,
-                        fontStyle: FontStyle.italic,
-                        color: accent.withOpacity(0.95),
-                      ),
-                    ),
-                  ],
-                  if (uniqueCode.isNotEmpty) ...[
-                    const SizedBox(height: 14),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.12),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white.withOpacity(0.22)),
-                      ),
-                      child: Text(
-                        uniqueCode,
-                        style: const TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 11,
+                ],
+                const SizedBox(height: 18),
+
+                // ── QR entrée ────────────────────────────────
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBFC),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: accent.withOpacity(0.25)),
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        'QR code d\'entrée',
+                        style: GoogleFonts.inter(
+                          fontSize: 12,
                           fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 1,
+                          color: _R.ink,
                         ),
                       ),
-                    ),
-                  ],
-                ],
-              ),
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: QrImageView(
+                          data: guestAccessCode.isNotEmpty
+                              ? guestAccessCode
+                              : uniqueCode,
+                          version: QrVersions.auto,
+                          size: 140,
+                          backgroundColor: Colors.white,
+                          eyeStyle: QrEyeStyle(
+                            eyeShape: QrEyeShape.square,
+                            color: accent,
+                          ),
+                          dataModuleStyle: QrDataModuleStyle(
+                            dataModuleShape: QrDataModuleShape.square,
+                            color: _R.ink,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        guestAccessCode.isNotEmpty ? guestAccessCode : uniqueCode,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                          color: _R.ink,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'À présenter à l\'entrée de la salle',
+                        style: GoogleFonts.inter(fontSize: 11, color: _R.inkSoft),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
