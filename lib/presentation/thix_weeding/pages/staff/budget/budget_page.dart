@@ -1,8 +1,11 @@
 // lib/presentation/thix_weeding/pages/staff/budget/budget_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — BUDGET PAGE (PRODUCTION)
-// Design royal premium + 12 catégories + paiements partiels + dettes
-// Branché sur providers EXISTANTS du dépôt
+// THIX WEDDING & EVENTS — BUDGET PAGE (PRODUCTION v2 — USD + ÉQUILIBRÉ)
+// ✅ Devise USD ($) partout
+// ✅ Restant = Budget − Payé (l'indicateur s'équilibre dès un décaissement)
+// ✅ % hero = Payé / Budget ; barre secondaire = Engagé / Budget
+// ✅ Paiements partiels appliqués aux dépenses (filtres + badges réels)
+// ✅ Dette prestataires = Dépensé − Payé
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -93,6 +96,67 @@ class _Cat {
 }
 
 // ============================================================================
+// RÉSUMÉ ÉQUILIBRÉ (calcul central — USD)
+// ============================================================================
+class BalancedSummary {
+  final double spent;            // Engagé : somme des dépenses
+  final double paid;             // Décaissé : paiements complétés (ou dépenses payées)
+  final double remaining;        // Trésorerie : budget − paid
+  final double toCommit;         // Capacité d'engagement : budget − spent
+  final double debt;             // Dette : spent − paid (si > 0)
+  final Map<String, double> paidByExpense; // paiements complétés par dépense
+
+  const BalancedSummary({
+    required this.spent,
+    required this.paid,
+    required this.remaining,
+    required this.toCommit,
+    required this.debt,
+    required this.paidByExpense,
+  });
+
+  double paidFor(String expenseId) => paidByExpense[expenseId] ?? 0;
+}
+
+/// Calcule l'état réel du budget : dès qu'un paiement part, le restant baisse.
+final balancedSummaryProvider =
+    FutureProvider.family<BalancedSummary, String>((ref, weddingId) async {
+  final expenses = await ref.watch(expensesProvider(weddingId).future);
+  final payments = await ref.watch(paymentsProvider(weddingId).future);
+  final budget = await ref.watch(budgetProvider(weddingId).future);
+
+  final totalBudget = budget?.totalBudget ?? 0.0;
+
+  final spent = expenses.fold<double>(0, (s, e) => s + e.amount);
+
+  // Décaissements : paiements complétés
+  final completed = payments.where((p) => p.status == 'completed');
+  final paidFromPayments = completed.fold<double>(0, (s, p) => s + p.amount);
+
+  // Filet de sécurité : dépenses marquées payées sans paiement enregistré
+  final paidFromExpenses =
+      expenses.where((e) => e.isPaid).fold<double>(0, (s, e) => s + e.amount);
+
+  final paid = paidFromPayments > paidFromExpenses ? paidFromPayments : paidFromExpenses;
+
+  // Paiements complétés ventilés par dépense (pour partiels & badges)
+  final paidByExpense = <String, double>{};
+  for (final p in completed) {
+    final eid = p.expenseId;
+    if (eid != null) paidByExpense[eid] = (paidByExpense[eid] ?? 0) + p.amount;
+  }
+
+  return BalancedSummary(
+    spent: spent,
+    paid: paid,
+    remaining: totalBudget - paid,
+    toCommit: totalBudget - spent,
+    debt: (spent - paid).clamp(0, double.infinity),
+    paidByExpense: paidByExpense,
+  );
+});
+
+// ============================================================================
 // PAGE
 // ============================================================================
 class BudgetPage extends ConsumerStatefulWidget {
@@ -127,7 +191,8 @@ class _BudgetPageState extends ConsumerState<BudgetPage>
     final id = widget.weddingId;
     ref.invalidate(budgetProvider(id));
     ref.invalidate(expensesProvider(id));
-    ref.invalidate(paymentsSummaryProvider(id));
+    ref.invalidate(paymentsProvider(id));
+    ref.invalidate(balancedSummaryProvider(id));
     ref.invalidate(vendorsProvider(id));
   }
 
@@ -145,7 +210,8 @@ class _BudgetPageState extends ConsumerState<BudgetPage>
           if (budget == null) {
             return _EmptyBudgetView(
               onCreate: () async {
-                await ref.read(budgetServiceProvider).upsert(id, 3500000);
+                // Budget par défaut en USD
+                await ref.read(budgetServiceProvider).upsert(id, 5000);
                 ref.invalidate(budgetProvider(id));
               },
             );
@@ -167,11 +233,11 @@ class _BudgetPageState extends ConsumerState<BudgetPage>
     );
   }
 
-  // ── MODAL ÉDITION BUDGET TOTAL ───────────────────────────────────────────
+  // ── MODAL ÉDITION BUDGET TOTAL (USD) ─────────────────────────────────────
   void _editTotalBudget() {
     final id = widget.weddingId;
     final current = ref.read(budgetProvider(id)).valueOrNull?.totalBudget ?? 0;
-    final controller = TextEditingController(text: current.toInt().toString());
+    final controller = TextEditingController(text: _plainNumber(current));
     final formKey = GlobalKey<FormState>();
 
     showModalBottomSheet(
@@ -182,7 +248,8 @@ class _BudgetPageState extends ConsumerState<BudgetPage>
         controller: controller,
         formKey: formKey,
         onSave: () async {
-          final val = double.tryParse(controller.text.replaceAll(RegExp(r'\D'), ''));
+          final val = double.tryParse(
+              controller.text.replaceAll(' ', '').replaceAll(',', '.'));
           if (val == null || val <= 0) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(content: Text('Montant invalide')),
@@ -191,6 +258,7 @@ class _BudgetPageState extends ConsumerState<BudgetPage>
           }
           await ref.read(budgetServiceProvider).upsert(id, val);
           ref.invalidate(budgetProvider(id));
+          ref.invalidate(balancedSummaryProvider(id));
           if (mounted) Navigator.of(context).pop();
         },
       ),
@@ -218,21 +286,19 @@ class _BudgetContent extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final summaryAsync = ref.watch(paymentsSummaryProvider(weddingId));
+    final summaryAsync = ref.watch(balancedSummaryProvider(weddingId));
     final expensesAsync = ref.watch(expensesProvider(weddingId));
     final vendorsAsync = ref.watch(vendorsProvider(weddingId));
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ── APP BAR ROYALE ──────────────────────────────────────────────────
         _BudgetAppBar(onEdit: onEditBudget),
-
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
           sliver: SliverList(
             delegate: SliverChildListDelegate([
-              // ── HERO BUDGET ─────────────────────────────────────────────
+              // ── HERO ÉQUILIBRÉ ──────────────────────────────────────────
               summaryAsync.when(
                 loading: () => const _SummaryShimmer(),
                 error: (e, _) => Text('$e', style: const TextStyle(color: _R.rose)),
@@ -264,43 +330,59 @@ class _BudgetContent extends ConsumerWidget {
               ),
               const SizedBox(height: 12),
 
-              // ── LISTE DES DÉPENSES ──────────────────────────────────────
-              expensesAsync.when(
+              // ── LISTE DES DÉPENSES (filtres réels, partiels inclus) ─────
+              summaryAsync.when(
                 loading: () => const _ListShimmer(),
                 error: (e, _) => _ErrorInline(message: '$e'),
-                data: (expenses) {
-                  final filtered = expenses.where((e) {
-                    if (filter == 'paid') return e.isPaid;
-                    if (filter == 'unpaid') return !e.isPaid;
-                    return true;
-                  }).toList()
-                    ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+                data: (summary) => expensesAsync.when(
+                  loading: () => const _ListShimmer(),
+                  error: (e, _) => _ErrorInline(message: '$e'),
+                  data: (expenses) {
+                    double paidOf(ExpenseModel e) =>
+                        e.isPaid ? e.amount : summary.paidFor(e.id);
 
-                  if (filtered.isEmpty) {
-                    return _EmptyList(filter: filter);
-                  }
+                    final filtered = expenses.where((e) {
+                      final p = paidOf(e);
+                      switch (filter) {
+                        case 'paid':
+                          return e.isPaid || p >= e.amount && e.amount > 0;
+                        case 'unpaid':
+                          return p <= 0 && !e.isPaid;
+                        case 'partial':
+                          return p > 0 && p < e.amount;
+                        default:
+                          return true;
+                      }
+                    }).toList()
+                      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
-                  return RefreshIndicator(
-                    color: _R.blue,
-                    onRefresh: () async {
-                      ref.invalidate(expensesProvider(weddingId));
-                      ref.invalidate(budgetProvider(weddingId));
-                    },
-                    child: Column(
-                      children: filtered
-                          .map((e) => Padding(
-                                padding: const EdgeInsets.only(bottom: 10),
-                                child: _ExpenseTile(
-                                  expense: e,
-                                  vendors: vendorsAsync.valueOrNull ?? const [],
-                                  onTap: () => context.push(
-                                      '/thix-weeding/staff/$weddingId/budget/${e.id}'),
-                                ),
-                              ))
-                          .toList(),
-                    ),
-                  );
-                },
+                    if (filtered.isEmpty) return _EmptyList(filter: filter);
+
+                    return RefreshIndicator(
+                      color: _R.blue,
+                      onRefresh: () async {
+                        ref.invalidate(expensesProvider(weddingId));
+                        ref.invalidate(paymentsProvider(weddingId));
+                        ref.invalidate(balancedSummaryProvider(weddingId));
+                        ref.invalidate(budgetProvider(weddingId));
+                      },
+                      child: Column(
+                        children: filtered
+                            .map((e) => Padding(
+                                  padding: const EdgeInsets.only(bottom: 10),
+                                  child: _ExpenseTile(
+                                    expense: e,
+                                    paidAmount: paidOf(e),
+                                    vendors: vendorsAsync.valueOrNull ?? const [],
+                                    onTap: () => context.push(
+                                        '/thix-weeding/staff/$weddingId/budget/${e.id}'),
+                                  ),
+                                ))
+                            .toList(),
+                      ),
+                    );
+                  },
+                ),
               ),
             ]),
           ),
@@ -378,21 +460,24 @@ class _BudgetAppBar extends StatelessWidget {
 }
 
 // ============================================================================
-// HERO BUDGET (dégradé or)
+// HERO BUDGET — ÉQUILIBRÉ (USD)
 // ============================================================================
 class _BudgetHero extends StatelessWidget {
   final double totalBudget;
-  final Map<String, double> summary;
+  final BalancedSummary summary;
 
   const _BudgetHero({required this.totalBudget, required this.summary});
 
   @override
   Widget build(BuildContext context) {
-    final spent = summary['spent'] ?? 0.0;
-    final paid = summary['paid'] ?? 0.0;
-    final remaining = summary['remaining'] ?? (totalBudget - spent);
-    final ratio = totalBudget > 0 ? (spent / totalBudget).clamp(0.0, 1.0) : 0.0;
-    final over = spent > totalBudget && totalBudget > 0;
+    final spent = summary.spent;
+    final paid = summary.paid;
+    final remaining = summary.remaining;
+    final over = totalBudget > 0 && (paid > totalBudget || spent > totalBudget);
+
+    // % réel : décaissé / budget (l'indicateur bouge dès qu'un paiement part)
+    final cashRatio = totalBudget > 0 ? (paid / totalBudget).clamp(0.0, 1.5) : 0.0;
+    final commitRatio = totalBudget > 0 ? (spent / totalBudget).clamp(0.0, 1.5) : 0.0;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -427,7 +512,7 @@ class _BudgetHero extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Budget global',
+                      'Budget global (USD)',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -453,7 +538,7 @@ class _BudgetHero extends StatelessWidget {
                   border: Border.all(color: Colors.white.withOpacity(0.4)),
                 ),
                 child: Text(
-                  '${(ratio * 100).toInt()}%',
+                  '${(cashRatio * 100).toInt()}%',
                   style: GoogleFonts.inter(
                     fontSize: 14,
                     fontWeight: FontWeight.w800,
@@ -463,21 +548,46 @@ class _BudgetHero extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 18),
 
-          // Progress bar
+          // Barre principale : décaissé (trésorerie sortie)
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: LinearProgressIndicator(
               minHeight: 10,
-              value: ratio,
+              value: cashRatio.clamp(0.0, 1.0),
               backgroundColor: Colors.white.withOpacity(0.25),
               valueColor: const AlwaysStoppedAnimation(Colors.white),
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 6),
+          // Barre secondaire : engagé
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              minHeight: 4,
+              value: commitRatio.clamp(0.0, 1.0),
+              backgroundColor: Colors.white.withOpacity(0.15),
+              valueColor: AlwaysStoppedAnimation(Colors.white.withOpacity(0.65)),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              Text(
+                'Décaissé ${(cashRatio * 100).toStringAsFixed(1)}%',
+                style: GoogleFonts.inter(fontSize: 9.5, color: Colors.white.withOpacity(0.9)),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Engagé ${(commitRatio * 100).toStringAsFixed(1)}%',
+                style: GoogleFonts.inter(fontSize: 9.5, color: Colors.white.withOpacity(0.75)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
 
-          // 3 stats
+          // 3 stats équilibrées
           Row(
             children: [
               Expanded(
@@ -506,9 +616,26 @@ class _BudgetHero extends StatelessWidget {
             ],
           ),
 
-          // Dettes (payé vs dépensé)
-          if (spent > paid && paid > 0) ...[
-            const SizedBox(height: 14),
+          // Capacité d'engagement restante
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Icon(Icons.trending_up, size: 14, color: Colors.white.withOpacity(0.9)),
+              const SizedBox(width: 6),
+              Text(
+                'Capacité d\'engagement : ${_fmtMoney(summary.toCommit)}',
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white.withOpacity(0.9),
+                ),
+              ),
+            ],
+          ),
+
+          // Dette prestataires
+          if (summary.debt > 0) ...[
+            const SizedBox(height: 10),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               decoration: BoxDecoration(
@@ -522,7 +649,7 @@ class _BudgetHero extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Dette prestataires : ${_fmtMoney(spent - paid)}',
+                      'Dette prestataires : ${_fmtMoney(summary.debt)}',
                       style: GoogleFonts.inter(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
@@ -596,7 +723,6 @@ class _CategoryBreakdown extends StatelessWidget {
   Widget build(BuildContext context) {
     if (expenses.isEmpty) return const SizedBox.shrink();
 
-    // Agrégation par catégorie
     final Map<String, double> totals = {};
     for (final e in expenses) {
       final key = (e.category != null && e.category!.isNotEmpty) ? e.category! : 'divers';
@@ -605,7 +731,6 @@ class _CategoryBreakdown extends StatelessWidget {
     final grandTotal = totals.values.fold<double>(0, (a, b) => a + b);
     if (grandTotal <= 0) return const SizedBox.shrink();
 
-    // Tri décroissant
     final sorted = totals.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
 
@@ -626,8 +751,6 @@ class _CategoryBreakdown extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 14),
-
-          // Barre empilée
           ClipRRect(
             borderRadius: BorderRadius.circular(6),
             child: SizedBox(
@@ -644,8 +767,6 @@ class _CategoryBreakdown extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 16),
-
-          // Top 5 catégories
           ...sorted.take(5).map((entry) {
             final cat = _Cat.find(entry.key);
             final percent = (entry.value / grandTotal * 100);
@@ -861,13 +982,19 @@ class _SectionHeader extends StatelessWidget {
 }
 
 // ============================================================================
-// TILE DÉPENSE
+// TILE DÉPENSE (USD + statut partiel réel)
 // ============================================================================
 class _ExpenseTile extends StatelessWidget {
   final ExpenseModel expense;
+  final double paidAmount;
   final List<VendorModel> vendors;
   final VoidCallback onTap;
-  const _ExpenseTile({required this.expense, required this.vendors, required this.onTap});
+  const _ExpenseTile({
+    required this.expense,
+    required this.paidAmount,
+    required this.vendors,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -876,6 +1003,12 @@ class _ExpenseTile extends StatelessWidget {
         ? vendors.where((v) => v.id == expense.vendorId).firstOrNull
         : null;
     final vendorName = vendor?.name ?? 'Sans prestataire';
+
+    final bool isPaid = expense.isPaid || (expense.amount > 0 && paidAmount >= expense.amount);
+    final bool isPartial = !isPaid && paidAmount > 0;
+
+    final Color statusColor = isPaid ? _R.green : (isPartial ? _R.amber : _R.rose);
+    final String statusLabel = isPaid ? 'Payée' : (isPartial ? 'Partiel' : 'Impayée');
 
     return Material(
       color: Colors.white,
@@ -888,7 +1021,6 @@ class _ExpenseTile extends StatelessWidget {
           decoration: _R.card(r: 14),
           child: Row(
             children: [
-              // Icône catégorie
               Container(
                 padding: const EdgeInsets.all(10),
                 decoration: BoxDecoration(
@@ -900,8 +1032,6 @@ class _ExpenseTile extends StatelessWidget {
                 child: Icon(cat.icon, color: Colors.white, size: 20),
               ),
               const SizedBox(width: 12),
-
-              // Contenu
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -942,11 +1072,26 @@ class _ExpenseTile extends StatelessWidget {
                         ),
                       ],
                     ),
+                    if (isPartial) ...[
+                      const SizedBox(height: 6),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(3),
+                        child: LinearProgressIndicator(
+                          minHeight: 4,
+                          value: (paidAmount / expense.amount).clamp(0.0, 1.0),
+                          backgroundColor: _R.amber.withOpacity(0.15),
+                          valueColor: const AlwaysStoppedAnimation(_R.amber),
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        '${_fmtMoney(paidAmount)} / ${_fmtMoney(expense.amount)}',
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: _R.amber),
+                      ),
+                    ],
                   ],
                 ),
               ),
-
-              // Montant + statut
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -955,22 +1100,22 @@ class _ExpenseTile extends StatelessWidget {
                     style: GoogleFonts.inter(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      color: expense.isPaid ? _R.green : _R.rose,
+                      color: statusColor,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: (expense.isPaid ? _R.green : _R.amber).withOpacity(0.12),
+                      color: statusColor.withOpacity(0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      expense.isPaid ? 'Payée' : 'Impayée',
+                      statusLabel,
                       style: GoogleFonts.inter(
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
-                        color: expense.isPaid ? _R.green : _R.amber,
+                        color: statusColor,
                       ),
                     ),
                   ),
@@ -1007,7 +1152,7 @@ class _RoyalFab extends StatelessWidget {
 }
 
 // ============================================================================
-// VUE BUDGET VIDE (premier usage)
+// VUE BUDGET VIDE (premier usage — USD)
 // ============================================================================
 class _EmptyBudgetView extends StatelessWidget {
   final VoidCallback onCreate;
@@ -1038,7 +1183,7 @@ class _EmptyBudgetView extends StatelessWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'Définissez votre budget global pour suivre vos dépenses',
+                    'Définissez votre budget global (USD) pour suivre vos dépenses',
                     textAlign: TextAlign.center,
                     style: GoogleFonts.inter(fontSize: 14, color: _R.text2),
                   ),
@@ -1046,7 +1191,7 @@ class _EmptyBudgetView extends StatelessWidget {
                   FilledButton.icon(
                     onPressed: onCreate,
                     icon: const Icon(Icons.add),
-                    label: const Text('Créer budget 3 500 000 FCFA'),
+                    label: const Text('Créer budget 5 000 \$'),
                     style: FilledButton.styleFrom(
                       backgroundColor: _R.blue,
                       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
@@ -1064,7 +1209,7 @@ class _EmptyBudgetView extends StatelessWidget {
 }
 
 // ============================================================================
-// SHEET ÉDITION BUDGET
+// SHEET ÉDITION BUDGET (USD)
 // ============================================================================
 class _RoyalEditBudgetSheet extends StatelessWidget {
   final TextEditingController controller;
@@ -1094,7 +1239,6 @@ class _RoyalEditBudgetSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Poignée
           Center(
             child: Container(
               width: 40,
@@ -1103,7 +1247,6 @@ class _RoyalEditBudgetSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 20),
-
           Row(
             children: [
               Container(
@@ -1113,23 +1256,22 @@ class _RoyalEditBudgetSheet extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                'Modifier le budget',
+                'Modifier le budget (USD)',
                 style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800),
               ),
             ],
           ),
           const SizedBox(height: 20),
-
           TextField(
             controller: controller,
-            keyboardType: TextInputType.number,
-            inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
             style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w800),
             decoration: InputDecoration(
-              labelText: 'Budget total (FCFA)',
+              labelText: 'Budget total (USD \$)',
+              hintText: 'Ex : 5000 ou 2500.50',
               labelStyle: GoogleFonts.inter(color: _R.text2),
-              suffixText: 'FCFA',
-              suffixStyle: GoogleFonts.inter(color: _R.text2, fontWeight: FontWeight.w600),
+              prefixText: '\$ ',
+              prefixStyle: GoogleFonts.inter(color: _R.green, fontWeight: FontWeight.w800, fontSize: 22),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: const BorderSide(color: _R.border),
@@ -1146,7 +1288,6 @@ class _RoyalEditBudgetSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 24),
-
           Row(
             children: [
               Expanded(
@@ -1209,7 +1350,7 @@ class _ExportSheet extends StatelessWidget {
               style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
           const SizedBox(height: 20),
           _ExportOption(icon: Icons.picture_as_pdf, label: 'Rapport PDF',
-              subtitle: 'Rapport complet avec graphiques',
+              subtitle: 'Rapport complet avec graphiques (USD)',
               color: _R.rose,
               onTap: () => Navigator.pop(context)),
           const SizedBox(height: 10),
@@ -1324,7 +1465,7 @@ class _SummaryShimmer extends StatelessWidget {
   const _SummaryShimmer();
   @override
   Widget build(BuildContext context) => Container(
-        height: 200,
+        height: 240,
         decoration: BoxDecoration(
           color: _R.gold.withOpacity(0.15),
           borderRadius: BorderRadius.circular(24),
@@ -1404,24 +1545,33 @@ class _ErrorInline extends StatelessWidget {
       );
 }
 
-// Utilitaire
+// ============================================================================
+// UTILITAIRES
+// ============================================================================
 void _noop() {}
 
+/// Format USD : $2,000,000 ou $1,234.56 (centimes seulement si nécessaires)
 String _fmtMoney(double v) {
   final neg = v < 0;
-  final s = v.round().abs().toString();
+  final abs = v.abs();
+  final whole = abs.floor();
+  final cents = ((abs - whole) * 100).round();
+  final s = whole.toString();
   final buf = StringBuffer();
-  var c = 0;
-  for (var i = s.length - 1; i >= 0; i--) {
+  for (var i = 0; i < s.length; i++) {
+    if (i > 0 && (s.length - i) % 3 == 0) buf.write(',');
     buf.write(s[i]);
-    c++;
-    if (c % 3 == 0 && i > 0) buf.write(' ');
   }
-  final out = buf.toString().split('').reversed.join();
-  return '${neg ? '-' : ''}$out FCFA';
+  final centsStr = cents > 0 ? '.${cents.toString().padLeft(2, '0')}' : '';
+  return '${neg ? '-' : ''}\$$buf$centsStr';
 }
 
-// Extension utilitaire pour firstOrNull
+/// Valeur brute sans séparateurs pour le champ d'édition
+String _plainNumber(double v) {
+  final cents = ((v - v.floor()) * 100).round();
+  return cents > 0 ? '${v.floor()}.$cents' : '${v.floor()}';
+}
+
 extension _FirstOrNullExt<T> on Iterable<T> {
   T? get firstOrNull => isEmpty ? null : first;
 }
