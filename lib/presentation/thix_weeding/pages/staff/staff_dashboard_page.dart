@@ -82,6 +82,8 @@ class _Routes {
   static String messages(String id) => '${_base(id)}/messages';
   static String parametres(String id) => '${_base(id)}/parametres';
   static String myWeddings() => '/thix-weeding/staff/my-weddings';
+  static String seating(String id) => '${_base(id)}/seating';
+  static String cadeaux(String id) => '${_base(id)}/cadeaux';
 }
 
 // ============================================================================
@@ -616,6 +618,8 @@ class _ModulesGrid extends StatelessWidget {
       _Module('Galerie', '$photosCount photos', Icons.photo_library_outlined, _Royal.roseG, _Routes.galerie(id)),
       _Module("Livre d'or", '$guestbookCount msgs', Icons.menu_book_outlined, _Royal.goldG, _Routes.livreOr(id)),
       _Module('Messages', unreadMessages > 0 ? '$unreadMessages nouveaux' : 'À jour', Icons.chat_bubble_outline, _Royal.royal, _Routes.messages(id), badge: unreadMessages),
+      _Module('Plan de table', 'Salle 3D', Icons.table_restaurant_outlined, _Royal.goldG, _Routes.seating(id)),
+      _Module('Cadeaux', 'Propositions', Icons.card_giftcard_outlined, _Royal.roseG, _Routes.cadeaux(id)),
       _Module('Paramètres', 'Réglages', Icons.settings_outlined, LinearGradient(colors: [Colors.grey.shade600, Colors.grey.shade800]), _Routes.parametres(id)),
       _Module('Mes mariages', 'Multi-événements', Icons.favorite_border, _Royal.roseG, _Routes.myWeddings()),
     ];
