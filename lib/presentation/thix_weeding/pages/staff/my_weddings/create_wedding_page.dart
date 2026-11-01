@@ -1,11 +1,10 @@
 // lib/presentation/thix_weeding/pages/staff/my_weddings/create_wedding_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — CREATE / EDIT WEDDING (PRODUCTION)
-// Design royal + Champs typés WeddingModel + Unique Code auto + Date picker
-// ⚠️ CORRIGÉ : utilise bride_name/groom_name (pas partner_one/partner_two)
+// THIX WEDDING & EVENTS — CREATE / EDIT WEDDING (PRODUCTION v2)
+// ✅ Code unique THIX-W-JJMM-XXXYY généré par Trigger SQL
+// ✅ Preview du code en temps réel selon la date sélectionnée
+// ✅ Design royal harmonisé
 // ============================================================================
-import 'dart:math';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -62,15 +61,6 @@ class _R {
           ),
         ],
       );
-}
-
-// ============================================================================
-// GÉNÉRATEUR DE CODE UNIQUE
-// ============================================================================
-String _generateUniqueCode() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  final random = Random.secure();
-  return List.generate(6, (_) => chars[random.nextInt(chars.length)]).join();
 }
 
 // ============================================================================
@@ -164,6 +154,7 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
         return;
       }
 
+      // ✅ unique_code n'est PLUS envoyé ici : le Trigger SQL le génère automatiquement
       final Map<String, dynamic> data = {
         'bride_name': _brideCtrl.text.trim(),
         'groom_name': _groomCtrl.text.trim(),
@@ -182,9 +173,8 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
         _showSuccess('Mariage mis à jour avec succès ✓');
         context.pop();
       } else {
-        data['unique_code'] = _generateUniqueCode();
-        data['invitation_published'] = false;
-
+        // Pour la création, on ne définit plus unique_code ni invitation_published
+        // Le trigger SQL gère unique_code, et la DB a DEFAULT false pour invitation_published
         final res = await Supabase.instance.client
             .from('thix_weeding_weddings')
             .insert(data)
@@ -278,14 +268,11 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
                 child: CustomScrollView(
                   physics: const BouncingScrollPhysics(),
                   slivers: [
-                    // ── APP BAR ROYALE ────────────────────────────────
                     _RoyalAppBar(isEditing: _isEditing),
-
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
                       sliver: SliverList(
                         delegate: SliverChildListDelegate([
-                          // ── HERO BANNER ────────────────────────────
                           _HeroBanner(isEditing: _isEditing),
                           const SizedBox(height: 24),
 
@@ -344,9 +331,16 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
                               ),
                             ],
                           ),
-                          const SizedBox(height: 32),
+                          const SizedBox(height: 16),
+
+                          // ── ✅ PREVIEW CODE UNIQUE (nouveau) ───────
+                          if (!_isEditing)
+                            _CodePreviewCard(weddingDate: _weddingDate),
+
+                          if (!_isEditing) const SizedBox(height: 16),
 
                           // ── BOUTON SOUMETTRE ───────────────────────
+                          const SizedBox(height: 16),
                           _SubmitButton(
                             isEditing: _isEditing,
                             isLoading: _isLoading,
@@ -377,7 +371,7 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
                                 const SizedBox(width: 12),
                                 Expanded(
                                   child: Text(
-                                    'Un code unique sera généré automatiquement. Vous pourrez configurer l\'invitation, les invités et le budget après la création.',
+                                    'Le code d\'accès au mariage sera généré automatiquement au format THIX-W-JJMM-XXXYY. Vous pourrez configurer l\'invitation, les invités et le budget après la création.',
                                     style: GoogleFonts.inter(fontSize: 11, color: _R.blue, height: 1.4),
                                   ),
                                 ),
@@ -391,6 +385,87 @@ class _CreateWeddingPageState extends State<CreateWeddingPage>
                 ),
               ),
             ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ CODE PREVIEW CARD (nouveau widget)
+// ============================================================================
+class _CodePreviewCard extends StatelessWidget {
+  final DateTime? weddingDate;
+
+  const _CodePreviewCard({required this.weddingDate});
+
+  /// Génère un aperçu du code basé sur la date (sans les parties aléatoires)
+  String get _previewCode {
+    final date = weddingDate ?? DateTime.now();
+    final ddmm = '${date.day.toString().padLeft(2, '0')}${date.month.toString().padLeft(2, '0')}';
+    return 'THIX-W-$ddmm-XXXYY';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: _R.goldG,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: _R.gold.withOpacity(0.25),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.fingerprint, color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'CODE D\'ACCÈS AU MARIAGE',
+                  style: GoogleFonts.inter(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white.withOpacity(0.9),
+                    letterSpacing: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _previewCode,
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                    letterSpacing: 1,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Généré automatiquement à la création',
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    color: Colors.white.withOpacity(0.8),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
