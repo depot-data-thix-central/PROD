@@ -1,14 +1,17 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_auth_pages.dart
 // ============================================================================
 // THIX WEDDING PROVIDER AUTH (PRODUCTION ENTERPRISE)
-// ✅ Login + Registration Multi-étapes
-// ✅ Design glassmorphism premium
-// ✅ Validation stricte des champs
+// ✅ MODE 1 (PAR DÉFAUT) : Connexion SANS auth via code THIX-P-XXXYY
+// ✅ MODE 2 (optionnel) : Email + mot de passe Supabase
+// ✅ FIX BOUCLE : sauvegarde de l'ID local après toute connexion réussie
 // ============================================================================
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
@@ -22,10 +25,12 @@ class _P {
   static const Color ink = Color(0xFF1A1A2E);
   static const Color inkSoft = Color(0xFF6B7280);
   static const Color line = Color(0xFFE5E7EB);
+  static const Color green = Color(0xFF10B981);
+  static const Color red = Color(0xFFEF4444);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LOGIN PAGE
+// LOGIN PAGE — 2 MODES (CODE THIX sans auth / EMAIL Supabase)
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderLoginPage extends ConsumerStatefulWidget {
   const ProviderLoginPage({super.key});
@@ -36,21 +41,78 @@ class ProviderLoginPage extends ConsumerStatefulWidget {
 
 class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
   final _formKey = GlobalKey<FormState>();
+  final _codeCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
+
+  bool _useCodeMode = true; // ✅ MODE SANS AUTH par défaut
   bool _isLoading = false;
   bool _obscure = true;
+  String? _error;
 
   @override
   void dispose() {
+    _codeCtrl.dispose();
     _emailCtrl.dispose();
     _passCtrl.dispose();
     super.dispose();
   }
 
-  Future<void> _login() async {
+  // ═══════════════════════════════════════════════════════════════════════
+  // MODE 1 : CONNEXION PAR CODE THIX (SANS AUTHENTICATION)
+  // ═══════════════════════════════════════════════════════════════════════
+  Future<void> _loginWithCode() async {
+    final code = _codeCtrl.text.trim().toUpperCase();
+
+    if (!RegExp(r'^THIX-P-\d{3}[A-Z]{2}$').hasMatch(code)) {
+      HapticFeedback.heavyImpact();
+      setState(() => _error = 'Format invalide. Exemple : THIX-P-358GH');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    HapticFeedback.mediumImpact();
+
+    try {
+      final provider =
+          await ref.read(providerServiceProvider).getProviderByCode(code);
+
+      if (provider == null) {
+        throw Exception('Code introuvable. Vérifiez votre code ou créez un compte.');
+      }
+
+      // ✅ Sauvegarde locale = session sans auth
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('thix_current_provider_id', provider.id);
+      await prefs.setString('thix_current_provider_code', provider.uniqueCode);
+      await prefs.setString('thix_current_provider_name', provider.businessName);
+
+      ref.invalidate(providerByIdProvider(provider.id));
+
+      if (!mounted) return;
+      context.go('/thix-weeding/provider/dashboard');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      HapticFeedback.heavyImpact();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MODE 2 : CONNEXION EMAIL (SUPABASE AUTH — OPTIONNEL)
+  // ═══════════════════════════════════════════════════════════════════════
+  Future<void> _loginWithEmail() async {
     if (!_formKey.currentState!.validate()) return;
-    setState(() => _isLoading = true);
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
 
     try {
       final res = await Supabase.instance.client.auth.signInWithPassword(
@@ -61,20 +123,34 @@ class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
       if (!mounted) return;
 
       if (res.user != null) {
-        // Vérifier si c'est un prestataire
-        final provider = await ref.read(providerServiceProvider).getProviderByUserId(res.user!.id);
-        
+        final provider = await ref
+            .read(providerServiceProvider)
+            .getProviderByUserId(res.user!.id);
+
         if (provider != null) {
+          // ✅ Synchronise aussi la session locale
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('thix_current_provider_id', provider.id);
+          await prefs.setString('thix_current_provider_code', provider.uniqueCode);
+          await prefs.setString('thix_current_provider_name', provider.businessName);
+          ref.invalidate(providerByIdProvider(provider.id));
+          if (!mounted) return;
           context.go('/thix-weeding/provider/dashboard');
         } else {
-          context.go('/thix-weeding/provider/register');
+          // Pas de profil lié à cet email : vérifier une session locale existante
+          final prefs = await SharedPreferences.getInstance();
+          final localId = prefs.getString('thix_current_provider_id');
+          if (!mounted) return;
+          if (localId != null && localId.isNotEmpty) {
+            context.go('/thix-weeding/provider/dashboard');
+          } else {
+            context.go('/thix-weeding/provider/register');
+          }
         }
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: ${e.toString()}'), backgroundColor: _P.rose),
-      );
+      setState(() => _error = 'Identifiants incorrects. Réessayez.');
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -101,77 +177,134 @@ class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
                     decoration: BoxDecoration(
                       gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
                       borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10)),
-                      ],
+                      boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
                     ),
                     child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 40),
                   ),
                   const SizedBox(height: 24),
-                  Text(
-                    'Espace Prestataire',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5),
-                  ),
+                  Text('Espace Prestataire', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
                   const SizedBox(height: 8),
-                  Text(
-                    'Connectez-vous pour gérer votre activité',
-                    textAlign: TextAlign.center,
-                    style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft),
-                  ),
-                  const SizedBox(height: 40),
+                  Text('Accédez à votre tableau de bord', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft)),
+                  const SizedBox(height: 28),
 
-                  // EMAIL
-                  TextFormField(
-                    controller: _emailCtrl,
-                    keyboardType: TextInputType.emailAddress,
-                    decoration: _inputDecoration(label: 'Email', icon: Icons.email_outlined),
-                    validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
-                  ),
-                  const SizedBox(height: 16),
-
-                  // PASSWORD
-                  TextFormField(
-                    controller: _passCtrl,
-                    obscureText: _obscure,
-                    decoration: _inputDecoration(
-                      label: 'Mot de passe',
-                      icon: Icons.lock_outline,
-                      suffix: IconButton(
-                        icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: _P.inkSoft),
-                        onPressed: () => setState(() => _obscure = !_obscure),
-                      ),
-                    ),
-                    validator: (v) => v == null || v.length < 6 ? 'Min 6 caractères' : null,
-                  ),
-                  const SizedBox(height: 32),
-
-                  // BUTTON
-                  SizedBox(
-                    height: 56,
-                    child: ElevatedButton(
-                      onPressed: _isLoading ? null : _login,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _P.rose,
-                        foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                        elevation: 0,
-                      ),
-                      child: _isLoading
-                          ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                          : Text('Se connecter', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+                  // ══ SWITCH DE MODE ══
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: _P.line.withOpacity(0.4), borderRadius: BorderRadius.circular(14)),
+                    child: Row(
+                      children: [
+                        _ModeTab(
+                          label: 'Code THIX',
+                          isSelected: _useCodeMode,
+                          onTap: () => setState(() => _useCodeMode = true),
+                        ),
+                        _ModeTab(
+                          label: 'Email',
+                          isSelected: !_useCodeMode,
+                          onTap: () => setState(() => _useCodeMode = false),
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(height: 24),
+
+                  // ══ MESSAGE D'ERREUR ══
+                  if (_error != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: _P.red.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.red.withOpacity(0.3))),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: _P.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: _P.red, fontWeight: FontWeight.w600))),
+                        ],
+                      ),
+                    ),
+
+                  // ══ MODE CODE THIX ══
+                  if (_useCodeMode) ...[
+                    TextFormField(
+                      controller: _codeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(11),
+                        UpperCaseFormatter(),
+                      ],
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2, color: _P.ink),
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                        hintText: 'THIX-P-000AA',
+                        hintStyle: GoogleFonts.inter(color: _P.line, fontWeight: FontWeight.w900, letterSpacing: 2),
+                        prefixIcon: const Icon(Icons.qr_code_2_rounded, color: _P.rose),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.rose, width: 2)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '💡 Votre code THIX vous a été donné lors de la création de votre compte.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, height: 1.4),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _loginWithCode,
+                        style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
+                        child: _isLoading
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Accéder à mon espace', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ] else ...[
+                    // ══ MODE EMAIL ══
+                    TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: _inputDecoration(label: 'Email', icon: Icons.email_outlined),
+                      validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      decoration: _inputDecoration(
+                        label: 'Mot de passe',
+                        icon: Icons.lock_outline,
+                        suffix: IconButton(
+                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: _P.inkSoft),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
+                      validator: (v) => v == null || v.length < 6 ? 'Min 6 caractères' : null,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _loginWithEmail,
+                        style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
+                        child: _isLoading
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Se connecter', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 20),
-
-                  // LINK
                   Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text('Pas encore prestataire ?', style: GoogleFonts.inter(color: _P.inkSoft)),
                       TextButton(
                         onPressed: () => context.push('/thix-weeding/provider/register'),
-                        child: Text('S\'inscrire', style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w800)),
+                        child: Text("S'inscrire", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w800)),
                       ),
                     ],
                   ),
@@ -191,257 +324,6 @@ class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
       suffixIcon: suffix,
       filled: true,
       fillColor: Colors.white,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _P.line),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _P.line),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(16),
-        borderSide: const BorderSide(color: _P.rose, width: 2),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// REGISTER PAGE (Multi-étapes)
-// ═══════════════════════════════════════════════════════════════════════════
-class ProviderRegisterPage extends ConsumerStatefulWidget {
-  const ProviderRegisterPage({super.key});
-
-  @override
-  ConsumerState<ProviderRegisterPage> createState() => _ProviderRegisterPageState();
-}
-
-class _ProviderRegisterPageState extends ConsumerState<ProviderRegisterPage> {
-  int _step = 0;
-  final _formKey = GlobalKey<FormState>();
-  
-  // Step 1: Auth
-  final _emailCtrl = TextEditingController();
-  final _passCtrl = TextEditingController();
-  
-  // Step 2: Info
-  final _nameCtrl = TextEditingController();
-  final _phoneCtrl = TextEditingController();
-  ProviderCategory? _category;
-  
-  bool _isLoading = false;
-
-  @override
-  void dispose() {
-    _emailCtrl.dispose();
-    _passCtrl.dispose();
-    _nameCtrl.dispose();
-    _phoneCtrl.dispose();
-    super.dispose();
-  }
-
-  void _next() {
-    if (_formKey.currentState!.validate()) {
-      if (_step == 0) {
-        setState(() => _step = 1);
-      } else if (_step == 1) {
-        if (_category == null) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Veuillez choisir une catégorie')),
-          );
-          return;
-        }
-        setState(() => _step = 2); // Preview & Submit
-      }
-    }
-  }
-
-  Future<void> _submit() async {
-    setState(() => _isLoading = true);
-    try {
-      // 1. Créer le compte Auth
-      final authRes = await Supabase.instance.client.auth.signUp(
-        email: _emailCtrl.text.trim(),
-        password: _passCtrl.text,
-      );
-
-      if (authRes.user == null) throw Exception('Erreur création compte');
-
-      // 2. Créer le profil Prestataire
-      await ref.read(createProviderProvider)(
-        userId: authRes.user!.id,
-        category: _category!,
-        businessName: _nameCtrl.text.trim(),
-        phone: _phoneCtrl.text.trim(),
-        email: _emailCtrl.text.trim(),
-      );
-
-      if (!mounted) return;
-      
-      // Rediriger vers le dashboard
-      context.go('/thix-weeding/provider/dashboard');
-      
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.rose),
-      );
-    } finally {
-      if (mounted) setState(() => _isLoading = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _P.bg,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading: _step > 0
-            ? IconButton(
-                icon: const Icon(Icons.arrow_back, color: _P.ink),
-                onPressed: () => setState(() => _step--),
-              )
-            : null,
-      ),
-      body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Progress Bar
-                _StepperIndicator(step: _step),
-                const SizedBox(height: 32),
-
-                if (_step == 0) _buildAuthStep(),
-                if (_step == 1) _buildInfoStep(),
-                if (_step == 2) _buildPreviewStep(),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAuthStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Créer votre compte', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink)),
-        const SizedBox(height: 8),
-        Text('Étape 1 sur 2 : Informations de connexion', style: GoogleFonts.inter(color: _P.inkSoft)),
-        const SizedBox(height: 32),
-        TextFormField(
-          controller: _emailCtrl,
-          decoration: _inputDecoration('Email professionnel', Icons.email_outlined),
-          validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _passCtrl,
-          obscureText: true,
-          decoration: _inputDecoration('Mot de passe', Icons.lock_outline),
-          validator: (v) => v == null || v.length < 6 ? 'Min 6 caractères' : null,
-        ),
-        const SizedBox(height: 32),
-        _NextButton(onPressed: _next, isLoading: false),
-      ],
-    );
-  }
-
-  Widget _buildInfoStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('Votre Activité', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink)),
-        const SizedBox(height: 8),
-        Text('Étape 2 sur 2 : Détails professionnels', style: GoogleFonts.inter(color: _P.inkSoft)),
-        const SizedBox(height: 32),
-        TextFormField(
-          controller: _nameCtrl,
-          decoration: _inputDecoration('Nom de l\'entreprise', Icons.business),
-          validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
-        ),
-        const SizedBox(height: 16),
-        TextFormField(
-          controller: _phoneCtrl,
-          keyboardType: TextInputType.phone,
-          decoration: _inputDecoration('Téléphone', Icons.phone),
-          validator: (v) => v == null || v.isEmpty ? 'Requis' : null,
-        ),
-        const SizedBox(height: 24),
-        Text('Catégorie', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700, color: _P.ink)),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: ProviderCategory.values.map((cat) {
-            final isSelected = _category == cat;
-            return ChoiceChip(
-              label: Text(cat.displayName),
-              selected: isSelected,
-              onSelected: (selected) {
-                setState(() => _category = selected ? cat : null);
-              },
-              selectedColor: _P.rose,
-              labelStyle: TextStyle(
-                color: isSelected ? Colors.white : _P.ink,
-                fontWeight: FontWeight.w600,
-              ),
-            );
-          }).toList(),
-        ),
-        const SizedBox(height: 32),
-        _NextButton(onPressed: _next, isLoading: false),
-      ],
-    );
-  }
-
-  Widget _buildPreviewStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Text('Confirmation', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink)),
-        const SizedBox(height: 24),
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _P.line),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _PreviewRow(label: 'Email', value: _emailCtrl.text),
-              _PreviewRow(label: 'Entreprise', value: _nameCtrl.text),
-              _PreviewRow(label: 'Téléphone', value: _phoneCtrl.text),
-              _PreviewRow(label: 'Catégorie', value: _category?.displayName ?? ''),
-            ],
-          ),
-        ),
-        const SizedBox(height: 32),
-        _NextButton(
-          onPressed: _submit,
-          isLoading: _isLoading,
-          label: 'Créer mon compte',
-        ),
-      ],
-    );
-  }
-
-  InputDecoration _inputDecoration(String label, IconData icon) {
-    return InputDecoration(
-      labelText: label,
-      prefixIcon: Icon(icon, color: _P.inkSoft),
-      filled: true,
-      fillColor: Colors.white,
       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
       enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
       focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.rose, width: 2)),
@@ -449,73 +331,52 @@ class _ProviderRegisterPageState extends ConsumerState<ProviderRegisterPage> {
   }
 }
 
-class _PreviewRow extends StatelessWidget {
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGETS HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+class _ModeTab extends StatelessWidget {
   final String label;
-  final String value;
-  const _PreviewRow({required this.label, required this.value});
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ModeTab({required this.label, required this.isSelected, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text(label, style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14)),
-          Text(value, style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: _P.ink, fontSize: 14)),
-        ],
-      ),
-    );
-  }
-}
-
-class _NextButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  final bool isLoading;
-  final String label;
-
-  const _NextButton({required this.onPressed, required this.isLoading, this.label = 'Continuer'});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 56,
-      child: ElevatedButton(
-        onPressed: isLoading ? null : onPressed,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: _P.rose,
-          foregroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          elevation: 0,
-        ),
-        child: isLoading
-            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-            : Text(label, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
-      ),
-    );
-  }
-}
-
-class _StepperIndicator extends StatelessWidget {
-  final int step;
-  const _StepperIndicator({required this.step});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: List.generate(3, (index) {
-        final isActive = index <= step;
-        return Expanded(
-          child: Container(
-            height: 4,
-            margin: const EdgeInsets.symmetric(horizontal: 4),
-            decoration: BoxDecoration(
-              color: isActive ? _P.rose : _P.line,
-              borderRadius: BorderRadius.circular(2),
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? _P.rose : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: isSelected ? Colors.white : _P.inkSoft,
             ),
           ),
-        );
-      }),
+        ),
+      ),
+    );
+  }
+}
+
+class UpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }
