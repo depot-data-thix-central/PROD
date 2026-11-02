@@ -976,7 +976,7 @@ class ThixHomeOffersSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final offersAsync = ref.watch(activeOffersProvider);
+    final offersAsync = ref.watch(activeOffersProvider(null));
 
     return offersAsync.when(
       data: (offers) {
