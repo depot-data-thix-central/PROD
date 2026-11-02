@@ -192,7 +192,11 @@ class _ActivityCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isPrimary = activity.isPrimary == true;
+    // ✅ FIX : isPrimary existe maintenant dans le modèle
+    final isPrimary = activity.isPrimary;
+    // ✅ FIX : category est un enum → utiliser .name pour la string
+    final catKey = activity.category.name.toLowerCase();
+
     return Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(20),
@@ -200,7 +204,6 @@ class _ActivityCard extends ConsumerWidget {
         borderRadius: BorderRadius.circular(20),
         onTap: () {
           HapticFeedback.selectionClick();
-          // ouvre le dashboard sur CETTE activité
           ref.read(selectedActivityIdProvider.notifier).state = activity.id;
           ref.invalidate(myProviderProvider(userId));
           context.go('/thix-weeding/provider/dashboard');
@@ -213,7 +216,8 @@ class _ActivityCard extends ConsumerWidget {
               width: 56,
               height: 56,
               decoration: BoxDecoration(gradient: _P.grad, borderRadius: BorderRadius.circular(16)),
-              child: Icon(_catIcon(activity.category), color: Colors.white, size: 26),
+              // ✅ FIX : passer catKey (String) au lieu de activity.category (enum)
+              child: Icon(_catIcon(catKey), color: Colors.white, size: 26),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -229,17 +233,18 @@ class _ActivityCard extends ConsumerWidget {
                         child: Text('Principale', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: _P.rose))),
                 ]),
                 const SizedBox(height: 4),
-                Text(_catLabel(activity.category), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.rose)),
+                // ✅ FIX : passer catKey (String) au lieu de activity.category (enum)
+                Text(_catLabel(catKey), style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.rose)),
                 const SizedBox(height: 6),
                 Wrap(spacing: 6, runSpacing: 4, children: [
                   if (activity.city != null && activity.city!.isNotEmpty)
                     _chip(Icons.place_outlined, activity.city!, _P.inkSoft),
-                  if (activity.uniqueCode != null && activity.uniqueCode!.isNotEmpty)
-                    _chip(Icons.fingerprint, activity.uniqueCode!, _P.purple),
+                  if (activity.uniqueCode.isNotEmpty)
+                    _chip(Icons.fingerprint, activity.uniqueCode, _P.purple),
                   _chip(
-                    activity.verificationStatus == 'verified' ? Icons.verified : Icons.hourglass_bottom,
-                    activity.verificationStatus == 'verified' ? 'Vérifié' : 'En vérification',
-                    activity.verificationStatus == 'verified' ? _P.green : _P.amber,
+                    activity.verificationStatus == ProviderVerificationStatus.verified ? Icons.verified : Icons.hourglass_bottom,
+                    activity.verificationStatus == ProviderVerificationStatus.verified ? 'Vérifié' : 'En vérification',
+                    activity.verificationStatus == ProviderVerificationStatus.verified ? _P.green : _P.amber,
                   ),
                 ]),
               ]),
@@ -254,7 +259,8 @@ class _ActivityCard extends ConsumerWidget {
                   ref.invalidate(myProviderProvider(userId));
                   context.go('/thix-weeding/provider/dashboard');
                 } else if (v == 'primary') {
-                  await setPrimaryActivity(activity.id);
+                  // ✅ FIX : utiliser le provider Riverpod au lieu d'une fonction globale
+                  await ref.read(setPrimaryActivityProvider)(activity.id, ownerId: userId);
                   ref.invalidate(myActivitiesProvider(userId));
                   if (context.mounted) _toast(context, 'Activité principale définie ✓');
                 } else if (v == 'edit') {
@@ -273,7 +279,8 @@ class _ActivityCard extends ConsumerWidget {
                     ),
                   );
                   if (ok == true) {
-                    await deleteActivity(activity.id);
+                    // ✅ FIX : utiliser le provider Riverpod au lieu d'une fonction globale
+                    await ref.read(deleteActivityProvider)(activity.id, ownerId: userId);
                     if (ref.read(selectedActivityIdProvider) == activity.id) {
                       ref.read(selectedActivityIdProvider.notifier).state = null;
                     }
