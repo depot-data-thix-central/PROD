@@ -124,8 +124,8 @@ class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
 
       if (res.user != null) {
         final provider = await ref
-            .read(providerServiceProvider)
-            .getProviderByUserId(res.user!.id);
+    .read(providerServiceProvider)
+    .getByOwner(res.user!.id);
 
         if (provider != null) {
           // ✅ Synchronise aussi la session locale
