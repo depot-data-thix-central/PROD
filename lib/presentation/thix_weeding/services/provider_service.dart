@@ -2,7 +2,7 @@
 // ============================================================================
 // THIX WEDDING PROVIDER SERVICE (PRODUCTION ENTERPRISE)
 // ✅ CRUD complet prestataires
-// ✅ Génération code unique Thix-CAT-XXX
+// ✅ Génération code unique THIX-P-XXXYY (3 chiffres + 2 lettres)
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
 // ✅ FIX : Typage explicite <String, dynamic> pour toutes les maps de données
@@ -19,31 +19,55 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // GÉNÉRATION CODE UNIQUE THIX
+  // Format : THIX-P-XXXYY (3 chiffres + 2 lettres majuscules)
+  // Exemples : THIX-P-001AB, THIX-P-456XY, THIX-P-999ZZ
+  // Capacité : 1000 × 676 = 676 000 codes uniques
   // ═══════════════════════════════════════════════════════════════════════════
   Future<String> generateUniqueCode(ProviderCategory category) async {
-    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    const digits = '0123456789';
     final random = Random.secure();
-    
+
     String code;
     bool exists = true;
-    
+    int attempts = 0;
+    const maxAttempts = 50;
+
     do {
-      final randomChars = List.generate(
+      attempts++;
+      
+      // Protection contre boucle infinie
+      if (attempts > maxAttempts) {
+        throw Exception(
+            'Impossible de générer un code unique après $maxAttempts tentatives. '
+            'Contactez le support technique.');
+      }
+
+      // Générer 3 chiffres (000 à 999)
+      final numberPart = List.generate(
         3,
-        (_) => chars[random.nextInt(chars.length)],
+        (_) => digits[random.nextInt(digits.length)],
       ).join();
-      
-      code = 'Thix-${category.iconCode}-$randomChars';
-      
+
+      // Générer 2 lettres majuscules (AA à ZZ)
+      final letterPart = List.generate(
+        2,
+        (_) => letters[random.nextInt(letters.length)],
+      ).join();
+
+      // Format final : THIX-P-XXXYY
+      code = 'THIX-P-$numberPart$letterPart';
+
+      // Vérifier l'unicité en base de données
       final result = await _client
           .from('thix_weeding_providers')
           .select('id')
           .eq('unique_code', code)
           .maybeSingle();
-      
+
       exists = result != null;
     } while (exists);
-    
+
     return code;
   }
 
@@ -158,6 +182,7 @@ class ProviderService {
     Map<String, dynamic>? requirements,
   }) async {
     try {
+      // Générer le code unique au format THIX-P-XXXYY
       final uniqueCode = await generateUniqueCode(category);
       final now = DateTime.now();
       
@@ -337,8 +362,8 @@ class ProviderService {
       };
       
       if (eventType != null) data['event_type'] = eventType;
-      if (guestCount != null) data['guest_count'] = guestCount; // ✅ Fonctionne maintenant
-      if (totalPrice != null) data['total_price'] = totalPrice; // ✅ Fonctionne maintenant
+      if (guestCount != null) data['guest_count'] = guestCount;
+      if (totalPrice != null) data['total_price'] = totalPrice;
       if (currency != null) data['currency'] = currency;
       if (notes != null) data['notes'] = notes;
       
