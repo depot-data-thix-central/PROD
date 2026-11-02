@@ -1,12 +1,13 @@
 // lib/presentation/thix_weeding/models/provider_models.dart
 // ============================================================================
-// THIX WEDDING PROVIDER MODELS (PRODUCTION v4 — MULTI-PHOTOS + CATÉGORIE OFFRE)
+// THIX WEDDING PROVIDER MODELS (PRODUCTION v5 — MULTI-CATÉGORIES OFFRES)
 // ✅ ownerId ajouté (aligné sur la logique mariages)
 // ✅ Compatibilité rétroactive : lit user_id (ancien) OU owner_id (nouveau)
 // ✅ OfferType enum + ProviderOfferModel (pour offres/services/menus/formules)
 // ✅ isPrimary ajouté à ThixProviderModel
 // ✅ galleryUrls ajouté à ProviderOfferModel (multi-photos)
-// ✅ category ajouté à ProviderOfferModel (catégorie d'offre, indépendante du prestataire)
+// ✅ categories[] ajouté (1 à 3 catégories d'offre, indépendante du prestataire)
+// ✅ isInCategory() helper pour filtrage côté client
 // ✅ Helpers de conversion ProviderCategory <-> String
 // ============================================================================
 
@@ -145,8 +146,6 @@ class ThixProviderModel {
   });
 
   factory ThixProviderModel.fromJson(Map<String, dynamic> json) {
-    // Sécurisation : on lit 'category' en string, insensible à la casse,
-    // et on gère à la fois le format enum (ex: 'salle') et le format DB legacy (ex: 'SALLE')
     final rawCategory = (json['category'] as String?)?.toLowerCase();
     final parsedCategory = ProviderCategory.values.firstWhere(
       (c) => c.name.toLowerCase() == rawCategory || c.iconCode.toLowerCase() == rawCategory,
@@ -155,7 +154,6 @@ class ThixProviderModel {
 
     return ThixProviderModel(
       id: json['id'] as String,
-      // ✅ LIT owner_id (nouveau) OU user_id (legacy) pour ne rien casser
       ownerId: (json['owner_id'] as String?) ?? (json['user_id'] as String?),
       userId: (json['user_id'] as String?) ?? (json['owner_id'] as String?),
       uniqueCode: json['unique_code'] as String? ?? '',
@@ -458,7 +456,7 @@ class ProviderTaskModel {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ PROVIDER OFFER MODEL (Services / Menus / Formules / Promos)
-// ✅ v4 : multi-photos (galleryUrls) + catégorie d'offre indépendante
+// ✅ v5 : multi-photos + MULTI-CATÉGORIES (1 à 3 catégories d'offre)
 // ═══════════════════════════════════════════════════════════════════════════
 @immutable
 class ProviderOfferModel {
@@ -468,11 +466,15 @@ class ProviderOfferModel {
   final String? description;
   final OfferType type;
 
-  /// ✅ Catégorie de l'offre (salle, traiteur, photographe...) — indépendante
-  /// de la catégorie du prestataire. Permet au catalogue et au home de classer
-  /// les offres par métier. Rétrocompatibilité : si null en DB, on prend
-  /// la catégorie du prestataire via providerCategoryName.
+  /// ✅ Catégorie PRINCIPALE de l'offre (rétrocompat avec ancienne colonne `category`)
+  /// Égale au premier élément de `categories`.
   final ProviderCategory category;
+
+  /// ✅ TOUTES les catégories de l'offre (1 à 3 catégories)
+  /// Permet à une annonce "Salle + Traiteur" d'apparaître dans les deux sections.
+  /// Rétrocompatibilité : si la colonne `categories` est absente, on crée une
+  /// liste à 1 élément à partir de `category`.
+  final List<ProviderCategory> categories;
 
   final double? price;
   final String currency;
@@ -503,6 +505,10 @@ class ProviderOfferModel {
     return list;
   }
 
+  /// ✅ Vérifie si l'offre appartient à une catégorie donnée
+  /// Utilisé par le HOME et le catalogue pour filtrer les offres multi-catégories
+  bool isInCategory(ProviderCategory c) => categories.contains(c);
+
   const ProviderOfferModel({
     required this.id,
     required this.providerId,
@@ -510,6 +516,7 @@ class ProviderOfferModel {
     this.description,
     this.type = OfferType.service,
     this.category = ProviderCategory.salle,
+    this.categories = const [],
     this.price,
     this.currency = 'USD',
     this.imageUrl,
@@ -533,10 +540,29 @@ class ProviderOfferModel {
             .toList() ??
         <String>[];
 
-    // ✅ Parse catégorie de l'offre (fallback sur catégorie du prestataire)
-    final offerCategoryStr = (json['category'] as String?) ??
+    // ✅ Parse MULTI-CATÉGORIES (colonne `categories` text[])
+    final categoriesRaw = (json['categories'] as List<dynamic>?)
+            ?.map((e) => '$e')
+            .where((s) => s.isNotEmpty)
+            .toList() ??
+        <String>[];
+    final parsedCategories = categoriesRaw
+        .map(stringToProviderCategory)
+        .toSet() // dédoublonnage
+        .toList();
+
+    // ✅ Fallback sur ancienne colonne `category` (string unique)
+    final fallbackStr = (json['category'] as String?) ??
         (prov?['category'] as String?);
-    final offerCategory = stringToProviderCategory(offerCategoryStr);
+    final fallbackCategory = stringToProviderCategory(fallbackStr);
+
+    // ✅ Si categories[] vide, on utilise fallback (rétrocompatibilité)
+    final finalCategories = parsedCategories.isNotEmpty
+        ? parsedCategories
+        : [fallbackCategory];
+
+    // ✅ Catégorie principale = première catégorie
+    final mainCategory = finalCategories.first;
 
     return ProviderOfferModel(
       id: json['id'] as String,
@@ -547,7 +573,8 @@ class ProviderOfferModel {
         (t) => t.name == json['offer_type'],
         orElse: () => OfferType.service,
       ),
-      category: offerCategory,
+      category: mainCategory,
+      categories: finalCategories,
       price: (json['price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       imageUrl: json['image_url'] as String?,
@@ -573,11 +600,12 @@ class ProviderOfferModel {
       'title': title,
       'description': description,
       'offer_type': type.name,
-      'category': category.name, // ✅ catégorie de l'offre
+      'category': category.name, // ✅ catégorie principale (rétrocompat)
+      'categories': categories.map((c) => c.name).toList(), // ✅ toutes les catégories
       'price': price,
       'currency': currency,
       'image_url': imageUrl,
-      'gallery_urls': galleryUrls, // ✅ galerie multi-photos
+      'gallery_urls': galleryUrls,
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -591,6 +619,7 @@ class ProviderOfferModel {
     String? description,
     OfferType? type,
     ProviderCategory? category,
+    List<ProviderCategory>? categories,
     double? price,
     String? currency,
     String? imageUrl,
@@ -599,13 +628,17 @@ class ProviderOfferModel {
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
+    final newCategories = categories ?? this.categories;
+    final newMainCategory = category ?? (newCategories.isNotEmpty ? newCategories.first : this.category);
+
     return ProviderOfferModel(
       id: id ?? this.id,
       providerId: providerId ?? this.providerId,
       title: title ?? this.title,
       description: description ?? this.description,
       type: type ?? this.type,
-      category: category ?? this.category,
+      category: newMainCategory,
+      categories: newCategories,
       price: price ?? this.price,
       currency: currency ?? this.currency,
       imageUrl: imageUrl ?? this.imageUrl,
@@ -622,7 +655,7 @@ class ProviderOfferModel {
 
   @override
   String toString() =>
-      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, category: ${category.name}, photos: ${galleryUrls.length + (imageUrl != null ? 1 : 0)}, provider: $providerId)';
+      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, categories: ${categories.map((c) => c.name).toList()}, photos: ${galleryUrls.length + (imageUrl != null ? 1 : 0)}, provider: $providerId)';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
