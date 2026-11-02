@@ -1,6 +1,6 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.4 (PRODUCTION ENTERPRISE)
+// THIX WEDDING ROUTES — v3.5 (PRODUCTION ENTERPRISE + MULTI-ACTIVITÉS)
 // ✅ FIX 404 : meal-preferences déplacé DANS guest/:weddingId (weddingId hérité)
 // ✅ FIX 404 : route enfant :vendorId (détail prestataire) ajoutée sous prestataires
 // ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelon (doublon staffMenu)
@@ -8,6 +8,9 @@
 // ✅ NOUVEAU invité : menu, playlist, ma-table (plan 3D), live, annonces,
 //    navette, dress-code, faq, remerciements, prestataires, meal-preferences
 // ✅ NOUVEAU staff  : playlist, menu(traitor), contenu/:kind
+// ✅ 🆕 MULTI-ACTIVITÉS PRESTATAIRE (1 compte = N métiers : traiteur, salle…)
+//    → routes /provider/activities[/new][/edit/:id] + imports associés
+//    → _ProviderOfferFormRoute respecte selectedActivityIdProvider
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -73,6 +76,9 @@ import 'pages/provider_portal/provider_catalog_pages.dart';
 import 'pages/provider_portal/provider_register_simple.dart';
 import 'pages/provider_portal/provider_detail_page.dart';
 import 'pages/provider_portal/provider_offers_page.dart';
+// ✅ NOUVEAU : Multi-activités prestataire (1 compte = N métiers)
+import 'pages/provider_portal/my_activities_page.dart';
+import 'pages/provider_portal/create_activity_page.dart';
 import 'providers/provider_providers.dart';
 
 class ThixWeedingRoutes {
@@ -89,7 +95,7 @@ class ThixWeedingRoutes {
   static const String staffPrestataires = 'staffPrestataires';
   static const String staffAddPrestataire = 'staffAddPrestataire';
   static const String staffEditPrestataire = 'staffEditPrestataire';
-  static const String staffVendorDetail = 'staffVendorDetail'; // ✅ AJOUTÉ
+  static const String staffVendorDetail = 'staffVendorDetail';
   static const String staffMessages = 'staffMessages';
   static const String staffChatDetail = 'staffChatDetail';
   static const String staffBudget = 'staffBudget';
@@ -116,7 +122,7 @@ class ThixWeedingRoutes {
 
   // --- NAMES INVITÉ (nouveaux) ---
   static const String guestMenu = 'guestMenu';
-  static const String guestMealPreferences = 'guestMealPreferences'; // ✅ AJOUTÉ
+  static const String guestMealPreferences = 'guestMealPreferences';
   static const String guestPlaylist = 'guestPlaylist';
   static const String guestTable = 'guestTable';
   static const String guestLive = 'guestLive';
@@ -127,7 +133,7 @@ class ThixWeedingRoutes {
   static const String guestThanks = 'guestThanks';
   static const String guestPrestataires = 'guestPrestataires';
 
-  // --- ✅ NAMES ESPACE PRESTATAIRE ---
+  // --- NAMES ESPACE PRESTATAIRE ---
   static const String providerAuth = 'providerAuth';
   static const String providerRegister = 'providerRegister';
   static const String providerCatalog = 'providerCatalog';
@@ -140,6 +146,10 @@ class ThixWeedingRoutes {
   static const String providerReservations = 'providerReservations';
   static const String providerTasks = 'providerTasks';
   static const String providerProfile = 'providerProfile';
+  // ✅ NOUVEAU : Multi-activités
+  static const String providerActivities = 'providerActivities';
+  static const String providerNewActivity = 'providerNewActivity';
+  static const String providerEditActivity = 'providerEditActivity';
 
   static List<RouteBase> get routes => [
         GoRoute(
@@ -220,6 +230,29 @@ class ThixWeedingRoutes {
               path: 'provider/offers/edit/:offerId',
               name: providerEditOffer,
               builder: (c, s) => _ProviderOfferFormRoute(editId: s.pathParameters['offerId']),
+            ),
+
+            // ═══════════════════════════════════════════════════════════════
+            // ✅ NOUVEAU : MULTI-ACTIVITÉS PRESTATAIRE
+            //    1 compte (owner_id) = plusieurs métiers (traiteur, salle, DJ…)
+            //    → calqué sur /staff/my-weddings + /create
+            // ═══════════════════════════════════════════════════════════════
+            GoRoute(
+              path: 'provider/activities',
+              name: providerActivities,
+              builder: (c, s) => const MyActivitiesPage(),
+            ),
+            GoRoute(
+              path: 'provider/activities/new',
+              name: providerNewActivity,
+              builder: (c, s) => const CreateActivityPage(),
+            ),
+            GoRoute(
+              path: 'provider/activities/edit/:activityId',
+              name: providerEditActivity,
+              builder: (c, s) => CreateActivityPage(
+                editId: s.pathParameters['activityId'],
+              ),
             ),
 
             // ================= ESPACE INVITÉ =================
@@ -617,9 +650,6 @@ class ThixWeedingRoutes {
                 ),
 
                 // ✅ 16. MENU / VALIDATION PLATS TRAITEUR (staff)
-                //    FIX : remplacement de StaffMenuPage (non importé) par
-                //    TraiteurMenuStaffPage (importé) -> résout conflit de nom
-                //    avec l'ancien bloc orphelin + fournit le bon écran.
                 GoRoute(
                   path: 'menu',
                   name: staffMenu,
@@ -645,6 +675,7 @@ class ThixWeedingRoutes {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // WIDGET ROUTE POUR LE FORMULAIRE D'OFFRE (résolution dynamique du provider)
+// ✅ RESPECTE selectedActivityIdProvider (multi-activités)
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProviderOfferFormRoute extends ConsumerWidget {
   final String? editId;
@@ -675,6 +706,9 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
       );
     }
 
+    // ✅ myProviderProvider(ownerId) renvoie DÉJÀ l'activité sélectionnée
+    //    (fallback principale) grâce à selectedActivityIdProvider interne.
+    //    Aucune modif nécessaire ici : on garde la même signature.
     final providerAsync = ref.watch(myProviderProvider(user.id));
 
     return providerAsync.when(
