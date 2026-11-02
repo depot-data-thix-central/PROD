@@ -1,20 +1,20 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_register_simple.dart
 // ============================================================================
-// THIX WEDDING — INSCRIPTION PRESTATAIRE (PRODUCTION ENTERPRISE)
-// ✅ Validation complète de tous les champs
-// ✅ Gestion d'erreurs robuste avec retry
-// ✅ Sauvegarde locale sécurisée + redirection garantie
-// ✅ Haptic feedback + animations fluides
-// ✅ Copie du code unique
+// THIX WEDDING — INSCRIPTION PRESTATAIRE (PRODUCTION v3)
+// ✅ LOGIQUE IDENTIQUE À create_wedding_page.dart
+// ✅ owner_id = user.id (comme les mariages)
+// ✅ ZÉRO SharedPreferences — session Supabase uniquement
+// ✅ Code THIX-P généré par trigger SQL
 // ============================================================================
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 
@@ -54,14 +54,12 @@ class _ProviderRegisterSimplePageState
   bool _agreedToTerms = false;
   String? _serverError;
 
-  // Focus nodes pour UX clavier
   final _nameFocus = FocusNode();
   final _emailFocus = FocusNode();
   final _phoneFocus = FocusNode();
   final _cityFocus = FocusNode();
   final _descFocus = FocusNode();
 
-  // Animation pour la catégorie sélectionnée
   late AnimationController _animController;
 
   @override
@@ -90,7 +88,7 @@ class _ProviderRegisterSimplePageState
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // VALIDATEURS AVANCÉS
+  // VALIDATEURS
   // ═══════════════════════════════════════════════════════════════════════════
 
   String? _validateName(String? v) {
@@ -122,11 +120,10 @@ class _ProviderRegisterSimplePageState
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // SOUMISSION DU FORMULAIRE
+  // SOUMISSION (LOGIQUE IDENTIQUE À create_wedding_page)
   // ═══════════════════════════════════════════════════════════════════════════
 
   Future<void> _submit() async {
-    // Validation du formulaire
     if (!_formKey.currentState!.validate()) {
       HapticFeedback.heavyImpact();
       setState(() => _serverError = 'Veuillez corriger les erreurs du formulaire');
@@ -161,6 +158,22 @@ class _ProviderRegisterSimplePageState
       return;
     }
 
+    // ✅ GARDE : pas de session → login général (comme my_weddings_page)
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Veuillez vous connecter pour créer votre profil prestataire',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: _P.rose,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      context.push('/thix-weeding/auth/login');
+      return;
+    }
+
     setState(() {
       _submitting = true;
       _serverError = null;
@@ -168,68 +181,47 @@ class _ProviderRegisterSimplePageState
     HapticFeedback.mediumImpact();
 
     try {
-      // 1. Création du prestataire via Supabase
+      // ✅ CRÉATION : owner_id = user.id (exactement comme les mariages)
+      // Le code THIX-P-XXXYY sera généré par le trigger SQL
       final provider = await ref.read(createProviderProvider)(
-  userId: Supabase.instance.client.auth.currentUser?.id, // ✅ lie la session si elle existe, sinon null
-  category: _category!,
-  // ... reste identique
-
+        ownerId: user.id,  // ← CHANGEMENT CLÉ : ownerId au lieu de userId
+        category: _category!,
         businessName: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
         city: _cityCtrl.text.trim().isEmpty ? null : _cityCtrl.text.trim(),
-        description:
-            _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
+        description: _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim(),
       );
 
       if (!mounted) return;
 
-      // 2. Sauvegarde locale CRITIQUE de l'ID pour le shell
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('thix_current_provider_id', provider.id);
-      await prefs.setString('thix_current_provider_code', provider.uniqueCode);
-      await prefs.setString('thix_current_provider_name', provider.businessName);
+      // ✅ INVALIDATION : forcer le rafraîchissement du provider courant
+      ref.invalidate(myProviderProvider(user.id));
 
-      // 3. Invalidation du cache Riverpod (TRÈS IMPORTANT)
-      ref.invalidate(providersListProvider);
-      ref.invalidate(providerByIdProvider(provider.id));
-
-      // 4. Petit délai pour propagation Supabase
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (!mounted) return;
-
-      // 5. Dialogue de succès
+      // ✅ DIALOGUE DE SUCCÈS
       await _showSuccessDialog(provider);
 
       if (!mounted) return;
 
-      // 6. Redirection GARANTIE vers le dashboard
+      // ✅ REDIRECTION : le shell retrouvera le profil via myProviderProvider(user.id)
       context.go('/thix-weeding/provider/dashboard');
+
     } on TimeoutException {
       if (!mounted) return;
-      setState(() => _serverError =
-          'Délai dépassé. Vérifiez votre connexion internet et réessayez.');
-    } on FormatException catch (e) {
-      if (!mounted) return;
-      setState(() => _serverError =
-          'Format de données invalide. Contact support@thix.com');
-      debugPrint('Format error: $e');
+      setState(() => _serverError = 'Délai dépassé. Vérifiez votre connexion internet et réessayez.');
     } catch (e) {
       if (!mounted) return;
       final msg = e.toString();
       String userMessage;
 
-      if (msg.contains('duplicate key') ||
-          msg.contains('unique constraint')) {
-        userMessage =
-            'Un compte avec ces informations existe déjà. Connectez-vous.';
+      if (msg.contains('duplicate key') || msg.contains('unique constraint')) {
+        userMessage = 'Un profil existe déjà pour ce compte.';
       } else if (msg.contains('network') || msg.contains('SocketException')) {
         userMessage = 'Pas de connexion internet. Vérifiez votre réseau.';
       } else if (msg.contains('timeout')) {
         userMessage = 'Connexion trop lente. Réessayez.';
       } else {
-        userMessage = 'Erreur serveur : ${msg.length > 80 ? '${msg.substring(0, 80)}...' : msg}';
+        userMessage = 'Erreur : ${msg.length > 80 ? '${msg.substring(0, 80)}...' : msg}';
       }
 
       setState(() => _serverError = userMessage);
@@ -267,7 +259,6 @@ class _ProviderRegisterSimplePageState
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icône succès animée
               Container(
                 padding: const EdgeInsets.all(20),
                 decoration: BoxDecoration(
@@ -282,7 +273,7 @@ class _ProviderRegisterSimplePageState
               ),
               const SizedBox(height: 20),
               Text(
-                'Compte créé avec succès !',
+                'Profil prestataire créé !',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(
                   fontSize: 22,
@@ -302,8 +293,6 @@ class _ProviderRegisterSimplePageState
                 ),
               ),
               const SizedBox(height: 20),
-
-              // Code unique
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -337,15 +326,13 @@ class _ProviderRegisterSimplePageState
                     const SizedBox(height: 10),
                     GestureDetector(
                       onTap: () {
-                        Clipboard.setData(
-                            ClipboardData(text: provider.uniqueCode));
+                        Clipboard.setData(ClipboardData(text: provider.uniqueCode));
                         HapticFeedback.mediumImpact();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text('Code copié !',
                                 style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white)),
+                                    fontWeight: FontWeight.w700, color: Colors.white)),
                             backgroundColor: _P.green,
                             behavior: SnackBarBehavior.floating,
                             shape: RoundedRectangleBorder(
@@ -354,8 +341,7 @@ class _ProviderRegisterSimplePageState
                         );
                       },
                       child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(10),
@@ -364,8 +350,7 @@ class _ProviderRegisterSimplePageState
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.copy_rounded,
-                                size: 16, color: _P.rose),
+                            const Icon(Icons.copy_rounded, size: 16, color: _P.rose),
                             const SizedBox(width: 6),
                             Text('Copier le code',
                                 style: GoogleFonts.inter(
@@ -380,7 +365,6 @@ class _ProviderRegisterSimplePageState
                   ],
                 ),
               ),
-
               const SizedBox(height: 20),
               Text(
                 '⚠️ Gardez ce code précieusement. Il permet à vos clients de vous identifier sur THIX Wedding.',
@@ -391,7 +375,6 @@ class _ProviderRegisterSimplePageState
                   height: 1.4,
                 ),
               ),
-
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -424,7 +407,7 @@ class _ProviderRegisterSimplePageState
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // BUILD
+  // BUILD (INCHANGÉ)
   // ═══════════════════════════════════════════════════════════════════════════
 
   @override
@@ -436,7 +419,6 @@ class _ProviderRegisterSimplePageState
       body: SafeArea(
         child: Column(
           children: [
-            // Header
             Container(
               padding: EdgeInsets.fromLTRB(16, topPad + 12, 16, 16),
               decoration: BoxDecoration(
@@ -454,8 +436,7 @@ class _ProviderRegisterSimplePageState
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: _P.line),
                       ),
-                      child: const Icon(Icons.arrow_back_ios_new,
-                          size: 16, color: _P.ink),
+                      child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _P.ink),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -483,8 +464,7 @@ class _ProviderRegisterSimplePageState
                     ),
                   ),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: _P.green.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(8),
@@ -503,7 +483,6 @@ class _ProviderRegisterSimplePageState
               ),
             ),
 
-            // Contenu
             Expanded(
               child: SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
@@ -513,7 +492,6 @@ class _ProviderRegisterSimplePageState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Message d'erreur serveur
                       if (_serverError != null)
                         Container(
                           margin: const EdgeInsets.only(bottom: 16),
@@ -521,13 +499,11 @@ class _ProviderRegisterSimplePageState
                           decoration: BoxDecoration(
                             color: _P.red.withOpacity(0.08),
                             borderRadius: BorderRadius.circular(14),
-                            border: Border.all(
-                                color: _P.red.withOpacity(0.3)),
+                            border: Border.all(color: _P.red.withOpacity(0.3)),
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.error_outline,
-                                  color: _P.red, size: 20),
+                              const Icon(Icons.error_outline, color: _P.red, size: 20),
                               const SizedBox(width: 10),
                               Expanded(
                                 child: Text(
@@ -540,10 +516,8 @@ class _ProviderRegisterSimplePageState
                                 ),
                               ),
                               IconButton(
-                                icon: const Icon(Icons.close,
-                                    size: 16, color: _P.red),
-                                onPressed: () =>
-                                    setState(() => _serverError = null),
+                                icon: const Icon(Icons.close, size: 16, color: _P.red),
+                                onPressed: () => setState(() => _serverError = null),
                                 padding: EdgeInsets.zero,
                                 constraints: const BoxConstraints(),
                               ),
@@ -582,8 +556,7 @@ class _ProviderRegisterSimplePageState
                         icon: Icons.phone_outlined,
                         keyboard: TextInputType.phone,
                         inputFormatters: [
-                          FilteringTextInputFormatter.allow(
-                              RegExp(r'[0-9+\-\s()]')),
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9+\-\s()]')),
                         ],
                         validator: _validatePhone,
                       ),
@@ -602,27 +575,19 @@ class _ProviderRegisterSimplePageState
                       const SizedBox(height: 10),
                       Row(
                         children: [
-                          Text(
-                            'Catégorie *',
-                            style: GoogleFonts.inter(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: _P.ink,
-                            ),
-                          ),
+                          Text('Catégorie *',
+                              style: GoogleFonts.inter(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: _P.ink,
+                              )),
                           const SizedBox(width: 6),
-                          Text(
-                            '(obligatoire)',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: _P.inkSoft,
-                            ),
-                          ),
+                          Text('(obligatoire)',
+                              style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
                         ],
                       ),
                       const SizedBox(height: 12),
 
-                      // Grille de catégories
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -637,8 +602,7 @@ class _ProviderRegisterSimplePageState
                             child: AnimatedContainer(
                               duration: const Duration(milliseconds: 220),
                               curve: Curves.easeOut,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 14, vertical: 11),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                               decoration: BoxDecoration(
                                 color: isSelected ? _P.rose : _P.surface,
                                 borderRadius: BorderRadius.circular(22),
@@ -649,8 +613,7 @@ class _ProviderRegisterSimplePageState
                                 boxShadow: isSelected
                                     ? [
                                         BoxShadow(
-                                          color:
-                                              _P.rose.withOpacity(0.25),
+                                          color: _P.rose.withOpacity(0.25),
                                           blurRadius: 10,
                                           offset: const Offset(0, 4),
                                         ),
@@ -662,21 +625,15 @@ class _ProviderRegisterSimplePageState
                                 children: [
                                   if (isSelected)
                                     Padding(
-                                      padding:
-                                          const EdgeInsets.only(right: 6),
-                                      child: Icon(
-                                        Icons.check_rounded,
-                                        size: 14,
-                                        color: Colors.white,
-                                      ),
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: Icon(Icons.check_rounded, size: 14, color: Colors.white),
                                     ),
                                   Text(
                                     cat.displayName,
                                     style: GoogleFonts.inter(
                                       fontSize: 12,
                                       fontWeight: FontWeight.w700,
-                                      color:
-                                          isSelected ? Colors.white : _P.ink,
+                                      color: isSelected ? Colors.white : _P.ink,
                                     ),
                                   ),
                                 ],
@@ -687,14 +644,12 @@ class _ProviderRegisterSimplePageState
                       ),
 
                       const SizedBox(height: 22),
-                      Text(
-                        'Description (optionnel)',
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: _P.ink,
-                        ),
-                      ),
+                      Text('Description (optionnel)',
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: _P.ink,
+                          )),
                       const SizedBox(height: 8),
                       TextFormField(
                         controller: _descCtrl,
@@ -702,13 +657,10 @@ class _ProviderRegisterSimplePageState
                         maxLines: 4,
                         maxLength: 500,
                         textCapitalization: TextCapitalization.sentences,
-                        style: GoogleFonts.inter(
-                            fontSize: 14, color: _P.ink),
+                        style: GoogleFonts.inter(fontSize: 14, color: _P.ink),
                         decoration: InputDecoration(
-                          hintText:
-                              'Décrivez votre activité, vos spécialités, votre expérience...',
-                          hintStyle: GoogleFonts.inter(
-                              color: _P.inkSoft, fontSize: 13),
+                          hintText: 'Décrivez votre activité, vos spécialités, votre expérience...',
+                          hintStyle: GoogleFonts.inter(color: _P.inkSoft, fontSize: 13),
                           counterText: '',
                           filled: true,
                           fillColor: _P.surface,
@@ -718,18 +670,14 @@ class _ProviderRegisterSimplePageState
                           ),
                         ),
                         buildCounter: (ctx,
-                                {required currentLength,
-                                required isFocused,
-                                maxLength}) =>
+                                {required currentLength, required isFocused, maxLength}) =>
                             Padding(
                           padding: const EdgeInsets.only(top: 4),
                           child: Text(
                             '$currentLength/500',
                             style: GoogleFonts.inter(
                               fontSize: 10,
-                              color: currentLength > 450
-                                  ? _P.amber
-                                  : _P.inkSoft,
+                              color: currentLength > 450 ? _P.amber : _P.inkSoft,
                             ),
                           ),
                         ),
@@ -737,7 +685,6 @@ class _ProviderRegisterSimplePageState
 
                       const SizedBox(height: 18),
 
-                      // Conditions d'utilisation
                       GestureDetector(
                         onTap: () {
                           HapticFeedback.selectionClick();
@@ -756,40 +703,30 @@ class _ProviderRegisterSimplePageState
                                 width: 22,
                                 height: 22,
                                 decoration: BoxDecoration(
-                                  color: _agreedToTerms
-                                      ? _P.green
-                                      : Colors.transparent,
+                                  color: _agreedToTerms ? _P.green : Colors.transparent,
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
-                                    color: _agreedToTerms
-                                        ? _P.green
-                                        : _P.line,
+                                    color: _agreedToTerms ? _P.green : _P.line,
                                     width: 2,
                                   ),
                                 ),
                                 child: _agreedToTerms
-                                    ? const Icon(Icons.check,
-                                        size: 14, color: Colors.white)
+                                    ? const Icon(Icons.check, size: 14, color: Colors.white)
                                     : null,
                               ),
                               const SizedBox(width: 12),
                               Expanded(
                                 child: Text.rich(
                                   TextSpan(
-                                    style: GoogleFonts.inter(
-                                        fontSize: 12, color: _P.ink),
+                                    style: GoogleFonts.inter(fontSize: 12, color: _P.ink),
                                     children: [
-                                      const TextSpan(
-                                          text:
-                                              "J'accepte les conditions d'utilisation et la "),
+                                      const TextSpan(text: "J'accepte les conditions d'utilisation et la "),
                                       TextSpan(
-                                        text:
-                                            "politique de confidentialité",
+                                        text: "politique de confidentialité",
                                         style: GoogleFonts.inter(
                                           color: _P.rose,
                                           fontWeight: FontWeight.w700,
-                                          decoration:
-                                              TextDecoration.underline,
+                                          decoration: TextDecoration.underline,
                                         ),
                                       ),
                                     ],
@@ -803,7 +740,6 @@ class _ProviderRegisterSimplePageState
 
                       const SizedBox(height: 28),
 
-                      // Bouton de soumission
                       SizedBox(
                         height: 58,
                         width: double.infinity,
@@ -831,7 +767,7 @@ class _ProviderRegisterSimplePageState
                                   mainAxisAlignment: MainAxisAlignment.center,
                                   children: [
                                     Text(
-                                      'Créer mon compte gratuit',
+                                      'Créer mon profil prestataire',
                                       style: GoogleFonts.inter(
                                         fontSize: 15,
                                         fontWeight: FontWeight.w900,
@@ -839,39 +775,9 @@ class _ProviderRegisterSimplePageState
                                       ),
                                     ),
                                     const SizedBox(width: 8),
-                                    const Icon(Icons.arrow_forward_rounded,
-                                        size: 20),
+                                    const Icon(Icons.arrow_forward_rounded, size: 20),
                                   ],
                                 ),
-                        ),
-                      ),
-
-                      const SizedBox(height: 20),
-
-                      // Lien vers connexion
-                      Center(
-                        child: TextButton(
-                          onPressed: () => context.push(
-                              '/thix-weeding/provider/auth'),
-                          child: Text.rich(
-                            TextSpan(
-                              style: GoogleFonts.inter(
-                                fontSize: 13,
-                                color: _P.inkSoft,
-                              ),
-                              children: [
-                                const TextSpan(
-                                    text: 'Déjà inscrit ? '),
-                                TextSpan(
-                                  text: 'Se connecter',
-                                  style: GoogleFonts.inter(
-                                    color: _P.rose,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
                         ),
                       ),
 
@@ -887,10 +793,6 @@ class _ProviderRegisterSimplePageState
     );
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// COMPOSANT CHAMP RÉUTILISABLE
-// ═══════════════════════════════════════════════════════════════════════════
 
 class _Field extends StatelessWidget {
   final String label;
