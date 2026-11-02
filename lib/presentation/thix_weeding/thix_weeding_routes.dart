@@ -61,7 +61,7 @@ import 'pages/provider_portal/provider_catalog_pages.dart';
 import 'pages/provider_portal/provider_register_simple.dart';
 import 'pages/provider_portal/provider_detail_page.dart';
 import 'pages/provider_portal/provider_offers_page.dart';
-import '../providers/provider_providers.dart';
+import 'providers/provider_providers.dart';
 
 class ThixWeedingRoutes {
   static const String home = '/thix-weeding';
