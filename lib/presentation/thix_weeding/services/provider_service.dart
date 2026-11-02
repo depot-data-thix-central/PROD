@@ -1,14 +1,12 @@
 // lib/presentation/thix_weeding/services/provider_service.dart
 // ============================================================================
-// THIX WEDDING PROVIDER SERVICE (PRODUCTION ENTERPRISE)
-// ✅ CRUD complet prestataires
-// ✅ Génération code unique THIX-P-XXXYY (3 chiffres + 2 lettres)
-// ✅ Validation documents (surtout salles)
-// ✅ Gestion réservations et tâches
-// ✅ FIX : Typage explicite <String, dynamic> pour toutes les maps de données
+// THIX WEDDING PROVIDER SERVICE (PRODUCTION v3)
+// ✅ LOGIQUE IDENTIQUE À WeddingService (mariages)
+// ✅ Code unique THIX-P-XXXYY généré par Trigger SQL (pas en Dart)
+// ✅ owner_id = user.id (comme owner_id des mariages)
+// ✅ Méthode getByOwner(ownerId) comme getByOwner des mariages
 // ============================================================================
 
-import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/provider_models.dart';
 
@@ -18,57 +16,21 @@ class ProviderService {
   ProviderService() : _client = Supabase.instance.client;
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // GÉNÉRATION CODE UNIQUE THIX
-  // Format : THIX-P-XXXYY (3 chiffres + 2 lettres majuscules)
-  // Exemples : THIX-P-001AB, THIX-P-456XY, THIX-P-999ZZ
-  // Capacité : 1000 × 676 = 676 000 codes uniques
+  // RÉCUPÉRER PRESTATAIRE PAR OWNER (LOGIQUE IDENTIQUE À WeddingService.getByOwner)
   // ═══════════════════════════════════════════════════════════════════════════
-  Future<String> generateUniqueCode(ProviderCategory category) async {
-    const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
-    const digits = '0123456789';
-    final random = Random.secure();
-
-    String code;
-    bool exists = true;
-    int attempts = 0;
-    const maxAttempts = 50;
-
-    do {
-      attempts++;
-      
-      // Protection contre boucle infinie
-      if (attempts > maxAttempts) {
-        throw Exception(
-            'Impossible de générer un code unique après $maxAttempts tentatives. '
-            'Contactez le support technique.');
-      }
-
-      // Générer 3 chiffres (000 à 999)
-      final numberPart = List.generate(
-        3,
-        (_) => digits[random.nextInt(digits.length)],
-      ).join();
-
-      // Générer 2 lettres majuscules (AA à ZZ)
-      final letterPart = List.generate(
-        2,
-        (_) => letters[random.nextInt(letters.length)],
-      ).join();
-
-      // Format final : THIX-P-XXXYY
-      code = 'THIX-P-$numberPart$letterPart';
-
-      // Vérifier l'unicité en base de données
-      final result = await _client
+  Future<ThixProviderModel?> getByOwner(String ownerId) async {
+    try {
+      final response = await _client
           .from('thix_weeding_providers')
-          .select('id')
-          .eq('unique_code', code)
+          .select('*')
+          .eq('owner_id', ownerId)
           .maybeSingle();
-
-      exists = result != null;
-    } while (exists);
-
-    return code;
+      
+      if (response == null) return null;
+      return ThixProviderModel.fromJson(response as Map<String, dynamic>);
+    } catch (e) {
+      throw Exception('Erreur lors de la récupération du prestataire: $e');
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -143,30 +105,12 @@ class ProviderService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RÉCUPÉRER PRESTATAIRE PAR USER ID
-  // ═══════════════════════════════════════════════════════════════════════════
-  Future<ThixProviderModel?> getProviderByUserId(String? userId) async {
-    if (userId == null || userId.isEmpty) return null;
-    
-    try {
-      final response = await _client
-          .from('thix_weeding_providers')
-          .select('*')
-          .eq('user_id', userId)
-          .maybeSingle();
-      
-      if (response == null) return null;
-      return ThixProviderModel.fromJson(response as Map<String, dynamic>);
-    } catch (e) {
-      throw Exception('Erreur lors de la récupération du prestataire: $e');
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // CRÉER UN NOUVEAU PRESTATAIRE
+  // CRÉER UN NOUVEAU PRESTATAIRE (LOGIQUE IDENTIQUE À WeddingService.create)
+  // ✅ owner_id = user.id (comme owner_id des mariages)
+  // ✅ Code THIX-P-XXXYY généré par Trigger SQL (pas en Dart)
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> createProvider({
-    String? userId,
+    required String ownerId,  // ← CHANGEMENT : ownerId au lieu de userId
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -182,13 +126,11 @@ class ProviderService {
     Map<String, dynamic>? requirements,
   }) async {
     try {
-      // Générer le code unique au format THIX-P-XXXYY
-      final uniqueCode = await generateUniqueCode(category);
       final now = DateTime.now();
       
-      // ✅ FIX : Typage explicite <String, dynamic>
+      // ✅ DONNÉES : owner_id + données métier (PAS de unique_code, le trigger SQL le génère)
       final data = <String, dynamic>{
-        'unique_code': uniqueCode,
+        'owner_id': ownerId,  // ← CHANGEMENT : owner_id
         'category': category.name,
         'business_name': businessName,
         'level': TrackingLevel.bronze.name,
@@ -201,7 +143,6 @@ class ProviderService {
         'updated_at': now.toIso8601String(),
       };
       
-      if (userId != null) data['user_id'] = userId;
       if (description != null) data['description'] = description;
       if (phone != null) data['phone'] = phone;
       if (email != null) data['email'] = email;
@@ -250,7 +191,6 @@ class ProviderService {
     Map<String, dynamic>? requirements,
   }) async {
     try {
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'updated_at': DateTime.now().toIso8601String(),
       };
@@ -296,7 +236,6 @@ class ProviderService {
     TrackingLevel? newLevel,
   }) async {
     try {
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'updated_at': DateTime.now().toIso8601String(),
         'verification_status': approved
@@ -349,7 +288,6 @@ class ProviderService {
   }) async {
     try {
       final now = DateTime.now();
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'provider_id': providerId,
         'wedding_id': weddingId,
@@ -406,7 +344,6 @@ class ProviderService {
     ReservationStatus status,
   ) async {
     try {
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'status': status.name,
         'updated_at': DateTime.now().toIso8601String(),
@@ -440,7 +377,6 @@ class ProviderService {
   }) async {
     try {
       final now = DateTime.now();
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'provider_id': providerId,
         'wedding_id': weddingId,
@@ -493,7 +429,6 @@ class ProviderService {
     TaskStatus status,
   ) async {
     try {
-      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'status': status.name,
       };
