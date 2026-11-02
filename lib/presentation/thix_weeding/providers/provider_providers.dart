@@ -22,7 +22,7 @@ final providerServiceProvider = Provider<ProviderService>((ref) {
 // LISTE DES PRESTATAIRES
 // ═══════════════════════════════════════════════════════════════════════════
 final providersListProvider = FutureProvider.autoDispose
-    .family<List<ThixProviderModel>, _ProviderListParams>((ref, params) async {
+    .family<List<ThixProviderModel>, ProviderListParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
   return service.getAllProviders(
     page: params.page,
@@ -35,7 +35,7 @@ final providersListProvider = FutureProvider.autoDispose
   );
 });
 
-class _ProviderListParams {
+class ProviderListParams {
   final int page;
   final int limit;
   final ProviderCategory? category;
@@ -44,7 +44,7 @@ class _ProviderListParams {
   final bool? isAvailable;
   final String? search;
 
-  const _ProviderListParams({
+  const ProviderListParams({
     this.page = 1,
     this.limit = 20,
     this.category,
@@ -53,38 +53,21 @@ class _ProviderListParams {
     this.isAvailable,
     this.search,
   });
-}
 
-ProviderListParams providerListParams({
-  int page = 1,
-  int limit = 20,
-  ProviderCategory? category,
-  TrackingLevel? level,
-  String? city,
-  bool? isAvailable,
-  String? search,
-}) {
-  return ProviderListParams(
-    page: page,
-    limit: limit,
-    category: category,
-    level: level,
-    city: city,
-    isAvailable: isAvailable,
-    search: search,
-  );
-}
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProviderListParams &&
+          page == other.page &&
+          limit == other.limit &&
+          category == other.category &&
+          level == other.level &&
+          city == other.city &&
+          isAvailable == other.isAvailable &&
+          search == other.search;
 
-class ProviderListParams extends _ProviderListParams {
-  const ProviderListParams({
-    super.page,
-    super.limit,
-    super.category,
-    super.level,
-    super.city,
-    super.isAvailable,
-    super.search,
-  });
+  @override
+  int get hashCode => Object.hash(page, limit, category, level, city, isAvailable, search);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -97,7 +80,7 @@ final providerByIdProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRE PAR CODE UNIQUE (Pour le staff)
+// PRESTATAIRE PAR CODE UNIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 final providerByCodeProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, code) async {
@@ -107,9 +90,11 @@ final providerByCodeProvider = FutureProvider.autoDispose
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PRESTATAIRE COURANT (Espace prestataire)
-// ══════════════════════════════════════════════════════════════════════════
+// ✅ FIX : userId nullable
+// ═══════════════════════════════════════════════════════════════════════════
 final currentProviderProvider = FutureProvider.autoDispose
-    .family<ThixProviderModel?, String>((ref, userId) async {
+    .family<ThixProviderModel?, String?>((ref, userId) async {
+  if (userId == null || userId.isEmpty) return null;
   final service = ref.watch(providerServiceProvider);
   return service.getProviderByUserId(userId);
 });
@@ -118,65 +103,57 @@ final currentProviderProvider = FutureProvider.autoDispose
 // RÉSERVATIONS D'UN PRESTATAIRE
 // ═══════════════════════════════════════════════════════════════════════════
 final providerReservationsProvider = FutureProvider.autoDispose
-    .family<List<ProviderReservationModel>, _ReservationParams>((ref, params) async {
+    .family<List<ProviderReservationModel>, ProviderReservationsParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
-  return service.getProviderReservations(
-    params.providerId,
-    status: params.status,
-  );
+  return service.getProviderReservations(params.providerId, status: params.status);
 });
 
-class _ReservationParams {
+class ProviderReservationsParams {
   final String providerId;
   final ReservationStatus? status;
 
-  const _ReservationParams({required this.providerId, this.status});
-}
+  const ProviderReservationsParams({required this.providerId, this.status});
 
-ProviderReservationsParams providerReservationsParams({
-  required String providerId,
-  ReservationStatus? status,
-}) {
-  return ProviderReservationsParams(providerId: providerId, status: status);
-}
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProviderReservationsParams &&
+          providerId == other.providerId &&
+          status == other.status;
 
-class ProviderReservationsParams extends _ReservationParams {
-  const ProviderReservationsParams({required super.providerId, super.status});
+  @override
+  int get hashCode => Object.hash(providerId, status);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TÂCHES D'UN PRESTATAIRE
 // ═══════════════════════════════════════════════════════════════════════════
 final providerTasksProvider = FutureProvider.autoDispose
-    .family<List<ProviderTaskModel>, _TaskParams>((ref, params) async {
+    .family<List<ProviderTaskModel>, ProviderTasksParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
-  return service.getProviderTasks(
-    params.providerId,
-    status: params.status,
-  );
+  return service.getProviderTasks(params.providerId, status: params.status);
 });
 
-class _TaskParams {
+class ProviderTasksParams {
   final String providerId;
   final TaskStatus? status;
 
-  const _TaskParams({required this.providerId, this.status});
+  const ProviderTasksParams({required this.providerId, this.status});
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ProviderTasksParams &&
+          providerId == other.providerId &&
+          status == other.status;
+
+  @override
+  int get hashCode => Object.hash(providerId, status);
 }
 
-ProviderTasksParams providerTasksParams({
-  required String providerId,
-  TaskStatus? status,
-}) {
-  return ProviderTasksParams(providerId: providerId, status: status);
-}
-
-class ProviderTasksParams extends _TaskParams {
-  const ProviderTasksParams({required super.providerId, super.status});
-}
-
-// ══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 // STATISTIQUES D'UN PRESTATAIRE
-// ══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
 final providerStatsProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((ref, providerId) async {
   final service = ref.watch(providerServiceProvider);
@@ -184,7 +161,7 @@ final providerStatsProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS (Avec invalidation automatique)
+// ACTIONS
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Créer un prestataire
@@ -192,7 +169,7 @@ final providerStatsProvider = FutureProvider.autoDispose
 final createProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
   return ({
-    String? userId, // ✅ RENDU OPTIONNEL
+    String? userId,
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -224,7 +201,6 @@ final createProviderProvider = Provider((ref) {
       requirements: requirements,
     );
     
-    // Invalider la liste pour rafraîchir
     ref.invalidate(providersListProvider);
     
     return provider;
@@ -275,7 +251,6 @@ final updateProviderProvider = Provider((ref) {
       requirements: requirements,
     );
     
-    // Invalider les providers concernés
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
     
@@ -344,13 +319,8 @@ final createReservationProvider = Provider((ref) {
 final updateReservationStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
   return (String reservationId, ReservationStatus status) async {
-    final reservation = await service.updateReservationStatus(
-      reservationId,
-      status,
-    );
-    
+    final reservation = await service.updateReservationStatus(reservationId, status);
     ref.invalidate(providerReservationsProvider);
-    
     return reservation;
   };
 });
@@ -388,9 +358,7 @@ final updateTaskStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
   return (String taskId, TaskStatus status) async {
     final task = await service.updateTaskStatus(taskId, status);
-    
     ref.invalidate(providerTasksProvider);
-    
     return task;
   };
 });
