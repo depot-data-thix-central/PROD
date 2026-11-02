@@ -1,6 +1,6 @@
 // lib/presentation/thix_weeding/pages/guest/guest_home_page.dart
 // ============================================================================
-// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v3)
+// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v4)
 // ✅ Hero : 6 premières photos de la galerie, défilement automatique permanent
 // ✅ Tout est compact (rien ne déborde) — feuilles de détail défilables
 // ✅ « En un coup d'œil » supprimé → bande « Photos du mariage »
@@ -8,6 +8,7 @@
 // ✅ Message d'invitation / table / place : visibles seulement par l'invité concerné
 // ✅ Cartes infos & prestataires avec photos
 // ✅ Temps réel (mariage, invité, table, messages) + verre dépoli
+// ✅ MENU : lien vers préférences repas avec badge compteur de plats
 // ============================================================================
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -97,7 +98,8 @@ const List<_GuestMenuItem> _kGuestMenu = [
   _GuestMenuItem(title: 'Programme', subtitle: 'Déroulé de la journée', icon: Icons.event_note_outlined, route: 'programme'),
   _GuestMenuItem(title: 'Lieu & Accès', subtitle: 'Itinéraire & infos', icon: Icons.location_on_outlined, route: 'lieu'),
   _GuestMenuItem(title: 'RSVP', subtitle: 'Confirmer votre présence', icon: Icons.people_alt_outlined, route: 'rsvp', badgeType: _BadgeType.alert),
-  _GuestMenuItem(title: 'Menu', subtitle: 'Repas & boissons', icon: Icons.restaurant_menu_rounded, route: 'menu'),
+  // ✅ MODIFIÉ : route vers meal-preferences + badge compteur
+  _GuestMenuItem(title: 'Menu', subtitle: 'Choisir mes plats', icon: Icons.restaurant_menu_rounded, route: 'meal-preferences', badgeType: _BadgeType.count),
   _GuestMenuItem(title: 'Playlist', subtitle: 'Proposer vos titres', icon: Icons.queue_music_rounded, route: 'playlist'),
   _GuestMenuItem(title: 'Ma table', subtitle: 'Votre table & voisins', icon: Icons.table_restaurant_outlined, route: 'ma-table'),
   _GuestMenuItem(title: 'Cadeaux', subtitle: 'Voir & contribuer', icon: Icons.card_giftcard_outlined, route: 'cadeaux'),
@@ -225,6 +227,18 @@ final guestVendorPhotosProvider =
   }
 });
 
+/// ✅ NOUVEAU : Compteur de plats publics pour le badge du menu
+final guestMenuCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
+  try {
+    final service = ref.read(menuServiceProvider);
+    final items = await service.getPublicByWedding(weddingId);
+    return items.length;
+  } catch (_) {
+    return 0;
+  }
+});
+
 // ── URL d'une photo de galerie (modèle inconnu → lecture tolérante) ──
 String? _galleryUrl(dynamic g) {
   final getters = <dynamic Function()>[
@@ -262,6 +276,24 @@ bool _isVideoUrl(String u) {
 String _fmtShort(DateTime? d) {
   if (d == null) return '';
   return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
+}
+
+Color tagColor(String tag) {
+  switch (tag.toUpperCase()) {
+    case 'URGENT':
+      return _P.primary;
+    case 'PARKING':
+    case 'TRANSPORT':
+      return _P.primaryDark;
+    case 'PROGRAMME':
+      return const Color(0xFF6B46C1);
+    case 'MENU':
+      return _P.accent;
+    case 'DRESS CODE':
+      return const Color(0xFFE91E63);
+    default:
+      return const Color(0xFF0B3B8F);
+  }
 }
 
 // ============================================================
@@ -419,6 +451,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     ref.invalidate(galleryProvider(id));
     ref.invalidate(guestsProvider(id));
     ref.invalidate(messagesProvider(id));
+    ref.invalidate(guestMenuCountProvider(id)); // ✅ AJOUTÉ
   }
 
   Future<void> _onRefresh() async {
@@ -658,6 +691,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     final vendorPhotos = ref.watch(guestVendorPhotosProvider(widget.weddingId)).value ?? const <String, String>{};
     final annAsync = ref.watch(guestAnnouncementsProvider(widget.weddingId));
     final galleryRaw = ref.watch(galleryProvider(widget.weddingId)).value;
+    final menuCount = ref.watch(guestMenuCountProvider(widget.weddingId)).value ?? 0; // ✅ AJOUTÉ
     final bottom = MediaQuery.of(context).padding.bottom;
 
     final photos = <String>[];
@@ -681,6 +715,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                   vendorsAsync: vendorsAsync,
                   vendorPhotos: vendorPhotos,
                   annAsync: annAsync,
+                  menuCount: menuCount, // ✅ AJOUTÉ
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
@@ -785,6 +820,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     required AsyncValue<List<VendorModel>> vendorsAsync,
     required Map<String, String> vendorPhotos,
     required AsyncValue<List<GuestAnnouncement>> annAsync,
+    required int menuCount, // ✅ AJOUTÉ
   }) {
     final mq = MediaQuery.of(context);
     final headerH = mq.padding.top + 56;
@@ -898,6 +934,10 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                         } else if (item.route == 'annonces') {
                           count = announcements.length;
                           type = announcements.isNotEmpty ? _BadgeType.count : _BadgeType.none;
+                        } else if (item.route == 'meal-preferences') {
+                          // ✅ AJOUTÉ : badge pour le menu
+                          count = menuCount;
+                          type = menuCount > 0 ? _BadgeType.count : _BadgeType.none;
                         }
                         return _GuestMenuTile(
                           item: item,
