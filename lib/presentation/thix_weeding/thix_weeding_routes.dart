@@ -1,15 +1,15 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.1 (PRODUCTION ENTERPRISE)
+// THIX WEDDING ROUTES — v3.2 (PRODUCTION ENTERPRISE)
+// ✅ FIX 404 : /provider/offers/new & /provider/offers/edit/:id ajoutées
+// ✅ FIX : indices des onglets alignés sur le shell (Offres=1, Galerie=2...)
 // ✅ FIX 404 : provider/catalog & provider/detail → remis au BON niveau
-// ✅ FIX 404 : staff/:id/invitation/preview  → PreviewInvitationPage
-// ✅ FIX 404 : staff/:id/budget/add          → ExpenseFormPage
-// ✅ FIX 404 : staff/:id/budget/:eid/edit    → ExpenseFormPage (mode édition)
-// ✅ FIX 404 : staff/:id/planning/add        → TaskFormPage
-// ✅ NOUVEAU : Espace Prestataire complet (auth, register, dashboard, catalogue)
+// ✅ ESPACE PRESTATAIRE complet (register, dashboard, catalogue, offres)
 // ============================================================================
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 // HOME
 import 'pages/home/thix_weeding_home_page.dart';
@@ -60,6 +60,9 @@ import 'pages/provider_portal/provider_auth_pages.dart';
 import 'pages/provider_portal/provider_catalog_pages.dart';
 import 'pages/provider_portal/provider_register_simple.dart';
 import 'pages/provider_portal/provider_detail_page.dart';
+import 'pages/provider_portal/provider_offers_page.dart';
+import '../providers/provider_providers.dart';
+
 class ThixWeedingRoutes {
   static const String home = '/thix-weeding';
 
@@ -101,6 +104,9 @@ class ThixWeedingRoutes {
   static const String providerCatalog = 'providerCatalog';
   static const String providerDetail = 'providerDetail';
   static const String providerDashboard = 'providerDashboard';
+  static const String providerOffers = 'providerOffers';
+  static const String providerNewOffer = 'providerNewOffer';
+  static const String providerEditOffer = 'providerEditOffer';
   static const String providerGallery = 'providerGallery';
   static const String providerReservations = 'providerReservations';
   static const String providerTasks = 'providerTasks';
@@ -154,24 +160,38 @@ class ThixWeedingRoutes {
               ),
             ),
 
-            // ✅ SHELL + ANCIENS DEEP-LINKS NICHÉS (compatibilité)
+            // ✅ SHELL + ONGLETS NICHÉS (indices corrigés : Offres=1)
             GoRoute(
               path: 'provider/dashboard',
               name: providerDashboard,
               builder: (c, s) => const ProviderPortalShell(initialTab: 0),
               routes: [
-                GoRoute(path: 'galerie', name: providerGallery, builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
-                GoRoute(path: 'reservations', name: providerReservations, builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
-                GoRoute(path: 'taches', name: providerTasks, builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
-                GoRoute(path: 'profil', name: providerProfile, builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
+                GoRoute(path: 'offres', name: providerOffers, builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
+                GoRoute(path: 'galerie', name: providerGallery, builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
+                GoRoute(path: 'reservations', name: providerReservations, builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
+                GoRoute(path: 'taches', name: providerTasks, builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
+                GoRoute(path: 'profil', name: providerProfile, builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
               ],
             ),
 
-            // ✅ FIX 404 : ALIAS PLATS utilisés par les actions du dashboard
-            GoRoute(path: 'provider/gallery', builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
-            GoRoute(path: 'provider/reservations', builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
-            GoRoute(path: 'provider/tasks', builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
-            GoRoute(path: 'provider/profile', builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
+            // ✅ ALIAS PLATS (utilisés par les boutons du dashboard)
+            GoRoute(path: 'provider/offers', builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
+            GoRoute(path: 'provider/gallery', builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
+            GoRoute(path: 'provider/reservations', builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
+            GoRoute(path: 'provider/tasks', builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
+            GoRoute(path: 'provider/profile', builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
+
+            // ✅ NOUVEAU : FORMULAIRE DE CRÉATION / ÉDITION D'OFFRE (résout le 404)
+            GoRoute(
+              path: 'provider/offers/new',
+              name: providerNewOffer,
+              builder: (c, s) => const _ProviderOfferFormRoute(editId: null),
+            ),
+            GoRoute(
+              path: 'provider/offers/edit/:offerId',
+              name: providerEditOffer,
+              builder: (c, s) => _ProviderOfferFormRoute(editId: s.pathParameters['offerId']),
+            ),
 
             // ================= ESPACE INVITÉ =================
             GoRoute(
@@ -471,4 +491,86 @@ class ThixWeedingRoutes {
           ],
         ),
       ];
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGET ROUTE POUR LE FORMULAIRE D'OFFRE (résolution dynamique du provider)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderOfferFormRoute extends ConsumerWidget {
+  final String? editId;
+  const _ProviderOfferFormRoute({this.editId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              Text('Connexion requise', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/auth/login'),
+                child: const Text('Se connecter'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final providerAsync = ref.watch(myProviderProvider(user.id));
+
+    return providerAsync.when(
+      loading: () => const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      ),
+      error: (e, _) => Scaffold(
+        body: Center(child: Text('Erreur: $e')),
+      ),
+      data: (provider) {
+        if (provider == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  Text('Aucun profil prestataire', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => context.go('/thix-weeding/provider/register'),
+                    child: const Text('Créer mon profil'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        // Mode édition : charger l'offre existante si nécessaire
+        if (editId != null) {
+          final offersAsync = ref.watch(providerOffersProvider(provider.id));
+          return offersAsync.when(
+            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+            error: (e, _) => Scaffold(body: Center(child: Text('Erreur chargement offre: $e'))),
+            data: (offers) {
+              final existing = offers.where((o) => o.id == editId).firstOrNull;
+              return ProviderOfferFormPage(provider: provider, existing: existing);
+            },
+          );
+        }
+
+        // Mode création
+        return ProviderOfferFormPage(provider: provider);
+      },
+    );
+  }
 }
