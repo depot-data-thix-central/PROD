@@ -496,7 +496,7 @@ class _MenuCard extends StatelessWidget {
                         final name = item['name'] as String? ?? 'Sans nom';
                         
                         return Padding(
-                          padding: const EdgeInsets.only(bottom: i < top3.length - 1 ? 8 : 0),
+                          padding: EdgeInsets.only(bottom: i < top3.length - 1 ? 8 : 0),
                           child: Row(
                             children: [
                               Container(
