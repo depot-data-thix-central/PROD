@@ -574,7 +574,9 @@ final updateActivityProvider = Provider((ref) {
     if (phone != null) patch['phone'] = phone.trim().isEmpty ? null : phone.trim();
     if (email != null) patch['email'] = email.trim().isEmpty ? null : email.trim();
     if (city != null) patch['city'] = city.trim().isEmpty ? null : city.trim();
-    if (patch.isEmpty) return;
+    
+    // ✅ FIX : retourner explicitement si patch vide
+    if (patch.isEmpty) return null;
 
     final res = await Supabase.instance.client
         .from('thix_weeding_providers')
@@ -977,7 +979,103 @@ final updateTaskStatusProvider = Provider((ref) {
     return task;
   };
 });
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : ACTIONS MULTI-ACTIVITÉS (create / delete / setPrimary)
+// ═══════════════════════════════════════════════════════════════════════════
 
+final createActivityProvider = Provider((ref) {
+  return ({
+    required String ownerId,
+    required String businessName,
+    required String category,
+    String? description,
+    String? phone,
+    String? email,
+    String? city,
+  }) async {
+    if (businessName.trim().isEmpty) {
+      throw ProviderValidationException('Le nom commercial est requis');
+    }
+    if (category.trim().isEmpty) {
+      throw ProviderValidationException('Choisissez un métier (catégorie)');
+    }
+
+    final c = Supabase.instance.client;
+
+    // 1ère activité du compte ? => is_primary = true
+    final existing = await c
+        .from('thix_weeding_providers')
+        .select('id')
+        .eq('owner_id', ownerId)
+        .limit(1);
+    final isFirst = (existing as List).isEmpty;
+
+    final res = await c
+        .from('thix_weeding_providers')
+        .insert({
+          'owner_id': ownerId,
+          'business_name': businessName.trim(),
+          'category': category.trim().toLowerCase(),
+          'description': (description ?? '').trim().isEmpty ? null : description!.trim(),
+          'phone': (phone ?? '').trim().isEmpty ? null : phone!.trim(),
+          'email': (email ?? '').trim().isEmpty ? null : email!.trim(),
+          'city': (city ?? '').trim().isEmpty ? null : city!.trim(),
+          'is_primary': isFirst,
+          'verification_status': 'pending',
+        })
+        .select()
+        .single();
+
+    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+
+    ref.invalidate(myActivitiesProvider(ownerId));
+    ref.invalidate(myProviderProvider(ownerId));
+    ref.invalidate(providersListProvider);
+
+    return model;
+  };
+});
+
+final deleteActivityProvider = Provider((ref) {
+  return (String activityId, {String? ownerId}) async {
+    await Supabase.instance.client
+        .from('thix_weeding_providers')
+        .delete()
+        .eq('id', activityId);
+
+    // Reset sélecteur si c'était l'activité active
+    if (ref.read(selectedActivityIdProvider) == activityId) {
+      ref.read(selectedActivityIdProvider.notifier).state = null;
+    }
+
+    ref.invalidate(activityDetailProvider(activityId));
+    ref.invalidate(providerByIdProvider(activityId));
+    ref.invalidate(providersListProvider);
+    if (ownerId != null) {
+      ref.invalidate(myActivitiesProvider(ownerId));
+      ref.invalidate(myProviderProvider(ownerId));
+    }
+  };
+});
+
+final setPrimaryActivityProvider = Provider((ref) {
+  return (String activityId, {String? ownerId}) async {
+    final c = Supabase.instance.client;
+    final row = await c
+        .from('thix_weeding_providers')
+        .select('owner_id')
+        .eq('id', activityId)
+        .single();
+    final oid = ownerId ?? (row['owner_id'] as String);
+
+    await c.from('thix_weeding_providers').update({'is_primary': false}).eq('owner_id', oid);
+    await c.from('thix_weeding_providers').update({'is_primary': true}).eq('id', activityId);
+
+    ref.invalidate(myActivitiesProvider(oid));
+    ref.invalidate(myProviderProvider(oid));
+    ref.invalidate(activityDetailProvider(activityId));
+  };
+});
 // ═══════════════════════════════════════════════════════════════════════════
 // PROVIDERS UTILITAIRES
 // ═══════════════════════════════════════════════════════════════════════════
