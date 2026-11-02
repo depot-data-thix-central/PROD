@@ -1,702 +1,826 @@
 // lib/presentation/thix_weeding/pages/guest/meal_preferences_page.dart
 // ============================================================================
-// THIX WEDDING — PRÉFÉRENCES REPAS CÔTÉ INVITÉ (PRODUCTION)
-// ✅ Liste des plats PUBLICS validés
-// ✅ Coche multiple (un invité peut aimer plusieurs plats)
-// ✅ Compteur de votes affiché en temps réel
-// ✅ Mise en avant du plat le plus populaire (Top 1)
-// ✅ Identification invité via SharedPreferences (guestId stable)
+// THIX WEDDING — PRÉFÉRENCES REPAS CÔTÉ INVITÉ (logique alignée guest_menu_page)
+// ✅ Voir le menu des mariés (photos, tags)
+// ✅ Choisir UN plat préféré par rubrique (compte pour tout le groupe)
+// ✅ Voir le nombre de choix par plat + badge « Le plus choisi »
+// ✅ Suggérer un plat (max 3, validé par les mariés)
+// ✅ Indiquer régime alimentaire et allergies pour le traiteur
+// ✅ Temps réel • verre dépoli
 // ============================================================================
+import 'dart:async';
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
+import 'package:thix_id/presentation/thix_weeding/pages/staff/content/staff_content_pages.dart'
+    show MenuEntry, kMenuCourses, kMenuCourseIcons, kMenuTags;
+import 'package:thix_id/presentation/thix_weeding/pages/staff/messages/message_media.dart';
+import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PALETTE INVITÉ (cohérent avec guest_home_page)
-// ═══════════════════════════════════════════════════════════════════════════
 class _G {
-  static const Color bg = Color(0xFFFFFBFC);
-  static const Color surface = Colors.white;
-  static const Color ink = Color(0xFF1A1A2E);
-  static const Color inkSoft = Color(0xFF6B7280);
-  static const Color line = Color(0xFFF1E3E8);
-  static const Color rose = Color(0xFFD81B60);
-  static const Color roseLight = Color(0xFFFF6F9C);
-  static const Color gold = Color(0xFFD4AF37);
-  static const Color green = Color(0xFF059669);
-  static const Color blue = Color(0xFF0B3B8F);
-
-  static const LinearGradient roseG = LinearGradient(
+  static const rose = Color(0xFFD81B60);
+  static const roseSoft = Color(0xFFFCE4EC);
+  static const green = Color(0xFF059669);
+  static const gold = Color(0xFFD4AF37);
+  static const ink = Color(0xFF241521);
+  static const ink2 = Color(0xFF8A7580);
+  static const grad = LinearGradient(
     colors: [Color(0xFFE91E78), Color(0xFFC2185B)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  static const LinearGradient goldG = LinearGradient(
-    colors: [gold, Color(0xFFB8860B)],
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-  );
 }
 
-/// Provider de l'identité invité courante (guestId + guestName)
-/// Stockée en SharedPreferences pour persistance locale
-final _currentGuestIdentityProvider =
-    FutureProvider<({String guestId, String guestName})>((ref) async {
-  final prefs = await SharedPreferences.getInstance();
-  final id = prefs.getString('thix_current_guest_id');
-  final name = prefs.getString('thix_current_guest_name') ?? '';
-  if (id != null && id.isNotEmpty) {
-    return (guestId: id, guestName: name);
-  }
-  // Générer un id invité anonyme (basé sur device + timestamp)
-  final newId =
-      'guest_${DateTime.now().millisecondsSinceEpoch}_${Supabase.instance.client.auth.currentUser?.id ?? 'anon'}';
-  await prefs.setString('thix_current_guest_id', newId);
-  return (guestId: newId, guestName: '');
-});
+String _msg(Object e) => e is PostgrestException ? e.message : '$e';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PAGE PRINCIPALE
-// ═══════════════════════════════════════════════════════════════════════════
-class MealPreferencesPage extends ConsumerStatefulWidget {
+class MealPreferencesPage extends StatefulWidget {
   final String weddingId;
   const MealPreferencesPage({super.key, required this.weddingId});
 
   @override
-  ConsumerState<MealPreferencesPage> createState() =>
-      _MealPreferencesPageState();
+  State<MealPreferencesPage> createState() => _MealPreferencesPageState();
 }
 
-class _MealPreferencesPageState extends ConsumerState<MealPreferencesPage> {
-  final _nameCtrl = TextEditingController();
-  bool _nameSaved = false;
+class _MealPreferencesPageState extends State<MealPreferencesPage> {
+  final _supa = Supabase.instance.client;
+  final _note = TextEditingController();
+
+  List<MenuEntry> _dishes = [];
+  List<MenuEntry> _mine = [];
+  Map<String, String> _myChoice = {}; // rubrique -> id du plat
+  bool _votingOpen = true;
+  bool _suggestOpen = true;
+  int _persons = 1;
+  String? _guestId;
+  String? _myName;
+  final Set<String> _myTags = {};
+  bool _dietLoaded = false;
+  bool _savingDiet = false;
+
+  bool _loading = true;
+  String? _error;
+  final Set<String> _busy = {};
+
+  RealtimeChannel? _ch;
+  Timer? _deb;
+
+  String? get _uid => _supa.auth.currentUser?.id;
 
   @override
   void initState() {
     super.initState();
-    _loadGuestName();
+    _load();
+    PostgresChangeFilter f() => PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq,
+        column: 'wedding_id',
+        value: widget.weddingId);
+    void cb(PostgresChangePayload _) {
+      _deb?.cancel();
+      _deb = Timer(const Duration(milliseconds: 500), () {
+        if (mounted) _load(silent: true);
+      });
+    }
+
+    _ch = _supa
+        .channel('guest-menu-${widget.weddingId}')
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'thix_weeding_menu_items',
+            filter: f(),
+            callback: cb)
+        .onPostgresChanges(
+            event: PostgresChangeEvent.all,
+            schema: 'public',
+            table: 'thix_weeding_menu_settings',
+            filter: f(),
+            callback: cb)
+        .subscribe();
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose();
+    _deb?.cancel();
+    if (_ch != null) _supa.removeChannel(_ch!);
+    _note.dispose();
     super.dispose();
   }
 
-  Future<void> _loadGuestName() async {
-    final prefs = await SharedPreferences.getInstance();
-    final name = prefs.getString('thix_current_guest_name') ?? '';
-    if (name.isNotEmpty && mounted) {
+  Future<void> _load({bool silent = false}) async {
+    try {
+      final id = widget.weddingId;
+      final uid = _uid;
+
+      final rows = await _supa
+          .from('thix_weeding_menu_items')
+          .select()
+          .eq('wedding_id', id)
+          .order('position', ascending: true)
+          .order('created_at', ascending: true);
+      final all = (rows as List)
+          .map((e) => MenuEntry.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+
+      var voting = true, suggest = true;
+      try {
+        final s = await _supa
+            .from('thix_weeding_menu_settings')
+            .select()
+            .eq('wedding_id', id)
+            .maybeSingle();
+        if (s != null) {
+          voting = s['voting_open'] != false;
+          suggest = s['suggestions_open'] != false;
+        }
+      } catch (_) {}
+
+      final choice = <String, String>{};
+      var persons = _persons;
+      String? guestId = _guestId;
+      String? myName = _myName;
+      if (uid != null) {
+        try {
+          final v = await _supa
+              .from('thix_weeding_menu_votes')
+              .select('item_id, course')
+              .eq('wedding_id', id)
+              .eq('user_id', uid);
+          for (final r in (v as List)) {
+            choice['${r['course']}'] = '${r['item_id']}';
+          }
+        } catch (_) {}
+        try {
+          final g = await _supa
+              .from('thix_weeding_guests')
+              .select('id, name, guests_count')
+              .eq('wedding_id', id)
+              .eq('user_id', uid)
+              .maybeSingle();
+          if (g != null) {
+            guestId = '${g['id']}';
+            myName = '${g['name'] ?? ''}'.trim();
+            persons = math.max(1, (g['guests_count'] as num?)?.toInt() ?? 1);
+          }
+        } catch (_) {}
+        if (!_dietLoaded) {
+          try {
+            final d = await _supa
+                .from('thix_weeding_menu_diets')
+                .select()
+                .eq('wedding_id', id)
+                .eq('user_id', uid)
+                .maybeSingle();
+            if (d != null) {
+              _myTags
+                ..clear()
+                ..addAll(((d['tags'] as List?) ?? const []).map((e) => '$e'));
+              final n = '${d['note'] ?? ''}';
+              _note.text = n == 'null' ? '' : n;
+            }
+          } catch (_) {}
+          _dietLoaded = true;
+        }
+      }
+
+      if (!mounted) return;
       setState(() {
-        _nameCtrl.text = name;
-        _nameSaved = true;
+        _dishes = all.where((e) => e.status == 'approved' && e.published).toList();
+        _mine = uid == null ? [] : all.where((e) => e.suggestedBy == uid).toList();
+        _myChoice = choice;
+        _votingOpen = voting;
+        _suggestOpen = suggest;
+        _persons = persons;
+        _guestId = guestId;
+        _myName = myName;
+        _loading = false;
+        _error = null;
       });
+    } catch (e) {
+      if (!mounted) return;
+      if (!silent) {
+        setState(() {
+          _loading = false;
+          _error = '$e';
+        });
+      }
     }
   }
 
-  Future<void> _saveGuestName() async {
-    final name = _nameCtrl.text.trim();
-    if (name.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Veuillez saisir votre nom',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-        backgroundColor: _G.rose,
+  void _toast(String m, {bool error = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(m),
+        backgroundColor: error ? _G.rose : _G.green,
         behavior: SnackBarBehavior.floating,
       ));
-      return;
-    }
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('thix_current_guest_name', name);
-    setState(() => _nameSaved = true);
-    ref.invalidate(_currentGuestIdentityProvider);
-    HapticFeedback.mediumImpact();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text('Bienvenue $name !',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-      backgroundColor: _G.green,
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final identityAsync = ref.watch(_currentGuestIdentityProvider);
-    final publicMenuAsync =
-        ref.watch(weddingPublicMenuProvider(widget.weddingId));
-    final votesAsync = ref.watch(menuVotesCountProvider(widget.weddingId));
+  // ───────────────────────── ACTIONS ─────────────────────────
+  Future<void> _choose(MenuEntry d) async {
+    if (_uid == null) {
+      _toast('Connectez-vous pour choisir vos plats', error: true);
+      return;
+    }
+    if (!_votingOpen) {
+      _toast('Les votes sont clos', error: true);
+      return;
+    }
+    if (_busy.contains(d.id)) return;
+    setState(() => _busy.add(d.id));
+    try {
+      await _supa.rpc('thix_weeding_menu_choose', params: {'p_item_id': d.id});
+      HapticFeedback.mediumImpact();
+      await _load(silent: true);
+    } catch (e) {
+      _toast(_msg(e), error: true);
+    } finally {
+      if (mounted) setState(() => _busy.remove(d.id));
+    }
+  }
 
-    return Scaffold(
-      backgroundColor: _G.bg,
-      body: identityAsync.when(
-        loading: () => const Center(
-            child: CircularProgressIndicator(color: _G.rose)),
-        error: (e, _) => Center(child: Text('Erreur: $e')),
-        data: (identity) {
-          // Si pas de nom → demander avant d'afficher les plats
-          if (!_nameSaved || identity.guestName.isEmpty) {
-            return _GuestNameForm(
-              controller: _nameCtrl,
-              onSave: _saveGuestName,
-            );
-          }
+  Future<void> _deleteMine(MenuEntry e) async {
+    try {
+      await _supa.from('thix_weeding_menu_items').delete().eq('id', e.id);
+      await _load(silent: true);
+    } catch (err) {
+      _toast(_msg(err), error: true);
+    }
+  }
 
-          return publicMenuAsync.when(
-            loading: () => const Center(
-                child: CircularProgressIndicator(color: _G.rose)),
-            error: (e, _) => Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.error_outline,
-                          size: 48, color: _G.rose),
-                      const SizedBox(height: 12),
-                      Text('Erreur: $e',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.inter(color: _G.rose)),
-                      const SizedBox(height: 12),
-                      ElevatedButton.icon(
-                        onPressed: () {
-                          ref.invalidate(weddingPublicMenuProvider(
-                              widget.weddingId));
-                          ref.invalidate(menuVotesCountProvider(
-                              widget.weddingId));
-                        },
-                        icon: const Icon(Icons.refresh),
-                        label: const Text('Réessayer'),
-                        style: ElevatedButton.styleFrom(
-                            backgroundColor: _G.rose,
-                            foregroundColor: Colors.white),
-                      ),
-                    ]),
-              ),
-            ),
-            data: (publicItems) {
-              if (publicItems.isEmpty) {
-                return const _EmptyPublicMenu();
-              }
+  Future<void> _saveDiet() async {
+    final uid = _uid;
+    if (uid == null) {
+      _toast('Connectez-vous pour enregistrer votre régime', error: true);
+      return;
+    }
+    setState(() => _savingDiet = true);
+    try {
+      await _supa.from('thix_weeding_menu_diets').upsert({
+        'wedding_id': widget.weddingId,
+        'user_id': uid,
+        'guest_id': _guestId,
+        'tags': _myTags.toList(),
+        'note': _note.text.trim().isEmpty ? null : _note.text.trim(),
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'wedding_id,user_id');
+      FocusScope.of(context).unfocus();
+      _toast('Merci ! Le traiteur en tiendra compte 🙏');
+    } catch (e) {
+      _toast(_msg(e), error: true);
+    } finally {
+      if (mounted) setState(() => _savingDiet = false);
+    }
+  }
 
-              final votes = votesAsync.valueOrNull ?? {};
-              final guestVotesAsync = ref.watch(guestMenuVotesProvider(
-                  (weddingId: widget.weddingId,
-                      guestId: identity.guestId)));
-              final guestVotes = guestVotesAsync.valueOrNull ?? {};
-
-              // Top 1
-              Map<String, dynamic>? topItem;
-              int topVotes = 0;
-              for (final item in publicItems) {
-                final v = votes[item['id'] as String] ?? 0;
-                if (v > topVotes) {
-                  topVotes = v;
-                  topItem = item;
-                }
-              }
-
-              // Tri : top en premier, puis par votes décroissants
-              final sorted = List<Map<String, dynamic>>.from(publicItems)
-                ..sort((a, b) {
-                  final va = votes[a['id'] as String] ?? 0;
-                  final vb = votes[b['id'] as String] ?? 0;
-                  return vb.compareTo(va);
-                });
-
-              return RefreshIndicator(
-                color: _G.rose,
-                onRefresh: () async {
-                  ref.invalidate(
-                      weddingPublicMenuProvider(widget.weddingId));
-                  ref.invalidate(
-                      menuVotesCountProvider(widget.weddingId));
-                  ref.invalidate(guestMenuVotesProvider((
-                    weddingId: widget.weddingId,
-                    guestId: identity.guestId,
-                  )));
-                },
-                child: CustomScrollView(
-                  physics: const BouncingScrollPhysics(
-                      parent: AlwaysScrollableScrollPhysics()),
-                  slivers: [
-                    // ── APP BAR ──
-                    _GuestAppBar(
-                      guestName: identity.guestName,
-                      onEditName: () =>
-                          setState(() => _nameSaved = false),
-                    ),
-
-                    SliverPadding(
-                      padding:
-                          const EdgeInsets.fromLTRB(16, 16, 16, 32),
-                      sliver: SliverList(
-                        delegate: SliverChildListDelegate([
-                          // Intro
-                          Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              gradient: LinearGradient(colors: [
-                                _G.rose.withOpacity(0.08),
-                                _G.gold.withOpacity(0.05),
-                              ]),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(
-                                  color: _G.rose.withOpacity(0.2)),
-                            ),
-                            child: Row(children: [
-                              Container(
-                                padding: const EdgeInsets.all(10),
-                                decoration: BoxDecoration(
-                                  color: _G.rose.withOpacity(0.15),
-                                  borderRadius:
-                                      BorderRadius.circular(10),
-                                ),
-                                child: const Icon(
-                                    Icons.restaurant_menu_rounded,
-                                    color: _G.rose,
-                                    size: 22),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Choisissez vos plats préférés',
-                                          style: GoogleFonts.inter(
-                                              fontSize: 14,
-                                              fontWeight:
-                                                  FontWeight.w800,
-                                              color: _G.ink)),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Le traiteur se concentrera sur les plats les plus plébiscités',
-                                        style: GoogleFonts.inter(
-                                            fontSize: 11.5,
-                                            color: _G.inkSoft,
-                                            height: 1.4),
-                                      ),
-                                    ]),
-                              ),
-                            ]),
-                          ),
-                          const SizedBox(height: 16),
-
-                          // Top 1 — mise en avant
-                          if (topItem != null && topVotes > 0) ...[
-                            _TopItemCard(
-                              item: topItem,
-                              votes: topVotes,
-                              isVoted: guestVotes
-                                  .contains(topItem['id'] as String),
-                              onToggle: (v) => _toggleVote(
-                                identity: identity,
-                                item: topItem!, 
-                                vote: v,
-                              ),
-                            ),
-                            const SizedBox(height: 16),
-                          ],
-
-                          // Liste complète (sans le top)
-                          ...sorted
-                              .where((i) => i != topItem || topVotes == 0)
-                              .map((item) => Padding(
-                                    padding: const EdgeInsets.only(
-                                        bottom: 10),
-                                    child: _GuestMenuItemCard(
-                                      item: item,
-                                      votes: votes[item['id'] as String] ??
-                                          0,
-                                      isVoted: guestVotes
-                                          .contains(item['id'] as String),
-                                      onToggle: (v) => _toggleVote(
-                                        identity: identity,
-                                        item: item,
-                                        vote: v,
-                                      ),
-                                    ),
-                                  )),
-                        ]),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          );
+  void _openSuggest() {
+    if (_uid == null) {
+      _toast('Connectez-vous pour suggérer un plat', error: true);
+      return;
+    }
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SuggestSheet(
+        weddingId: widget.weddingId,
+        myName: _myName,
+        onDone: () {
+          _toast('Suggestion envoyée — les mariés vont la valider 🍽️');
+          _load(silent: true);
         },
       ),
     );
   }
 
-  Future<void> _toggleVote({
-    required ({String guestId, String guestName}) identity,
-    required Map<String, dynamic> item,
-    required bool vote,
-  }) async {
-    HapticFeedback.mediumImpact();
-    try {
-      await ref.read(menuServiceProvider).toggleVote(
-            weddingId: widget.weddingId,
-            menuItemId: item['id'] as String,
-            guestId: identity.guestId,
-            guestName: identity.guestName,
-            vote: vote,
-          );
-      // Refresh votes
-      ref.invalidate(menuVotesCountProvider(widget.weddingId));
-      ref.invalidate(guestMenuVotesProvider((
-        weddingId: widget.weddingId,
-        guestId: identity.guestId,
-      )));
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-          vote ? '❤ Ajouté à vos favoris' : 'Retiré de vos favoris',
-          style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-        ),
-        backgroundColor: vote ? _G.rose : _G.inkSoft,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        duration: const Duration(seconds: 2),
-      ));
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Erreur: $e'),
-        backgroundColor: _G.rose,
-      ));
-    }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// FORMULAIRE NOM INVITÉ
-// ═══════════════════════════════════════════════════════════════════════════
-class _GuestNameForm extends StatelessWidget {
-  final TextEditingController controller;
-  final VoidCallback onSave;
-  const _GuestNameForm({required this.controller, required this.onSave});
-
+  // ───────────────────────── BUILD ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              color: _G.surface,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _G.line),
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.06),
-                    blurRadius: 20,
-                    offset: const Offset(0, 8)),
-              ],
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: const BoxDecoration(
-                    gradient: _G.roseG,
-                    shape: BoxShape.circle,
-                  ),
-                  child: const Icon(Icons.person_rounded,
-                      color: Colors.white, size: 40),
-                ),
-                const SizedBox(height: 20),
-                Text('Bienvenue !',
-                    style: GoogleFonts.inter(
-                        fontSize: 22,
-                        fontWeight: FontWeight.w900,
-                        color: _G.ink)),
-                const SizedBox(height: 6),
-                Text(
-                  'Avant de choisir vos plats préférés, comment vous appelez-vous ?',
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(
-                      fontSize: 13, color: _G.inkSoft, height: 1.4),
-                ),
-                const SizedBox(height: 20),
-                TextField(
-                  controller: controller,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: InputDecoration(
-                    labelText: 'Votre nom',
-                    hintText: 'Ex: Sophie Martin',
-                    prefixIcon: const Icon(Icons.person_outline,
-                        color: _G.rose),
-                    filled: true,
-                    fillColor: _G.bg,
-                    border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none),
-                    focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide:
-                            const BorderSide(color: _G.rose, width: 2)),
-                  ),
-                  onSubmitted: (_) => onSave(),
-                ),
-                const SizedBox(height: 16),
-                SizedBox(
-                  width: double.infinity,
-                  height: 52,
-                  child: ElevatedButton.icon(
-                    onPressed: onSave,
-                    icon: const Icon(Icons.check_rounded, size: 18),
-                    label: Text('Continuer',
-                        style: GoogleFonts.inter(
-                            fontWeight: FontWeight.w800, fontSize: 15)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _G.rose,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14)),
+    return Scaffold(
+      backgroundColor: const Color(0xFFFFFBFC),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        flexibleSpace: const ThixGlassBar(),
+        elevation: 0,
+        foregroundColor: _G.ink,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+          onPressed: () {
+            if (context.canPop()) context.pop();
+          },
+        ),
+        title: Text('Menu & votes',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+      ),
+      body: ThixGlassBackdrop(
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(color: _G.rose))
+            : _error != null
+                ? _empty(Icons.error_outline_rounded,
+                    'Menu indisponible pour le moment.')
+                : RefreshIndicator(
+                    color: _G.rose,
+                    onRefresh: () => _load(silent: true),
+                    child: ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.fromLTRB(14, 12, 14, 50),
+                      children: [
+                        _intro(),
+                        const SizedBox(height: 14),
+                        if (_dishes.isEmpty)
+                          SizedBox(
+                            height: 260,
+                            child: _empty(Icons.restaurant_menu_rounded,
+                                'Le menu n\'est pas encore publié.\nLes mariés l\'afficheront bientôt.'),
+                          )
+                        else
+                          for (final c in kMenuCourses.keys)
+                            ..._courseSection(c),
+                        const SizedBox(height: 18),
+                        _suggestCard(),
+                        const SizedBox(height: 14),
+                        _dietCard(),
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
-}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// APP BAR INVITÉ
-// ═══════════════════════════════════════════════════════════════════════════
-class _GuestAppBar extends StatelessWidget {
-  final String guestName;
-  final VoidCallback onEditName;
-  const _GuestAppBar({
-    required this.guestName,
-    required this.onEditName,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SliverAppBar(
-      expandedHeight: 130,
-      pinned: true,
-      backgroundColor: Colors.white,
-      leading: IconButton(
-        icon: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-              color: Colors.white,
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: Colors.black.withOpacity(0.1), blurRadius: 8)
-              ]),
-          child: const Icon(Icons.arrow_back_ios_new,
-              size: 14, color: _G.ink),
-        ),
-        onPressed: () => context.pop(),
-      ),
-      actions: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: onEditName,
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              child:
-                  const Icon(Icons.edit_outlined, color: _G.rose, size: 18),
-            ),
+  Widget _empty(IconData icon, String text) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 44, color: _G.rose.withOpacity(0.5)),
+              const SizedBox(height: 12),
+              Text(text,
+                  textAlign: TextAlign.center,
+                  style:
+                      GoogleFonts.inter(color: _G.ink2, height: 1.4)),
+            ],
           ),
         ),
-        const SizedBox(width: 8),
-      ],
-      flexibleSpace: Container(
-        decoration: const BoxDecoration(
-          gradient: _G.roseG,
-          borderRadius: BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
-        ),
-        child: FlexibleSpaceBar(
-          background: SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  Text('BONJOUR $guestName',
-                      style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white.withOpacity(0.85),
-                          letterSpacing: 2)),
-                  const SizedBox(height: 4),
-                  Text('Préférences repas',
-                      style: GoogleFonts.inter(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white)),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
+      );
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CARTE TOP PLAT (mise en avant)
-// ═══════════════════════════════════════════════════════════════════════════
-class _TopItemCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final int votes;
-  final bool isVoted;
-  final ValueChanged<bool> onToggle;
+  Widget _chip(String t, {Color color = _G.rose}) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+        decoration: BoxDecoration(
+            color: color.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(9)),
+        child: Text(t,
+            style: GoogleFonts.inter(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: color)),
+      );
 
-  const _TopItemCard({
-    required this.item,
-    required this.votes,
-    required this.isVoted,
-    required this.onToggle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final name = item['name'] as String? ?? 'Sans nom';
-    final desc = item['description'] as String? ?? '';
-    final img = item['image_url'] as String?;
-    final vendor =
-        (item['vendor'] as Map?)?.cast<String, dynamic>() ?? {};
-    final vendorName = vendor['name'] as String? ?? '';
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: _G.goldG,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-              color: _G.gold.withOpacity(0.4),
-              blurRadius: 20,
-              offset: const Offset(0, 8)),
-        ],
-      ),
+  // ───────────────────────── INTRO ─────────────────────────
+  Widget _intro() {
+    final courses = kMenuCourses.keys
+        .where((c) => _dishes.any((d) => d.course == c))
+        .toList();
+    final done = courses.where((c) => _myChoice.containsKey(c)).length;
+    final ratio = courses.isEmpty ? 0.0 : done / courses.length;
+    return ThixGlass(
+      radius: 24,
+      opacity: 0.65,
+      borderColor: _G.rose.withOpacity(0.2),
+      padding: const EdgeInsets.all(14),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(children: [
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.emoji_events,
-                    color: Colors.white, size: 14),
-                const SizedBox(width: 4),
-                Text('LE PLUS POPULAIRE',
-                    style: GoogleFonts.inter(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white,
-                        letterSpacing: 1)),
-              ]),
+              width: 38,
+              height: 38,
+              decoration:
+                  const BoxDecoration(gradient: _G.grad, shape: BoxShape.circle),
+              child: Icon(
+                  _votingOpen
+                      ? Icons.how_to_vote_rounded
+                      : Icons.lock_rounded,
+                  color: Colors.white,
+                  size: 19),
             ),
-            const Spacer(),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.25),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.favorite, color: Colors.white, size: 14),
-                const SizedBox(width: 4),
-                Text('$votes',
-                    style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white)),
-              ]),
-            ),
-          ]),
-          const SizedBox(height: 14),
-          Row(children: [
-            Container(
-              width: 80,
-              height: 80,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                color: Colors.white.withOpacity(0.2),
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: (img != null && img.isNotEmpty)
-                  ? Image.network(img,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => const Icon(
-                          Icons.restaurant,
-                          color: Colors.white,
-                          size: 36))
-                  : const Icon(Icons.restaurant,
-                      color: Colors.white, size: 36),
-            ),
-            const SizedBox(width: 14),
+            const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(name,
-                        style: GoogleFonts.inter(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white)),
-                    if (desc.isNotEmpty)
-                      Text(desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              color: Colors.white.withOpacity(0.9),
-                              height: 1.4)),
-                    if (vendorName.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(vendorName,
-                          style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.white.withOpacity(0.85),
-                              fontWeight: FontWeight.w600)),
-                    ],
-                  ]),
+              child: Text(
+                _votingOpen
+                    ? 'Choisissez vos plats préférés'
+                    : 'Les votes sont clos — merci !',
+                style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    color: _G.ink),
+              ),
             ),
           ]),
-          const SizedBox(height: 16),
-          _VoteButton(
-            isVoted: isVoted,
-            onToggle: onToggle,
-            isTop: true,
+          const SizedBox(height: 8),
+          Text(
+            _votingOpen
+                ? 'Les mariés commanderont les plats les plus choisis. Touchez « Choisir » sur un plat par rubrique.'
+                : 'Les mariés préparent maintenant la commande selon les choix de chacun.',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: _G.ink2, height: 1.4),
+          ),
+          if (_uid != null && _persons > 1) ...[
+            const SizedBox(height: 6),
+            Text(
+                'Votre choix compte pour $_persons personnes (votre groupe).',
+                style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: _G.rose,
+                    fontWeight: FontWeight.w800)),
+          ],
+          if (_uid == null) ...[
+            const SizedBox(height: 6),
+            Text('Connectez-vous pour voter et suggérer des plats.',
+                style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    color: _G.rose,
+                    fontWeight: FontWeight.w800)),
+          ],
+          if (courses.isNotEmpty && _uid != null) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(6),
+              child: LinearProgressIndicator(
+                value: ratio,
+                minHeight: 7,
+                backgroundColor: Colors.white.withOpacity(0.7),
+                valueColor: const AlwaysStoppedAnimation(_G.green),
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+                done == courses.length
+                    ? 'Tout est choisi ✓'
+                    : '$done / ${courses.length} rubriques choisies',
+                style: GoogleFonts.inter(
+                    fontSize: 11,
+                    color: _G.ink2,
+                    fontWeight: FontWeight.w700)),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── RUBRIQUES ─────────────────────────
+  List<Widget> _courseSection(String c) {
+    final list = _dishes.where((d) => d.course == c).toList();
+    if (list.isEmpty) return const [];
+    final maxVotes = list.map((d) => d.votes).fold<int>(0, math.max);
+    return [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
+        child: Row(children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: const BoxDecoration(
+                gradient: _G.grad, shape: BoxShape.circle),
+            child: Icon(kMenuCourseIcons[c], size: 18, color: Colors.white),
+          ),
+          const SizedBox(width: 10),
+          Text(kMenuCourses[c]!,
+              style: GoogleFonts.inter(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  color: _G.ink)),
+          const Spacer(),
+          if (_myChoice.containsKey(c)) _chip('Choisi ✓', color: _G.green),
+        ]),
+      ),
+      ...list.map((d) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _dish(d, maxVotes))),
+      const SizedBox(height: 6),
+    ];
+  }
+
+  Widget _dish(MenuEntry d, int maxVotes) {
+    final chosen = _myChoice[d.course] == d.id;
+    final leader = maxVotes > 0 && d.votes == maxVotes;
+    final busy = _busy.contains(d.id);
+    return ThixGlass(
+      radius: 22,
+      opacity: chosen ? 0.82 : 0.62,
+      borderColor: chosen ? _G.rose : _G.rose.withOpacity(0.15),
+      padding: EdgeInsets.zero,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (d.imageUrl != null)
+            GestureDetector(
+              onTap: () => showPhotoViewer(context, [d.imageUrl!]),
+              child: ClipRRect(
+                borderRadius:
+                    const BorderRadius.horizontal(left: Radius.circular(22)),
+                child: SizedBox(
+                  width: 104,
+                  child: Image.network(d.imageUrl!,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) =>
+                          Container(color: _G.roseSoft)),
+                ),
+              ),
+            ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Expanded(
+                      child: Text(d.name,
+                          style: GoogleFonts.inter(
+                              fontSize: 14.5,
+                              fontWeight: FontWeight.w900,
+                              color: _G.ink)),
+                    ),
+                    if (leader) _chip('🔥 Le plus choisi', color: _G.gold),
+                  ]),
+                  if (d.description != null) ...[
+                    const SizedBox(height: 3),
+                    Text(d.description!,
+                        style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: _G.ink2,
+                            height: 1.35)),
+                  ],
+                  if (d.tags.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Wrap(
+                        spacing: 5,
+                        runSpacing: 4,
+                        children: d.tags
+                            .map((t) => _chip(kMenuTags[t] ?? t))
+                            .toList()),
+                  ],
+                  const SizedBox(height: 8),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(5),
+                    child: LinearProgressIndicator(
+                      value: maxVotes == 0 ? 0 : d.votes / maxVotes,
+                      minHeight: 6,
+                      backgroundColor: Colors.white.withOpacity(0.7),
+                      valueColor:
+                          AlwaysStoppedAnimation(leader ? _G.gold : _G.rose),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Row(children: [
+                    Text(
+                        d.votes == 0
+                            ? 'Aucun choix pour l\'instant'
+                            : '${d.votes} choix',
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: _G.ink2,
+                            fontWeight: FontWeight.w700)),
+                    const Spacer(),
+                    SizedBox(
+                      height: 34,
+                      child: chosen
+                          ? FilledButton.icon(
+                              onPressed:
+                                  !_votingOpen || busy ? null : () => _choose(d),
+                              icon: busy
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white))
+                                  : const Icon(Icons.check_circle_rounded,
+                                      size: 16),
+                              label: const Text('Mon choix'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: _G.rose,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                textStyle: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12),
+                              ),
+                            )
+                          : OutlinedButton(
+                              onPressed:
+                                  !_votingOpen || busy ? null : () => _choose(d),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _G.rose,
+                                side: BorderSide(
+                                    color: _G.rose.withOpacity(0.6)),
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 14),
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12)),
+                                textStyle: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12),
+                              ),
+                              child: busy
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2))
+                                  : const Text('Choisir'),
+                            ),
+                    ),
+                  ]),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── SUGGESTIONS ─────────────────────────
+  Widget _suggestCard() {
+    final statusColor = {
+      'pending': _G.gold,
+      'approved': _G.green,
+      'rejected': _G.rose
+    };
+    final statusLabel = {
+      'pending': 'En attente',
+      'approved': 'Ajouté au menu ✓',
+      'rejected': 'Non retenu'
+    };
+    return ThixGlass(
+      radius: 24,
+      opacity: 0.62,
+      borderColor: _G.rose.withOpacity(0.15),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.lightbulb_outline_rounded, color: _G.rose),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Un plat à proposer ?',
+                  style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: _G.ink)),
+            ),
+            Text('${_mine.length}/3',
+                style: GoogleFonts.inter(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: _G.rose)),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            _suggestOpen
+                ? 'Suggérez jusqu\'à 3 plats. Les mariés décideront de les ajouter au menu.'
+                : 'Les suggestions sont fermées.',
+            style: GoogleFonts.inter(
+                fontSize: 12, color: _G.ink2, height: 1.35),
+          ),
+          if (_mine.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ..._mine.map((e) => Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(e.name,
+                              style: GoogleFonts.inter(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: _G.ink)),
+                          Text(kMenuCourses[e.course] ?? e.course,
+                              style: GoogleFonts.inter(
+                                  fontSize: 11, color: _G.ink2)),
+                        ],
+                      ),
+                    ),
+                    _chip(statusLabel[e.status] ?? e.status,
+                        color: statusColor[e.status] ?? _G.ink2),
+                    if (e.status == 'pending')
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        icon: const Icon(Icons.delete_outline_rounded,
+                            size: 19, color: _G.rose),
+                        onPressed: () => _deleteMine(e),
+                      ),
+                  ]),
+                )),
+          ],
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: _G.rose,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16)),
+              ),
+              onPressed:
+                  _suggestOpen && _mine.length < 3 ? _openSuggest : null,
+              icon: const Icon(Icons.add_rounded, size: 20),
+              label: Text('Proposer un plat',
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── RÉGIMES ─────────────────────────
+  Widget _dietCard() {
+    final diets = kMenuTags.entries.where((e) => e.key != 'epice');
+    return ThixGlass(
+      radius: 24,
+      opacity: 0.62,
+      borderColor: _G.rose.withOpacity(0.15),
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.health_and_safety_outlined, color: _G.rose),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Régime & allergies',
+                  style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      color: _G.ink)),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text('Aidez le traiteur à bien préparer le repas.',
+              style: GoogleFonts.inter(fontSize: 12, color: _G.ink2)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 6,
+            children: diets
+                .map((e) => FilterChip(
+                      label: Text(e.value,
+                          style: const TextStyle(fontSize: 12)),
+                      selected: _myTags.contains(e.key),
+                      selectedColor: _G.roseSoft,
+                      checkmarkColor: _G.rose,
+                      onSelected: (v) => setState(
+                          () => v ? _myTags.add(e.key) : _myTags.remove(e.key)),
+                    ))
+                .toList(),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _note,
+            maxLines: 3,
+            minLines: 1,
+            decoration: InputDecoration(
+              labelText: 'Allergies ou remarques (arachides, fruits de mer…)',
+              filled: true,
+              fillColor: Colors.white.withOpacity(0.7),
+              border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: BorderSide.none),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 44,
+            child: OutlinedButton.icon(
+              onPressed: _savingDiet ? null : _saveDiet,
+              icon: _savingDiet
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.save_outlined, size: 18),
+              label: const Text('Enregistrer'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _G.rose,
+                side: BorderSide(color: _G.rose.withOpacity(0.6)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+            ),
           ),
         ],
       ),
@@ -705,280 +829,213 @@ class _TopItemCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CARTE PLAT NORMAL (invité)
+// FEUILLE « PROPOSER UN PLAT »
 // ═══════════════════════════════════════════════════════════════════════════
-class _GuestMenuItemCard extends StatelessWidget {
-  final Map<String, dynamic> item;
-  final int votes;
-  final bool isVoted;
-  final ValueChanged<bool> onToggle;
-
-  const _GuestMenuItemCard({
-    required this.item,
-    required this.votes,
-    required this.isVoted,
-    required this.onToggle,
+class _SuggestSheet extends StatefulWidget {
+  final String weddingId;
+  final String? myName;
+  final VoidCallback onDone;
+  const _SuggestSheet({
+    required this.weddingId,
+    required this.myName,
+    required this.onDone,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final name = item['name'] as String? ?? 'Sans nom';
-    final desc = item['description'] as String? ?? '';
-    final price = (item['price'] as num?)?.toDouble();
-    final img = item['image_url'] as String?;
-    final category = item['category'] as String? ?? 'plat';
-    final vendor =
-        (item['vendor'] as Map?)?.cast<String, dynamic>() ?? {};
-    final vendorName = vendor['name'] as String? ?? '';
+  State<_SuggestSheet> createState() => _SuggestSheetState();
+}
 
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _G.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isVoted ? _G.rose.withOpacity(0.5) : _G.line,
-          width: isVoted ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-              color: Colors.black.withOpacity(0.04),
-              blurRadius: 8,
-              offset: const Offset(0, 2)),
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image
-          Container(
-            width: 70,
-            height: 70,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              color: _G.rose.withOpacity(0.08),
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: (img != null && img.isNotEmpty)
-                ? Image.network(img,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => const Icon(
-                        Icons.restaurant,
-                        color: _G.rose,
-                        size: 28))
-                : const Icon(Icons.restaurant,
-                    color: _G.rose, size: 28),
-          ),
-          const SizedBox(width: 12),
-          // Infos
-          Expanded(
+class _SuggestSheetState extends State<_SuggestSheet> {
+  final _name = TextEditingController();
+  final _desc = TextEditingController();
+  String _course = 'plat';
+  PickedPhoto? _photo;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pick() async {
+    try {
+      final p = await pickPhotos(max: 1);
+      if (p.isNotEmpty) setState(() => _photo = p.first);
+    } catch (e) {
+      setState(() => _error = 'Galerie inaccessible : $e');
+    }
+  }
+
+  Future<void> _send() async {
+    final n = _name.text.trim();
+    if (n.isEmpty) {
+      setState(() => _error = 'Indiquez le nom du plat');
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      String? url;
+      if (_photo != null) {
+        final urls = await uploadPhotos(widget.weddingId, [_photo!]);
+        url = urls.first;
+      }
+      await Supabase.instance.client.from('thix_weeding_menu_items').insert({
+        'wedding_id': widget.weddingId,
+        'course': _course,
+        'name': n,
+        'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
+        'image_url': url,
+        'suggested_by_name':
+            (widget.myName ?? '').isEmpty ? null : widget.myName,
+      });
+      widget.onDone();
+      if (mounted) Navigator.pop(context);
+    } catch (e) {
+      if (mounted) setState(() => _error = _msg(e));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(12, 12, 12, 12 + mq.viewInsets.bottom),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxHeight: mq.size.height * 0.88),
+        child: ThixGlass(
+          radius: 28,
+          opacity: 0.85,
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: SingleChildScrollView(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w800,
-                        color: _G.ink)),
-                if (desc.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(desc,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: _G.inkSoft,
-                            height: 1.35)),
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: Colors.black26,
+                        borderRadius: BorderRadius.circular(2)),
                   ),
-                const SizedBox(height: 6),
+                ),
+                const SizedBox(height: 12),
+                Text('Proposer un plat',
+                    style: GoogleFonts.inter(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: _G.ink)),
+                Text('Les mariés valideront votre suggestion.',
+                    style: GoogleFonts.inter(
+                        fontSize: 11.5, color: _G.ink2)),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 6,
+                  children: kMenuCourses.entries
+                      .map((e) => ChoiceChip(
+                            label: Text(e.value,
+                                style: const TextStyle(fontSize: 12)),
+                            selected: _course == e.key,
+                            onSelected: (_) =>
+                                setState(() => _course = e.key),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 10),
+                TextField(
+                  controller: _name,
+                  maxLength: 80,
+                  decoration: InputDecoration(
+                    labelText: 'Nom du plat *',
+                    prefixIcon: const Icon(Icons.restaurant_rounded,
+                        size: 19, color: _G.rose),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.7),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                TextField(
+                  controller: _desc,
+                  maxLines: 3,
+                  minLines: 1,
+                  decoration: InputDecoration(
+                    labelText: 'Pourquoi ce plat ? (optionnel)',
+                    prefixIcon: const Icon(Icons.notes_rounded,
+                        size: 19, color: _G.rose),
+                    filled: true,
+                    fillColor: Colors.white.withOpacity(0.7),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide.none),
+                  ),
+                ),
+                const SizedBox(height: 10),
                 Row(children: [
-                  _TagChip(category, _G.blue),
-                  if (vendorName.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    _TagChip(vendorName, _G.inkSoft),
-                  ],
-                  if (price != null && price > 0) ...[
-                    const SizedBox(width: 6),
-                    _TagChip(
-                        '${price.toStringAsFixed(0)}\$', _G.gold),
-                  ],
-                  const Spacer(),
-                  if (votes > 0)
-                    Row(mainAxisSize: MainAxisSize.min, children: [
-                      const Icon(Icons.favorite,
-                          size: 13, color: _G.rose),
-                      const SizedBox(width: 3),
-                      Text('$votes',
-                          style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: _G.rose)),
-                    ]),
+                  if (_photo != null)
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Image.memory(_photo!.bytes,
+                          width: 64, height: 64, fit: BoxFit.cover),
+                    ),
+                  if (_photo != null) const SizedBox(width: 10),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _pick,
+                    icon: const Icon(Icons.add_photo_alternate_outlined,
+                        size: 18),
+                    label: Text(
+                        _photo == null ? 'Ajouter une photo' : 'Changer'),
+                  ),
+                  if (_photo != null)
+                    TextButton(
+                        onPressed: () => setState(() => _photo = null),
+                        child: const Text('Retirer')),
                 ]),
+                if (_error != null) ...[
+                  const SizedBox(height: 8),
+                  Text(_error!,
+                      style: const TextStyle(
+                          color: _G.rose,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700)),
+                ],
+                const SizedBox(height: 12),
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _G.rose,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onPressed: _busy ? null : _send,
+                    child: _busy
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : Text('Envoyer ma suggestion',
+                            style: GoogleFonts.inter(
+                                fontWeight: FontWeight.w800)),
+                  ),
+                ),
               ],
             ),
           ),
-          const SizedBox(width: 8),
-          // Checkbox vote
-          GestureDetector(
-            onTap: () => onToggle(!isVoted),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 200),
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                color: isVoted ? _G.rose : Colors.transparent,
-                shape: BoxShape.circle,
-                border: Border.all(
-                  color: isVoted ? _G.rose : _G.line,
-                  width: 2,
-                ),
-                boxShadow: isVoted
-                    ? [
-                        BoxShadow(
-                            color: _G.rose.withOpacity(0.35),
-                            blurRadius: 10,
-                            spreadRadius: 1)
-                      ]
-                    : null,
-              ),
-              child: Icon(
-                isVoted ? Icons.favorite : Icons.favorite_border,
-                color: isVoted ? Colors.white : _G.inkSoft,
-                size: 22,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TagChip extends StatelessWidget {
-  final String text;
-  final Color color;
-  const _TagChip(this.text, this.color);
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Text(text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.inter(
-              fontSize: 9, fontWeight: FontWeight.w800, color: color)),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BOUTON VOTE
-// ═══════════════════════════════════════════════════════════════════════════
-class _VoteButton extends StatelessWidget {
-  final bool isVoted;
-  final ValueChanged<bool> onToggle;
-  final bool isTop;
-  const _VoteButton({
-    required this.isVoted,
-    required this.onToggle,
-    this.isTop = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onToggle(!isVoted),
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          decoration: BoxDecoration(
-            color: isTop
-                ? (isVoted
-                    ? Colors.white
-                    : Colors.white.withOpacity(0.25))
-                : (isVoted
-                    ? _G.rose
-                    : _G.rose.withOpacity(0.1)),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: isTop
-                  ? Colors.white
-                  : (isVoted ? _G.rose : _G.rose.withOpacity(0.3)),
-              width: isTop ? 2 : 1.5,
-            ),
-          ),
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(
-              isVoted ? Icons.favorite : Icons.favorite_border,
-              size: 18,
-              color: isTop ? _G.rose : (isVoted ? Colors.white : _G.rose),
-            ),
-            const SizedBox(width: 8),
-            Text(
-              isVoted ? 'Retirer de mes favoris' : "J'aime ce plat",
-              style: GoogleFonts.inter(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  color: isTop
-                      ? _G.rose
-                      : (isVoted ? Colors.white : _G.rose)),
-            ),
-          ]),
         ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EMPTY STATE — pas de menu public
-// ═══════════════════════════════════════════════════════════════════════════
-class _EmptyPublicMenu extends StatelessWidget {
-  const _EmptyPublicMenu();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            padding: const EdgeInsets.all(24),
-            decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [
-                  _G.rose.withOpacity(0.12),
-                  _G.gold.withOpacity(0.08)
-                ]),
-                shape: BoxShape.circle),
-            child: const Icon(Icons.restaurant_menu_rounded,
-                size: 56, color: _G.rose),
-          ),
-          const SizedBox(height: 20),
-          Text('Menu en cours de préparation',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  color: _G.ink)),
-          const SizedBox(height: 8),
-          Text(
-            'Le traiteur et les organisateurs finalisent la sélection des plats.\nRevenez bientôt pour voter !',
-            textAlign: TextAlign.center,
-            style: GoogleFonts.inter(
-                fontSize: 13, color: _G.inkSoft, height: 1.5),
-          ),
-        ]),
       ),
     );
   }
