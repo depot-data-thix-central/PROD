@@ -1,10 +1,12 @@
 // lib/presentation/thix_weeding/models/provider_models.dart
 // ============================================================================
-// THIX WEDDING PROVIDER MODELS (PRODUCTION v3)
+// THIX WEDDING PROVIDER MODELS (PRODUCTION v4 — MULTI-PHOTOS + CATÉGORIE OFFRE)
 // ✅ ownerId ajouté (aligné sur la logique mariages)
 // ✅ Compatibilité rétroactive : lit user_id (ancien) OU owner_id (nouveau)
 // ✅ OfferType enum + ProviderOfferModel (pour offres/services/menus/formules)
 // ✅ isPrimary ajouté à ThixProviderModel
+// ✅ galleryUrls ajouté à ProviderOfferModel (multi-photos)
+// ✅ category ajouté à ProviderOfferModel (catégorie d'offre, indépendante du prestataire)
 // ✅ Helpers de conversion ProviderCategory <-> String
 // ============================================================================
 
@@ -82,7 +84,7 @@ enum OfferType {
 class ThixProviderModel {
   final String id;
 
-  /// ✅ NOUVEAU : owner_id (compte général THIX, comme les mariages)
+  /// ✅ owner_id (compte général THIX, comme les mariages)
   /// Nullable pour compatibilité avec les anciennes lignes qui ont user_id
   final String? ownerId;
 
@@ -107,7 +109,7 @@ class ThixProviderModel {
   final double? maxPrice;
   final String currency;
   final bool isAvailable;
-  final bool isPrimary; // ✅ AJOUTÉ
+  final bool isPrimary;
   final Map<String, dynamic> requirements;
   final String? rejectionReason;
   final DateTime createdAt;
@@ -135,7 +137,7 @@ class ThixProviderModel {
     this.maxPrice,
     this.currency = 'USD',
     this.isAvailable = true,
-    this.isPrimary = false, // ✅ AJOUTÉ
+    this.isPrimary = false,
     this.requirements = const {},
     this.rejectionReason,
     required this.createdAt,
@@ -143,7 +145,7 @@ class ThixProviderModel {
   });
 
   factory ThixProviderModel.fromJson(Map<String, dynamic> json) {
-    // Sécurisation : on lit 'category' en string, insensible à la casse, 
+    // Sécurisation : on lit 'category' en string, insensible à la casse,
     // et on gère à la fois le format enum (ex: 'salle') et le format DB legacy (ex: 'SALLE')
     final rawCategory = (json['category'] as String?)?.toLowerCase();
     final parsedCategory = ProviderCategory.values.firstWhere(
@@ -186,7 +188,7 @@ class ThixProviderModel {
       maxPrice: (json['max_price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       isAvailable: json['is_available'] as bool? ?? true,
-      isPrimary: json['is_primary'] as bool? ?? false, // ✅ AJOUTÉ
+      isPrimary: json['is_primary'] as bool? ?? false,
       requirements: json['requirements'] as Map<String, dynamic>? ?? {},
       rejectionReason: json['rejection_reason'] as String?,
       createdAt: json['created_at'] != null
@@ -201,7 +203,7 @@ class ThixProviderModel {
   Map<String, dynamic> toJson() {
     return {
       'id': id,
-      'owner_id': ownerId, // ✅ Envoi au nouveau format
+      'owner_id': ownerId,
       'unique_code': uniqueCode,
       'category': category.name,
       'business_name': businessName,
@@ -220,7 +222,7 @@ class ThixProviderModel {
       'max_price': maxPrice,
       'currency': currency,
       'is_available': isAvailable,
-      'is_primary': isPrimary, // ✅ AJOUTÉ
+      'is_primary': isPrimary,
       'requirements': requirements,
       'rejection_reason': rejectionReason,
       'created_at': createdAt.toIso8601String(),
@@ -250,7 +252,7 @@ class ThixProviderModel {
     double? maxPrice,
     String? currency,
     bool? isAvailable,
-    bool? isPrimary, // ✅ AJOUTÉ
+    bool? isPrimary,
     Map<String, dynamic>? requirements,
     String? rejectionReason,
     DateTime? createdAt,
@@ -278,7 +280,7 @@ class ThixProviderModel {
       maxPrice: maxPrice ?? this.maxPrice,
       currency: currency ?? this.currency,
       isAvailable: isAvailable ?? this.isAvailable,
-      isPrimary: isPrimary ?? this.isPrimary, // ✅ AJOUTÉ
+      isPrimary: isPrimary ?? this.isPrimary,
       requirements: requirements ?? this.requirements,
       rejectionReason: rejectionReason ?? this.rejectionReason,
       createdAt: createdAt ?? this.createdAt,
@@ -456,6 +458,7 @@ class ProviderTaskModel {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ PROVIDER OFFER MODEL (Services / Menus / Formules / Promos)
+// ✅ v4 : multi-photos (galleryUrls) + catégorie d'offre indépendante
 // ═══════════════════════════════════════════════════════════════════════════
 @immutable
 class ProviderOfferModel {
@@ -464,18 +467,41 @@ class ProviderOfferModel {
   final String title;
   final String? description;
   final OfferType type;
+
+  /// ✅ Catégorie de l'offre (salle, traiteur, photographe...) — indépendante
+  /// de la catégorie du prestataire. Permet au catalogue et au home de classer
+  /// les offres par métier. Rétrocompatibilité : si null en DB, on prend
+  /// la catégorie du prestataire via providerCategoryName.
+  final ProviderCategory category;
+
   final double? price;
   final String currency;
+
+  /// ✅ Cover (première photo) — conservé pour rétrocompatibilité
   final String? imageUrl;
+
+  /// ✅ Galerie complète (multi-photos). Le premier élément est le cover.
+  final List<String> galleryUrls;
+
   final bool isActive;
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  // ✅ Champs optionnels remplis par jointure Supabase (pour HOME + catalogue)
+  // Champs optionnels remplis par jointure Supabase (pour HOME + catalogue)
   final String? providerBusinessName;
   final String? providerCity;
   final String? providerCategoryName;
   final String? providerVerificationStatus;
+
+  /// ✅ Toutes les photos de l'offre (cover + galerie dédupliquée)
+  List<String> get allImages {
+    final list = <String>[];
+    if (imageUrl != null && imageUrl!.isNotEmpty) list.add(imageUrl!);
+    for (final u in galleryUrls) {
+      if (u.isNotEmpty && !list.contains(u)) list.add(u);
+    }
+    return list;
+  }
 
   const ProviderOfferModel({
     required this.id,
@@ -483,9 +509,11 @@ class ProviderOfferModel {
     required this.title,
     this.description,
     this.type = OfferType.service,
+    this.category = ProviderCategory.salle,
     this.price,
     this.currency = 'USD',
     this.imageUrl,
+    this.galleryUrls = const [],
     this.isActive = true,
     required this.createdAt,
     required this.updatedAt,
@@ -499,6 +527,17 @@ class ProviderOfferModel {
     // Jointure Supabase : provider:thix_weeding_providers(...)
     final prov = json['provider'] as Map<String, dynamic>?;
 
+    // ✅ Parse galerie (fallback vide si colonne absente)
+    final gallery = (json['gallery_urls'] as List<dynamic>?)
+            ?.map((e) => e as String)
+            .toList() ??
+        <String>[];
+
+    // ✅ Parse catégorie de l'offre (fallback sur catégorie du prestataire)
+    final offerCategoryStr = (json['category'] as String?) ??
+        (prov?['category'] as String?);
+    final offerCategory = stringToProviderCategory(offerCategoryStr);
+
     return ProviderOfferModel(
       id: json['id'] as String,
       providerId: json['provider_id'] as String,
@@ -508,9 +547,11 @@ class ProviderOfferModel {
         (t) => t.name == json['offer_type'],
         orElse: () => OfferType.service,
       ),
+      category: offerCategory,
       price: (json['price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       imageUrl: json['image_url'] as String?,
+      galleryUrls: gallery,
       isActive: json['is_active'] as bool? ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -532,9 +573,11 @@ class ProviderOfferModel {
       'title': title,
       'description': description,
       'offer_type': type.name,
+      'category': category.name, // ✅ catégorie de l'offre
       'price': price,
       'currency': currency,
       'image_url': imageUrl,
+      'gallery_urls': galleryUrls, // ✅ galerie multi-photos
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -547,9 +590,11 @@ class ProviderOfferModel {
     String? title,
     String? description,
     OfferType? type,
+    ProviderCategory? category,
     double? price,
     String? currency,
     String? imageUrl,
+    List<String>? galleryUrls,
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -560,9 +605,11 @@ class ProviderOfferModel {
       title: title ?? this.title,
       description: description ?? this.description,
       type: type ?? this.type,
+      category: category ?? this.category,
       price: price ?? this.price,
       currency: currency ?? this.currency,
       imageUrl: imageUrl ?? this.imageUrl,
+      galleryUrls: galleryUrls ?? this.galleryUrls,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -575,7 +622,7 @@ class ProviderOfferModel {
 
   @override
   String toString() =>
-      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, provider: $providerId)';
+      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, category: ${category.name}, photos: ${galleryUrls.length + (imageUrl != null ? 1 : 0)}, provider: $providerId)';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
