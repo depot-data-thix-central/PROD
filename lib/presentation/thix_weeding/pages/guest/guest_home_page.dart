@@ -1,11 +1,13 @@
 // lib/presentation/thix_weeding/pages/guest/guest_home_page.dart
 // ============================================================================
-// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v2)
-// ✅ Entête verre dépoli + photo plein écran + feuille blanche arrondie
-// ✅ Synchronisé en direct avec le staff (mariage, invité, table, places, annonces)
-// ✅ Carte "Ma place" + état de l'invitation (désactivée = bannière)
-// ✅ Nouveaux boutons : Menu, Playlist, Ma table, Navette, Dress code
-// ✅ Design premium rose + glassflou
+// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v3)
+// ✅ Hero : 6 premières photos de la galerie, défilement automatique permanent
+// ✅ Tout est compact (rien ne déborde) — feuilles de détail défilables
+// ✅ « En un coup d'œil » supprimé → bande « Photos du mariage »
+// ✅ Infos pratiques = uniquement ce que le staff PUBLIE (photos, tag, titre)
+// ✅ Message d'invitation / table / place : visibles seulement par l'invité concerné
+// ✅ Cartes infos & prestataires avec photos
+// ✅ Temps réel (mariage, invité, table, messages) + verre dépoli
 // ============================================================================
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -32,11 +34,12 @@ import '../../domain/entities/wedding_entity.dart';
 import '../staff/providers/thix_weeding_providers.dart';
 import '../staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
+import 'package:thix_id/presentation/thix_weeding/pages/staff/messages/message_media.dart';
 
 part 'guest_home_page.g.dart';
 
 // ============================================================
-// PALETTE — Charte THIX WEDDING (rose premium / verre dépoli)
+// PALETTE
 // ============================================================
 class _P {
   static const bg = Color(0xFFFFFBFC);
@@ -62,14 +65,14 @@ class _P {
   static final shadow = [
     BoxShadow(
       color: const Color(0xFFD81B60).withOpacity(0.10),
-      blurRadius: 18,
-      offset: const Offset(0, 8),
+      blurRadius: 14,
+      offset: const Offset(0, 6),
     )
   ];
 }
 
 // ============================================================
-// MODELE DES TUILES DU MENU INVITÉ
+// MENU
 // ============================================================
 enum _BadgeType { none, alert, count, live }
 
@@ -89,7 +92,6 @@ class _GuestMenuItem {
   });
 }
 
-// 16 boutons = 4 lignes de 4
 const List<_GuestMenuItem> _kGuestMenu = [
   _GuestMenuItem(title: 'Invitation', subtitle: 'Votre carte & QR code', icon: Icons.mail_outline_rounded, route: 'invitation'),
   _GuestMenuItem(title: 'Programme', subtitle: 'Déroulé de la journée', icon: Icons.event_note_outlined, route: 'programme'),
@@ -109,14 +111,13 @@ const List<_GuestMenuItem> _kGuestMenu = [
   _GuestMenuItem(title: 'Plus', subtitle: 'Autres options', icon: Icons.grid_view_rounded, route: 'plus'),
 ];
 
-// Rubriques supplémentaires (feuille « Plus »)
 const List<_GuestMenuItem> _kExtraMenu = [
   _GuestMenuItem(title: 'Remerciements', subtitle: 'Un mot pour vous', icon: Icons.volunteer_activism_outlined, route: 'remerciements'),
   _GuestMenuItem(title: 'Prestataires', subtitle: 'Ceux qui font la fête', icon: Icons.storefront_outlined, route: 'prestataires'),
 ];
 
 // ============================================================
-// PROVIDERS COMPLEMENTAIRES (SYNCHRONISES BACKEND / STAFF)
+// PROVIDERS GÉNÉRÉS (inchangés — nécessaires au fichier .g.dart)
 // ============================================================
 @riverpod
 Future<Map<String, int>> guestEventStats(GuestEventStatsRef ref, String weddingId) async {
@@ -146,8 +147,121 @@ Future<List<VendorModel>> guestVendors(GuestVendorsRef ref, String weddingId) as
 @riverpod
 Future<List<MessageModel>> guestUpdates(GuestUpdatesRef ref, String weddingId) async {
   final messages = await ref.watch(messagesProvider(weddingId).future);
-  // On ne remonte que les communications officielles de l'organisation (staff)
   return messages.where((m) => m.senderType.toLowerCase() == 'staff').toList();
+}
+
+// ============================================================
+// NOUVEAUX PROVIDERS (sans génération de code)
+// ============================================================
+class GuestAnnouncement {
+  final String id;
+  final String content;
+  final String? title;
+  final String tag;
+  final String sender;
+  final List<String> images;
+  final DateTime? createdAt;
+  final String type;
+
+  const GuestAnnouncement({
+    required this.id,
+    required this.content,
+    required this.title,
+    required this.tag,
+    required this.sender,
+    required this.images,
+    required this.createdAt,
+    required this.type,
+  });
+}
+
+/// Uniquement les informations PUBLIÉES par le staff (jamais les messages privés).
+final guestAnnouncementsProvider =
+    FutureProvider.autoDispose.family<List<GuestAnnouncement>, String>((ref, weddingId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_messages')
+        .select('id, content, title, tag, image_urls, sender_name, created_at, message_type')
+        .eq('wedding_id', weddingId)
+        .eq('is_published', true)
+        .filter('guest_id', 'is', 'null')
+        .order('created_at', ascending: false)
+        .limit(20);
+    return (rows as List).map((e) {
+      final m = Map<String, dynamic>.from(e as Map);
+      return GuestAnnouncement(
+        id: '${m['id']}',
+        content: '${m['content'] ?? ''}',
+        title: (m['title'] as String?)?.trim().isEmpty == true ? null : m['title'] as String?,
+        tag: ((m['tag'] as String?) ?? 'INFO').toUpperCase(),
+        sender: '${m['sender_name'] ?? 'Les mariés'}',
+        images: parseImageUrls(m['image_urls']),
+        createdAt: DateTime.tryParse('${m['created_at']}')?.toLocal(),
+        type: '${m['message_type'] ?? 'info'}',
+      );
+    }).toList();
+  } catch (_) {
+    return [];
+  }
+});
+
+/// Photos des prestataires (colonne photo_url), indexées par nom.
+final guestVendorPhotosProvider =
+    FutureProvider.autoDispose.family<Map<String, String>, String>((ref, weddingId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_vendors')
+        .select('name, photo_url')
+        .eq('wedding_id', weddingId);
+    final out = <String, String>{};
+    for (final r in (rows as List)) {
+      final n = '${r['name'] ?? ''}'.trim().toLowerCase();
+      final u = '${r['photo_url'] ?? ''}';
+      if (n.isNotEmpty && u.isNotEmpty && u != 'null') out[n] = u;
+    }
+    return out;
+  } catch (_) {
+    return {};
+  }
+});
+
+// ── URL d'une photo de galerie (modèle inconnu → lecture tolérante) ──
+String? _galleryUrl(dynamic g) {
+  final getters = <dynamic Function()>[
+    () => g.url,
+    () => g.imageUrl,
+    () => g.photoUrl,
+    () => g.mediaUrl,
+    () => g.fileUrl,
+    () => g.publicUrl,
+    () => g.thumbnailUrl,
+  ];
+  for (final get in getters) {
+    try {
+      final v = get();
+      if (v is String && v.isNotEmpty) return v;
+    } catch (_) {}
+  }
+  try {
+    final m = g.toJson();
+    if (m is Map) {
+      for (final k in ['url', 'image_url', 'photo_url', 'media_url', 'file_url', 'public_url']) {
+        final v = m[k];
+        if (v is String && v.isNotEmpty) return v;
+      }
+    }
+  } catch (_) {}
+  return null;
+}
+
+bool _isVideoUrl(String u) {
+  final l = u.toLowerCase().split('?').first;
+  return l.endsWith('.mp4') || l.endsWith('.mov') || l.endsWith('.webm') || l.endsWith('.avi') || l.endsWith('.mkv');
+}
+
+String _fmtShort(DateTime? d) {
+  if (d == null) return '';
+  return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
 }
 
 // ============================================================
@@ -164,12 +278,12 @@ class GuestHomePage extends ConsumerStatefulWidget {
 class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   final _scroll = ScrollController();
 
-  // Invité connecté (lié au compte)
+  // Invité connecté (privé : visible uniquement par lui)
   Map<String, dynamic>? _guest;
   String _hallLabel = '';
   List<int> _seats = [];
+  String? _inviteMsg;
 
-  // Temps réel
   RealtimeChannel? _channel;
   Timer? _debounce;
 
@@ -202,33 +316,49 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
           .eq('user_id', user.id)
           .maybeSingle();
       if (g == null) {
-        if (mounted) setState(() => _guest = null);
+        if (mounted) {
+          setState(() {
+            _guest = null;
+            _inviteMsg = null;
+          });
+        }
         return;
       }
       final guest = Map<String, dynamic>.from(g);
       var label = '';
       final hid = guest['hall_table_id'];
       if (hid != null) {
-        final t = await supa
-            .from('thix_weeding_hall_items')
-            .select('label')
-            .eq('id', hid)
-            .maybeSingle();
+        final t = await supa.from('thix_weeding_hall_items').select('label').eq('id', hid).maybeSingle();
         label = (t?['label'] as String?) ?? '';
       }
       final seats = ((guest['seat_indices'] as List?) ?? const [])
           .map((e) => (e as num).toInt())
           .toList()
         ..sort();
+
+      // Message d'invitation PRIVÉ (seulement pour cet invité)
+      String? invite;
+      try {
+        final m = await supa
+            .from('thix_weeding_messages')
+            .select('content')
+            .eq('wedding_id', widget.weddingId)
+            .eq('guest_id', guest['id'])
+            .eq('message_type', 'invitation')
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+        invite = m?['content'] as String?;
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() {
         _guest = guest;
         _hallLabel = label;
         _seats = seats;
+        _inviteMsg = invite;
       });
-    } catch (_) {
-      // on garde l'affichage actuel
-    }
+    } catch (_) {}
   }
 
   void _subscribe() {
@@ -283,9 +413,10 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   void _invalidateAll() {
     final id = widget.weddingId;
     ref.invalidate(guestWeddingProvider(id));
-    ref.invalidate(guestEventStatsProvider(id));
     ref.invalidate(guestVendorsProvider(id));
-    ref.invalidate(guestUpdatesProvider(id));
+    ref.invalidate(guestVendorPhotosProvider(id));
+    ref.invalidate(guestAnnouncementsProvider(id));
+    ref.invalidate(galleryProvider(id));
     ref.invalidate(guestsProvider(id));
     ref.invalidate(messagesProvider(id));
   }
@@ -325,7 +456,76 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     context.push('/thix-weeding/guest/${widget.weddingId}/$route');
   }
 
-  // ───────────────────────── SHEETS ─────────────────────────
+  // ───────────────────────── FEUILLES (défilables) ─────────────────────────
+  void _glassSheet({
+    required IconData icon,
+    required String title,
+    String? subtitle,
+    required List<Widget> children,
+  }) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.all(12),
+        child: ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.78),
+          child: ThixGlass(
+            radius: 28,
+            opacity: 0.82,
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(color: _P.inkSoft.withOpacity(0.35), borderRadius: BorderRadius.circular(2)),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Container(
+                      width: 38,
+                      height: 38,
+                      decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
+                      child: Icon(icon, color: Colors.white, size: 19),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(title,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                          if (subtitle != null && subtitle.isNotEmpty)
+                            Text(subtitle,
+                                style: GoogleFonts.inter(fontSize: 11.5, color: _P.primary, fontWeight: FontWeight.w700)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   void _openMore() {
     final all = [..._kGuestMenu.where((e) => e.route != 'plus'), ..._kExtraMenu];
     showModalBottomSheet(
@@ -337,27 +537,23 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
         child: ConstrainedBox(
           constraints: BoxConstraints(maxHeight: MediaQuery.of(ctx).size.height * 0.78),
           child: ThixGlass(
-            radius: 30,
-            opacity: 0.72,
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+            radius: 28,
+            opacity: 0.82,
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 6),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Container(
-                  width: 42,
+                  width: 40,
                   height: 4,
-                  decoration: BoxDecoration(
-                    color: _P.inkSoft.withOpacity(0.35),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
+                  decoration: BoxDecoration(color: _P.inkSoft.withOpacity(0.35), borderRadius: BorderRadius.circular(2)),
                 ),
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 Align(
                   alignment: Alignment.centerLeft,
                   child: Text('Toutes les rubriques',
-                      style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w800, color: _P.ink)),
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
                 ),
-                const SizedBox(height: 6),
                 Flexible(
                   child: ListView.builder(
                     shrinkWrap: true,
@@ -365,18 +561,18 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                     itemBuilder: (_, i) {
                       final it = all[i];
                       return ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+                        dense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 2),
                         leading: Container(
-                          width: 44,
-                          height: 44,
+                          width: 38,
+                          height: 38,
                           decoration: const BoxDecoration(color: _P.primarySoft, shape: BoxShape.circle),
-                          child: Icon(it.icon, color: _P.primary, size: 22),
+                          child: Icon(it.icon, color: _P.primary, size: 19),
                         ),
                         title: Text(it.title,
-                            style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: _P.ink, fontSize: 14)),
-                        subtitle: Text(it.subtitle,
-                            style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft)),
-                        trailing: const Icon(Icons.chevron_right_rounded, color: _P.primary),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: _P.ink, fontSize: 13)),
+                        subtitle: Text(it.subtitle, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                        trailing: const Icon(Icons.chevron_right_rounded, color: _P.primary, size: 20),
                         onTap: () {
                           Navigator.pop(ctx);
                           _go(it.route);
@@ -393,64 +589,64 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     );
   }
 
-  void _showDetail(dynamic item) {
-    String title = 'Information';
-    String subtitle = '';
-    String body = '';
-    IconData icon = Icons.info_outline_rounded;
-    if (item is VendorModel) {
-      title = item.name;
-      subtitle = item.category;
-      body = item.contactName ?? 'Contact à venir';
-      icon = Icons.storefront_outlined;
-    } else if (item is MessageModel) {
-      title = 'Annonce officielle';
-      subtitle = item.senderName;
-      body = item.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), '');
-      icon = Icons.campaign_outlined;
-    }
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(12),
-        child: ThixGlass(
-          radius: 28,
-          opacity: 0.72,
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(11),
-                    decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
-                    child: Icon(icon, color: Colors.white, size: 22),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(title,
-                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
-                        if (subtitle.isNotEmpty)
-                          Text(subtitle,
-                              style: GoogleFonts.inter(fontSize: 12, color: _P.primary, fontWeight: FontWeight.w700)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 14),
-              Text(body, style: GoogleFonts.inter(fontSize: 14, color: _P.ink, height: 1.45)),
-              const SizedBox(height: 8),
-            ],
-          ),
-        ),
-      ),
+  void _showAnnouncement(GuestAnnouncement a) {
+    final text = a.content == '📷 Photo' && a.images.isNotEmpty ? '' : a.content;
+    _glassSheet(
+      icon: Icons.campaign_outlined,
+      title: a.title ?? (a.type == 'announcement' ? 'Annonce' : 'Information'),
+      subtitle: '${a.tag} · ${a.sender}${a.createdAt != null ? ' · ${_fmtShort(a.createdAt)}' : ''}',
+      children: [
+        if (a.images.isNotEmpty) ...[
+          MessageImages(urls: a.images, radius: 16),
+          const SizedBox(height: 10),
+        ],
+        if (text.isNotEmpty)
+          Text(text, style: GoogleFonts.inter(fontSize: 13.5, color: _P.ink, height: 1.5)),
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  void _showVendor(VendorModel v, String? photo) {
+    _glassSheet(
+      icon: Icons.storefront_outlined,
+      title: v.name,
+      subtitle: v.category,
+      children: [
+        if (photo != null) ...[
+          MessageImages(urls: [photo], radius: 16),
+          const SizedBox(height: 10),
+        ],
+        Row(children: [
+          const Icon(Icons.person_outline_rounded, size: 16, color: _P.inkSoft),
+          const SizedBox(width: 6),
+          Text(v.contactName ?? 'Contact à venir',
+              style: GoogleFonts.inter(fontSize: 13, color: _P.ink, fontWeight: FontWeight.w600)),
+        ]),
+        if (v.isBooked) ...[
+          const SizedBox(height: 8),
+          Row(children: [
+            const Icon(Icons.check_circle_rounded, size: 16, color: _P.green),
+            const SizedBox(width: 6),
+            Text('Réservé', style: GoogleFonts.inter(fontSize: 13, color: _P.green, fontWeight: FontWeight.w800)),
+          ]),
+        ],
+        const SizedBox(height: 4),
+      ],
+    );
+  }
+
+  void _showInviteMessage() {
+    final m = _inviteMsg;
+    if (m == null) return;
+    _glassSheet(
+      icon: Icons.mail_outline_rounded,
+      title: 'Mon invitation',
+      subtitle: 'Message privé · visible par vous seul(e)',
+      children: [
+        Text(m, style: GoogleFonts.inter(fontSize: 13, color: _P.ink, height: 1.5)),
+        const SizedBox(height: 4),
+      ],
     );
   }
 
@@ -458,10 +654,17 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   @override
   Widget build(BuildContext context) {
     final weddingAsync = ref.watch(guestWeddingProvider(widget.weddingId));
-    final statsAsync = ref.watch(guestStatsAsync);
     final vendorsAsync = ref.watch(guestVendorsProvider(widget.weddingId));
-    final updatesAsync = ref.watch(guestUpdatesProvider(widget.weddingId));
+    final vendorPhotos = ref.watch(guestVendorPhotosProvider(widget.weddingId)).value ?? const <String, String>{};
+    final annAsync = ref.watch(guestAnnouncementsProvider(widget.weddingId));
+    final galleryRaw = ref.watch(galleryProvider(widget.weddingId)).value;
     final bottom = MediaQuery.of(context).padding.bottom;
+
+    final photos = <String>[];
+    for (final g in ((galleryRaw as List?) ?? const [])) {
+      final u = _galleryUrl(g);
+      if (u != null && !_isVideoUrl(u)) photos.add(u);
+    }
 
     return Scaffold(
       backgroundColor: _P.bg,
@@ -474,22 +677,21 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                 return _content(
                   wedding: wedding,
                   countdown: countdown,
-                  statsAsync: statsAsync,
+                  photos: photos,
                   vendorsAsync: vendorsAsync,
-                  updatesAsync: updatesAsync,
+                  vendorPhotos: vendorPhotos,
+                  annAsync: annAsync,
                 );
               },
-              loading: () => const Center(
-                child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary),
-              ),
+              loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
               error: (e, _) => Center(child: _ErrorView(error: e, onRetry: _invalidateAll)),
             ),
           ),
           Positioned(top: 0, left: 0, right: 0, child: _glassHeader(context)),
           Positioned(
-            left: 16,
-            right: 16,
-            bottom: 12 + bottom,
+            left: 18,
+            right: 18,
+            bottom: 10 + bottom,
             child: _GlassNav(
               onHome: () => _scroll.animateTo(0,
                   duration: const Duration(milliseconds: 380), curve: Curves.easeOut),
@@ -504,10 +706,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     );
   }
 
-  ProviderListenable<AsyncValue<Map<String, int>>> get guestStatsAsync =>
-      guestEventStatsProvider(widget.weddingId);
-
-  // ───────────────────────── ENTÊTE VERRE DÉPOLI ─────────────────────────
+  // ───────────────────────── ENTÊTE COMPACT ─────────────────────────
   Widget _glassHeader(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
     return ClipRect(
@@ -517,42 +716,34 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
           padding: EdgeInsets.only(top: top),
           decoration: BoxDecoration(
             color: Colors.white.withOpacity(0.38),
-            border: Border(
-              bottom: BorderSide(color: Colors.white.withOpacity(0.75), width: 1.2),
-            ),
+            border: Border(bottom: BorderSide(color: Colors.white.withOpacity(0.75), width: 1.2)),
           ),
           child: SizedBox(
-            height: 74,
+            height: 56,
             child: Row(
               children: [
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
                 Container(
-                  width: 50,
-                  height: 50,
+                  width: 38,
+                  height: 38,
                   decoration: BoxDecoration(
                     gradient: _P.gradPrimary,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: _P.primary.withOpacity(0.35),
-                        blurRadius: 14,
-                        offset: const Offset(0, 5),
-                      ),
-                    ],
+                    boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.35), blurRadius: 10, offset: const Offset(0, 4))],
                   ),
-                  child: const Icon(Icons.favorite, color: Colors.white, size: 26),
+                  child: const Icon(Icons.favorite, color: Colors.white, size: 20),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 10),
                 Expanded(
                   child: Text(
                     'THIX WEDDING',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(
-                      fontSize: 18,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 2.2,
-                      color: const Color(0xFF3B3B44).withOpacity(0.68),
+                      letterSpacing: 1.8,
+                      color: const Color(0xFF3B3B44).withOpacity(0.75),
                     ),
                   ),
                 ),
@@ -566,19 +757,18 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      const Icon(Icons.language_rounded, size: 15, color: _P.primary),
+                      const Icon(Icons.language_rounded, size: 13, color: _P.primary),
                       Text('FR',
-                          style: GoogleFonts.inter(
-                              fontSize: 8.5, fontWeight: FontWeight.w900, color: _P.primary)),
+                          style: GoogleFonts.inter(fontSize: 7.5, fontWeight: FontWeight.w900, color: _P.primary)),
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 7),
                 _GlassCircleBtn(
                   onTap: _openMore,
-                  child: const Icon(Icons.menu_rounded, size: 21, color: _P.primary),
+                  child: const Icon(Icons.menu_rounded, size: 18, color: _P.primary),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 12),
               ],
             ),
           ),
@@ -591,56 +781,29 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   Widget _content({
     required WeddingEntity wedding,
     required CountdownState? countdown,
-    required AsyncValue<Map<String, int>> statsAsync,
+    required List<String> photos,
     required AsyncValue<List<VendorModel>> vendorsAsync,
-    required AsyncValue<List<MessageModel>> updatesAsync,
+    required Map<String, String> vendorPhotos,
+    required AsyncValue<List<GuestAnnouncement>> annAsync,
   }) {
     final mq = MediaQuery.of(context);
-    final headerH = mq.padding.top + 74;
-    final contentH = (mq.size.height * 0.52).clamp(400.0, 540.0).toDouble();
-    final photoH = contentH + 44;
-    final annCount = updatesAsync.value?.length ?? 0;
+    final headerH = mq.padding.top + 56;
+    final contentH = (mq.size.height * 0.44).clamp(330.0, 440.0).toDouble();
+    final photoH = contentH + 30;
+    final announcements = annAsync.value ?? const <GuestAnnouncement>[];
+    final heroPhotos = photos.take(6).toList();
 
     return Stack(
       children: [
-        // PHOTO PLEIN ÉCRAN (fixe)
+        // HERO : 6 premières photos de la galerie, défilement automatique
         Positioned(
           top: 0,
           left: 0,
           right: 0,
           height: photoH,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Image.network(
-                wedding.coverImageUrl,
-                fit: BoxFit.cover,
-                errorBuilder: (_, __, ___) => Container(
-                  decoration: const BoxDecoration(gradient: _P.gradPrimary),
-                  child: Center(
-                    child: Icon(Icons.favorite, size: 90, color: Colors.white.withOpacity(0.2)),
-                  ),
-                ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.white.withOpacity(0.10),
-                      Colors.transparent,
-                      const Color(0xFF3A0A18).withOpacity(0.55),
-                    ],
-                    stops: const [0.0, 0.4, 1.0],
-                  ),
-                ),
-              ),
-            ],
-          ),
+          child: _HeroPhotos(urls: heroPhotos, fallback: wedding.coverImageUrl),
         ),
 
-        // CONTENU QUI DÉFILE
         RefreshIndicator(
           color: _P.primary,
           edgeOffset: headerH,
@@ -653,40 +816,39 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
               SizedBox(
                 height: contentH,
                 child: Padding(
-                  padding: EdgeInsets.fromLTRB(18, headerH + 12, 18, 6),
+                  padding: EdgeInsets.fromLTRB(16, headerH + 8, 16, 4),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.end,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      _GreetingChip(
-                        name: _firstName,
-                        vip: _guest?['is_vip'] == true,
-                      ),
-                      const SizedBox(height: 12),
+                      _GreetingChip(name: _firstName, vip: _guest?['is_vip'] == true),
+                      const SizedBox(height: 8),
                       Text(
                         wedding.coupleNames,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.playfairDisplay(
-                          fontSize: 34,
+                          fontSize: 28,
                           color: Colors.white,
                           fontWeight: FontWeight.w700,
                           height: 1.1,
-                          shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 14)],
+                          shadows: [Shadow(color: Colors.black.withOpacity(0.4), blurRadius: 14)],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 5),
                       Text(
                         wedding.welcomeMessage,
-                        maxLines: 3,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(
                           color: Colors.white,
-                          fontSize: 13,
-                          height: 1.4,
+                          fontSize: 12,
+                          height: 1.35,
                           fontWeight: FontWeight.w500,
-                          shadows: [Shadow(color: Colors.black.withOpacity(0.35), blurRadius: 10)],
+                          shadows: [Shadow(color: Colors.black.withOpacity(0.4), blurRadius: 10)],
                         ),
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 10),
                       _CountdownCard(state: countdown),
                     ],
                   ),
@@ -701,46 +863,31 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                     end: Alignment.bottomCenter,
                     colors: [Colors.white, _P.rosePale],
                   ),
-                  borderRadius: const BorderRadius.vertical(top: Radius.circular(36)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
-                      blurRadius: 26,
-                      offset: const Offset(0, -6),
-                    ),
-                  ],
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(30)),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 22, offset: const Offset(0, -5))],
                 ),
-                padding: EdgeInsets.fromLTRB(16, 26, 16, 130 + mq.padding.bottom),
+                padding: EdgeInsets.fromLTRB(14, 20, 14, 100 + mq.padding.bottom),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     if (!_invitationActive) ...[
                       _DisabledBanner(),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 12),
                     ],
                     _placeCard(),
-                    if (_guest != null) const SizedBox(height: 26),
+                    if (_guest != null) const SizedBox(height: 20),
 
-                    const _SectionHeader(title: 'En un coup d\'œil'),
-                    const SizedBox(height: 14),
-                    statsAsync.when(
-                      data: (stats) => _StatsRow(stats: stats),
-                      loading: () => const SizedBox(height: 96),
-                      error: (_, __) => const SizedBox(),
-                    ),
-
-                    const SizedBox(height: 28),
                     const _SectionHeader(title: 'Toutes les rubriques'),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
                     GridView.builder(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       itemCount: _kGuestMenu.length,
                       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4,
-                        mainAxisSpacing: 18,
-                        crossAxisSpacing: 8,
-                        childAspectRatio: 0.78,
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 6,
+                        childAspectRatio: 0.9,
                       ),
                       itemBuilder: (context, index) {
                         final item = _kGuestMenu[index];
@@ -749,8 +896,8 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                         if (item.route == 'rsvp') {
                           type = _rsvpPending ? _BadgeType.alert : _BadgeType.none;
                         } else if (item.route == 'annonces') {
-                          count = annCount;
-                          type = annCount > 0 ? _BadgeType.count : _BadgeType.none;
+                          count = announcements.length;
+                          type = announcements.isNotEmpty ? _BadgeType.count : _BadgeType.none;
                         }
                         return _GuestMenuTile(
                           item: item,
@@ -761,38 +908,49 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                       },
                     ),
 
-                    const SizedBox(height: 28),
+                    if (photos.isNotEmpty) ...[
+                      const SizedBox(height: 22),
+                      _SectionHeader(title: 'Photos du mariage', onMore: () => _go('galerie')),
+                      const SizedBox(height: 10),
+                      _PhotoStrip(urls: photos.take(12).toList(), onTap: () => _go('galerie')),
+                    ],
+
+                    const SizedBox(height: 22),
                     const _SectionHeader(title: 'Nos prestataires'),
-                    const SizedBox(height: 14),
+                    const SizedBox(height: 10),
                     vendorsAsync.when(
-                      data: (vendors) => _VendorsList(vendors: vendors, onTap: _showDetail),
+                      data: (vendors) => _VendorsList(
+                        vendors: vendors,
+                        photos: vendorPhotos,
+                        onTap: _showVendor,
+                      ),
                       loading: () => const SizedBox(
-                        height: 220,
+                        height: 150,
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
                       ),
                       error: (_, __) => const SizedBox(),
                     ),
 
-                    const SizedBox(height: 28),
-                    const _SectionHeader(title: 'Infos pratiques & Annonces'),
-                    const SizedBox(height: 14),
-                    updatesAsync.when(
-                      data: (items) => _UpdatesList(items: items, onTap: _showDetail),
+                    const SizedBox(height: 22),
+                    const _SectionHeader(title: 'Infos pratiques'),
+                    const SizedBox(height: 10),
+                    annAsync.when(
+                      data: (items) => _UpdatesList(items: items, onTap: _showAnnouncement),
                       loading: () => const SizedBox(
-                        height: 160,
+                        height: 130,
                         child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
                       ),
                       error: (_, __) => const SizedBox(),
                     ),
 
                     if (wedding.hasAnnouncement) ...[
-                      const SizedBox(height: 22),
+                      const SizedBox(height: 18),
                       _NewsBanner(text: wedding.announcement),
                     ],
 
-                    const SizedBox(height: 24),
-                    _HelpCard(onTap: () => _go('faq')),
                     const SizedBox(height: 20),
+                    _HelpCard(onTap: () => _go('faq')),
+                    const SizedBox(height: 16),
                     const _TrustRow(),
                   ],
                 ),
@@ -804,17 +962,17 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     );
   }
 
-  // ───────────────────────── CARTE "MA PLACE" ─────────────────────────
+  // ───────────────────────── CARTE "MA PLACE" (privée) ─────────────────────────
   Widget _placeCard() {
     final g = _guest;
     if (g == null || !_invitationActive) return const SizedBox.shrink();
     final has = _tableName.isNotEmpty;
     final persons = (g['guests_count'] as num?)?.toInt() ?? 1;
     return ThixGlass(
-      radius: 26,
+      radius: 22,
       opacity: 0.55,
       borderColor: _P.primary.withOpacity(0.22),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(12),
       onTap: () => _go('invitation'),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -822,88 +980,98 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.all(11),
+                padding: const EdgeInsets.all(9),
                 decoration: BoxDecoration(
                   gradient: _P.gradPrimary,
-                  borderRadius: BorderRadius.circular(15),
-                  boxShadow: [
-                    BoxShadow(color: _P.primary.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 5)),
-                  ],
+                  borderRadius: BorderRadius.circular(13),
+                  boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
                 ),
-                child: const Icon(Icons.event_seat_rounded, color: Colors.white, size: 22),
+                child: const Icon(Icons.event_seat_rounded, color: Colors.white, size: 18),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('VOTRE PLACE',
                         style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 1.8,
-                            color: _P.inkSoft)),
-                    const SizedBox(height: 2),
+                            fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.6, color: _P.inkSoft)),
                     Text(
                       has ? _tableName : 'En cours d\'attribution',
-                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink),
+                      style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink),
                     ),
                     Text('$persons personne${persons > 1 ? 's' : ''}',
-                        style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft)),
+                        style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
                   ],
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                decoration: BoxDecoration(
-                  color: _P.primarySoft,
-                  borderRadius: BorderRadius.circular(14),
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
+                decoration: BoxDecoration(color: _P.primarySoft, borderRadius: BorderRadius.circular(12)),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.qr_code_2_rounded, size: 18, color: _P.primary),
+                    const Icon(Icons.qr_code_2_rounded, size: 16, color: _P.primary),
                     const SizedBox(width: 4),
                     Text('QR',
-                        style: GoogleFonts.inter(
-                            fontSize: 11, fontWeight: FontWeight.w900, color: _P.primary)),
+                        style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w900, color: _P.primary)),
                   ],
                 ),
               ),
             ],
           ),
           if (has && _seats.isNotEmpty) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               children: _seats
                   .map((s) => Container(
-                        width: 38,
-                        height: 38,
+                        width: 30,
+                        height: 30,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: Colors.white.withOpacity(0.85),
                           shape: BoxShape.circle,
-                          border: Border.all(color: _P.primary, width: 2),
-                          boxShadow: [
-                            BoxShadow(color: _P.primary.withOpacity(0.22), blurRadius: 8, offset: const Offset(0, 3)),
-                          ],
+                          border: Border.all(color: _P.primary, width: 1.8),
                         ),
                         child: Text('${s + 1}',
-                            style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w900, fontSize: 14, color: _P.primary)),
+                            style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 12, color: _P.primary)),
                       ))
                   .toList(),
             ),
           ] else if (!has)
             Padding(
-              padding: const EdgeInsets.only(top: 10),
+              padding: const EdgeInsets.only(top: 8),
               child: Text(
                 'Votre table et votre place apparaîtront ici dès que les mariés les auront choisies.',
-                style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4),
+                style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft, height: 1.35),
               ),
             ),
+          if (_inviteMsg != null) ...[
+            const SizedBox(height: 10),
+            GestureDetector(
+              onTap: _showInviteMessage,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.7),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.mail_outline_rounded, size: 16, color: _P.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text('Voir mon message d\'invitation',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _P.ink)),
+                    ),
+                    const Icon(Icons.chevron_right_rounded, size: 18, color: _P.primary),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -911,7 +1079,131 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
 }
 
 // ============================================================
-// PETITS WIDGETS D'ENTÊTE
+// HERO : PHOTOS EN DÉFILEMENT AUTOMATIQUE
+// ============================================================
+class _HeroPhotos extends StatefulWidget {
+  final List<String> urls;
+  final String fallback;
+  const _HeroPhotos({required this.urls, required this.fallback});
+
+  @override
+  State<_HeroPhotos> createState() => _HeroPhotosState();
+}
+
+class _HeroPhotosState extends State<_HeroPhotos> {
+  final PageController _ctrl = PageController();
+  int _cur = 0;
+  Timer? _t;
+
+  List<String> get _urls => widget.urls.isEmpty ? [widget.fallback] : widget.urls;
+
+  @override
+  void initState() {
+    super.initState();
+    _start();
+  }
+
+  @override
+  void didUpdateWidget(covariant _HeroPhotos old) {
+    super.didUpdateWidget(old);
+    if (_cur >= _urls.length) {
+      _cur = 0;
+      if (_ctrl.hasClients) _ctrl.jumpToPage(0);
+    }
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  void _start() {
+    _t?.cancel();
+    _t = Timer.periodic(const Duration(seconds: 4), (_) {
+      final n = _urls.length;
+      if (!mounted || n <= 1 || !_ctrl.hasClients) return;
+      _ctrl.animateToPage(
+        (_cur + 1) % n,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final urls = _urls;
+    final cur = _cur.clamp(0, urls.length - 1);
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        PageView.builder(
+          controller: _ctrl,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: urls.length,
+          onPageChanged: (i) => setState(() => _cur = i),
+          itemBuilder: (_, i) => TweenAnimationBuilder<double>(
+            key: ValueKey('hero-$i-${urls[i]}'),
+            tween: Tween(begin: 1.0, end: 1.08),
+            duration: const Duration(seconds: 6),
+            curve: Curves.easeOut,
+            builder: (_, s, child) => Transform.scale(scale: s, child: child),
+            child: Image.network(
+              urls[i],
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              errorBuilder: (_, __, ___) => Container(
+                decoration: const BoxDecoration(gradient: _P.gradPrimary),
+                child: Center(child: Icon(Icons.favorite, size: 80, color: Colors.white.withOpacity(0.2))),
+              ),
+            ),
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Colors.black.withOpacity(0.18),
+                Colors.transparent,
+                const Color(0xFF3A0A18).withOpacity(0.58),
+              ],
+              stops: const [0.0, 0.4, 1.0],
+            ),
+          ),
+        ),
+        if (urls.length > 1)
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 38,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(urls.length, (i) {
+                final active = i == cur;
+                return AnimatedContainer(
+                  duration: const Duration(milliseconds: 280),
+                  margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                  width: active ? 18 : 5,
+                  height: 5,
+                  decoration: BoxDecoration(
+                    color: active ? Colors.white : Colors.white.withOpacity(0.5),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                );
+              }),
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+// ============================================================
+// PETITS WIDGETS
 // ============================================================
 class _GlassCircleBtn extends StatelessWidget {
   final Widget child;
@@ -923,12 +1215,12 @@ class _GlassCircleBtn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 42,
-        height: 42,
+        width: 34,
+        height: 34,
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.55),
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.2),
+          border: Border.all(color: Colors.white.withOpacity(0.9), width: 1.1),
           boxShadow: _P.shadow,
         ),
         child: Center(child: child),
@@ -945,27 +1237,27 @@ class _GreetingChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThixGlass(
-      radius: 22,
+      radius: 18,
       blur: 14,
       opacity: 0.26,
       borderColor: Colors.white.withOpacity(0.55),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('👋', style: TextStyle(fontSize: 14)),
-          const SizedBox(width: 8),
+          const Text('👋', style: TextStyle(fontSize: 12)),
+          const SizedBox(width: 6),
           Flexible(
             child: Text(
               'Bonjour $name',
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
+              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white),
             ),
           ),
           if (vip) ...[
-            const SizedBox(width: 8),
-            const Icon(Icons.star_rounded, size: 16, color: _P.accent),
+            const SizedBox(width: 6),
+            const Icon(Icons.star_rounded, size: 14, color: _P.accent),
           ],
         ],
       ),
@@ -979,33 +1271,33 @@ class _CountdownCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (state == null) return const SizedBox(height: 84);
+    if (state == null) return const SizedBox(height: 66);
     return ThixGlass(
-      radius: 24,
+      radius: 20,
       blur: 18,
       opacity: 0.40,
       borderColor: Colors.white.withOpacity(0.7),
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+      padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 11),
       child: Row(
         children: [
           Container(
-            width: 44,
-            height: 44,
+            width: 34,
+            height: 34,
             decoration: const BoxDecoration(gradient: _P.gradPrimary, shape: BoxShape.circle),
-            child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 20),
+            child: const Icon(Icons.calendar_month_rounded, color: Colors.white, size: 17),
           ),
-          const SizedBox(width: 14),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('JOUR J DANS',
                     style: GoogleFonts.inter(
-                        fontSize: 10,
+                        fontSize: 8.5,
                         color: _P.ink.withOpacity(0.7),
                         fontWeight: FontWeight.w800,
-                        letterSpacing: 1.2)),
-                const SizedBox(height: 4),
+                        letterSpacing: 1.1)),
+                const SizedBox(height: 2),
                 Row(
                   children: [
                     _CountItem(value: state!.days, label: 'Jours'),
@@ -1033,65 +1325,68 @@ class _CountItem extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Text('$value',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 20, color: _P.primaryDark)),
+          Text('$value', style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 17, color: _P.primaryDark)),
           Text(label,
-              style: GoogleFonts.inter(fontSize: 9.5, color: _P.ink.withOpacity(0.65), fontWeight: FontWeight.w700)),
+              style: GoogleFonts.inter(fontSize: 8.5, color: _P.ink.withOpacity(0.65), fontWeight: FontWeight.w700)),
         ],
       ),
     );
   }
 }
 
-// ============================================================
-// SECTION HEADER
-// ============================================================
 class _SectionHeader extends StatelessWidget {
   final String title;
-  const _SectionHeader({required this.title});
+  final VoidCallback? onMore;
+  const _SectionHeader({required this.title, this.onMore});
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Container(
-          width: 4,
-          height: 20,
+          width: 3.5,
+          height: 17,
           decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(2)),
         ),
-        const SizedBox(width: 10),
-        Text(title,
-            style: GoogleFonts.inter(
-                fontWeight: FontWeight.w800, fontSize: 18, color: _P.ink, letterSpacing: -0.3)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(title,
+              style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16, color: _P.ink, letterSpacing: -0.3)),
+        ),
+        if (onMore != null)
+          GestureDetector(
+            onTap: onMore,
+            child: Row(children: [
+              Text('Voir tout', style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: _P.primary)),
+              const Icon(Icons.chevron_right_rounded, size: 16, color: _P.primary),
+            ]),
+          ),
       ],
     );
   }
 }
 
-// ============================================================
-// BANNIÈRE INVITATION DÉSACTIVÉE
-// ============================================================
 class _DisabledBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThixGlass(
-      radius: 22,
+      radius: 18,
       tint: const Color(0xFFFFE4E8),
       borderColor: _P.primary.withOpacity(0.45),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       child: Row(
         children: [
-          const Icon(Icons.block_rounded, color: _P.primary, size: 28),
-          const SizedBox(width: 12),
+          const Icon(Icons.block_rounded, color: _P.primary, size: 24),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('Invitation désactivée',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _P.primary, fontSize: 14)),
+                    style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _P.primary, fontSize: 13)),
                 Text(
-                  'Votre QR code n\'est plus valide. Contactez les mariés pour plus d\'informations.',
-                  style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft, height: 1.35),
+                  'Votre QR code n\'est plus valide. Contactez les mariés.',
+                  style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, height: 1.3),
                 ),
               ],
             ),
@@ -1103,65 +1398,7 @@ class _DisabledBanner extends StatelessWidget {
 }
 
 // ============================================================
-// STATS ROW
-// ============================================================
-class _StatsRow extends StatelessWidget {
-  final Map<String, int> stats;
-  const _StatsRow({required this.stats});
-
-  IconData _icon(String k) {
-    final s = k.toLowerCase();
-    if (s.contains('confirm')) return Icons.how_to_reg_rounded;
-    if (s.contains('attente')) return Icons.hourglass_top_rounded;
-    if (s.contains('cadeau')) return Icons.card_giftcard_rounded;
-    return Icons.photo_camera_rounded;
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = stats.entries.toList();
-    return Row(
-      children: List.generate(entries.length, (i) {
-        final e = entries[i];
-        return Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(right: i == entries.length - 1 ? 0 : 8),
-            child: ThixGlass(
-              radius: 20,
-              opacity: 0.55,
-              borderColor: _P.primary.withOpacity(0.15),
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-              child: Column(
-                children: [
-                  Icon(_icon(e.key), size: 18, color: _P.primary.withOpacity(0.75)),
-                  const SizedBox(height: 6),
-                  Text('${e.value}',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w900, fontSize: 19, color: _P.primary)),
-                  const SizedBox(height: 4),
-                  Text(
-                    e.key.toUpperCase(),
-                    textAlign: TextAlign.center,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(
-                        fontSize: 8,
-                        color: _P.inkSoft,
-                        fontWeight: FontWeight.w700,
-                        height: 1.2,
-                        letterSpacing: 0.4),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      }),
-    );
-  }
-}
-
-// ============================================================
-// TUILE DE MENU — bouton rond premium
+// TUILE DE MENU (compacte)
 // ============================================================
 class _GuestMenuTile extends StatelessWidget {
   final _GuestMenuItem item;
@@ -1179,7 +1416,7 @@ class _GuestMenuTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(14),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1187,8 +1424,8 @@ class _GuestMenuTile extends StatelessWidget {
             clipBehavior: Clip.none,
             children: [
               Container(
-                width: 62,
-                height: 62,
+                width: 52,
+                height: 52,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: const LinearGradient(
@@ -1196,52 +1433,46 @@ class _GuestMenuTile extends StatelessWidget {
                     end: Alignment.bottomRight,
                     colors: [Colors.white, Color(0xFFFFEFF4)],
                   ),
-                  border: Border.all(color: Colors.white, width: 1.6),
-                  boxShadow: [
-                    BoxShadow(
-                      color: _P.primary.withOpacity(0.16),
-                      blurRadius: 18,
-                      offset: const Offset(0, 8),
-                    ),
-                  ],
+                  border: Border.all(color: Colors.white, width: 1.5),
+                  boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.15), blurRadius: 14, offset: const Offset(0, 6))],
                 ),
-                child: Icon(item.icon, color: _P.primary, size: 27),
+                child: Icon(item.icon, color: _P.primary, size: 23),
               ),
               if (badge == _BadgeType.alert)
                 const Positioned(
-                  top: 0,
-                  right: 0,
-                  child: _DotBadge(child: Text('!', style: TextStyle(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w800))),
+                  top: -1,
+                  right: -1,
+                  child: _DotBadge(child: Text('!', style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800))),
                 ),
               if (badge == _BadgeType.count)
                 Positioned(
-                  top: 0,
-                  right: 0,
+                  top: -1,
+                  right: -1,
                   child: _DotBadge(
                     child: Text('${badgeCount ?? 0}',
-                        style: const TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800)),
+                        style: const TextStyle(fontSize: 8.5, color: Colors.white, fontWeight: FontWeight.w800)),
                   ),
                 ),
               if (badge == _BadgeType.live)
                 Positioned(
                   top: -4,
-                  right: -12,
+                  right: -10,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                     decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(6)),
                     child: const Text('LIVE',
-                        style: TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                        style: TextStyle(fontSize: 7.5, color: Colors.white, fontWeight: FontWeight.w800, letterSpacing: 0.4)),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 9),
+          const SizedBox(height: 6),
           Text(
             item.title,
             textAlign: TextAlign.center,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 11, color: _P.ink, height: 1.1),
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 10.5, color: _P.ink, height: 1.1),
           ),
         ],
       ),
@@ -1256,13 +1487,13 @@ class _DotBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 19,
-      height: 19,
+      width: 17,
+      height: 17,
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: _P.primary,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 1.6),
+        border: Border.all(color: Colors.white, width: 1.5),
       ),
       child: child,
     );
@@ -1270,12 +1501,52 @@ class _DotBadge extends StatelessWidget {
 }
 
 // ============================================================
-// NOS PRESTATAIRES
+// BANDE PHOTOS
+// ============================================================
+class _PhotoStrip extends StatelessWidget {
+  final List<String> urls;
+  final VoidCallback onTap;
+  const _PhotoStrip({required this.urls, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        clipBehavior: Clip.none,
+        scrollDirection: Axis.horizontal,
+        itemCount: urls.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (context, i) => GestureDetector(
+          onTap: () => showPhotoViewer(context, urls, i),
+          child: Container(
+            width: 92,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: Colors.white, width: 2),
+              boxShadow: _P.shadow,
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: Image.network(
+              urls[i],
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => Container(color: _P.primarySoft),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// NOS PRESTATAIRES (avec photos)
 // ============================================================
 class _VendorsList extends StatelessWidget {
   final List<VendorModel> vendors;
-  final void Function(dynamic) onTap;
-  const _VendorsList({required this.vendors, required this.onTap});
+  final Map<String, String> photos;
+  final void Function(VendorModel, String?) onTap;
+  const _VendorsList({required this.vendors, required this.photos, required this.onTap});
 
   IconData _vendorIcon(String cat) {
     final c = cat.toLowerCase();
@@ -1292,64 +1563,66 @@ class _VendorsList extends StatelessWidget {
   Widget build(BuildContext context) {
     if (vendors.isEmpty) {
       return SizedBox(
-        height: 110,
-        child: Center(
-          child: Text('Aucun prestataire enregistré',
-              style: GoogleFonts.inter(color: _P.inkSoft)),
-        ),
+        height: 70,
+        child: Center(child: Text('Aucun prestataire enregistré', style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 12))),
       );
     }
     return SizedBox(
-      height: 222,
+      height: 168,
       child: ListView.separated(
         clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         itemCount: vendors.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, i) {
           final v = vendors[i];
+          final photo = photos[v.name.trim().toLowerCase()];
           return InkWell(
-            onTap: () => onTap(v),
-            borderRadius: BorderRadius.circular(22),
+            onTap: () => onTap(v, photo),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
-              width: 172,
+              width: 146,
               decoration: BoxDecoration(
                 color: _P.surface,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(18),
                 boxShadow: _P.shadow,
                 border: Border.all(color: _P.border),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    height: 110,
+                    height: 88,
+                    width: double.infinity,
                     child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Container(
-                          width: double.infinity,
-                          decoration: const BoxDecoration(
-                            gradient: _P.gradPrimary,
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                        if (photo != null)
+                          Image.network(photo,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(decoration: const BoxDecoration(gradient: _P.gradPrimary)))
+                        else
+                          Container(
+                            decoration: const BoxDecoration(gradient: _P.gradPrimary),
+                            child: Center(child: Icon(_vendorIcon(v.category), size: 32, color: Colors.white54)),
                           ),
-                          child: Center(child: Icon(_vendorIcon(v.category), size: 38, color: Colors.white54)),
-                        ),
                         if (v.isBooked)
                           Positioned(
-                            top: 10,
-                            left: 10,
+                            top: 8,
+                            left: 8,
                             child: ThixGlass(
-                              radius: 10,
+                              radius: 9,
                               blur: 10,
-                              opacity: 0.55,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              opacity: 0.6,
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  const Icon(Icons.check_circle_rounded, size: 12, color: _P.green),
-                                  const SizedBox(width: 4),
+                                  const Icon(Icons.check_circle_rounded, size: 11, color: _P.green),
+                                  const SizedBox(width: 3),
                                   Text('Réservé',
-                                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.ink)),
+                                      style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: _P.ink)),
                                 ],
                               ),
                             ),
@@ -1358,27 +1631,28 @@ class _VendorsList extends StatelessWidget {
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(v.name,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
-                        const SizedBox(height: 2),
+                            style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w800, color: _P.ink)),
                         Text(v.category,
-                            style: GoogleFonts.inter(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 10.5, color: _P.primary, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 4),
                         Row(
                           children: [
-                            const Icon(Icons.info_outline, size: 12, color: _P.inkSoft),
-                            const SizedBox(width: 4),
+                            const Icon(Icons.person_outline_rounded, size: 11, color: _P.inkSoft),
+                            const SizedBox(width: 3),
                             Expanded(
                               child: Text(v.contactName ?? 'Contact à venir',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft)),
+                                  style: GoogleFonts.inter(fontSize: 9.5, color: _P.inkSoft)),
                             ),
                           ],
                         ),
@@ -1396,110 +1670,126 @@ class _VendorsList extends StatelessWidget {
 }
 
 // ============================================================
-// INFOS PRATIQUES / ANNONCES
+// INFOS PRATIQUES — uniquement ce que le staff publie
 // ============================================================
 class _UpdatesList extends StatelessWidget {
-  final List<MessageModel> items;
-  final void Function(dynamic) onTap;
+  final List<GuestAnnouncement> items;
+  final void Function(GuestAnnouncement) onTap;
   const _UpdatesList({required this.items, required this.onTap});
 
-  IconData _messageIcon(String content) {
-    final c = content.toLowerCase();
-    if (c.contains('parking')) return Icons.local_parking_outlined;
-    if (c.contains('tenue') || c.contains('dress')) return Icons.checkroom_outlined;
-    if (c.contains('transport') || c.contains('navette')) return Icons.directions_bus_outlined;
-    if (c.contains('urgent') || c.contains('important')) return Icons.warning_amber_rounded;
-    return Icons.campaign_outlined;
-  }
-
-  String _extractTag(String content) {
-    final match = RegExp(r'^\[([A-Z0-9\s]+)\]').firstMatch(content);
-    if (match != null) return match.group(1)!.trim();
-    final c = content.toLowerCase();
-    if (c.contains('parking')) return 'PARKING';
-    if (c.contains('tenue') || c.contains('dress')) return 'DRESS CODE';
-    if (c.contains('transport')) return 'TRANSPORT';
-    if (c.contains('urgent')) return 'URGENT';
-    return 'INFO';
+  IconData _icon(String tag) {
+    switch (tag) {
+      case 'PARKING':
+        return Icons.local_parking_outlined;
+      case 'DRESS CODE':
+        return Icons.checkroom_outlined;
+      case 'TRANSPORT':
+        return Icons.directions_bus_outlined;
+      case 'PROGRAMME':
+        return Icons.event_note_outlined;
+      case 'MENU':
+        return Icons.restaurant_menu_rounded;
+      case 'URGENT':
+        return Icons.warning_amber_rounded;
+      default:
+        return Icons.campaign_outlined;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     if (items.isEmpty) {
       return SizedBox(
-        height: 90,
+        height: 64,
         child: Center(
-          child: Text('Aucune annonce pour le moment',
-              style: GoogleFonts.inter(color: _P.inkSoft)),
+          child: Text('Aucune information publiée pour le moment',
+              style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 12)),
         ),
       );
     }
     return SizedBox(
-      height: 168,
+      height: 158,
       child: ListView.separated(
         clipBehavior: Clip.none,
         scrollDirection: Axis.horizontal,
         itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 14),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (context, i) {
           final a = items[i];
-          final tag = _extractTag(a.content);
+          final tc = tagColor(a.tag);
+          final firstLine = a.title ??
+              (a.content == '📷 Photo' ? 'Photo' : a.content.split('\n').first);
           return InkWell(
             onTap: () => onTap(a),
-            borderRadius: BorderRadius.circular(22),
+            borderRadius: BorderRadius.circular(18),
             child: Container(
-              width: 156,
+              width: 146,
               decoration: BoxDecoration(
                 color: _P.surface,
-                borderRadius: BorderRadius.circular(22),
+                borderRadius: BorderRadius.circular(18),
                 boxShadow: _P.shadow,
                 border: Border.all(color: _P.border),
               ),
+              clipBehavior: Clip.antiAlias,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   SizedBox(
-                    height: 78,
+                    height: 74,
+                    width: double.infinity,
                     child: Stack(
+                      fit: StackFit.expand,
                       children: [
-                        Container(
-                          width: double.infinity,
-                          decoration: const BoxDecoration(
+                        if (a.images.isNotEmpty)
+                          Image.network(a.images.first,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) => Container(color: _P.accentSoft))
+                        else
+                          Container(
                             color: _P.accentSoft,
-                            borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+                            child: Center(child: Icon(_icon(a.tag), size: 26, color: _P.accent)),
                           ),
-                          child: Center(child: Icon(_messageIcon(a.content), size: 28, color: _P.accent)),
-                        ),
                         Positioned(
-                          top: 10,
-                          left: 10,
+                          top: 8,
+                          left: 8,
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(color: _P.ink, borderRadius: BorderRadius.circular(6)),
-                            child: Text(tag,
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                            decoration: BoxDecoration(color: tc, borderRadius: BorderRadius.circular(6)),
+                            child: Text(a.tag,
                                 style: const TextStyle(
-                                    fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.5)),
+                                    fontSize: 7.5, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 0.4)),
                           ),
                         ),
+                        if (a.images.length > 1)
+                          Positioned(
+                            right: 8,
+                            bottom: 6,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(8)),
+                              child: Text('+${a.images.length - 1}',
+                                  style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.w800)),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                   Padding(
-                    padding: const EdgeInsets.all(12),
+                    padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          a.content.replaceAll(RegExp(r'^\[[A-Z0-9\s]+\]\s*'), ''),
+                          firstLine,
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink, height: 1.25),
+                          style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: _P.ink, height: 1.2),
                         ),
-                        const SizedBox(height: 8),
-                        Text(a.senderName,
+                        const SizedBox(height: 6),
+                        Text('${a.sender} · ${_fmtShort(a.createdAt)}',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(fontSize: 11, color: _P.primary, fontWeight: FontWeight.w800)),
+                            style: GoogleFonts.inter(fontSize: 9.5, color: _P.primary, fontWeight: FontWeight.w800)),
                       ],
                     ),
                   ),
@@ -1523,31 +1813,26 @@ class _NewsBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: _P.gradPrimary,
-        borderRadius: BorderRadius.circular(22),
-        boxShadow: _P.shadow,
-      ),
+      padding: const EdgeInsets.all(13),
+      decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(18), boxShadow: _P.shadow),
       child: Row(
         children: [
           Container(
-            width: 42,
-            height: 42,
+            width: 36,
+            height: 36,
             decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
-            child: const Icon(Icons.campaign_rounded, color: Colors.white, size: 21),
+            child: const Icon(Icons.campaign_rounded, color: Colors.white, size: 18),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('INFORMATION',
-                    style: GoogleFonts.inter(
-                        color: Colors.white70, fontWeight: FontWeight.w800, fontSize: 10, letterSpacing: 1)),
+                    style: GoogleFonts.inter(color: Colors.white70, fontWeight: FontWeight.w800, fontSize: 9, letterSpacing: 1)),
                 const SizedBox(height: 2),
                 Text(text,
-                    style: GoogleFonts.inter(fontSize: 13, color: Colors.white, fontWeight: FontWeight.w600, height: 1.35)),
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w600, height: 1.3)),
               ],
             ),
           ),
@@ -1558,7 +1843,7 @@ class _NewsBanner extends StatelessWidget {
 }
 
 // ============================================================
-// CARTE ROSE "BESOIN D'AIDE" (style Espace Prestataire)
+// CARTE ROSE « UNE QUESTION ? »
 // ============================================================
 class _HelpCard extends StatelessWidget {
   final VoidCallback onTap;
@@ -1569,17 +1854,15 @@ class _HelpCard extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(20, 20, 16, 20),
+        padding: const EdgeInsets.fromLTRB(16, 15, 12, 15),
         decoration: BoxDecoration(
           gradient: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [Color(0xFFD81B60), Color(0xFFB0124F)],
           ),
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: [
-            BoxShadow(color: _P.primary.withOpacity(0.35), blurRadius: 24, offset: const Offset(0, 12)),
-          ],
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.32), blurRadius: 18, offset: const Offset(0, 9))],
         ),
         child: Row(
           children: [
@@ -1588,27 +1871,26 @@ class _HelpCard extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text('Une question ?',
-                      style: GoogleFonts.inter(fontSize: 13, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 4),
+                      style: GoogleFonts.inter(fontSize: 11.5, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 2),
                   Text('Contacter les mariés',
-                      style: GoogleFonts.playfairDisplay(
-                          fontSize: 25, color: Colors.white, fontWeight: FontWeight.w700, height: 1.1)),
-                  const SizedBox(height: 6),
+                      style: GoogleFonts.playfairDisplay(fontSize: 20, color: Colors.white, fontWeight: FontWeight.w700, height: 1.1)),
+                  const SizedBox(height: 4),
                   Text('FAQ, messages et aide pour le jour J.',
-                      style: GoogleFonts.inter(fontSize: 12.5, color: Colors.white.withOpacity(0.85))),
+                      style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withOpacity(0.85))),
                 ],
               ),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 10),
             Container(
-              width: 52,
-              height: 52,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.22),
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white.withOpacity(0.4)),
               ),
-              child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+              child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 19),
             ),
           ],
         ),
@@ -1617,9 +1899,6 @@ class _HelpCard extends StatelessWidget {
   }
 }
 
-// ============================================================
-// BANDEAU DE CONFIANCE
-// ============================================================
 class _TrustRow extends StatelessWidget {
   const _TrustRow();
 
@@ -1632,21 +1911,21 @@ class _TrustRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ThixGlass(
-      radius: 22,
+      radius: 20,
       opacity: 0.5,
       borderColor: _P.primary.withOpacity(0.12),
-      padding: const EdgeInsets.symmetric(vertical: 18),
+      padding: const EdgeInsets.symmetric(vertical: 13),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: _items.map((e) {
           return Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(e['icon'] as IconData, size: 22, color: _P.primary),
-              const SizedBox(height: 8),
+              Icon(e['icon'] as IconData, size: 19, color: _P.primary),
+              const SizedBox(height: 5),
               Text(e['label'] as String,
                   textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                  style: GoogleFonts.inter(fontSize: 9.5, color: _P.inkSoft, fontWeight: FontWeight.w600)),
             ],
           );
         }).toList(),
@@ -1656,7 +1935,7 @@ class _TrustRow extends StatelessWidget {
 }
 
 // ============================================================
-// BARRE DE NAVIGATION FLOTTANTE EN VERRE DÉPOLI
+// BARRE DE NAVIGATION FLOTTANTE (verre dépoli, compacte)
 // ============================================================
 class _GlassNav extends StatelessWidget {
   final VoidCallback onHome;
@@ -1675,18 +1954,16 @@ class _GlassNav extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(30),
+      borderRadius: BorderRadius.circular(26),
       child: BackdropFilter(
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
-          height: 66,
+          height: 58,
           decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.62),
-            borderRadius: BorderRadius.circular(30),
-            border: Border.all(color: Colors.white.withOpacity(0.85), width: 1.2),
-            boxShadow: [
-              BoxShadow(color: _P.primary.withOpacity(0.14), blurRadius: 24, offset: const Offset(0, 10)),
-            ],
+            color: Colors.white.withOpacity(0.64),
+            borderRadius: BorderRadius.circular(26),
+            border: Border.all(color: Colors.white.withOpacity(0.85), width: 1.1),
+            boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.14), blurRadius: 20, offset: const Offset(0, 8))],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
@@ -1696,16 +1973,14 @@ class _GlassNav extends StatelessWidget {
               GestureDetector(
                 onTap: onHeart,
                 child: Container(
-                  width: 50,
-                  height: 50,
+                  width: 44,
+                  height: 44,
                   decoration: BoxDecoration(
                     gradient: _P.gradPrimary,
                     shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: _P.primary.withOpacity(0.4), blurRadius: 14, offset: const Offset(0, 5)),
-                    ],
+                    boxShadow: [BoxShadow(color: _P.primary.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))],
                   ),
-                  child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 24),
+                  child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 21),
                 ),
               ),
               _NavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Annonces', onTap: onMessages),
@@ -1732,16 +2007,16 @@ class _NavItem extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 4),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 22, color: color),
-            const SizedBox(height: 2),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(height: 1),
             Text(label,
                 style: GoogleFonts.inter(
-                    fontSize: 9.5, color: color, fontWeight: selected ? FontWeight.w800 : FontWeight.w500)),
+                    fontSize: 9, color: color, fontWeight: selected ? FontWeight.w800 : FontWeight.w500)),
           ],
         ),
       ),
@@ -1760,22 +2035,22 @@ class _ErrorView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 100, 24, 24),
+      padding: const EdgeInsets.fromLTRB(24, 90, 24, 24),
       child: ThixGlass(
-        radius: 28,
+        radius: 26,
         opacity: 0.55,
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.all(22),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.error_outline_rounded, size: 44, color: _P.primary),
-            const SizedBox(height: 12),
+            const Icon(Icons.error_outline_rounded, size: 40, color: _P.primary),
+            const SizedBox(height: 10),
             Text(
               error is Failure ? (error as Failure).message : 'Erreur de chargement',
               textAlign: TextAlign.center,
               style: GoogleFonts.inter(color: _P.inkSoft),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 14),
             FilledButton(
               style: FilledButton.styleFrom(backgroundColor: _P.primary),
               onPressed: onRetry,
