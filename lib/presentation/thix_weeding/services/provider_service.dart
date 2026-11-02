@@ -1,3 +1,4 @@
+
 // lib/presentation/thix_weeding/services/provider_service.dart
 // ============================================================================
 // THIX WEDDING PROVIDER SERVICE (PRODUCTION ENTERPRISE)
@@ -5,8 +6,8 @@
 // ✅ Génération code unique Thix-CAT-XXX
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
-// ✅ Sécurité + Rate limiting
-// ✅ FIX : Correction du nom des tables (weeding au lieu de wedding)
+// ✅ FIX : Noms de tables corrigés (weeding)
+// ✅ FIX : userId rendu optionnel pour inscription libre (sans auth)
 // ============================================================================
 
 import 'dart:math';
@@ -39,7 +40,7 @@ class ProviderService {
       
       // Vérifier si le code existe déjà
       final result = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .select('id')
           .eq('unique_code', code)
           .maybeSingle();
@@ -64,10 +65,8 @@ class ProviderService {
     String? search,
   }) async {
     try {
-      // ✅ CONSTRUIRE la requête avec TOUS les filtres d'abord
-      var query = _client.from('thix_weeding_providers').select('*'); // ✅ FIX: weeding
+      var query = _client.from('thix_weeding_providers').select('*');
       
-      // ✅ Appliquer les filtres (retournent PostgrestFilterBuilder)
       if (category != null) {
         query = query.eq('category', category.name);
       }
@@ -84,7 +83,6 @@ class ProviderService {
         query = query.or('business_name.ilike.%$search%,description.ilike.%$search%');
       }
       
-      // ✅ ENSUITE appliquer order et range (retournent PostgrestTransformBuilder)
       final response = await query
           .order('created_at', ascending: false)
           .range((page - 1) * limit, page * limit - 1);
@@ -103,7 +101,7 @@ class ProviderService {
   Future<ThixProviderModel?> getProviderById(String id) async {
     try {
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .select('*')
           .eq('id', id)
           .maybeSingle();
@@ -122,7 +120,7 @@ class ProviderService {
   Future<ThixProviderModel?> getProviderByCode(String code) async {
     try {
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .select('*')
           .eq('unique_code', code.toUpperCase())
           .maybeSingle();
@@ -135,12 +133,15 @@ class ProviderService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RÉCUPÉRER PRESTATAIRE PAR USER ID (Pour l'espace prestataire)
+  // RÉCUPÉRER PRESTATAIRE PAR USER ID
+  // ✅ FIX : Ignore les requêtes avec userId 'anonymous' ou vide
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel?> getProviderByUserId(String userId) async {
+    if (userId == 'anonymous' || userId.isEmpty) return null;
+    
     try {
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .select('*')
           .eq('user_id', userId)
           .maybeSingle();
@@ -154,9 +155,10 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CRÉER UN NOUVEAU PRESTATAIRE
+  // ✅ FIX : userId rendu optionnel (String?) pour inscription libre
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> createProvider({
-    required String userId,
+    String? userId, // ✅ RENDU OPTIONNEL
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -172,12 +174,11 @@ class ProviderService {
     Map<String, dynamic>? requirements,
   }) async {
     try {
-      // Générer le code unique
       final uniqueCode = await generateUniqueCode(category);
-      
       final now = DateTime.now();
+      
       final data = {
-        'user_id': userId,
+        'user_id': userId, // ✅ Peut être null maintenant
         'unique_code': uniqueCode,
         'category': category.name,
         'business_name': businessName,
@@ -202,7 +203,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .insert(data)
           .select()
           .single();
@@ -262,7 +263,7 @@ class ProviderService {
       if (requirements != null) data['requirements'] = requirements;
       
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .update(data)
           .eq('id', id)
           .select()
@@ -276,7 +277,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // VALIDER UN PRESTATAIRE (Par le staff)
-  // Surtout pour les salles : vérifier documents légaux
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> validateProvider(
     String id, {
@@ -301,7 +301,7 @@ class ProviderService {
       }
       
       final response = await _client
-          .from('thix_weeding_providers') // ✅ FIX: weeding
+          .from('thix_weeding_providers')
           .update(data)
           .eq('id', id)
           .select()
@@ -318,7 +318,7 @@ class ProviderService {
   // ═══════════════════════════════════════════════════════════════════════════
   Future<void> deleteProvider(String id) async {
     try {
-      await _client.from('thix_weeding_providers').delete().eq('id', id); // ✅ FIX: weeding
+      await _client.from('thix_weeding_providers').delete().eq('id', id);
     } catch (e) {
       throw Exception('Erreur lors de la suppression du prestataire: $e');
     }
@@ -328,7 +328,6 @@ class ProviderService {
   // RÉSERVATIONS
   // ═══════════════════════════════════════════════════════════════════════════
   
-  /// Créer une réservation
   Future<ProviderReservationModel> createReservation({
     required String providerId,
     required String weddingId,
@@ -360,7 +359,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
+          .from('thix_weeding_provider_reservations')
           .insert(data)
           .select()
           .single();
@@ -371,25 +370,20 @@ class ProviderService {
     }
   }
 
-  /// Récupérer les réservations d'un prestataire
-  /// ✅ FIX : Filtre status appliqué AVANT order()
   Future<List<ProviderReservationModel>> getProviderReservations(
     String providerId, {
     ReservationStatus? status,
   }) async {
     try {
-      // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
-          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
+          .from('thix_weeding_provider_reservations')
           .select('*')
           .eq('provider_id', providerId);
       
-      // ✅ Appliquer le filtre status optionnel AVANT order
       if (status != null) {
         query = query.eq('status', status.name);
       }
       
-      // ✅ ENSUITE appliquer order
       final response = await query.order('event_date', ascending: true);
       
       return response
@@ -400,7 +394,6 @@ class ProviderService {
     }
   }
 
-  /// Mettre à jour le statut d'une réservation
   Future<ProviderReservationModel> updateReservationStatus(
     String reservationId,
     ReservationStatus status,
@@ -412,7 +405,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
+          .from('thix_weeding_provider_reservations')
           .update(data)
           .eq('id', reservationId)
           .select()
@@ -425,10 +418,9 @@ class ProviderService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TÂCHES (Assignées par le staff)
+  // TÂCHES
   // ═══════════════════════════════════════════════════════════════════════════
   
-  /// Assigner une tâche à un prestataire
   Future<ProviderTaskModel> createTask({
     required String providerId,
     required String weddingId,
@@ -453,7 +445,7 @@ class ProviderService {
       };
       
       final response = await _client
-          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
+          .from('thix_weeding_provider_tasks')
           .insert(data)
           .select()
           .single();
@@ -464,25 +456,20 @@ class ProviderService {
     }
   }
 
-  /// Récupérer les tâches d'un prestataire
-  /// ✅ FIX : Filtre status appliqué AVANT order()
   Future<List<ProviderTaskModel>> getProviderTasks(
     String providerId, {
     TaskStatus? status,
   }) async {
     try {
-      // ✅ Construire avec le filtre provider_id d'abord
       var query = _client
-          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
+          .from('thix_weeding_provider_tasks')
           .select('*')
           .eq('provider_id', providerId);
       
-      // ✅ Appliquer le filtre status optionnel AVANT order
       if (status != null) {
         query = query.eq('status', status.name);
       }
       
-      // ✅ ENSUITE appliquer order
       final response = await query.order('due_datetime', ascending: true);
       
       return response
@@ -493,7 +480,6 @@ class ProviderService {
     }
   }
 
-  /// Mettre à jour le statut d'une tâche
   Future<ProviderTaskModel> updateTaskStatus(
     String taskId,
     TaskStatus status,
@@ -508,7 +494,7 @@ class ProviderService {
       }
       
       final response = await _client
-          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
+          .from('thix_weeding_provider_tasks')
           .update(data)
           .eq('id', taskId)
           .select()
@@ -524,16 +510,15 @@ class ProviderService {
   // STATISTIQUES
   // ═══════════════════════════════════════════════════════════════════════════
   
-  /// Obtenir les statistiques d'un prestataire
   Future<Map<String, dynamic>> getProviderStats(String providerId) async {
     try {
       final reservations = await _client
-          .from('thix_weeding_provider_reservations') // ✅ FIX: weeding
+          .from('thix_weeding_provider_reservations')
           .select('status, total_price')
           .eq('provider_id', providerId);
       
       final tasks = await _client
-          .from('thix_weeding_provider_tasks') // ✅ FIX: weeding
+          .from('thix_weeding_provider_tasks')
           .select('status')
           .eq('provider_id', providerId);
       
