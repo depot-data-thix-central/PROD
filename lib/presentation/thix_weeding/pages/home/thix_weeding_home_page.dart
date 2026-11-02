@@ -463,7 +463,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
   Widget build(BuildContext context) {
     final catsAsync = ref.watch(homeCategoriesProvider);
     final providersByCategoryAsync = ref.watch(homeProvidersByCategoryProvider);
-    final offersAsync = ref.watch(activeOffersProvider); // ✅ OFFRES RÉELLES
+    final offersAsync = ref.watch(activeOffersProvider(null)); // ✅ null = toutes catégories
     final promosAsync = ref.watch(homePromoSlidesProvider);
     final heroAsync = ref.watch(homeHeroPhotosProvider);
     final activeInvitesAsync = ref.watch(myActiveInvitationsProvider);
