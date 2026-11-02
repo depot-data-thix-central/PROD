@@ -27,19 +27,35 @@ import 'package:thix_id/presentation/thix_weeding/pages/staff/services/thix_weed
 final vendorRequestsProvider =
     FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
         (ref, weddingId) async {
-  try {
-    final res = await Supabase.instance.client
-        .from('thix_weeding_vendor_requests')
-        .select(
-            '*, provider:thix_weeding_providers(business_name, unique_code, category, city, verification_status)')
-        .eq('wedding_id', weddingId)
-        .order('created_at', ascending: false);
-    return List<Map<String, dynamic>>.from(res);
-  } catch (_) {
-    return [];
-  }
-});
+  final c = Supabase.instance.client;
+  // ✅ Lecture SIMPLE (aucune embed => jamais de plantage de jointure)
+  final rows = await c
+      .from('thix_weeding_vendor_requests')
+      .select('*')
+      .eq('wedding_id', weddingId)
+      .order('created_at', ascending: false);
+  final list = List<Map<String, dynamic>>.from(rows);
+  if (list.isEmpty) return list;
 
+  // ✅ Enrichissement groupé best-effort (ne casse JAMAIS la liste)
+  final pIds = list.map((r) => r['provider_id']).whereType<String>().toSet().toList();
+  final provMap = <String, Map<String, dynamic>>{};
+  if (pIds.isNotEmpty) {
+    try {
+      final pr = await c.from('thix_weeding_providers')
+          .select('id, business_name, unique_code, category, city, phone, email, verification_status')
+          .inFilter('id', pIds);
+      for (final p in List<Map<String, dynamic>>.from(pr)) {
+        provMap[p['id'] as String] = p;
+      }
+    } catch (_) {/* fallback {} */}
+  }
+  for (final r in list) {
+    r['provider'] = provMap[r['provider_id'] as String? ?? ''] ?? <String, dynamic>{};
+  }
+  return list;
+  
+});
 // ============================================================================
 // DESIGN SYSTEM ROYAL
 // ============================================================================
