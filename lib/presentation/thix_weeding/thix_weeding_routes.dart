@@ -1,20 +1,23 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.3 (PRODUCTION ENTERPRISE)
+// THIX WEDDING ROUTES — v3.4 (PRODUCTION ENTERPRISE)
+// ✅ FIX 404 : meal-preferences déplacé DANS guest/:weddingId (weddingId hérité)
+// ✅ FIX 404 : route enfant :vendorId (détail prestataire) ajoutée sous prestataires
+// ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelon (doublon staffMenu)
+// ✅ Route 16 staff "menu" -> TraiteurMenuStaffPage (validation plats traiteur)
 // ✅ NOUVEAU invité : menu, playlist, ma-table (plan 3D), live, annonces,
-//    navette, dress-code, faq, remerciements, prestataires
-// ✅ NOUVEAU staff  : playlist, menu, contenu/:kind (navette, dress_code, faq, thanks, live)
-// ✅ FIX : add?edit=<id> ouvre bien l'invité en MODIFICATION (page détail invité)
-// ✅ FIX : guest/:id/invitation?guest=<id> transmet guestId (lien d'invitation)
-// ✅ FIX : le nom de l'invité passé en extra arrive dans le chat staff
-// ✅ FIX 404 offres prestataire, indices des onglets, catalogue (v3.2 conservé)
+//    navette, dress-code, faq, remerciements, prestataires, meal-preferences
+// ✅ NOUVEAU staff  : playlist, menu(traitor), contenu/:kind
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
+// ✅ Pages menu / préférences (imports déjà présents)
 import 'pages/staff/traiteur/traiteur_menu_staff_page.dart';
 import 'pages/guest/meal_preferences_page.dart';
+
 // HOME
 import 'pages/home/thix_weeding_home_page.dart';
 
@@ -86,6 +89,7 @@ class ThixWeedingRoutes {
   static const String staffPrestataires = 'staffPrestataires';
   static const String staffAddPrestataire = 'staffAddPrestataire';
   static const String staffEditPrestataire = 'staffEditPrestataire';
+  static const String staffVendorDetail = 'staffVendorDetail'; // ✅ AJOUTÉ
   static const String staffMessages = 'staffMessages';
   static const String staffChatDetail = 'staffChatDetail';
   static const String staffBudget = 'staffBudget';
@@ -112,6 +116,7 @@ class ThixWeedingRoutes {
 
   // --- NAMES INVITÉ (nouveaux) ---
   static const String guestMenu = 'guestMenu';
+  static const String guestMealPreferences = 'guestMealPreferences'; // ✅ AJOUTÉ
   static const String guestPlaylist = 'guestPlaylist';
   static const String guestTable = 'guestTable';
   static const String guestLive = 'guestLive';
@@ -282,6 +287,14 @@ class ThixWeedingRoutes {
                   builder: (c, s) =>
                       GuestMenuPage(weddingId: s.pathParameters['weddingId']!),
                 ),
+                // ✅ FIX 404 : préférences repas (choix des plats) — ICI, enfant de guest/:weddingId
+                GoRoute(
+                  path: 'meal-preferences',
+                  name: guestMealPreferences,
+                  builder: (c, s) => MealPreferencesPage(
+                    weddingId: s.pathParameters['weddingId']!,
+                  ),
+                ),
                 GoRoute(
                   path: 'playlist',
                   name: guestPlaylist,
@@ -339,20 +352,10 @@ class ThixWeedingRoutes {
               ],
             ),
 
-            GoRoute(
-  path: 'meal-preferences',
-  builder: (c, s) => MealPreferencesPage(
-    weddingId: s.pathParameters['weddingId']!,
-  ),
-),
-            // 15. MENUS TRAITEUR (staff)
-GoRoute(
-  path: 'menu',
-  name: 'staffMenu',
-  builder: (c, s) => TraiteurMenuStaffPage(
-    weddingId: s.pathParameters['weddingId']!,
-  ),
-),
+            // ⚠️ SUPPRIMÉ : anciens blocs orphelins "meal-preferences" et "menu"
+            //    qui étaient déclarés ICI (niveau racine) au lieu d'être enfants
+            //    de guest/:weddingId et staff/:weddingId -> causaient les 404.
+
             // ================= DASHBOARD STAFF =================
             GoRoute(
               path: 'staff/:weddingId',
@@ -431,6 +434,16 @@ GoRoute(
                     GoRoute(
                       path: ':vendorId/edit',
                       name: staffEditPrestataire,
+                      builder: (c, s) => AddVendorPage(
+                        weddingId: s.pathParameters['weddingId']!,
+                        editVendorId: s.pathParameters['vendorId'],
+                      ),
+                    ),
+                    // ✅ FIX 404 : détail prestataire /staff/{id}/prestataires/{vendorId}
+                    //    -> fallback formulaire pré-rempli (seul écran importé)
+                    GoRoute(
+                      path: ':vendorId',
+                      name: staffVendorDetail,
                       builder: (c, s) => AddVendorPage(
                         weddingId: s.pathParameters['weddingId']!,
                         editVendorId: s.pathParameters['vendorId'],
@@ -603,11 +616,14 @@ GoRoute(
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
-                // ✅ 16. MENU DU REPAS (staff)
+                // ✅ 16. MENU / VALIDATION PLATS TRAITEUR (staff)
+                //    FIX : remplacement de StaffMenuPage (non importé) par
+                //    TraiteurMenuStaffPage (importé) -> résout conflit de nom
+                //    avec l'ancien bloc orphelin + fournit le bon écran.
                 GoRoute(
                   path: 'menu',
                   name: staffMenu,
-                  builder: (c, s) => StaffMenuPage(
+                  builder: (c, s) => TraiteurMenuStaffPage(
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
