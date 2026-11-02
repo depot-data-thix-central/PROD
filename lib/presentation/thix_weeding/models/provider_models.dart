@@ -1,59 +1,72 @@
 // lib/presentation/thix_weeding/models/provider_models.dart
 // ============================================================================
-// THIX WEDDING PROVIDER MODELS (PRODUCTION ENTERPRISE)
-// ✅ 10 catégories prestataires
-// ✅ Code unique Thix-SALLE-XXX format
-// ✅ Niveaux de vérification (Bronze/Silver/Gold/Platinum)
-// ✅ Modèles de réservation et tâches
+// THIX WEDDING PROVIDER MODELS
+// ✅ FIX : userId rendu nullable (String?) dans fromJson
 // ============================================================================
 
+import 'package:flutter/foundation.dart';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════════════════
 enum ProviderCategory {
-  salle,
-  photographe,
-  videaste,
-  traiteur,
-  mc,
-  dj,
-  decorateur,
-  fleuriste,
-  maquilleur,
-  patissier,
+  salle('Salle de réception', 'SALLE'),
+  traiteur('Traiteur', 'TRAITEUR'),
+  photographe('Photographe', 'PHOTO'),
+  videaste('Vidéaste', 'VIDEO'),
+  decorateur('Décorateur', 'DECOR'),
+  dj('DJ / Sonorisation', 'DJ'),
+  mc('MC / Animateur', 'MC'),
+  maquilleur('Maquilleur / Coiffeur', 'MAQUILLAGE'),
+  patissier('Pâtissier', 'PATISSIER'),
+  fleuriste('Fleuriste', 'FLEURISTE');
+
+  final String displayName;
+  final String iconCode;
+  
+  const ProviderCategory(this.displayName, this.iconCode);
 }
 
 enum TrackingLevel {
-  bronze,   // Non vérifié
-  silver,   // Vérifié basique
-  gold,     // Vérifié + avis
-  platinum, // Partenaire premium
+  bronze('Bronze', 1),
+  silver('Argent', 2),
+  gold('Or', 3),
+  platinum('Platinum', 4);
+
+  final String displayName;
+  final int priority;
+  
+  const TrackingLevel(this.displayName, this.priority);
 }
 
 enum ProviderVerificationStatus {
   pending,
   verified,
-  rejected,
+  rejected;
 }
 
 enum ReservationStatus {
   pending,
   confirmed,
-  completed,
   cancelled,
+  completed;
 }
 
 enum TaskStatus {
   assigned,
   inProgress,
   completed,
-  cancelled,
+  cancelled;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODÈLE PRINCIPAL PRESTATAIRE
-// ═══════════════════════════════════════════════════════════════════════════
+// THIX PROVIDER MODEL
+// ══════════════════════════════════════════════════════════════════════════
+@immutable
 class ThixProviderModel {
   final String id;
-  final String userId;
-  final String uniqueCode; // Format: Thix-SALLE-7A9
+  final String? userId; // ✅ RENDU NULLABLE
+  final String uniqueCode;
   final ProviderCategory category;
   final String businessName;
   final String? description;
@@ -69,15 +82,16 @@ class ThixProviderModel {
   final int reviewCount;
   final double? minPrice;
   final double? maxPrice;
-  final String? currency;
+  final String currency;
   final bool isAvailable;
-  final Map<String, dynamic> requirements; // Documents légaux
+  final Map<String, dynamic> requirements;
+  final String? rejectionReason;
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  ThixProviderModel({
+  const ThixProviderModel({
     required this.id,
-    required this.userId,
+    this.userId, // ✅ OPTIONNEL
     required this.uniqueCode,
     required this.category,
     required this.businessName,
@@ -88,8 +102,8 @@ class ThixProviderModel {
     this.city,
     this.galleryUrls = const [],
     this.videoUrls = const [],
-    required this.level,
-    required this.verificationStatus,
+    this.level = TrackingLevel.bronze,
+    this.verificationStatus = ProviderVerificationStatus.pending,
     this.rating = 0.0,
     this.reviewCount = 0,
     this.minPrice,
@@ -97,6 +111,7 @@ class ThixProviderModel {
     this.currency = 'USD',
     this.isAvailable = true,
     this.requirements = const {},
+    this.rejectionReason,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -104,10 +119,10 @@ class ThixProviderModel {
   factory ThixProviderModel.fromJson(Map<String, dynamic> json) {
     return ThixProviderModel(
       id: json['id'] as String,
-      userId: json['user_id'] as String,
+      userId: json['user_id'] as String?, // ✅ CAST EN String? (nullable)
       uniqueCode: json['unique_code'] as String,
       category: ProviderCategory.values.firstWhere(
-        (e) => e.name == json['category'],
+        (c) => c.name == json['category'],
         orElse: () => ProviderCategory.salle,
       ),
       businessName: json['business_name'] as String,
@@ -116,25 +131,30 @@ class ThixProviderModel {
       email: json['email'] as String?,
       address: json['address'] as String?,
       city: json['city'] as String?,
-      galleryUrls: List<String>.from(json['gallery_urls'] ?? []),
-      videoUrls: List<String>.from(json['video_urls'] ?? []),
+      galleryUrls: (json['gallery_urls'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
+      videoUrls: (json['video_urls'] as List<dynamic>?)?.map((e) => e as String).toList() ?? [],
       level: TrackingLevel.values.firstWhere(
-        (e) => e.name == json['level'],
+        (l) => l.name == json['level'],
         orElse: () => TrackingLevel.bronze,
       ),
       verificationStatus: ProviderVerificationStatus.values.firstWhere(
-        (e) => e.name == json['verification_status'],
+        (s) => s.name == json['verification_status'],
         orElse: () => ProviderVerificationStatus.pending,
       ),
       rating: (json['rating'] as num?)?.toDouble() ?? 0.0,
-      reviewCount: (json['review_count'] as int?) ?? 0,
+      reviewCount: json['review_count'] as int? ?? 0,
       minPrice: (json['min_price'] as num?)?.toDouble(),
       maxPrice: (json['max_price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       isAvailable: json['is_available'] as bool? ?? true,
       requirements: json['requirements'] as Map<String, dynamic>? ?? {},
-      createdAt: DateTime.parse(json['created_at'] as String),
-      updatedAt: DateTime.parse(json['updated_at'] as String),
+      rejectionReason: json['rejection_reason'] as String?,
+      createdAt: json['created_at'] != null 
+          ? DateTime.parse(json['created_at'] as String) 
+          : DateTime.now(),
+      updatedAt: json['updated_at'] != null 
+          ? DateTime.parse(json['updated_at'] as String) 
+          : DateTime.now(),
     );
   }
 
@@ -161,6 +181,7 @@ class ThixProviderModel {
       'currency': currency,
       'is_available': isAvailable,
       'requirements': requirements,
+      'rejection_reason': rejectionReason,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -188,6 +209,7 @@ class ThixProviderModel {
     String? currency,
     bool? isAvailable,
     Map<String, dynamic>? requirements,
+    String? rejectionReason,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -213,15 +235,34 @@ class ThixProviderModel {
       currency: currency ?? this.currency,
       isAvailable: isAvailable ?? this.isAvailable,
       requirements: requirements ?? this.requirements,
+      rejectionReason: rejectionReason ?? this.rejectionReason,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  @override
+  String toString() => 'ThixProviderModel(id: $id, businessName: $businessName, uniqueCode: $uniqueCode)';
+
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is ThixProviderModel &&
+          runtimeType == other.runtimeType &&
+          id == other.id &&
+          userId == other.userId &&
+          uniqueCode == other.uniqueCode &&
+          category == other.category &&
+          businessName == other.businessName;
+
+  @override
+  int get hashCode => Object.hash(id, userId, uniqueCode, category, businessName);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RÉSERVATION
+// PROVIDER RESERVATION MODEL
 // ═══════════════════════════════════════════════════════════════════════════
+@immutable
 class ProviderReservationModel {
   final String id;
   final String providerId;
@@ -232,13 +273,13 @@ class ProviderReservationModel {
   final String? eventType;
   final int? guestCount;
   final double? totalPrice;
-  final String? currency;
+  final String currency;
   final ReservationStatus status;
   final String? notes;
   final DateTime createdAt;
   final DateTime updatedAt;
 
-  ProviderReservationModel({
+  const ProviderReservationModel({
     required this.id,
     required this.providerId,
     required this.weddingId,
@@ -249,7 +290,7 @@ class ProviderReservationModel {
     this.guestCount,
     this.totalPrice,
     this.currency = 'USD',
-    required this.status,
+    this.status = ReservationStatus.pending,
     this.notes,
     required this.createdAt,
     required this.updatedAt,
@@ -268,7 +309,7 @@ class ProviderReservationModel {
       totalPrice: (json['total_price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       status: ReservationStatus.values.firstWhere(
-        (e) => e.name == json['status'],
+        (s) => s.name == json['status'],
         orElse: () => ReservationStatus.pending,
       ),
       notes: json['notes'] as String?,
@@ -298,22 +339,23 @@ class ProviderReservationModel {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TÂCHE ASSIGNÉE PAR LE STAFF
+// PROVIDER TASK MODEL
 // ═══════════════════════════════════════════════════════════════════════════
+@immutable
 class ProviderTaskModel {
   final String id;
   final String providerId;
   final String weddingId;
-  final String assignedBy; // Staff user ID
+  final String assignedBy;
   final String title;
   final String? description;
   final DateTime dueDateTime;
   final TaskStatus status;
-  final int priority; // 1=Haute, 2=Moyenne, 3=Basse
+  final int priority;
   final DateTime createdAt;
   final DateTime? completedAt;
 
-  ProviderTaskModel({
+  const ProviderTaskModel({
     required this.id,
     required this.providerId,
     required this.weddingId,
@@ -321,7 +363,7 @@ class ProviderTaskModel {
     required this.title,
     this.description,
     required this.dueDateTime,
-    required this.status,
+    this.status = TaskStatus.assigned,
     this.priority = 2,
     required this.createdAt,
     this.completedAt,
@@ -337,13 +379,13 @@ class ProviderTaskModel {
       description: json['description'] as String?,
       dueDateTime: DateTime.parse(json['due_datetime'] as String),
       status: TaskStatus.values.firstWhere(
-        (e) => e.name == json['status'],
+        (s) => s.name == json['status'],
         orElse: () => TaskStatus.assigned,
       ),
       priority: json['priority'] as int? ?? 2,
       createdAt: DateTime.parse(json['created_at'] as String),
-      completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
+      completedAt: json['completed_at'] != null 
+          ? DateTime.parse(json['completed_at'] as String) 
           : null,
     );
   }
@@ -362,88 +404,5 @@ class ProviderTaskModel {
       'created_at': createdAt.toIso8601String(),
       'completed_at': completedAt?.toIso8601String(),
     };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HELPERS
-// ═══════════════════════════════════════════════════════════════════════════
-extension ProviderCategoryExtension on ProviderCategory {
-  String get displayName {
-    switch (this) {
-      case ProviderCategory.salle:
-        return 'Salle de réception';
-      case ProviderCategory.photographe:
-        return 'Photographe';
-      case ProviderCategory.videaste:
-        return 'Vidéaste';
-      case ProviderCategory.traiteur:
-        return 'Traiteur';
-      case ProviderCategory.mc:
-        return 'MC / Animateur';
-      case ProviderCategory.dj:
-        return 'DJ / Sonorisation';
-      case ProviderCategory.decorateur:
-        return 'Décorateur';
-      case ProviderCategory.fleuriste:
-        return 'Fleuriste';
-      case ProviderCategory.maquilleur:
-        return 'Maquilleur / Coiffeur';
-      case ProviderCategory.patissier:
-        return 'Pâtissier';
-    }
-  }
-
-  String get iconCode {
-    switch (this) {
-      case ProviderCategory.salle:
-        return 'SALLE';
-      case ProviderCategory.photographe:
-        return 'PHOTO';
-      case ProviderCategory.videaste:
-        return 'VIDEO';
-      case ProviderCategory.traiteur:
-        return 'TRAITEUR';
-      case ProviderCategory.mc:
-        return 'MC';
-      case ProviderCategory.dj:
-        return 'DJ';
-      case ProviderCategory.decorateur:
-        return 'DECOR';
-      case ProviderCategory.fleuriste:
-        return 'FLEUR';
-      case ProviderCategory.maquilleur:
-        return 'BEAUTE';
-      case ProviderCategory.patissier:
-        return 'CAKE';
-    }
-  }
-}
-
-extension TrackingLevelExtension on TrackingLevel {
-  String get displayName {
-    switch (this) {
-      case TrackingLevel.bronze:
-        return 'Référencé';
-      case TrackingLevel.silver:
-        return 'Vérifié';
-      case TrackingLevel.gold:
-        return 'Certifié';
-      case TrackingLevel.platinum:
-        return 'Partenaire Premium';
-    }
-  }
-
-  String get badgeColor {
-    switch (this) {
-      case TrackingLevel.bronze:
-        return 'CD7F32'; // Bronze
-      case TrackingLevel.silver:
-        return 'C0C0C0'; // Silver
-      case TrackingLevel.gold:
-        return 'FFD700'; // Gold
-      case TrackingLevel.platinum:
-        return 'E5E4E2'; // Platinum
-    }
   }
 }
