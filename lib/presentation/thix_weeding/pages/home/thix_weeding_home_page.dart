@@ -1,9 +1,11 @@
 // lib/presentation/thix_weeding/pages/home/thix_weeding_home_page.dart
 // ============================================================================
-// THIX WEDDING HOME PAGE — DESIGN v6.1 PREMIUM GLASS (PRODUCTION)
+// THIX WEDDING HOME PAGE — DESIGN v7.0 PREMIUM GLASS (PRODUCTION)
 // ✅ Rôle Admin détecté aussi depuis profiles (role / user_role / is_admin…)
 // ✅ Bouton « Photos du hero » bien visible (haut gauche, sous l'appbar)
-// ✅ Éléments réduits : tout rentre dans l'écran, rien ne se chevauche
+// ✅ Prestataires organisés PAR CATÉGORIE (sections horizontales)
+// ✅ Cartes prestataires AGRANDIES (meilleure visibilité)
+// ✅ Supprimé : grande bannière "Espace Prestataire"
 // ✅ Hero : jusqu'à 12 photos en défilement automatique (Ken Burns)
 // ✅ Verre dépoli : appbar, barre « Rejoindre », offres, confiance
 // ============================================================================
@@ -211,15 +213,33 @@ final homeOffersProvider = FutureProvider<List<Map<String, dynamic>>>((ref) asyn
   ];
 });
 
-final homeProvidersProvider = FutureProvider<List<ThixProviderModel>>((ref) async {
+// ✅ NOUVEAU : Prestataires groupés par catégorie
+final homeProvidersByCategoryProvider = FutureProvider<Map<ProviderCategory, List<ThixProviderModel>>>((ref) async {
   final service = ref.watch(providerServiceProvider);
   try {
-    final providers = await service.getAllProviders(limit: 10, isAvailable: true);
-    return providers
-        .where((p) => p.level == TrackingLevel.gold || p.level == TrackingLevel.platinum)
+    final allProviders = await service.getAllProviders(limit: 100, isAvailable: true);
+    final verified = allProviders
+        .where((p) => p.verificationStatus == ProviderVerificationStatus.verified)
         .toList();
+    
+    // Grouper par catégorie
+    final grouped = <ProviderCategory, List<ThixProviderModel>>{};
+    for (final p in verified) {
+      grouped.putIfAbsent(p.category, () => []).add(p);
+    }
+    
+    // Trier chaque catégorie par rating puis reviewCount
+    for (final list in grouped.values) {
+      list.sort((a, b) {
+        final scoreA = a.rating * 10 + a.reviewCount;
+        final scoreB = b.rating * 10 + b.reviewCount;
+        return scoreB.compareTo(scoreA);
+      });
+    }
+    
+    return grouped;
   } catch (e) {
-    return [];
+    return {};
   }
 });
 
@@ -458,7 +478,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
   Widget build(BuildContext context) {
     final catsAsync = ref.watch(homeCategoriesProvider);
     final offersAsync = ref.watch(homeOffersProvider);
-    final providersAsync = ref.watch(homeProvidersProvider);
+    final providersByCategoryAsync = ref.watch(homeProvidersByCategoryProvider);
     final announcementsAsync = ref.watch(homeAnnouncementsProvider);
     final promosAsync = ref.watch(homePromoSlidesProvider);
     final heroAsync = ref.watch(homeHeroPhotosProvider);
@@ -485,7 +505,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ref.invalidate(homeIsAdminProvider);
               ref.invalidate(homeCategoriesProvider);
               ref.invalidate(homeOffersProvider);
-              ref.invalidate(homeProvidersProvider);
+              ref.invalidate(homeProvidersByCategoryProvider);
               ref.invalidate(homeAnnouncementsProvider);
               ref.invalidate(myActiveInvitationsProvider);
               await Future.delayed(const Duration(milliseconds: 400));
@@ -553,22 +573,63 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                   ),
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                const SliverToBoxAdapter(
-                  child: Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: _SectionHeader(title: 'Prestataires recommandés')),
-                ),
-                const SliverToBoxAdapter(child: SizedBox(height: 10)),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    child: providersAsync.when(
-                      data: (providers) => _ProvidersGrid(providers: providers),
-                      loading: () => const SizedBox(height: 240),
-                      error: (_, __) => const SizedBox.shrink(),
+                
+                // ✅ NOUVEAU : Prestataires organisés PAR CATÉGORIE
+                providersByCategoryAsync.when(
+                  data: (providersByCategory) {
+                    if (providersByCategory.isEmpty) {
+                      return const SliverToBoxAdapter(
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 14),
+                          child: _EmptyProviders(),
+                        ),
+                      );
+                    }
+                    
+                    return SliverList(
+                      delegate: SliverChildListDelegate([
+                        ...providersByCategory.entries.map((entry) {
+                          final category = entry.key;
+                          final providers = entry.value.take(10).toList(); // Max 10 par catégorie
+                          
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Padding(
+                                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                                child: _SectionHeader(
+                                  title: category.displayName,
+                                  showSeeAll: true,
+                                  onSeeAll: () => _onCategoryTap(category),
+                                ),
+                              ),
+                              SizedBox(
+                                height: 280, // ✅ AGRANDI (était ~240)
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const BouncingScrollPhysics(),
+                                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                                  itemCount: providers.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 14),
+                                  itemBuilder: (_, i) => _ProviderCardLarge(provider: providers[i]),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                          );
+                        }),
+                      ]),
+                    );
+                  },
+                  loading: () => const SliverToBoxAdapter(
+                    child: SizedBox(
+                      height: 300,
+                      child: Center(child: CircularProgressIndicator(color: _W.rose)),
                     ),
                   ),
+                  error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
                 ),
-                const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                const SliverToBoxAdapter(child: _ProviderBanner()),
+
                 const SliverToBoxAdapter(child: SizedBox(height: 24)),
                 const SliverToBoxAdapter(
                   child: Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: _SectionHeader(title: 'Dernières annonces')),
@@ -615,6 +676,219 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
             onProvider: _onProviderAccess,
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : CARTE PRESTATAIRE AGRANDIE (pour sections par catégorie)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderCardLarge extends StatelessWidget {
+  final ThixProviderModel provider;
+
+  const _ProviderCardLarge({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final coverImage = provider.galleryUrls.isNotEmpty
+        ? provider.galleryUrls.first
+        : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
+
+    return GestureDetector(
+      onTap: () {
+        HapticFeedback.mediumImpact();
+        context.push('/thix-weeding/provider/detail/${provider.id}');
+      },
+      child: Container(
+        width: 220, // ✅ LARGEUR AGRANDIE (était ~180)
+        decoration: BoxDecoration(
+          color: _W.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _W.line),
+          boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.10), blurRadius: 16, offset: const Offset(0, 8))],
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image (plus grande)
+            Expanded(
+              flex: 5, // ✅ PLUS D'ESPACE POUR L'IMAGE
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  Image.network(
+                    coverImage,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(
+                      color: _W.tile,
+                      child: const Icon(Icons.broken_image_outlined, size: 32, color: _W.inkSoft),
+                    ),
+                  ),
+                  // Badge Premium/Gold
+                  if (provider.level == TrackingLevel.platinum)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [_W.gold, Color(0xFFFFA500)]),
+                          borderRadius: BorderRadius.circular(10),
+                          boxShadow: [BoxShadow(color: _W.gold.withOpacity(0.4), blurRadius: 6, offset: const Offset(0, 2))],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.workspace_premium, color: Colors.white, size: 12),
+                            const SizedBox(width: 4),
+                            Text('PREMIUM',
+                                style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    )
+                  else if (provider.level == TrackingLevel.gold)
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: _W.green,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.verified, color: Colors.white, size: 12),
+                            const SizedBox(width: 4),
+                            Text('CERTIFIÉ', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                          ],
+                        ),
+                      ),
+                    ),
+                  // Bouton favori
+                  Positioned(
+                    top: 10,
+                    right: 10,
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.95),
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 6)],
+                      ),
+                      child: const Icon(Icons.favorite_border_rounded, size: 16, color: _W.rose),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            
+            // Infos (plus compactes mais lisibles)
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          provider.businessName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w900,
+                            color: _W.ink,
+                            letterSpacing: -0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '${provider.category.displayName} · ${provider.city ?? 'RDC'}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: _W.inkSoft,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.star_rounded, size: 14, color: _W.gold),
+                            const SizedBox(width: 3),
+                            Text(
+                              provider.rating.toStringAsFixed(1),
+                              style: GoogleFonts.inter(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: _W.ink,
+                              ),
+                            ),
+                            Text(
+                              ' (${provider.reviewCount})',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: _W.inkSoft,
+                              ),
+                            ),
+                          ],
+                        ),
+                        Text(
+                          provider.minPrice != null
+                              ? 'Dès ${provider.minPrice!.toStringAsFixed(0)}\$'
+                              : 'Sur devis',
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                            color: _W.rose,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ✅ NOUVEAU : État vide quand aucun prestataire
+class _EmptyProviders extends StatelessWidget {
+  const _EmptyProviders();
+
+  @override
+  Widget build(BuildContext context) {
+    return ThixGlass(
+      radius: 20,
+      opacity: 0.55,
+      padding: const EdgeInsets.all(30),
+      child: Center(
+        child: Column(
+          children: [
+            const Icon(Icons.store_outlined, size: 40, color: _W.inkSoft),
+            const SizedBox(height: 10),
+            Text('Aucun prestataire disponible', style: GoogleFonts.inter(fontSize: 13, color: _W.inkSoft)),
+          ],
+        ),
       ),
     );
   }
@@ -738,68 +1012,6 @@ class _AppBarBtn extends StatelessWidget {
           boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.10), blurRadius: 8, offset: const Offset(0, 3))],
         ),
         child: Icon(icon, size: 18, color: _W.rose),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BANNIÈRE ESPACE PRESTATAIRE
-// ═══════════════════════════════════════════════════════════════════════════
-class _ProviderBanner extends StatelessWidget {
-  const _ProviderBanner();
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: GestureDetector(
-        onTap: () {
-          HapticFeedback.mediumImpact();
-          context.push('/thix-weeding/provider/auth');
-        },
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(18, 18, 14, 18),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFD81B60), Color(0xFFB0124F)],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.32), blurRadius: 20, offset: const Offset(0, 10))],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('Vous êtes un professionnel ?',
-                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.8))),
-                    const SizedBox(height: 3),
-                    Text('Espace Prestataire',
-                        style: GoogleFonts.playfairDisplay(fontSize: 22, fontWeight: FontWeight.w700, color: Colors.white, height: 1.1)),
-                    const SizedBox(height: 5),
-                    Text('Gérez vos services, réservations et tâches.',
-                        style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w500, color: Colors.white.withOpacity(0.88))),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.22),
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white.withOpacity(0.4)),
-                ),
-                child: const Icon(Icons.arrow_forward_rounded, color: Colors.white, size: 20),
-              ),
-            ],
-          ),
-        ),
       ),
     );
   }
@@ -1771,10 +1983,17 @@ class _CategoryRow extends StatelessWidget {
   }
 }
 
+// ✅ MODIFIÉ : SectionHeader avec option "Voir tout"
 class _SectionHeader extends StatelessWidget {
   final String title;
+  final bool showSeeAll;
+  final VoidCallback? onSeeAll;
 
-  const _SectionHeader({required this.title});
+  const _SectionHeader({
+    required this.title,
+    this.showSeeAll = false,
+    this.onSeeAll,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1790,17 +2009,18 @@ class _SectionHeader extends StatelessWidget {
           child: Text(title,
               style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.4)),
         ),
-        GestureDetector(
-          onTap: () {
-            HapticFeedback.selectionClick();
-            context.push('/thix-weeding/provider/catalog');
-          },
-          child: Row(children: [
-            Text('Voir tout', style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: _W.rose)),
-            const SizedBox(width: 2),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: _W.rose),
-          ]),
-        ),
+        if (showSeeAll && onSeeAll != null)
+          GestureDetector(
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onSeeAll!();
+            },
+            child: Row(children: [
+              Text('Voir tout', style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w800, color: _W.rose)),
+              const SizedBox(width: 2),
+              const Icon(Icons.arrow_forward_ios_rounded, size: 10, color: _W.rose),
+            ]),
+          ),
       ],
     );
   }
@@ -1871,176 +2091,6 @@ class _OffersRow extends StatelessWidget {
           );
         },
       ),
-    );
-  }
-}
-
-class _ProvidersGrid extends StatelessWidget {
-  final List<ThixProviderModel> providers;
-
-  const _ProvidersGrid({required this.providers});
-
-  @override
-  Widget build(BuildContext context) {
-    if (providers.isEmpty) {
-      return ThixGlass(
-        radius: 20,
-        opacity: 0.55,
-        padding: const EdgeInsets.all(30),
-        child: Center(
-          child: Column(
-            children: [
-              const Icon(Icons.store_outlined, size: 40, color: _W.inkSoft),
-              const SizedBox(height: 10),
-              Text('Aucun prestataire disponible', style: GoogleFonts.inter(fontSize: 13, color: _W.inkSoft)),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: providers.length,
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        mainAxisSpacing: 12,
-        crossAxisSpacing: 12,
-        childAspectRatio: 0.78,
-      ),
-      itemBuilder: (_, i) {
-        final p = providers[i];
-        final coverImage = p.galleryUrls.isNotEmpty
-            ? p.galleryUrls.first
-            : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=600&q=80';
-
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            context.push('/thix-weeding/provider/detail/${p.id}');
-          },
-          child: Container(
-            decoration: BoxDecoration(
-              color: _W.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: _W.line),
-              boxShadow: [BoxShadow(color: _W.rose.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 6))],
-            ),
-            clipBehavior: Clip.antiAlias,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      Image.network(
-                        coverImage,
-                        fit: BoxFit.cover,
-                        errorBuilder: (_, __, ___) => Container(
-                          color: _W.tile,
-                          child: const Icon(Icons.broken_image_outlined, size: 30, color: _W.inkSoft),
-                        ),
-                      ),
-                      if (p.level == TrackingLevel.platinum)
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(colors: [_W.gold, Color(0xFFFFA500)]),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.workspace_premium, color: Colors.white, size: 11),
-                                const SizedBox(width: 3),
-                                Text('PREMIUM',
-                                    style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.4)),
-                              ],
-                            ),
-                          ),
-                        )
-                      else if (p.level == TrackingLevel.gold)
-                        Positioned(
-                          top: 8,
-                          left: 8,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                            decoration: BoxDecoration(color: _W.green, borderRadius: BorderRadius.circular(8)),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.verified, color: Colors.white, size: 11),
-                                const SizedBox(width: 3),
-                                Text('CERTIFIÉ', style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.white)),
-                              ],
-                            ),
-                          ),
-                        ),
-                      Positioned(
-                        top: 8,
-                        right: 8,
-                        child: Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.favorite_border_rounded, size: 14, color: _W.rose),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(10, 8, 10, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(p.businessName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 12.5, fontWeight: FontWeight.w900, color: _W.ink, letterSpacing: -0.3)),
-                      const SizedBox(height: 1),
-                      Text('${p.category.displayName} · ${p.city ?? 'RDC'}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(fontSize: 10, color: _W.inkSoft, fontWeight: FontWeight.w600)),
-                      const SizedBox(height: 6),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.star_rounded, size: 12, color: _W.gold),
-                              const SizedBox(width: 2),
-                              Text(p.rating.toStringAsFixed(1),
-                                  style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _W.ink)),
-                            ],
-                          ),
-                          if (p.minPrice != null)
-                            Text(
-                              'Dès ${p.minPrice!.toStringAsFixed(0)}${p.currency == 'USD' ? r'$' : p.currency}',
-                              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w900, color: _W.rose),
-                            )
-                          else
-                            Text('Sur devis',
-                                style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w700, color: _W.inkSoft)),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
     );
   }
 }
