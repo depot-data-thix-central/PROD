@@ -1,11 +1,12 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_business_pages.dart
 // ============================================================================
-// THIX WEDDING PROVIDER BUSINESS (PRODUCTION ENTERPRISE)
+// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v3 — COMPLET)
 // ✅ Réservations : filtres, recherche, détails, actions rapides, stats
 // ✅ Tâches : checklist interactive, priorités, tri, édition inline
+// ✅ 🆕 DEMANDES DE PRESTATION (thix_weeding_vendor_requests) :
+//    bandeau d'alerte dans Résa. + page dédiée ProviderRequestsPage
+//    → Approuver (crée le dossier vendor + stage 'contacted') / Refuser (motif)
 // ✅ Pull-to-refresh, haptic feedback, animations fluides
-// ✅ Bottom sheets détaillés et dialogues de confirmation
-// ✅ Empty states premium et skeleton loading
 // ============================================================================
 
 import 'dart:async';
@@ -15,6 +16,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ AJOUT (demandes)
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -48,6 +50,112 @@ final _taskFilterProvider = StateProvider<TaskStatus?>((ref) => null);
 final _taskSortProvider = StateProvider<TaskSort>((ref) => TaskSort.date);
 
 enum TaskSort { date, priority, status }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ AJOUT : DEMANDES DE PRESTATION (staff → prestataire)
+// Table : thix_weeding_vendor_requests (jointure mariage + prestataire)
+// ═══════════════════════════════════════════════════════════════════════════
+final providerIncomingRequestsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
+        (ref, providerId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('thix_weeding_vendor_requests')
+        .select('''
+          *,
+          wedding:thix_weeding_weddings(bride_name, groom_name, wedding_date, venue),
+          provider:thix_weeding_providers(business_name, unique_code, category, city, phone, email, verification_status)
+        ''')
+        .eq('provider_id', providerId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  } catch (e) {
+    throw Exception('Erreur chargement des demandes: $e');
+  }
+});
+
+/// Libellé lisible d'une catégorie prestataire THIX
+String _catLabel(String? key) {
+  switch ((key ?? '').toLowerCase()) {
+    case 'salle': return 'Salle de réception';
+    case 'traiteur': return 'Traiteur';
+    case 'photographe': return 'Photographe';
+    case 'videaste': return 'Vidéaste';
+    case 'decorateur': return 'Décorateur';
+    case 'dj': return 'DJ / Sonorisation';
+    case 'mc': return 'MC / Animateur';
+    case 'maquilleur': return 'Maquillage / Coiffure';
+    case 'patissier': return 'Pâtissier';
+    case 'fleuriste': return 'Fleuriste';
+    default: return key ?? 'Prestataire';
+  }
+}
+
+/// ✅ Harmonise une catégorie provider THIX vers les clés staff (15 catégories)
+String _mapVendorCategory(String? providerCat) {
+  switch ((providerCat ?? '').toLowerCase()) {
+    case 'salle': return 'salle';
+    case 'traiteur': return 'traiteur';
+    case 'photographe': return 'photographe';
+    case 'videaste': return 'videaste';
+    case 'decorateur': return 'decorateur';
+    case 'dj': return 'dj';
+    case 'mc': return 'dj';
+    case 'maquilleur': return 'maquilleur';
+    case 'patissier': return 'patissier';
+    case 'fleuriste': return 'fleuriste';
+    default: return (providerCat ?? '').trim().isEmpty ? 'organisateur' : providerCat!;
+  }
+}
+
+/// Couleur + libellé + icône du statut d'une DEMANDE
+Color _reqColor(String? s) => switch (s) {
+      'approved' => _P.green,
+      'rejected' => _P.red,
+      'cancelled' => _P.inkSoft,
+      _ => _P.amber,
+    };
+String _reqLabel(String? s) => switch (s) {
+      'approved' => 'Acceptée',
+      'rejected' => 'Refusée',
+      'cancelled' => 'Retirée',
+      _ => 'En attente',
+    };
+IconData _reqIcon(String? s) => switch (s) {
+      'approved' => Icons.check_circle_rounded,
+      'rejected' => Icons.cancel_rounded,
+      'cancelled' => Icons.do_not_disturb_on_rounded,
+      _ => Icons.hourglass_top_rounded,
+    };
+
+/// "Prénom & Prénom" depuis la jointure mariage
+String _coupleNames(Map<String, dynamic> r) {
+  final w = (r['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
+  final b = (w['bride_name'] as String? ?? '').trim();
+  final g = (w['groom_name'] as String? ?? '').trim();
+  if (b.isEmpty && g.isEmpty) return 'Mariage';
+  if (g.isEmpty) return b;
+  if (b.isEmpty) return g;
+  return '$b & $g';
+}
+
+String _fmtWeddingDate(Map<String, dynamic> r) {
+  final w = (r['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
+  final d = w['wedding_date'] as String?;
+  if (d == null || d.isEmpty) return 'Date à définir';
+  try {
+    return DateFormat('dd MMM yyyy', 'fr_FR').format(DateTime.parse(d));
+  } catch (_) {
+    return d;
+  }
+}
+
+String _venueOf(Map<String, dynamic> r) {
+  final w = (r['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
+  return (w['venue'] as String? ?? '').trim().isEmpty
+      ? 'Lieu à définir'
+      : w['venue'] as String;
+}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RÉSERVATIONS - PAGE PRINCIPALE
@@ -109,6 +217,9 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
     ));
     final filter = ref.watch(_reservationFilterProvider);
     final search = ref.watch(_reservationSearchProvider);
+    // ✅ AJOUT : demandes de mariage en attente (pour le bandeau)
+    final requestsAsync =
+        ref.watch(providerIncomingRequestsProvider(widget.provider.id));
 
     return Scaffold(
       backgroundColor: _P.bg,
@@ -215,6 +326,98 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                 ),
               ),
             ),
+          ),
+
+          // ✅ AJOUT : BANDEAU "Demandes de mariage à traiter"
+          requestsAsync.when(
+            data: (list) {
+              final pending =
+                  list.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+              if (pending == 0) {
+                return const SliverToBoxAdapter(child: SizedBox.shrink());
+              }
+              return SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                  child: Material(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(16),
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ProviderRequestsPage(provider: widget.provider),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_P.amber, Color(0xFFFFB84D)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          boxShadow: [
+                            BoxShadow(
+                              color: _P.amber.withOpacity(0.35),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.mark_email_unread_rounded,
+                                  color: Colors.white, size: 22),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '$pending demande${pending > 1 ? 's' : ''} de mariage à traiter',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    'Consultez, acceptez ou refusez les sollicitations des couples',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      color: Colors.white.withOpacity(0.92),
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Icon(Icons.chevron_right_rounded,
+                                color: Colors.white, size: 26),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+            loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+            error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
           // ═══════════════════════════════════════════════════════════
@@ -2705,4 +2908,797 @@ class _ErrorState extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
+//    Ouverte via le bandeau d'alerte de l'onglet Résa. (Navigator.push)
+//    CORRIGÉ : ConsumerStatefulWidget + TabController créé/disposé proprement
+// ═══════════════════════════════════════════════════════════════════════════
+final _reqTabProvider = StateProvider<int>((ref) => 0); // 0=À traiter, 1=Historique
+
+class ProviderRequestsPage extends ConsumerStatefulWidget {
+  final ThixProviderModel provider;
+  const ProviderRequestsPage({super.key, required this.provider});
+
+  @override
+  ConsumerState<ProviderRequestsPage> createState() =>
+      _ProviderRequestsPageState();
+}
+
+class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(
+      length: 2,
+      vsync: this,
+      initialIndex: ref.read(_reqTabProvider).clamp(0, 1),
+    );
+    _tabCtrl.addListener(() {
+      if (!_tabCtrl.indexIsChanging) {
+        HapticFeedback.selectionClick();
+        ref.read(_reqTabProvider.notifier).state = _tabCtrl.index;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final requestsAsync =
+        ref.watch(providerIncomingRequestsProvider(widget.provider.id));
+    final tab = ref.watch(_reqTabProvider);
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.rose,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        title: Text(
+          'Demandes de prestation',
+          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900),
+        ),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        actions: [
+          IconButton(
+            tooltip: 'Rafraîchir',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () => ref
+                .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
+          ),
+        ],
+        bottom: TabBar(
+          controller: _tabCtrl,
+          labelColor: Colors.white,
+          unselectedLabelColor: Colors.white.withOpacity(0.7),
+          indicatorColor: Colors.white,
+          indicatorWeight: 3,
+          labelStyle:
+              GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
+          unselectedLabelStyle:
+              GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+          tabs: const [
+            Tab(text: 'À traiter'),
+            Tab(text: 'Historique'),
+          ],
+        ),
+      ),
+      body: requestsAsync.when(
+        loading: () =>
+            const Center(child: CircularProgressIndicator(color: _P.rose)),
+        error: (e, _) => _ErrorState(
+          message: '$e',
+          onRetry: () => ref
+              .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
+        ),
+        data: (all) {
+          final pending =
+              all.where((r) => (r['status'] ?? 'pending') == 'pending').toList();
+          final history =
+              all.where((r) => (r['status'] ?? 'pending') != 'pending').toList();
+          final list = tab == 0 ? pending : history;
+
+          if (list.isEmpty) {
+            return tab == 0
+                ? const _EmptyState(
+                    icon: Icons.mark_email_read_rounded,
+                    title: 'Aucune demande en attente',
+                    subtitle:
+                        'Quand un couple vous sollicitera depuis le catalogue, sa demande apparaîtra ici.',
+                  )
+                : const _EmptyState(
+                    icon: Icons.history_rounded,
+                    title: 'Aucun historique',
+                    subtitle:
+                        'Vos demandes traitées (acceptées ou refusées) s\'afficheront ici.',
+                  );
+          }
+
+          return RefreshIndicator(
+            color: _P.rose,
+            onRefresh: () async => ref
+                .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
+            child: ListView.separated(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+              itemCount: list.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 12),
+              itemBuilder: (_, i) => _IncomingRequestCard(
+                request: list[i],
+                providerId: widget.provider.id,
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARTE D'UNE DEMANDE REÇUE
+// ═══════════════════════════════════════════════════════════════════════════
+class _IncomingRequestCard extends ConsumerWidget {
+  final Map<String, dynamic> request;
+  final String providerId;
+  const _IncomingRequestCard({required this.request, required this.providerId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = request['status'] as String? ?? 'pending';
+    final color = _reqColor(status);
+    final couple = _coupleNames(request);
+    final prov =
+        (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+    final catKey = prov['category'] as String?;
+    final code = prov['unique_code'] as String? ?? '';
+    final price = (request['proposed_price'] as num?)?.toDouble();
+    final currency = request['currency'] as String? ?? 'USD';
+    final message = (request['message'] as String? ?? '').trim();
+    final response = (request['provider_response'] as String? ?? '').trim();
+    final contactName = (request['contact_name'] as String? ?? '').trim();
+    final contactPhone = (request['contact_phone'] as String? ?? '').trim();
+    final venue = _venueOf(request);
+    final dateStr = _fmtWeddingDate(request);
+
+    final initials = couple
+        .split(RegExp(r'[&\s]+'))
+        .where((p) => p.trim().isNotEmpty)
+        .take(2)
+        .map((p) => p.trim()[0].toUpperCase())
+        .join();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: status == 'pending' ? _P.amber.withOpacity(0.5) : _P.line,
+          width: status == 'pending' ? 2 : 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // En-tête : couple + statut
+          Row(
+            children: [
+              Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [_P.rose.withOpacity(0.85), _P.roseLight],
+                  ),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Center(
+                  child: Text(
+                    initials.isEmpty ? '?' : initials,
+                    style: GoogleFonts.inter(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      couple,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          color: _P.ink),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        const Icon(Icons.calendar_today_rounded,
+                            size: 12, color: _P.inkSoft),
+                        const SizedBox(width: 4),
+                        Text(
+                          dateStr,
+                          style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: _P.inkSoft,
+                              fontWeight: FontWeight.w600),
+                        ),
+                        const SizedBox(width: 8),
+                        const Icon(Icons.place_rounded,
+                            size: 12, color: _P.inkSoft),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            venue,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                                fontSize: 11,
+                                color: _P.inkSoft,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: color.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(_reqIcon(status), size: 13, color: color),
+                    const SizedBox(width: 4),
+                    Text(
+                      _reqLabel(status),
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: color),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Ligne catégorie + code + prix
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _P.purple.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  _catLabel(catKey),
+                  style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: _P.purple),
+                ),
+              ),
+              if (code.isNotEmpty)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: _P.blue.withOpacity(0.08),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    code,
+                    style: GoogleFonts.inter(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w800,
+                        color: _P.blue),
+                  ),
+                ),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _P.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  price != null && price > 0
+                      ? '$price $currency'
+                      : 'Prix à négocier',
+                  style: GoogleFonts.inter(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w800,
+                      color: price != null && price > 0
+                          ? _P.green
+                          : _P.inkSoft),
+                ),
+              ),
+            ],
+          ),
+
+          // Message du staff
+          if (message.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: _P.bg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _P.line),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Message du couple',
+                    style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: _P.inkSoft),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    message,
+                    style: GoogleFonts.inter(
+                        fontSize: 12.5, color: _P.ink, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Contact du staff
+          if (contactName.isNotEmpty || contactPhone.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                const Icon(Icons.person_outline_rounded,
+                    size: 14, color: _P.inkSoft),
+                const SizedBox(width: 6),
+                Text(
+                  [
+                    if (contactName.isNotEmpty) contactName,
+                    if (contactPhone.isNotEmpty) contactPhone
+                  ].join(' · '),
+                  style: GoogleFonts.inter(
+                      fontSize: 11.5,
+                      color: _P.inkSoft,
+                      fontWeight: FontWeight.w600),
+                ),
+              ],
+            ),
+          ],
+
+          // Réponse déjà donnée (historique)
+          if (response.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: color.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: color.withOpacity(0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Votre réponse',
+                    style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: color),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    response,
+                    style: GoogleFonts.inter(
+                        fontSize: 12.5, color: _P.ink, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Actions (uniquement si en attente)
+          if (status == 'pending') ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.check_circle_rounded,
+                    label: 'Accepter',
+                    color: _P.green,
+                    onTap: () => _approveDialog(context, ref),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ActionButton(
+                    icon: Icons.cancel_rounded,
+                    label: 'Refuser',
+                    color: _P.red,
+                    isOutlined: true,
+                    onTap: () => _rejectDialog(context, ref),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  // ── ACCEPTER : crée le dossier vendor + passe la demande en approved ──
+  Future<void> _approveDialog(BuildContext context, WidgetRef ref) async {
+    final prov =
+        (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+    final priceCtrl = TextEditingController(
+      text: (request['proposed_price'] as num?)?.toStringAsFixed(0) ?? '',
+    );
+    final respCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool busy = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: _P.green.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.check_circle_rounded,
+                    color: _P.green, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Accepter la demande',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _P.ink),
+                ),
+              ),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Le dossier sera créé côté mariage et le suivi des étapes s\'ouvrira pour le couple.',
+                    style: GoogleFonts.inter(
+                        fontSize: 12.5,
+                        color: _P.inkSoft,
+                        height: 1.4),
+                  ),
+                  const SizedBox(height: 16),
+                  TextFormField(
+                    controller: priceCtrl,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: _sheetDec(
+                        'Prix confirmé (optionnel)',
+                        Icons.payments_rounded,
+                        hint: 'Ex: 350000'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: respCtrl,
+                    maxLines: 4,
+                    decoration: _sheetDec(
+                        'Vos conditions / message',
+                        Icons.chat_bubble_outline_rounded,
+                        hint:
+                            'Ex: Disponible à cette date, acompte 40%, inclut montage...'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx),
+              child: Text(
+                'Annuler',
+                style: GoogleFonts.inter(
+                    color: _P.inkSoft, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      setSt(() => busy = true);
+                      HapticFeedback.mediumImpact();
+                      try {
+                        final c = Supabase.instance.client;
+                        final now = DateTime.now().toIso8601String();
+                        final weddingId = request['wedding_id'] as String;
+                        final confirmedPrice = double.tryParse(
+                            priceCtrl.text.replaceAll(RegExp(r'\D'), ''));
+                        final resp = respCtrl.text.trim();
+                        final staffMsg =
+                            (request['message'] as String? ?? '').trim();
+                        final vendorName =
+                            (prov['business_name'] as String? ?? '').trim();
+
+                        // 1) Créer le dossier prestataire lié au mariage
+                        final vendorData = <String, dynamic>{
+                          'wedding_id': weddingId,
+                          'name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+                          'category': _mapVendorCategory(prov['category'] as String?),
+                          'contact_name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+                          'phone': prov['phone'] as String?,
+                          'email': prov['email'] as String?,
+                          'price': confirmedPrice,
+                          'status': 'contacted',
+                          'is_booked': false,
+                          'notes': [
+                            if (staffMsg.isNotEmpty)
+                              'Demande du couple : $staffMsg',
+                            if (resp.isNotEmpty)
+                              'Réponse prestataire : $resp',
+                          ].join('\n'),
+                        };
+                        final vendorRes = await c
+                            .from('thix_weeding_vendors')
+                            .insert(vendorData)
+                            .select()
+                            .single();
+                        final vendorId = vendorRes['id'] as String;
+
+                        // 2) Valider la demande
+                        await c
+                            .from('thix_weeding_vendor_requests')
+                            .update({
+                              'status': 'approved',
+                              'stage': 'contacted',
+                              'vendor_id': vendorId,
+                              'provider_response':
+                                  resp.isEmpty ? null : resp,
+                              'proposed_price':
+                                  confirmedPrice ?? request['proposed_price'],
+                              'responded_at': now,
+                              'updated_at': now,
+                            })
+                            .eq('id', request['id'] as String);
+
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        ref.invalidate(
+                            providerIncomingRequestsProvider(providerId));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                                'Demande acceptée ✓ Dossier créé pour le couple',
+                                style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700)),
+                            backgroundColor: _P.green,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ));
+                        }
+                      } catch (e) {
+                        setSt(() => busy = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            content: Text('Erreur: $e'),
+                            backgroundColor: _P.red,
+                            behavior: SnackBarBehavior.floating,
+                          ));
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.check_rounded, size: 18),
+              label: Text(
+                'Confirmer l\'acceptation',
+                style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _P.green,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    priceCtrl.dispose();
+    respCtrl.dispose();
+  }
+
+  // ── REFUSER : motif obligatoire ──
+  Future<void> _rejectDialog(BuildContext context, WidgetRef ref) async {
+    final reasonCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+    bool busy = false;
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSt) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: _P.red.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.cancel_rounded,
+                    color: _P.red, size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Refuser la demande',
+                  style: GoogleFonts.inter(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: _P.ink),
+                ),
+              ),
+            ],
+          ),
+          content: Form(
+            key: formKey,
+            child: TextFormField(
+              controller: reasonCtrl,
+              maxLines: 3,
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Indiquez un motif (requis)'
+                  : null,
+              decoration: _sheetDec('Motif du refus',
+                  Icons.info_outline_rounded,
+                  hint:
+                      'Ex: Date déjà réservée, hors zone géographique...'),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: busy ? null : () => Navigator.pop(ctx),
+              child: Text(
+                'Annuler',
+                style: GoogleFonts.inter(
+                    color: _P.inkSoft, fontWeight: FontWeight.w600),
+              ),
+            ),
+            ElevatedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      if (!formKey.currentState!.validate()) return;
+                      setSt(() => busy = true);
+                      HapticFeedback.mediumImpact();
+                      try {
+                        final now = DateTime.now().toIso8601String();
+                        await Supabase.instance.client
+                            .from('thix_weeding_vendor_requests')
+                            .update({
+                              'status': 'rejected',
+                              'provider_response': reasonCtrl.text.trim(),
+                              'responded_at': now,
+                              'updated_at': now,
+                            })
+                            .eq('id', request['id'] as String);
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        ref.invalidate(
+                            providerIncomingRequestsProvider(providerId));
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                                'Demande refusée — le couple en sera informé',
+                                style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w700)),
+                            backgroundColor: _P.amber,
+                            behavior: SnackBarBehavior.floating,
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                          ));
+                        }
+                      } catch (e) {
+                        setSt(() => busy = false);
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            content: Text('Erreur: $e'),
+                            backgroundColor: _P.red,
+                            behavior: SnackBarBehavior.floating,
+                          ));
+                        }
+                      }
+                    },
+              icon: const Icon(Icons.block_rounded, size: 18),
+              label: Text(
+                'Refuser',
+                style: GoogleFonts.inter(
+                    fontWeight: FontWeight.w800, fontSize: 13),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _P.red,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    reasonCtrl.dispose();
+  }
+
+  InputDecoration _sheetDec(String label, IconData icon, {String? hint}) =>
+      InputDecoration(
+        labelText: label,
+        hintText: hint,
+        labelStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
+        hintStyle: GoogleFonts.inter(
+            fontSize: 12, color: _P.inkSoft.withOpacity(0.6)),
+        prefixIcon: Icon(icon, size: 18, color: _P.rose),
+        filled: true,
+        fillColor: _P.bg,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
+      );
 }
