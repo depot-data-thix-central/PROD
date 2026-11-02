@@ -338,7 +338,7 @@ class ProviderService {
     }
   }
 
-  /// ✅ Offres actives de TOUS les prestataires (pour le HOME + catalogue)
+/// ✅ Offres actives de TOUS les prestataires (pour le HOME + catalogue)
   /// ✅ Paramètre optionnel `category` pour filtrer par catégorie d'offre
   /// ✅ Limite augmentée à 50 (home + catalogue peuvent afficher beaucoup d'offres)
   Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
@@ -358,11 +358,11 @@ class ProviderService {
         query = query.eq('category', category.name);
       }
 
+      // ✅ UNE SEULE exécution de la requête (avec order + limit)
       final response = await query
           .order('created_at', ascending: false)
           .limit(limit);
 
-      final response = await query;
       return List<Map<String, dynamic>>.from(response)
           .map((json) => ProviderOfferModel.fromJson(json))
           .where((o) => o.providerVerificationStatus != 'rejected')
