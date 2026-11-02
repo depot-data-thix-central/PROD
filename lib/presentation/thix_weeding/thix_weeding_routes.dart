@@ -56,6 +56,8 @@ import 'pages/staff/cadeaux/gifts_management_page.dart';
 // ✅ NOUVEAU — ESPACE PRESTATAIRE
 import 'pages/provider_portal/provider_portal_shell.dart';
 import 'pages/provider_portal/provider_auth_pages.dart';
+// ✅ NOUVEAU — CATALOGUE PRESTATAIRES
+import 'pages/provider_portal/provider_catalog_pages.dart';
 
 class ThixWeedingRoutes {
   static const String home = '/thix-weeding';
@@ -100,7 +102,9 @@ class ThixWeedingRoutes {
   static const String providerReservations = 'providerReservations';
   static const String providerTasks = 'providerTasks';
   static const String providerProfile = 'providerProfile';
-
+static const String providerCatalog = 'providerCatalog';
+  static const String providerDetail = 'providerDetail';
+  
   static List<RouteBase> get routes => [
         GoRoute(
           path: home,
@@ -145,6 +149,21 @@ class ThixWeedingRoutes {
                   name: providerGallery,
                   builder: (c, s) => const ProviderPortalShell(initialTab: 1),
                 ),
+                // ✅ NOUVEAU — CATALOGUE PUBLIC DES PRESTATAIRES
+            GoRoute(
+              path: 'provider/catalog',
+              name: providerCatalog,
+              builder: (c, s) => ProviderCatalogPage(
+                initialCategory: s.uri.queryParameters['category'],
+              ),
+            ),
+            GoRoute(
+              path: 'provider/detail/:providerId',
+              name: providerDetail,
+              builder: (c, s) => ProviderDetailPage(
+                providerId: s.pathParameters['providerId']!,
+              ),
+            ),
                 GoRoute(
                   path: 'reservations',
                   name: providerReservations,
