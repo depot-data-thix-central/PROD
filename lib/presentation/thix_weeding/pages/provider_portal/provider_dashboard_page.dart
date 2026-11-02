@@ -20,7 +20,7 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-
+import 'provider_business_pages.dart' show providerIncomingRequestsProvider, ProviderRequestsPage;
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 import 'provider_business_pages.dart' show ProviderRequestsPage; // ✅ AJOUTÉ
