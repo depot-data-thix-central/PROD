@@ -1,11 +1,12 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.0 (PRODUCTION ENTERPRISE)
+// THIX WEDDING ROUTES — v3.1 (PRODUCTION ENTERPRISE)
+// ✅ FIX 404 : provider/catalog & provider/detail → remis au BON niveau
 // ✅ FIX 404 : staff/:id/invitation/preview  → PreviewInvitationPage
-// ✅ FIX 404 : staff/:id/budget/add          → ExpenseFormPage (existait déjà !)
+// ✅ FIX 404 : staff/:id/budget/add          → ExpenseFormPage
 // ✅ FIX 404 : staff/:id/budget/:eid/edit    → ExpenseFormPage (mode édition)
 // ✅ FIX 404 : staff/:id/planning/add        → TaskFormPage
-// ✅ NOUVEAU : Espace Prestataire complet (auth, register, dashboard + onglets)
+// ✅ NOUVEAU : Espace Prestataire complet (auth, register, dashboard, catalogue)
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -39,24 +40,23 @@ import 'pages/staff/prestataires/add_vendor_page.dart';
 import 'pages/staff/messages/staff_messages_page.dart';
 import 'pages/staff/messages/chat_detail_page.dart';
 import 'pages/staff/budget/budget_page.dart';
-import 'pages/staff/budget/expense_form_page.dart'; // ✅ FIX 404 budget/add
+import 'pages/staff/budget/expense_form_page.dart';
 import 'pages/staff/paiements/payments_page.dart';
 import 'pages/staff/paiements/add_payment_page.dart';
 import 'pages/staff/paiements/payment_detail_page.dart';
 import 'pages/staff/checklist/checklist_page.dart';
 import 'pages/staff/planning/planning_page.dart';
-import 'pages/staff/planning/task_form_page.dart'; // ✅ FIX 404 planning/add
+import 'pages/staff/planning/task_form_page.dart';
 import 'pages/staff/galerie/gallery_management_page.dart';
 import 'pages/staff/livre_or/guestbook_management_page.dart';
-import 'pages/staff/invitation/preview_invitation_page.dart'; // ✅ FIX 404 invitation/preview
+import 'pages/staff/invitation/preview_invitation_page.dart';
 import 'pages/staff/parametres/settings_page.dart';
 import 'pages/staff/seating/seating_3d_page.dart';
 import 'pages/staff/cadeaux/gifts_management_page.dart';
 
-// ✅ NOUVEAU — ESPACE PRESTATAIRE
+// ✅ ESPACE PRESTATAIRE
 import 'pages/provider_portal/provider_portal_shell.dart';
 import 'pages/provider_portal/provider_auth_pages.dart';
-// ✅ NOUVEAU — CATALOGUE PRESTATAIRES
 import 'pages/provider_portal/provider_catalog_pages.dart';
 
 class ThixWeedingRoutes {
@@ -76,35 +76,35 @@ class ThixWeedingRoutes {
   static const String staffMessages = 'staffMessages';
   static const String staffChatDetail = 'staffChatDetail';
   static const String staffBudget = 'staffBudget';
-  static const String staffBudgetAdd = 'staffBudgetAdd'; // ✅ NOUVEAU
-  static const String staffBudgetEdit = 'staffBudgetEdit'; // ✅ NOUVEAU
+  static const String staffBudgetAdd = 'staffBudgetAdd';
+  static const String staffBudgetEdit = 'staffBudgetEdit';
   static const String staffPaiements = 'staffPaiements';
   static const String staffAddPaiement = 'staffAddPaiement';
   static const String staffPaiementDetail = 'staffPaiementDetail';
   static const String staffChecklist = 'staffChecklist';
   static const String staffAddTask = 'staffAddTask';
   static const String staffPlanning = 'staffPlanning';
-  static const String staffPlanningAdd = 'staffPlanningAdd'; // ✅ NOUVEAU
+  static const String staffPlanningAdd = 'staffPlanningAdd';
   static const String staffGalerie = 'staffGalerie';
   static const String staffLivreOr = 'staffLivreOr';
   static const String staffInvitation = 'staffInvitation';
-  static const String staffInvitationPreview = 'staffInvitationPreview'; // ✅ NOUVEAU
+  static const String staffInvitationPreview = 'staffInvitationPreview';
   static const String staffSettings = 'staffSettings';
   static const String staffSeating = 'staffSeating';
   static const String staffCadeaux = 'staffCadeaux';
   static const String myWeddingsList = 'myWeddingsList';
 
-  // --- ✅ NOUVEAU : NAMES ESPACE PRESTATAIRE ---
+  // --- ✅ NAMES ESPACE PRESTATAIRE ---
   static const String providerAuth = 'providerAuth';
   static const String providerRegister = 'providerRegister';
+  static const String providerCatalog = 'providerCatalog';
+  static const String providerDetail = 'providerDetail';
   static const String providerDashboard = 'providerDashboard';
   static const String providerGallery = 'providerGallery';
   static const String providerReservations = 'providerReservations';
   static const String providerTasks = 'providerTasks';
   static const String providerProfile = 'providerProfile';
-static const String providerCatalog = 'providerCatalog';
-  static const String providerDetail = 'providerDetail';
-  
+
   static List<RouteBase> get routes => [
         GoRoute(
           path: home,
@@ -126,7 +126,7 @@ static const String providerCatalog = 'providerCatalog';
             ),
 
             // ================================================================
-            // ✅ NOUVEAU — ESPACE PRESTATAIRE (B2B)
+            // ✅ ESPACE PRESTATAIRE (B2B) — routes de PREMIER niveau
             // ================================================================
             GoRoute(
               path: 'provider/auth',
@@ -138,6 +138,25 @@ static const String providerCatalog = 'providerCatalog';
               name: providerRegister,
               builder: (c, s) => const ProviderRegisterPage(),
             ),
+
+            // ✅ FIX : catalogue au MÊME niveau que auth/register/dashboard
+            GoRoute(
+              path: 'provider/catalog',
+              name: providerCatalog,
+              builder: (c, s) => ProviderCatalogPage(
+                initialCategory: s.uri.queryParameters['category'],
+              ),
+            ),
+
+            // ✅ FIX : détail prestataire au MÊME niveau
+            GoRoute(
+              path: 'provider/detail/:providerId',
+              name: providerDetail,
+              builder: (c, s) => ProviderDetailPage(
+                providerId: s.pathParameters['providerId']!,
+              ),
+            ),
+
             GoRoute(
               path: 'provider/dashboard',
               name: providerDashboard,
@@ -149,21 +168,6 @@ static const String providerCatalog = 'providerCatalog';
                   name: providerGallery,
                   builder: (c, s) => const ProviderPortalShell(initialTab: 1),
                 ),
-                // ✅ NOUVEAU — CATALOGUE PUBLIC DES PRESTATAIRES
-            GoRoute(
-              path: 'provider/catalog',
-              name: providerCatalog,
-              builder: (c, s) => ProviderCatalogPage(
-                initialCategory: s.uri.queryParameters['category'],
-              ),
-            ),
-            GoRoute(
-              path: 'provider/detail/:providerId',
-              name: providerDetail,
-              builder: (c, s) => ProviderDetailPage(
-                providerId: s.pathParameters['providerId']!,
-              ),
-            ),
                 GoRoute(
                   path: 'reservations',
                   name: providerReservations,
@@ -340,7 +344,7 @@ static const String providerCatalog = 'providerCatalog';
                   ],
                 ),
 
-                // 5. BUDGET — ✅ FIX 404 : add + edit maintenant routés
+                // 5. BUDGET
                 GoRoute(
                   path: 'budget',
                   name: staffBudget,
@@ -404,7 +408,7 @@ static const String providerCatalog = 'providerCatalog';
                   ],
                 ),
 
-                // 8. PLANNING — ✅ FIX 404 : planning/add maintenant routé
+                // 8. PLANNING
                 GoRoute(
                   path: 'planning',
                   name: staffPlanning,
@@ -436,7 +440,7 @@ static const String providerCatalog = 'providerCatalog';
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
-                // 11. INVITATION STUDIO — ✅ FIX 404 : invitation/preview routé
+                // 11. INVITATION STUDIO
                 GoRoute(
                   path: 'invitation',
                   name: staffInvitation,
