@@ -339,39 +339,28 @@ class ProviderService {
   }
 
 /// ✅ Offres actives de TOUS les prestataires (pour le HOME + catalogue)
-  /// ✅ Paramètre optionnel `category` pour filtrer par catégorie d'offre
-  /// ✅ Limite augmentée à 50 (home + catalogue peuvent afficher beaucoup d'offres)
-  Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
-    int limit = 50,
-    ProviderCategory? category,
-  }) async {
-    try {
-      // ✅ Construit la requête en appliquant TOUS les filtres AVANT limit/order
-      var query = _client
-          .from('thix_weeding_provider_offers')
-          .select(
-              '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
-          .eq('is_active', true);
+Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
+  int limit = 100,
+  ProviderCategory? category,
+}) async {
+  try {
+    final response = await _client
+        .from('thix_weeding_provider_offers')
+        .select(
+            '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
+        .eq('is_active', true)
+        .order('created_at', ascending: false)
+        .limit(limit);
 
-      // ✅ Filtre par catégorie d'offre AVANT limit()
-      if (category != null) {
-        query = query.eq('category', category.name);
-      }
-
-      // ✅ UNE SEULE exécution de la requête (avec order + limit)
-      final response = await query
-          .order('created_at', ascending: false)
-          .limit(limit);
-
-      return List<Map<String, dynamic>>.from(response)
-          .map((json) => ProviderOfferModel.fromJson(json))
-          .where((o) => o.providerVerificationStatus != 'rejected')
-          .toList();
-    } catch (e) {
-      throw Exception(
-          'Erreur lors de la récupération des offres actives: $e');
-    }
+    return List<Map<String, dynamic>>.from(response)
+        .map((json) => ProviderOfferModel.fromJson(json))
+        .where((o) => o.providerVerificationStatus != 'rejected')
+        .where((o) => category == null || o.isInCategory(category))
+        .toList();
+  } catch (e) {
+    throw Exception('Erreur lors de la récupération des offres actives: $e');
   }
+}
 
   /// ✅ Créer une offre (avec multi-photos + catégorie d'offre)
   Future<ProviderOfferModel> createOffer({
