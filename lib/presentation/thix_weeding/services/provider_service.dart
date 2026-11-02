@@ -1,6 +1,6 @@
 // lib/presentation/thix_weeding/services/provider_service.dart
 // ============================================================================
-// THIX WEDDING PROVIDER SERVICE (PRODUCTION v5 — MULTI-PHOTOS + CATÉGORIE OFFRE)
+// THIX WEDDING PROVIDER SERVICE (PRODUCTION v6 — MULTI-CATÉGORIES OFFRES)
 // ✅ LOGIQUE IDENTIQUE À WeddingService (mariages)
 // ✅ Code unique THIX-P-XXXYY généré par Trigger SQL (pas en Dart)
 // ✅ owner_id = user.id (comme owner_id des mariages)
@@ -8,8 +8,8 @@
 //    → getByOwner() retourne l'activité principale (rétro-compat)
 //    → getAllByOwner() retourne TOUTES les activités du compte
 //    → createProvider() marque is_primary=true si 1ère activité
-// ✅ OFFRES : galleryUrls (multi-photos) + category (catégorie d'offre)
-// ✅ getActiveOffersWithProvider : filtre par ProviderCategory optionnel
+// ✅ OFFRES : galleryUrls (multi-photos) + categories[] (1 à 3 catégories par offre)
+// ✅ getActiveOffersWithProvider : filtre par ProviderCategory (isInCategory)
 // ============================================================================
 
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -22,7 +22,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // ✅ MULTI-ACTIVITÉS : TOUTES les activités d'un compte
-  //    Calqué sur WeddingService.getByOwner (qui retourne une liste)
   // ═══════════════════════════════════════════════════════════════════════════
   Future<List<ThixProviderModel>> getAllByOwner(String ownerId) async {
     try {
@@ -43,9 +42,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER PRESTATAIRE PAR OWNER (rétro-compat : retourne la principale)
-  //    Les call-sites existants (shell, register, auth) attendent un seul objet.
-  //    En multi-activités, on retourne l'activité marquée is_primary
-  //    ou la plus récente si aucune n'est marquée.
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel?> getByOwner(String ownerId) async {
     try {
@@ -139,9 +135,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CRÉER UN NOUVEAU PRESTATAIRE / ACTIVITÉ
-  // ✅ Multi-activités : marque is_primary=true si c'est la 1ère du compte
-  // ✅ Code THIX-P-XXXYY généré par Trigger SQL (pas en Dart)
-  // ✅ owner_id = user.id (comme owner_id des mariages)
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> createProvider({
     required String ownerId,
@@ -162,7 +155,6 @@ class ProviderService {
     try {
       final now = DateTime.now();
 
-      // ✅ Vérifier si c'est la 1ère activité du compte → is_primary = true
       final existing = await _client
           .from('thix_weeding_providers')
           .select('id')
@@ -180,7 +172,7 @@ class ProviderService {
         'review_count': 0,
         'currency': currency ?? 'USD',
         'is_available': true,
-        'is_primary': isFirst, // ✅ Multi-activités
+        'is_primary': isFirst,
         'created_at': now.toIso8601String(),
         'updated_at': now.toIso8601String(),
       };
@@ -318,7 +310,7 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // OFFRES / SERVICES / MENUS
-  // ✅ v5 : galleryUrls (multi-photos) + category (catégorie d'offre)
+  // ✅ v6 : galleryUrls + categories[] (1 à 3 catégories par offre)
   // ═══════════════════════════════════════════════════════════════════════════
 
   /// Offres d'un prestataire (filtrées par provider_id = activité spécifique)
@@ -327,7 +319,8 @@ class ProviderService {
     try {
       final response = await _client
           .from('thix_weeding_provider_offers')
-          .select('*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
+          .select(
+              '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
           .eq('provider_id', providerId)
           .order('created_at', ascending: false);
       return List<Map<String, dynamic>>.from(response)
@@ -338,31 +331,33 @@ class ProviderService {
     }
   }
 
-/// ✅ Offres actives de TOUS les prestataires (pour le HOME + catalogue)
-Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
-  int limit = 100,
-  ProviderCategory? category,
-}) async {
-  try {
-    final response = await _client
-        .from('thix_weeding_provider_offers')
-        .select(
-            '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
-        .eq('is_active', true)
-        .order('created_at', ascending: false)
-        .limit(limit);
+  /// ✅ Offres actives de TOUS les prestataires (pour le HOME + catalogue)
+  /// Filtre par ProviderCategory optionnel via isInCategory() (multi-catégories)
+  Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
+    int limit = 100,
+    ProviderCategory? category,
+  }) async {
+    try {
+      final response = await _client
+          .from('thix_weeding_provider_offers')
+          .select(
+              '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .limit(limit);
 
-    return List<Map<String, dynamic>>.from(response)
-        .map((json) => ProviderOfferModel.fromJson(json))
-        .where((o) => o.providerVerificationStatus != 'rejected')
-        .where((o) => category == null || o.isInCategory(category))
-        .toList();
-  } catch (e) {
-    throw Exception('Erreur lors de la récupération des offres actives: $e');
+      return List<Map<String, dynamic>>.from(response)
+          .map((json) => ProviderOfferModel.fromJson(json))
+          .where((o) => o.providerVerificationStatus != 'rejected')
+          .where((o) => category == null || o.isInCategory(category))
+          .toList();
+    } catch (e) {
+      throw Exception(
+          'Erreur lors de la récupération des offres actives: $e');
+    }
   }
-}
 
-  /// ✅ Créer une offre (avec multi-photos + catégorie d'offre)
+  /// ✅ Créer une offre (avec multi-photos + 1 à 3 catégories)
   Future<ProviderOfferModel> createOffer({
     required String providerId,
     required String title,
@@ -373,6 +368,7 @@ Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
     String? imageUrl,
     List<String>? galleryUrls,
     ProviderCategory? category,
+    List<ProviderCategory>? categories, // ✅ MULTI-CATÉGORIES
     bool isActive = true,
   }) async {
     try {
@@ -391,9 +387,14 @@ Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
         'updated_at': now.toIso8601String(),
       };
 
-      // ✅ Catégorie de l'offre (si null, Supabase ne mettra rien → fallback sur catégorie du prestataire au fromJson)
-      if (category != null) {
+      // ✅ Écriture multi-catégories
+      if (categories != null && categories.isNotEmpty) {
+        data['category'] = categories.first.name; // catégorie principale (rétrocompat)
+        data['categories'] =
+            categories.map((c) => c.name).toList(); // toutes les catégories
+      } else if (category != null) {
         data['category'] = category.name;
+        data['categories'] = [category.name];
       }
 
       final response = await _client
@@ -407,7 +408,7 @@ Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
     }
   }
 
-  /// ✅ Mettre à jour une offre (avec multi-photos + catégorie d'offre)
+  /// ✅ Mettre à jour une offre (avec multi-photos + 1 à 3 catégories)
   Future<ProviderOfferModel> updateOffer(
     String id, {
     String? title,
@@ -417,6 +418,7 @@ Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
     String? imageUrl,
     List<String>? galleryUrls,
     ProviderCategory? category,
+    List<ProviderCategory>? categories, // ✅ MULTI-CATÉGORIES
     bool? isActive,
   }) async {
     try {
@@ -429,8 +431,16 @@ Future<List<ProviderOfferModel>> getActiveOffersWithProvider({
       if (price != null) data['price'] = price;
       if (imageUrl != null) data['image_url'] = imageUrl;
       if (galleryUrls != null) data['gallery_urls'] = galleryUrls;
-      if (category != null) data['category'] = category.name;
       if (isActive != null) data['is_active'] = isActive;
+
+      // ✅ Écriture multi-catégories
+      if (categories != null && categories.isNotEmpty) {
+        data['category'] = categories.first.name;
+        data['categories'] = categories.map((c) => c.name).toList();
+      } else if (category != null) {
+        data['category'] = category.name;
+        data['categories'] = [category.name];
+      }
 
       final response = await _client
           .from('thix_weeding_provider_offers')
