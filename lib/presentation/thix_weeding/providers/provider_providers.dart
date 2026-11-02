@@ -1,21 +1,18 @@
 // lib/presentation/thix_weeding/providers/provider_providers.dart
 // ============================================================================
-// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v4 — MULTI-ACTIVITÉS)
+// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v5 — MULTI-ACTIVITÉS)
 // ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
-//    → calqué sur myWeddingsProvider (1 user = N mariages)
-// ✅ myProviderProvider(ownerId) RENVOIE DÉSORMAIS l'activité SÉLECTIONNÉE
-//    (fallback = principale / 1ère) → MÊME signature, AUCUN call-site cassé
+// ✅ myProviderProvider(ownerId) = activité sélectionnée (fallback principale)
 // ✅ selectedActivityIdProvider = sélecteur global (barre du shell)
-// ✅ myActivitiesProvider / activityDetailProvider / create·update·delete·setPrimary
-// ✅ createProviderProvider / updateProviderProvider / deleteProviderProvider
-//    invalident aussi myActivitiesProvider (cohérence liste <-> activité active)
-// ✅ LOGIQUE IDENTIQUE À thix_weeding_providers.dart (mariages)
+// ✅ myActivitiesProvider / activityDetailProvider / CRUD activités
+// ✅ createProvider / update / delete / validate / offres / réservations / tâches
+// ✅ ZÉRO doublon — chaque provider déclaré une seule fois
 // ============================================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ AJOUT (multi-activités)
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/provider_models.dart';
 import '../services/provider_service.dart';
@@ -45,20 +42,26 @@ class ProviderException implements Exception {
 }
 
 class ProviderTimeoutException extends ProviderException {
-  ProviderTimeoutException(String message) : super(message: message, code: 'TIMEOUT');
+  ProviderTimeoutException(String message)
+      : super(message: message, code: 'TIMEOUT');
 }
 
 class ProviderNetworkException extends ProviderException {
   ProviderNetworkException(String message, {dynamic originalError})
-      : super(message: message, code: 'NETWORK_ERROR', originalError: originalError);
+      : super(
+            message: message,
+            code: 'NETWORK_ERROR',
+            originalError: originalError);
 }
 
 class ProviderValidationException extends ProviderException {
-  ProviderValidationException(String message) : super(message: message, code: 'VALIDATION_ERROR');
+  ProviderValidationException(String message)
+      : super(message: message, code: 'VALIDATION_ERROR');
 }
 
 class ProviderNotFoundException extends ProviderException {
-  ProviderNotFoundException(String message) : super(message: message, code: 'NOT_FOUND');
+  ProviderNotFoundException(String message)
+      : super(message: message, code: 'NOT_FOUND');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -100,18 +103,20 @@ Future<T> _executeWithTimeout<T>(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU (MULTI-ACTIVITÉS) : SÉLECTEUR GLOBAL D'ACTIVITÉ
-//    null => on retombe sur la principale / 1ère (rétro-compat mono-activité)
+// 🧩 MULTI-ACTIVITÉS : SÉLECTEUR GLOBAL
 // ═══════════════════════════════════════════════════════════════════════════
+/// ID de l'activité actuellement ouverte dans le shell prestataire.
+/// null => on retombe sur la principale / 1ère (rétro-compat mono-activité)
 final selectedActivityIdProvider = StateProvider<String?>((ref) => null);
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : TOUTES LES ACTIVITÉS D'UN COMPTE (1 owner_id = N métiers)
-//    Calqué sur myWeddingsProvider(ownerId) -> getByOwner (liste)
+// 🧩 MULTI-ACTIVITÉS : LISTE DES ACTIVITÉS D'UN COMPTE
 // ═══════════════════════════════════════════════════════════════════════════
 final myActivitiesProvider = FutureProvider.autoDispose
     .family<List<ThixProviderModel>, String>((ref, ownerId) async {
-  if (kDebugMode) debugPrint('🧩 [myActivitiesProvider] Loading activities for owner: $ownerId');
+  if (kDebugMode) {
+    debugPrint('🧩 [myActivitiesProvider] Loading activities for owner: $ownerId');
+  }
 
   return await _executeWithTimeout(
     () async {
@@ -130,11 +135,13 @@ final myActivitiesProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : DÉTAIL D'UNE ACTIVITÉ PRÉCISE (édition / formulaire offre)
+// 🧩 MULTI-ACTIVITÉS : DÉTAIL D'UNE ACTIVITÉ
 // ═══════════════════════════════════════════════════════════════════════════
 final activityDetailProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, activityId) async {
-  if (kDebugMode) debugPrint('🔎 [activityDetailProvider] Loading activity: $activityId');
+  if (kDebugMode) {
+    debugPrint('🔎 [activityDetailProvider] Loading activity: $activityId');
+  }
 
   return await _executeWithTimeout(
     () async {
@@ -151,13 +158,15 @@ final activityDetailProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ RÉÉCRIT : myProviderProvider = ACTIVITÉ SÉLECTIONNÉE (sinon principale)
-//    MÊME signature <ThixProviderModel?, String> => AUCUN call-site à changer.
-//    (shell, _ProviderOfferFormRoute, ProviderReservationsPage, TasksPage…)
+// 👤 ACTIVITÉ COURANTE (shell + formulaires)
+//    Renvoie l'activité sélectionnée, sinon la principale/1ère.
+//    MÊME signature <ThixProviderModel?, String> => AUCUN call-site cassé.
 // ═══════════════════════════════════════════════════════════════════════════
 final myProviderProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, ownerId) async {
-  if (kDebugMode) debugPrint('👤 [myProviderProvider] Resolving active activity for owner: $ownerId');
+  if (kDebugMode) {
+    debugPrint('👤 [myProviderProvider] Resolving active activity for owner: $ownerId');
+  }
 
   final activities = await ref.watch(myActivitiesProvider(ownerId).future);
   if (activities.isEmpty) return null;
@@ -167,12 +176,11 @@ final myProviderProvider = FutureProvider.autoDispose
     final match = activities.where((a) => a.id == sel);
     if (match.isNotEmpty) return match.first;
   }
-  // fallback : 1ère = principale (tri SQL is_primary DESC, created_at DESC)
   return activities.first;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LISTE DES PRESTATAIRES (PAGINÉ + FILTRES — pour catalogue public)
+// 📋 LISTE PUBLIQUE DES PRESTATAIRES (catalogue)
 // ═══════════════════════════════════════════════════════════════════════════
 final providersListProvider = FutureProvider.autoDispose
     .family<List<ThixProviderModel>, ProviderListParams>((ref, params) async {
@@ -254,20 +262,17 @@ class ProviderListParams {
           search == other.search;
 
   @override
-  int get hashCode => Object.hash(page, limit, category, level, city, isAvailable, search);
+  int get hashCode =>
+      Object.hash(page, limit, category, level, city, isAvailable, search);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRE PAR ID (pour la page détail catalogue)
+// 🔍 PRESTATAIRE PAR ID (page détail catalogue)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerByIdProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, id) async {
   final service = ref.watch(providerServiceProvider);
-
-  if (kDebugMode) {
-    debugPrint('🔍 Loading provider by ID: $id');
-  }
-
+  if (kDebugMode) debugPrint('🔍 Loading provider by ID: $id');
   return await _executeWithTimeout(
     () => service.getProviderById(id),
     operationName: 'getProviderById($id)',
@@ -275,16 +280,12 @@ final providerByIdProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRE PAR CODE UNIQUE (THIX-P-XXXYY)
+// 🔍 PRESTATAIRE PAR CODE UNIQUE (THIX-P-XXXYY)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerByCodeProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, code) async {
   final service = ref.watch(providerServiceProvider);
-
-  if (kDebugMode) {
-    debugPrint('🔍 Loading provider by code: $code');
-  }
-
+  if (kDebugMode) debugPrint('🔍 Loading provider by code: $code');
   return await _executeWithTimeout(
     () => service.getProviderByCode(code),
     operationName: 'getProviderByCode($code)',
@@ -292,19 +293,18 @@ final providerByCodeProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// RÉSERVATIONS D'UN PRESTATAIRE
+// 📅 RÉSERVATIONS D'UN PRESTATAIRE (activité spécifique)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerReservationsProvider = FutureProvider.autoDispose
     .family<List<ProviderReservationModel>, ProviderReservationsParams>(
         (ref, params) async {
   final service = ref.watch(providerServiceProvider);
-
   if (kDebugMode) {
     debugPrint('📅 Loading reservations for provider: ${params.providerId}');
   }
-
   return await _executeWithTimeout(
-    () => service.getProviderReservations(params.providerId, status: params.status),
+    () => service.getProviderReservations(params.providerId,
+        status: params.status),
     operationName: 'getProviderReservations(${params.providerId})',
   );
 });
@@ -312,7 +312,6 @@ final providerReservationsProvider = FutureProvider.autoDispose
 class ProviderReservationsParams {
   final String providerId;
   final ReservationStatus? status;
-
   const ProviderReservationsParams({required this.providerId, this.status});
 
   ProviderReservationsParams copyWith({
@@ -338,16 +337,14 @@ class ProviderReservationsParams {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TÂCHES D'UN PRESTATAIRE
+// ✅ TÂCHES D'UN PRESTATAIRE
 // ═══════════════════════════════════════════════════════════════════════════
 final providerTasksProvider = FutureProvider.autoDispose
     .family<List<ProviderTaskModel>, ProviderTasksParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
-
   if (kDebugMode) {
     debugPrint('✅ Loading tasks for provider: ${params.providerId}');
   }
-
   return await _executeWithTimeout(
     () => service.getProviderTasks(params.providerId, status: params.status),
     operationName: 'getProviderTasks(${params.providerId})',
@@ -357,7 +354,6 @@ final providerTasksProvider = FutureProvider.autoDispose
 class ProviderTasksParams {
   final String providerId;
   final TaskStatus? status;
-
   const ProviderTasksParams({required this.providerId, this.status});
 
   ProviderTasksParams copyWith({
@@ -383,16 +379,12 @@ class ProviderTasksParams {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STATISTIQUES D'UN PRESTATAIRE
+// 📊 STATISTIQUES D'UN PRESTATAIRE
 // ═══════════════════════════════════════════════════════════════════════════
 final providerStatsProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((ref, providerId) async {
   final service = ref.watch(providerServiceProvider);
-
-  if (kDebugMode) {
-    debugPrint('📊 Loading stats for provider: $providerId');
-  }
-
+  if (kDebugMode) debugPrint('📊 Loading stats for provider: $providerId');
   return await _executeWithTimeout(
     () => service.getProviderStats(providerId),
     operationName: 'getProviderStats($providerId)',
@@ -400,16 +392,12 @@ final providerStatsProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// OFFRES / SERVICES / MENUS
+// 🎁 OFFRES / SERVICES
 // ═══════════════════════════════════════════════════════════════════════════
 final providerOffersProvider = FutureProvider.autoDispose
     .family<List<ProviderOfferModel>, String>((ref, providerId) async {
   final service = ref.watch(providerServiceProvider);
-
-  if (kDebugMode) {
-    debugPrint('🎁 Loading offers for provider: $providerId');
-  }
-
+  if (kDebugMode) debugPrint('🎁 Loading offers for provider: $providerId');
   return await _executeWithTimeout(
     () => service.getOffersByProvider(providerId),
     operationName: 'getOffersByProvider($providerId)',
@@ -419,11 +407,7 @@ final providerOffersProvider = FutureProvider.autoDispose
 final activeOffersProvider =
     FutureProvider.autoDispose<List<ProviderOfferModel>>((ref) async {
   final service = ref.watch(providerServiceProvider);
-
-  if (kDebugMode) {
-    debugPrint('🌟 Loading active offers (home/catalog)');
-  }
-
+  if (kDebugMode) debugPrint('🌟 Loading active offers (home/catalog)');
   return await _executeWithTimeout(
     () => service.getActiveOffersWithProvider(),
     operationName: 'getActiveOffersWithProvider',
@@ -431,8 +415,7 @@ final activeOffersProvider =
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — CRÉATION D'UN PRESTATAIRE "HISTORIQUE" (1 fiche, enum category)
-// ✅ Invalidation étendue à myActivitiesProvider (multi-activités)
+// ➕ CRÉATION PRESTATAIRE "HISTORIQUE" (1 fiche, enum category)
 // ═══════════════════════════════════════════════════════════════════════════
 final createProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -456,7 +439,6 @@ final createProviderProvider = Provider((ref) {
     if (kDebugMode) {
       debugPrint('➕ Creating provider: $businessName (owner: $ownerId)');
     }
-
     if (businessName.trim().isEmpty) {
       throw ProviderValidationException('Le nom de l\'entreprise est requis');
     }
@@ -481,22 +463,20 @@ final createProviderProvider = Provider((ref) {
       operationName: 'createProvider',
     );
 
-    // ✅ Invalidation ciblée : activité active + LISTE + catalogue + détail
     ref.invalidate(myProviderProvider(ownerId));
-    ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
+    ref.invalidate(myActivitiesProvider(ownerId));
     ref.invalidate(providersListProvider);
     ref.invalidate(providerByIdProvider(provider.id));
 
     if (kDebugMode) {
       debugPrint('✅ Provider created: ${provider.id} - ${provider.uniqueCode}');
     }
-
     return provider;
   };
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU (MULTI-ACTIVITÉS) : CRÉER UNE ACTIVITÉ / MÉTIER (category = String)
+// 🧩 MULTI-ACTIVITÉS : CRÉER UNE NOUVELLE ACTIVITÉ (category = String)
 //    1ère activité du compte => is_primary = true automatiquement
 // ═══════════════════════════════════════════════════════════════════════════
 final createActivityProvider = Provider((ref) {
@@ -518,7 +498,6 @@ final createActivityProvider = Provider((ref) {
 
     final c = Supabase.instance.client;
 
-    // 1ère activité du compte ? => on la marque principale
     final existing = await c
         .from('thix_weeding_providers')
         .select('id')
@@ -532,7 +511,8 @@ final createActivityProvider = Provider((ref) {
           'owner_id': ownerId,
           'business_name': businessName.trim(),
           'category': category.trim().toLowerCase(),
-          'description': (description ?? '').trim().isEmpty ? null : description!.trim(),
+          'description':
+              (description ?? '').trim().isEmpty ? null : description!.trim(),
           'phone': (phone ?? '').trim().isEmpty ? null : phone!.trim(),
           'email': (email ?? '').trim().isEmpty ? null : email!.trim(),
           'city': (city ?? '').trim().isEmpty ? null : city!.trim(),
@@ -542,19 +522,22 @@ final createActivityProvider = Provider((ref) {
         .select()
         .single();
 
-    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+    final model =
+        ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
 
     ref.invalidate(myActivitiesProvider(ownerId));
     ref.invalidate(myProviderProvider(ownerId));
     ref.invalidate(providersListProvider);
 
-    if (kDebugMode) debugPrint('🧩 Activity created: ${model.id} (${model.category})');
+    if (kDebugMode) {
+      debugPrint('🧩 Activity created: ${model.id} (${model.category})');
+    }
     return model;
   };
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : METTRE À JOUR / SUPPRIMER / DÉFINIR PRINCIPALE UNE ACTIVITÉ
+// 🧩 MULTI-ACTIVITÉS : METTRE À JOUR UNE ACTIVITÉ
 // ═══════════════════════════════════════════════════════════════════════════
 final updateActivityProvider = Provider((ref) {
   return (
@@ -570,12 +553,20 @@ final updateActivityProvider = Provider((ref) {
     final patch = <String, dynamic>{};
     if (businessName != null) patch['business_name'] = businessName.trim();
     if (category != null) patch['category'] = category.trim().toLowerCase();
-    if (description != null) patch['description'] = description.trim().isEmpty ? null : description.trim();
-    if (phone != null) patch['phone'] = phone.trim().isEmpty ? null : phone.trim();
-    if (email != null) patch['email'] = email.trim().isEmpty ? null : email.trim();
-    if (city != null) patch['city'] = city.trim().isEmpty ? null : city.trim();
-    
-    // ✅ FIX : retourner explicitement si patch vide
+    if (description != null) {
+      patch['description'] =
+          description.trim().isEmpty ? null : description.trim();
+    }
+    if (phone != null) {
+      patch['phone'] = phone.trim().isEmpty ? null : phone.trim();
+    }
+    if (email != null) {
+      patch['email'] = email.trim().isEmpty ? null : email.trim();
+    }
+    if (city != null) {
+      patch['city'] = city.trim().isEmpty ? null : city.trim();
+    }
+
     if (patch.isEmpty) return null;
 
     final res = await Supabase.instance.client
@@ -584,7 +575,8 @@ final updateActivityProvider = Provider((ref) {
         .eq('id', activityId)
         .select()
         .single();
-    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+    final model =
+        ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
 
     ref.invalidate(activityDetailProvider(activityId));
     ref.invalidate(providerByIdProvider(activityId));
@@ -597,6 +589,9 @@ final updateActivityProvider = Provider((ref) {
   };
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧩 MULTI-ACTIVITÉS : SUPPRIMER UNE ACTIVITÉ
+// ═══════════════════════════════════════════════════════════════════════════
 final deleteActivityProvider = Provider((ref) {
   return (String activityId, {String? ownerId}) async {
     await Supabase.instance.client
@@ -604,7 +599,6 @@ final deleteActivityProvider = Provider((ref) {
         .delete()
         .eq('id', activityId);
 
-    // si l'activité supprimée était celle affichée => reset sélecteur
     if (ref.read(selectedActivityIdProvider) == activityId) {
       ref.read(selectedActivityIdProvider.notifier).state = null;
     }
@@ -619,6 +613,9 @@ final deleteActivityProvider = Provider((ref) {
   };
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🧩 MULTI-ACTIVITÉS : DÉFINIR ACTIVITÉ PRINCIPALE
+// ═══════════════════════════════════════════════════════════════════════════
 final setPrimaryActivityProvider = Provider((ref) {
   return (String activityId, {String? ownerId}) async {
     final c = Supabase.instance.client;
@@ -629,9 +626,14 @@ final setPrimaryActivityProvider = Provider((ref) {
         .single();
     final oid = ownerId ?? (row['owner_id'] as String);
 
-    // retirer le flag sur toutes les activités du compte, puis mettre sur celle-ci
-    await c.from('thix_weeding_providers').update({'is_primary': false}).eq('owner_id', oid);
-    await c.from('thix_weeding_providers').update({'is_primary': true}).eq('id', activityId);
+    await c
+        .from('thix_weeding_providers')
+        .update({'is_primary': false})
+        .eq('owner_id', oid);
+    await c
+        .from('thix_weeding_providers')
+        .update({'is_primary': true})
+        .eq('id', activityId);
 
     ref.invalidate(myActivitiesProvider(oid));
     ref.invalidate(myProviderProvider(oid));
@@ -640,8 +642,7 @@ final setPrimaryActivityProvider = Provider((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — MISE À JOUR / SUPPRESSION / VALIDATION (prestataire historique)
-// ✅ Invalidation étendue à myActivitiesProvider
+// ✏️ MISE À JOUR PRESTATAIRE HISTORIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 final updateProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -697,13 +698,15 @@ final updateProviderProvider = Provider((ref) {
     ref.invalidate(providersListProvider);
     if (ownerId != null) {
       ref.invalidate(myProviderProvider(ownerId));
-      ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
+      ref.invalidate(myActivitiesProvider(ownerId));
     }
-
     return provider;
   };
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🔐 VALIDATION PAR LE STAFF
+// ═══════════════════════════════════════════════════════════════════════════
 final validateProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
@@ -713,8 +716,9 @@ final validateProviderProvider = Provider((ref) {
     String? rejectionReason,
     TrackingLevel? newLevel,
   }) async {
-    if (kDebugMode) debugPrint('🔐 Validating provider: $id (approved: $approved)');
-
+    if (kDebugMode) {
+      debugPrint('🔐 Validating provider: $id (approved: $approved)');
+    }
     if (!approved && (rejectionReason == null || rejectionReason.isEmpty)) {
       throw ProviderValidationException('Un motif de rejet est requis');
     }
@@ -731,11 +735,13 @@ final validateProviderProvider = Provider((ref) {
 
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-
     return provider;
   };
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// 🗑️ SUPPRESSION PRESTATAIRE
+// ═══════════════════════════════════════════════════════════════════════════
 final deleteProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
@@ -751,13 +757,13 @@ final deleteProviderProvider = Provider((ref) {
     ref.invalidate(providersListProvider);
     if (ownerId != null) {
       ref.invalidate(myProviderProvider(ownerId));
-      ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
+      ref.invalidate(myActivitiesProvider(ownerId));
     }
   };
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — OFFRES
+// 🎁 ACTIONS OFFRES
 // ═══════════════════════════════════════════════════════════════════════════
 final createOfferProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -790,7 +796,6 @@ final createOfferProvider = Provider((ref) {
 
     ref.invalidate(providerOffersProvider(providerId));
     ref.invalidate(activeOffersProvider);
-
     return offer;
   };
 });
@@ -825,7 +830,6 @@ final updateOfferProvider = Provider((ref) {
 
     ref.invalidate(providerOffersProvider(providerId));
     ref.invalidate(activeOffersProvider);
-
     return offer;
   };
 });
@@ -847,7 +851,7 @@ final deleteOfferProvider = Provider((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — RÉSERVATIONS
+// 📅 ACTIONS RÉSERVATIONS
 // ═══════════════════════════════════════════════════════════════════════════
 final createReservationProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -864,8 +868,9 @@ final createReservationProvider = Provider((ref) {
     String? currency,
     String? notes,
   }) async {
-    if (kDebugMode) debugPrint('📅 Creating reservation for provider: $providerId');
-
+    if (kDebugMode) {
+      debugPrint('📅 Creating reservation for provider: $providerId');
+    }
     if (eventDate.isBefore(DateTime.now())) {
       throw ProviderValidationException('La date doit être future');
     }
@@ -892,7 +897,6 @@ final createReservationProvider = Provider((ref) {
     ref.invalidate(providerReservationsProvider(
       ProviderReservationsParams(providerId: providerId),
     ));
-
     return reservation;
   };
 });
@@ -900,8 +904,14 @@ final createReservationProvider = Provider((ref) {
 final updateReservationStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
-  return (String reservationId, ReservationStatus status, String providerId) async {
-    if (kDebugMode) debugPrint('🔄 Updating reservation: $reservationId -> ${status.name}');
+  return (
+    String reservationId,
+    ReservationStatus status,
+    String providerId,
+  ) async {
+    if (kDebugMode) {
+      debugPrint('🔄 Updating reservation: $reservationId -> ${status.name}');
+    }
 
     final reservation = await _executeWithTimeout(
       () => service.updateReservationStatus(reservationId, status),
@@ -911,13 +921,12 @@ final updateReservationStatusProvider = Provider((ref) {
     ref.invalidate(providerReservationsProvider(
       ProviderReservationsParams(providerId: providerId),
     ));
-
     return reservation;
   };
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — TÂCHES
+// ✅ ACTIONS TÂCHES
 // ═══════════════════════════════════════════════════════════════════════════
 final createTaskProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -931,8 +940,9 @@ final createTaskProvider = Provider((ref) {
     required DateTime dueDateTime,
     int priority = 2,
   }) async {
-    if (kDebugMode) debugPrint('✅ Creating task for provider: $providerId');
-
+    if (kDebugMode) {
+      debugPrint('✅ Creating task for provider: $providerId');
+    }
     if (title.trim().isEmpty) {
       throw ProviderValidationException('Le titre est requis');
     }
@@ -956,7 +966,6 @@ final createTaskProvider = Provider((ref) {
     ref.invalidate(providerTasksProvider(
       ProviderTasksParams(providerId: providerId),
     ));
-
     return task;
   };
 });
@@ -965,7 +974,9 @@ final updateTaskStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
   return (String taskId, TaskStatus status, String providerId) async {
-    if (kDebugMode) debugPrint('🔄 Updating task: $taskId -> ${status.name}');
+    if (kDebugMode) {
+      debugPrint('🔄 Updating task: $taskId -> ${status.name}');
+    }
 
     final task = await _executeWithTimeout(
       () => service.updateTaskStatus(taskId, status),
@@ -975,109 +986,12 @@ final updateTaskStatusProvider = Provider((ref) {
     ref.invalidate(providerTasksProvider(
       ProviderTasksParams(providerId: providerId),
     ));
-
     return task;
   };
 });
+
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : ACTIONS MULTI-ACTIVITÉS (create / delete / setPrimary)
-// ═══════════════════════════════════════════════════════════════════════════
-
-final createActivityProvider = Provider((ref) {
-  return ({
-    required String ownerId,
-    required String businessName,
-    required String category,
-    String? description,
-    String? phone,
-    String? email,
-    String? city,
-  }) async {
-    if (businessName.trim().isEmpty) {
-      throw ProviderValidationException('Le nom commercial est requis');
-    }
-    if (category.trim().isEmpty) {
-      throw ProviderValidationException('Choisissez un métier (catégorie)');
-    }
-
-    final c = Supabase.instance.client;
-
-    // 1ère activité du compte ? => is_primary = true
-    final existing = await c
-        .from('thix_weeding_providers')
-        .select('id')
-        .eq('owner_id', ownerId)
-        .limit(1);
-    final isFirst = (existing as List).isEmpty;
-
-    final res = await c
-        .from('thix_weeding_providers')
-        .insert({
-          'owner_id': ownerId,
-          'business_name': businessName.trim(),
-          'category': category.trim().toLowerCase(),
-          'description': (description ?? '').trim().isEmpty ? null : description!.trim(),
-          'phone': (phone ?? '').trim().isEmpty ? null : phone!.trim(),
-          'email': (email ?? '').trim().isEmpty ? null : email!.trim(),
-          'city': (city ?? '').trim().isEmpty ? null : city!.trim(),
-          'is_primary': isFirst,
-          'verification_status': 'pending',
-        })
-        .select()
-        .single();
-
-    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
-
-    ref.invalidate(myActivitiesProvider(ownerId));
-    ref.invalidate(myProviderProvider(ownerId));
-    ref.invalidate(providersListProvider);
-
-    return model;
-  };
-});
-
-final deleteActivityProvider = Provider((ref) {
-  return (String activityId, {String? ownerId}) async {
-    await Supabase.instance.client
-        .from('thix_weeding_providers')
-        .delete()
-        .eq('id', activityId);
-
-    // Reset sélecteur si c'était l'activité active
-    if (ref.read(selectedActivityIdProvider) == activityId) {
-      ref.read(selectedActivityIdProvider.notifier).state = null;
-    }
-
-    ref.invalidate(activityDetailProvider(activityId));
-    ref.invalidate(providerByIdProvider(activityId));
-    ref.invalidate(providersListProvider);
-    if (ownerId != null) {
-      ref.invalidate(myActivitiesProvider(ownerId));
-      ref.invalidate(myProviderProvider(ownerId));
-    }
-  };
-});
-
-final setPrimaryActivityProvider = Provider((ref) {
-  return (String activityId, {String? ownerId}) async {
-    final c = Supabase.instance.client;
-    final row = await c
-        .from('thix_weeding_providers')
-        .select('owner_id')
-        .eq('id', activityId)
-        .single();
-    final oid = ownerId ?? (row['owner_id'] as String);
-
-    await c.from('thix_weeding_providers').update({'is_primary': false}).eq('owner_id', oid);
-    await c.from('thix_weeding_providers').update({'is_primary': true}).eq('id', activityId);
-
-    ref.invalidate(myActivitiesProvider(oid));
-    ref.invalidate(myProviderProvider(oid));
-    ref.invalidate(activityDetailProvider(activityId));
-  };
-});
-// ═══════════════════════════════════════════════════════════════════════════
-// PROVIDERS UTILITAIRES
+// 🔧 UTILITAIRES
 // ═══════════════════════════════════════════════════════════════════════════
 final providerExistsByCodeProvider = FutureProvider.autoDispose
     .family<bool, String>((ref, code) async {
