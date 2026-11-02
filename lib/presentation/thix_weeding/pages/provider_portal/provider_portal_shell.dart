@@ -1,10 +1,10 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_portal_shell.dart
 // ============================================================================
-// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION ENTERPRISE)
-// ✅ FIX BOUCLE : l'ID LOCAL (inscription libre) est PRIORITAIRE sur Supabase Auth
-// ✅ Plus aucun setState pendant le build (post-frame callback)
-// ✅ Écran de chargement pendant la lecture des SharedPreferences
-// ✅ Navigation par onglets complète
+// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION v3)
+// ✅ LOGIQUE IDENTIQUE À my_weddings_page.dart
+// ✅ 1 seule session : Supabase.auth.currentUser (= compte THIX général)
+// ✅ 1 seule propriété : owner_id = user.id
+// ✅ ZÉRO SharedPreferences — fini les sessions parallèles qui désynchronisent
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -13,13 +13,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 import 'provider_dashboard_page.dart';
 import 'provider_media_pages.dart';
 import 'provider_business_pages.dart';
+import 'provider_offers_page.dart';
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -31,11 +31,14 @@ class _P {
   static const Color green = Color(0xFF10B981);
   static const Color amber = Color(0xFFF59E0B);
   static const Color red = Color(0xFFEF4444);
+  static const Color blue = Color(0xFF0B3B8F);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// SHELL — ConsumerStatefulWidget (comme MyWeddingsPage)
+// ═══════════════════════════════════════════════════════════════════════════
 class ProviderPortalShell extends ConsumerStatefulWidget {
   final int initialTab;
-
   const ProviderPortalShell({super.key, this.initialTab = 0});
 
   @override
@@ -43,89 +46,43 @@ class ProviderPortalShell extends ConsumerStatefulWidget {
 }
 
 class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
-  late int _currentIndex;
-  String? _localProviderId;
-  bool _prefsLoaded = false; // ✅ Évite le flash du _NoUserScreen au démarrage
+  int _currentIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _currentIndex = widget.initialTab.clamp(0, 4);
-    _loadLocalProviderId();
-  }
-
-  // ✅ Recharge l'ID local à chaque retour sur le shell (après inscription)
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_prefsLoaded) _loadLocalProviderId();
-  }
-
-  Future<void> _loadLocalProviderId() async {
-    final prefs = await SharedPreferences.getInstance();
-    final id = prefs.getString('thix_current_provider_id');
-    if (!mounted) return;
-    setState(() {
-      _localProviderId = (id != null && id.isNotEmpty) ? id : null;
-      _prefsLoaded = true;
-    });
-  }
-
-  Future<void> _clearLocalProviderId() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('thix_current_provider_id');
-    if (mounted) setState(() => _localProviderId = null);
+    _currentIndex = widget.initialTab.clamp(0, 5);
   }
 
   @override
   Widget build(BuildContext context) {
-    //  Pendant la lecture des préférences → loading (pas de flash)
-    if (!_prefsLoaded) return const _LoadingScreen();
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // ✅ PRIORITÉ 1 : ID LOCAL (INSCRIPTION LIBRE — SANS AUTH SUPABASE)
-    // C'est LE FIX de la boucle infinie : ce cas passe AVANT Supabase Auth
-    // ═══════════════════════════════════════════════════════════════════════
-    if (_localProviderId != null) {
-      final providerAsync = ref.watch(providerByIdProvider(_localProviderId!));
-      return providerAsync.when(
-        data: (provider) {
-          if (provider != null) return _buildDashboard(provider);
-          // ID local obsolète → nettoyage HORS du build (post-frame)
-          WidgetsBinding.instance.addPostFrameCallback(
-            (_) => _clearLocalProviderId(),
-          );
-          return const _NoUserScreen();
-        },
-        loading: () => const _LoadingScreen(),
-        error: (error, stack) => _ErrorScreen(
-          error: error,
-          onRetry: () => ref.invalidate(providerByIdProvider(_localProviderId!)),
-        ),
-      );
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // PRIORITÉ 2 : Session Supabase Auth (OPTIONNELLE)
-    // ═══════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════
+    // GARDE : pas de session → login GÉNÉRAL (comme my_weddings_page)
+    // ═══════════════════════════════════════════════════════════════════
     final user = Supabase.instance.client.auth.currentUser;
-    if (user != null) {
-      final providerAsync = ref.watch(currentProviderProvider(user.id));
-      return providerAsync.when(
-        data: (provider) =>
-            provider != null ? _buildDashboard(provider) : const _NoProviderScreen(),
-        loading: () => const _LoadingScreen(),
-        error: (error, stack) => _ErrorScreen(
-          error: error,
-          onRetry: () => ref.invalidate(currentProviderProvider(user.id)),
-        ),
-      );
+    if (user == null) {
+      return const _AuthRequiredView();
     }
 
-    // ═══════════════════════════════════════════════════════════════════════
-    // PRIORITÉ 3 : Ni session locale, ni auth → accueil inscription
-    // ═══════════════════════════════════════════════════════════════════════
-    return const _NoUserScreen();
+    // ═══════════════════════════════════════════════════════════════════
+    // CHARGEMENT : myProvidersProvider(user.id) = WHERE owner_id = user.id
+    // ═══════════════════════════════════════════════════════════════════
+    final providerAsync = ref.watch(myProviderProvider(user.id));
+
+    return providerAsync.when(
+      loading: () => const _LoadingScreen(),
+      error: (e, _) => _ErrorView(
+        message: e.toString(),
+        onRetry: () => ref.invalidate(myProviderProvider(user.id)),
+      ),
+      data: (provider) {
+        if (provider == null) {
+          // Connecté mais pas de profil → "Devenez prestataire"
+          return const _NoProviderScreen();
+        }
+        return _buildDashboard(provider);
+      },
+    );
   }
 
   Widget _buildDashboard(ThixProviderModel provider) {
@@ -135,6 +92,7 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
         index: _currentIndex,
         children: [
           ProviderDashboardPage(provider: provider),
+          ProviderOffersPage(provider: provider),
           ProviderGalleryPage(provider: provider),
           ProviderReservationsPage(provider: provider),
           ProviderTasksPage(provider: provider),
@@ -143,9 +101,9 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
       ),
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
-        onTap: (index) {
+        onTap: (i) {
           HapticFeedback.selectionClick();
-          setState(() => _currentIndex = index);
+          setState(() => _currentIndex = i);
         },
       ),
     );
@@ -153,16 +111,138 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAVIGATION BAR
+// _AuthRequiredView — IDENTIQUE à my_weddings_page
+// ═══════════════════════════════════════════════════════════════════════════
+class _AuthRequiredView extends StatelessWidget {
+  const _AuthRequiredView();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [_P.rose.withOpacity(0.15), _P.blue.withOpacity(0.1)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.lock_outline, size: 48, color: _P.rose),
+              ),
+              const SizedBox(height: 16),
+              Text('Connexion requise', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w700, color: _P.ink)),
+              const SizedBox(height: 8),
+              Text(
+                'Connectez-vous à votre compte THIX pour accéder à l\'espace prestataire',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.4),
+              ),
+              const SizedBox(height: 24),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: () => context.push('/thix-weeding/auth/login'),
+                  icon: const Icon(Icons.login, size: 18),
+                  label: Text('Se connecter', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _P.rose,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/auth/register'),
+                child: Text('Créer un compte THIX', style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// _NoProviderScreen — connecté mais pas encore de profil prestataire
+// ═══════════════════════════════════════════════════════════════════════════
+class _NoProviderScreen extends StatelessWidget {
+  const _NoProviderScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [_P.rose.withOpacity(0.15), _P.blue.withOpacity(0.1)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.storefront_rounded, size: 56, color: _P.rose),
+              ),
+              const SizedBox(height: 20),
+              Text('Devenez prestataire', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
+              const SizedBox(height: 8),
+              Text(
+                'Créez votre profil pour accéder à votre dashboard, publier vos offres et recevoir des réservations.',
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
+              ),
+              const SizedBox(height: 28),
+              SizedBox(
+                width: double.infinity,
+                height: 52,
+                child: ElevatedButton.icon(
+                  onPressed: () => context.push('/thix-weeding/provider/register'),
+                  icon: const Icon(Icons.add_business, size: 18),
+                  label: Text('Créer mon profil prestataire', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _P.rose,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => context.go('/thix-weeding'),
+                child: Text('Retour à l\'accueil', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOTTOM NAVIGATION (inchangé)
 // ═══════════════════════════════════════════════════════════════════════════
 class _BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
-
   const _BottomNavBar({required this.currentIndex, required this.onTap});
 
   static const _items = <_NavItemConfig>[
     _NavItemConfig(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: 'Dashboard'),
+    _NavItemConfig(icon: Icons.local_offer_outlined, activeIcon: Icons.local_offer, label: 'Offres'),
     _NavItemConfig(icon: Icons.photo_library_outlined, activeIcon: Icons.photo_library, label: 'Galerie'),
     _NavItemConfig(icon: Icons.event_outlined, activeIcon: Icons.event, label: 'Résa.'),
     _NavItemConfig(icon: Icons.task_outlined, activeIcon: Icons.task, label: 'Tâches'),
@@ -183,11 +263,7 @@ class _BottomNavBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               for (int i = 0; i < _items.length; i++)
-                _NavItem(
-                  config: _items[i],
-                  isActive: currentIndex == i,
-                  onTap: () => onTap(i),
-                ),
+                _NavItem(config: _items[i], isActive: currentIndex == i, onTap: () => onTap(i)),
             ],
           ),
         ),
@@ -207,7 +283,6 @@ class _NavItem extends StatelessWidget {
   final _NavItemConfig config;
   final bool isActive;
   final VoidCallback onTap;
-
   const _NavItem({required this.config, required this.isActive, required this.onTap});
 
   @override
@@ -230,21 +305,10 @@ class _NavItem extends StatelessWidget {
                   color: isActive ? _P.rose.withOpacity(0.1) : Colors.transparent,
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Icon(
-                  isActive ? config.activeIcon : config.icon,
-                  size: isActive ? 22 : 20,
-                  color: isActive ? _P.rose : _P.inkSoft,
-                ),
+                child: Icon(isActive ? config.activeIcon : config.icon, size: isActive ? 22 : 20, color: isActive ? _P.rose : _P.inkSoft),
               ),
               const SizedBox(height: 4),
-              Text(
-                config.label,
-                style: GoogleFonts.inter(
-                  fontSize: 10,
-                  fontWeight: isActive ? FontWeight.w800 : FontWeight.w500,
-                  color: isActive ? _P.rose : _P.inkSoft,
-                ),
-              ),
+              Text(config.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: isActive ? FontWeight.w800 : FontWeight.w500, color: isActive ? _P.rose : _P.inkSoft)),
             ],
           ),
         ),
@@ -254,7 +318,7 @@ class _NavItem extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROFIL TAB (DÉCONNEXION NETTOYANT LE CACHE LOCAL)
+// PROFILE TAB (avec déconnexion = Supabase.signOut global)
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProfileTab extends ConsumerWidget {
   final ThixProviderModel provider;
@@ -266,7 +330,7 @@ class _ProfileTab extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Déconnexion', style: GoogleFonts.inter(fontWeight: FontWeight.w800, color: _P.ink)),
-        content: Text('Voulez-vous vraiment vous déconnecter ?', style: GoogleFonts.inter(color: _P.inkSoft)),
+        content: Text('Vous serez déconnecté de votre compte THIX.', style: GoogleFonts.inter(color: _P.inkSoft)),
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft))),
           ElevatedButton(
@@ -277,17 +341,11 @@ class _ProfileTab extends ConsumerWidget {
         ],
       ),
     );
+    if (confirmed != true) return;
 
-    if (confirmed == true) {
-      await Supabase.instance.client.auth.signOut();
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('thix_current_provider_id');
-      await prefs.remove('thix_current_provider_code');
-      await prefs.remove('thix_current_provider_name');
-      ref.invalidate(providerByIdProvider(provider.id));
-      ref.invalidate(providersListProvider);
-      if (context.mounted) context.go('/thix-weeding');
-    }
+    await Supabase.instance.client.auth.signOut();
+    ref.invalidate(myProviderProvider(provider.ownerId ?? ''));
+    if (context.mounted) context.go('/thix-weeding');
   }
 
   @override
@@ -369,7 +427,6 @@ class _MenuItem extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final String? badge;
-
   const _MenuItem({required this.icon, required this.label, required this.onTap, this.color = _P.ink, this.badge});
 
   @override
@@ -404,7 +461,6 @@ class _MenuItem extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════════════════
 class _LoadingScreen extends StatelessWidget {
   const _LoadingScreen();
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -413,11 +469,7 @@ class _LoadingScreen extends StatelessWidget {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Container(
-              width: 80, height: 80,
-              decoration: BoxDecoration(gradient: const LinearGradient(colors: [_P.rose, Color(0xFFFF85A1)]), borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))]),
-              child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 36),
-            ),
+            Container(width: 80, height: 80, decoration: BoxDecoration(gradient: const LinearGradient(colors: [_P.rose, Color(0xFFFF85A1)]), borderRadius: BorderRadius.circular(24), boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))]), child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 36)),
             const SizedBox(height: 24),
             Text('Chargement de votre espace...', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _P.inkSoft)),
             const SizedBox(height: 20),
@@ -429,12 +481,10 @@ class _LoadingScreen extends StatelessWidget {
   }
 }
 
-class _ErrorScreen extends StatelessWidget {
-  final Object error;
+class _ErrorView extends StatelessWidget {
+  final String message;
   final VoidCallback onRetry;
-
-  const _ErrorScreen({required this.error, required this.onRetry});
-
+  const _ErrorView({required this.message, required this.onRetry});
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -449,106 +499,13 @@ class _ErrorScreen extends StatelessWidget {
               const SizedBox(height: 24),
               Text('Une erreur est survenue', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: _P.ink)),
               const SizedBox(height: 8),
-              Text(error.toString(), textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft), maxLines: 3, overflow: TextOverflow.ellipsis),
+              Text(message, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft), maxLines: 3, overflow: TextOverflow.ellipsis),
               const SizedBox(height: 28),
               ElevatedButton.icon(
                 onPressed: onRetry,
                 icon: const Icon(Icons.refresh),
                 label: const Text('Réessayer'),
                 style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NoUserScreen extends StatelessWidget {
-  const _NoUserScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _P.bg,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 90, height: 90,
-                decoration: BoxDecoration(gradient: const LinearGradient(colors: [_P.rose, Color(0xFFFF85A1)]), borderRadius: BorderRadius.circular(28), boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))]),
-                child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 44),
-              ),
-              const SizedBox(height: 28),
-              Text('Espace Prestataire', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
-              const SizedBox(height: 8),
-              Text('Connectez-vous ou créez un compte gratuit.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft)),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity, height: 56,
-                child: ElevatedButton(
-                  onPressed: () => context.push('/thix-weeding/provider/register'),
-                  style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
-                  child: Text('Créer mon compte', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => context.push('/thix-weeding/provider/auth'),
-                child: Text("J'ai déjà un compte / un code THIX", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _NoProviderScreen extends StatelessWidget {
-  const _NoProviderScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _P.bg,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.person_add_outlined, size: 64, color: _P.rose)),
-              const SizedBox(height: 24),
-              Text('Devenez prestataire', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.3)),
-              const SizedBox(height: 8),
-              Text("Vous n'avez pas encore créé votre profil.\nInscrivez-vous pour accéder à votre dashboard.", textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft, height: 1.4)),
-              const SizedBox(height: 32),
-              SizedBox(
-                width: double.infinity, height: 56,
-                child: ElevatedButton.icon(
-                  onPressed: () => context.push('/thix-weeding/provider/register'),
-                  icon: const Icon(Icons.add_business),
-                  label: const Text('Créer mon compte'),
-                  style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-                ),
-              ),
-              const SizedBox(height: 12),
-              TextButton(
-                onPressed: () => context.push('/thix-weeding/provider/auth'),
-                child: Text("J'ai un code THIX", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
-              ),
-              const SizedBox(height: 4),
-              TextButton(
-                onPressed: () async {
-                  await Supabase.instance.client.auth.signOut();
-                  if (context.mounted) context.go('/thix-weeding');
-                },
-                child: Text('Se déconnecter', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600)),
               ),
             ],
           ),
