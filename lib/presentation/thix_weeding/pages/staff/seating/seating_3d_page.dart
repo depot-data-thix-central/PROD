@@ -1,11 +1,10 @@
 // lib/presentation/thix_weeding/pages/staff/seating/seating_3d_page.dart
 // ============================================================================
-// THIX WEDDING — PLAN DE SALLE 3D (PRODUCTION v4 — FULLSCREEN GAME UI)
+// THIX WEDDING — PLAN DE SALLE (PRODUCTION v5 — VUE 2D FIXE + NAVIGATION)
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,7 +19,6 @@ import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 // ═══════════════════════════════════════════════════════════════════════════
 const double _roomW = 1200;
 const double _roomH = 800;
-const double _wallH = 300;
 const double _seatGap = 13;
 
 const double _kMoveStep = 20.0;
@@ -312,92 +310,6 @@ class _Guest {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HELPERS 3D
-// ═══════════════════════════════════════════════════════════════════════════
-Widget _z(double z, Widget child) =>
-    Transform(transform: Matrix4.translationValues(0, 0, z), child: child);
-
-Widget _shadow(double w, double h,
-        {bool circle = false, double radius = 8, double o = 0.28}) =>
-    _z(
-      0,
-      Container(
-        width: w,
-        height: h,
-        decoration: BoxDecoration(
-          shape: circle ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circle ? null : BorderRadius.circular(radius),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(o),
-              blurRadius: 18,
-              offset: const Offset(6, 10),
-            ),
-          ],
-        ),
-      ),
-    );
-
-List<Widget> _cuboid({
-  required double w,
-  required double h,
-  required double height,
-  required Color side,
-  required Color top,
-  bool circle = false,
-  double radius = 6,
-  double base = 0,
-  double step = 4,
-  Gradient? topGradient,
-  Color? rim,
-}) {
-  final n = math.max(1, (height / step).ceil());
-  final out = <Widget>[];
-  for (var i = 0; i <= n; i++) {
-    final isTop = i == n;
-    final t = i / n;
-    final z = base + height * t;
-    final c = isTop
-        ? top
-        : Color.lerp(Color.lerp(side, Colors.black, 0.18), side, t)!;
-    out.add(_z(
-      z,
-      Container(
-        width: w,
-        height: h,
-        decoration: BoxDecoration(
-          shape: circle ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: circle ? null : BorderRadius.circular(radius),
-          color: (isTop && topGradient != null) ? null : c,
-          gradient: isTop ? topGradient : null,
-          border: isTop
-              ? Border.all(color: rim ?? Colors.white.withOpacity(0.55), width: 0.9)
-              : null,
-        ),
-      ),
-    ));
-  }
-  return out;
-}
-
-Widget _upright(String t,
-        {required double angle,
-        double size = 11,
-        Color color = _C.ink,
-        FontWeight w = FontWeight.w800,
-        double ls = 0}) =>
-    Transform.rotate(
-      angle: angle,
-      child: Text(
-        t,
-        maxLines: 1,
-        textAlign: TextAlign.center,
-        style: GoogleFonts.inter(
-            fontSize: size, fontWeight: w, color: color, letterSpacing: ls),
-      ),
-    );
-
-// ═══════════════════════════════════════════════════════════════════════════
 // PAGE
 // ═══════════════════════════════════════════════════════════════════════════
 class Seating3dPage extends ConsumerStatefulWidget {
@@ -408,13 +320,10 @@ class Seating3dPage extends ConsumerStatefulWidget {
   ConsumerState<Seating3dPage> createState() => _Seating3dPageState();
 }
 
-class _Seating3dPageState extends ConsumerState<Seating3dPage>
-    with TickerProviderStateMixin {
+class _Seating3dPageState extends ConsumerState<Seating3dPage> {
   final _supa = Supabase.instance.client;
   final _labelCtrl = TextEditingController();
   final _searchCtrl = TextEditingController();
-  late final AnimationController _camCtrl;
-  late final AnimationController _tourCtrl;
   RealtimeChannel? _channel;
   Timer? _flushTimer;
   final Set<String> _dirty = {};
@@ -428,18 +337,16 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   bool _showPlaced = false;
   String _query = '';
 
-  double _tilt = 0.95, _rot = 0.0, _zoom = 1.0;
+  // Caméra 2D
+  double _zoom = 1.0;
   Offset _pan = Offset.zero;
-  double _ambient = 0.9;
-  bool _evening = false, _hq = true, _visit = false, _tour = false;
-  bool _wall = true, _snap = true;
-  double _tourBase = 0, _zoomStart = 1;
+  bool _visit = false;
+  bool _snap = true;
   String? _dragId;
   Offset _dragOff = Offset.zero;
-  ({double t, double r, double z}) _camA = (t: 0.95, r: 0.0, z: 1.0);
-  ({double t, double r, double z}) _camB = (t: 0.95, r: 0.0, z: 1.0);
+  double _zoomStart = 1;
 
-  // Mode Fullscreen / Jeu
+  // Mode Fullscreen
   bool _showPanel = true;
   bool _precisionMode = false;
   bool _showGrid = false;
@@ -447,17 +354,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   @override
   void initState() {
     super.initState();
-    _camCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 420))
-      ..addListener(_camTick);
-    _tourCtrl = AnimationController(
-        vsync: this, duration: const Duration(seconds: 26))
-      ..addListener(() {
-        if (_tour) {
-          setState(() =>
-              _rot = _tourBase + 0.6 * math.sin(_tourCtrl.value * math.pi * 2));
-        }
-      });
     _bootstrap();
   }
 
@@ -466,8 +362,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     _flushTimer?.cancel();
     _flush();
     if (_channel != null) _supa.removeChannel(_channel!);
-    _camCtrl.dispose();
-    _tourCtrl.dispose();
     _labelCtrl.dispose();
     _searchCtrl.dispose();
     super.dispose();
@@ -484,16 +378,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       _items = (rows as List)
           .map((e) => _Item.fromJson(Map<String, dynamic>.from(e as Map)))
           .toList();
-      final lay = await _supa
-          .from('thix_weeding_hall_layout')
-          .select()
-          .eq('wedding_id', widget.weddingId)
-          .maybeSingle();
-      if (lay != null) {
-        _ambient = (lay['ambient_light'] as num?)?.toDouble() ?? _ambient;
-        _wall = (lay['show_wall'] as bool?) ?? true;
-        _evening = (lay['evening'] as bool?) ?? false;
-      }
       await _fetchGuests();
       _subscribe();
       if (mounted) setState(() => _loaded = true);
@@ -560,19 +444,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     }
   }
 
-  Future<void> _saveLayout() async {
-    try {
-      await _supa.from('thix_weeding_hall_layout').upsert({
-        'wedding_id': widget.weddingId,
-        'ambient_light': _ambient,
-        'show_wall': _wall,
-        'evening': _evening,
-      }, onConflict: 'wedding_id');
-    } catch (e) {
-      _toast('Réglages : $e', error: true);
-    }
-  }
-
   // ───────────────────────── HELPERS ─────────────────────────
   _Item? _itemById(String? id) {
     if (id == null) return null;
@@ -607,7 +478,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       .fold(0, (s, g) => s + g.count);
   int get _totalPersons =>
       _guests.where((g) => g.active).fold(0, (s, g) => s + g.count);
-  double get _rotN => ((_rot + math.pi) % (2 * math.pi)) - math.pi;
 
   void _toast(String m, {bool error = false}) {
     if (!mounted) return;
@@ -630,75 +500,51 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     _labelCtrl.text = _itemById(id)?.label ?? '';
   }
 
-  // ───────────────────────── CAMÉRA ─────────────────────────
-  void _camTick() {
-    final k = Curves.easeInOut.transform(_camCtrl.value);
+  // ───────────────────────── CAMÉRA & NAVIGATION ─────────────────────────
+  void _panBy(double dx, double dy) {
+    setState(() => _pan += Offset(dx, dy));
+  }
+
+  void _zoomBy(double f) => setState(() => _zoom = (_zoom * f).clamp(0.4, 2.5).toDouble());
+
+  void _resetView() {
     setState(() {
-      _tilt = _camA.t + (_camB.t - _camA.t) * k;
-      _rot = _camA.r + (_camB.r - _camA.r) * k;
-      _zoom = _camA.z + (_camB.z - _camA.z) * k;
-      _pan = Offset.lerp(_pan, Offset.zero, k) ?? Offset.zero;
+      _zoom = 1.0;
+      _pan = Offset.zero;
     });
   }
-
-  void _animateCam({double? tilt, double? rot, double? zoom, Offset? panTo}) {
-    if (_tour) _toggleTour();
-    final r0 = _rot;
-    var r1 = rot ?? _rot;
-    r1 = r0 + ((r1 - r0 + math.pi) % (2 * math.pi) - math.pi);
-    _camA = (t: _tilt, r: r0, z: _zoom);
-    _camB = (t: tilt ?? _tilt, r: r1, z: zoom ?? _zoom);
-    _camCtrl.forward(from: 0);
-  }
-
-  void _toggleTour() {
-    setState(() => _tour = !_tour);
-    if (_tour) {
-      _tourBase = _rot;
-      _tourCtrl.repeat();
-    } else {
-      _tourCtrl.stop();
-    }
-  }
-
-  void _zoomBy(double f) =>
-      setState(() => _zoom = (_zoom * f).clamp(0.5, 3.5).toDouble());
 
   void _focusSelected() {
     final sel = _selected;
     if (sel == null) return;
     setState(() {
       _zoom = 1.4;
-      _pan = Offset.zero;
+      // Centrer grossièrement sur l'élément
+      _pan = Offset((_roomW/2) - sel.c.dx, (_roomH/2) - sel.c.dy) * 0.8;
     });
-    _animateCam(tilt: 0.9, zoom: 1.6);
     _toast('Centré sur ${sel.label}');
   }
 
   void _camStart(ScaleStartDetails d) {
     _zoomStart = _zoom;
-    if (_tour) _toggleTour();
   }
 
   void _camUpdate(ScaleUpdateDetails d) {
     setState(() {
       if (d.pointerCount >= 2) {
-        _zoom = (_zoomStart * d.scale).clamp(0.5, 3.5).toDouble();
-        _pan += d.focalPointDelta;
-      } else {
-        _rot += d.focalPointDelta.dx * 0.009;
-        _tilt = (_tilt - d.focalPointDelta.dy * 0.006).clamp(0.0, 1.3).toDouble();
+        _zoom = (_zoomStart * d.scale).clamp(0.4, 2.5).toDouble();
       }
+      _pan += d.focalPointDelta;
     });
   }
 
-  // ───────────────────────── HIT-TEST ─────────────────────────
+  // ───────────────────────── HIT-TEST (2D) ─────────────────────────
   bool _contains(_Item it, Offset p) {
     final d = p - it.c;
     final l = _rot2(d, -it.rotation);
     final b = it.body;
-    if (it.kind == _Kind.tableRound) return d.distance <= b.width / 2 + 6;
-    return l.dx.abs() <= b.width / 2 + 6 && l.dy.abs() <= b.height / 2 + 6;
+    if (it.kind == _Kind.tableRound) return d.distance <= b.width / 2 + 10;
+    return l.dx.abs() <= b.width / 2 + 10 && l.dy.abs() <= b.height / 2 + 10;
   }
 
   _Item? _hitItem(Offset p) {
@@ -719,7 +565,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     for (final it in _items.where((i) => i.isTable)) {
       for (final s in it.seats) {
         final pos = it.c + _rot2(s.off, it.rotation);
-        if ((pos - p).distance < 16) return (it, s.index);
+        if ((pos - p).distance < 18) return (it, s.index);
       }
     }
     return null;
@@ -770,7 +616,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   void _editUpdate(ScaleUpdateDetails d) {
     if (d.pointerCount >= 2) {
       _dragId = null;
-      setState(() => _zoom = (_zoomStart * d.scale).clamp(0.5, 3.5).toDouble());
+      setState(() => _zoom = (_zoomStart * d.scale).clamp(0.4, 2.5).toDouble());
       return;
     }
     final it = _itemById(_dragId);
@@ -946,8 +792,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       ref.invalidate(guestsProvider(widget.weddingId));
       if (!quiet) {
         HapticFeedback.mediumImpact();
-        _toast(
-            '${g.name} → ${t.label}, place${seats.length > 1 ? 's' : ''} ${seats.map((s) => s + 1).join(', ')}');
+        _toast('${g.name} → ${t.label}, place${seats.length > 1 ? 's' : ''} ${seats.map((s) => s + 1).join(', ')}');
       }
       return true;
     } catch (e) {
@@ -1043,7 +888,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   }
 
   // ═════════════════════════════════════════════════════════════════════════
-  // BUILD FULLSCREEN (Style Jeu / HUD)
+  // BUILD FULLSCREEN
   // ═════════════════════════════════════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
@@ -1058,15 +903,13 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
     final panelHeight = MediaQuery.of(context).size.height * 0.40;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF1B1F3B), // Fond sombre
+      backgroundColor: const Color(0xFF1B1F3B),
       body: Stack(
         children: [
-          // 1. LA VUE 3D PREND TOUT L'ÉCRAN
-          Positioned.fill(
-            child: _viewport(),
-          ),
+          // 1. LA VUE 2D
+          Positioned.fill(child: _viewport()),
 
-          // 2. LA BARRE D'OUTILS FLOTTANTE (Haut)
+          // 2. LA BARRE D'OUTILS
           Positioned(
             top: 0,
             left: 0,
@@ -1080,7 +923,29 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
             ),
           ),
 
-          // 3. BOUTON POUR AFFICHER/MASQUER LE PANNEAU
+          // 3. BOUTONS DE NAVIGATION GAUCHE / DROITE
+          Positioned(
+            left: 8,
+            top: MediaQuery.of(context).size.height / 2 - 40,
+            child: FloatingActionButton(
+              heroTag: 'nav_left',
+              backgroundColor: Colors.black.withOpacity(0.6),
+              onPressed: () => _panBy(150, 0),
+              child: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20),
+            ),
+          ),
+          Positioned(
+            right: 8,
+            top: MediaQuery.of(context).size.height / 2 - 40,
+            child: FloatingActionButton(
+              heroTag: 'nav_right',
+              backgroundColor: Colors.black.withOpacity(0.6),
+              onPressed: () => _panBy(-150, 0),
+              child: const Icon(Icons.arrow_forward_ios, color: Colors.white, size: 20),
+            ),
+          ),
+
+          // 4. BOUTON PANNEAU
           Positioned(
             top: MediaQuery.of(context).padding.top + 70,
             right: 12,
@@ -1091,7 +956,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
             ),
           ),
 
-          // 4. LE PANNEAU DE CONFIGURATION FLOTTANT
+          // 5. PANNEAU DE CONFIGURATION
           if (_showPanel)
             Positioned(
               left: 12,
@@ -1105,14 +970,12 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
               ),
             ),
 
-          // 5. LE JOYSTICK (remonte si le panneau est ouvert)
+          // 6. JOYSTICK DE DÉPLACEMENT
           if (_selected != null)
             Positioned(
               left: 12,
               right: 12,
-              bottom: _showPanel
-                  ? panelHeight + 24 + bottomInset
-                  : 12 + bottomInset,
+              bottom: _showPanel ? panelHeight + 24 + bottomInset : 12 + bottomInset,
               child: _SelectionJoystick(
                 item: _selected!,
                 precision: _precisionMode,
@@ -1141,142 +1004,81 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
+      child: Row(
         children: [
-          Row(
-            children: [
-              // Bouton Retour
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 18),
-                onPressed: () => Navigator.maybePop(context),
-              ),
-              const SizedBox(width: 4),
-              _Pill(
-                label: 'Éditer',
-                icon: Icons.open_with_rounded,
-                selected: !_visit,
-                onTap: () => setState(() => _visit = false),
-              ),
-              const SizedBox(width: 4),
-              _Pill(
-                label: 'Visiter',
-                icon: Icons.explore_outlined,
-                selected: _visit,
-                onTap: () => setState(() => _visit = true),
-              ),
-              const Spacer(),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.grid_view_rounded, color: Colors.white70, size: 20),
-                onPressed: () => _animateCam(tilt: 0, rot: 0, zoom: 1),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.view_in_ar_rounded, color: Colors.white70, size: 20),
-                onPressed: () => _animateCam(tilt: 0.95, rot: 0, zoom: 1),
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(_tour ? Icons.pause_rounded : Icons.play_arrow_rounded, color: _tour ? _C.gold : Colors.white70, size: 20),
-                onPressed: _toggleTour,
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.add_circle_outline, color: _C.gold, size: 22),
-                onPressed: _openAddSheet,
-              ),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.tune_rounded, color: _C.blue, size: 22),
-                onPressed: _openSettings,
-              ),
-            ],
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white70, size: 18),
+            onPressed: () => Navigator.maybePop(context),
           ),
-          // Sliders compacts
-          Row(
-            children: [
-              const SizedBox(width: 8),
-              const Icon(Icons.height_rounded, size: 14, color: Colors.white54),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                  ),
-                  child: Slider(
-                    value: _tilt.clamp(0.0, 1.3).toDouble(),
-                    min: 0,
-                    max: 1.3,
-                    activeColor: _C.gold,
-                    inactiveColor: Colors.white24,
-                    onChanged: (v) => setState(() => _tilt = v),
-                  ),
-                ),
-              ),
-              const Icon(Icons.threesixty_rounded, size: 14, color: Colors.white54),
-              Expanded(
-                child: SliderTheme(
-                  data: SliderTheme.of(context).copyWith(
-                    trackHeight: 2,
-                    thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 5),
-                    overlayShape: const RoundSliderOverlayShape(overlayRadius: 10),
-                  ),
-                  child: Slider(
-                    value: _rotN.clamp(-math.pi, math.pi).toDouble(),
-                    min: -math.pi,
-                    max: math.pi,
-                    activeColor: _C.gold,
-                    inactiveColor: Colors.white24,
-                    onChanged: (v) => setState(() => _rot = v),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 8),
-            ],
+          const SizedBox(width: 4),
+          _Pill(
+            label: 'Éditer',
+            icon: Icons.open_with_rounded,
+            selected: !_visit,
+            onTap: () => setState(() => _visit = false),
+          ),
+          const SizedBox(width: 4),
+          _Pill(
+            label: 'Visiter',
+            icon: Icons.explore_outlined,
+            selected: _visit,
+            onTap: () => setState(() => _visit = true),
+          ),
+          const Spacer(),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.zoom_in, color: Colors.white70, size: 22),
+            onPressed: () => _zoomBy(1.2),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.zoom_out, color: Colors.white70, size: 22),
+            onPressed: () => _zoomBy(0.8),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.center_focus_strong, color: Colors.white70, size: 22),
+            onPressed: _resetView,
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.add_circle_outline, color: _C.gold, size: 24),
+            onPressed: _openAddSheet,
           ),
         ],
       ),
     );
   }
 
-  // ───────────────────────── VIEWPORT ─────────────────────────
+  // ───────────────────────── VIEWPORT 2D FIXE ─────────────────────────
   Widget _viewport() {
     return LayoutBuilder(builder: (context, c) {
-      // On réduit le fit global pour que la pièce ne soit pas coupée si le panneau est ouvert
-      final fit = math.min(c.maxWidth / _roomW, c.maxHeight / (_roomH * 1.2));
+      final fit = math.min(c.maxWidth / _roomW, c.maxHeight / _roomH) * 0.9;
       final s = fit * _zoom;
-      final m = Matrix4.identity()
-        ..setEntry(3, 2, 0.001)
-        ..rotateX(_tilt)
-        ..rotateZ(_rot)
-        ..scale(s, s, s);
+      
       return GestureDetector(
         behavior: HitTestBehavior.translucent,
         onScaleStart: _visit ? _camStart : null,
         onScaleUpdate: _visit ? _camUpdate : null,
         child: Container(
-          decoration: const BoxDecoration(
-            // Plus de bordure arrondie pour le plein écran
-          ),
+          decoration: const BoxDecoration(color: Color(0xFF1B1F3B)),
           child: ClipRRect(
             child: Stack(
               children: [
+                // Fond
                 Positioned.fill(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
+                  child: Container(
+                    decoration: const BoxDecoration(
                       gradient: LinearGradient(
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
-                        colors: _evening
-                            ? const [Color(0xFF1B1F3B), Color(0xFF2E2A52)]
-                            : const [Color(0xFFEAF1FB), Color(0xFFFBF8F0)],
+                        colors: [Color(0xFF2E2A52), Color(0xFF1B1F3B)],
                       ),
                     ),
                   ),
                 ),
+                // Plan 2D (sans rotation 3D)
                 Positioned.fill(
                   child: OverflowBox(
                     minWidth: _roomW,
@@ -1285,15 +1087,14 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                     maxHeight: _roomH,
                     child: Transform.translate(
                       offset: _pan,
-                      child: Transform(
-                        alignment: Alignment.center,
-                        transform: m,
+                      child: Transform.scale(
+                        scale: s,
                         child: _room(),
                       ),
                     ),
                   ),
                 ),
-                // Bannière de placement
+                // Bannière
                 if (_assigning != null)
                   Positioned(
                     top: 90,
@@ -1323,39 +1124,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                       ),
                     ),
                   ),
-                // Zoom
-                Positioned(
-                  top: 90,
-                  right: 10,
-                  child: ThixGlass(
-                    radius: 16,
-                    blur: 14,
-                    padding: const EdgeInsets.all(2),
-                    child: Column(
-                      children: [
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.add, size: 20),
-                          onPressed: () => _zoomBy(1.25),
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.remove, size: 20),
-                          onPressed: () => _zoomBy(0.8),
-                        ),
-                        IconButton(
-                          visualDensity: VisualDensity.compact,
-                          icon: const Icon(Icons.center_focus_strong_outlined, size: 20),
-                          onPressed: () => _animateCam(zoom: 1),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                // Stats + aide
+                // Stats
                 Positioned(
                   left: 10,
-                  bottom: _showPanel ? 16 : 80, // Remonte si le panneau est fermé
+                  bottom: _showPanel ? 16 : 80,
                   child: ThixGlass(
                     radius: 14,
                     blur: 14,
@@ -1369,9 +1141,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                           style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _C.ink),
                         ),
                         Text(
-                          _visit
-                              ? 'Glissez pour tourner • 2 doigts : zoom'
-                              : 'Glissez une table • pincez pour zoomer',
+                          _visit ? 'Glissez pour déplacer' : 'Glissez un élément • pincez pour zoomer',
                           style: GoogleFonts.inter(fontSize: 9.5, color: _C.ink2),
                         ),
                       ],
@@ -1387,22 +1157,20 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
   }
 
   Widget _room() {
-    final sc = math.sin(_rot), cc = math.cos(_rot);
-    double depth(_Item i) =>
-        sc * (i.c.dx - _roomW / 2) + cc * (i.c.dy - _roomH / 2);
-    final flat = _items.where((i) => i.isFlat).toList();
-    final solids = _items.where((i) => !i.isFlat).toList()
-      ..sort((a, b) => depth(a).compareTo(depth(b)));
-    final showWall = _wall && _tilt > 0.25 && _rotN.abs() < 1.15;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapUp: (d) => _onTap(d.localPosition),
       onScaleStart: _visit ? null : _editStart,
       onScaleUpdate: _visit ? null : _editUpdate,
       onScaleEnd: _visit ? null : _editEnd,
-      child: SizedBox(
+      child: Container(
         width: _roomW,
         height: _roomH,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF5E6C4), // Sol de la salle
+          border: Border.all(color: _C.gold, width: 8),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 20)],
+        ),
         child: Stack(
           clipBehavior: Clip.none,
           children: [
@@ -1412,34 +1180,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                   child: CustomPaint(painter: _GridPainter()),
                 ),
               ),
-            if (showWall)
-              Positioned(
-                left: 0,
-                top: -_wallH,
-                width: _roomW,
-                height: _wallH,
-                child: IgnorePointer(
-                  child: Transform(
-                    alignment: Alignment.bottomCenter,
-                    transform: Matrix4.identity()..rotateX(-math.pi / 2),
-                    child: CustomPaint(
-                      size: const Size(_roomW, _wallH),
-                      painter: _WallPainter(evening: _evening),
-                    ),
-                  ),
-                ),
-              ),
-            Positioned.fill(
-              child: CustomPaint(
-                painter: _FloorPainter(
-                  ambient: _ambient,
-                  evening: _evening,
-                  glows: [for (final t in _items.where((i) => i.isTable)) t.c],
-                ),
-              ),
-            ),
-            for (final it in flat) _placed(it),
-            for (final it in solids) _placed(it),
+            for (final it in _items) _placed(it),
           ],
         ),
       ),
@@ -1465,15 +1206,10 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                   selected: sel,
                   selSeat: sel ? _selSeat : null,
                   assigning: _assigning != null,
-                  camRot: _rot,
-                  hq: _hq,
                 )
               : _DecorView(
                   item: it,
                   selected: sel,
-                  camRot: _rot,
-                  hq: _hq,
-                  evening: _evening,
                 ),
         ),
       ),
@@ -1595,8 +1331,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
               backgroundColor: _zoneColor(g.zone).withOpacity(0.2),
               child: g.isVip
                   ? const Icon(Icons.star, size: 15, color: _C.gold)
-                  : Text(g.initial,
-                      style: TextStyle(color: _zoneColor(g.zone), fontWeight: FontWeight.w800)),
+                  : Text(g.initial, style: TextStyle(color: _zoneColor(g.zone), fontWeight: FontWeight.w800)),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -1774,22 +1509,7 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
                 .toList(),
           ),
         ],
-        if (it.kind != _Kind.tableRound && it.kind != _Kind.plant && it.kind != _Kind.cake)
-          _slider('Rotation', it.rotation, -math.pi, math.pi, (v) {
-            setState(() => it.rotation = v);
-            _markDirty(it.id);
-          }),
-        if (!it.isTable && it.kind != _Kind.plant && it.kind != _Kind.cake) ...[
-          _slider('Largeur', it.body.width, 60, 520, (v) {
-            setState(() => it.w = v);
-            _markDirty(it.id);
-          }),
-          _slider('Profondeur', it.body.height, 30, 320, (v) {
-            setState(() => it.h = v);
-            _markDirty(it.id);
-          }),
-        ],
-        const SizedBox(height: 4),
+        const SizedBox(height: 8),
         Row(
           children: [
             Expanded(
@@ -1836,23 +1556,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
           else
             ...unplaced.map((g) => Padding(padding: const EdgeInsets.only(bottom: 6), child: _guestTile(g, table: it))),
         ],
-      ],
-    );
-  }
-
-  Widget _slider(String label, double v, double min, double max, ValueChanged<double> on) {
-    return Row(
-      children: [
-        SizedBox(width: 78, child: Text(label, style: GoogleFonts.inter(fontSize: 11, color: _C.ink2, fontWeight: FontWeight.w600))),
-        Expanded(
-          child: Slider(
-            value: v.clamp(min, max).toDouble(),
-            min: min,
-            max: max,
-            activeColor: _C.blue,
-            onChanged: on,
-          ),
-        ),
       ],
     );
   }
@@ -1912,109 +1615,6 @@ class _Seating3dPageState extends ConsumerState<Seating3dPage>
       ),
     );
   }
-
-  void _openSettings() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setM) => Padding(
-          padding: const EdgeInsets.all(12),
-          child: ThixGlass(
-            radius: 26,
-            opacity: 0.9,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Réglages de la salle',
-                    style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 16)),
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    const Icon(Icons.wb_sunny_outlined, size: 18),
-                    Expanded(
-                      child: Slider(
-                        value: _ambient,
-                        min: 0.4,
-                        max: 1,
-                        activeColor: _C.gold,
-                        onChanged: (v) {
-                          setState(() => _ambient = v);
-                          setM(() {});
-                        },
-                        onChangeEnd: (_) => _saveLayout(),
-                      ),
-                    ),
-                  ],
-                ),
-                SwitchListTile(
-                  dense: true,
-                  title: const Text('Ambiance soirée'),
-                  value: _evening,
-                  onChanged: (v) {
-                    setState(() => _evening = v);
-                    setM(() {});
-                    _saveLayout();
-                  },
-                ),
-                SwitchListTile(
-                  dense: true,
-                  title: const Text('Mur & fenêtres'),
-                  value: _wall,
-                  onChanged: (v) {
-                    setState(() => _wall = v);
-                    setM(() {});
-                    _saveLayout();
-                  },
-                ),
-                SwitchListTile(
-                  dense: true,
-                  title: const Text('Aimanter à la grille'),
-                  value: _snap,
-                  onChanged: (v) {
-                    setState(() => _snap = v);
-                    setM(() {});
-                  },
-                ),
-                SwitchListTile(
-                  dense: true,
-                  title: const Text('Haute qualité 3D'),
-                  subtitle: const Text('Désactivez-la sur un téléphone lent'),
-                  value: _hq,
-                  onChanged: (v) {
-                    setState(() => _hq = v);
-                    setM(() {});
-                  },
-                ),
-                const Divider(),
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.auto_fix_high_rounded, color: _C.blue),
-                  title: const Text('Placer tous les invités automatiquement'),
-                  subtitle: const Text('VIP d\'abord, par zone de table'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _autoPlaceAll();
-                  },
-                ),
-                ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.link_off_rounded, color: _C.rose),
-                  title: const Text('Libérer toutes les chaises'),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    _releaseAll();
-                  },
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2051,18 +1651,13 @@ class _SelectionJoystick extends StatelessWidget {
         borderRadius: BorderRadius.circular(22),
         border: Border.all(color: _C.gold, width: 1.5),
         boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.5),
-            blurRadius: 15,
-            offset: const Offset(0, 5),
-          ),
+          BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 15, offset: const Offset(0, 5)),
         ],
       ),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // Indicateur
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -2072,11 +1667,7 @@ class _SelectionJoystick extends StatelessWidget {
                   '✦ ${item.label}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 13,
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13, color: Colors.white),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -2086,10 +1677,8 @@ class _SelectionJoystick extends StatelessWidget {
               ],
             ),
           ),
-          // D-pad
           _DPad(onMove: onMove),
           const SizedBox(width: 8),
-          // Actions
           Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -2126,32 +1715,16 @@ class _DPad extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const sz = 34.0; // Réduit pour s'adapter au HUD
+    const sz = 34.0;
     return SizedBox(
       width: sz * 3 + 6,
       height: sz * 3 + 6,
       child: Stack(
         children: [
-          Positioned(
-            left: sz + 3,
-            top: 0,
-            child: _DPadButton(icon: Icons.arrow_upward_rounded, onTap: () => onMove(0, -1)),
-          ),
-          Positioned(
-            left: sz + 3,
-            bottom: 0,
-            child: _DPadButton(icon: Icons.arrow_downward_rounded, onTap: () => onMove(0, 1)),
-          ),
-          Positioned(
-            left: 0,
-            top: sz + 3,
-            child: _DPadButton(icon: Icons.arrow_back_rounded, onTap: () => onMove(-1, 0)),
-          ),
-          Positioned(
-            right: 0,
-            top: sz + 3,
-            child: _DPadButton(icon: Icons.arrow_forward_rounded, onTap: () => onMove(1, 0)),
-          ),
+          Positioned(left: sz + 3, top: 0, child: _DPadButton(icon: Icons.arrow_upward_rounded, onTap: () => onMove(0, -1))),
+          Positioned(left: sz + 3, bottom: 0, child: _DPadButton(icon: Icons.arrow_downward_rounded, onTap: () => onMove(0, 1))),
+          Positioned(left: 0, top: sz + 3, child: _DPadButton(icon: Icons.arrow_back_rounded, onTap: () => onMove(-1, 0))),
+          Positioned(right: 0, top: sz + 3, child: _DPadButton(icon: Icons.arrow_forward_rounded, onTap: () => onMove(1, 0))),
           Positioned(
             left: sz + 3,
             top: sz + 3,
@@ -2210,7 +1783,7 @@ class _DPadButtonState extends State<_DPadButton> {
         width: 34,
         height: 34,
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.15), // HUD style
+          color: Colors.white.withOpacity(0.15),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: Colors.white24),
         ),
@@ -2278,206 +1851,6 @@ class _GridPainter extends CustomPainter {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PAINTERS — mur, sol, piste de danse
-// ═══════════════════════════════════════════════════════════════════════════
-class _WallPainter extends CustomPainter {
-  final bool evening;
-  _WallPainter({required this.evening});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final rect = Rect.fromLTWH(0, 0, w, h);
-
-    final wallPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: evening
-            ? const [Color(0xFF1B1F3B), Color(0xFF3B2A63), Color(0xFF4B3A7A)]
-            : const [Color(0xFFFFF7E6), Color(0xFFFBF3DD), Color(0xFFF5E6C4)],
-      ).createShader(rect);
-    canvas.drawRect(rect, wallPaint);
-
-    canvas.drawRect(
-      Rect.fromLTWH(0, h - 18, w, 18),
-      Paint()..color = const Color(0xFFB8860B),
-    );
-
-    const windowCount = 5;
-    final panelW = w / (windowCount * 2 + 1);
-    for (var i = 0; i < windowCount; i++) {
-      final x = panelW * (i * 2 + 1);
-      final r = Rect.fromLTWH(x, h * 0.18, panelW, h * 0.55);
-
-      final framePaint = Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 3;
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r, const Radius.circular(8)),
-        framePaint,
-      );
-
-      final glowPaint = Paint()
-        ..shader = RadialGradient(
-          colors: evening
-              ? [const Color(0xFFFFE9A8).withOpacity(0.7), const Color(0xFFFFD060).withOpacity(0.1)]
-              : [Colors.white.withOpacity(0.9), Colors.white.withOpacity(0.3)],
-        ).createShader(r);
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(r.deflate(4), const Radius.circular(6)),
-        glowPaint,
-      );
-
-      final barPaint = Paint()
-        ..color = const Color(0xFFD4AF37)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-      canvas.drawLine(Offset(r.center.dx, r.top), Offset(r.center.dx, r.bottom), barPaint);
-      canvas.drawLine(Offset(r.left, r.center.dy), Offset(r.right, r.center.dy), barPaint);
-    }
-
-    if (evening) {
-      final lightPaint = Paint()..color = const Color(0xFFFFF3A0);
-      for (var x = 20.0; x < w; x += 60) {
-        canvas.drawCircle(Offset(x, h * 0.05), 4, lightPaint);
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _WallPainter oldDelegate) => oldDelegate.evening != evening;
-}
-
-class _FloorPainter extends CustomPainter {
-  final double ambient;
-  final bool evening;
-  final List<Offset> glows;
-
-  _FloorPainter({required this.ambient, required this.evening, required this.glows});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final rect = Rect.fromLTWH(0, 0, w, h);
-
-    final basePaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: evening
-            ? const [Color(0xFF2A1B14), Color(0xFF3D2A1E), Color(0xFF4B3626)]
-            : const [Color(0xFFF5E6C4), Color(0xFFEEDDB5), Color(0xFFE0CDA0)],
-      ).createShader(rect);
-    canvas.drawRect(rect, basePaint);
-
-    final parquetPaint = Paint()
-      ..color = evening ? Colors.white.withOpacity(0.05) : Colors.black.withOpacity(0.06)
-      ..strokeWidth = 1;
-    const plankW = 60.0;
-    const plankH = 20.0;
-    for (var y = 0.0; y < h; y += plankH) {
-      canvas.drawLine(Offset(0, y), Offset(w, y), parquetPaint);
-      final off = (y ~/ plankH).isEven ? 0.0 : plankW / 2;
-      for (var x = off; x < w; x += plankW) {
-        canvas.drawLine(Offset(x, y), Offset(x, y + plankH), parquetPaint);
-      }
-    }
-
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(rect.deflate(3), const Radius.circular(8)),
-      Paint()
-        ..color = _C.gold
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 6,
-    );
-
-    final glowPaint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 40);
-    for (final g in glows) {
-      glowPaint.shader = RadialGradient(
-        colors: evening
-            ? [const Color(0xFFFFD700).withOpacity(0.35 * ambient), Colors.transparent]
-            : [Colors.white.withOpacity(0.5 * ambient), Colors.transparent],
-      ).createShader(Rect.fromCircle(center: g, radius: 90));
-      canvas.drawCircle(g, 90, glowPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _FloorPainter oldDelegate) =>
-      oldDelegate.ambient != ambient ||
-      oldDelegate.evening != evening ||
-      !listEquals(oldDelegate.glows, glows);
-}
-
-class _DancePainter extends CustomPainter {
-  final bool evening;
-  _DancePainter({required this.evening});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width, h = size.height;
-    final rect = Rect.fromLTWH(0, 0, w, h);
-    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(14));
-
-    canvas.save();
-    canvas.clipRRect(rrect);
-
-    final basePaint = Paint()
-      ..shader = LinearGradient(
-        colors: evening
-            ? const [Color(0xFF1A1A2E), Color(0xFF16213E)]
-            : const [Color(0xFF2B2D42), Color(0xFF3A3D5C)],
-      ).createShader(rect);
-    canvas.drawRect(rect, basePaint);
-
-    const tile = 30.0;
-    final lightPaint = Paint()
-      ..color = evening
-          ? const Color(0xFF4A3F8C).withOpacity(0.5)
-          : Colors.white.withOpacity(0.08);
-    for (var y = 0.0; y < h; y += tile) {
-      for (var x = 0.0; x < w; x += tile) {
-        final col = (x ~/ tile).toInt();
-        final row = (y ~/ tile).toInt();
-        if ((col + row).isEven) {
-          canvas.drawRect(Rect.fromLTWH(x, y, tile, tile), lightPaint);
-        }
-      }
-    }
-
-    final neonPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFE31C4E), Color(0xFFD4AF37), Color(0xFF6B46C1), Color(0xFFE31C4E)],
-      ).createShader(rect)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
-    canvas.drawRRect(rrect, neonPaint);
-
-    final glowPaint = Paint()
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 20);
-    for (var i = 0; i < 3; i++) {
-      final cx = w * (0.25 + i * 0.25);
-      glowPaint.shader = RadialGradient(
-        colors: [
-          [const Color(0xFFE31C4E), const Color(0xFFD4AF37), const Color(0xFF6B46C1)][i]
-              .withOpacity(evening ? 0.6 : 0.25),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromCircle(center: Offset(cx, h / 2), radius: 70));
-      canvas.drawCircle(Offset(cx, h / 2), 70, glowPaint);
-    }
-
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _DancePainter oldDelegate) => oldDelegate.evening != evening;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // PETITS WIDGETS UI
 // ═══════════════════════════════════════════════════════════════════════════
 class _Pill extends StatelessWidget {
@@ -2506,10 +1879,7 @@ class _Pill extends StatelessWidget {
             if (label != null) ...[
               const SizedBox(width: 6),
               Text(label!,
-                  style: GoogleFonts.inter(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: selected ? Colors.white : Colors.white70)),
+                  style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: selected ? Colors.white : Colors.white70)),
             ],
           ],
         ),
@@ -2553,7 +1923,7 @@ class _Stepper extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TABLE 3D
+// TABLE 2D
 // ═══════════════════════════════════════════════════════════════════════════
 class _TableView extends StatelessWidget {
   final _Item item;
@@ -2561,8 +1931,6 @@ class _TableView extends StatelessWidget {
   final bool selected;
   final int? selSeat;
   final bool assigning;
-  final double camRot;
-  final bool hq;
 
   const _TableView({
     required this.item,
@@ -2570,8 +1938,6 @@ class _TableView extends StatelessWidget {
     required this.selected,
     required this.selSeat,
     required this.assigning,
-    required this.camRot,
-    required this.hq,
   });
 
   @override
@@ -2580,42 +1946,6 @@ class _TableView extends StatelessWidget {
     final round = item.kind == _Kind.tableRound;
     final zc = _zoneColor(item.zone);
     final seats = item.seats;
-    final cr = math.cos(item.rotation), sr = math.sin(item.rotation);
-    final sc = math.sin(camRot), cc = math.cos(camRot);
-    double depth(Offset o) =>
-        sc * (o.dx * cr - o.dy * sr) + cc * (o.dx * sr + o.dy * cr);
-
-    final sorted = [...seats]..sort((a, c) => depth(a.off).compareTo(depth(c.off)));
-    final back = sorted.where((s) => depth(s.off) < 0).toList();
-    final front = sorted.where((s) => depth(s.off) >= 0).toList();
-    final step = hq ? 4.0 : 9.0;
-    final upAngle = -(camRot + item.rotation);
-
-    Widget chair(_Seat s) {
-      final g = occ[s.index];
-      final backNear = depth(Offset(math.sin(s.phi), -math.cos(s.phi))) > 0;
-      return Transform.translate(
-        offset: s.off,
-        child: Transform.rotate(
-          angle: s.phi,
-          child: _ChairView(
-            occupied: g != null,
-            initial: g?.initial ?? '',
-            color: g == null ? zc : (g.isVip ? _C.gold : zc),
-            selected: selSeat == s.index,
-            pick: assigning && g == null,
-            backNear: backNear,
-            labelAngle: upAngle - s.phi,
-            hq: hq,
-          ),
-        ),
-      );
-    }
-
-    Offset plate(_Seat s) {
-      final dist = round ? _seatGap + b.width / 2 * 0.26 : _seatGap + 11;
-      return s.off - Offset(math.sin(s.phi), -math.cos(s.phi)) * dist;
-    }
 
     BoxDecoration shape({Gradient? gradient, Color? color, Border? border}) => BoxDecoration(
           shape: round ? BoxShape.circle : BoxShape.rectangle,
@@ -2634,7 +1964,7 @@ class _TableView extends StatelessWidget {
         children: [
           Container(
             decoration: shape(
-              gradient: const RadialGradient(colors: [Colors.white, Color(0xFFF3EEE0)]),
+              color: Colors.white,
               border: Border.all(color: zc.withOpacity(0.85), width: 2.2),
             ),
           ),
@@ -2647,45 +1977,29 @@ class _TableView extends StatelessWidget {
               color: zc.withOpacity(0.14),
             ),
           ),
-          for (final s in seats)
-            Transform.translate(
-              offset: plate(s),
-              child: Container(
-                width: 11,
-                height: 11,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: occ[s.index] != null ? zc.withOpacity(0.85) : Colors.white,
-                  border: Border.all(color: const Color(0xFFD8D0BC), width: 1.2),
-                ),
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: math.max(34, b.shortestSide * 0.62)),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: zc, width: 1.3),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 4)],
               ),
-            ),
-          Transform.rotate(
-            angle: upAngle,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: math.max(34, b.shortestSide * 0.62)),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: zc, width: 1.3),
-                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12), blurRadius: 4)],
-                ),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(item.label,
-                          style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _C.ink)),
-                      Text('${occ.length}/${item.capacity}',
-                          style: GoogleFonts.inter(
-                              fontSize: 8.5,
-                              fontWeight: FontWeight.w700,
-                              color: occ.length >= item.capacity ? _C.rose : _C.ink2)),
-                    ],
-                  ),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(item.label,
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _C.ink)),
+                    Text('${occ.length}/${item.capacity}',
+                        style: GoogleFonts.inter(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w700,
+                            color: occ.length >= item.capacity ? _C.rose : _C.ink2)),
+                  ],
                 ),
               ),
             ),
@@ -2699,82 +2013,62 @@ class _TableView extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         if (selected)
-          _z(
-            0,
-            Container(
-              width: b.width + 24,
-              height: b.height + 24,
-              decoration: BoxDecoration(
-                shape: round ? BoxShape.circle : BoxShape.rectangle,
-                borderRadius: round ? null : BorderRadius.circular(18),
-                border: Border.all(color: _C.gold, width: 2.5),
-                boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.5), blurRadius: 22, spreadRadius: 2)],
-              ),
+          Container(
+            width: b.width + 24,
+            height: b.height + 24,
+            decoration: BoxDecoration(
+              shape: round ? BoxShape.circle : BoxShape.rectangle,
+              borderRadius: round ? null : BorderRadius.circular(18),
+              border: Border.all(color: _C.gold, width: 2.5),
+              boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.5), blurRadius: 22, spreadRadius: 2)],
             ),
           ),
-        _shadow(b.width + 6, b.height + 6, circle: round, radius: 14),
-        ...back.map(chair),
-        ..._cuboid(
-          w: b.width,
-          h: b.height,
-          height: 24,
-          side: _C.clothSide,
-          top: _C.cloth,
-          circle: round,
-          radius: 12,
-          step: step,
+        Container(
+          width: b.width + 6,
+          height: b.height + 6,
+          decoration: BoxDecoration(
+            shape: round ? BoxShape.circle : BoxShape.rectangle,
+            borderRadius: round ? null : BorderRadius.circular(14),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 10, offset: const Offset(4, 6))],
+          ),
         ),
-        _z(24.5, topSurface),
-        ...front.map(chair),
+        // La table
+        topSurface,
+        // Les chaises
+        for (final s in seats)
+          Transform.translate(
+            offset: s.off,
+            child: _ChairView(
+              occupied: occ[s.index] != null,
+              initial: occ[s.index]?.initial ?? '',
+              color: occ[s.index] == null ? zc : (occ[s.index]!.isVip ? _C.gold : zc),
+              selected: selSeat == s.index,
+              pick: assigning && occ[s.index] == null,
+            ),
+          ),
       ],
     );
   }
 }
 
 class _ChairView extends StatelessWidget {
-  final bool occupied, selected, pick, backNear, hq;
+  final bool occupied, selected, pick;
   final String initial;
   final Color color;
-  final double labelAngle;
 
   const _ChairView({
     required this.occupied,
     required this.selected,
     required this.pick,
-    required this.backNear,
-    required this.hq,
     required this.initial,
     required this.color,
-    required this.labelAngle,
   });
 
   @override
   Widget build(BuildContext context) {
     final seatColor = occupied ? color : const Color(0xFFFBF8EF);
-    final backRest = Positioned(
-      left: 1,
-      top: -1,
-      child: Transform(
-        alignment: Alignment.topCenter,
-        transform: Matrix4.identity()
-          ..translate(0.0, 0.0, 12.0)
-          ..rotateX(math.pi / 2),
-        child: Container(
-          width: 24,
-          height: 16,
-          decoration: BoxDecoration(
-            color: occupied ? Color.lerp(color, Colors.black, 0.12) : const Color(0xFFEFE8D6),
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: _C.gold, width: 1.1),
-          ),
-        ),
-      ),
-    );
-    final glow = selected
-        ? _C.gold
-        : pick
-            ? _C.green
-            : null;
+    final glow = selected ? _C.gold : (pick ? _C.green : null);
+    
     return SizedBox(
       width: 26,
       height: 26,
@@ -2782,45 +2076,31 @@ class _ChairView extends StatelessWidget {
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          _shadow(24, 24, radius: 7, o: 0.22),
-          ..._cuboid(
-            w: 22,
-            h: 22,
-            height: 11,
-            side: const Color(0xFFB89B55),
-            top: const Color(0xFFB89B55),
-            radius: 6,
-            step: hq ? 5.5 : 11,
-          ),
-          if (!backNear) backRest,
-          _z(
-            12.5,
-            Container(
-              width: 24,
-              height: 24,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: seatColor,
-                borderRadius: BorderRadius.circular(7),
-                border: Border.all(
-                  color: selected ? Colors.white : (pick ? _C.green : _C.gold),
-                  width: selected || pick ? 2.2 : 1.2,
-                ),
-                boxShadow: glow == null
-                    ? null
-                    : [BoxShadow(color: glow.withOpacity(0.7), blurRadius: 10, spreadRadius: 1)],
-              ),
-              child: occupied
-                  ? Transform.rotate(
-                      angle: labelAngle,
-                      child: Text(initial,
-                          style: GoogleFonts.inter(
-                              fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
-                    )
-                  : null,
+          Container(
+            width: 26,
+            height: 26,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, offset: const Offset(2, 2))],
             ),
           ),
-          if (backNear) backRest,
+          Container(
+            width: 24,
+            height: 24,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: seatColor,
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: selected ? Colors.white : (pick ? _C.green : (occupied ? Colors.white : _C.gold)),
+                width: selected || pick ? 2.5 : 1.5,
+              ),
+              boxShadow: glow == null ? null : [BoxShadow(color: glow.withOpacity(0.7), blurRadius: 10, spreadRadius: 1)],
+            ),
+            child: occupied
+                ? Text(initial, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white))
+                : null,
+          ),
         ],
       ),
     );
@@ -2828,106 +2108,136 @@ class _ChairView extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DÉCORS 3D
+// DÉCORS 2D
 // ═══════════════════════════════════════════════════════════════════════════
 class _DecorView extends StatelessWidget {
   final _Item item;
   final bool selected;
-  final double camRot;
-  final bool hq;
-  final bool evening;
 
   const _DecorView({
     required this.item,
     required this.selected,
-    required this.camRot,
-    required this.hq,
-    required this.evening,
   });
 
   @override
   Widget build(BuildContext context) {
     final b = item.body;
-    final up = -(camRot + item.rotation);
-    final backNear = math.cos(camRot + item.rotation) < 0;
-    final st = hq ? 3.0 : 7.0;
-
-    final List<Widget> body;
+    
+    Widget content;
     switch (item.kind) {
       case _Kind.stage:
-        body = _stage(b, up, backNear, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF1B2A57),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _C.gold, width: 3),
+          ),
+          child: Text('SCÈNE', style: GoogleFonts.cinzel(fontSize: 16, color: _C.gold, letterSpacing: 5, fontWeight: FontWeight.w700)),
+        );
         break;
       case _Kind.dance:
-        body = [
-          _z(
-            0.6,
-            SizedBox(
-              width: b.width,
-              height: b.height,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  CustomPaint(size: b, painter: _DancePainter(evening: evening)),
-                  _upright('PISTE DE DANSE', angle: up, size: 11, color: Colors.white, ls: 2),
-                ],
-              ),
-            ),
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF2B2D42),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _C.purple, width: 2),
           ),
-        ];
+          child: Text('PISTE DE DANSE', style: GoogleFonts.inter(fontSize: 12, color: Colors.white, letterSpacing: 2)),
+        );
         break;
       case _Kind.vip:
-        body = [
-          _z(
-            0.6,
-            Container(
-              width: b.width,
-              height: b.height,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(18),
-                gradient: LinearGradient(colors: [
-                  _C.gold.withOpacity(0.32),
-                  _C.gold.withOpacity(0.12),
-                ]),
-                border: Border.all(color: _C.gold, width: 2),
-              ),
-              child: _upright('ZONE VIP', angle: up, size: 12, color: _C.goldDark, ls: 3),
-            ),
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _C.gold.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _C.gold, width: 2),
           ),
-        ];
+          child: Text('ZONE VIP', style: GoogleFonts.inter(fontSize: 12, color: _C.goldDark, letterSpacing: 3)),
+        );
         break;
       case _Kind.entrance:
-        body = _entrance(b, up, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFE11D48),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _C.gold, width: 2),
+          ),
+          child: Text('ENTRÉE', style: GoogleFonts.inter(fontSize: 12, color: Colors.white, letterSpacing: 2)),
+        );
         break;
       case _Kind.buffet:
-        body = _buffet(b, up, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: _C.cloth,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _C.gold, width: 1.5),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              const Icon(Icons.restaurant, color: _C.goldDark, size: 18),
+              Text('BUFFET', style: GoogleFonts.inter(fontSize: 10, color: _C.ink, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        );
         break;
       case _Kind.bar:
-        body = _bar(b, up, st);
-        break;
-      case _Kind.cake:
-        body = _cake(b, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF6B4A33),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _C.gold, width: 1.5),
+          ),
+          child: Text('BAR', style: GoogleFonts.inter(fontSize: 11, color: _C.gold, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        );
         break;
       case _Kind.dj:
-        body = _dj(b, up, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFF111827),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: _C.rose, width: 2),
+          ),
+          child: const Icon(Icons.speaker, color: _C.gold, size: 28),
+        );
+        break;
+      case _Kind.cake:
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1F5),
+            shape: BoxShape.circle,
+            border: Border.all(color: _C.rose, width: 2),
+          ),
+          child: const Icon(Icons.cake, color: _C.rose, size: 24),
+        );
         break;
       case _Kind.plant:
-        body = _plant(b);
-        break;
-      case _Kind.photobooth:
-        body = _photobooth(b, up, st);
-        break;
-      case _Kind.wishingTree:
-        body = _wishingTree(b);
-        break;
-      case _Kind.fountain:
-        body = _fountain(b, st);
-        break;
-      case _Kind.floralArch:
-        body = _floralArch(b, up, st);
+        content = Container(
+          alignment: Alignment.center,
+          decoration: const BoxDecoration(
+            color: Color(0xFF16A34A),
+            shape: BoxShape.circle,
+          ),
+          child: const Icon(Icons.local_florist, color: Colors.white, size: 18),
+        );
         break;
       default:
-        body = const [];
+        content = Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade300,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(_meta[item.kind]!.icon, color: Colors.black54),
+        );
     }
 
     return Stack(
@@ -2935,508 +2245,24 @@ class _DecorView extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         if (selected)
-          _z(
-            0,
-            Container(
-              width: b.width + 16,
-              height: b.height + 16,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: _C.gold, width: 2.5),
-                boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.5), blurRadius: 22, spreadRadius: 2)],
-              ),
+          Container(
+            width: b.width + 16,
+            height: b.height + 16,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _C.gold, width: 2.5),
+              boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.5), blurRadius: 22, spreadRadius: 2)],
             ),
           ),
-        ...body,
+        Container(
+          width: b.width,
+          height: b.height,
+          decoration: BoxDecoration(
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 8, offset: const Offset(3, 5))],
+          ),
+          child: content,
+        ),
       ],
     );
-  }
-
-  List<Widget> _stage(Size b, double up, bool backNear, double st) {
-    final backdrop = Positioned(
-      left: 12,
-      top: 12,
-      child: Transform(
-        alignment: Alignment.topCenter,
-        transform: Matrix4.identity()
-          ..translate(0.0, 0.0, 18.0)
-          ..rotateX(math.pi / 2),
-        child: Container(
-          width: b.width,
-          height: 74,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(4),
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [Color(0xFF1B2A57), Color(0xFF3B2A63)],
-            ),
-            border: const Border(bottom: BorderSide(color: _C.gold, width: 3)),
-          ),
-          child: Text('THIX WEDDING',
-              style: GoogleFonts.cinzel(
-                  fontSize: 14, color: _C.gold, letterSpacing: 5, fontWeight: FontWeight.w700)),
-        ),
-      ),
-    );
-    return [
-      _shadow(b.width + 6, b.height + 6),
-      if (!backNear) backdrop,
-      ..._cuboid(
-        w: b.width,
-        h: b.height,
-        height: 18,
-        side: const Color(0xFFCDBF9F),
-        top: const Color(0xFFFBF7EC),
-        radius: 8,
-        step: st * 1.6,
-      ),
-      _z(
-        18.5,
-        Container(
-          width: b.width,
-          height: b.height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            gradient: const LinearGradient(colors: [Colors.white, Color(0xFFF5E9C8)]),
-            border: Border.all(color: _C.gold, width: 1.6),
-          ),
-          child: _upright('SCÈNE', angle: up, size: 12, color: _C.goldDark, ls: 6),
-        ),
-      ),
-      if (backNear) backdrop,
-    ];
-  }
-
-  List<Widget> _entrance(Size b, double up, double st) {
-    Widget post(double dx) => Transform.translate(
-          offset: Offset(dx, 0),
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: _cuboid(
-              w: 10,
-              h: 10,
-              height: 62,
-              side: const Color(0xFFE9DFC4),
-              top: _C.gold,
-              radius: 3,
-              step: st * 3,
-            ),
-          ),
-        );
-    return [
-      _z(
-        0.6,
-        Container(
-          width: b.width,
-          height: b.height,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(8),
-            gradient: const LinearGradient(colors: [Color(0xFF9F1239), Color(0xFFE11D48)]),
-            border: Border.all(color: _C.gold, width: 2),
-          ),
-          child: _upright('ENTRÉE', angle: up, size: 12, color: Colors.white, ls: 4),
-        ),
-      ),
-      post(-b.width / 2 + 5),
-      post(b.width / 2 - 5),
-      _z(
-        62,
-        Container(
-          width: b.width,
-          height: 8,
-          decoration: BoxDecoration(
-            color: _C.gold,
-            borderRadius: BorderRadius.circular(4),
-            boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.6), blurRadius: 8)],
-          ),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _buffet(Size b, double up, double st) {
-    final dishes = math.max(3, (b.width / 48).floor());
-    return [
-      _shadow(b.width + 4, b.height + 4),
-      ..._cuboid(
-        w: b.width,
-        h: b.height,
-        height: 20,
-        side: _C.clothSide,
-        top: _C.cloth,
-        radius: 8,
-        step: st * 1.6,
-      ),
-      _z(
-        20.6,
-        SizedBox(
-          width: b.width,
-          height: b.height,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              for (var i = 0; i < dishes; i++)
-                Container(
-                  width: 28,
-                  height: 28,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const RadialGradient(colors: [Colors.white, Color(0xFFC8CDD6)]),
-                    border: Border.all(color: const Color(0xFF9AA3B2)),
-                  ),
-                  child: Container(
-                    width: 14,
-                    height: 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: [
-                        const Color(0xFFF59E0B),
-                        const Color(0xFFE11D48),
-                        const Color(0xFF16A34A),
-                        const Color(0xFF7C3AED),
-                      ][i % 4],
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _bar(Size b, double up, double st) {
-    return [
-      _shadow(b.width + 4, b.height + 4),
-      ..._cuboid(
-        w: b.width,
-        h: b.height,
-        height: 28,
-        side: const Color(0xFF6B4A33),
-        top: const Color(0xFF2A1B14),
-        radius: 8,
-        step: st * 2,
-        topGradient: const LinearGradient(colors: [Color(0xFF3A271C), Color(0xFF1B110C)]),
-        rim: _C.gold,
-      ),
-      _z(
-        28.6,
-        SizedBox(
-          width: b.width,
-          height: b.height,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              for (var i = 0; i < 5; i++)
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: [
-                      const Color(0xFF16A34A),
-                      const Color(0xFFF59E0B),
-                      const Color(0xFF3B82F6),
-                      const Color(0xFFE11D48),
-                      const Color(0xFF7C3AED),
-                    ][i],
-                    boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.5), blurRadius: 3)],
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-      _z(29, _upright('BAR', angle: up, size: 10, color: _C.gold, ls: 3)),
-    ];
-  }
-
-  List<Widget> _cake(Size b, double st) {
-    return [
-      _shadow(b.width, b.width, circle: true),
-      ..._cuboid(w: 46, h: 46, height: 12, side: _C.clothSide, top: _C.cloth, circle: true, step: st * 2),
-      ..._cuboid(w: 38, h: 38, height: 8, base: 12, side: const Color(0xFFFFE4EC), top: const Color(0xFFFFF1F5), circle: true, step: st * 2),
-      ..._cuboid(w: 28, h: 28, height: 8, base: 20, side: const Color(0xFFFFE4EC), top: const Color(0xFFFFF7FA), circle: true, step: st * 2),
-      ..._cuboid(w: 18, h: 18, height: 8, base: 28, side: const Color(0xFFFFE4EC), top: Colors.white, circle: true, step: st * 2),
-      _z(
-        37,
-        Container(
-          width: 8,
-          height: 8,
-          decoration: const BoxDecoration(shape: BoxShape.circle, color: _C.rose),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _dj(Size b, double up, double st) {
-    Widget speaker(double dx) => Transform.translate(
-          offset: Offset(dx, 0),
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: _cuboid(
-              w: 26,
-              h: 26,
-              height: 42,
-              side: const Color(0xFF1F2937),
-              top: const Color(0xFF111827),
-              radius: 5,
-              step: st * 3,
-            ),
-          ),
-        );
-    return [
-      _shadow(b.width, b.height),
-      speaker(-b.width / 2 + 14),
-      speaker(b.width / 2 - 14),
-      ..._cuboid(
-        w: b.width - 64,
-        h: b.height,
-        height: 18,
-        side: const Color(0xFF374151),
-        top: const Color(0xFF111827),
-        radius: 6,
-        step: st * 2,
-      ),
-      _z(
-        18.6,
-        SizedBox(
-          width: b.width - 64,
-          height: b.height,
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              for (var i = 0; i < 4; i++)
-                Container(
-                  width: 6,
-                  height: 22,
-                  decoration: BoxDecoration(
-                    color: [_C.rose, _C.gold, _C.blue, _C.green][i],
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
-    ];
-  }
-
-  List<Widget> _plant(Size b) {
-    return [
-      _shadow(24, 24, circle: true),
-      ..._cuboid(w: 20, h: 20, height: 14, side: const Color(0xFFB45309), top: const Color(0xFF7C4A21), circle: true, step: 7),
-      _z(18, Container(width: 30, height: 30, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
-      _z(26, Container(width: 25, height: 25, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
-    ];
-  }
-
-  List<Widget> _photobooth(Size b, double up, double st) {
-    return [
-      _shadow(b.width + 4, b.height + 4),
-      ..._cuboid(
-        w: b.width,
-        h: b.height,
-        height: 80,
-        side: const Color(0xFF7C2D12),
-        top: const Color(0xFF111827),
-        radius: 10,
-        step: st * 4,
-      ),
-      _z(
-        40,
-        Container(
-          width: b.width * 0.6,
-          height: b.height * 0.9,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFE11D48), Color(0xFF9F1239), Color(0xFFE11D48)],
-            ),
-            borderRadius: BorderRadius.circular(6),
-            border: Border.all(color: _C.gold, width: 1.5),
-          ),
-        ),
-      ),
-      _z(
-        80,
-        Container(
-          width: 18,
-          height: 14,
-          decoration: BoxDecoration(
-            color: const Color(0xFF111827),
-            borderRadius: BorderRadius.circular(3),
-            border: Border.all(color: _C.gold, width: 1),
-          ),
-        ),
-      ),
-      _z(80, _upright('PHOTOBOOTH', angle: up, size: 8, color: _C.gold, ls: 1.5)),
-    ];
-  }
-
-  List<Widget> _wishingTree(Size b) {
-    return [
-      _shadow(b.width, b.width, circle: true),
-      ..._cuboid(
-        w: 30,
-        h: 30,
-        height: 14,
-        side: const Color(0xFF7C4A21),
-        top: const Color(0xFFB45309),
-        circle: true,
-        step: 7,
-      ),
-      ..._cuboid(
-        w: 8,
-        h: 8,
-        height: 26,
-        base: 14,
-        side: const Color(0xFF78350F),
-        top: const Color(0xFF92400E),
-        radius: 3,
-        step: 8,
-      ),
-      _z(40, Container(width: 50, height: 50, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF15803D)))),
-      _z(48, Container(width: 42, height: 42, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF16A34A)))),
-      _z(56, Container(width: 34, height: 34, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF22C55E)))),
-      for (var i = 0; i < 6; i++)
-        _z(
-          60,
-          Transform.translate(
-            offset: Offset(
-              math.cos(i * math.pi / 3) * 22,
-              math.sin(i * math.pi / 3) * 22,
-            ),
-            child: Container(
-              width: 5,
-              height: 5,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: _C.gold,
-                boxShadow: [BoxShadow(color: _C.gold.withOpacity(0.9), blurRadius: 8)],
-              ),
-            ),
-          ),
-        ),
-    ];
-  }
-
-  List<Widget> _fountain(Size b, double st) {
-    return [
-      _shadow(b.width, b.width, circle: true),
-      ..._cuboid(
-        w: b.width,
-        h: b.width,
-        height: 16,
-        side: const Color(0xFFCBD5E1),
-        top: const Color(0xFFE2E8F0),
-        circle: true,
-        step: st * 2,
-        rim: _C.blue.withOpacity(0.5),
-      ),
-      _z(
-        16.5,
-        Container(
-          width: b.width - 20,
-          height: b.width - 20,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: RadialGradient(colors: [
-              const Color(0xFF60A5FA).withOpacity(0.85),
-              const Color(0xFF3B82F6).withOpacity(0.55),
-            ]),
-            border: Border.all(color: Colors.white.withOpacity(0.6), width: 1.5),
-          ),
-        ),
-      ),
-      ..._cuboid(
-        w: 14,
-        h: 14,
-        height: 32,
-        base: 16,
-        side: const Color(0xFF94A3B8),
-        top: const Color(0xFFE2E8F0),
-        circle: true,
-        step: st * 3,
-      ),
-      _z(50, Container(width: 6, height: 6, decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF93C5FD)))),
-      for (var i = 0; i < 8; i++)
-        _z(
-          48,
-          Transform.translate(
-            offset: Offset(math.cos(i * math.pi / 4) * 12, math.sin(i * math.pi / 4) * 12),
-            child: Container(
-              width: 3,
-              height: 3,
-              decoration: const BoxDecoration(shape: BoxShape.circle, color: Color(0xFF93C5FD)),
-            ),
-          ),
-        ),
-    ];
-  }
-
-  List<Widget> _floralArch(Size b, double up, double st) {
-    Widget post(double dx) => Transform.translate(
-          offset: Offset(dx, 0),
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: _cuboid(
-              w: 10,
-              h: 10,
-              height: 90,
-              side: const Color(0xFF15803D),
-              top: const Color(0xFF22C55E),
-              radius: 4,
-              step: st * 4,
-            ),
-          ),
-        );
-    return [
-      _shadow(b.width, b.height, radius: 10),
-      post(-b.width / 2 + 5),
-      post(b.width / 2 - 5),
-      _z(
-        90,
-        Container(
-          width: b.width,
-          height: 10,
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [Color(0xFFE11D48), Color(0xFFF472B6), Color(0xFFE11D48)],
-            ),
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: _C.gold, width: 1.5),
-          ),
-        ),
-      ),
-      for (var i = 0; i < 6; i++)
-        _z(
-          92,
-          Transform.translate(
-            offset: Offset(-b.width / 2 + b.width * i / 5, 0),
-            child: Container(
-              width: 12,
-              height: 12,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: [
-                  const Color(0xFFE11D48),
-                  const Color(0xFFF472B6),
-                  const Color(0xFFFBBF24),
-                  const Color(0xFFF472B6),
-                ][i % 4],
-                boxShadow: [BoxShadow(color: Colors.white.withOpacity(0.5), blurRadius: 4)],
-              ),
-            ),
-          ),
-        ),
-    ];
   }
 }
