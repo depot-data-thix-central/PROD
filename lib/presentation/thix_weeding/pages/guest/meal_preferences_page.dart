@@ -298,7 +298,7 @@ class _MealPreferencesPageState extends ConsumerState<MealPreferencesPage> {
                                   .contains(topItem['id'] as String),
                               onToggle: (v) => _toggleVote(
                                 identity: identity,
-                                item: topItem,
+                                item: topItem!, 
                                 vote: v,
                               ),
                             ),
