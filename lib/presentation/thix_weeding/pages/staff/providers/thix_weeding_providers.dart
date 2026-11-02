@@ -5,12 +5,14 @@
 // ✅ Import supabase_flutter ajouté pour expenseDetailProvider
 // ✅ expensesProvider(weddingId) avec argument correct
 // ✅ Seating 3D + invitations actives (badge home) + recherche profiles THIX Hub
+// ✅ Menu Service + providers pour gestion traiteur + votes invités
 // ============================================================================
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/thix_weeding_models.dart';
 import '../services/thix_weeding_services.dart';
+import '../services/menu_service.dart'; // ✅ NOUVEAU : MenuService
 
 // ============================================================================
 // SERVICES (Singleton via Provider)
@@ -26,6 +28,7 @@ final messageServiceProvider = Provider((ref) => MessageService());
 final paymentServiceProvider = Provider((ref) => PaymentService());
 final seatingServiceProvider = Provider((ref) => SeatingService());
 final thixProfileServiceProvider = Provider((ref) => ThixProfileService());
+final menuServiceProvider = Provider((ref) => MenuService()); // ✅ NOUVEAU
 
 // ============================================================================
 // WEDDING
@@ -337,4 +340,88 @@ final myActiveInvitationsProvider =
 final thixProfileSearchProvider =
     FutureProvider.autoDispose.family<ThixProfileLite?, String>((ref, thixId) async {
   return ref.read(thixProfileServiceProvider).findByThixId(thixId);
+});
+
+// ============================================================================
+// ✅ MENU SERVICE & PROVIDERS (traiteurs + votes invités)
+// ============================================================================
+
+/// Tous les plats d'un mariage (avec jointure vendor)
+/// Utilisé par : staff (page menu traiteur)
+final weddingMenuItemsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, weddingId) async {
+  return await ref.watch(menuServiceProvider).getByWedding(weddingId);
+});
+
+/// Plats PUBLICS d'un mariage (is_public = true)
+/// Utilisé par : guests (page préférences repas)
+final weddingPublicMenuProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, weddingId) async {
+  return await ref.watch(menuServiceProvider).getPublicByWedding(weddingId);
+});
+
+/// Compteur de votes par menu_item_id pour un mariage
+/// Utilisé par : staff (top plats) + guests (nombre de votes visibles)
+final menuVotesCountProvider = FutureProvider.autoDispose
+    .family<Map<String, int>, String>((ref, weddingId) async {
+  return await ref.watch(menuServiceProvider).getVoteCounts(weddingId);
+});
+
+/// Votes d'un invité spécifique (Set de menu_item_id votés)
+/// Utilisé par : guests (savoir quels plats il a déjà cochés)
+/// Paramètre : record (weddingId, guestId)
+final guestMenuVotesProvider = FutureProvider.autoDispose
+    .family<Set<String>, ({String weddingId, String guestId})>((ref, args) async {
+  return await ref
+      .watch(menuServiceProvider)
+      .getGuestVotes(args.weddingId, args.guestId);
+});
+
+/// Plat spécifique par ID (pour détails / édition)
+final menuItemDetailProvider = FutureProvider.autoDispose
+    .family<Map<String, dynamic>?, String>((ref, itemId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('thix_weeding_menu_items')
+        .select('*, vendor:thix_weeding_vendors(id, name, category, contact_name)')
+        .eq('id', itemId)
+        .maybeSingle();
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res);
+  } catch (_) {
+    return null;
+  }
+});
+
+/// Stats globales du menu d'un mariage (pour dashboard staff)
+final menuStatsProvider = FutureProvider.autoDispose
+    .family<Map<String, int>, String>((ref, weddingId) async {
+  try {
+    final items = await ref.watch(menuServiceProvider).getByWedding(weddingId);
+    final votes = await ref.watch(menuServiceProvider).getVoteCounts(weddingId);
+    
+    final total = items.length;
+    final validated = items.where((i) => i['is_validated'] == true).length;
+    final public = items.where((i) => i['is_public'] == true).length;
+    final pending = items.where((i) => i['is_validated'] != true).length;
+    final totalVotes = votes.values.fold(0, (sum, v) => sum + v);
+    
+    return {
+      'total': total,
+      'validated': validated,
+      'public': public,
+      'pending': pending,
+      'totalVotes': totalVotes,
+      'vendors': items.map((i) => i['vendor_id']).toSet().length,
+    };
+  } catch (_) {
+    return {
+      'total': 0,
+      'validated': 0,
+      'public': 0,
+      'pending': 0,
+      'totalVotes': 0,
+      'vendors': 0,
+    };
+  }
 });
