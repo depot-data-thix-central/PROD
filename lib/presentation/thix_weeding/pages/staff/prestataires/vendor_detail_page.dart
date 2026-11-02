@@ -1,7 +1,10 @@
 // lib/presentation/thix_weeding/pages/staff/prestataires/vendor_detail_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — VENDOR DETAIL (PRODUCTION)
-// Design royal + Dépenses liées + Actions rapides + Statuts + Suppression
+// THIX WEDDING & EVENTS — VENDOR DETAIL (PRODUCTION v3)
+// ✅ Mode CATALOGUE : bandeau code THIX-P + réponse prestataire + TIMELINE de
+//    suivi des étapes (contacté → devis → réservé → payé → terminé)
+// ✅ Mode MANUEL : comportement d'origine conservé
+// ✅ Design royal + Dépenses liées + Actions rapides + Statuts + Suppression
 // Branché sur providers & services EXISTANTS du dépôt
 // ============================================================================
 import 'package:flutter/material.dart';
@@ -18,11 +21,13 @@ import 'package:thix_id/presentation/thix_weeding/pages/staff/services/thix_weed
 // ============================================================================
 // PROVIDERS LOCAUX
 // ============================================================================
-final vendorDetailProvider = FutureProvider.family<VendorModel, String>((ref, vendorId) async {
+final vendorDetailProvider =
+    FutureProvider.family<VendorModel, String>((ref, vendorId) async {
   return await ref.read(vendorServiceProvider).getById(vendorId);
 });
 
-final vendorExpensesProvider = FutureProvider.family<List<ExpenseModel>, String>((ref, vendorId) async {
+final vendorExpensesProvider =
+    FutureProvider.family<List<ExpenseModel>, String>((ref, vendorId) async {
   try {
     final res = await Supabase.instance.client
         .from('thix_weeding_expenses')
@@ -34,6 +39,40 @@ final vendorExpensesProvider = FutureProvider.family<List<ExpenseModel>, String>
         .toList();
   } catch (_) {
     return [];
+  }
+});
+
+/// ✅ NOUVEAU : la DEMANDE de prestation liée à ce vendor (mode catalogue)
+/// Retourne null si le vendor a été créé manuellement.
+final vendorRequestProvider =
+    FutureProvider.family<Map<String, dynamic>?, String>((ref, vendorId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('thix_weeding_vendor_requests')
+        .select()
+        .eq('vendor_id', vendorId)
+        .order('created_at', ascending: false)
+        .maybeSingle();
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
+  } catch (_) {
+    return null;
+  }
+});
+
+/// ✅ NOUVEAU : infos du prestataire THIX (pour le bandeau code THIX-P)
+final thixProviderInfoProvider =
+    FutureProvider.family<Map<String, dynamic>?, String>((ref, providerId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('thix_weeding_providers')
+        .select('id, unique_code, business_name, city, category, verification_status, level, phone, email')
+        .eq('id', providerId)
+        .maybeSingle();
+    if (res == null) return null;
+    return Map<String, dynamic>.from(res as Map);
+  } catch (_) {
+    return null;
   }
 });
 
@@ -50,6 +89,7 @@ class _R {
   static const Color greenSoft = Color(0xFF10B981);
   static const Color amber = Color(0xFFD97706);
   static const Color surface = Color(0xFFF8FAFC);
+  static const Color cream = Color(0xFFFFFBF5);
   static const Color text = Color(0xFF111827);
   static const Color text2 = Color(0xFF6B7280);
   static const Color border = Color(0xFFE5E7EB);
@@ -90,7 +130,7 @@ class _R {
 }
 
 // ============================================================================
-// CATÉGORIES & STATUTS (mêmes définitions que add_vendor_page)
+// CATÉGORIES (mêmes définitions que add_vendor_page)
 // ============================================================================
 const Map<String, _CatDef> _CAT_MAP = {
   'organisateur': _CatDef('Organisateur', Icons.celebration, Color(0xFF6B46C1)),
@@ -119,21 +159,26 @@ class _CatDef {
 
 _CatDef _getCat(String? key) {
   if (key == null || key.isEmpty) return _CatDef('Autre', Icons.store_outlined, _R.text2);
-  // Chercher par clé ou par label (rétrocompatibilité)
   for (final entry in _CAT_MAP.entries) {
-    if (entry.key == key.toLowerCase() || entry.value.label.toLowerCase() == key.toLowerCase()) {
+    if (entry.key == key.toLowerCase() ||
+        entry.value.label.toLowerCase() == key.toLowerCase()) {
       return entry.value;
     }
   }
   return _CatDef(key, Icons.store_outlined, _R.blue);
 }
 
+// ============================================================================
+// STATUTS (étendus avec requested + completed pour le flux catalogue)
+// ============================================================================
 const Map<String, _StatusDef> _STATUS_MAP = {
+  'requested': _StatusDef('Demande envoyée', Icons.send_outlined, Color(0xFF6B7280)),
   'pending': _StatusDef('En attente', Icons.hourglass_empty, Color(0xFF6B7280)),
   'contacted': _StatusDef('Contacté', Icons.phone_callback, Color(0xFF0B3B8F)),
   'devis_envoye': _StatusDef('Devis envoyé', Icons.description_outlined, Color(0xFF6B46C1)),
   'booked': _StatusDef('Réservé', Icons.event_available, Color(0xFF059669)),
   'paid': _StatusDef('Payé', Icons.payments, Color(0xFFD4AF37)),
+  'completed': _StatusDef('Terminé', Icons.task_alt, Color(0xFF059669)),
   'cancelled': _StatusDef('Annulé', Icons.cancel_outlined, Color(0xFFE31C4E)),
 };
 
@@ -150,18 +195,46 @@ _StatusDef _getStatus(String? key) {
 }
 
 // ============================================================================
+// ✅ NOUVEAU : TIMELINE DES ÉTAPES (post-approbation)
+// ============================================================================
+class _StageDef {
+  final String key;
+  final String label;
+  final String hint;
+  final IconData icon;
+  const _StageDef(this.key, this.label, this.hint, this.icon);
+}
+
+const List<_StageDef> _STAGES = [
+  _StageDef('requested', 'Demande envoyée', 'En attente de la réponse du prestataire', Icons.send_outlined),
+  _StageDef('contacted', 'Contacté', 'Premier échange établi avec le prestataire', Icons.phone_callback),
+  _StageDef('devis_envoye', 'Devis reçu', 'Le prestataire a transmis son devis / conditions', Icons.description_outlined),
+  _StageDef('booked', 'Réservé', 'Prestation confirmée et bloquée pour l\'événement', Icons.event_available),
+  _StageDef('paid', 'Payé', 'Acompte ou solde réglé', Icons.payments),
+  _StageDef('completed', 'Terminé', 'Prestation réalisée', Icons.task_alt),
+];
+
+int _stageIndex(String key) =>
+    _STAGES.indexWhere((s) => s.key == key);
+
+// ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
 class VendorDetailPage extends ConsumerWidget {
   final String weddingId;
   final String vendorId;
 
-  const VendorDetailPage({super.key, required this.weddingId, required this.vendorId});
+  const VendorDetailPage({
+    super.key,
+    required this.weddingId,
+    required this.vendorId,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final vendorAsync = ref.watch(vendorDetailProvider(vendorId));
     final expensesAsync = ref.watch(vendorExpensesProvider(vendorId));
+    final requestAsync = ref.watch(vendorRequestProvider(vendorId));
 
     return Scaffold(
       backgroundColor: _R.surface,
@@ -171,15 +244,31 @@ class VendorDetailPage extends ConsumerWidget {
           message: '$e',
           onRetry: () => ref.invalidate(vendorDetailProvider(vendorId)),
         ),
-        data: (vendor) => _VendorContent(
-          weddingId: weddingId,
-          vendor: vendor,
-          expensesAsync: expensesAsync,
-          onRefresh: () {
-            ref.invalidate(vendorDetailProvider(vendorId));
-            ref.invalidate(vendorExpensesProvider(vendorId));
-          },
-        ),
+        data: (vendor) {
+          final request = requestAsync.valueOrNull;
+          // Si la demande existe, charger les infos prestataire THIX
+          AsyncValue<Map<String, dynamic>?> providerAsync = const AsyncValue.data(null);
+          if (request != null && request['provider_id'] != null) {
+            providerAsync =
+                ref.watch(thixProviderInfoProvider(request['provider_id'] as String));
+          }
+
+          return _VendorContent(
+            weddingId: weddingId,
+            vendor: vendor,
+            expensesAsync: expensesAsync,
+            request: request,
+            providerInfo: providerAsync.valueOrNull,
+            onRefresh: () {
+              ref.invalidate(vendorDetailProvider(vendorId));
+              ref.invalidate(vendorExpensesProvider(vendorId));
+              ref.invalidate(vendorRequestProvider(vendorId));
+              if (request != null && request['provider_id'] != null) {
+                ref.invalidate(thixProviderInfoProvider(request['provider_id'] as String));
+              }
+            },
+          );
+        },
       ),
     );
   }
@@ -192,36 +281,42 @@ class _VendorContent extends StatelessWidget {
   final String weddingId;
   final VendorModel vendor;
   final AsyncValue<List<ExpenseModel>> expensesAsync;
+  final Map<String, dynamic>? request;
+  final Map<String, dynamic>? providerInfo;
   final VoidCallback onRefresh;
 
   const _VendorContent({
     required this.weddingId,
     required this.vendor,
     required this.expensesAsync,
+    required this.request,
+    required this.providerInfo,
     required this.onRefresh,
   });
+
+  bool get _isFromCatalog => request != null;
 
   @override
   Widget build(BuildContext context) {
     final cat = _getCat(vendor.category);
     final status = _getStatus(vendor.status);
 
-    // Calcul total dépenses liées
     final expenses = expensesAsync.valueOrNull ?? [];
     final totalSpent = expenses.fold<double>(0, (s, e) => s + e.amount);
-    final paidAmount = expenses.where((e) => e.isPaid).fold<double>(0, (s, e) => s + e.amount);
+    final paidAmount =
+        expenses.where((e) => e.isPaid).fold<double>(0, (s, e) => s + e.amount);
     final unpaidAmount = totalSpent - paidAmount;
 
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        // ── APP BAR ROYALE ────────────────────────────────────────────
         _VendorAppBar(
           vendor: vendor,
           cat: cat,
           status: status,
           weddingId: weddingId,
-          onDelete: () => _confirmDelete(context, weddingId, vendorId),
+          isCatalog: _isFromCatalog,
+          onDelete: () => _confirmDelete(context, weddingId, vendor.id),
         ),
 
         SliverPadding(
@@ -232,11 +327,31 @@ class _VendorContent extends StatelessWidget {
               _HeroCard(vendor: vendor, cat: cat, status: status),
               const SizedBox(height: 16),
 
+              // ── ✅ BANDEAU PRESTATAIRE THIX (mode catalogue) ───────
+              if (_isFromCatalog && providerInfo != null) ...[
+                _ThixProviderBanner(
+                  providerInfo: providerInfo!,
+                  request: request!,
+                ),
+                const SizedBox(height: 16),
+              ],
+
+              // ── ✅ TIMELINE DE SUIVI (mode catalogue) ──────────────
+              if (_isFromCatalog) ...[
+                _RequestTimeline(
+                  request: request!,
+                  vendorId: vendor.id,
+                  onRefresh: onRefresh,
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // ── ACTIONS RAPIDES ────────────────────────────────────
               _QuickActions(
                 vendor: vendor,
                 weddingId: weddingId,
                 vendorId: vendor.id,
+                providerId: _isFromCatalog ? request!['provider_id'] as String? : null,
                 onRefresh: onRefresh,
               ),
               const SizedBox(height: 16),
@@ -271,7 +386,7 @@ class _VendorContent extends StatelessWidget {
               const SizedBox(height: 16),
 
               // ── MÉTADONNÉES ────────────────────────────────────────
-              _MetaCard(vendor: vendor),
+              _MetaCard(vendor: vendor, isCatalog: _isFromCatalog),
             ]),
           ),
         ),
@@ -279,7 +394,8 @@ class _VendorContent extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmDelete(BuildContext context, String weddingId, String vendorId) async {
+  Future<void> _confirmDelete(
+      BuildContext context, String weddingId, String vendorId) async {
     final ok = await showDialog<bool>(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -292,20 +408,24 @@ class _VendorContent extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(18),
-                decoration: const BoxDecoration(gradient: _R.roseG, shape: BoxShape.circle),
-                child: const Icon(Icons.warning_amber_rounded, color: Colors.white, size: 36),
+                decoration: const BoxDecoration(
+                    gradient: _R.roseG, shape: BoxShape.circle),
+                child: const Icon(Icons.warning_amber_rounded,
+                    color: Colors.white, size: 36),
               ),
               const SizedBox(height: 18),
               Text(
                 'Supprimer ce prestataire ?',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800),
+                style: GoogleFonts.inter(
+                    fontSize: 18, fontWeight: FontWeight.w800),
               ),
               const SizedBox(height: 8),
               Text(
                 'Cette action est irréversible. Toutes les dépenses liées seront aussi supprimées.',
                 textAlign: TextAlign.center,
-                style: GoogleFonts.inter(fontSize: 13, color: _R.text2),
+                style:
+                    GoogleFonts.inter(fontSize: 13, color: _R.text2),
               ),
               const SizedBox(height: 24),
               Row(
@@ -317,7 +437,8 @@ class _VendorContent extends StatelessWidget {
                         foregroundColor: _R.text,
                         side: const BorderSide(color: _R.border),
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                       child: const Text('Annuler'),
                     ),
@@ -332,7 +453,8 @@ class _VendorContent extends StatelessWidget {
                       style: FilledButton.styleFrom(
                         backgroundColor: _R.rose,
                         padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
                       ),
                     ),
                   ),
@@ -346,7 +468,10 @@ class _VendorContent extends StatelessWidget {
     if (ok != true) return;
 
     try {
-      await Supabase.instance.client.from('thix_weeding_vendors').delete().eq('id', vendorId);
+      await Supabase.instance.client
+          .from('thix_weeding_vendors')
+          .delete()
+          .eq('id', vendorId);
       if (context.mounted) context.pop();
     } catch (e) {
       if (context.mounted) {
@@ -361,6 +486,674 @@ class _VendorContent extends StatelessWidget {
 }
 
 // ============================================================================
+// ✅ BANDEAU PRESTATAIRE THIX (code THIX-P + vérification + réponse)
+// ============================================================================
+class _ThixProviderBanner extends StatelessWidget {
+  final Map<String, dynamic> providerInfo;
+  final Map<String, dynamic> request;
+  const _ThixProviderBanner(
+      {required this.providerInfo, required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    final code = providerInfo['unique_code'] as String? ?? '';
+    final name = providerInfo['business_name'] as String? ?? '';
+    final city = providerInfo['city'] as String? ?? 'RDC';
+    final verified = providerInfo['verification_status'] == 'verified';
+    final reqStatus = request['status'] as String? ?? 'pending';
+    final response = request['provider_response'] as String?;
+    final respondedAt = request['responded_at'] as String?;
+
+    Color accent;
+    IconData statusIcon;
+    String statusLabel;
+    if (reqStatus == 'approved') {
+      accent = _R.green;
+      statusIcon = Icons.check_circle;
+      statusLabel = 'Demande acceptée';
+    } else if (reqStatus == 'rejected') {
+      accent = _R.rose;
+      statusIcon = Icons.cancel;
+      statusLabel = 'Demande refusée';
+    } else {
+      accent = _R.amber;
+      statusIcon = Icons.hourglass_top;
+      statusLabel = 'En attente de réponse';
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [accent.withOpacity(0.10), accent.withOpacity(0.03)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: accent.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [accent, accent.withOpacity(0.7)]),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(Icons.verified_user_outlined,
+                    color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'PRESTATAIRE THIX',
+                      style: GoogleFonts.inter(
+                        fontSize: 9,
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                        letterSpacing: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _R.text),
+                          ),
+                        ),
+                        if (verified) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.verified, size: 15, color: _R.green),
+                        ],
+                      ],
+                    ),
+                    Text(
+                      '$city · Code $code',
+                      style: GoogleFonts.inter(
+                          fontSize: 11, color: _R.text2, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+              // Copier le code
+              Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    Clipboard.setData(ClipboardData(text: code));
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Code $code copié ✓'),
+                      backgroundColor: _R.green,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10)),
+                    ));
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: _R.border),
+                    ),
+                    child: const Icon(Icons.copy, size: 16, color: _R.text2),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Statut de la demande
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(statusIcon, size: 15, color: accent),
+                const SizedBox(width: 6),
+                Text(
+                  statusLabel,
+                  style: GoogleFonts.inter(
+                      fontSize: 12, fontWeight: FontWeight.w800, color: accent),
+                ),
+              ],
+            ),
+          ),
+
+          // Réponse du prestataire
+          if (response != null && response.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: accent.withOpacity(0.25)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.format_quote, size: 14, color: accent),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Réponse du prestataire',
+                        style: GoogleFonts.inter(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: accent),
+                      ),
+                      const Spacer(),
+                      if (respondedAt != null)
+                        Text(
+                          _fmtShortDate(respondedAt),
+                          style: GoogleFonts.inter(
+                              fontSize: 10, color: _R.text2),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    response,
+                    style: GoogleFonts.inter(
+                        fontSize: 12.5, color: _R.text, height: 1.45),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ TIMELINE INTERACTIVE DE SUIVI DES ÉTAPES
+// ============================================================================
+class _RequestTimeline extends ConsumerWidget {
+  final Map<String, dynamic> request;
+  final String vendorId;
+  final VoidCallback onRefresh;
+
+  const _RequestTimeline({
+    required this.request,
+    required this.vendorId,
+    required this.onRefresh,
+  });
+
+  String get _reqStatus => request['status'] as String? ?? 'pending';
+  String get _stage => request['stage'] as String? ?? 'requested';
+  String get _requestId => request['id'] as String;
+
+  bool get _approved => _reqStatus == 'approved';
+  bool get _rejected => _reqStatus == 'rejected';
+  bool get _pending => _reqStatus == 'pending';
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final currentIdx = _stageIndex(_stage).clamp(0, _STAGES.length - 1);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: _R.card(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: [_R.purple, _R.purple.withOpacity(0.7)]),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.timeline, color: Colors.white, size: 16),
+              ),
+              const SizedBox(width: 10),
+              Text('Suivi de la prestation',
+                  style: GoogleFonts.inter(
+                      fontSize: 15, fontWeight: FontWeight.w700)),
+              const Spacer(),
+              if (_approved)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: _R.green.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text('Approuvé',
+                      style: GoogleFonts.inter(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: _R.green)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // ── Cas EN ATTENTE ──
+          if (_pending)
+            _PendingBlock(requestId: _requestId, onRefresh: onRefresh),
+
+          // ── Cas REFUSÉ ──
+          if (_rejected)
+            _RejectedBlock(request: request),
+
+          // ── Cas APPROUVÉ : timeline interactive ──
+          if (_approved) ...[
+            _StageTracker(currentIdx: currentIdx),
+            const SizedBox(height: 16),
+            _StageControls(
+              requestId: _requestId,
+              vendorId: vendorId,
+              currentIdx: currentIdx,
+              onRefresh: onRefresh,
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingBlock extends ConsumerWidget {
+  final String requestId;
+  final VoidCallback onRefresh;
+  const _PendingBlock({required this.requestId, required this.onRefresh});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _R.amber.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _R.amber.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.hourglass_top, color: _R.amber, size: 18),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'En attente de la réponse du prestataire',
+                style: GoogleFonts.inter(
+                    fontSize: 13, fontWeight: FontWeight.w800, color: _R.amber),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 6),
+          Text(
+            'Dès qu\'il accepte, le suivi des étapes s\'ouvrira automatiquement ici.',
+            style: GoogleFonts.inter(fontSize: 11.5, color: _R.text2, height: 1.4),
+          ),
+          const SizedBox(height: 12),
+          Row(children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () => _cancelRequest(context, ref),
+                icon: const Icon(Icons.close, size: 16),
+                label: const Text('Retirer la demande'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _R.rose,
+                  side: const BorderSide(color: _R.rose),
+                  padding: const EdgeInsets.symmetric(vertical: 11),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelRequest(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text('Retirer cette demande ?',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+        content: Text(
+            'Le prestataire ne verra plus votre demande. Vous pourrez en envoyer une nouvelle plus tard.',
+            style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Annuler',
+                  style: GoogleFonts.inter(color: _R.text2))),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _R.rose,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10))),
+            child: Text('Retirer',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await Supabase.instance.client
+          .from('thix_weeding_vendor_requests')
+          .update({'status': 'cancelled', 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', requestId);
+      onRefresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Demande retirée',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: _R.amber,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+      }
+    }
+  }
+}
+
+class _RejectedBlock extends StatelessWidget {
+  final Map<String, dynamic> request;
+  const _RejectedBlock({required this.request});
+
+  @override
+  Widget build(BuildContext context) {
+    final reason = request['provider_response'] as String?;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _R.rose.withOpacity(0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _R.rose.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            const Icon(Icons.cancel, color: _R.rose, size: 18),
+            const SizedBox(width: 8),
+            Text('Demande refusée par le prestataire',
+                style: GoogleFonts.inter(
+                    fontSize: 13, fontWeight: FontWeight.w800, color: _R.rose)),
+          ]),
+          if (reason != null && reason.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text('Motif : $reason',
+                style: GoogleFonts.inter(
+                    fontSize: 12, color: _R.text, height: 1.4)),
+          ],
+          const SizedBox(height: 8),
+          Text(
+            'Vous pouvez contacter le prestataire autrement ou choisir un autre professionnel du catalogue.',
+            style: GoogleFonts.inter(fontSize: 11.5, color: _R.text2, height: 1.4),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StageTracker extends StatelessWidget {
+  final int currentIdx;
+  const _StageTracker({required this.currentIdx});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List.generate(_STAGES.length, (i) {
+        final stage = _STAGES[i];
+        final done = i < currentIdx;
+        final active = i == currentIdx;
+        final isLast = i == _STAGES.length - 1;
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Colonne indicateur + ligne
+            SizedBox(
+              width: 28,
+              child: Column(
+                children: [
+                  Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: (done || active)
+                          ? LinearGradient(colors: [
+                              active ? _R.gold : _R.green,
+                              (active ? _R.gold : _R.green).withOpacity(0.7)
+                            ])
+                          : null,
+                      color: (!done && !active) ? _R.border : null,
+                      border: Border.all(
+                        color: (done || active)
+                            ? Colors.transparent
+                            : _R.border,
+                        width: 2,
+                      ),
+                    ),
+                    child: (done || active)
+                        ? Icon(
+                            active ? Icons.radio_button_checked : Icons.check,
+                            size: 12,
+                            color: Colors.white,
+                          )
+                        : null,
+                  ),
+                  if (!isLast)
+                    Container(
+                      width: 2,
+                      height: 26,
+                      color: done ? _R.green : _R.border,
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Libellé + hint
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(bottom: isLast ? 0 : 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      stage.label,
+                      style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight:
+                            (done || active) ? FontWeight.w800 : FontWeight.w600,
+                        color: (done || active) ? _R.text : _R.text2,
+                      ),
+                    ),
+                    if (active)
+                      Text(
+                        stage.hint,
+                        style: GoogleFonts.inter(
+                            fontSize: 11, color: _R.goldDark, height: 1.35),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        );
+      }),
+    );
+  }
+}
+
+class _StageControls extends ConsumerWidget {
+  final String requestId;
+  final String vendorId;
+  final int currentIdx;
+  final VoidCallback onRefresh;
+
+  const _StageControls({
+    required this.requestId,
+    required this.vendorId,
+    required this.currentIdx,
+    required this.onRefresh,
+  });
+
+  bool get _isFinal => currentIdx >= _STAGES.length - 1;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (_isFinal) {
+      return Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: _R.green.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _R.green.withOpacity(0.3)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.task_alt, color: _R.green, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Prestation terminée ✓ Tout est à jour.',
+              style: GoogleFonts.inter(
+                  fontSize: 12.5, fontWeight: FontWeight.w700, color: _R.green),
+            ),
+          ),
+        ]),
+      );
+    }
+
+    final next = _STAGES[currentIdx + 1];
+
+    return Row(
+      children: [
+        Expanded(
+          child: FilledButton.icon(
+            onPressed: () => _advance(context, next),
+            icon: const Icon(Icons.arrow_forward, size: 18),
+            label: Text('Étape suivante : ${next.label}',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
+            style: FilledButton.styleFrom(
+              backgroundColor: _R.blue,
+              padding: const EdgeInsets.symmetric(vertical: 13),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        // Menu pour sauter directement à une étape
+        PopupMenuButton<String>(
+          tooltip: 'Changer d\'étape',
+          icon: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: _R.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _R.border),
+            ),
+            child: const Icon(Icons.swap_vert, size: 18, color: _R.text2),
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          onSelected: (key) {
+            final idx = _stageIndex(key);
+            if (idx >= 0) _advanceTo(context, _STAGES[idx]);
+          },
+          itemBuilder: (_) => _STAGES.asMap().entries.map((e) {
+            final i = e.key;
+            final s = e.value;
+            return PopupMenuItem(
+              value: s.key,
+              child: Row(children: [
+                Icon(s.icon, size: 16, color: i <= currentIdx ? _R.green : _R.text2),
+                const SizedBox(width: 10),
+                Text(s.label, style: GoogleFonts.inter(fontSize: 13)),
+                if (i == currentIdx)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 6),
+                    child: Icon(Icons.check, size: 14, color: _R.green),
+                  ),
+              ]),
+            );
+          }).toList(),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _advance(BuildContext context, _StageDef next) =>
+      _advanceTo(context, next);
+
+  Future<void> _advanceTo(BuildContext context, _StageDef stage) async {
+    HapticFeedback.selectionClick();
+    try {
+      final now = DateTime.now().toIso8601String();
+      // 1) Avancer le stage de la demande
+      await Supabase.instance.client
+          .from('thix_weeding_vendor_requests')
+          .update({'stage': stage.key, 'updated_at': now})
+          .eq('id', requestId);
+      // 2) Miroir sur le vendor pour cohérence de la liste
+      await Supabase.instance.client
+          .from('thix_weeding_vendors')
+          .update({'status': stage.key})
+          .eq('id', vendorId);
+      onRefresh();
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Étape mise à jour : ${stage.label} ✓',
+              style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: _R.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+      }
+    }
+  }
+}
+
+// ============================================================================
 // APP BAR ROYALE
 // ============================================================================
 class _VendorAppBar extends StatelessWidget {
@@ -368,6 +1161,7 @@ class _VendorAppBar extends StatelessWidget {
   final _CatDef cat;
   final _StatusDef status;
   final String weddingId;
+  final bool isCatalog;
   final VoidCallback onDelete;
 
   const _VendorAppBar({
@@ -375,6 +1169,7 @@ class _VendorAppBar extends StatelessWidget {
     required this.cat,
     required this.status,
     required this.weddingId,
+    required this.isCatalog,
     required this.onDelete,
   });
 
@@ -403,7 +1198,8 @@ class _VendorAppBar extends StatelessWidget {
           shape: const CircleBorder(),
           child: InkWell(
             customBorder: const CircleBorder(),
-            onTap: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add?edit=${vendor.id}'),
+            onTap: () => context
+                .push('/thix-weeding/staff/$weddingId/prestataires/add?edit=${vendor.id}'),
             child: Container(
               padding: const EdgeInsets.all(10),
               child: const Icon(Icons.edit_outlined, color: _R.blue, size: 20),
@@ -441,7 +1237,8 @@ class _VendorAppBar extends StatelessWidget {
               child: Container(
                 width: 220,
                 height: 220,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.08)),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle, color: Colors.white.withOpacity(0.08)),
               ),
             ),
             Positioned(
@@ -450,7 +1247,8 @@ class _VendorAppBar extends StatelessWidget {
               child: Container(
                 width: 140,
                 height: 140,
-                decoration: BoxDecoration(shape: BoxShape.circle, color: _R.gold.withOpacity(0.15)),
+                decoration: BoxDecoration(
+                    shape: BoxShape.circle, color: _R.gold.withOpacity(0.15)),
               ),
             ),
             FlexibleSpaceBar(
@@ -476,15 +1274,21 @@ class _VendorAppBar extends StatelessWidget {
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(
-                                  'PRESTATAIRE',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white.withOpacity(0.85),
-                                    letterSpacing: 2,
+                                Row(children: [
+                                  Text(
+                                    isCatalog ? 'PRESTATAIRE THIX' : 'PRESTATAIRE',
+                                    style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white.withOpacity(0.85),
+                                      letterSpacing: 2,
+                                    ),
                                   ),
-                                ),
+                                  if (isCatalog) ...[
+                                    const SizedBox(width: 6),
+                                    const Icon(Icons.verified, size: 12, color: _R.gold),
+                                  ],
+                                ]),
                                 const SizedBox(height: 2),
                                 Text(
                                   vendor.name,
@@ -505,7 +1309,8 @@ class _VendorAppBar extends StatelessWidget {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: Colors.white.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(8),
@@ -518,14 +1323,18 @@ class _VendorAppBar extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Text(
                                   cat.label,
-                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white),
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(width: 6),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding:
+                                const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: status.color.withOpacity(0.9),
                               borderRadius: BorderRadius.circular(8),
@@ -537,7 +1346,10 @@ class _VendorAppBar extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Text(
                                   status.label,
-                                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white),
+                                  style: GoogleFonts.inter(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white),
                                 ),
                               ],
                             ),
@@ -545,14 +1357,19 @@ class _VendorAppBar extends StatelessWidget {
                           if (vendor.isBooked) ...[
                             const SizedBox(width: 6),
                             Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                               decoration: BoxDecoration(
                                 gradient: _R.goldG,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Text(
                                 'RÉSERVÉ',
-                                style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1),
+                                style: GoogleFonts.inter(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    letterSpacing: 1),
                               ),
                             ),
                           ],
@@ -614,17 +1431,20 @@ class _HeroCard extends StatelessWidget {
                   vendor.name,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
+                  style: GoogleFonts.inter(
+                      fontSize: 18, fontWeight: FontWeight.w800, color: Colors.white),
                 ),
                 const SizedBox(height: 4),
                 Text(
                   cat.label,
-                  style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9)),
+                  style: GoogleFonts.inter(
+                      fontSize: 12, color: Colors.white.withOpacity(0.9)),
                 ),
                 if (vendor.price != null && vendor.price! > 0) ...[
                   const SizedBox(height: 8),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     decoration: BoxDecoration(
                       color: Colors.white.withOpacity(0.25),
                       borderRadius: BorderRadius.circular(8),
@@ -632,7 +1452,8 @@ class _HeroCard extends StatelessWidget {
                     ),
                     child: Text(
                       '${_fmtMoney(vendor.price!)} FCFA',
-                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
+                      style: GoogleFonts.inter(
+                          fontSize: 13, fontWeight: FontWeight.w800, color: Colors.white),
                     ),
                   ),
                 ],
@@ -652,77 +1473,95 @@ class _QuickActions extends StatelessWidget {
   final VendorModel vendor;
   final String weddingId;
   final String vendorId;
+  final String? providerId;
   final VoidCallback onRefresh;
 
   const _QuickActions({
     required this.vendor,
     required this.weddingId,
     required this.vendorId,
+    required this.providerId,
     required this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
+    final hasPhone = vendor.phone != null && vendor.phone!.isNotEmpty;
+    final hasEmail = vendor.email != null && vendor.email!.isNotEmpty;
+    final hasCatalog = providerId != null;
+
+    return Wrap(
+      spacing: 8,
+      runSpacing: 8,
       children: [
-        if (vendor.phone != null && vendor.phone!.isNotEmpty)
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.call,
-              label: 'Appeler',
-              gradient: _R.greenG,
-              onTap: () async {
-                // url_launcher serait idéal ici
-                Clipboard.setData(ClipboardData(text: vendor.phone!));
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text('Numéro copié : ${vendor.phone}'),
-                    backgroundColor: _R.green,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ));
-                }
-              },
-            ),
-          ),
-        if (vendor.phone != null && vendor.phone!.isNotEmpty) const SizedBox(width: 8),
-        if (vendor.email != null && vendor.email!.isNotEmpty)
-          Expanded(
-            child: _ActionButton(
-              icon: Icons.email_outlined,
-              label: 'Email',
-              gradient: _R.royal,
-              onTap: () {},
-            ),
-          ),
-        if (vendor.email != null && vendor.email!.isNotEmpty) const SizedBox(width: 8),
-        Expanded(
-          child: _ActionButton(
-            icon: vendor.isBooked ? Icons.event_busy : Icons.event_available,
-            label: vendor.isBooked ? 'Annuler' : 'Confirmer',
-            gradient: vendor.isBooked ? _R.roseG : _R.goldG,
-            onTap: () async {
-              try {
-                await Supabase.instance.client
-                    .from('thix_weeding_vendors')
-                    .update({'is_booked': !vendor.isBooked, 'status': vendor.isBooked ? 'cancelled' : 'booked'})
-                    .eq('id', vendorId);
-                onRefresh();
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    content: Text(vendor.isBooked ? 'Réservation annulée' : 'Prestataire confirmé ✓'),
-                    backgroundColor: vendor.isBooked ? _R.amber : _R.green,
-                    behavior: SnackBarBehavior.floating,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                  ));
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
-                }
-              }
+        if (hasPhone)
+          _ActionButton(
+            icon: Icons.call,
+            label: 'Appeler',
+            gradient: _R.greenG,
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: vendor.phone!));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Numéro copié : ${vendor.phone}'),
+                backgroundColor: _R.green,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ));
             },
           ),
+        if (hasEmail)
+          _ActionButton(
+            icon: Icons.email_outlined,
+            label: 'Email',
+            gradient: _R.royal,
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: vendor.email!));
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Email copié : ${vendor.email}'),
+                backgroundColor: _R.blue,
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ));
+            },
+          ),
+        if (hasCatalog)
+          _ActionButton(
+            icon: Icons.travel_explore,
+            label: 'Fiche',
+            gradient: _R.goldG,
+            onTap: () =>
+                context.push('/thix-weeding/provider/detail/$providerId'),
+          ),
+        _ActionButton(
+          icon: vendor.isBooked ? Icons.event_busy : Icons.event_available,
+          label: vendor.isBooked ? 'Annuler' : 'Confirmer',
+          gradient: vendor.isBooked ? _R.roseG : _R.greenG,
+          onTap: () async {
+            try {
+              await Supabase.instance.client
+                  .from('thix_weeding_vendors')
+                  .update({
+                    'is_booked': !vendor.isBooked,
+                    'status': vendor.isBooked ? 'cancelled' : 'booked'
+                  })
+                  .eq('id', vendorId);
+              onRefresh();
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                  content: Text(
+                      vendor.isBooked ? 'Réservation annulée' : 'Prestataire confirmé ✓'),
+                  backgroundColor: vendor.isBooked ? _R.amber : _R.green,
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ));
+              }
+            } catch (e) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+              }
+            }
+          },
         ),
       ],
     );
@@ -735,7 +1574,11 @@ class _ActionButton extends StatelessWidget {
   final LinearGradient gradient;
   final VoidCallback onTap;
 
-  const _ActionButton({required this.icon, required this.label, required this.gradient, required this.onTap});
+  const _ActionButton(
+      {required this.icon,
+      required this.label,
+      required this.gradient,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -746,18 +1589,23 @@ class _ActionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Container(
+          width: 84,
           padding: const EdgeInsets.symmetric(vertical: 14),
           decoration: BoxDecoration(
             gradient: gradient,
             borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: _R.blue.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(color: _R.blue.withOpacity(0.15), blurRadius: 10, offset: const Offset(0, 4))
+            ],
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(icon, color: Colors.white, size: 20),
               const SizedBox(height: 4),
-              Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
+              Text(label,
+                  style: GoogleFonts.inter(
+                      fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white)),
             ],
           ),
         ),
@@ -783,9 +1631,23 @@ class _ContactSection extends StatelessWidget {
         children: [
           _SectionHeader(title: 'Contact', icon: Icons.person_outline, color: _R.purple),
           const SizedBox(height: 14),
-          _InfoRow(icon: Icons.person_outline, label: 'Personne de contact', value: vendor.contactName ?? 'Non renseigné', color: _R.purple),
-          _InfoRow(icon: Icons.phone_outlined, label: 'Téléphone', value: vendor.phone ?? 'Non renseigné', color: _R.green, copyable: vendor.phone),
-          _InfoRow(icon: Icons.email_outlined, label: 'Email', value: vendor.email ?? 'Non renseigné', color: _R.blue, copyable: vendor.email),
+          _InfoRow(
+              icon: Icons.person_outline,
+              label: 'Personne de contact',
+              value: vendor.contactName ?? 'Non renseigné',
+              color: _R.purple),
+          _InfoRow(
+              icon: Icons.phone_outlined,
+              label: 'Téléphone',
+              value: vendor.phone ?? 'Non renseigné',
+              color: _R.green,
+              copyable: vendor.phone),
+          _InfoRow(
+              icon: Icons.email_outlined,
+              label: 'Email',
+              value: vendor.email ?? 'Non renseigné',
+              color: _R.blue,
+              copyable: vendor.email),
         ],
       ),
     );
@@ -808,12 +1670,15 @@ class _ContractSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Contrat & Tarif', icon: Icons.payments_outlined, color: _R.gold),
+          _SectionHeader(
+              title: 'Contrat & Tarif', icon: Icons.payments_outlined, color: _R.gold),
           const SizedBox(height: 14),
           _InfoRow(
             icon: Icons.account_balance_wallet_outlined,
             label: 'Prix convenu',
-            value: vendor.price != null && vendor.price! > 0 ? '${_fmtMoney(vendor.price!)} FCFA' : 'Non défini',
+            value: vendor.price != null && vendor.price! > 0
+                ? '${_fmtMoney(vendor.price!)} FCFA'
+                : 'Non défini',
             color: _R.gold,
           ),
           _InfoRow(
@@ -859,10 +1724,8 @@ class _NotesSection extends StatelessWidget {
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: _R.border),
             ),
-            child: Text(
-              notes,
-              style: GoogleFonts.inter(fontSize: 13, color: _R.text, height: 1.5),
-            ),
+            child: Text(notes,
+                style: GoogleFonts.inter(fontSize: 13, color: _R.text, height: 1.5)),
           ),
         ],
       ),
@@ -885,7 +1748,10 @@ class _PackagesSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Prestations (${packages.length})', icon: Icons.list_alt_outlined, color: _R.blue),
+          _SectionHeader(
+              title: 'Prestations (${packages.length})',
+              icon: Icons.list_alt_outlined,
+              color: _R.blue),
           const SizedBox(height: 14),
           ...packages.map((p) => Padding(
                 padding: const EdgeInsets.only(bottom: 10),
@@ -900,7 +1766,9 @@ class _PackagesSection extends StatelessWidget {
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: _R.blue.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        decoration: BoxDecoration(
+                            color: _R.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8)),
                         child: const Icon(Icons.star_outline, size: 16, color: _R.blue),
                       ),
                       const SizedBox(width: 10),
@@ -908,13 +1776,21 @@ class _PackagesSection extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(p.title, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700)),
+                            Text(p.title,
+                                style: GoogleFonts.inter(
+                                    fontSize: 13, fontWeight: FontWeight.w700)),
                             if (p.description != null && p.description!.isNotEmpty)
-                              Text(p.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
+                              Text(p.description!,
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: GoogleFonts.inter(
+                                      fontSize: 11, color: _R.text2)),
                           ],
                         ),
                       ),
-                      Text('${_fmtMoney(p.price)} FCFA', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _R.gold)),
+                      Text('${_fmtMoney(p.price)} FCFA',
+                          style: GoogleFonts.inter(
+                              fontSize: 13, fontWeight: FontWeight.w800, color: _R.gold)),
                     ],
                   ),
                 ),
@@ -949,85 +1825,111 @@ class _ExpensesSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeader(title: 'Dépenses liées', icon: Icons.receipt_long_outlined, color: _R.rose),
+          _SectionHeader(
+              title: 'Dépenses liées', icon: Icons.receipt_long_outlined, color: _R.rose),
           const SizedBox(height: 14),
 
-          // Résumé financier
           if (totalSpent > 0) ...[
             Container(
               padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [_R.rose.withOpacity(0.08), _R.amber.withOpacity(0.08)]),
+                gradient: LinearGradient(
+                    colors: [_R.rose.withOpacity(0.08), _R.amber.withOpacity(0.08)]),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: _R.rose.withOpacity(0.2)),
               ),
               child: Row(
                 children: [
-                  Expanded(child: _ExpenseMiniStat(label: 'Total', value: totalSpent, color: _R.text)),
-                  Expanded(child: _ExpenseMiniStat(label: 'Payé', value: paidAmount, color: _R.green)),
-                  Expanded(child: _ExpenseMiniStat(label: 'Restant', value: unpaidAmount, color: unpaidAmount > 0 ? _R.rose : _R.green)),
+                  Expanded(
+                      child: _ExpenseMiniStat(
+                          label: 'Total', value: totalSpent, color: _R.text)),
+                  Expanded(
+                      child: _ExpenseMiniStat(
+                          label: 'Payé', value: paidAmount, color: _R.green)),
+                  Expanded(
+                      child: _ExpenseMiniStat(
+                          label: 'Restant',
+                          value: unpaidAmount,
+                          color: unpaidAmount > 0 ? _R.rose : _R.green)),
                 ],
               ),
             ),
             const SizedBox(height: 14),
           ],
 
-          // Liste des dépenses
           expensesAsync.when(
-            loading: () => const Center(child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2))),
+            loading: () => const Center(
+                child: Padding(padding: EdgeInsets.all(16), child: CircularProgressIndicator(strokeWidth: 2))),
             error: (e, _) => Text('Erreur: $e', style: const TextStyle(color: _R.rose)),
             data: (expenses) {
               if (expenses.isEmpty) {
                 return Container(
                   padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(color: _R.surface, borderRadius: BorderRadius.circular(12)),
+                  decoration: BoxDecoration(
+                      color: _R.surface, borderRadius: BorderRadius.circular(12)),
                   child: Column(
                     children: [
                       Icon(Icons.receipt_outlined, size: 32, color: _R.text2),
                       const SizedBox(height: 8),
-                      Text('Aucune dépense liée', style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
+                      Text('Aucune dépense liée',
+                          style: GoogleFonts.inter(fontSize: 13, color: _R.text2)),
                     ],
                   ),
                 );
               }
               return Column(
-                children: expenses.map((e) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: _R.surface,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: e.isPaid ? _R.green.withOpacity(0.3) : _R.amber.withOpacity(0.3)),
-                        ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: (e.isPaid ? _R.green : _R.amber).withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Icon(e.isPaid ? Icons.check_circle : Icons.pending, size: 16, color: e.isPaid ? _R.green : _R.amber),
+                children: expenses
+                    .map((e) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: _R.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: e.isPaid
+                                      ? _R.green.withOpacity(0.3)
+                                      : _R.amber.withOpacity(0.3)),
                             ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(e.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700)),
-                                  Text(e.category, style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
-                                ],
-                              ),
+                            child: Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: (e.isPaid ? _R.green : _R.amber).withOpacity(0.1),
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Icon(
+                                      e.isPaid ? Icons.check_circle : Icons.pending,
+                                      size: 16,
+                                      color: e.isPaid ? _R.green : _R.amber),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(e.title,
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: GoogleFonts.inter(
+                                              fontSize: 13, fontWeight: FontWeight.w700)),
+                                      Text(e.category,
+                                          style: GoogleFonts.inter(
+                                              fontSize: 10, color: _R.text2)),
+                                    ],
+                                  ),
+                                ),
+                                Text('${_fmtMoney(e.amount)} FCFA',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: e.isPaid ? _R.green : _R.amber)),
+                              ],
                             ),
-                            Text(
-                              '${_fmtMoney(e.amount)} FCFA',
-                              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: e.isPaid ? _R.green : _R.amber),
-                            ),
-                          ],
-                        ),
-                      ),
-                    )).toList(),
+                          ),
+                        ))
+                    .toList(),
               );
             },
           ),
@@ -1047,7 +1949,9 @@ class _ExpenseMiniStat extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Text(_fmtMoney(value), style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: color)),
+        Text(_fmtMoney(value),
+            style: GoogleFonts.inter(
+                fontSize: 13, fontWeight: FontWeight.w800, color: color)),
         Text(label, style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
       ],
     );
@@ -1059,25 +1963,37 @@ class _ExpenseMiniStat extends StatelessWidget {
 // ============================================================================
 class _MetaCard extends StatelessWidget {
   final VendorModel vendor;
-  const _MetaCard({required this.vendor});
+  final bool isCatalog;
+  const _MetaCard({required this.vendor, required this.isCatalog});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(color: _R.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _R.border)),
+      decoration: BoxDecoration(
+          color: _R.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _R.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: _R.text2.withOpacity(0.1), borderRadius: BorderRadius.circular(6)), child: const Icon(Icons.fingerprint, size: 14, color: _R.text2)),
+              Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                      color: _R.text2.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6)),
+                  child: const Icon(Icons.fingerprint, size: 14, color: _R.text2)),
               const SizedBox(width: 8),
-              Text('Métadonnées', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _R.text2)),
+              Text('Métadonnées',
+                  style: GoogleFonts.inter(
+                      fontSize: 12, fontWeight: FontWeight.w700, color: _R.text2)),
             ],
           ),
           const SizedBox(height: 12),
           _MetaRow(label: 'ID unique', value: vendor.id),
+          _MetaRow(label: 'Origine', value: isCatalog ? 'Catalogue THIX' : 'Saisie manuelle'),
           _MetaRow(label: 'Créé le', value: _fmtDateTime(vendor.createdAt)),
           _MetaRow(label: 'Paquets', value: '${vendor.packages.length} prestation(s)'),
         ],
@@ -1101,7 +2017,9 @@ class _SectionHeader extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]), borderRadius: BorderRadius.circular(8)),
+          decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [color, color.withOpacity(0.7)]),
+              borderRadius: BorderRadius.circular(8)),
           child: Icon(icon, color: Colors.white, size: 16),
         ),
         const SizedBox(width: 10),
@@ -1119,7 +2037,13 @@ class _InfoRow extends StatelessWidget {
   final bool badge;
   final String? copyable;
 
-  const _InfoRow({required this.icon, required this.label, required this.value, required this.color, this.badge = false, this.copyable});
+  const _InfoRow(
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.color,
+      this.badge = false,
+      this.copyable});
 
   @override
   Widget build(BuildContext context) {
@@ -1127,7 +2051,11 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
         children: [
-          Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, size: 16, color: color)),
+          Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                  color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+              child: Icon(icon, size: 16, color: color)),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1138,10 +2066,21 @@ class _InfoRow extends StatelessWidget {
                 badge
                     ? Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                        decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: color.withOpacity(0.3))),
-                        child: Text(value, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: color)),
+                        decoration: BoxDecoration(
+                            color: color.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: color.withOpacity(0.3))),
+                        child: Text(value,
+                            style: GoogleFonts.inter(
+                                fontSize: 12, fontWeight: FontWeight.w700, color: color)),
                       )
-                    : Text(value, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: value == 'Non renseigné' || value == 'Non défini' ? _R.text2 : _R.text)),
+                    : Text(value,
+                        style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: value == 'Non renseigné' || value == 'Non défini'
+                                ? _R.text2
+                                : _R.text)),
               ],
             ),
           ),
@@ -1151,10 +2090,16 @@ class _InfoRow extends StatelessWidget {
               child: InkWell(
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: copyable!));
-                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Copié ✓'), backgroundColor: _R.green, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))));
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: const Text('Copié ✓'),
+                      backgroundColor: _R.green,
+                      behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))));
                 },
                 borderRadius: BorderRadius.circular(6),
-                child: Container(padding: const EdgeInsets.all(6), child: const Icon(Icons.copy, size: 14, color: _R.text2)),
+                child: Container(
+                    padding: const EdgeInsets.all(6),
+                    child: const Icon(Icons.copy, size: 14, color: _R.text2)),
               ),
             ),
         ],
@@ -1175,8 +2120,14 @@ class _MetaRow extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 80, child: Text(label, style: GoogleFonts.inter(fontSize: 11, color: _R.text2))),
-          Expanded(child: Text(value, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _R.text))),
+          SizedBox(
+              width: 80,
+              child: Text(label,
+                  style: GoogleFonts.inter(fontSize: 11, color: _R.text2))),
+          Expanded(
+              child: Text(value,
+                  style: GoogleFonts.inter(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: _R.text))),
         ],
       ),
     );
@@ -1194,9 +2145,14 @@ class _LoadingView extends StatelessWidget {
       backgroundColor: _R.surface,
       body: Center(
         child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(gradient: _R.goldG, shape: BoxShape.circle), child: const Icon(Icons.storefront_outlined, color: Colors.white, size: 36)),
+          Container(
+              padding: const EdgeInsets.all(20),
+              decoration: const BoxDecoration(gradient: _R.goldG, shape: BoxShape.circle),
+              child: const Icon(Icons.storefront_outlined, color: Colors.white, size: 36)),
           const SizedBox(height: 16),
-          Text('Chargement...', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2)),
+          Text('Chargement...',
+              style: GoogleFonts.inter(
+                  fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2)),
         ]),
       ),
     );
@@ -1216,13 +2172,24 @@ class _ErrorView extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: _R.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline, color: _R.rose, size: 40)),
+            Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                    color: _R.rose.withOpacity(0.1), shape: BoxShape.circle),
+                child: const Icon(Icons.error_outline, color: _R.rose, size: 40)),
             const SizedBox(height: 16),
-            Text('Impossible de charger', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+            Text('Impossible de charger',
+                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
             const SizedBox(height: 4),
-            Text(message, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
+            Text(message,
+                textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
             const SizedBox(height: 20),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Réessayer'), style: FilledButton.styleFrom(backgroundColor: _R.blue)),
+            FilledButton.icon(
+                onPressed: onRetry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Réessayer'),
+                style: FilledButton.styleFrom(backgroundColor: _R.blue)),
           ]),
         ),
       ),
@@ -1236,11 +2203,11 @@ class _ErrorView extends StatelessWidget {
 String _fmtMoney(double v) {
   final s = v.round().toString();
   final buf = StringBuffer();
-  var c = 0;
+  var count = 0;
   for (var i = s.length - 1; i >= 0; i--) {
     buf.write(s[i]);
-    c++;
-    if (c % 3 == 0 && i > 0) buf.write(' ');
+    count++;
+    if (count % 3 == 0 && i > 0) buf.write(' ');
   }
   return buf.toString().split('').reversed.join();
 }
@@ -1248,4 +2215,14 @@ String _fmtMoney(double v) {
 String _fmtDateTime(DateTime dt) {
   const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
   return '${dt.day} ${months[dt.month - 1]} ${dt.year} à ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
+}
+
+String _fmtShortDate(String iso) {
+  try {
+    final dt = DateTime.parse(iso);
+    const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  } catch (_) {
+    return '';
+  }
 }
