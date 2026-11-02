@@ -4,6 +4,7 @@
 // ✅ Providers pour prestataires, réservations, tâches
 // ✅ Recherche par code unique Thix
 // ✅ Cache + Invalidation automatique
+// ✅ FIX : userId rendu optionnel (String?) dans createProviderProvider
 // ============================================================================
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -54,7 +55,6 @@ class _ProviderListParams {
   });
 }
 
-// Helper pour créer les paramètres
 ProviderListParams providerListParams({
   int page = 1,
   int limit = 20,
@@ -107,7 +107,7 @@ final providerByCodeProvider = FutureProvider.autoDispose
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PRESTATAIRE COURANT (Espace prestataire)
-// ═══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 final currentProviderProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, userId) async {
   final service = ref.watch(providerServiceProvider);
@@ -174,9 +174,9 @@ class ProviderTasksParams extends _TaskParams {
   const ProviderTasksParams({required super.providerId, super.status});
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 // STATISTIQUES D'UN PRESTATAIRE
-// ═══════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 final providerStatsProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((ref, providerId) async {
   final service = ref.watch(providerServiceProvider);
@@ -188,10 +188,11 @@ final providerStatsProvider = FutureProvider.autoDispose
 // ═══════════════════════════════════════════════════════════════════════════
 
 /// Créer un prestataire
+/// ✅ FIX : userId rendu optionnel (String?)
 final createProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
   return ({
-    required String userId,
+    String? userId, // ✅ RENDU OPTIONNEL
     required ProviderCategory category,
     required String businessName,
     String? description,
