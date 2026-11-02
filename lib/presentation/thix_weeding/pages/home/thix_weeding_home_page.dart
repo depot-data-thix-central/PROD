@@ -324,7 +324,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
       return;
     }
     try {
-      final provider = await ref.read(providerServiceProvider).getProviderByUserId(user.id);
+      final provider = await ref.read(providerServiceProvider).getByOwner(user.id);
       if (!mounted) return;
       if (provider != null) {
         context.push('/thix-weeding/provider/dashboard');
