@@ -4,6 +4,8 @@
 // ✅ ownerId ajouté (aligné sur la logique mariages)
 // ✅ Compatibilité rétroactive : lit user_id (ancien) OU owner_id (nouveau)
 // ✅ OfferType enum + ProviderOfferModel (pour offres/services/menus/formules)
+// ✅ isPrimary ajouté à ThixProviderModel
+// ✅ Helpers de conversion ProviderCategory <-> String
 // ============================================================================
 
 import 'package:flutter/foundation.dart';
@@ -62,7 +64,7 @@ enum TaskStatus {
   cancelled;
 }
 
-/// ✅ NOUVEAU : types d'offres pour les prestataires
+/// ✅ Types d'offres pour les prestataires
 enum OfferType {
   service('Service'),
   menu('Menu'),
@@ -105,6 +107,7 @@ class ThixProviderModel {
   final double? maxPrice;
   final String currency;
   final bool isAvailable;
+  final bool isPrimary; // ✅ AJOUTÉ
   final Map<String, dynamic> requirements;
   final String? rejectionReason;
   final DateTime createdAt;
@@ -132,6 +135,7 @@ class ThixProviderModel {
     this.maxPrice,
     this.currency = 'USD',
     this.isAvailable = true,
+    this.isPrimary = false, // ✅ AJOUTÉ
     this.requirements = const {},
     this.rejectionReason,
     required this.createdAt,
@@ -139,16 +143,21 @@ class ThixProviderModel {
   });
 
   factory ThixProviderModel.fromJson(Map<String, dynamic> json) {
+    // Sécurisation : on lit 'category' en string, insensible à la casse, 
+    // et on gère à la fois le format enum (ex: 'salle') et le format DB legacy (ex: 'SALLE')
+    final rawCategory = (json['category'] as String?)?.toLowerCase();
+    final parsedCategory = ProviderCategory.values.firstWhere(
+      (c) => c.name.toLowerCase() == rawCategory || c.iconCode.toLowerCase() == rawCategory,
+      orElse: () => ProviderCategory.salle,
+    );
+
     return ThixProviderModel(
       id: json['id'] as String,
       // ✅ LIT owner_id (nouveau) OU user_id (legacy) pour ne rien casser
       ownerId: (json['owner_id'] as String?) ?? (json['user_id'] as String?),
       userId: (json['user_id'] as String?) ?? (json['owner_id'] as String?),
       uniqueCode: json['unique_code'] as String? ?? '',
-      category: ProviderCategory.values.firstWhere(
-        (c) => c.name == json['category'],
-        orElse: () => ProviderCategory.salle,
-      ),
+      category: parsedCategory,
       businessName: json['business_name'] as String? ?? 'Sans nom',
       description: json['description'] as String?,
       phone: json['phone'] as String?,
@@ -177,6 +186,7 @@ class ThixProviderModel {
       maxPrice: (json['max_price'] as num?)?.toDouble(),
       currency: json['currency'] as String? ?? 'USD',
       isAvailable: json['is_available'] as bool? ?? true,
+      isPrimary: json['is_primary'] as bool? ?? false, // ✅ AJOUTÉ
       requirements: json['requirements'] as Map<String, dynamic>? ?? {},
       rejectionReason: json['rejection_reason'] as String?,
       createdAt: json['created_at'] != null
@@ -210,6 +220,7 @@ class ThixProviderModel {
       'max_price': maxPrice,
       'currency': currency,
       'is_available': isAvailable,
+      'is_primary': isPrimary, // ✅ AJOUTÉ
       'requirements': requirements,
       'rejection_reason': rejectionReason,
       'created_at': createdAt.toIso8601String(),
@@ -239,6 +250,7 @@ class ThixProviderModel {
     double? maxPrice,
     String? currency,
     bool? isAvailable,
+    bool? isPrimary, // ✅ AJOUTÉ
     Map<String, dynamic>? requirements,
     String? rejectionReason,
     DateTime? createdAt,
@@ -266,6 +278,7 @@ class ThixProviderModel {
       maxPrice: maxPrice ?? this.maxPrice,
       currency: currency ?? this.currency,
       isAvailable: isAvailable ?? this.isAvailable,
+      isPrimary: isPrimary ?? this.isPrimary, // ✅ AJOUTÉ
       requirements: requirements ?? this.requirements,
       rejectionReason: rejectionReason ?? this.rejectionReason,
       createdAt: createdAt ?? this.createdAt,
@@ -275,7 +288,7 @@ class ThixProviderModel {
 
   @override
   String toString() =>
-      'ThixProviderModel(id: $id, owner: $ownerId, businessName: $businessName, uniqueCode: $uniqueCode)';
+      'ThixProviderModel(id: $id, owner: $ownerId, businessName: $businessName, uniqueCode: $uniqueCode, isPrimary: $isPrimary)';
 
   @override
   bool operator ==(Object other) =>
@@ -286,10 +299,11 @@ class ThixProviderModel {
           ownerId == other.ownerId &&
           uniqueCode == other.uniqueCode &&
           category == other.category &&
-          businessName == other.businessName;
+          businessName == other.businessName &&
+          isPrimary == other.isPrimary;
 
   @override
-  int get hashCode => Object.hash(id, ownerId, uniqueCode, category, businessName);
+  int get hashCode => Object.hash(id, ownerId, uniqueCode, category, businessName, isPrimary);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -441,7 +455,7 @@ class ProviderTaskModel {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PROVIDER OFFER MODEL (Services / Menus / Formules / Promos)
+// ✅ PROVIDER OFFER MODEL (Services / Menus / Formules / Promos)
 // ═══════════════════════════════════════════════════════════════════════════
 @immutable
 class ProviderOfferModel {
@@ -521,7 +535,7 @@ class ProviderOfferModel {
       'price': price,
       'currency': currency,
       'image_url': imageUrl,
-      'is_active': isActive, // ✅ COQUILLE CORRIGÉE (était is_active)
+      'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -562,4 +576,21 @@ class ProviderOfferModel {
   @override
   String toString() =>
       'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, provider: $providerId)';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS DE CONVERSION (À placer à la toute fin du fichier)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// Convertit un ProviderCategory enum en string lowercase pour la DB
+String providerCategoryToString(ProviderCategory cat) => cat.name.toLowerCase();
+
+/// Convertit une string DB en ProviderCategory enum
+ProviderCategory stringToProviderCategory(String? s) {
+  if (s == null || s.isEmpty) return ProviderCategory.salle;
+  final cleanStr = s.toLowerCase();
+  return ProviderCategory.values.firstWhere(
+    (c) => c.name.toLowerCase() == cleanStr || c.iconCode.toLowerCase() == cleanStr,
+    orElse: () => ProviderCategory.salle,
+  );
 }
