@@ -1,20 +1,16 @@
 // lib/presentation/thix_weeding/pages/home/thix_weeding_home_page.dart
 // ============================================================================
-// THIX WEDDING HOME PAGE — DESIGN v8.0 (DONNÉES RÉELLES — PLUS DE MOCK-UPS)
-// ✅ SUPPRIMÉ : offres statiques "−30% / −20% / OFFERT" (mock-ups)
-// ✅ SUPPRIMÉ : annonces statiques "Robe T38 / Salle 200 places" (mock-ups)
-// ✅ NOUVEAU : sections dynamiques alimentées par les offres publiées :
-//    • Offre de la semaine (grande carte vedette)
-//    • Promotions (offres type promo)
-//    • Dernières annonces (offres récentes)
-//    • Service traiteur (offres catégorie traiteur)
-//    • Le plus réservé (prestataires triés par avis)
-//    • Sections par catégorie (Salles, Traiteurs, Photos…)
-// ✅ CARTES AGRANDIES : offres 240×280, prestataires 260×320, vedette pleine largeur
-// ✅ Multi-photos (PageView) sur toutes les cartes offres & prestataires
-// ✅ Filtre prestataires assoupli : pending inclus, rejected exclu
-// ✅ Hero admin 12 photos conservé · Appbar verre · Orbe invitations conservés
+// THIX WEDDING HOME PAGE — DESIGN v8.0 (MULTI-CATÉGORIES + ORDRE STANDARD)
+// ✅ Sections dans l'ordre fixe :
+//    1. Offre de la semaine (vedette)
+//    2. Promotions (type promo)
+//    3. Dernières annonces (mixte, toutes catégories)
+//    4. Le plus réservé (prestataires triés par avis)
+//    5. Catégories (ordre de l'enum) : offres + prestataires dans chaque section
+// ✅ Multi-catégories : 1 offre apparaît dans toutes ses catégories
+// ✅ Filtre côté serveur via isInCategory()
 // ============================================================================
+
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
@@ -168,7 +164,6 @@ final homeIsAdminProvider = FutureProvider.autoDispose<bool>((ref) async {
   return _profileSaysAdmin(user.id);
 });
 
-// ── Slides du hero : photos admin uniquement (fallback branding si vide) ──
 final homePromoSlidesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) async {
   await Future.delayed(const Duration(milliseconds: 150));
   return [
@@ -198,7 +193,6 @@ final homeCategoriesProvider = FutureProvider<List<Map<String, dynamic>>>((ref) 
   ];
 });
 
-// ✅ Prestataires groupés par catégorie — pending inclus, rejected exclu
 final homeProvidersByCategoryProvider =
     FutureProvider<Map<ProviderCategory, List<ThixProviderModel>>>((ref) async {
   final service = ref.watch(providerServiceProvider);
@@ -452,7 +446,6 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
     return out;
   }
 
-  /// ✅ Offre vedette : dernière offre active avec photo (sinon la plus récente)
   ProviderOfferModel? _pickFeatured(List<ProviderOfferModel> offers) {
     if (offers.isEmpty) return null;
     final withImg = offers.where((o) => o.allImages.isNotEmpty).toList();
@@ -463,7 +456,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
   Widget build(BuildContext context) {
     final catsAsync = ref.watch(homeCategoriesProvider);
     final providersByCategoryAsync = ref.watch(homeProvidersByCategoryProvider);
-    final offersAsync = ref.watch(activeOffersProvider(null)); // ✅ null = toutes catégories
+    final offersAsync = ref.watch(activeOffersProvider(null));
     final promosAsync = ref.watch(homePromoSlidesProvider);
     final heroAsync = ref.watch(homeHeroPhotosProvider);
     final activeInvitesAsync = ref.watch(myActiveInvitationsProvider);
@@ -489,7 +482,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ref.invalidate(homeIsAdminProvider);
               ref.invalidate(homeCategoriesProvider);
               ref.invalidate(homeProvidersByCategoryProvider);
-              ref.invalidate(activeOffersProvider(null)); // ✅ rafraîchit les offres
+              ref.invalidate(activeOffersProvider(null));
               ref.invalidate(myActiveInvitationsProvider);
               await Future.delayed(const Duration(milliseconds: 400));
             },
@@ -548,7 +541,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                 ),
                 const SliverToBoxAdapter(child: SizedBox(height: 22)),
 
-                // ═══════════════ SECTIONS OFFRES RÉELLES ═══════════════
+                // ═══════════════ SECTIONS MIXTES (ordre fixe) ═══════════════
                 offersAsync.when(
                   data: (allOffers) {
                     if (allOffers.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
@@ -556,145 +549,81 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
                     final featured = _pickFeatured(allOffers);
                     final promoOffers = allOffers.where((o) => o.type == OfferType.promo).toList();
                     final latestOffers = allOffers.take(10).toList();
-                    final traiteurOffers =
-                        allOffers.where((o) => o.category == ProviderCategory.traiteur).toList();
 
                     return SliverList(
                       delegate: SliverChildListDelegate([
-                        // ── 1. OFFRE DE LA SEMAINE ──
+                        // 1. OFFRE DE LA SEMAINE
                         if (featured != null) ...[
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: _SectionHeader(title: 'Offre de la semaine'),
-                          ),
+                          const Padding(padding: EdgeInsets.symmetric(horizontal: 14),
+                              child: _SectionHeader(title: 'Offre de la semaine')),
                           const SizedBox(height: 12),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            child: _FeaturedOfferCard(offer: featured, onTap: () => _openOffer(featured)),
-                          ),
+                          Padding(padding: const EdgeInsets.symmetric(horizontal: 14),
+                              child: _FeaturedOfferCard(offer: featured, onTap: () => _openOffer(featured))),
                           const SizedBox(height: 28),
                         ],
-
-                        // ── 2. PROMOTIONS ──
+                        // 2. PROMOTIONS
                         if (promoOffers.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            child: _SectionHeader(
-                              title: 'Promotions',
-                              showSeeAll: true,
-                              onSeeAll: () => _onCategoryTap(null),
-                            ),
-                          ),
+                          const Padding(padding: EdgeInsets.symmetric(horizontal: 14),
+                              child: _SectionHeader(title: 'Promotions')),
                           const SizedBox(height: 12),
                           _OffersRowDynamic(offers: promoOffers, onTap: _openOffer),
                           const SizedBox(height: 28),
                         ],
-
-                        // ── 3. DERNIÈRES ANNONCES ──
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 14),
-                          child: _SectionHeader(
-                            title: 'Dernières annonces',
-                            showSeeAll: true,
-                            onSeeAll: () => _onCategoryTap(null),
-                          ),
-                        ),
+                        // 3. DERNIÈRES ANNONCES
+                        const Padding(padding: EdgeInsets.symmetric(horizontal: 14),
+                            child: _SectionHeader(title: 'Dernières annonces')),
                         const SizedBox(height: 12),
                         _OffersRowDynamic(offers: latestOffers, onTap: _openOffer),
                         const SizedBox(height: 28),
-
-                        // ── 4. SERVICE TRAITEUR ──
-                        if (traiteurOffers.isNotEmpty) ...[
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 14),
-                            child: _SectionHeader(
-                              title: 'Service traiteur',
-                              showSeeAll: true,
-                              onSeeAll: () => _onCategoryTap(ProviderCategory.traiteur),
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          _OffersRowDynamic(offers: traiteurOffers, onTap: _openOffer),
-                          const SizedBox(height: 28),
-                        ],
                       ]),
                     );
                   },
                   loading: () => const SliverToBoxAdapter(
-                    child: SizedBox(height: 120, child: Center(child: CircularProgressIndicator(color: _W.rose))),
-                  ),
+                      child: SizedBox(height: 120, child: Center(child: CircularProgressIndicator(color: _W.rose)))),
                   error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
                 ),
 
-                // ═══════════════ SECTIONS PRESTATAIRES RÉELS ═══════════════
+                // ═══════════════ SECTIONS PAR CATÉGORIE (ordre fixe de l'enum) ═══════════════
                 providersByCategoryAsync.when(
-                  data: (providersByCategory) {
-                    final offersCount = offersAsync.valueOrNull?.length ?? 0;
+                  data: (grouped) {
+                    final offers = offersAsync.valueOrNull ?? const <ProviderOfferModel>[];
 
-                    if (providersByCategory.isEmpty && offersCount == 0) {
-                      return const SliverToBoxAdapter(
-                        child: Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 14),
-                          child: _EmptyProviders(),
+                    // Construit les sections dans l'ordre FIXE de ProviderCategory.values
+                    final sections = <Widget>[];
+                    for (final cat in ProviderCategory.values) {
+                      final offersInCat = offers.where((o) => o.isInCategory(cat)).take(10).toList();
+                      final providersInCat = (grouped[cat] ?? const <ThixProviderModel>[]).take(10).toList();
+                      if (offersInCat.isEmpty && providersInCat.isEmpty) continue;
+
+                      sections.add(Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+                        child: _SectionHeader(
+                          title: cat.displayName,
+                          showSeeAll: true,
+                          onSeeAll: () => _onCategoryTap(cat),
                         ),
+                      ));
+                      if (offersInCat.isNotEmpty) {
+                        sections.add(_OffersRowDynamic(offers: offersInCat, onTap: _openOffer));
+                        sections.add(const SizedBox(height: 14));
+                      }
+                      if (providersInCat.isNotEmpty) {
+                        sections.add(_ProvidersRowDynamic(providers: providersInCat, onTap: _openProvider));
+                      }
+                      sections.add(const SizedBox(height: 28));
+                    }
+
+                    if (sections.isEmpty && offers.isEmpty) {
+                      return const SliverToBoxAdapter(
+                        child: Padding(padding: EdgeInsets.symmetric(horizontal: 14), child: _EmptyProviders()),
                       );
                     }
-                    if (providersByCategory.isEmpty) {
-                      return const SliverToBoxAdapter(child: SizedBox.shrink());
-                    }
+                    if (sections.isEmpty) return const SliverToBoxAdapter(child: SizedBox.shrink());
 
-                    // ── 5. LE PLUS RÉSERVÉ (toutes catégories, trié par avis) ──
-                    final allProviders = providersByCategory.values.expand((l) => l).toList();
-                    allProviders.sort((a, b) {
-                      final scoreA = a.reviewCount * 10 + (a.rating * 100).toInt();
-                      final scoreB = b.reviewCount * 10 + (b.rating * 100).toInt();
-                      return scoreB.compareTo(scoreA);
-                    });
-                    final topReserved = allProviders.take(10).toList();
-
-                    return SliverList(
-                      delegate: SliverChildListDelegate([
-                        if (topReserved.isNotEmpty) ...[
-                          const Padding(
-                            padding: EdgeInsets.symmetric(horizontal: 14),
-                            child: _SectionHeader(title: 'Le plus réservé'),
-                          ),
-                          const SizedBox(height: 12),
-                          _ProvidersRowDynamic(providers: topReserved, onTap: _openProvider),
-                          const SizedBox(height: 28),
-                        ],
-
-                        // ── 6. SECTIONS PAR CATÉGORIE ──
-                        ...providersByCategory.entries.map((entry) {
-                          final category = entry.key;
-                          final providers = entry.value.take(10).toList();
-                          if (providers.isEmpty) return const SizedBox.shrink();
-
-                          return Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Padding(
-                                padding: const EdgeInsets.fromLTRB(14, 0, 14, 10),
-                                child: _SectionHeader(
-                                  title: category.displayName,
-                                  showSeeAll: true,
-                                  onSeeAll: () => _onCategoryTap(category),
-                                ),
-                              ),
-                              _ProvidersRowDynamic(providers: providers, onTap: _openProvider),
-                              const SizedBox(height: 28),
-                            ],
-                          );
-                        }),
-                      ]),
-                    );
+                    return SliverList(delegate: SliverChildListDelegate(sections));
                   },
                   loading: () => const SliverToBoxAdapter(
-                    child: SizedBox(
-                      height: 300,
-                      child: Center(child: CircularProgressIndicator(color: _W.rose)),
-                    ),
-                  ),
+                      child: SizedBox(height: 300, child: Center(child: CircularProgressIndicator(color: _W.rose)))),
                   error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
                 ),
 
@@ -737,7 +666,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ CARTE VEDETTE "OFFRE DE LA SEMAINE" (pleine largeur, 300 de haut)
+// CARTE VEDETTE "OFFRE DE LA SEMAINE"
 // ═══════════════════════════════════════════════════════════════════════════
 class _FeaturedOfferCard extends StatelessWidget {
   final ProviderOfferModel offer;
@@ -762,7 +691,6 @@ class _FeaturedOfferCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Images (carrousel si multi-photos)
             if (images.isNotEmpty)
               PageView.builder(
                 itemCount: images.length,
@@ -778,7 +706,6 @@ class _FeaturedOfferCard extends StatelessWidget {
                 child: Icon(offerTypeIcon(offer.type), size: 64, color: color),
               ),
 
-            // Dégradé de lisibilité
             DecoratedBox(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -794,7 +721,6 @@ class _FeaturedOfferCard extends StatelessWidget {
               ),
             ),
 
-            // Badge vedette
             Positioned(
               top: 14,
               left: 14,
@@ -813,7 +739,6 @@ class _FeaturedOfferCard extends StatelessWidget {
               ),
             ),
 
-            // Badge type + compteur photos
             Positioned(
               top: 14,
               right: 14,
@@ -844,7 +769,6 @@ class _FeaturedOfferCard extends StatelessWidget {
               ),
             ),
 
-            // Contenu bas
             Positioned(
               left: 16,
               right: 16,
@@ -914,7 +838,7 @@ class _FeaturedOfferCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ RANGÉE D'OFFRES DYNAMIQUE (cartes agrandies 240×280)
+// RANGÉE D'OFFRES DYNAMIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 class _OffersRowDynamic extends StatelessWidget {
   final List<ProviderOfferModel> offers;
@@ -940,7 +864,7 @@ class _OffersRowDynamic extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ CARTE OFFRE AGRANDIE (240 de large, multi-photos)
+// CARTE OFFRE AGRANDIE
 // ═══════════════════════════════════════════════════════════════════════════
 class _OfferCardLarge extends StatelessWidget {
   final ProviderOfferModel offer;
@@ -990,7 +914,6 @@ class _OfferCardLarge extends StatelessWidget {
                       child: Icon(offerTypeIcon(offer.type), size: 40, color: color),
                     ),
 
-                  // Badge type
                   Positioned(
                     top: 10,
                     left: 10,
@@ -1002,7 +925,6 @@ class _OfferCardLarge extends StatelessWidget {
                     ),
                   ),
 
-                  // Compteur photos
                   if (images.length > 1)
                     Positioned(
                       top: 10,
@@ -1022,20 +944,26 @@ class _OfferCardLarge extends StatelessWidget {
                       ),
                     ),
 
-                  // Badge catégorie (en bas de l'image)
+                  // ✅ Badges catégories (1 à 2 visibles)
                   Positioned(
                     left: 10,
                     bottom: 10,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.92),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        offer.category.displayName,
-                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: _W.ink),
-                      ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: offer.categories.take(2).map((c) {
+                        return Container(
+                          margin: const EdgeInsets.only(right: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withOpacity(0.92),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            c.displayName,
+                            style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w800, color: _W.ink),
+                          ),
+                        );
+                      }).toList(),
                     ),
                   ),
                 ],
@@ -1089,7 +1017,7 @@ class _OfferCardLarge extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ RANGÉE PRESTATAIRES DYNAMIQUE (cartes agrandies 260×320)
+// RANGÉE PRESTATAIRES DYNAMIQUE
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProvidersRowDynamic extends StatelessWidget {
   final List<ThixProviderModel> providers;
@@ -1115,7 +1043,7 @@ class _ProvidersRowDynamic extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ CARTE PRESTATAIRE AGRANDIE (260 de large, multi-photos, badge statut)
+// CARTE PRESTATAIRE AGRANDIE
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProviderCardLarge extends StatelessWidget {
   final ThixProviderModel provider;
@@ -1160,7 +1088,6 @@ class _ProviderCardLarge extends StatelessWidget {
                     ),
                   ),
 
-                  // Badge Premium / Certifié
                   if (provider.level == TrackingLevel.platinum)
                     Positioned(
                       top: 10,
@@ -1200,7 +1127,6 @@ class _ProviderCardLarge extends StatelessWidget {
                       ),
                     ),
 
-                  // Badge statut vérification
                   Positioned(
                     top: 10,
                     right: 10,
@@ -1221,7 +1147,6 @@ class _ProviderCardLarge extends StatelessWidget {
                     ),
                   ),
 
-                  // Compteur photos
                   if (images.length > 1)
                     Positioned(
                       left: 10,
@@ -1298,7 +1223,6 @@ class _ProviderCardLarge extends StatelessWidget {
   }
 }
 
-// ✅ État vide quand aucun prestataire & aucune offre
 class _EmptyProviders extends StatelessWidget {
   const _EmptyProviders();
 
@@ -1324,7 +1248,7 @@ class _EmptyProviders extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// APP BAR VERRE DÉPOLI (compacte)
+// APP BAR VERRE DÉPOLI
 // ═══════════════════════════════════════════════════════════════════════════
 class _GlassAppBar extends StatelessWidget {
   final double topPad;
@@ -1433,7 +1357,7 @@ class _AppBarBtn extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HERO : PHOTOS EN DÉFILEMENT AUTOMATIQUE
+// HERO CAROUSEL
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroCarousel extends StatefulWidget {
   final List<Map<String, dynamic>> slides;
@@ -1888,7 +1812,7 @@ class _JoinBarState extends State<_JoinBar> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FEUILLE ADMIN : GÉRER LES 12 PHOTOS DU HERO
+// HERO MANAGER SHEET
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroManagerSheet extends StatefulWidget {
   final VoidCallback onChanged;
@@ -2285,7 +2209,7 @@ class _HeroManagerSheetState extends State<_HeroManagerSheet> {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CATÉGORIES (boutons ronds compacts)
+// CATÉGORIES
 // ═══════════════════════════════════════════════════════════════════════════
 class _CategoryRow extends StatelessWidget {
   final List<Map<String, dynamic>> categories;
@@ -2418,7 +2342,7 @@ class _TrustRow extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FOND AMBIANT
+// AMBIENT BACKGROUND
 // ═══════════════════════════════════════════════════════════════════════════
 class _AmbientBackground extends StatefulWidget {
   const _AmbientBackground();
@@ -2485,7 +2409,7 @@ class _AmbientBackgroundState extends State<_AmbientBackground> with SingleTicke
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ORBE « MES INVITATIONS »
+// ACTIVE INVITES ORB
 // ═══════════════════════════════════════════════════════════════════════════
 class _ActiveInvitesOrb extends StatefulWidget {
   final List<Map<String, dynamic>> invites;
@@ -2572,9 +2496,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                             stops: const [0.0, 0.55, 1.0],
                           ),
                           border: Border.all(color: Colors.white.withOpacity(0.95), width: 1.5),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 5)),
-                          ],
+                          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 5))],
                         ),
                         child: Stack(
                           alignment: Alignment.center,
@@ -2599,9 +2521,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                                   child: Container(
                                     width: 24,
                                     decoration: BoxDecoration(
-                                      gradient: LinearGradient(
-                                        colors: [Colors.transparent, Colors.white.withOpacity(0.35), Colors.transparent],
-                                      ),
+                                      gradient: LinearGradient(colors: [Colors.transparent, Colors.white.withOpacity(0.35), Colors.transparent]),
                                     ),
                                   ),
                                 ),
@@ -2622,10 +2542,8 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                             gradient: const LinearGradient(colors: [Color(0xFFFF3B4A), Color(0xFFE31C4E)]),
                             border: Border.all(color: Colors.white, width: 1.8),
                           ),
-                          child: Text(
-                            count > 9 ? '9+' : '$count',
-                            style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, height: 1),
-                          ),
+                          child: Text(count > 9 ? '9+' : '$count',
+                              style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, height: 1)),
                         ),
                       ),
                     ],
@@ -2645,13 +2563,11 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                   border: Border.all(color: Colors.white),
                   boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 8, offset: const Offset(0, 3))],
                 ),
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: _W.ink, letterSpacing: -0.2),
-                ),
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.inter(fontSize: 9.5, fontWeight: FontWeight.w800, color: _W.ink, letterSpacing: -0.2)),
               ),
             ),
             AnimatedSize(
@@ -2667,10 +2583,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
                           final c = '${inv['bride_name'] ?? ''} & ${inv['groom_name'] ?? ''}'.trim();
                           return Padding(
                             padding: const EdgeInsets.only(bottom: 6),
-                            child: _GlassInviteChip(
-                              title: c.isEmpty || c == '&' ? 'Invitation' : c,
-                              onTap: () => widget.onTap(inv['wedding_id'] as String),
-                            ),
+                            child: _GlassInviteChip(title: c.isEmpty || c == '&' ? 'Invitation' : c, onTap: () => widget.onTap(inv['wedding_id'] as String)),
                           );
                         }).toList(),
                       ),
@@ -2685,7 +2598,7 @@ class _ActiveInvitesOrbState extends State<_ActiveInvitesOrb> with TickerProvide
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CHIP D'INVITATION (quand plusieurs invitations sont affichées)
+// GLASS INVITE CHIP
 // ═══════════════════════════════════════════════════════════════════════════
 class _GlassInviteChip extends StatelessWidget {
   final String title;
@@ -2720,12 +2633,7 @@ class _GlassInviteChip extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Flexible(
-                child: Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _W.ink),
-                ),
+                child: Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _W.ink)),
               ),
             ],
           ),
