@@ -1,13 +1,17 @@
 // lib/presentation/thix_weeding/pages/staff/content/staff_content_pages.dart
 // ============================================================================
-// THIX WEDDING — CONTENUS INVITÉS (STAFF) : MENU DU REPAS + PAGES D'INFOS
-// ✅ StaffMenuPage : plats par catégorie, photo, tags, publier / masquer, ordre
-// ✅ StaffInfoPage : navette, dress code, FAQ, remerciements, live (photos + lien)
-// ✅ Modèles et constantes partagés avec les pages invité
+// THIX WEDDING — CONTENUS INVITÉS (STAFF) v2
+// ✅ StaffMenuPage : 3 onglets → Menu | Suggestions | Résultats
+//    • Menu : plats par catégorie, photo, tags, publier, ordre, nb de choix
+//    • Suggestions : plats proposés par les invités (Ajouter au menu / Refuser)
+//    • Résultats : classement par rubrique, qui a voté quoi, non-répondants,
+//      régimes & allergies, ouvrir/fermer votes et suggestions, récap traiteur
+// ✅ StaffInfoPage : navette, dress code, FAQ, remerciements, live
 // ============================================================================
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -18,6 +22,7 @@ class _K {
   static const rose = Color(0xFFD81B60);
   static const roseSoft = Color(0xFFFCE4EC);
   static const green = Color(0xFF059669);
+  static const gold = Color(0xFFD4AF37);
   static const ink = Color(0xFF111827);
   static const ink2 = Color(0xFF6B7280);
 }
@@ -27,8 +32,13 @@ String? _nz(dynamic v) {
   return (s.isEmpty || s == 'null') ? null : s;
 }
 
+List<Map<String, dynamic>> _maps(dynamic r) =>
+    (r as List).map((e) => Map<String, dynamic>.from(e as Map)).toList();
+
+String _err(Object e) => e is PostgrestException ? e.message : '$e';
+
 // ═══════════════════════════════════════════════════════════════════════════
-// CONSTANTES + MODÈLES PARTAGÉS
+// CONSTANTES + MODÈLES PARTAGÉS (staff + invité)
 // ═══════════════════════════════════════════════════════════════════════════
 const Map<String, String> kMenuCourses = {
   'entree': 'Entrées',
@@ -64,6 +74,12 @@ class MenuEntry {
   List<String> tags;
   int position;
   bool published;
+  String status; // approved | pending | rejected
+  String source; // staff | guest
+  String? suggestedBy;
+  String? suggestedByName;
+  int votes;
+  int portions;
 
   MenuEntry({
     required this.id,
@@ -74,6 +90,12 @@ class MenuEntry {
     this.tags = const [],
     this.position = 0,
     this.published = true,
+    this.status = 'approved',
+    this.source = 'staff',
+    this.suggestedBy,
+    this.suggestedByName,
+    this.votes = 0,
+    this.portions = 0,
   });
 
   factory MenuEntry.fromJson(Map<String, dynamic> j) => MenuEntry(
@@ -85,6 +107,12 @@ class MenuEntry {
         tags: ((j['tags'] as List?) ?? const []).map((e) => '$e').toList(),
         position: (j['position'] as num?)?.toInt() ?? 0,
         published: (j['is_published'] as bool?) ?? true,
+        status: '${j['status'] ?? 'approved'}',
+        source: '${j['source'] ?? 'staff'}',
+        suggestedBy: _nz(j['suggested_by']),
+        suggestedByName: _nz(j['suggested_by_name']),
+        votes: (j['votes_count'] as num?)?.toInt() ?? 0,
+        portions: (j['portions_count'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -208,7 +236,7 @@ Widget _tagChip(String t, {Color color = _K.rose}) => Container(
     );
 
 // ═══════════════════════════════════════════════════════════════════════════
-// STAFF : MENU DU REPAS
+// STAFF : MENU DU REPAS (Menu | Suggestions | Résultats)
 // ═══════════════════════════════════════════════════════════════════════════
 class StaffMenuPage extends StatefulWidget {
   final String weddingId;
@@ -218,54 +246,107 @@ class StaffMenuPage extends StatefulWidget {
   State<StaffMenuPage> createState() => _StaffMenuPageState();
 }
 
-class _StaffMenuPageState extends State<StaffMenuPage> {
+class _StaffMenuPageState extends State<StaffMenuPage> with SingleTickerProviderStateMixin {
   final _supa = Supabase.instance.client;
-  List<MenuEntry> _items = [];
+  late final TabController _tab;
+
+  List<MenuEntry> _all = [];
+  List<Map<String, dynamic>> _votes = [];
+  List<Map<String, dynamic>> _guests = [];
+  List<Map<String, dynamic>> _diets = [];
+  Map<String, Map<String, dynamic>> _guestById = {};
+  Map<String, Map<String, dynamic>> _guestByUser = {};
+  bool _votingOpen = true;
+  bool _suggestOpen = true;
+
   bool _loading = true;
   String? _error;
   RealtimeChannel? _ch;
   Timer? _deb;
+  final Set<String> _expanded = {};
 
   @override
   void initState() {
     super.initState();
+    _tab = TabController(length: 3, vsync: this)..addListener(() => setState(() {}));
     _load();
+    PostgresChangeFilter f() => PostgresChangeFilter(
+        type: PostgresChangeFilterType.eq, column: 'wedding_id', value: widget.weddingId);
     _ch = _supa
         .channel('staff-menu-${widget.weddingId}')
-        .onPostgresChanges(
-          event: PostgresChangeEvent.all,
-          schema: 'public',
-          table: 'thix_weeding_menu_items',
-          filter: PostgresChangeFilter(
-              type: PostgresChangeFilterType.eq, column: 'wedding_id', value: widget.weddingId),
-          callback: (_) {
-            _deb?.cancel();
-            _deb = Timer(const Duration(milliseconds: 400), () {
-              if (mounted) _load(silent: true);
-            });
-          },
-        )
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'thix_weeding_menu_items', filter: f(), callback: _onChange)
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'thix_weeding_menu_votes', filter: f(), callback: _onChange)
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'thix_weeding_menu_diets', filter: f(), callback: _onChange)
+        .onPostgresChanges(event: PostgresChangeEvent.all, schema: 'public', table: 'thix_weeding_menu_settings', filter: f(), callback: _onChange)
         .subscribe();
+  }
+
+  void _onChange(PostgresChangePayload _) {
+    _deb?.cancel();
+    _deb = Timer(const Duration(milliseconds: 450), () {
+      if (mounted) _load(silent: true);
+    });
   }
 
   @override
   void dispose() {
     _deb?.cancel();
     if (_ch != null) _supa.removeChannel(_ch!);
+    _tab.dispose();
     super.dispose();
   }
 
   Future<void> _load({bool silent = false}) async {
     try {
+      final id = widget.weddingId;
       final rows = await _supa
           .from('thix_weeding_menu_items')
           .select()
-          .eq('wedding_id', widget.weddingId)
+          .eq('wedding_id', id)
           .order('position', ascending: true)
           .order('created_at', ascending: true);
+      final items = _maps(rows).map(MenuEntry.fromJson).toList();
+
+      var votes = <Map<String, dynamic>>[];
+      var guests = <Map<String, dynamic>>[];
+      var diets = <Map<String, dynamic>>[];
+      var voting = true, suggest = true;
+      try {
+        votes = _maps(await _supa
+            .from('thix_weeding_menu_votes')
+            .select('item_id, guest_id, user_id, persons, course')
+            .eq('wedding_id', id));
+      } catch (_) {}
+      try {
+        guests = _maps(await _supa
+            .from('thix_weeding_guests')
+            .select('id, name, guests_count, user_id, invitation_active')
+            .eq('wedding_id', id));
+      } catch (_) {}
+      try {
+        diets = _maps(await _supa.from('thix_weeding_menu_diets').select().eq('wedding_id', id));
+      } catch (_) {}
+      try {
+        final s = await _supa.from('thix_weeding_menu_settings').select().eq('wedding_id', id).maybeSingle();
+        if (s != null) {
+          voting = s['voting_open'] != false;
+          suggest = s['suggestions_open'] != false;
+        }
+      } catch (_) {}
+
       if (!mounted) return;
       setState(() {
-        _items = (rows as List).map((e) => MenuEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+        _all = items;
+        _votes = votes;
+        _guests = guests;
+        _diets = diets;
+        _guestById = {for (final g in guests) '${g['id']}': g};
+        _guestByUser = {
+          for (final g in guests)
+            if (g['user_id'] != null) '${g['user_id']}': g
+        };
+        _votingOpen = voting;
+        _suggestOpen = suggest;
         _loading = false;
         _error = null;
       });
@@ -286,7 +367,11 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
       ));
   }
 
-  List<MenuEntry> _course(String c) => _items.where((e) => e.course == c).toList()
+  // ───────────────────────── HELPERS ─────────────────────────
+  List<MenuEntry> get _menuItems => _all.where((e) => e.status == 'approved').toList();
+  List<MenuEntry> get _pending => _all.where((e) => e.status == 'pending').toList();
+
+  List<MenuEntry> _course(String c) => _menuItems.where((e) => e.course == c).toList()
     ..sort((a, b) => a.position.compareTo(b.position));
 
   int _nextPos(String course) {
@@ -294,12 +379,34 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
     return l.isEmpty ? 0 : l.last.position + 1;
   }
 
+  Map<String, dynamic>? _guestOf(Map<String, dynamic> row) =>
+      _guestById['${row['guest_id']}'] ?? _guestByUser['${row['user_id']}'];
+
+  int _personsOf(Map<String, dynamic> v) {
+    final g = _guestOf(v);
+    return (g?['guests_count'] as num?)?.toInt() ?? (v['persons'] as num?)?.toInt() ?? 1;
+  }
+
+  String _voterName(Map<String, dynamic> v) => '${_guestOf(v)?['name'] ?? 'Invité'}';
+
+  ({int votes, int portions}) _stats(String itemId) {
+    var n = 0, p = 0;
+    for (final v in _votes) {
+      if ('${v['item_id']}' == itemId) {
+        n++;
+        p += _personsOf(v);
+      }
+    }
+    return (votes: n, portions: p);
+  }
+
+  // ───────────────────────── ACTIONS ─────────────────────────
   Future<void> _togglePublished(MenuEntry e, bool v) async {
     try {
       await _supa.from('thix_weeding_menu_items').update({'is_published': v}).eq('id', e.id);
       setState(() => e.published = v);
     } catch (err) {
-      _toast('Erreur : $err', error: true);
+      _toast(_err(err), error: true);
     }
   }
 
@@ -313,7 +420,7 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
       await _supa.from('thix_weeding_menu_items').update({'position': i}).eq('id', l[j].id);
       await _load(silent: true);
     } catch (err) {
-      _toast('Erreur : $err', error: true);
+      _toast(_err(err), error: true);
     }
   }
 
@@ -322,6 +429,7 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
       context: context,
       builder: (_) => AlertDialog(
         title: Text('Supprimer « ${e.name} » ?'),
+        content: const Text('Les choix des invités pour ce plat seront aussi supprimés.'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
           FilledButton(
@@ -337,7 +445,53 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
       await _supa.from('thix_weeding_menu_items').delete().eq('id', e.id);
       await _load(silent: true);
     } catch (err) {
-      _toast('Suppression impossible : $err', error: true);
+      _toast('Suppression impossible : ${_err(err)}', error: true);
+    }
+  }
+
+  Future<void> _approve(MenuEntry e) async {
+    try {
+      await _supa.from('thix_weeding_menu_items').update({
+        'status': 'approved',
+        'is_published': true,
+        'position': _nextPos(e.course),
+      }).eq('id', e.id);
+      _toast('« ${e.name} » ajouté au menu');
+      await _load(silent: true);
+    } catch (err) {
+      _toast(_err(err), error: true);
+    }
+  }
+
+  Future<void> _reject(MenuEntry e) async {
+    try {
+      await _supa.from('thix_weeding_menu_items').update({'status': 'rejected', 'is_published': false}).eq('id', e.id);
+      await _load(silent: true);
+    } catch (err) {
+      _toast(_err(err), error: true);
+    }
+  }
+
+  Future<void> _saveSettings({bool? voting, bool? suggest}) async {
+    final v = voting ?? _votingOpen;
+    final s = suggest ?? _suggestOpen;
+    final oldV = _votingOpen, oldS = _suggestOpen;
+    setState(() {
+      _votingOpen = v;
+      _suggestOpen = s;
+    });
+    try {
+      await _supa.from('thix_weeding_menu_settings').upsert({
+        'wedding_id': widget.weddingId,
+        'voting_open': v,
+        'suggestions_open': s,
+      }, onConflict: 'wedding_id');
+    } catch (err) {
+      setState(() {
+        _votingOpen = oldV;
+        _suggestOpen = oldS;
+      });
+      _toast(_err(err), error: true);
     }
   }
 
@@ -355,9 +509,61 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
     );
   }
 
+  // ───────────────────────── RÉCAP TRAITEUR ─────────────────────────
+  String _recap() {
+    final active = _guests.where((g) => g['invitation_active'] != false).toList();
+    final totalPersons = active.fold<int>(0, (s, g) => s + ((g['guests_count'] as num?)?.toInt() ?? 1));
+    final votedIds = _votedGuestIds();
+    final votedGuests = active.where((g) => votedIds.contains('${g['id']}')).toList();
+    final votedPersons = votedGuests.fold<int>(0, (s, g) => s + ((g['guests_count'] as num?)?.toInt() ?? 1));
+
+    final b = StringBuffer('MENU — RÉCAPITULATIF POUR LE TRAITEUR\n');
+    b.writeln('Invités : ${active.length} ($totalPersons personnes)');
+    b.writeln('Ont voté : ${votedGuests.length}/${active.length} invités ($votedPersons/$totalPersons personnes)');
+    for (final c in kMenuCourses.keys) {
+      final l = _course(c).map((e) => (e, _stats(e.id))).toList()
+        ..sort((a, b) => b.$2.portions.compareTo(a.$2.portions));
+      if (l.isEmpty) continue;
+      b.writeln('\n${kMenuCourses[c]!.toUpperCase()}');
+      for (final x in l) {
+        b.writeln('- ${x.$1.name} : ${x.$2.portions} portion(s) (${x.$2.votes} invité(s))');
+      }
+    }
+    final tags = <String, int>{};
+    final notes = <String>[];
+    for (final d in _diets) {
+      for (final t in ((d['tags'] as List?) ?? const [])) {
+        tags['$t'] = (tags['$t'] ?? 0) + 1;
+      }
+      final n = '${d['note'] ?? ''}'.trim();
+      if (n.isNotEmpty && n != 'null') notes.add('${_guestOf(d)?['name'] ?? 'Invité'} : $n');
+    }
+    if (tags.isNotEmpty) {
+      b.writeln('\nRÉGIMES (en nombre d\'invités)');
+      tags.forEach((k, v) => b.writeln('- ${kMenuTags[k] ?? k} : $v'));
+    }
+    if (notes.isNotEmpty) {
+      b.writeln('\nALLERGIES / REMARQUES');
+      for (final n in notes) {
+        b.writeln('- $n');
+      }
+    }
+    return b.toString();
+  }
+
+  Set<String> _votedGuestIds() {
+    final s = <String>{};
+    for (final v in _votes) {
+      final g = _guestOf(v);
+      if (g != null) s.add('${g['id']}');
+    }
+    return s;
+  }
+
+  // ───────────────────────── BUILD ─────────────────────────
   @override
   Widget build(BuildContext context) {
-    final published = _items.where((e) => e.published).length;
+    final pendingN = _pending.length;
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFC),
       appBar: AppBar(
@@ -366,14 +572,28 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
         elevation: 0,
         foregroundColor: _K.ink,
         title: Text('Menu du repas', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        bottom: TabBar(
+          controller: _tab,
+          indicatorColor: _K.rose,
+          labelColor: _K.rose,
+          unselectedLabelColor: _K.ink2,
+          labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 12.5),
+          tabs: [
+            const Tab(text: 'Menu'),
+            Tab(text: 'Suggestions${pendingN > 0 ? ' ($pendingN)' : ''}'),
+            const Tab(text: 'Résultats'),
+          ],
+        ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        backgroundColor: _K.rose,
-        foregroundColor: Colors.white,
-        onPressed: () => _openEditor(),
-        icon: const Icon(Icons.add_rounded),
-        label: Text('Ajouter un plat', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
-      ),
+      floatingActionButton: _tab.index == 0
+          ? FloatingActionButton.extended(
+              backgroundColor: _K.rose,
+              foregroundColor: Colors.white,
+              onPressed: () => _openEditor(),
+              icon: const Icon(Icons.add_rounded),
+              label: Text('Ajouter un plat', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+            )
+          : null,
       body: ThixGlassBackdrop(
         child: _loading
             ? const Center(child: CircularProgressIndicator(color: _K.rose))
@@ -381,55 +601,64 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
-                      child: Text('Erreur : $_error\n(Avez-vous exécuté le SQL du menu ?)', textAlign: TextAlign.center),
+                      child: Text('Erreur : $_error\n(Avez-vous exécuté les SQL du menu ?)', textAlign: TextAlign.center),
                     ),
                   )
-                : _items.isEmpty
-                    ? Center(
-                        child: Padding(
-                          padding: const EdgeInsets.all(32),
-                          child: Text(
-                            'Votre menu est vide.\nAjoutez les entrées, plats, desserts et boissons : vos invités les verront sur leur accueil.',
-                            textAlign: TextAlign.center,
-                            style: GoogleFonts.inter(color: _K.ink2, height: 1.4),
-                          ),
-                        ),
-                      )
-                    : RefreshIndicator(
-                        onRefresh: () => _load(silent: true),
-                        child: ListView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.fromLTRB(14, 12, 14, 110),
-                          children: [
-                            Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: Text('${_items.length} plat(s) · $published visible(s) par les invités',
-                                  style: GoogleFonts.inter(fontSize: 12, color: _K.ink2, fontWeight: FontWeight.w700)),
-                            ),
-                            for (final c in kMenuCourses.keys)
-                              if (_course(c).isNotEmpty) ...[
-                                Padding(
-                                  padding: const EdgeInsets.fromLTRB(2, 8, 2, 8),
-                                  child: Row(children: [
-                                    Icon(kMenuCourseIcons[c], size: 18, color: _K.rose),
-                                    const SizedBox(width: 8),
-                                    Text(kMenuCourses[c]!,
-                                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink)),
-                                  ]),
-                                ),
-                                ..._course(c).map((e) => Padding(
-                                      padding: const EdgeInsets.only(bottom: 8),
-                                      child: _tile(e),
-                                    )),
-                              ],
-                          ],
-                        ),
-                      ),
+                : TabBarView(
+                    controller: _tab,
+                    children: [_menuTab(), _suggestionsTab(), _resultsTab()],
+                  ),
+      ),
+    );
+  }
+
+  // ───────────────────────── ONGLET MENU ─────────────────────────
+  Widget _menuTab() {
+    final items = _menuItems;
+    if (items.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            'Votre menu est vide.\nAjoutez les entrées, plats, desserts et boissons : vos invités pourront les voir et voter pour leurs préférés.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(color: _K.ink2, height: 1.4),
+          ),
+        ),
+      );
+    }
+    final published = items.where((e) => e.published).length;
+    return RefreshIndicator(
+      onRefresh: () => _load(silent: true),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 110),
+        children: [
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: Text('${items.length} plat(s) · $published visible(s) par les invités',
+                style: GoogleFonts.inter(fontSize: 12, color: _K.ink2, fontWeight: FontWeight.w700)),
+          ),
+          for (final c in kMenuCourses.keys)
+            if (_course(c).isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(2, 8, 2, 8),
+                child: Row(children: [
+                  Icon(kMenuCourseIcons[c], size: 18, color: _K.rose),
+                  const SizedBox(width: 8),
+                  Text(kMenuCourses[c]!,
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink)),
+                ]),
+              ),
+              ..._course(c).map((e) => Padding(padding: const EdgeInsets.only(bottom: 8), child: _tile(e))),
+            ],
+        ],
       ),
     );
   }
 
   Widget _tile(MenuEntry e) {
+    final st = _stats(e.id);
     return ThixGlass(
       radius: 18,
       opacity: e.published ? 0.62 : 0.35,
@@ -443,12 +672,8 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
               width: 58,
               height: 58,
               child: e.imageUrl != null
-                  ? Image.network(e.imageUrl!, fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(color: _K.roseSoft))
-                  : Container(
-                      color: _K.roseSoft,
-                      child: Icon(kMenuCourseIcons[e.course], color: _K.rose, size: 24),
-                    ),
+                  ? Image.network(e.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _K.roseSoft))
+                  : Container(color: _K.roseSoft, child: Icon(kMenuCourseIcons[e.course], color: _K.rose, size: 24)),
             ),
           ),
           const SizedBox(width: 10),
@@ -465,15 +690,16 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(fontSize: 11.5, color: _K.ink2, height: 1.25)),
-                if (e.tags.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4),
-                    child: Wrap(
-                      spacing: 4,
-                      runSpacing: 3,
-                      children: e.tags.map((t) => _tagChip(kMenuTags[t] ?? t)).toList(),
-                    ),
-                  ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 3,
+                  children: [
+                    _tagChip('🗳 ${st.votes} choix · ${st.portions} portions', color: _K.green),
+                    if (e.source == 'guest') _tagChip('Suggéré par ${e.suggestedByName ?? 'un invité'}', color: _K.gold),
+                    ...e.tags.map((t) => _tagChip(kMenuTags[t] ?? t)),
+                  ],
+                ),
               ],
             ),
           ),
@@ -505,8 +731,393 @@ class _StaffMenuPageState extends State<StaffMenuPage> {
       ),
     );
   }
+
+  // ───────────────────────── ONGLET SUGGESTIONS ─────────────────────────
+  Widget _suggestionsTab() {
+    final l = _pending;
+    if (l.isEmpty) {
+      return RefreshIndicator(
+        onRefresh: () => _load(silent: true),
+        child: ListView(children: [
+          SizedBox(
+            height: 380,
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  'Aucune suggestion en attente.\nLes plats proposés par vos invités apparaîtront ici.',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(color: _K.ink2, height: 1.4),
+                ),
+              ),
+            ),
+          ),
+        ]),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: () => _load(silent: true),
+      child: ListView.separated(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 40),
+        itemCount: l.length,
+        separatorBuilder: (_, __) => const SizedBox(height: 10),
+        itemBuilder: (_, i) => _suggestion(l[i]),
+      ),
+    );
+  }
+
+  Widget _suggestion(MenuEntry e) {
+    return ThixGlass(
+      radius: 20,
+      opacity: 0.65,
+      borderColor: _K.gold.withOpacity(0.5),
+      padding: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (e.imageUrl != null)
+            ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              child: SizedBox(
+                height: 130,
+                width: double.infinity,
+                child: Image.network(e.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _K.roseSoft)),
+              ),
+            ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  _tagChip(kMenuCourses[e.course] ?? e.course, color: _K.rose),
+                  const SizedBox(width: 6),
+                  _tagChip('Suggéré par ${e.suggestedByName ?? 'un invité'}', color: _K.gold),
+                ]),
+                const SizedBox(height: 8),
+                Text(e.name, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink)),
+                if (e.description != null) ...[
+                  const SizedBox(height: 4),
+                  Text(e.description!, style: GoogleFonts.inter(fontSize: 12.5, color: _K.ink2, height: 1.35)),
+                ],
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton.icon(
+                        onPressed: () => _reject(e),
+                        icon: const Icon(Icons.close_rounded, size: 16),
+                        label: const Text('Refuser'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _K.rose,
+                          side: BorderSide(color: _K.rose.withOpacity(0.5)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: FilledButton.icon(
+                        onPressed: () => _approve(e),
+                        icon: const Icon(Icons.check_rounded, size: 16),
+                        label: const Text('Ajouter au menu'),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _K.green,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ───────────────────────── ONGLET RÉSULTATS ─────────────────────────
+  Widget _resultsTab() {
+    final active = _guests.where((g) => g['invitation_active'] != false).toList();
+    int gp(Map<String, dynamic> g) => (g['guests_count'] as num?)?.toInt() ?? 1;
+    final totalPersons = active.fold<int>(0, (s, g) => s + gp(g));
+    final votedIds = _votedGuestIds();
+    final votedGuests = active.where((g) => votedIds.contains('${g['id']}')).toList();
+    final votedPersons = votedGuests.fold<int>(0, (s, g) => s + gp(g));
+    final nonVoters = active.where((g) => !votedIds.contains('${g['id']}')).toList();
+    final ratio = totalPersons == 0 ? 0.0 : votedPersons / totalPersons;
+
+    // régimes
+    final tagCounts = <String, int>{};
+    final notes = <MapEntry<String, String>>[];
+    for (final d in _diets) {
+      for (final t in ((d['tags'] as List?) ?? const [])) {
+        tagCounts['$t'] = (tagCounts['$t'] ?? 0) + 1;
+      }
+      final n = '${d['note'] ?? ''}'.trim();
+      if (n.isNotEmpty && n != 'null') notes.add(MapEntry('${_guestOf(d)?['name'] ?? 'Invité'}', n));
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _load(silent: true),
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 40),
+        children: [
+          // Résumé + interrupteurs
+          ThixGlass(
+            radius: 22,
+            opacity: 0.65,
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.how_to_vote_rounded, color: _K.rose),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Participation des invités',
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink)),
+                  ),
+                  Text('${(ratio * 100).round()}%',
+                      style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: _K.rose)),
+                ]),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: LinearProgressIndicator(
+                    value: ratio,
+                    minHeight: 8,
+                    backgroundColor: Colors.white.withOpacity(0.7),
+                    valueColor: const AlwaysStoppedAnimation(_K.green),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '${votedGuests.length}/${active.length} invités ont voté · $votedPersons/$totalPersons personnes couvertes',
+                  style: GoogleFonts.inter(fontSize: 12, color: _K.ink2, fontWeight: FontWeight.w600),
+                ),
+                const Divider(height: 22),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text('Votes ouverts', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
+                  subtitle: Text(_votingOpen ? 'Les invités peuvent choisir leurs plats' : 'Votes clos — résultats figés',
+                      style: GoogleFonts.inter(fontSize: 11)),
+                  value: _votingOpen,
+                  activeColor: _K.green,
+                  onChanged: (v) => _saveSettings(voting: v),
+                ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text('Suggestions ouvertes', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
+                  subtitle: Text(_suggestOpen ? 'Les invités peuvent proposer des plats' : 'Suggestions fermées',
+                      style: GoogleFonts.inter(fontSize: 11)),
+                  value: _suggestOpen,
+                  activeColor: _K.green,
+                  onChanged: (v) => _saveSettings(suggest: v),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  height: 46,
+                  child: FilledButton.icon(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _K.rose,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: _recap()));
+                      _toast('Récapitulatif copié — collez-le dans un message au traiteur');
+                    },
+                    icon: const Icon(Icons.copy_all_rounded, size: 18),
+                    label: Text('Copier le récapitulatif traiteur', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Classement par rubrique
+          for (final c in kMenuCourses.keys) ..._courseResults(c),
+
+          // Régimes
+          if (tagCounts.isNotEmpty || notes.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _sectionTitle(Icons.health_and_safety_outlined, 'Régimes & allergies'),
+            const SizedBox(height: 8),
+            ThixGlass(
+              radius: 20,
+              opacity: 0.62,
+              padding: const EdgeInsets.all(14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (tagCounts.isNotEmpty)
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: tagCounts.entries
+                          .map((e) => Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                decoration: BoxDecoration(color: _K.roseSoft, borderRadius: BorderRadius.circular(12)),
+                                child: Text('${kMenuTags[e.key] ?? e.key} · ${e.value}',
+                                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _K.rose)),
+                              ))
+                          .toList(),
+                    ),
+                  if (notes.isNotEmpty) ...[
+                    const SizedBox(height: 10),
+                    ...notes.map((n) => Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text.rich(TextSpan(children: [
+                            TextSpan(text: '${n.key} : ', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 12.5)),
+                            TextSpan(text: n.value, style: GoogleFonts.inter(fontSize: 12.5)),
+                          ])),
+                        )),
+                  ],
+                ],
+              ),
+            ),
+          ],
+
+          // Non-répondants
+          if (nonVoters.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _sectionTitle(Icons.hourglass_top_rounded, 'N\'ont pas encore voté (${nonVoters.length})'),
+            const SizedBox(height: 8),
+            ThixGlass(
+              radius: 20,
+              opacity: 0.62,
+              padding: const EdgeInsets.all(12),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: nonVoters
+                    .map((g) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), borderRadius: BorderRadius.circular(12)),
+                          child: Text('${g['name']}${gp(g) > 1 ? ' (${gp(g)})' : ''}',
+                              style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: _K.ink)),
+                        ))
+                    .toList(),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(IconData i, String t) => Row(children: [
+        Icon(i, size: 18, color: _K.rose),
+        const SizedBox(width: 8),
+        Expanded(child: Text(t, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink))),
+      ]);
+
+  List<Widget> _courseResults(String c) {
+    final dishes = _menuItems.where((e) => e.course == c).map((e) => (e, _stats(e.id))).toList()
+      ..sort((a, b) {
+        final k = b.$2.portions.compareTo(a.$2.portions);
+        return k != 0 ? k : a.$1.position.compareTo(b.$1.position);
+      });
+    if (dishes.isEmpty) return const [];
+    final maxP = dishes.first.$2.portions;
+    final totalP = dishes.fold<int>(0, (s, d) => s + d.$2.portions);
+
+    return [
+      const SizedBox(height: 16),
+      Row(children: [
+        Icon(kMenuCourseIcons[c], size: 18, color: _K.rose),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(kMenuCourses[c]!, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _K.ink)),
+        ),
+        Text('$totalP portion(s)', style: GoogleFonts.inter(fontSize: 11.5, color: _K.ink2, fontWeight: FontWeight.w700)),
+      ]),
+      const SizedBox(height: 8),
+      ...List.generate(dishes.length, (i) {
+        final e = dishes[i].$1, st = dishes[i].$2;
+        final leader = i == 0 && st.portions > 0;
+        final open = _expanded.contains(e.id);
+        final voters = _votes.where((v) => '${v['item_id']}' == e.id).map(_voterName).toList();
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: ThixGlass(
+            radius: 18,
+            opacity: leader ? 0.78 : 0.6,
+            borderColor: leader ? _K.gold : null,
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            onTap: voters.isEmpty ? null : () => setState(() => open ? _expanded.remove(e.id) : _expanded.add(e.id)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: leader ? _K.gold : _K.roseSoft,
+                      shape: BoxShape.circle,
+                    ),
+                    child: leader
+                        ? const Text('🏆', style: TextStyle(fontSize: 14))
+                        : Text('${i + 1}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _K.rose)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(e.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _K.ink)),
+                  ),
+                  Text('${st.portions}',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: leader ? _K.gold : _K.rose)),
+                  Text(' pers.', style: GoogleFonts.inter(fontSize: 10.5, color: _K.ink2)),
+                ]),
+                const SizedBox(height: 8),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: LinearProgressIndicator(
+                    value: maxP == 0 ? 0 : st.portions / maxP,
+                    minHeight: 7,
+                    backgroundColor: Colors.white.withOpacity(0.7),
+                    valueColor: AlwaysStoppedAnimation(leader ? _K.gold : _K.rose),
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text('${st.votes} invité(s)${voters.isEmpty ? '' : (open ? ' · masquer' : ' · voir qui')}',
+                    style: GoogleFonts.inter(fontSize: 10.5, color: _K.ink2, fontWeight: FontWeight.w600)),
+                if (open) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 5,
+                    children: voters
+                        .map((n) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                              decoration: BoxDecoration(color: _K.roseSoft, borderRadius: BorderRadius.circular(10)),
+                              child: Text(n, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _K.rose)),
+                            ))
+                        .toList(),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        );
+      }),
+    ];
+  }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// ÉDITEUR DE PLAT (staff)
+// ═══════════════════════════════════════════════════════════════════════════
 class _MenuEditor extends StatefulWidget {
   final String weddingId;
   final MenuEntry? existing;
@@ -565,7 +1176,7 @@ class _MenuEditorState extends State<_MenuEditor> {
         url = urls.first;
       }
       final supa = Supabase.instance.client;
-      final row = {
+      final row = <String, dynamic>{
         'wedding_id': widget.weddingId,
         'course': _course,
         'name': name,
@@ -576,6 +1187,8 @@ class _MenuEditorState extends State<_MenuEditor> {
       };
       if (widget.existing == null) {
         row['position'] = widget.positionFor(_course);
+        row['status'] = 'approved';
+        row['source'] = 'staff';
         await supa.from('thix_weeding_menu_items').insert(row);
       } else {
         if (widget.existing!.course != _course) row['position'] = widget.positionFor(_course);
@@ -584,7 +1197,7 @@ class _MenuEditorState extends State<_MenuEditor> {
       widget.onSaved();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      if (mounted) setState(() => _error = 'Échec : $e');
+      if (mounted) setState(() => _error = 'Échec : ${_err(e)}');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
