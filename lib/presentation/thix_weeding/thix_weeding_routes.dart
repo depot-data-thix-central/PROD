@@ -126,18 +126,18 @@ class ThixWeedingRoutes {
             ),
 
             // ================================================================
-            // ✅ ESPACE PRESTATAIRE (B2B) — routes de PREMIER niveau
+            // ✅ ESPACE PRESTATAIRE (B2B) — SANS AUTH OBLIGATOIRE
             // ================================================================
             GoRoute(
               path: 'provider/auth',
               name: providerAuth,
               builder: (c, s) => const ProviderLoginPage(),
-            ),GoRoute(
-  path: 'provider/register',
-  name: providerRegister,
-  builder: (c, s) => const ProviderRegisterSimplePage(),
-),
-            // ✅ FIX : catalogue au MÊME niveau que auth/register/dashboard
+            ),
+            GoRoute(
+              path: 'provider/register',
+              name: providerRegister,
+              builder: (c, s) => const ProviderRegisterSimplePage(),
+            ),
             GoRoute(
               path: 'provider/catalog',
               name: providerCatalog,
@@ -145,8 +145,6 @@ class ThixWeedingRoutes {
                 initialCategory: s.uri.queryParameters['category'],
               ),
             ),
-
-            // ✅ FIX : détail prestataire au MÊME niveau
             GoRoute(
               path: 'provider/detail/:providerId',
               name: providerDetail,
@@ -155,34 +153,24 @@ class ThixWeedingRoutes {
               ),
             ),
 
+            // ✅ SHELL + ANCIENS DEEP-LINKS NICHÉS (compatibilité)
             GoRoute(
               path: 'provider/dashboard',
               name: providerDashboard,
-              builder: (c, s) => const ProviderPortalShell(),
+              builder: (c, s) => const ProviderPortalShell(initialTab: 0),
               routes: [
-                // Deep-links vers les onglets du shell
-                GoRoute(
-                  path: 'galerie',
-                  name: providerGallery,
-                  builder: (c, s) => const ProviderPortalShell(initialTab: 1),
-                ),
-                GoRoute(
-                  path: 'reservations',
-                  name: providerReservations,
-                  builder: (c, s) => const ProviderPortalShell(initialTab: 2),
-                ),
-                GoRoute(
-                  path: 'taches',
-                  name: providerTasks,
-                  builder: (c, s) => const ProviderPortalShell(initialTab: 3),
-                ),
-                GoRoute(
-                  path: 'profil',
-                  name: providerProfile,
-                  builder: (c, s) => const ProviderPortalShell(initialTab: 4),
-                ),
+                GoRoute(path: 'galerie', name: providerGallery, builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
+                GoRoute(path: 'reservations', name: providerReservations, builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
+                GoRoute(path: 'taches', name: providerTasks, builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
+                GoRoute(path: 'profil', name: providerProfile, builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
               ],
             ),
+
+            // ✅ FIX 404 : ALIAS PLATS utilisés par les actions du dashboard
+            GoRoute(path: 'provider/gallery', builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
+            GoRoute(path: 'provider/reservations', builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
+            GoRoute(path: 'provider/tasks', builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
+            GoRoute(path: 'provider/profile', builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
 
             // ================= ESPACE INVITÉ =================
             GoRoute(
