@@ -1,19 +1,44 @@
 // lib/presentation/thix_weeding/pages/staff/prestataires/vendors_list_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — VENDORS LIST (PRODUCTION)
+// THIX WEDDING & EVENTS — VENDORS LIST (PRODUCTION v3)
+// ✅ 2 ONGLETS : Prestataires (liste locale) + Demandes (catalogue THIX)
+// ✅ Badge "THIX" sur les pros issus d'une demande approuvée
+// ✅ Onglet Demandes : statut live (pending/approved/rejected/cancelled),
+//    motif de refus, actions Retirer / Renvoyer / Voir la fiche prestataire
+// ✅ Compteur de demandes en attente sur l'onglet
 // Design royal + 15 Catégories + Stats live + Recherche debounce + Typed
-// Branché sur providers & services EXISTANTS du dépôt
 // ============================================================================
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/services/thix_weeding_services.dart';
+
+// ============================================================================
+// ✅ NOUVEAU : PROVIDER DES DEMANDES DU MARIAGE (jointure prestataire THIX)
+// ============================================================================
+final vendorRequestsProvider =
+    FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
+        (ref, weddingId) async {
+  try {
+    final res = await Supabase.instance.client
+        .from('thix_weeding_vendor_requests')
+        .select(
+            '*, provider:thix_weeding_providers(business_name, unique_code, category, city, verification_status)')
+        .eq('wedding_id', weddingId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(res);
+  } catch (_) {
+    return [];
+  }
+});
 
 // ============================================================================
 // DESIGN SYSTEM ROYAL
@@ -44,6 +69,11 @@ class _R {
   );
   static const LinearGradient greenG = LinearGradient(
     colors: [green, greenSoft],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+  );
+  static const LinearGradient roseG = LinearGradient(
+    colors: [rose, Color(0xFFFF6B9D)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
@@ -101,14 +131,16 @@ _CatDef _findCat(String? raw) {
 }
 
 // ============================================================================
-// STATUTS
+// STATUTS PRESTATAIRE (liste locale)
 // ============================================================================
 const Map<String, _StatusDef> _STATUS_MAP = {
+  'requested': _StatusDef('Demande envoyée', Icons.send_outlined, Color(0xFF6B7280)),
   'pending': _StatusDef('En attente', Icons.hourglass_empty, Color(0xFF6B7280)),
   'contacted': _StatusDef('Contacté', Icons.phone_callback, Color(0xFF0B3B8F)),
   'devis_envoye': _StatusDef('Devis envoyé', Icons.description_outlined, Color(0xFF6B46C1)),
   'booked': _StatusDef('Réservé', Icons.event_available, Color(0xFF059669)),
   'paid': _StatusDef('Payé', Icons.payments, Color(0xFFD4AF37)),
+  'completed': _StatusDef('Terminé', Icons.task_alt, Color(0xFF059669)),
   'cancelled': _StatusDef('Annulé', Icons.cancel_outlined, Color(0xFFE31C4E)),
 };
 
@@ -123,7 +155,31 @@ _StatusDef _getStatus(String? key) =>
     _STATUS_MAP[key ?? ''] ?? _StatusDef(key ?? 'Inconnu', Icons.info_outline, _R.text2);
 
 // ============================================================================
-// PAGE PRINCIPALE
+// ✅ STATUTS DE DEMANDE (onglet Demandes)
+// ============================================================================
+class _ReqStatusDef {
+  final String label;
+  final IconData icon;
+  final Color color;
+  const _ReqStatusDef(this.label, this.icon, this.color);
+}
+
+_ReqStatusDef _reqStatus(String? key) {
+  switch (key) {
+    case 'approved':
+      return const _ReqStatusDef('Acceptée', Icons.check_circle, _R.green);
+    case 'rejected':
+      return const _ReqStatusDef('Refusée', Icons.cancel, _R.rose);
+    case 'cancelled':
+      return const _ReqStatusDef('Retirée', Icons.do_not_disturb_on, _R.text2);
+    case 'pending':
+    default:
+      return const _ReqStatusDef('En attente', Icons.hourglass_top, _R.amber);
+  }
+}
+
+// ============================================================================
+// PAGE PRINCIPALE — 2 ONGLETS
 // ============================================================================
 class VendorsListPage extends ConsumerStatefulWidget {
   final String weddingId;
@@ -135,20 +191,218 @@ class VendorsListPage extends ConsumerStatefulWidget {
 
 class _VendorsListPageState extends ConsumerState<VendorsListPage>
     with SingleTickerProviderStateMixin {
+  late final TabController _tabCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+  }
+
+  @override
+  void dispose() {
+    _tabCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final vendorsAsync = ref.watch(vendorsProvider(widget.weddingId));
+    final requestsAsync = ref.watch(vendorRequestsProvider(widget.weddingId));
+
+    final requests = requestsAsync.valueOrNull ?? [];
+    final pendingCount = requests.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+    // vendor_id liés à une demande ACCEPTÉE → badge THIX sur la carte prestataire
+    final thixVendorIds = requests
+        .where((r) => r['status'] == 'approved' && r['vendor_id'] != null)
+        .map((r) => r['vendor_id'] as String)
+        .toSet();
+
+    return Scaffold(
+      backgroundColor: _R.surface,
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push('/thix-weeding/staff/${widget.weddingId}/prestataires/add'),
+        backgroundColor: _R.blue,
+        foregroundColor: Colors.white,
+        elevation: 3,
+        icon: const Icon(Icons.add_business, size: 20),
+        label: Text('Ajouter', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+      ),
+      body: Column(
+        children: [
+          _GlobalHeader(
+            weddingId: widget.weddingId,
+            tabCtrl: _tabCtrl,
+            pendingCount: pendingCount,
+            vendorsCount: vendorsAsync.valueOrNull?.length ?? 0,
+          ),
+          Expanded(
+            child: vendorsAsync.when(
+              loading: () => const _LoadingView(),
+              error: (e, _) => _ErrorView(
+                message: '$e',
+                onRetry: () {
+                  ref.invalidate(vendorsProvider(widget.weddingId));
+                  ref.invalidate(vendorRequestsProvider(widget.weddingId));
+                },
+              ),
+              data: (vendors) => TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  _PrestatairesTab(
+                    weddingId: widget.weddingId,
+                    vendors: vendors,
+                    thixVendorIds: thixVendorIds,
+                    onRefresh: () => ref.invalidate(vendorsProvider(widget.weddingId)),
+                  ),
+                  _DemandesTab(
+                    weddingId: widget.weddingId,
+                    requestsAsync: requestsAsync,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// HEADER GLOBAL (gradient royal + TabBar)
+// ============================================================================
+class _GlobalHeader extends StatelessWidget {
+  final String weddingId;
+  final TabController tabCtrl;
+  final int pendingCount;
+  final int vendorsCount;
+
+  const _GlobalHeader({
+    required this.weddingId,
+    required this.tabCtrl,
+    required this.pendingCount,
+    required this.vendorsCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(gradient: _R.royal),
+      child: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 8, 16, 4),
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: () => context.pop(),
+                    icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 18),
+                  ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'PRESTATAIRES',
+                          style: GoogleFonts.inter(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white.withOpacity(0.85),
+                            letterSpacing: 2,
+                          ),
+                        ),
+                        Text(
+                          'Gestion & demandes',
+                          style: GoogleFonts.inter(fontSize: 19, fontWeight: FontWeight.w800, color: Colors.white),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.18),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.storefront, color: Colors.white, size: 14),
+                      const SizedBox(width: 5),
+                      Text('$vendorsCount', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
+                    ]),
+                  ),
+                ],
+              ),
+            ),
+            TabBar(
+              controller: tabCtrl,
+              labelColor: Colors.white,
+              unselectedLabelColor: Colors.white.withOpacity(0.65),
+              indicatorColor: _R.gold,
+              indicatorWeight: 3,
+              labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
+              unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
+              tabs: [
+                const Tab(text: 'Prestataires'),
+                Tab(
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text('Demandes'),
+                      if (pendingCount > 0) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(color: _R.gold, borderRadius: BorderRadius.circular(10)),
+                          child: Text(
+                            '$pendingCount',
+                            style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: _R.blue),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// 🅐 ONGLET PRESTATAIRES (liste locale + recherche + filtres + badge THIX)
+// ============================================================================
+class _PrestatairesTab extends ConsumerStatefulWidget {
+  final String weddingId;
+  final List<VendorModel> vendors;
+  final Set<String> thixVendorIds;
+  final Future<void> Function() onRefresh;
+
+  const _PrestatairesTab({
+    required this.weddingId,
+    required this.vendors,
+    required this.thixVendorIds,
+    required this.onRefresh,
+  });
+
+  @override
+  ConsumerState<_PrestatairesTab> createState() => _PrestatairesTabState();
+}
+
+class _PrestatairesTabState extends ConsumerState<_PrestatairesTab> {
   final _searchCtrl = TextEditingController();
   String _search = '';
   String _filterCat = 'all';
   Timer? _debounce;
 
-  late AnimationController _animCtrl;
-  late Animation<double> _fadeAnim;
-
   @override
   void initState() {
     super.initState();
-    _animCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 700));
-    _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _animCtrl.forward();
     _searchCtrl.addListener(_onSearchChanged);
   }
 
@@ -157,7 +411,6 @@ class _VendorsListPageState extends ConsumerState<VendorsListPage>
     _searchCtrl.removeListener(_onSearchChanged);
     _searchCtrl.dispose();
     _debounce?.cancel();
-    _animCtrl.dispose();
     super.dispose();
   }
 
@@ -171,262 +424,389 @@ class _VendorsListPageState extends ConsumerState<VendorsListPage>
 
   @override
   Widget build(BuildContext context) {
-    final vendorsAsync = ref.watch(vendorsProvider(widget.weddingId));
-
-    return Scaffold(
-      backgroundColor: _R.surface,
-      body: vendorsAsync.when(
-        loading: () => const _LoadingView(),
-        error: (e, _) => _ErrorView(
-          message: '$e',
-          onRetry: () => ref.invalidate(vendorsProvider(widget.weddingId)),
-        ),
-        data: (vendors) => FadeTransition(
-          opacity: _fadeAnim,
-          child: _VendorsContent(
-            weddingId: widget.weddingId,
-            vendors: vendors,
-            searchCtrl: _searchCtrl,
-            search: _search,
-            filterCat: _filterCat,
-            onFilterChanged: (f) => setState(() => _filterCat = f),
-            onRefresh: () async => ref.invalidate(vendorsProvider(widget.weddingId)),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// CONTENU PRINCIPAL
-// ============================================================================
-class _VendorsContent extends StatelessWidget {
-  final String weddingId;
-  final List<VendorModel> vendors;
-  final TextEditingController searchCtrl;
-  final String search;
-  final String filterCat;
-  final ValueChanged<String> onFilterChanged;
-  final Future<void> Function() onRefresh;
-
-  const _VendorsContent({
-    required this.weddingId,
-    required this.vendors,
-    required this.searchCtrl,
-    required this.search,
-    required this.filterCat,
-    required this.onFilterChanged,
-    required this.onRefresh,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // Stats
+    final vendors = widget.vendors;
     final total = vendors.length;
     final booked = vendors.where((v) => v.isBooked).length;
     final totalBudget = vendors.fold<double>(0, (s, v) => s + (v.price ?? 0));
 
-    // Catégories uniques présentes dans les données
     final activeCategories = <String>{};
     for (final v in vendors) {
       if (v.category.isNotEmpty) activeCategories.add(v.category);
     }
 
-    // Filtrage
     final filtered = vendors.where((v) {
-      final matchSearch = search.isEmpty ||
-          v.name.toLowerCase().contains(search) ||
-          (v.contactName ?? '').toLowerCase().contains(search) ||
-          v.category.toLowerCase().contains(search);
-      final matchCat = filterCat == 'all' ||
-          v.category.toLowerCase() == filterCat.toLowerCase() ||
-          _findCat(v.category).key == filterCat;
+      final matchSearch = _search.isEmpty ||
+          v.name.toLowerCase().contains(_search) ||
+          (v.contactName ?? '').toLowerCase().contains(_search) ||
+          v.category.toLowerCase().contains(_search);
+      final matchCat = _filterCat == 'all' ||
+          v.category.toLowerCase() == _filterCat.toLowerCase() ||
+          _findCat(v.category).key == _filterCat;
       return matchSearch && matchCat;
     }).toList()
       ..sort((a, b) {
-        // Réservés en premier
         if (a.isBooked != b.isBooked) return a.isBooked ? -1 : 1;
         return a.name.compareTo(b.name);
       });
 
-    return CustomScrollView(
-      physics: const BouncingScrollPhysics(),
-      slivers: [
-        // ── APP BAR ───────────────────────────────────────────────────
-        _VendorsAppBar(
-          weddingId: weddingId,
-          total: total,
-          booked: booked,
-          totalBudget: totalBudget,
-          searchCtrl: searchCtrl,
-        ),
-
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
-          sliver: SliverList(
-            delegate: SliverChildListDelegate([
-              // ── STATS BAR ──────────────────────────────────────────
-              _StatsBar(total: total, booked: booked, totalBudget: totalBudget),
-              const SizedBox(height: 12),
-
-              // ── FILTRES CATÉGORIES ─────────────────────────────────
-              _CategoryFilterRow(
-                selected: filterCat,
-                activeCategories: activeCategories,
-                onChanged: onFilterChanged,
-              ),
-              const SizedBox(height: 16),
-
-              // ── HEADER LISTE ───────────────────────────────────────
-              _ListHeader(count: filtered.length, total: total, search: search),
-              const SizedBox(height: 10),
-
-              // ── LISTE / EMPTY ──────────────────────────────────────
-              if (filtered.isEmpty)
-                _EmptyState(hasSearch: search.isNotEmpty, hasFilter: filterCat != 'all', weddingId: weddingId)
-              else
-                RefreshIndicator(
-                  color: _R.blue,
-                  onRefresh: onRefresh,
-                  child: Column(
-                    children: filtered
-                        .map((v) => Padding(
-                              padding: const EdgeInsets.only(bottom: 10),
-                              child: _VendorCard(vendor: v, weddingId: weddingId),
-                            ))
-                        .toList(),
+    return RefreshIndicator(
+      color: _R.blue,
+      onRefresh: widget.onRefresh,
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // Recherche
+                Container(
+                  height: 46,
+                  decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: _R.border)),
+                  child: TextField(
+                    controller: _searchCtrl,
+                    style: GoogleFonts.inter(fontSize: 14, color: _R.text),
+                    decoration: InputDecoration(
+                      hintText: 'Rechercher nom, catégorie...',
+                      hintStyle: GoogleFonts.inter(color: _R.text2, fontSize: 13),
+                      prefixIcon: const Icon(Icons.search, color: _R.blue, size: 20),
+                      suffixIcon: ValueListenableBuilder<TextEditingValue>(
+                        valueListenable: _searchCtrl,
+                        builder: (_, v, __) => v.text.isNotEmpty
+                            ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: _searchCtrl.clear)
+                            : const SizedBox.shrink(),
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    ),
                   ),
                 ),
-            ]),
+                const SizedBox(height: 12),
+
+                _StatsBar(total: total, booked: booked, totalBudget: totalBudget),
+                const SizedBox(height: 12),
+
+                _CategoryFilterRow(
+                  selected: _filterCat,
+                  activeCategories: activeCategories,
+                  onChanged: (f) => setState(() => _filterCat = f),
+                ),
+                const SizedBox(height: 16),
+
+                _ListHeader(count: filtered.length, total: total, search: _search),
+                const SizedBox(height: 10),
+
+                if (filtered.isEmpty)
+                  _EmptyVendors(hasSearch: _search.isNotEmpty, hasFilter: _filterCat != 'all', weddingId: widget.weddingId)
+                else
+                  ...filtered.map((v) => Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _VendorCard(
+                          vendor: v,
+                          weddingId: widget.weddingId,
+                          isThix: widget.thixVendorIds.contains(v.id),
+                        ),
+                      )),
+              ]),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
 // ============================================================================
-// APP BAR ROYALE
+// 🅑 ONGLET DEMANDES (catalogue THIX — statut live + actions)
 // ============================================================================
-class _VendorsAppBar extends StatelessWidget {
+class _DemandesTab extends ConsumerStatefulWidget {
   final String weddingId;
-  final int total;
-  final int booked;
-  final double totalBudget;
-  final TextEditingController searchCtrl;
+  final AsyncValue<List<Map<String, dynamic>>> requestsAsync;
 
-  const _VendorsAppBar({
-    required this.weddingId,
-    required this.total,
-    required this.booked,
-    required this.totalBudget,
-    required this.searchCtrl,
-  });
+  const _DemandesTab({required this.weddingId, required this.requestsAsync});
+
+  @override
+  ConsumerState<_DemandesTab> createState() => _DemandesTabState();
+}
+
+class _DemandesTabState extends ConsumerState<_DemandesTab> {
+  String _filter = 'all'; // all | pending | approved | rejected
+
+  void _refresh() => ref.invalidate(vendorRequestsProvider(widget.weddingId));
+
+  Future<void> _setStatus(String requestId, String status, String toast) async {
+    HapticFeedback.selectionClick();
+    try {
+      await Supabase.instance.client
+          .from('thix_weeding_vendor_requests')
+          .update({'status': status, 'updated_at': DateTime.now().toIso8601String()})
+          .eq('id', requestId);
+      _refresh();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(toast, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: status == 'cancelled' ? _R.amber : _R.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    return SliverAppBar(
-      expandedHeight: 220,
-      floating: false,
-      pinned: true,
-      backgroundColor: Colors.white,
-      elevation: 0,
-      leading: IconButton(
-        icon: Container(
-          padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            shape: BoxShape.circle,
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+    return widget.requestsAsync.when(
+      loading: () => const Center(child: CircularProgressIndicator(color: _R.blue)),
+      error: (e, _) => Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _R.rose))),
+      data: (requests) {
+        if (requests.isEmpty) {
+          return _EmptyRequests(weddingId: widget.weddingId);
+        }
+
+        final counts = <String, int>{
+          'pending': requests.where((r) => (r['status'] ?? 'pending') == 'pending').length,
+          'approved': requests.where((r) => r['status'] == 'approved').length,
+          'rejected': requests.where((r) => r['status'] == 'rejected').length,
+        };
+
+        final filtered = requests.where((r) {
+          if (_filter == 'all') return true;
+          return (r['status'] ?? 'pending') == _filter;
+        }).toList();
+
+        return RefreshIndicator(
+          color: _R.blue,
+          onRefresh: () async => _refresh(),
+          child: ListView(
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 100),
+            children: [
+              // Résumé des statuts
+              Row(
+                children: [
+                  _ReqStatChip(label: 'En attente', value: counts['pending']!, color: _R.amber, selected: _filter == 'pending', onTap: () => setState(() => _filter = _filter == 'pending' ? 'all' : 'pending')),
+                  const SizedBox(width: 8),
+                  _ReqStatChip(label: 'Acceptées', value: counts['approved']!, color: _R.green, selected: _filter == 'approved', onTap: () => setState(() => _filter = _filter == 'approved' ? 'all' : 'approved')),
+                  const SizedBox(width: 8),
+                  _ReqStatChip(label: 'Refusées', value: counts['rejected']!, color: _R.rose, selected: _filter == 'rejected', onTap: () => setState(() => _filter = _filter == 'rejected' ? 'all' : 'rejected')),
+                ],
+              ),
+              const SizedBox(height: 14),
+              if (_filter != 'all')
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => setState(() => _filter = 'all'),
+                      icon: const Icon(Icons.filter_alt_off, size: 16),
+                      label: const Text('Tout afficher'),
+                      style: TextButton.styleFrom(foregroundColor: _R.blue),
+                    ),
+                  ),
+                ),
+              ...filtered.map((r) => Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: _RequestCard(
+                      request: r,
+                      onWithdraw: () => _setStatus(r['id'] as String, 'cancelled', 'Demande retirée'),
+                      onResend: () => _setStatus(r['id'] as String, 'pending', 'Demande renvoyée ✓'),
+                    ),
+                  )),
+            ],
           ),
-          child: const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
+        );
+      },
+    );
+  }
+}
+
+class _ReqStatChip extends StatelessWidget {
+  final String label;
+  final int value;
+  final Color color;
+  final bool selected;
+  final VoidCallback onTap;
+  const _ReqStatChip({required this.label, required this.value, required this.color, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: selected ? color : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: selected ? color : _R.border, width: selected ? 1.5 : 1),
+            ),
+            child: Column(children: [
+              Text('$value', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: selected ? Colors.white : color)),
+              Text(label, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: selected ? Colors.white : _R.text2)),
+            ]),
+          ),
         ),
-        onPressed: () => context.pop(),
       ),
-      actions: [
-        Material(
-          color: Colors.white,
-          shape: const CircleBorder(),
-          child: InkWell(
-            customBorder: const CircleBorder(),
-            onTap: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add'),
-            child: Container(
-              padding: const EdgeInsets.all(10),
-              child: const Icon(Icons.add_business_outlined, color: _R.blue, size: 20),
-            ),
-          ),
-        ),
-        const SizedBox(width: 10),
-      ],
-      flexibleSpace: Container(
+    );
+  }
+}
+
+// ============================================================================
+// CARTE DE DEMANDE
+// ============================================================================
+class _RequestCard extends StatelessWidget {
+  final Map<String, dynamic> request;
+  final VoidCallback onWithdraw;
+  final VoidCallback onResend;
+
+  const _RequestCard({required this.request, required this.onWithdraw, required this.onResend});
+
+  @override
+  Widget build(BuildContext context) {
+    final prov = (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+    final name = prov['business_name'] as String? ?? 'Prestataire';
+    final code = prov['unique_code'] as String? ?? '';
+    final cat = _findCat(prov['category'] as String?);
+    final city = prov['city'] as String? ?? 'RDC';
+    final verified = prov['verification_status'] == 'verified';
+    final statusKey = request['status'] as String? ?? 'pending';
+    final st = _reqStatus(statusKey);
+    final eventDate = request['event_date'] as String?;
+    final price = (request['proposed_price'] as num?)?.toDouble();
+    final currency = request['currency'] as String? ?? 'USD';
+    final message = request['message'] as String?;
+    final response = request['provider_response'] as String?;
+    final providerId = request['provider_id'] as String?;
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
-          gradient: _R.royal,
-          borderRadius: const BorderRadius.only(
-            bottomLeft: Radius.circular(24),
-            bottomRight: Radius.circular(24),
-          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: st.color.withOpacity(0.35), width: 1.2),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
         ),
-        child: Stack(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Positioned(
-              right: -60, top: -60,
-              child: Container(width: 220, height: 220, decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.white.withOpacity(0.08))),
-            ),
-            Positioned(
-              right: 30, bottom: -40,
-              child: Container(width: 140, height: 140, decoration: BoxDecoration(shape: BoxShape.circle, color: _R.gold.withOpacity(0.15))),
-            ),
-            FlexibleSpaceBar(
-              background: SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 55, 20, 20),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(gradient: LinearGradient(colors: [cat.color, cat.color.withOpacity(0.7)]), borderRadius: BorderRadius.circular(12)),
+                  child: Icon(cat.icon, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)),
-                            child: const Icon(Icons.storefront_outlined, color: Colors.white, size: 16),
-                          ),
-                          const SizedBox(width: 8),
-                          Text('PRESTATAIRES', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.85), letterSpacing: 2)),
-                          const Spacer(),
-                          _AddButton(weddingId: weddingId),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text('Gestion des prestataires', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
-                      Text('$total prestataire${total > 1 ? 's' : ''} • $booked réservé${booked > 1 ? 's' : ''}', style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
-                      const SizedBox(height: 14),
-                      Container(
-                        height: 44,
-                        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-                        child: TextField(
-                          controller: searchCtrl,
-                          style: GoogleFonts.inter(fontSize: 14, color: _R.text),
-                          decoration: InputDecoration(
-                            hintText: 'Rechercher nom, catégorie...',
-                            hintStyle: GoogleFonts.inter(color: _R.text2, fontSize: 13),
-                            prefixIcon: const Icon(Icons.search, color: _R.blue, size: 20),
-                            suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                              valueListenable: searchCtrl,
-                              builder: (_, v, __) => v.text.isNotEmpty
-                                  ? IconButton(icon: const Icon(Icons.clear, size: 18), onPressed: () => searchCtrl.clear())
-                                  : const SizedBox.shrink(),
-                            ),
-                            border: InputBorder.none,
-                            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          ),
-                        ),
-                      ),
+                      Row(children: [
+                        Flexible(child: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _R.text))),
+                        if (verified) ...[const SizedBox(width: 5), const Icon(Icons.verified, size: 14, color: _R.green)],
+                      ]),
+                      Text('$city · $code', style: GoogleFonts.inter(fontSize: 10.5, color: _R.text2, fontWeight: FontWeight.w600)),
                     ],
                   ),
                 ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: st.color.withOpacity(0.12), borderRadius: BorderRadius.circular(8)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(st.icon, size: 12, color: st.color),
+                    const SizedBox(width: 4),
+                    Text(st.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: st.color)),
+                  ]),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+
+            // Détails de la demande
+            Wrap(
+              spacing: 12,
+              runSpacing: 6,
+              children: [
+                if (eventDate != null)
+                  _DetailPill(icon: Icons.event, text: _fmtShortDate(eventDate), color: _R.blue),
+                if (price != null && price > 0)
+                  _DetailPill(icon: Icons.payments, text: '${_fmtMoney(price)} $currency', color: _R.gold),
+                if ((request['guest_count'] as num?) != null)
+                  _DetailPill(icon: Icons.group, text: '${request['guest_count']} invités', color: _R.purple),
+              ],
+            ),
+
+            if (message != null && message.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              Text('« $message »', maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11.5, color: _R.text2, fontStyle: FontStyle.italic, height: 1.35)),
+            ],
+
+            // Réponse du prestataire
+            if (response != null && response.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(color: st.color.withOpacity(0.07), borderRadius: BorderRadius.circular(10), border: Border.all(color: st.color.withOpacity(0.25))),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('Réponse du prestataire', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: st.color)),
+                  const SizedBox(height: 3),
+                  Text(response, style: GoogleFonts.inter(fontSize: 11.5, color: _R.text, height: 1.4)),
+                ]),
               ),
+            ],
+            const SizedBox(height: 12),
+
+            // Actions
+            Row(
+              children: [
+                if (providerId != null)
+                  Expanded(
+                    child: _ReqAction(
+                      icon: Icons.travel_explore,
+                      label: 'Fiche',
+                      color: _R.blue,
+                      onTap: () => context.push('/thix-weeding/provider/detail/$providerId'),
+                    ),
+                  ),
+                if (statusKey == 'pending' || statusKey == 'cancelled') ...[
+                  if (providerId != null) const SizedBox(width: 8),
+                  Expanded(
+                    child: _ReqAction(
+                      icon: statusKey == 'cancelled' ? Icons.restart_alt : Icons.close,
+                      label: statusKey == 'cancelled' ? 'Renvoyer' : 'Retirer',
+                      color: statusKey == 'cancelled' ? _R.green : _R.rose,
+                      onTap: statusKey == 'cancelled' ? onResend : onWithdraw,
+                    ),
+                  ),
+                ],
+                if (statusKey == 'approved') ...[
+                  if (providerId != null) const SizedBox(width: 8),
+                  Expanded(
+                    child: _ReqAction(
+                      icon: Icons.arrow_forward,
+                      label: 'Détail',
+                      color: _R.green,
+                      onTap: () {
+                        final vid = request['vendor_id'] as String?;
+                        if (vid != null) {
+                          context.push('/thix-weeding/staff/${request['wedding_id']}/prestataires/$vid');
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ],
             ),
           ],
         ),
@@ -435,32 +815,42 @@ class _VendorsAppBar extends StatelessWidget {
   }
 }
 
-class _AddButton extends StatelessWidget {
-  final String weddingId;
-  const _AddButton({required this.weddingId});
+class _DetailPill extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  final Color color;
+  const _DetailPill({required this.icon, required this.text, required this.color});
+  @override
+  Widget build(BuildContext context) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Icon(icon, size: 13, color: color),
+      const SizedBox(width: 4),
+      Text(text, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _R.text)),
+    ]);
+  }
+}
 
+class _ReqAction extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  const _ReqAction({required this.icon, required this.label, required this.color, required this.onTap});
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.transparent,
+      color: color.withOpacity(0.1),
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        onTap: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add'),
-        borderRadius: BorderRadius.circular(14),
-        child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            gradient: _R.goldG,
-            borderRadius: BorderRadius.circular(14),
-            boxShadow: [BoxShadow(color: _R.gold.withOpacity(0.4), blurRadius: 12, offset: const Offset(0, 4))],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.add_business, color: Colors.white, size: 16),
-              const SizedBox(width: 6),
-              Text('Ajouter', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
-            ],
-          ),
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 9),
+          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+            Icon(icon, size: 15, color: color),
+            const SizedBox(width: 5),
+            Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: color)),
+          ]),
         ),
       ),
     );
@@ -468,13 +858,12 @@ class _AddButton extends StatelessWidget {
 }
 
 // ============================================================================
-// STATS BAR
+// APP BAR / STATS / FILTRES / HEADER (réutilisés, inchangés de logique)
 // ============================================================================
 class _StatsBar extends StatelessWidget {
   final int total;
   final int booked;
   final double totalBudget;
-
   const _StatsBar({required this.total, required this.booked, required this.totalBudget});
 
   @override
@@ -499,60 +888,41 @@ class _MiniStat extends StatelessWidget {
   final String value;
   final Color color;
   const _MiniStat({required this.icon, required this.label, required this.value, required this.color});
-
   @override
   Widget build(BuildContext context) {
     return Expanded(
-      child: Column(
-        children: [
-          Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 14, color: color)),
-          const SizedBox(height: 4),
-          Text(value, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: color)),
-          Text(label, style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
-        ],
-      ),
+      child: Column(children: [
+        Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, size: 14, color: color)),
+        const SizedBox(height: 4),
+        Text(value, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: color)),
+        Text(label, style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
+      ]),
     );
   }
 }
 
-// ============================================================================
-// CATEGORY FILTER ROW (dynamique)
-// ============================================================================
 class _CategoryFilterRow extends StatelessWidget {
   final String selected;
   final Set<String> activeCategories;
   final ValueChanged<String> onChanged;
-
   const _CategoryFilterRow({required this.selected, required this.activeCategories, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
-    // Construire la liste : "Tous" + catégories actives triées
     final chips = <Widget>[
-      _FilterChip(label: 'Tous', icon: Icons.all_inbox, color: _R.blue, isSelected: selected == 'all', onTap: () => onChanged('all')),
+      Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: _FilterChip(label: 'Tous', icon: Icons.all_inbox, color: _R.blue, isSelected: selected == 'all', onTap: () => onChanged('all')),
+      ),
     ];
-
-    // Ajouter les catégories présentes dans les données
     for (final catKey in activeCategories) {
       final cat = _findCat(catKey);
-      chips.add(
-        Padding(
-          padding: const EdgeInsets.only(right: 8),
-          child: _FilterChip(
-            label: cat.label,
-            icon: cat.icon,
-            color: cat.color,
-            isSelected: selected == cat.key,
-            onTap: () => onChanged(cat.key),
-          ),
-        ),
-      );
+      chips.add(Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: _FilterChip(label: cat.label, icon: cat.icon, color: cat.color, isSelected: selected == cat.key, onTap: () => onChanged(cat.key)),
+      ));
     }
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(children: chips),
-    );
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: chips));
   }
 }
 
@@ -562,76 +932,58 @@ class _FilterChip extends StatelessWidget {
   final Color color;
   final bool isSelected;
   final VoidCallback onTap;
-
   const _FilterChip({required this.label, required this.icon, required this.color, required this.isSelected, required this.onTap});
-
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: Material(
-        color: isSelected ? color : Colors.white,
+    return Material(
+      color: isSelected ? color : Colors.white,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(12),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: isSelected ? color : _R.border, width: isSelected ? 1.5 : 1),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(icon, size: 14, color: isSelected ? Colors.white : color),
-                const SizedBox(width: 6),
-                Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: isSelected ? Colors.white : _R.text)),
-              ],
-            ),
-          ),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(borderRadius: BorderRadius.circular(12), border: Border.all(color: isSelected ? color : _R.border, width: isSelected ? 1.5 : 1)),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 14, color: isSelected ? Colors.white : color),
+            const SizedBox(width: 6),
+            Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: isSelected ? Colors.white : _R.text)),
+          ]),
         ),
       ),
     );
   }
 }
 
-// ============================================================================
-// LIST HEADER
-// ============================================================================
 class _ListHeader extends StatelessWidget {
   final int count;
   final int total;
   final String search;
-
   const _ListHeader({required this.count, required this.total, required this.search});
-
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(Icons.list_alt_outlined, size: 16, color: _R.blue),
-        const SizedBox(width: 6),
-        Text(search.isEmpty ? 'Liste des prestataires' : 'Résultats', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
-        const Spacer(),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(color: _R.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
-          child: Text(search.isEmpty ? '$total' : '$count / $total', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _R.blue)),
-        ),
-      ],
-    );
+    return Row(children: [
+      Icon(Icons.list_alt_outlined, size: 16, color: _R.blue),
+      const SizedBox(width: 6),
+      Text(search.isEmpty ? 'Liste des prestataires' : 'Résultats', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
+      const Spacer(),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(color: _R.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+        child: Text(search.isEmpty ? '$total' : '$count / $total', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _R.blue)),
+      ),
+    ]);
   }
 }
 
 // ============================================================================
-// VENDOR CARD
+// CARTE PRESTATAIRE (+ badge THIX)
 // ============================================================================
 class _VendorCard extends StatelessWidget {
   final VendorModel vendor;
   final String weddingId;
-
-  const _VendorCard({required this.vendor, required this.weddingId});
+  final bool isThix;
+  const _VendorCard({required this.vendor, required this.weddingId, required this.isThix});
 
   @override
   Widget build(BuildContext context) {
@@ -649,83 +1001,72 @@ class _VendorCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: vendor.isBooked ? _R.green.withOpacity(0.4) : _R.border,
-              width: vendor.isBooked ? 1.5 : 1,
-            ),
+            border: Border.all(color: vendor.isBooked ? _R.green.withOpacity(0.4) : _R.border, width: vendor.isBooked ? 1.5 : 1),
             boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
           ),
           child: Row(
             children: [
-              // Icône catégorie
               Container(
                 padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(colors: [cat.color, cat.color.withOpacity(0.7)]),
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: BoxDecoration(gradient: LinearGradient(colors: [cat.color, cat.color.withOpacity(0.7)]), borderRadius: BorderRadius.circular(12)),
                 child: Icon(cat.icon, color: Colors.white, size: 24),
               ),
               const SizedBox(width: 12),
-
-              // Infos
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            vendor.name,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _R.text),
-                          ),
-                        ),
-                        if (vendor.isBooked)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(gradient: _R.goldG, borderRadius: BorderRadius.circular(6)),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.star, color: Colors.white, size: 10),
-                              const SizedBox(width: 2),
-                              Text('RÉSERVÉ', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white)),
-                            ]),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 4),
-                    Row(
-                      children: [
-                        // Badge statut
+                    Row(children: [
+                      Expanded(
+                        child: Text(vendor.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _R.text)),
+                      ),
+                      // ✅ Badge origine
+                      if (isThix)
                         Container(
+                          margin: const EdgeInsets.only(right: 6),
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(color: status.color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: status.color.withOpacity(0.3))),
+                          decoration: BoxDecoration(color: _R.gold.withOpacity(0.15), borderRadius: BorderRadius.circular(6), border: Border.all(color: _R.gold.withOpacity(0.4))),
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
-                            Icon(status.icon, size: 10, color: status.color),
-                            const SizedBox(width: 3),
-                            Text(status.label, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: status.color)),
+                            const Icon(Icons.verified, size: 9, color: _R.goldDark),
+                            const SizedBox(width: 2),
+                            Text('THIX', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w900, color: _R.goldDark)),
                           ]),
                         ),
-                        const SizedBox(width: 6),
-                        // Prix
-                        if (vendor.price != null && vendor.price! > 0) ...[
-                          Icon(Icons.payments_outlined, size: 10, color: _R.gold),
+                      if (vendor.isBooked)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(gradient: _R.goldG, borderRadius: BorderRadius.circular(6)),
+                          child: Row(mainAxisSize: MainAxisSize.min, children: [
+                            const Icon(Icons.star, color: Colors.white, size: 10),
+                            const SizedBox(width: 2),
+                            Text('RÉSERVÉ', style: GoogleFonts.inter(fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white)),
+                          ]),
+                        ),
+                    ]),
+                    const SizedBox(height: 4),
+                    Row(children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(color: status.color.withOpacity(0.1), borderRadius: BorderRadius.circular(6), border: Border.all(color: status.color.withOpacity(0.3))),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          Icon(status.icon, size: 10, color: status.color),
                           const SizedBox(width: 3),
-                          Text('${_fmtMoney(vendor.price!)} FCFA', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: _R.gold)),
-                        ],
-                        const SizedBox(width: 6),
-                        // Contact
-                        if (vendor.contactName != null && vendor.contactName!.isNotEmpty) ...[
-                          Icon(Icons.person_outline, size: 10, color: _R.text2),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(vendor.contactName!, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10, color: _R.text2)),
-                          ),
-                        ],
+                          Text(status.label, style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w700, color: status.color)),
+                        ]),
+                      ),
+                      const SizedBox(width: 6),
+                      if (vendor.price != null && vendor.price! > 0) ...[
+                        Icon(Icons.payments_outlined, size: 10, color: _R.gold),
+                        const SizedBox(width: 3),
+                        Text('${_fmtMoney(vendor.price!)} FCFA', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: _R.gold)),
                       ],
-                    ),
+                      const SizedBox(width: 6),
+                      if (vendor.contactName != null && vendor.contactName!.isNotEmpty) ...[
+                        Icon(Icons.person_outline, size: 10, color: _R.text2),
+                        const SizedBox(width: 3),
+                        Expanded(child: Text(vendor.contactName!, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10, color: _R.text2))),
+                      ],
+                    ]),
                   ],
                 ),
               ),
@@ -740,41 +1081,72 @@ class _VendorCard extends StatelessWidget {
 }
 
 // ============================================================================
-// EMPTY STATE
+// EMPTY STATES
 // ============================================================================
-class _EmptyState extends StatelessWidget {
+class _EmptyVendors extends StatelessWidget {
   final bool hasSearch;
   final bool hasFilter;
   final String weddingId;
-
-  const _EmptyState({required this.hasSearch, required this.hasFilter, required this.weddingId});
-
+  const _EmptyVendors({required this.hasSearch, required this.hasFilter, required this.weddingId});
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(32),
       decoration: _R.card(),
-      child: Column(
-        children: [
+      child: Column(children: [
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(gradient: LinearGradient(colors: [_R.blue.withOpacity(0.15), _R.purple.withOpacity(0.1)]), shape: BoxShape.circle),
+          child: Icon(hasSearch ? Icons.search_off : Icons.storefront_outlined, size: 40, color: _R.blue),
+        ),
+        const SizedBox(height: 16),
+        Text(hasSearch ? 'Aucun résultat' : (hasFilter ? 'Aucun prestataire pour ce filtre' : 'Aucun prestataire'), style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text(hasSearch ? 'Essayez avec d\'autres termes' : 'Ajoutez un pro du catalogue THIX ou saisissez-en un manuellement', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
+        if (!hasSearch && !hasFilter) ...[
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add'),
+            icon: const Icon(Icons.add_business, size: 18),
+            label: const Text('Ajouter un prestataire'),
+            style: FilledButton.styleFrom(backgroundColor: _R.blue, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ],
+      ]),
+    );
+  }
+}
+
+class _EmptyRequests extends StatelessWidget {
+  final String weddingId;
+  const _EmptyRequests({required this.weddingId});
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
           Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(gradient: LinearGradient(colors: [_R.blue.withOpacity(0.15), _R.purple.withOpacity(0.1)]), shape: BoxShape.circle),
-            child: Icon(hasSearch ? Icons.search_off : Icons.storefront_outlined, size: 40, color: _R.blue),
+            padding: const EdgeInsets.all(22),
+            decoration: BoxDecoration(gradient: LinearGradient(colors: [_R.gold.withOpacity(0.18), _R.rose.withOpacity(0.1)]), shape: BoxShape.circle),
+            child: const Icon(Icons.send_outlined, size: 44, color: _R.gold),
           ),
           const SizedBox(height: 16),
-          Text(hasSearch ? 'Aucun résultat' : (hasFilter ? 'Aucun prestataire pour ce filtre' : 'Aucun prestataire'), style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          Text(hasSearch ? 'Essayez avec d\'autres termes' : 'Ajoutez votre premier prestataire', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
-          if (!hasSearch && !hasFilter) ...[
-            const SizedBox(height: 20),
-            FilledButton.icon(
-              onPressed: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add'),
-              icon: const Icon(Icons.add_business, size: 18),
-              label: const Text('Ajouter un prestataire'),
-              style: FilledButton.styleFrom(backgroundColor: _R.blue, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            ),
-          ],
-        ],
+          Text('Aucune demande envoyée', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _R.text)),
+          const SizedBox(height: 6),
+          Text(
+            'Sollicitez un professionnel du catalogue THIX : onglet Prestataires → Ajouter → Catalogue THIX.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(fontSize: 12.5, color: _R.text2, height: 1.45),
+          ),
+          const SizedBox(height: 20),
+          FilledButton.icon(
+            onPressed: () => context.push('/thix-weeding/staff/$weddingId/prestataires/add'),
+            icon: const Icon(Icons.travel_explore, size: 18),
+            label: const Text('Explorer le catalogue'),
+            style: FilledButton.styleFrom(backgroundColor: _R.blue, padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+          ),
+        ]),
       ),
     );
   }
@@ -787,16 +1159,7 @@ class _LoadingView extends StatelessWidget {
   const _LoadingView();
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _R.surface,
-      body: Center(
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Container(padding: const EdgeInsets.all(20), decoration: const BoxDecoration(gradient: _R.goldG, shape: BoxShape.circle), child: const Icon(Icons.storefront_outlined, color: Colors.white, size: 36)),
-          const SizedBox(height: 16),
-          Text('Chargement des prestataires...', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _R.text2)),
-        ]),
-      ),
-    );
+    return const Center(child: CircularProgressIndicator(color: _R.blue));
   }
 }
 
@@ -804,24 +1167,20 @@ class _ErrorView extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
   const _ErrorView({required this.message, required this.onRetry});
-
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _R.surface,
-      body: Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: _R.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline, color: _R.rose, size: 40)),
-            const SizedBox(height: 16),
-            Text('Impossible de charger', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
-            const SizedBox(height: 4),
-            Text(message, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
-            const SizedBox(height: 20),
-            FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Réessayer'), style: FilledButton.styleFrom(backgroundColor: _R.blue)),
-          ]),
-        ),
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: _R.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline, color: _R.rose, size: 40)),
+          const SizedBox(height: 16),
+          Text('Impossible de charger', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 4),
+          Text(message, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 12, color: _R.text2)),
+          const SizedBox(height: 20),
+          FilledButton.icon(onPressed: onRetry, icon: const Icon(Icons.refresh), label: const Text('Réessayer'), style: FilledButton.styleFrom(backgroundColor: _R.blue)),
+        ]),
       ),
     );
   }
@@ -840,4 +1199,14 @@ String _fmtMoney(double v) {
     if (c % 3 == 0 && i > 0) buf.write(' ');
   }
   return buf.toString().split('').reversed.join();
+}
+
+String _fmtShortDate(String iso) {
+  try {
+    final dt = DateTime.parse(iso);
+    const months = ['jan', 'fév', 'mar', 'avr', 'mai', 'jun', 'jul', 'aoû', 'sep', 'oct', 'nov', 'déc'];
+    return '${dt.day} ${months[dt.month - 1]} ${dt.year}';
+  } catch (_) {
+    return iso;
+  }
 }
