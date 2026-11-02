@@ -346,18 +346,21 @@ class ProviderService {
     ProviderCategory? category,
   }) async {
     try {
+      // ✅ Construit la requête en appliquant TOUS les filtres AVANT limit/order
       var query = _client
           .from('thix_weeding_provider_offers')
           .select(
               '*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
-          .eq('is_active', true)
-          .order('created_at', ascending: false)
-          .limit(limit);
+          .eq('is_active', true);
 
-      // ✅ Filtre par catégorie d'offre si spécifié
+      // ✅ Filtre par catégorie d'offre AVANT limit()
       if (category != null) {
         query = query.eq('category', category.name);
       }
+
+      final response = await query
+          .order('created_at', ascending: false)
+          .limit(limit);
 
       final response = await query;
       return List<Map<String, dynamic>>.from(response)
