@@ -1,14 +1,16 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_business_pages.dart
 // ============================================================================
-// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v3 — COMPLET)
+// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v4 — COMPLET)
 // ✅ Réservations : filtres, recherche, détails, actions rapides, stats
 // ✅ Tâches : checklist interactive, priorités, tri, édition inline
-// ✅ 🆕 DEMANDES DE PRESTATION (thix_weeding_vendor_requests) :
-//    bandeau d'alerte dans Résa. + page dédiée ProviderRequestsPage
-//    → Approuver (crée le dossier vendor + stage 'contacted') / Refuser (motif)
+// ✅ DEMANDES DE PRESTATION : bandeau d'alerte + page dédiée
+//    → Approuver (crée le dossier vendor + redirige vers gestion)
+//    → Refuser (motif obligatoire)
+// ✅ GESTION POST-APPROBATION : espace spécifique par type de prestation
+// ✅ MENUS TRAITEUR : liste de plats, validation par élément, mise en public
+// ✅ PRÉFÉRENCES INVITÉS : vote sur les plats, affichage du plus populaire
 // ✅ Pull-to-refresh, haptic feedback, animations fluides
 // ============================================================================
-
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -16,7 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ AJOUT (demandes)
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -39,6 +41,8 @@ class _P {
   static const Color redLight = Color(0xFFFEE2E2);
   static const Color purple = Color(0xFF8B5CF6);
   static const Color purpleLight = Color(0xFFEDE9FE);
+  static const Color gold = Color(0xFFD4AF37);
+  static const Color goldLight = Color(0xFFFFFBEB);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -52,14 +56,50 @@ final _taskSortProvider = StateProvider<TaskSort>((ref) => TaskSort.date);
 enum TaskSort { date, priority, status }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ AJOUT : DEMANDES DE PRESTATION (staff → prestataire)
-// Table : thix_weeding_vendor_requests (jointure mariage + prestataire)
+// ✅ NOUVEAU : PROVIDERS POUR LES MENUS (traiteurs)
+// ═══════════════════════════════════════════════════════════════════════════
+final vendorMenuItemsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, vendorId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_menu_items')
+        .select('*')
+        .eq('vendor_id', vendorId)
+        .order('position', ascending: true)
+        .order('created_at', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  } catch (e) {
+    debugPrint('Erreur menu items: $e');
+    return [];
+  }
+});
+
+/// Stats de votes invités pour un menu
+final menuItemVotesProvider = FutureProvider.autoDispose
+    .family<Map<String, int>, String>((ref, weddingId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_menu_votes')
+        .select('menu_item_id')
+        .eq('wedding_id', weddingId);
+    final counts = <String, int>{};
+    for (final r in rows) {
+      final id = r['menu_item_id'] as String;
+      counts[id] = (counts[id] ?? 0) + 1;
+    }
+    return counts;
+  } catch (_) {
+    return {};
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// DEMANDES DE PRESTATION (staff → prestataire)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerIncomingRequestsProvider =
     FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
         (ref, providerId) async {
   final c = Supabase.instance.client;
-  // ✅ Lecture SIMPLE sans embed
   final rows = await c
       .from('thix_weeding_vendor_requests')
       .select('*')
@@ -68,14 +108,15 @@ final providerIncomingRequestsProvider =
   final list = List<Map<String, dynamic>>.from(rows);
   if (list.isEmpty) return list;
 
-  // ✅ Enrichissement providers + weddings groupé, best-effort
   final pIds = list.map((r) => r['provider_id']).whereType<String>().toSet().toList();
   final wIds = list.map((r) => r['wedding_id']).whereType<String>().toSet().toList();
   final provMap = <String, Map<String, dynamic>>{};
-  final wedMap  = <String, Map<String, dynamic>>{};
+  final wedMap = <String, Map<String, dynamic>>{};
+
   if (pIds.isNotEmpty) {
     try {
-      final pr = await c.from('thix_weeding_providers')
+      final pr = await c
+          .from('thix_weeding_providers')
           .select('id, business_name, unique_code, category, city, phone, email, verification_status')
           .inFilter('id', pIds);
       for (final p in List<Map<String, dynamic>>.from(pr)) provMap[p['id'] as String] = p;
@@ -83,7 +124,8 @@ final providerIncomingRequestsProvider =
   }
   if (wIds.isNotEmpty) {
     try {
-      final wr = await c.from('thix_weeding_weddings')
+      final wr = await c
+          .from('thix_weeding_weddings')
           .select('id, bride_name, groom_name, wedding_date, venue')
           .inFilter('id', wIds);
       for (final w in List<Map<String, dynamic>>.from(wr)) wedMap[w['id'] as String] = w;
@@ -91,13 +133,14 @@ final providerIncomingRequestsProvider =
   }
   for (final r in list) {
     r['provider'] = provMap[r['provider_id'] as String? ?? ''] ?? <String, dynamic>{};
-    r['wedding']  = wedMap[r['wedding_id']  as String? ?? ''] ?? <String, dynamic>{};
+    r['wedding'] = wedMap[r['wedding_id'] as String? ?? ''] ?? <String, dynamic>{};
   }
   return list;
-  // ✅ on laisse remonter l'erreur de la requête principale (visible maintenant)
 });
 
-/// Libellé lisible d'une catégorie prestataire THIX
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
 String _catLabel(String? key) {
   switch ((key ?? '').toLowerCase()) {
     case 'salle': return 'Salle de réception';
@@ -114,7 +157,6 @@ String _catLabel(String? key) {
   }
 }
 
-/// ✅ Harmonise une catégorie provider THIX vers les clés staff (15 catégories)
 String _mapVendorCategory(String? providerCat) {
   switch ((providerCat ?? '').toLowerCase()) {
     case 'salle': return 'salle';
@@ -131,7 +173,26 @@ String _mapVendorCategory(String? providerCat) {
   }
 }
 
-/// Couleur + libellé + icône du statut d'une DEMANDE
+/// Détermine le type de gestion post-approbation selon la catégorie
+enum ServiceManagementType { menu, gallery, timeline, generic }
+
+ServiceManagementType _managementTypeFor(String? category) {
+  switch ((category ?? '').toLowerCase()) {
+    case 'traiteur':
+    case 'patissier':
+      return ServiceManagementType.menu;
+    case 'photographe':
+    case 'videaste':
+      return ServiceManagementType.gallery;
+    case 'dj':
+    case 'mc':
+    case 'decorateur':
+      return ServiceManagementType.timeline;
+    default:
+      return ServiceManagementType.generic;
+  }
+}
+
 Color _reqColor(String? s) => switch (s) {
       'approved' => _P.green,
       'rejected' => _P.red,
@@ -151,7 +212,6 @@ IconData _reqIcon(String? s) => switch (s) {
       _ => Icons.hourglass_top_rounded,
     };
 
-/// "Prénom & Prénom" depuis la jointure mariage
 String _coupleNames(Map<String, dynamic> r) {
   final w = (r['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
   final b = (w['bride_name'] as String? ?? '').trim();
@@ -240,18 +300,14 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
     ));
     final filter = ref.watch(_reservationFilterProvider);
     final search = ref.watch(_reservationSearchProvider);
-    // ✅ AJOUT : demandes de mariage en attente (pour le bandeau)
-    final requestsAsync =
-        ref.watch(providerIncomingRequestsProvider(widget.provider.id));
+    final requestsAsync = ref.watch(providerIncomingRequestsProvider(widget.provider.id));
 
     return Scaffold(
       backgroundColor: _P.bg,
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ═══════════════════════════════════════════════════════════
           // HEADER PREMIUM
-          // ═══════════════════════════════════════════════════════════
           SliverAppBar(
             pinned: true,
             expandedHeight: 180,
@@ -313,7 +369,6 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                           ],
                         ),
                         const SizedBox(height: 16),
-                        // Stats rapides
                         reservationsAsync.when(
                           data: (reservations) => Row(
                             children: [
@@ -351,7 +406,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
             ),
           ),
 
-          // ✅ AJOUT : BANDEAU "Demandes de mariage à traiter"
+          // BANDEAU DEMANDES
           requestsAsync.when(
             data: (list) {
               final pending =
@@ -443,9 +498,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
             error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
-          // ═══════════════════════════════════════════════════════════
           // BARRE DE RECHERCHE
-          // ═══════════════════════════════════════════════════════════
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -489,9 +542,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
             ),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // ONGLETS DE FILTRES
-          // ═══════════════════════════════════════════════════════════
+          // ONGLETS
           SliverToBoxAdapter(
             child: Container(
               color: _P.bg,
@@ -521,12 +572,9 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
             ),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // LISTE DES RÉSERVATIONS
-          // ═══════════════════════════════════════════════════════════
+          // LISTE
           reservationsAsync.when(
             data: (allReservations) {
-              // Filtrer par statut et recherche
               var filtered = allReservations;
               if (filter != null) {
                 filtered = filtered.where((r) => r.status == filter).toList();
@@ -539,8 +587,6 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                       (r.eventType?.toLowerCase().contains(q) ?? false);
                 }).toList();
               }
-
-              // Trier par date décroissante
               filtered.sort((a, b) => b.eventDate.compareTo(a.eventDate));
 
               if (filtered.isEmpty) {
@@ -825,7 +871,6 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
   }
 
   void _showFilterDialog(BuildContext context) {
-    // TODO: Implémenter dialogue de filtre avancé
     HapticFeedback.selectionClick();
   }
 
@@ -904,7 +949,6 @@ class _ReservationCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header avec client + statut
               Row(
                 children: [
                   Container(
@@ -996,7 +1040,6 @@ class _ReservationCard extends StatelessWidget {
 
               const SizedBox(height: 16),
 
-              // Infos événement
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
@@ -1075,7 +1118,6 @@ class _ReservationCard extends StatelessWidget {
                 ),
               ),
 
-              // Prix + urgence
               if (reservation.totalPrice != null || isUrgent) ...[
                 const SizedBox(height: 12),
                 Row(
@@ -1139,7 +1181,6 @@ class _ReservationCard extends StatelessWidget {
                 ),
               ],
 
-              // Actions rapides
               if (reservation.status == ReservationStatus.pending) ...[
                 const SizedBox(height: 16),
                 Row(
@@ -1272,7 +1313,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
           Container(
             margin: const EdgeInsets.only(top: 12),
             width: 40,
@@ -1289,7 +1329,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
                   Row(
                     children: [
                       Container(
@@ -1352,7 +1391,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Infos détaillées
                   _DetailRow(
                     icon: Icons.phone_rounded,
                     label: 'Téléphone',
@@ -1421,7 +1459,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Timeline
                   Text(
                     'Historique',
                     style: GoogleFonts.inter(
@@ -1467,7 +1504,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Actions
                   Row(
                     children: [
                       Expanded(
@@ -1887,7 +1923,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // Header
           SliverAppBar(
             pinned: true,
             expandedHeight: 200,
@@ -1949,7 +1984,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                           ],
                         ),
                         const SizedBox(height: 16),
-                        // Progress bar
                         tasksAsync.when(
                           data: (tasks) {
                             final total = tasks.length;
@@ -2025,7 +2059,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
             ),
           ),
 
-          // Onglets
           SliverToBoxAdapter(
             child: Container(
               color: _P.bg,
@@ -2054,7 +2087,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
             ),
           ),
 
-          // Liste des tâches
           tasksAsync.when(
             data: (allTasks) {
               var filtered = allTasks;
@@ -2062,7 +2094,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                 filtered = filtered.where((t) => t.status == filter).toList();
               }
 
-              // Tri
               switch (sort) {
                 case TaskSort.date:
                   filtered.sort((a, b) => a.dueDateTime.compareTo(b.dueDateTime));
@@ -2088,11 +2119,8 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                 );
               }
 
-              // Grouper par priorité
-              final urgent =
-                  filtered.where((t) => t.priority == 1).toList();
-              final normal =
-                  filtered.where((t) => t.priority != 1).toList();
+              final urgent = filtered.where((t) => t.priority == 1).toList();
+              final normal = filtered.where((t) => t.priority != 1).toList();
 
               return SliverList(
                 delegate: SliverChildListDelegate([
@@ -2335,9 +2363,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CARTE DE TÂCHE
-// ═══════════════════════════════════════════════════════════════════════════
 class _TaskCard extends StatelessWidget {
   final ProviderTaskModel task;
   final Function(bool) onToggle;
@@ -2508,9 +2533,6 @@ class _TaskCard extends StatelessWidget {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM SHEET - DÉTAILS TÂCHE
-// ═══════════════════════════════════════════════════════════════════════════
 class _TaskDetailsSheet extends StatelessWidget {
   final ProviderTaskModel task;
   final Function(bool) onToggle;
@@ -2551,7 +2573,6 @@ class _TaskDetailsSheet extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Header
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -2617,7 +2638,6 @@ class _TaskDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Description
                   if (task.description != null &&
                       task.description!.isNotEmpty) ...[
                     Text(
@@ -2649,7 +2669,6 @@ class _TaskDetailsSheet extends StatelessWidget {
                     const SizedBox(height: 20),
                   ],
 
-                  // Infos
                   _DetailRow(
                     icon: Icons.access_time_rounded,
                     label: 'Échéance',
@@ -2676,7 +2695,6 @@ class _TaskDetailsSheet extends StatelessWidget {
 
                   const SizedBox(height: 24),
 
-                  // Action
                   _ActionButton(
                     icon: isCompleted
                         ? Icons.refresh_rounded
@@ -2934,7 +2952,7 @@ class _ErrorState extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
+// ✅ NOUVEAU : PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
 //    Ouverte via le bandeau d'alerte de l'onglet Résa. (Navigator.push)
 //    CORRIGÉ : ConsumerStatefulWidget + TabController créé/disposé proprement
 // ═══════════════════════════════════════════════════════════════════════════
@@ -3062,6 +3080,7 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
               itemBuilder: (_, i) => _IncomingRequestCard(
                 request: list[i],
                 providerId: widget.provider.id,
+                provider: widget.provider,
               ),
             ),
           );
@@ -3077,7 +3096,13 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
 class _IncomingRequestCard extends ConsumerWidget {
   final Map<String, dynamic> request;
   final String providerId;
-  const _IncomingRequestCard({required this.request, required this.providerId});
+  final ThixProviderModel provider;
+
+  const _IncomingRequestCard({
+    required this.request,
+    required this.providerId,
+    required this.provider,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -3096,6 +3121,8 @@ class _IncomingRequestCard extends ConsumerWidget {
     final contactPhone = (request['contact_phone'] as String? ?? '').trim();
     final venue = _venueOf(request);
     final dateStr = _fmtWeddingDate(request);
+    final vendorId = request['vendor_id'] as String?;
+    final weddingId = request['wedding_id'] as String? ?? '';
 
     final initials = couple
         .split(RegExp(r'[&\s]+'))
@@ -3390,6 +3417,33 @@ class _IncomingRequestCard extends ConsumerWidget {
               ],
             ),
           ],
+
+          // ✅ NOUVEAU : Bouton "Gérer la prestation" pour les demandes approuvées
+          if (status == 'approved' && vendorId != null) ...[
+            const SizedBox(height: 14),
+            SizedBox(
+              width: double.infinity,
+              child: _ActionButton(
+                icon: Icons.settings_rounded,
+                label: 'Gérer la prestation',
+                color: _P.blue,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ProviderServiceManagementPage(
+                        vendorId: vendorId,
+                        weddingId: weddingId,
+                        provider: provider,
+                        couple: couple,
+                        managementType: _managementTypeFor(catKey),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -3547,7 +3601,7 @@ class _IncomingRequestCard extends ConsumerWidget {
                         if (context.mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                             content: Text(
-                                'Demande acceptée ✓ Dossier créé pour le couple',
+                                'Demande acceptée ✓ Dossier créé',
                                 style: GoogleFonts.inter(
                                     fontWeight: FontWeight.w700)),
                             backgroundColor: _P.green,
@@ -3555,6 +3609,20 @@ class _IncomingRequestCard extends ConsumerWidget {
                             shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(12)),
                           ));
+                          // ✅ Redirection automatique vers l'espace de gestion
+                          final catKey = prov['category'] as String?;
+                          final couple = _coupleNames(request);
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => ProviderServiceManagementPage(
+                                vendorId: vendorId,
+                                weddingId: weddingId,
+                                provider: provider,
+                                couple: couple,
+                                managementType: _managementTypeFor(catKey),
+                              ),
+                            ),
+                          );
                         }
                       } catch (e) {
                         setSt(() => busy = false);
@@ -3724,4 +3792,883 @@ class _IncomingRequestCard extends ConsumerWidget {
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide.none),
       );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : PAGE DE GESTION POST-APPROBATION
+// Redirige vers la bonne page selon le type de prestation
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderServiceManagementPage extends StatelessWidget {
+  final String vendorId;
+  final String weddingId;
+  final ThixProviderModel provider;
+  final String couple;
+  final ServiceManagementType managementType;
+
+  const ProviderServiceManagementPage({
+    super.key,
+    required this.vendorId,
+    required this.weddingId,
+    required this.provider,
+    required this.couple,
+    required this.managementType,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // Router vers la bonne page selon le type de service
+    switch (managementType) {
+      case ServiceManagementType.menu:
+        return ProviderMenuManagementPage(
+          vendorId: vendorId,
+          weddingId: weddingId,
+          provider: provider,
+          couple: couple,
+        );
+      case ServiceManagementType.gallery:
+        return _GenericServicePage(
+          vendorId: vendorId,
+          weddingId: weddingId,
+          provider: provider,
+          couple: couple,
+          title: 'Galerie & Médias',
+          icon: Icons.photo_library_rounded,
+          color: _P.blue,
+          sections: const ['Photos', 'Vidéos', 'Albums'],
+        );
+      case ServiceManagementType.timeline:
+        return _GenericServicePage(
+          vendorId: vendorId,
+          weddingId: weddingId,
+          provider: provider,
+          couple: couple,
+          title: 'Programme & Timeline',
+          icon: Icons.schedule_rounded,
+          color: _P.purple,
+          sections: const ['Préparatifs', 'Cérémonie', 'Soirée'],
+        );
+      case ServiceManagementType.generic:
+        return _GenericServicePage(
+          vendorId: vendorId,
+          weddingId: weddingId,
+          provider: provider,
+          couple: couple,
+          title: 'Gestion de la prestation',
+          icon: Icons.settings_rounded,
+          color: _P.rose,
+          sections: const ['Détails', 'Documents', 'Paiements'],
+        );
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ PAGE GÉNÉRIQUE (photo/vidéo/MC/DJ/salle...)
+// ═══════════════════════════════════════════════════════════════════════════
+class _GenericServicePage extends StatelessWidget {
+  final String vendorId;
+  final String weddingId;
+  final ThixProviderModel provider;
+  final String couple;
+  final String title;
+  final IconData icon;
+  final Color color;
+  final List<String> sections;
+
+  const _GenericServicePage({
+    required this.vendorId,
+    required this.weddingId,
+    required this.provider,
+    required this.couple,
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.sections,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: color,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header avec couple
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(colors: [color.withOpacity(0.1), color.withOpacity(0.05)]),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: color.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: color.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: color, size: 24),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Prestation pour',
+                          style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
+                        ),
+                        Text(
+                          couple,
+                          style: GoogleFonts.inter(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                            color: _P.ink,
+                          ),
+                        ),
+                        Text(
+                          provider.businessName,
+                          style: GoogleFonts.inter(
+                            fontSize: 12,
+                            color: _P.inkSoft,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Sections
+            ...sections.map((section) => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: _GenericSectionCard(
+                title: section,
+                icon: icon,
+                color: color,
+                itemCount: 0, // À remplir dynamiquement
+              ),
+            )),
+            
+            const SizedBox(height: 20),
+            
+            // Info
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _P.blueLight.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _P.blue.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, color: _P.blue, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Les éléments validés ici pourront être rendus publics pour les invités par le staff du mariage.',
+                      style: GoogleFonts.inter(fontSize: 12, color: _P.blue, height: 1.4),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GenericSectionCard extends StatelessWidget {
+  final String title;
+  final IconData icon;
+  final Color color;
+  final int itemCount;
+
+  const _GenericSectionCard({
+    required this.title,
+    required this.icon,
+    required this.color,
+    required this.itemCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _P.line),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text(
+                  '$itemCount élément${itemCount > 1 ? 's' : ''}',
+                  style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline, color: _P.blue),
+            onPressed: () {
+              HapticFeedback.selectionClick();
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                content: Text('Ajouter à $title (à implémenter)'),
+                backgroundColor: _P.blue,
+                behavior: SnackBarBehavior.floating,
+              ));
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ PAGE GESTION MENU (TRAITEURS / PÂTISSIERS)
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderMenuManagementPage extends ConsumerStatefulWidget {
+  final String vendorId;
+  final String weddingId;
+  final ThixProviderModel provider;
+  final String couple;
+
+  const ProviderMenuManagementPage({
+    super.key,
+    required this.vendorId,
+    required this.weddingId,
+    required this.provider,
+    required this.couple,
+  });
+
+  @override
+  ConsumerState<ProviderMenuManagementPage> createState() =>
+      _ProviderMenuManagementPageState();
+}
+
+class _ProviderMenuManagementPageState
+    extends ConsumerState<ProviderMenuManagementPage> {
+  Future<void> _addMenuItem() async {
+    final nameCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    final priceCtrl = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Ajouter un plat',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        content: Form(
+          key: formKey,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: nameCtrl,
+                  decoration: const InputDecoration(labelText: 'Nom du plat *'),
+                  validator: (v) =>
+                      v == null || v.trim().isEmpty ? 'Requis' : null,
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: descCtrl,
+                  maxLines: 2,
+                  decoration: const InputDecoration(labelText: 'Description'),
+                ),
+                const SizedBox(height: 8),
+                TextFormField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  decoration: const InputDecoration(labelText: 'Prix (optionnel)'),
+                ),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Annuler'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState!.validate()) {
+                Navigator.pop(ctx, true);
+              }
+            },
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _P.green, foregroundColor: Colors.white),
+            child: const Text('Ajouter'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok == true) {
+      try {
+        await Supabase.instance.client.from('thix_weeding_menu_items').insert({
+          'vendor_id': widget.vendorId,
+          'wedding_id': widget.weddingId,
+          'name': nameCtrl.text.trim(),
+          'description': descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+          'price': double.tryParse(priceCtrl.text) ?? 0,
+          'is_validated': false,
+          'is_public': false,
+          'position': DateTime.now().millisecondsSinceEpoch,
+        });
+        ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Plat ajouté ✓',
+                style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+            backgroundColor: _P.green,
+            behavior: SnackBarBehavior.floating,
+          ));
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
+          );
+        }
+      }
+    }
+    nameCtrl.dispose();
+    descCtrl.dispose();
+    priceCtrl.dispose();
+  }
+
+  Future<void> _toggleValidation(String itemId, bool current) async {
+    try {
+      await Supabase.instance.client
+          .from('thix_weeding_menu_items')
+          .update({'is_validated': !current})
+          .eq('id', itemId);
+      ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(!current ? 'Plat validé ✓' : 'Validation retirée'),
+          backgroundColor: !current ? _P.green : _P.amber,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _togglePublic(String itemId, bool current) async {
+    try {
+      await Supabase.instance.client
+          .from('thix_weeding_menu_items')
+          .update({'is_public': !current})
+          .eq('id', itemId);
+      ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(!current
+              ? 'Rendu public pour les invités ✓'
+              : 'Retiré de la vue invités'),
+          backgroundColor: !current ? _P.blue : _P.inkSoft,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _deleteItem(String itemId) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Supprimer ce plat ?'),
+        content: const Text('Cette action est irréversible.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler')),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _P.red, foregroundColor: Colors.white),
+            child: const Text('Supprimer'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await Supabase.instance.client
+          .from('thix_weeding_menu_items')
+          .delete()
+          .eq('id', itemId);
+      ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final itemsAsync = ref.watch(vendorMenuItemsProvider(widget.vendorId));
+    final votesAsync = ref.watch(menuItemVotesProvider(widget.weddingId));
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.amber,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text('Menu & Plats',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(
+            tooltip: 'Rafraîchir',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () {
+              ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+              ref.invalidate(menuItemVotesProvider(widget.weddingId));
+            },
+          ),
+        ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: _P.amber,
+        foregroundColor: Colors.white,
+        onPressed: _addMenuItem,
+        icon: const Icon(Icons.add_rounded),
+        label: Text('Ajouter un plat',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+      ),
+      body: RefreshIndicator(
+        color: _P.amber,
+        onRefresh: () async {
+          ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
+          ref.invalidate(menuItemVotesProvider(widget.weddingId));
+        },
+        child: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            // Header couple
+            SliverToBoxAdapter(
+              child: Container(
+                margin: const EdgeInsets.all(16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                      colors: [_P.amber.withOpacity(0.15), _P.gold.withOpacity(0.1)]),
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _P.amber.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _P.amber.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.restaurant_menu_rounded,
+                          color: _P.amber, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Menu pour',
+                              style: GoogleFonts.inter(
+                                  fontSize: 11, color: _P.inkSoft)),
+                          Text(widget.couple,
+                              style: GoogleFonts.inter(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: _P.ink)),
+                          Text(widget.provider.businessName,
+                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: _P.inkSoft,
+                                  fontWeight: FontWeight.w600)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Stats
+            itemsAsync.when(
+              data: (items) {
+                final validated = items.where((i) => i['is_validated'] == true).length;
+                final public = items.where((i) => i['is_public'] == true).length;
+                final votes = votesAsync.valueOrNull ?? {};
+                final totalVotes = votes.values.fold(0, (s, v) => s + v);
+                
+                return SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Row(
+                      children: [
+                        _MenuStatCard(
+                          label: 'Total',
+                          value: '${items.length}',
+                          color: _P.blue,
+                          icon: Icons.restaurant_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _MenuStatCard(
+                          label: 'Validés',
+                          value: '$validated',
+                          color: _P.green,
+                          icon: Icons.check_circle_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _MenuStatCard(
+                          label: 'Publics',
+                          value: '$public',
+                          color: _P.purple,
+                          icon: Icons.visibility_rounded,
+                        ),
+                        const SizedBox(width: 8),
+                        _MenuStatCard(
+                          label: 'Votes',
+                          value: '$totalVotes',
+                          color: _P.amber,
+                          icon: Icons.favorite_rounded,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
+              error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
+            ),
+
+            const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+            // Liste des plats
+            itemsAsync.when(
+              data: (items) {
+                if (items.isEmpty) {
+                  return SliverFillRemaining(
+                    child: _EmptyState(
+                      icon: Icons.restaurant_menu_rounded,
+                      title: 'Aucun plat',
+                      subtitle: 'Ajoutez votre premier plat avec le bouton +',
+                    ),
+                  );
+                }
+
+                final votes = votesAsync.valueOrNull ?? {};
+
+                return SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final item = items[index];
+                        final voteCount = votes[item['id'] as String] ?? 0;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _MenuItemCard(
+                            item: item,
+                            voteCount: voteCount,
+                            onValidate: () => _toggleValidation(
+                              item['id'] as String,
+                              item['is_validated'] as bool? ?? false,
+                            ),
+                            onTogglePublic: () => _togglePublic(
+                              item['id'] as String,
+                              item['is_public'] as bool? ?? false,
+                            ),
+                            onDelete: () => _deleteItem(item['id'] as String),
+                          ),
+                        );
+                      },
+                      childCount: items.length,
+                    ),
+                  ),
+                );
+              },
+              loading: () => const SliverFillRemaining(
+                child: Center(child: CircularProgressIndicator(color: _P.amber)),
+              ),
+              error: (e, _) => SliverFillRemaining(
+                child: _ErrorState(
+                  message: '$e',
+                  onRetry: () => ref.invalidate(vendorMenuItemsProvider(widget.vendorId)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuStatCard extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+  final IconData icon;
+
+  const _MenuStatCard({
+    required this.label,
+    required this.value,
+    required this.color,
+    required this.icon,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _P.line),
+        ),
+        child: Column(
+          children: [
+            Icon(icon, color: color, size: 18),
+            const SizedBox(height: 4),
+            Text(value,
+                style: GoogleFonts.inter(
+                    fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+            Text(label,
+                style: GoogleFonts.inter(fontSize: 9, color: _P.inkSoft)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuItemCard extends StatelessWidget {
+  final Map<String, dynamic> item;
+  final int voteCount;
+  final VoidCallback onValidate;
+  final VoidCallback onTogglePublic;
+  final VoidCallback onDelete;
+
+  const _MenuItemCard({
+    required this.item,
+    required this.voteCount,
+    required this.onValidate,
+    required this.onTogglePublic,
+    required this.onDelete,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isValidated = item['is_validated'] as bool? ?? false;
+    final isPublic = item['is_public'] as bool? ?? false;
+    final name = item['name'] as String? ?? 'Sans nom';
+    final desc = item['description'] as String? ?? '';
+    final price = (item['price'] as num?)?.toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: isValidated ? _P.green.withOpacity(0.4) : _P.line,
+          width: isValidated ? 2 : 1,
+        ),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _P.amber.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.restaurant_rounded, color: _P.amber, size: 22),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(name,
+                        style: GoogleFonts.inter(
+                            fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                    if (desc.isNotEmpty)
+                      Text(desc,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(
+                              fontSize: 11, color: _P.inkSoft, height: 1.4)),
+                  ],
+                ),
+              ),
+              if (price != null && price > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _P.green.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text('${price.toStringAsFixed(0)}\$',
+                      style: GoogleFonts.inter(
+                          fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Badges
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: [
+              if (isValidated)
+                _Badge(
+                  icon: Icons.check_circle_rounded,
+                  label: 'Validé',
+                  color: _P.green,
+                ),
+              if (isPublic)
+                _Badge(
+                  icon: Icons.visibility_rounded,
+                  label: 'Public',
+                  color: _P.blue,
+                ),
+              if (voteCount > 0)
+                _Badge(
+                  icon: Icons.favorite_rounded,
+                  label: '$voteCount vote${voteCount > 1 ? 's' : ''}',
+                  color: _P.rose,
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          // Actions
+          Row(
+            children: [
+              Expanded(
+                child: _ActionButton(
+                  icon: isValidated ? Icons.close_rounded : Icons.check_rounded,
+                  label: isValidated ? 'Retirer validation' : 'Valider',
+                  color: isValidated ? _P.amber : _P.green,
+                  isOutlined: isValidated,
+                  onTap: onValidate,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _ContactButton(
+                icon: isPublic ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                color: isPublic ? _P.blue : _P.inkSoft,
+                onTap: onTogglePublic,
+              ),
+              const SizedBox(width: 8),
+              _ContactButton(
+                icon: Icons.delete_outline_rounded,
+                color: _P.red,
+                onTap: onDelete,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  const _Badge({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(label,
+              style: GoogleFonts.inter(
+                  fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+        ],
+      ),
+    );
+  }
 }
