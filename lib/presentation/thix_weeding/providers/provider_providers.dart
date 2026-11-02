@@ -1,15 +1,22 @@
 // lib/presentation/thix_weeding/providers/provider_providers.dart
 // ============================================================================
-// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v3)
+// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v4 — MULTI-ACTIVITÉS)
+// ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
+//    → calqué sur myWeddingsProvider (1 user = N mariages)
+// ✅ myProviderProvider(ownerId) RENVOIE DÉSORMAIS l'activité SÉLECTIONNÉE
+//    (fallback = principale / 1ère) → MÊME signature, AUCUN call-site cassé
+// ✅ selectedActivityIdProvider = sélecteur global (barre du shell)
+// ✅ myActivitiesProvider / activityDetailProvider / create·update·delete·setPrimary
+// ✅ createProviderProvider / updateProviderProvider / deleteProviderProvider
+//    invalident aussi myActivitiesProvider (cohérence liste <-> activité active)
 // ✅ LOGIQUE IDENTIQUE À thix_weeding_providers.dart (mariages)
-// ✅ myProviderProvider(ownerId) = getByOwner (comme myWeddingsProvider)
-// ✅ createProviderProvider(ownerId: user.id) comme createWedding
-// ✅ Cache + invalidation intelligente
 // ============================================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ AJOUT (multi-activités)
+
 import '../models/provider_models.dart';
 import '../services/provider_service.dart';
 
@@ -93,21 +100,75 @@ Future<T> _executeWithTimeout<T>(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : myProviderProvider (IDENTIQUE À myWeddingsProvider)
-// LOGIQUE : SELECT * FROM providers WHERE owner_id = userId
+// ✅ NOUVEAU (MULTI-ACTIVITÉS) : SÉLECTEUR GLOBAL D'ACTIVITÉ
+//    null => on retombe sur la principale / 1ère (rétro-compat mono-activité)
+// ═══════════════════════════════════════════════════════════════════════════
+final selectedActivityIdProvider = StateProvider<String?>((ref) => null);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : TOUTES LES ACTIVITÉS D'UN COMPTE (1 owner_id = N métiers)
+//    Calqué sur myWeddingsProvider(ownerId) -> getByOwner (liste)
+// ═══════════════════════════════════════════════════════════════════════════
+final myActivitiesProvider = FutureProvider.autoDispose
+    .family<List<ThixProviderModel>, String>((ref, ownerId) async {
+  if (kDebugMode) debugPrint('🧩 [myActivitiesProvider] Loading activities for owner: $ownerId');
+
+  return await _executeWithTimeout(
+    () async {
+      final res = await Supabase.instance.client
+          .from('thix_weeding_providers')
+          .select()
+          .eq('owner_id', ownerId)
+          .order('is_primary', ascending: false)
+          .order('created_at', ascending: false);
+      return List<Map<String, dynamic>>.from(res)
+          .map((e) => ThixProviderModel.fromJson(Map<String, dynamic>.from(e)))
+          .toList();
+    },
+    operationName: 'getAllByOwner($ownerId)',
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : DÉTAIL D'UNE ACTIVITÉ PRÉCISE (édition / formulaire offre)
+// ═══════════════════════════════════════════════════════════════════════════
+final activityDetailProvider = FutureProvider.autoDispose
+    .family<ThixProviderModel?, String>((ref, activityId) async {
+  if (kDebugMode) debugPrint('🔎 [activityDetailProvider] Loading activity: $activityId');
+
+  return await _executeWithTimeout(
+    () async {
+      final res = await Supabase.instance.client
+          .from('thix_weeding_providers')
+          .select()
+          .eq('id', activityId)
+          .maybeSingle();
+      if (res == null) return null;
+      return ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+    },
+    operationName: 'getActivityById($activityId)',
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ RÉÉCRIT : myProviderProvider = ACTIVITÉ SÉLECTIONNÉE (sinon principale)
+//    MÊME signature <ThixProviderModel?, String> => AUCUN call-site à changer.
+//    (shell, _ProviderOfferFormRoute, ProviderReservationsPage, TasksPage…)
 // ═══════════════════════════════════════════════════════════════════════════
 final myProviderProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, ownerId) async {
-  final service = ref.watch(providerServiceProvider);
+  if (kDebugMode) debugPrint('👤 [myProviderProvider] Resolving active activity for owner: $ownerId');
 
-  if (kDebugMode) {
-    debugPrint('👤 [myProviderProvider] Loading for owner: $ownerId');
+  final activities = await ref.watch(myActivitiesProvider(ownerId).future);
+  if (activities.isEmpty) return null;
+
+  final sel = ref.watch(selectedActivityIdProvider);
+  if (sel != null) {
+    final match = activities.where((a) => a.id == sel);
+    if (match.isNotEmpty) return match.first;
   }
-
-  return await _executeWithTimeout(
-    () => service.getByOwner(ownerId),
-    operationName: 'getByOwner($ownerId)',
-  );
+  // fallback : 1ère = principale (tri SQL is_primary DESC, created_at DESC)
+  return activities.first;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -370,14 +431,14 @@ final activeOffersProvider =
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — CRÉATION (LOGIQUE IDENTIQUE À createWedding)
-// ✅ ownerId = user.id (pas userId optionnel)
+// ACTIONS — CRÉATION D'UN PRESTATAIRE "HISTORIQUE" (1 fiche, enum category)
+// ✅ Invalidation étendue à myActivitiesProvider (multi-activités)
 // ═══════════════════════════════════════════════════════════════════════════
 final createProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
   return ({
-    required String ownerId,  // ← CHANGEMENT CLÉ : requis, pas optionnel
+    required String ownerId,
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -402,7 +463,7 @@ final createProviderProvider = Provider((ref) {
 
     final provider = await _executeWithTimeout(
       () => service.createProvider(
-        ownerId: ownerId,  // ← CHANGEMENT CLÉ
+        ownerId: ownerId,
         category: category,
         businessName: businessName,
         description: description,
@@ -420,8 +481,9 @@ final createProviderProvider = Provider((ref) {
       operationName: 'createProvider',
     );
 
-    // ✅ Invalidation ciblée : myProviderProvider(ownerId) + liste publique
+    // ✅ Invalidation ciblée : activité active + LISTE + catalogue + détail
     ref.invalidate(myProviderProvider(ownerId));
+    ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
     ref.invalidate(providersListProvider);
     ref.invalidate(providerByIdProvider(provider.id));
 
@@ -434,14 +496,157 @@ final createProviderProvider = Provider((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS — MISE À JOUR / SUPPRESSION / VALIDATION
+// ✅ NOUVEAU (MULTI-ACTIVITÉS) : CRÉER UNE ACTIVITÉ / MÉTIER (category = String)
+//    1ère activité du compte => is_primary = true automatiquement
+// ═══════════════════════════════════════════════════════════════════════════
+final createActivityProvider = Provider((ref) {
+  return ({
+    required String ownerId,
+    required String businessName,
+    required String category,
+    String? description,
+    String? phone,
+    String? email,
+    String? city,
+  }) async {
+    if (businessName.trim().isEmpty) {
+      throw ProviderValidationException('Le nom commercial est requis');
+    }
+    if (category.trim().isEmpty) {
+      throw ProviderValidationException('Choisissez un métier (catégorie)');
+    }
+
+    final c = Supabase.instance.client;
+
+    // 1ère activité du compte ? => on la marque principale
+    final existing = await c
+        .from('thix_weeding_providers')
+        .select('id')
+        .eq('owner_id', ownerId)
+        .limit(1);
+    final isFirst = (existing as List).isEmpty;
+
+    final res = await c
+        .from('thix_weeding_providers')
+        .insert({
+          'owner_id': ownerId,
+          'business_name': businessName.trim(),
+          'category': category.trim().toLowerCase(),
+          'description': (description ?? '').trim().isEmpty ? null : description!.trim(),
+          'phone': (phone ?? '').trim().isEmpty ? null : phone!.trim(),
+          'email': (email ?? '').trim().isEmpty ? null : email!.trim(),
+          'city': (city ?? '').trim().isEmpty ? null : city!.trim(),
+          'is_primary': isFirst,
+          'verification_status': 'pending',
+        })
+        .select()
+        .single();
+
+    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+
+    ref.invalidate(myActivitiesProvider(ownerId));
+    ref.invalidate(myProviderProvider(ownerId));
+    ref.invalidate(providersListProvider);
+
+    if (kDebugMode) debugPrint('🧩 Activity created: ${model.id} (${model.category})');
+    return model;
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ NOUVEAU : METTRE À JOUR / SUPPRIMER / DÉFINIR PRINCIPALE UNE ACTIVITÉ
+// ═══════════════════════════════════════════════════════════════════════════
+final updateActivityProvider = Provider((ref) {
+  return (
+    String activityId, {
+    String? ownerId,
+    String? businessName,
+    String? category,
+    String? description,
+    String? phone,
+    String? email,
+    String? city,
+  }) async {
+    final patch = <String, dynamic>{};
+    if (businessName != null) patch['business_name'] = businessName.trim();
+    if (category != null) patch['category'] = category.trim().toLowerCase();
+    if (description != null) patch['description'] = description.trim().isEmpty ? null : description.trim();
+    if (phone != null) patch['phone'] = phone.trim().isEmpty ? null : phone.trim();
+    if (email != null) patch['email'] = email.trim().isEmpty ? null : email.trim();
+    if (city != null) patch['city'] = city.trim().isEmpty ? null : city.trim();
+    if (patch.isEmpty) return;
+
+    final res = await Supabase.instance.client
+        .from('thix_weeding_providers')
+        .update(patch)
+        .eq('id', activityId)
+        .select()
+        .single();
+    final model = ThixProviderModel.fromJson(Map<String, dynamic>.from(res));
+
+    ref.invalidate(activityDetailProvider(activityId));
+    ref.invalidate(providerByIdProvider(activityId));
+    ref.invalidate(providersListProvider);
+    if (ownerId != null) {
+      ref.invalidate(myActivitiesProvider(ownerId));
+      ref.invalidate(myProviderProvider(ownerId));
+    }
+    return model;
+  };
+});
+
+final deleteActivityProvider = Provider((ref) {
+  return (String activityId, {String? ownerId}) async {
+    await Supabase.instance.client
+        .from('thix_weeding_providers')
+        .delete()
+        .eq('id', activityId);
+
+    // si l'activité supprimée était celle affichée => reset sélecteur
+    if (ref.read(selectedActivityIdProvider) == activityId) {
+      ref.read(selectedActivityIdProvider.notifier).state = null;
+    }
+
+    ref.invalidate(activityDetailProvider(activityId));
+    ref.invalidate(providerByIdProvider(activityId));
+    ref.invalidate(providersListProvider);
+    if (ownerId != null) {
+      ref.invalidate(myActivitiesProvider(ownerId));
+      ref.invalidate(myProviderProvider(ownerId));
+    }
+  };
+});
+
+final setPrimaryActivityProvider = Provider((ref) {
+  return (String activityId, {String? ownerId}) async {
+    final c = Supabase.instance.client;
+    final row = await c
+        .from('thix_weeding_providers')
+        .select('owner_id')
+        .eq('id', activityId)
+        .single();
+    final oid = ownerId ?? (row['owner_id'] as String);
+
+    // retirer le flag sur toutes les activités du compte, puis mettre sur celle-ci
+    await c.from('thix_weeding_providers').update({'is_primary': false}).eq('owner_id', oid);
+    await c.from('thix_weeding_providers').update({'is_primary': true}).eq('id', activityId);
+
+    ref.invalidate(myActivitiesProvider(oid));
+    ref.invalidate(myProviderProvider(oid));
+    ref.invalidate(activityDetailProvider(activityId));
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — MISE À JOUR / SUPPRESSION / VALIDATION (prestataire historique)
+// ✅ Invalidation étendue à myActivitiesProvider
 // ═══════════════════════════════════════════════════════════════════════════
 final updateProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
 
   return (
     String id, {
-    String? ownerId,  // ← pour invalider myProviderProvider
+    String? ownerId,
     String? businessName,
     String? description,
     String? phone,
@@ -488,7 +693,10 @@ final updateProviderProvider = Provider((ref) {
 
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-    if (ownerId != null) ref.invalidate(myProviderProvider(ownerId));
+    if (ownerId != null) {
+      ref.invalidate(myProviderProvider(ownerId));
+      ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
+    }
 
     return provider;
   };
@@ -539,7 +747,10 @@ final deleteProviderProvider = Provider((ref) {
 
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-    if (ownerId != null) ref.invalidate(myProviderProvider(ownerId));
+    if (ownerId != null) {
+      ref.invalidate(myProviderProvider(ownerId));
+      ref.invalidate(myActivitiesProvider(ownerId)); // ✅ AJOUTÉ
+    }
   };
 });
 
