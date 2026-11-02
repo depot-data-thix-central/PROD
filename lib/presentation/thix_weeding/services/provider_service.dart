@@ -105,6 +105,128 @@ class ProviderService {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  // OFFRES / SERVICES / MENUS (ajouté pour compatibilité)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /// Offres d'un prestataire
+  Future<List<ProviderOfferModel>> getOffersByProvider(String providerId) async {
+    try {
+      final response = await _client
+          .from('thix_weeding_provider_offers')
+          .select('*')
+          .eq('provider_id', providerId)
+          .order('created_at', ascending: false);
+      return response
+          .map((json) => ProviderOfferModel.fromJson(json as Map<String, dynamic>))
+          .toList();
+    } catch (e) {
+      throw Exception('Erreur lors de la récupération des offres: $e');
+    }
+  }
+
+  /// Offres actives de TOUS les prestataires (pour le HOME + catalogue)
+  Future<List<ProviderOfferModel>> getActiveOffersWithProvider({int limit = 20}) async {
+    try {
+      final response = await _client
+          .from('thix_weeding_provider_offers')
+          .select('*, provider:thix_weeding_providers(id, business_name, city, category, verification_status)')
+          .eq('is_active', true)
+          .order('created_at', ascending: false)
+          .limit(limit);
+      return response
+          .map((json) => ProviderOfferModel.fromJson(json as Map<String, dynamic>))
+          .where((o) => o.providerVerificationStatus != 'rejected')
+          .toList();
+    } catch (e) {
+      throw Exception('Erreur lors de la récupération des offres actives: $e');
+    }
+  }
+
+  /// Créer une offre
+  Future<ProviderOfferModel> createOffer({
+    required String providerId,
+    required String title,
+    required OfferType type,
+    String? description,
+    double? price,
+    String? currency,
+    String? imageUrl,
+    bool isActive = true,
+  }) async {
+    try {
+      final now = DateTime.now();
+      final data = <String, dynamic>{
+        'provider_id': providerId,
+        'title': title,
+        'offer_type': type.name,
+        'description': description,
+        'price': price,
+        'currency': currency ?? 'USD',
+        'image_url': imageUrl,
+        'is_active': isActive,
+        'created_at': now.toIso8601String(),
+        'updated_at': now.toIso8601String(),
+      };
+      final response = await _client
+          .from('thix_weeding_provider_offers')
+          .insert(data)
+          .select()
+          .single();
+      return ProviderOfferModel.fromJson(response as Map<String, dynamic>);
+    } catch (e) {
+      throw Exception('Erreur lors de la création de l\'offre: $e');
+    }
+  }
+
+  /// Mettre à jour une offre
+  Future<ProviderOfferModel> updateOffer(
+    String id, {
+    String? title,
+    OfferType? type,
+    String? description,
+    double? price,
+    String? imageUrl,
+    bool? isActive,
+  }) async {
+    try {
+      final data = <String, dynamic>{
+        'updated_at': DateTime.now().toIso8601String(),
+      };
+      if (title != null) data['title'] = title;
+      if (type != null) data['offer_type'] = type.name;
+      if (description != null) data['description'] = description;
+      if (price != null) data['price'] = price;
+      if (imageUrl != null) data['image_url'] = imageUrl;
+      if (isActive != null) data['is_active'] = isActive;
+
+      final response = await _client
+          .from('thix_weeding_provider_offers')
+          .update(data)
+          .eq('id', id)
+          .select()
+          .single();
+      return ProviderOfferModel.fromJson(response as Map<String, dynamic>);
+    } catch (e) {
+      throw Exception('Erreur lors de la mise à jour de l\'offre: $e');
+    }
+  }
+
+  /// Supprimer une offre
+  Future<void> deleteOffer(String id) async {
+    try {
+      await _client.from('thix_weeding_provider_offers').delete().eq('id', id);
+    } catch (e) {
+      throw Exception('Erreur lors de la suppression de l\'offre: $e');
+    }
+  }
+
+  /// ✅ ALIAS RÉTROCOMPATIBLE : getProviderByUserId → getByOwner
+  /// Certains fichiers appellent encore l'ancien nom
+  Future<ThixProviderModel?> getProviderByUserId(String? userId) async {
+    if (userId == null || userId.isEmpty) return null;
+    return getByOwner(userId);
+  }
+  // ═══════════════════════════════════════════════════════════════════════════
   // CRÉER UN NOUVEAU PRESTATAIRE (LOGIQUE IDENTIQUE À WeddingService.create)
   // ✅ owner_id = user.id (comme owner_id des mariages)
   // ✅ Code THIX-P-XXXYY généré par Trigger SQL (pas en Dart)
