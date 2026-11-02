@@ -1,9 +1,10 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_offers_page.dart
 // ============================================================================
-// THIX WEDDING — GESTION DES OFFRES / SERVICES / MENUS (PRODUCTION v3)
+// THIX WEDDING — GESTION DES OFFRES / SERVICES / MENUS (PRODUCTION v4)
 // ✅ MULTI-PHOTOS : galerie horizontale (cover + gallery) avec ajout/suppression
 // ✅ UPLOAD WEB-COMPATIBLE : Uint8List + uploadBinary (plus de dart:io File)
 // ✅ Preview locale instantanée avant upload
+// ✅ MULTI-CATÉGORIES : 1 à 3 catégories par offre (chips multi-sélection)
 // ✅ Widget HOME : ThixHomeOffersSection
 // ============================================================================
 import 'dart:typed_data';
@@ -46,6 +47,19 @@ Color offerTypeColor(OfferType t) => switch (t) {
       OfferType.menu => _P.amber,
       OfferType.package => _P.purple,
       OfferType.promo => _P.rose,
+    };
+
+IconData _categoryIcon(ProviderCategory c) => switch (c) {
+      ProviderCategory.salle => Icons.meeting_room_rounded,
+      ProviderCategory.traiteur => Icons.restaurant_rounded,
+      ProviderCategory.photographe => Icons.camera_alt_rounded,
+      ProviderCategory.videaste => Icons.videocam_rounded,
+      ProviderCategory.decorateur => Icons.palette_rounded,
+      ProviderCategory.dj => Icons.music_note_rounded,
+      ProviderCategory.mc => Icons.mic_rounded,
+      ProviderCategory.maquilleur => Icons.face_rounded,
+      ProviderCategory.patissier => Icons.cake_rounded,
+      ProviderCategory.fleuriste => Icons.local_florist_rounded,
     };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -144,7 +158,6 @@ class _OfferCard extends ConsumerWidget {
   final String providerId;
   const _OfferCard({required this.offer, required this.providerId});
 
-  // ✅ Récupère TOUTES les photos : cover + galerie
   List<String> get _allImages {
     final list = <String>[];
     if ((offer.imageUrl ?? '').isNotEmpty) list.add(offer.imageUrl!);
@@ -170,7 +183,6 @@ class _OfferCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ ZONE IMAGE (carrousel si plusieurs photos)
           if (images.isNotEmpty)
             Stack(
               children: [
@@ -192,7 +204,6 @@ class _OfferCard extends ConsumerWidget {
                     ),
                   ),
                 ),
-                // Indicateurs de pagination
                 if (images.length > 1)
                   Positioned(
                     bottom: 8,
@@ -206,7 +217,6 @@ class _OfferCard extends ConsumerWidget {
                           style: GoogleFonts.inter(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
                     ),
                   ),
-                // Badge type
                 Positioned(
                   top: 8,
                   left: 8,
@@ -215,6 +225,26 @@ class _OfferCard extends ConsumerWidget {
                     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
                     child: Text(offer.type.displayName.toUpperCase(),
                         style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                  ),
+                ),
+                // ✅ Badges catégories (1 à 3)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: offer.categories.take(2).map((c) {
+                      return Container(
+                        margin: const EdgeInsets.only(left: 4),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.55),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(c.displayName,
+                            style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white)),
+                      );
+                    }).toList(),
                   ),
                 ),
                 if (!offer.isActive)
@@ -270,7 +300,6 @@ class _OfferCard extends ConsumerWidget {
               ),
             ),
 
-          // Contenu
           Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -300,6 +329,33 @@ class _OfferCard extends ConsumerWidget {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4)),
+                ],
+                // ✅ Ligne des catégories
+                if (offer.categories.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: offer.categories.map((c) {
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _P.rose.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: _P.rose.withOpacity(0.25)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_categoryIcon(c), size: 11, color: _P.rose),
+                            const SizedBox(width: 4),
+                            Text(c.displayName,
+                                style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: _P.rose)),
+                          ],
+                        ),
+                      );
+                    }).toList(),
+                  ),
                 ],
                 const SizedBox(height: 12),
                 Row(
@@ -369,7 +425,7 @@ class _OfferCard extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FORMULAIRE — ✅ MULTI-PHOTOS + UPLOAD WEB-COMPATIBLE
+// FORMULAIRE — ✅ MULTI-PHOTOS + MULTI-CATÉGORIES + UPLOAD WEB-COMPATIBLE
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderOfferFormPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
@@ -386,13 +442,14 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
   late final TextEditingController _descCtrl;
   late final TextEditingController _priceCtrl;
   late OfferType _type;
+
+  // ✅ MULTI-CATÉGORIES (1 à 3 catégories par offre)
+  final Set<ProviderCategory> _categories = {};
+
   bool _isActive = true;
   bool _saving = false;
 
-  // ✅ MULTI-PHOTOS
-  // URL persistées côté serveur
   final List<String> _imageUrls = [];
-  // Bytes locaux en attente d'upload (pour preview avant confirmation serveur)
   final List<Uint8List> _localBytes = [];
   bool _uploading = false;
   final _picker = ImagePicker();
@@ -407,7 +464,16 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
         TextEditingController(text: e?.price != null ? e!.price!.toStringAsFixed(0) : '');
     _type = e?.type ?? OfferType.service;
     _isActive = e?.isActive ?? true;
-    // ✅ Chargement initial : cover + galerie
+
+    // ✅ Chargement initial des catégories
+    if (e != null && e.categories.isNotEmpty) {
+      _categories.addAll(e.categories);
+    } else {
+      // Fallback : catégorie du prestataire
+      _categories.add(widget.provider.category);
+    }
+
+    // Chargement initial des photos
     if (e?.imageUrl != null && e!.imageUrl!.isNotEmpty) _imageUrls.add(e.imageUrl!);
     if (e != null) {
       for (final u in e.galleryUrls) {
@@ -424,7 +490,6 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     super.dispose();
   }
 
-  // ✅ PICK IMAGE (galerie ou caméra) — compatible Web + mobile
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? picked = await _picker.pickImage(
@@ -439,7 +504,6 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'jpg';
       setState(() {
         _localBytes.add(bytes);
-        // On ajoute temporairement une URL vide pour garder la longueur alignée
         _imageUrls.add('');
       });
       await _uploadBytes(bytes, ext, _imageUrls.length - 1);
@@ -448,7 +512,6 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     }
   }
 
-  // ✅ UPLOAD VERS SUPABASE STORAGE (Web-compatible via uploadBinary)
   Future<void> _uploadBytes(Uint8List bytes, String ext, int slot) async {
     setState(() => _uploading = true);
     try {
@@ -470,15 +533,12 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       final url = c.storage.from('thix-provider-media').getPublicUrl(filename);
       if (!mounted) return;
       setState(() {
-        // On remplace la URL vide par la vraie URL
         _imageUrls[slot] = url;
-        // On garde les bytes pour preview rapide et pour permettre re-upload si besoin
       });
       _toast('Photo ${slot + 1} uploadée ✓', _P.green);
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        // Rollback de la photo en échec
         if (slot < _imageUrls.length) {
           _imageUrls.removeAt(slot);
           _localBytes.removeAt(slot);
@@ -490,11 +550,30 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     }
   }
 
-  // ✅ SUPPRIMER UNE PHOTO (par son index)
   void _removeImage(int index) {
     setState(() {
       if (index < _imageUrls.length) _imageUrls.removeAt(index);
       if (index < _localBytes.length) _localBytes.removeAt(index);
+    });
+  }
+
+  // ✅ TOGGLE CATÉGORIE (1 min, 3 max)
+  void _toggleCategory(ProviderCategory c) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      if (_categories.contains(c)) {
+        if (_categories.length > 1) {
+          _categories.remove(c);
+        } else {
+          _toast('Au moins 1 catégorie requise', _P.amber);
+        }
+      } else {
+        if (_categories.length < 3) {
+          _categories.add(c);
+        } else {
+          _toast('Maximum 3 catégories par annonce', _P.amber);
+        }
+      }
     });
   }
 
@@ -507,9 +586,9 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       final price = _priceCtrl.text.trim().isEmpty ? null : double.tryParse(_priceCtrl.text.trim());
       final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
 
-      // ✅ Cover = première photo, galerie = le reste
       final cover = _imageUrls.isNotEmpty ? _imageUrls.first : null;
       final gallery = _imageUrls.length > 1 ? _imageUrls.sublist(1) : <String>[];
+      final categoriesList = _categories.toList();
 
       if (widget.existing == null) {
         await ref.read(createOfferProvider)(
@@ -520,6 +599,7 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
           price: price,
           imageUrl: cover,
           galleryUrls: gallery,
+          categories: categoriesList, // ✅ MULTI-CATÉGORIES
           isActive: _isActive,
         );
       } else {
@@ -532,6 +612,7 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
           price: price,
           imageUrl: cover,
           galleryUrls: gallery,
+          categories: categoriesList, // ✅ MULTI-CATÉGORIES
           isActive: _isActive,
         );
       }
@@ -541,7 +622,7 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(
             widget.existing == null
-                ? 'Offre publiée ✔ ${_imageUrls.length} photo(s) — Visible catalogue & accueil'
+                ? 'Offre publiée ✔ ${_imageUrls.length} photo(s), ${_categories.length} catégorie(s) — Visible catalogue & accueil'
                 : 'Offre mise à jour ✔',
             style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
         backgroundColor: _P.green,
@@ -661,6 +742,67 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                 ),
                 const SizedBox(height: 18),
 
+                // ✅ NOUVEAU : MULTI-CATÉGORIES (1 à 3)
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Catégories * (1 à 3)',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Text('${_categories.length}/3',
+                          style: GoogleFonts.inter(
+                              fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose)),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text('Choisissez où cette annonce apparaîtra (home + catalogue)',
+                    style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, height: 1.3)),
+                const SizedBox(height: 10),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: ProviderCategory.values.map((c) {
+                    final sel = _categories.contains(c);
+                    return GestureDetector(
+                      onTap: () => _toggleCategory(c),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 200),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: sel ? _P.rose : _P.surface,
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(color: sel ? _P.rose : _P.line),
+                          boxShadow: sel
+                              ? [BoxShadow(color: _P.rose.withOpacity(0.25), blurRadius: 6, offset: const Offset(0, 2))]
+                              : null,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(_categoryIcon(c), size: 14, color: sel ? Colors.white : _P.inkSoft),
+                            const SizedBox(width: 6),
+                            Text(c.displayName,
+                                style: GoogleFonts.inter(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: sel ? Colors.white : _P.ink)),
+                            if (sel) ...[
+                              const SizedBox(width: 4),
+                              const Icon(Icons.check_rounded, size: 13, color: Colors.white),
+                            ],
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+                const SizedBox(height: 18),
+
                 // Prix
                 Text('Prix (USD) — laisser vide pour "Sur devis"',
                     style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
@@ -738,11 +880,9 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     );
   }
 
-  // ✅ WIDGET MULTI-PHOTOS : galerie horizontale + bouton "Ajouter une photo"
   Widget _buildMultiImageUploadZone() {
     final items = <Widget>[];
 
-    // Cartes photos existantes + preview locale
     for (var i = 0; i < _imageUrls.length; i++) {
       final url = _imageUrls[i];
       final bytes = i < _localBytes.length ? _localBytes[i] : null;
@@ -757,7 +897,6 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       ));
     }
 
-    // Bouton "+" pour ajouter
     items.add(_AddPhotoCard(
       onPickGallery: () => _pickImage(ImageSource.gallery),
       onPickCamera: () => _pickImage(ImageSource.camera),
@@ -819,7 +958,6 @@ class _PhotoCard extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // Image (URL ou bytes locaux)
             if (imageUrl != null)
               Image.network(imageUrl!, fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => _fallback())
@@ -828,7 +966,6 @@ class _PhotoCard extends StatelessWidget {
             else
               _fallback(),
 
-            // Overlay en cas d'upload en cours
             if (isUploading && imageUrl == null)
               Positioned.fill(
                 child: Container(
@@ -841,7 +978,6 @@ class _PhotoCard extends StatelessWidget {
                 ),
               ),
 
-            // Badge "COUVERTURE"
             if (isCover)
               Positioned(
                 top: 6,
@@ -856,7 +992,6 @@ class _PhotoCard extends StatelessWidget {
                 ),
               ),
 
-            // Bouton ✕ supprimer
             Positioned(
               top: 6,
               right: 6,
@@ -1024,7 +1159,6 @@ class _HomeOfferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = offerTypeColor(offer.type);
-    // ✅ Toutes les photos disponibles
     final allImages = <String>[];
     if ((offer.imageUrl ?? '').isNotEmpty) allImages.add(offer.imageUrl!);
     for (final u in offer.galleryUrls) {
