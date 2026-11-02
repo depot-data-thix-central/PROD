@@ -1,17 +1,19 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_portal_shell.dart
 // ============================================================================
 // THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION ENTERPRISE)
-// ✅ Gestion intelligente des sessions (Auth Supabase OU Inscription Libre Locale)
+// ✅ FIX BOUCLE : l'ID LOCAL (inscription libre) est PRIORITAIRE sur Supabase Auth
+// ✅ Plus aucun setState pendant le build (post-frame callback)
+// ✅ Écran de chargement pendant la lecture des SharedPreferences
 // ✅ Navigation par onglets complète
-// ✅ Syntaxe corrigée pour compilation CI/CD
 // ============================================================================
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:shared_preferences/shared_preferences.dart'; // ⬅️ IMPORT CLÉ
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -33,6 +35,7 @@ class _P {
 
 class ProviderPortalShell extends ConsumerStatefulWidget {
   final int initialTab;
+
   const ProviderPortalShell({super.key, this.initialTab = 0});
 
   @override
@@ -42,7 +45,8 @@ class ProviderPortalShell extends ConsumerStatefulWidget {
 class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
   late int _currentIndex;
   String? _localProviderId;
-  
+  bool _prefsLoaded = false; // ✅ Évite le flash du _NoUserScreen au démarrage
+
   @override
   void initState() {
     super.initState();
@@ -50,47 +54,76 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
     _loadLocalProviderId();
   }
 
+  // ✅ Recharge l'ID local à chaque retour sur le shell (après inscription)
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_prefsLoaded) _loadLocalProviderId();
+  }
+
   Future<void> _loadLocalProviderId() async {
     final prefs = await SharedPreferences.getInstance();
     final id = prefs.getString('thix_current_provider_id');
-    if (mounted) setState(() => _localProviderId = id);
+    if (!mounted) return;
+    setState(() {
+      _localProviderId = (id != null && id.isNotEmpty) ? id : null;
+      _prefsLoaded = true;
+    });
+  }
+
+  Future<void> _clearLocalProviderId() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('thix_current_provider_id');
+    if (mounted) setState(() => _localProviderId = null);
   }
 
   @override
   Widget build(BuildContext context) {
-    final user = Supabase.instance.client.auth.currentUser;
+    //  Pendant la lecture des préférences → loading (pas de flash)
+    if (!_prefsLoaded) return const _LoadingScreen();
 
     // ═══════════════════════════════════════════════════════════════════════
-    // CAS 1 : L'utilisateur est connecté via Supabase Auth
+    // ✅ PRIORITÉ 1 : ID LOCAL (INSCRIPTION LIBRE — SANS AUTH SUPABASE)
+    // C'est LE FIX de la boucle infinie : ce cas passe AVANT Supabase Auth
     // ═══════════════════════════════════════════════════════════════════════
-    if (user != null) {
-      final providerAsync = ref.watch(currentProviderProvider(user.id));
-      return providerAsync.when(
-        data: (provider) => provider != null ? _buildDashboard(provider) : const _NoProviderScreen(),
-        loading: () => const _LoadingScreen(),
-        error: (error, stack) => _ErrorScreen(error: error, onRetry: () => ref.invalidate(currentProviderProvider(user.id))),
-      );
-    }
-
-    // ═══════════════════════════════════════════════════════════════════════
-    // CAS 2 : PAS DE CONNEXION AUTH MAIS ON A UN ID LOCAL (INSCRIPTION LIBRE)
-    // C'est ICI qu'on résout ton problème !
-    // ═══════════════════════════════════════════════════════════════════════
-    if (_localProviderId != null && _localProviderId!.isNotEmpty) {
+    if (_localProviderId != null) {
       final providerAsync = ref.watch(providerByIdProvider(_localProviderId!));
       return providerAsync.when(
         data: (provider) {
           if (provider != null) return _buildDashboard(provider);
-          _clearLocalProviderId(); 
+          // ID local obsolète → nettoyage HORS du build (post-frame)
+          WidgetsBinding.instance.addPostFrameCallback(
+            (_) => _clearLocalProviderId(),
+          );
           return const _NoUserScreen();
         },
         loading: () => const _LoadingScreen(),
-        error: (error, stack) => _ErrorScreen(error: error, onRetry: () => ref.invalidate(providerByIdProvider(_localProviderId!))),
+        error: (error, stack) => _ErrorScreen(
+          error: error,
+          onRetry: () => ref.invalidate(providerByIdProvider(_localProviderId!)),
+        ),
       );
     }
 
     // ═══════════════════════════════════════════════════════════════════════
-    // CAS 3 : Ni Auth, ni ID Local → Proposer la connexion ou l'inscription
+    // PRIORITÉ 2 : Session Supabase Auth (OPTIONNELLE)
+    // ═══════════════════════════════════════════════════════════════════════
+    final user = Supabase.instance.client.auth.currentUser;
+    if (user != null) {
+      final providerAsync = ref.watch(currentProviderProvider(user.id));
+      return providerAsync.when(
+        data: (provider) =>
+            provider != null ? _buildDashboard(provider) : const _NoProviderScreen(),
+        loading: () => const _LoadingScreen(),
+        error: (error, stack) => _ErrorScreen(
+          error: error,
+          onRetry: () => ref.invalidate(currentProviderProvider(user.id)),
+        ),
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PRIORITÉ 3 : Ni session locale, ni auth → accueil inscription
     // ═══════════════════════════════════════════════════════════════════════
     return const _NoUserScreen();
   }
@@ -98,13 +131,16 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
   Widget _buildDashboard(ThixProviderModel provider) {
     return Scaffold(
       backgroundColor: _P.bg,
-      body: IndexedStack(index: _currentIndex, children: [
-        ProviderDashboardPage(provider: provider),
-        ProviderGalleryPage(provider: provider),
-        ProviderReservationsPage(provider: provider),
-        ProviderTasksPage(provider: provider),
-        _ProfileTab(provider: provider),
-      ]),
+      body: IndexedStack(
+        index: _currentIndex,
+        children: [
+          ProviderDashboardPage(provider: provider),
+          ProviderGalleryPage(provider: provider),
+          ProviderReservationsPage(provider: provider),
+          ProviderTasksPage(provider: provider),
+          _ProfileTab(provider: provider),
+        ],
+      ),
       bottomNavigationBar: _BottomNavBar(
         currentIndex: _currentIndex,
         onTap: (index) {
@@ -114,12 +150,6 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
       ),
     );
   }
-
-  Future<void> _clearLocalProviderId() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('thix_current_provider_id');
-    if (mounted) setState(() => _localProviderId = null);
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -128,6 +158,7 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
 class _BottomNavBar extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+
   const _BottomNavBar({required this.currentIndex, required this.onTap});
 
   static const _items = <_NavItemConfig>[
@@ -152,7 +183,11 @@ class _BottomNavBar extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
               for (int i = 0; i < _items.length; i++)
-                _NavItem(config: _items[i], isActive: currentIndex == i, onTap: () => onTap(i)),
+                _NavItem(
+                  config: _items[i],
+                  isActive: currentIndex == i,
+                  onTap: () => onTap(i),
+                ),
             ],
           ),
         ),
@@ -172,6 +207,7 @@ class _NavItem extends StatelessWidget {
   final _NavItemConfig config;
   final bool isActive;
   final VoidCallback onTap;
+
   const _NavItem({required this.config, required this.isActive, required this.onTap});
 
   @override
@@ -218,7 +254,7 @@ class _NavItem extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROFIL TAB (AVEC DÉCONNEXION NETTOYANT LE CACHE LOCAL)
+// PROFIL TAB (DÉCONNEXION NETTOYANT LE CACHE LOCAL)
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProfileTab extends ConsumerWidget {
   final ThixProviderModel provider;
@@ -241,11 +277,13 @@ class _ProfileTab extends ConsumerWidget {
         ],
       ),
     );
-    
+
     if (confirmed == true) {
       await Supabase.instance.client.auth.signOut();
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('thix_current_provider_id');
+      await prefs.remove('thix_current_provider_code');
+      await prefs.remove('thix_current_provider_name');
       ref.invalidate(providerByIdProvider(provider.id));
       ref.invalidate(providersListProvider);
       if (context.mounted) context.go('/thix-weeding');
@@ -331,6 +369,7 @@ class _MenuItem extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final String? badge;
+
   const _MenuItem({required this.icon, required this.label, required this.onTap, this.color = _P.ink, this.badge});
 
   @override
@@ -361,7 +400,7 @@ class _MenuItem extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ÉCRANS D'ÉTAT (Syntaxe corrigée et étendue)
+// ÉCRANS D'ÉTAT
 // ═══════════════════════════════════════════════════════════════════════════
 class _LoadingScreen extends StatelessWidget {
   const _LoadingScreen();
@@ -380,7 +419,7 @@ class _LoadingScreen extends StatelessWidget {
               child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 36),
             ),
             const SizedBox(height: 24),
-            Text('Chargement...', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _P.inkSoft)),
+            Text('Chargement de votre espace...', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _P.inkSoft)),
             const SizedBox(height: 20),
             const SizedBox(width: 28, height: 28, child: CircularProgressIndicator(strokeWidth: 2.5, color: _P.rose)),
           ],
@@ -393,6 +432,7 @@ class _LoadingScreen extends StatelessWidget {
 class _ErrorScreen extends StatelessWidget {
   final Object error;
   final VoidCallback onRetry;
+
   const _ErrorScreen({required this.error, required this.onRetry});
 
   @override
@@ -405,11 +445,7 @@ class _ErrorScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(color: _P.red.withOpacity(0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.error_outline, size: 56, color: _P.red),
-              ),
+              Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: _P.red.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.error_outline, size: 56, color: _P.red)),
               const SizedBox(height: 24),
               Text('Une erreur est survenue', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800, color: _P.ink)),
               const SizedBox(height: 8),
@@ -463,7 +499,7 @@ class _NoUserScreen extends StatelessWidget {
               const SizedBox(height: 12),
               TextButton(
                 onPressed: () => context.push('/thix-weeding/provider/auth'),
-                child: Text('J\'ai déjà un compte', style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
+                child: Text("J'ai déjà un compte / un code THIX", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
               ),
             ],
           ),
@@ -486,15 +522,11 @@ class _NoProviderScreen extends StatelessWidget {
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), shape: BoxShape.circle),
-                child: const Icon(Icons.person_add_outlined, size: 64, color: _P.rose),
-              ),
+              Container(padding: const EdgeInsets.all(24), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), shape: BoxShape.circle), child: const Icon(Icons.person_add_outlined, size: 64, color: _P.rose)),
               const SizedBox(height: 24),
               Text('Devenez prestataire', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.3)),
               const SizedBox(height: 8),
-              Text('Vous n\'avez pas encore créé votre profil.\nInscrivez-vous pour accéder à votre dashboard.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft, height: 1.4)),
+              Text("Vous n'avez pas encore créé votre profil.\nInscrivez-vous pour accéder à votre dashboard.", textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft, height: 1.4)),
               const SizedBox(height: 32),
               SizedBox(
                 width: double.infinity, height: 56,
@@ -506,6 +538,11 @@ class _NoProviderScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 12),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/provider/auth'),
+                child: Text("J'ai un code THIX", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700)),
+              ),
+              const SizedBox(height: 4),
               TextButton(
                 onPressed: () async {
                   await Supabase.instance.client.auth.signOut();
