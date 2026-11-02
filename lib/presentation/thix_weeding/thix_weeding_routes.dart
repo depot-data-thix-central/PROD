@@ -1,16 +1,20 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.2 (PRODUCTION ENTERPRISE)
-// ✅ FIX 404 : /provider/offers/new & /provider/offers/edit/:id ajoutées
-// ✅ FIX : indices des onglets alignés sur le shell (Offres=1, Galerie=2...)
-// ✅ FIX 404 : provider/catalog & provider/detail → remis au BON niveau
-// ✅ ESPACE PRESTATAIRE complet (register, dashboard, catalogue, offres)
+// THIX WEDDING ROUTES — v3.3 (PRODUCTION ENTERPRISE)
+// ✅ NOUVEAU invité : menu, playlist, ma-table (plan 3D), live, annonces,
+//    navette, dress-code, faq, remerciements, prestataires
+// ✅ NOUVEAU staff  : playlist, menu, contenu/:kind (navette, dress_code, faq, thanks, live)
+// ✅ FIX : add?edit=<id> ouvre bien l'invité en MODIFICATION (page détail invité)
+// ✅ FIX : guest/:id/invitation?guest=<id> transmet guestId (lien d'invitation)
+// ✅ FIX : le nom de l'invité passé en extra arrive dans le chat staff
+// ✅ FIX 404 offres prestataire, indices des onglets, catalogue (v3.2 conservé)
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'pages/staff/traiteur/traiteur_menu_staff_page.dart';
+import 'pages/guest/meal_preferences_page.dart';
 // HOME
 import 'pages/home/thix_weeding_home_page.dart';
 
@@ -24,6 +28,9 @@ import 'pages/guest/cadeaux_page.dart';
 import 'pages/guest/galerie_page.dart';
 import 'pages/guest/livre_or_page.dart';
 import 'pages/guest/infos_page.dart';
+import 'pages/guest/guest_playlist_page.dart';
+import 'pages/guest/guest_table_page.dart';
+import 'pages/guest/guest_extra_pages.dart';
 
 // STAFF - CORE & SHELL
 import 'pages/staff/staff_shell_page.dart';
@@ -53,6 +60,8 @@ import 'pages/staff/invitation/preview_invitation_page.dart';
 import 'pages/staff/parametres/settings_page.dart';
 import 'pages/staff/seating/seating_3d_page.dart';
 import 'pages/staff/cadeaux/gifts_management_page.dart';
+import 'pages/staff/playlist/staff_playlist_page.dart';
+import 'pages/staff/content/staff_content_pages.dart';
 
 // ✅ ESPACE PRESTATAIRE
 import 'pages/provider_portal/provider_portal_shell.dart';
@@ -96,7 +105,22 @@ class ThixWeedingRoutes {
   static const String staffSettings = 'staffSettings';
   static const String staffSeating = 'staffSeating';
   static const String staffCadeaux = 'staffCadeaux';
+  static const String staffPlaylist = 'staffPlaylist';
+  static const String staffMenu = 'staffMenu';
+  static const String staffContent = 'staffContent';
   static const String myWeddingsList = 'myWeddingsList';
+
+  // --- NAMES INVITÉ (nouveaux) ---
+  static const String guestMenu = 'guestMenu';
+  static const String guestPlaylist = 'guestPlaylist';
+  static const String guestTable = 'guestTable';
+  static const String guestLive = 'guestLive';
+  static const String guestAnnonces = 'guestAnnonces';
+  static const String guestNavette = 'guestNavette';
+  static const String guestDressCode = 'guestDressCode';
+  static const String guestFaq = 'guestFaq';
+  static const String guestThanks = 'guestThanks';
+  static const String guestPrestataires = 'guestPrestataires';
 
   // --- ✅ NAMES ESPACE PRESTATAIRE ---
   static const String providerAuth = 'providerAuth';
@@ -181,7 +205,7 @@ class ThixWeedingRoutes {
             GoRoute(path: 'provider/tasks', builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
             GoRoute(path: 'provider/profile', builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
 
-            // ✅ NOUVEAU : FORMULAIRE DE CRÉATION / ÉDITION D'OFFRE (résout le 404)
+            // ✅ FORMULAIRE DE CRÉATION / ÉDITION D'OFFRE
             GoRoute(
               path: 'provider/offers/new',
               name: providerNewOffer,
@@ -207,10 +231,13 @@ class ThixWeedingRoutes {
                 return GuestHomePage(weddingId: weddingId);
               },
               routes: [
+                // ✅ guestId : lien direct vers l'invitation d'un invité (?guest=<id>)
                 GoRoute(
                   path: 'invitation',
-                  builder: (c, s) =>
-                      InvitationPage(weddingId: s.pathParameters['weddingId']!),
+                  builder: (c, s) => InvitationPage(
+                    weddingId: s.pathParameters['weddingId']!,
+                    guestId: s.uri.queryParameters['guest'],
+                  ),
                 ),
                 GoRoute(
                   path: 'programme',
@@ -247,9 +274,85 @@ class ThixWeedingRoutes {
                   builder: (c, s) =>
                       InfosPage(weddingId: s.pathParameters['weddingId']!),
                 ),
+
+                // ✅ NOUVEAU : rubriques du menu d'accueil invité
+                GoRoute(
+                  path: 'menu',
+                  name: guestMenu,
+                  builder: (c, s) =>
+                      GuestMenuPage(weddingId: s.pathParameters['weddingId']!),
+                ),
+                GoRoute(
+                  path: 'playlist',
+                  name: guestPlaylist,
+                  builder: (c, s) =>
+                      GuestPlaylistPage(weddingId: s.pathParameters['weddingId']!),
+                ),
+                GoRoute(
+                  path: 'ma-table',
+                  name: guestTable,
+                  builder: (c, s) =>
+                      GuestTablePage(weddingId: s.pathParameters['weddingId']!),
+                ),
+                GoRoute(
+                  path: 'live',
+                  name: guestLive,
+                  builder: (c, s) => GuestInfoPage(
+                      weddingId: s.pathParameters['weddingId']!, kind: 'live'),
+                ),
+                GoRoute(
+                  path: 'annonces',
+                  name: guestAnnonces,
+                  builder: (c, s) => GuestAnnoncesPage(
+                      weddingId: s.pathParameters['weddingId']!),
+                ),
+                GoRoute(
+                  path: 'navette',
+                  name: guestNavette,
+                  builder: (c, s) => GuestInfoPage(
+                      weddingId: s.pathParameters['weddingId']!, kind: 'navette'),
+                ),
+                GoRoute(
+                  path: 'dress-code',
+                  name: guestDressCode,
+                  builder: (c, s) => GuestInfoPage(
+                      weddingId: s.pathParameters['weddingId']!, kind: 'dress_code'),
+                ),
+                GoRoute(
+                  path: 'faq',
+                  name: guestFaq,
+                  builder: (c, s) => GuestInfoPage(
+                      weddingId: s.pathParameters['weddingId']!, kind: 'faq'),
+                ),
+                GoRoute(
+                  path: 'remerciements',
+                  name: guestThanks,
+                  builder: (c, s) => GuestInfoPage(
+                      weddingId: s.pathParameters['weddingId']!, kind: 'thanks'),
+                ),
+                GoRoute(
+                  path: 'prestataires',
+                  name: guestPrestataires,
+                  builder: (c, s) => GuestPrestatairesPage(
+                      weddingId: s.pathParameters['weddingId']!),
+                ),
               ],
             ),
 
+            GoRoute(
+  path: 'meal-preferences',
+  builder: (c, s) => MealPreferencesPage(
+    weddingId: s.pathParameters['weddingId']!,
+  ),
+),
+            // 15. MENUS TRAITEUR (staff)
+GoRoute(
+  path: 'menu',
+  name: 'staffMenu',
+  builder: (c, s) => TraiteurMenuStaffPage(
+    weddingId: s.pathParameters['weddingId']!,
+  ),
+),
             // ================= DASHBOARD STAFF =================
             GoRoute(
               path: 'staff/:weddingId',
@@ -282,11 +385,14 @@ class ThixWeedingRoutes {
                   builder: (c, s) => GuestListPage(
                       weddingId: s.pathParameters['weddingId']!),
                   routes: [
+                    // ✅ FIX : /invites/add?edit=<guestId> → mode modification
                     GoRoute(
                       path: 'add',
                       name: staffAddInvite,
                       builder: (c, s) => AddGuestPage(
-                          weddingId: s.pathParameters['weddingId']!),
+                        weddingId: s.pathParameters['weddingId']!,
+                        editGuestId: s.uri.queryParameters['edit'],
+                      ),
                     ),
                     GoRoute(
                       path: ':guestId',
@@ -340,12 +446,14 @@ class ThixWeedingRoutes {
                   builder: (c, s) => StaffMessagesPage(
                       weddingId: s.pathParameters['weddingId']!),
                   routes: [
+                    // ✅ FIX : le nom passé en extra arrive dans le chat
                     GoRoute(
                       path: ':guestId',
                       name: staffChatDetail,
                       builder: (c, s) => ChatDetailPage(
                         weddingId: s.pathParameters['weddingId']!,
                         guestIdOrName: s.pathParameters['guestId']!,
+                        guestName: s.extra is String ? s.extra as String : null,
                       ),
                     ),
                   ],
@@ -486,6 +594,32 @@ class ThixWeedingRoutes {
                   builder: (c, s) => SettingsPage(
                       weddingId: s.pathParameters['weddingId']!),
                 ),
+
+                // ✅ 15. PLAYLIST (staff)
+                GoRoute(
+                  path: 'playlist',
+                  name: staffPlaylist,
+                  builder: (c, s) => StaffPlaylistPage(
+                      weddingId: s.pathParameters['weddingId']!),
+                ),
+
+                // ✅ 16. MENU DU REPAS (staff)
+                GoRoute(
+                  path: 'menu',
+                  name: staffMenu,
+                  builder: (c, s) => StaffMenuPage(
+                      weddingId: s.pathParameters['weddingId']!),
+                ),
+
+                // ✅ 17. CONTENUS INVITÉS : navette, dress_code, faq, thanks, live
+                GoRoute(
+                  path: 'contenu/:kind',
+                  name: staffContent,
+                  builder: (c, s) => StaffInfoPage(
+                    weddingId: s.pathParameters['weddingId']!,
+                    kind: s.pathParameters['kind']!,
+                  ),
+                ),
               ],
             ),
           ],
@@ -513,7 +647,7 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
             children: [
               const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
               const SizedBox(height: 16),
-              Text('Connexion requise', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const Text('Connexion requise', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () => context.push('/thix-weeding/auth/login'),
@@ -543,7 +677,7 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
                 children: [
                   const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
                   const SizedBox(height: 16),
-                  Text('Aucun profil prestataire', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const Text('Aucun profil prestataire', style: TextStyle(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 8),
                   ElevatedButton(
                     onPressed: () => context.go('/thix-weeding/provider/register'),
