@@ -1,4 +1,3 @@
-
 // lib/presentation/thix_weeding/services/provider_service.dart
 // ============================================================================
 // THIX WEDDING PROVIDER SERVICE (PRODUCTION ENTERPRISE)
@@ -6,8 +5,7 @@
 // ✅ Génération code unique Thix-CAT-XXX
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
-// ✅ FIX : Noms de tables corrigés (weeding)
-// ✅ FIX : userId rendu optionnel pour inscription libre (sans auth)
+// ✅ FIX : userId nullable géré correctement
 // ============================================================================
 
 import 'dart:math';
@@ -21,7 +19,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // GÉNÉRATION CODE UNIQUE THIX
-  // Format: Thix-SALLE-7A9 (Catégorie + 3 caractères alphanumériques)
   // ═══════════════════════════════════════════════════════════════════════════
   Future<String> generateUniqueCode(ProviderCategory category) async {
     const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -38,7 +35,6 @@ class ProviderService {
       
       code = 'Thix-${category.iconCode}-$randomChars';
       
-      // Vérifier si le code existe déjà
       final result = await _client
           .from('thix_weeding_providers')
           .select('id')
@@ -53,7 +49,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER TOUS LES PRESTATAIRES (PAGINÉ)
-  // ✅ FIX : Filtres appliqués AVANT order() et range()
   // ═══════════════════════════════════════════════════════════════════════════
   Future<List<ThixProviderModel>> getAllProviders({
     int page = 1,
@@ -67,18 +62,10 @@ class ProviderService {
     try {
       var query = _client.from('thix_weeding_providers').select('*');
       
-      if (category != null) {
-        query = query.eq('category', category.name);
-      }
-      if (level != null) {
-        query = query.eq('level', level.name);
-      }
-      if (city != null && city.isNotEmpty) {
-        query = query.eq('city', city);
-      }
-      if (isAvailable != null) {
-        query = query.eq('is_available', isAvailable);
-      }
+      if (category != null) query = query.eq('category', category.name);
+      if (level != null) query = query.eq('level', level.name);
+      if (city != null && city.isNotEmpty) query = query.eq('city', city);
+      if (isAvailable != null) query = query.eq('is_available', isAvailable);
       if (search != null && search.isNotEmpty) {
         query = query.or('business_name.ilike.%$search%,description.ilike.%$search%');
       }
@@ -115,7 +102,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER PRESTATAIRE PAR CODE UNIQUE
-  // Utilisé par le staff pour retrouver rapidement un prestataire
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel?> getProviderByCode(String code) async {
     try {
@@ -134,10 +120,10 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER PRESTATAIRE PAR USER ID
-  // ✅ FIX : Ignore les requêtes avec userId 'anonymous' ou vide
+  // ✅ FIX : Gère les userId null ou vides
   // ═══════════════════════════════════════════════════════════════════════════
-  Future<ThixProviderModel?> getProviderByUserId(String userId) async {
-    if (userId == 'anonymous' || userId.isEmpty) return null;
+  Future<ThixProviderModel?> getProviderByUserId(String? userId) async {
+    if (userId == null || userId.isEmpty) return null;
     
     try {
       final response = await _client
@@ -155,10 +141,10 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CRÉER UN NOUVEAU PRESTATAIRE
-  // ✅ FIX : userId rendu optionnel (String?) pour inscription libre
+  // ✅ FIX : userId nullable, gestion correcte des valeurs null
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> createProvider({
-    String? userId, // ✅ RENDU OPTIONNEL
+    String? userId,
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -177,30 +163,35 @@ class ProviderService {
       final uniqueCode = await generateUniqueCode(category);
       final now = DateTime.now();
       
-      final data = {
-        'user_id': userId, // ✅ Peut être null maintenant
+      // ✅ Construire le map de données en excluant les champs null
+      final data = <String, dynamic>{
         'unique_code': uniqueCode,
         'category': category.name,
         'business_name': businessName,
-        'description': description,
-        'phone': phone,
-        'email': email,
-        'address': address,
-        'city': city,
-        'gallery_urls': galleryUrls ?? [],
-        'video_urls': videoUrls ?? [],
         'level': TrackingLevel.bronze.name,
         'verification_status': ProviderVerificationStatus.pending.name,
         'rating': 0.0,
         'review_count': 0,
-        'min_price': minPrice,
-        'max_price': maxPrice,
         'currency': currency ?? 'USD',
         'is_available': true,
-        'requirements': requirements ?? {},
         'created_at': now.toIso8601String(),
         'updated_at': now.toIso8601String(),
       };
+      
+      // ✅ Ajouter les champs optionnels uniquement s'ils ne sont pas null
+      if (userId != null) data['user_id'] = userId;
+      if (description != null) data['description'] = description;
+      if (phone != null) data['phone'] = phone;
+      if (email != null) data['email'] = email;
+      if (address != null) data['address'] = address;
+      if (city != null) data['city'] = city;
+      if (minPrice != null) data['min_price'] = minPrice;
+      if (maxPrice != null) data['max_price'] = maxPrice;
+      
+      // ✅ Les arrays et jsonb ont des valeurs par défaut en BDD
+      data['gallery_urls'] = galleryUrls ?? [];
+      data['video_urls'] = videoUrls ?? [];
+      data['requirements'] = requirements ?? {};
       
       final response = await _client
           .from('thix_weeding_providers')
@@ -251,9 +242,7 @@ class ProviderService {
       if (galleryUrls != null) data['gallery_urls'] = galleryUrls;
       if (videoUrls != null) data['video_urls'] = videoUrls;
       if (level != null) data['level'] = level.name;
-      if (verificationStatus != null) {
-        data['verification_status'] = verificationStatus.name;
-      }
+      if (verificationStatus != null) data['verification_status'] = verificationStatus.name;
       if (rating != null) data['rating'] = rating;
       if (reviewCount != null) data['review_count'] = reviewCount;
       if (minPrice != null) data['min_price'] = minPrice;
@@ -292,13 +281,8 @@ class ProviderService {
             : ProviderVerificationStatus.rejected.name,
       };
       
-      if (approved && newLevel != null) {
-        data['level'] = newLevel.name;
-      }
-      
-      if (!approved && rejectionReason != null) {
-        data['rejection_reason'] = rejectionReason;
-      }
+      if (approved && newLevel != null) data['level'] = newLevel.name;
+      if (!approved && rejectionReason != null) data['rejection_reason'] = rejectionReason;
       
       final response = await _client
           .from('thix_weeding_providers')
@@ -348,15 +332,16 @@ class ProviderService {
         'client_name': clientName,
         'client_phone': clientPhone,
         'event_date': eventDate.toIso8601String(),
-        'event_type': eventType,
-        'guest_count': guestCount,
-        'total_price': totalPrice,
-        'currency': currency ?? 'USD',
         'status': ReservationStatus.pending.name,
-        'notes': notes,
         'created_at': now.toIso8601String(),
         'updated_at': now.toIso8601String(),
       };
+      
+      if (eventType != null) data['event_type'] = eventType;
+      if (guestCount != null) data['guest_count'] = guestCount;
+      if (totalPrice != null) data['total_price'] = totalPrice;
+      if (currency != null) data['currency'] = currency;
+      if (notes != null) data['notes'] = notes;
       
       final response = await _client
           .from('thix_weeding_provider_reservations')
@@ -380,9 +365,7 @@ class ProviderService {
           .select('*')
           .eq('provider_id', providerId);
       
-      if (status != null) {
-        query = query.eq('status', status.name);
-      }
+      if (status != null) query = query.eq('status', status.name);
       
       final response = await query.order('event_date', ascending: true);
       
@@ -437,12 +420,13 @@ class ProviderService {
         'wedding_id': weddingId,
         'assigned_by': assignedBy,
         'title': title,
-        'description': description,
         'due_datetime': dueDateTime.toIso8601String(),
         'status': TaskStatus.assigned.name,
         'priority': priority,
         'created_at': now.toIso8601String(),
       };
+      
+      if (description != null) data['description'] = description;
       
       final response = await _client
           .from('thix_weeding_provider_tasks')
@@ -466,9 +450,7 @@ class ProviderService {
           .select('*')
           .eq('provider_id', providerId);
       
-      if (status != null) {
-        query = query.eq('status', status.name);
-      }
+      if (status != null) query = query.eq('status', status.name);
       
       final response = await query.order('due_datetime', ascending: true);
       
