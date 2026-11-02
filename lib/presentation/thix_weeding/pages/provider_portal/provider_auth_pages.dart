@@ -1,576 +1,382 @@
-// lib/presentation/thix_weeding/thix_weeding_routes.dart
+// lib/presentation/thix_weeding/pages/provider_portal/provider_auth_pages.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.2 (PRODUCTION ENTERPRISE)
-// ✅ FIX 404 : /provider/offers/new & /provider/offers/edit/:id ajoutées
-// ✅ FIX : indices des onglets alignés sur le shell (Offres=1, Galerie=2...)
-// ✅ FIX 404 : provider/catalog & provider/detail → remis au BON niveau
-// ✅ ESPACE PRESTATAIRE complet (register, dashboard, catalogue, offres)
+// THIX WEDDING PROVIDER AUTH (PRODUCTION ENTERPRISE)
+// ✅ MODE 1 (PAR DÉFAUT) : Connexion SANS auth via code THIX-P-XXXYY
+// ✅ MODE 2 (optionnel) : Email + mot de passe Supabase
+// ✅ FIX BOUCLE : sauvegarde de l'ID local après toute connexion réussie
 // ============================================================================
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// HOME
-import 'pages/home/thix_weeding_home_page.dart';
+import '../../models/provider_models.dart';
+import '../../providers/provider_providers.dart';
 
-// GUEST
-import 'pages/guest/guest_home_page.dart';
-import 'pages/guest/invitation_page.dart';
-import 'pages/guest/programme_page.dart';
-import 'pages/guest/lieu_acces_page.dart';
-import 'pages/guest/rsvp_page.dart';
-import 'pages/guest/cadeaux_page.dart';
-import 'pages/guest/galerie_page.dart';
-import 'pages/guest/livre_or_page.dart';
-import 'pages/guest/infos_page.dart';
-
-// STAFF - CORE & SHELL
-import 'pages/staff/staff_shell_page.dart';
-import 'pages/staff/staff_dashboard_page.dart';
-import 'pages/staff/my_weddings/my_weddings_page.dart';
-import 'pages/staff/my_weddings/create_wedding_page.dart';
-
-// STAFF MODULES
-import 'pages/staff/invités/guest_list_page.dart';
-import 'pages/staff/invités/add_guest_page.dart';
-import 'pages/staff/invités/guest_detail_page.dart';
-import 'pages/staff/prestataires/vendors_list_page.dart';
-import 'pages/staff/prestataires/add_vendor_page.dart';
-import 'pages/staff/messages/staff_messages_page.dart';
-import 'pages/staff/messages/chat_detail_page.dart';
-import 'pages/staff/budget/budget_page.dart';
-import 'pages/staff/budget/expense_form_page.dart';
-import 'pages/staff/paiements/payments_page.dart';
-import 'pages/staff/paiements/add_payment_page.dart';
-import 'pages/staff/paiements/payment_detail_page.dart';
-import 'pages/staff/checklist/checklist_page.dart';
-import 'pages/staff/planning/planning_page.dart';
-import 'pages/staff/planning/task_form_page.dart';
-import 'pages/staff/galerie/gallery_management_page.dart';
-import 'pages/staff/livre_or/guestbook_management_page.dart';
-import 'pages/staff/invitation/preview_invitation_page.dart';
-import 'pages/staff/parametres/settings_page.dart';
-import 'pages/staff/seating/seating_3d_page.dart';
-import 'pages/staff/cadeaux/gifts_management_page.dart';
-
-// ✅ ESPACE PRESTATAIRE
-import 'pages/provider_portal/provider_portal_shell.dart';
-import 'pages/provider_portal/provider_auth_pages.dart';
-import 'pages/provider_portal/provider_catalog_pages.dart';
-import 'pages/provider_portal/provider_register_simple.dart';
-import 'pages/provider_portal/provider_detail_page.dart';
-import 'pages/provider_portal/provider_offers_page.dart';
-import '../providers/provider_providers.dart';
-
-class ThixWeedingRoutes {
-  static const String home = '/thix-weeding';
-
-  // --- NAMES FOR PROGRAMMATIC NAVIGATION ---
-  static const String guestHome = 'guestHome';
-  static const String staffShell = 'staffShell';
-  static const String staffDashboard = 'staffDashboard';
-  static const String staffInvites = 'staffInvites';
-  static const String staffAddInvite = 'staffAddInvite';
-  static const String staffEditInvite = 'staffEditInvite';
-  static const String staffGuestDetail = 'staffGuestDetail';
-  static const String staffPrestataires = 'staffPrestataires';
-  static const String staffAddPrestataire = 'staffAddPrestataire';
-  static const String staffEditPrestataire = 'staffEditPrestataire';
-  static const String staffMessages = 'staffMessages';
-  static const String staffChatDetail = 'staffChatDetail';
-  static const String staffBudget = 'staffBudget';
-  static const String staffBudgetAdd = 'staffBudgetAdd';
-  static const String staffBudgetEdit = 'staffBudgetEdit';
-  static const String staffPaiements = 'staffPaiements';
-  static const String staffAddPaiement = 'staffAddPaiement';
-  static const String staffPaiementDetail = 'staffPaiementDetail';
-  static const String staffChecklist = 'staffChecklist';
-  static const String staffAddTask = 'staffAddTask';
-  static const String staffPlanning = 'staffPlanning';
-  static const String staffPlanningAdd = 'staffPlanningAdd';
-  static const String staffGalerie = 'staffGalerie';
-  static const String staffLivreOr = 'staffLivreOr';
-  static const String staffInvitation = 'staffInvitation';
-  static const String staffInvitationPreview = 'staffInvitationPreview';
-  static const String staffSettings = 'staffSettings';
-  static const String staffSeating = 'staffSeating';
-  static const String staffCadeaux = 'staffCadeaux';
-  static const String myWeddingsList = 'myWeddingsList';
-
-  // --- ✅ NAMES ESPACE PRESTATAIRE ---
-  static const String providerAuth = 'providerAuth';
-  static const String providerRegister = 'providerRegister';
-  static const String providerCatalog = 'providerCatalog';
-  static const String providerDetail = 'providerDetail';
-  static const String providerDashboard = 'providerDashboard';
-  static const String providerOffers = 'providerOffers';
-  static const String providerNewOffer = 'providerNewOffer';
-  static const String providerEditOffer = 'providerEditOffer';
-  static const String providerGallery = 'providerGallery';
-  static const String providerReservations = 'providerReservations';
-  static const String providerTasks = 'providerTasks';
-  static const String providerProfile = 'providerProfile';
-
-  static List<RouteBase> get routes => [
-        GoRoute(
-          path: home,
-          name: 'thixWeedingHome',
-          builder: (context, state) => const ThixWeedingHomePage(),
-          routes: [
-            // ================= CRÉATION MARIAGE =================
-            GoRoute(
-              path: 'create',
-              name: 'createWedding',
-              builder: (c, s) => const CreateWeddingPage(),
-            ),
-
-            // ================= LISTE DES MARIAGES =================
-            GoRoute(
-              path: 'staff/my-weddings',
-              name: myWeddingsList,
-              builder: (c, s) => const MyWeddingsPage(),
-            ),
-
-            // ================================================================
-            // ✅ ESPACE PRESTATAIRE (B2B) — SANS AUTH OBLIGATOIRE
-            // ================================================================
-            GoRoute(
-              path: 'provider/auth',
-              name: providerAuth,
-              builder: (c, s) => const ProviderLoginPage(),
-            ),
-            GoRoute(
-              path: 'provider/register',
-              name: providerRegister,
-              builder: (c, s) => const ProviderRegisterSimplePage(),
-            ),
-            GoRoute(
-              path: 'provider/catalog',
-              name: providerCatalog,
-              builder: (c, s) => ProviderCatalogPage(
-                initialCategory: s.uri.queryParameters['category'],
-              ),
-            ),
-            GoRoute(
-              path: 'provider/detail/:providerId',
-              name: providerDetail,
-              builder: (c, s) => ProviderDetailPage(
-                providerId: s.pathParameters['providerId']!,
-              ),
-            ),
-
-            // ✅ SHELL + ONGLETS NICHÉS (indices corrigés : Offres=1)
-            GoRoute(
-              path: 'provider/dashboard',
-              name: providerDashboard,
-              builder: (c, s) => const ProviderPortalShell(initialTab: 0),
-              routes: [
-                GoRoute(path: 'offres', name: providerOffers, builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
-                GoRoute(path: 'galerie', name: providerGallery, builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
-                GoRoute(path: 'reservations', name: providerReservations, builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
-                GoRoute(path: 'taches', name: providerTasks, builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
-                GoRoute(path: 'profil', name: providerProfile, builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
-              ],
-            ),
-
-            // ✅ ALIAS PLATS (utilisés par les boutons du dashboard)
-            GoRoute(path: 'provider/offers', builder: (c, s) => const ProviderPortalShell(initialTab: 1)),
-            GoRoute(path: 'provider/gallery', builder: (c, s) => const ProviderPortalShell(initialTab: 2)),
-            GoRoute(path: 'provider/reservations', builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
-            GoRoute(path: 'provider/tasks', builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
-            GoRoute(path: 'provider/profile', builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
-
-            // ✅ NOUVEAU : FORMULAIRE DE CRÉATION / ÉDITION D'OFFRE (résout le 404)
-            GoRoute(
-              path: 'provider/offers/new',
-              name: providerNewOffer,
-              builder: (c, s) => const _ProviderOfferFormRoute(editId: null),
-            ),
-            GoRoute(
-              path: 'provider/offers/edit/:offerId',
-              name: providerEditOffer,
-              builder: (c, s) => _ProviderOfferFormRoute(editId: s.pathParameters['offerId']),
-            ),
-
-            // ================= ESPACE INVITÉ =================
-            GoRoute(
-              path: 'guest/:weddingId',
-              name: guestHome,
-              redirect: (context, state) {
-                final id = state.pathParameters['weddingId'] ?? '';
-                if (id.trim().length < 4) return home;
-                return null;
-              },
-              builder: (context, state) {
-                final weddingId = state.pathParameters['weddingId']!;
-                return GuestHomePage(weddingId: weddingId);
-              },
-              routes: [
-                GoRoute(
-                  path: 'invitation',
-                  builder: (c, s) =>
-                      InvitationPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'programme',
-                  builder: (c, s) =>
-                      ProgrammePage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'lieu',
-                  builder: (c, s) =>
-                      LieuAccesPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'rsvp',
-                  builder: (c, s) =>
-                      RsvpPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'cadeaux',
-                  builder: (c, s) =>
-                      CadeauxPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'galerie',
-                  builder: (c, s) =>
-                      GaleriePage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'livre-or',
-                  builder: (c, s) =>
-                      LivreOrPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-                GoRoute(
-                  path: 'infos',
-                  builder: (c, s) =>
-                      InfosPage(weddingId: s.pathParameters['weddingId']!),
-                ),
-              ],
-            ),
-
-            // ================= DASHBOARD STAFF =================
-            GoRoute(
-              path: 'staff/:weddingId',
-              name: staffShell,
-              redirect: (context, state) {
-                final id = state.pathParameters['weddingId'] ?? '';
-                if (id == 'my-weddings') {
-                  return '$home/staff/my-weddings';
-                }
-                if (id.trim().length < 4) return home;
-                return null;
-              },
-              builder: (context, state) {
-                final weddingId = state.pathParameters['weddingId']!;
-                return StaffShellPage(weddingId: weddingId);
-              },
-              routes: [
-                // 1. TABLEAU DE BORD
-                GoRoute(
-                  path: '.',
-                  name: staffDashboard,
-                  builder: (c, s) => StaffDashboardPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-
-                // 2. INVITÉS
-                GoRoute(
-                  path: 'invites',
-                  name: staffInvites,
-                  builder: (c, s) => GuestListPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffAddInvite,
-                      builder: (c, s) => AddGuestPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                    GoRoute(
-                      path: ':guestId',
-                      name: staffGuestDetail,
-                      builder: (c, s) => GuestDetailPage(
-                        weddingId: s.pathParameters['weddingId']!,
-                        guestId: s.pathParameters['guestId']!,
-                      ),
-                      routes: [
-                        GoRoute(
-                          path: 'edit',
-                          name: staffEditInvite,
-                          builder: (c, s) => AddGuestPage(
-                            weddingId: s.pathParameters['weddingId']!,
-                            editGuestId: s.pathParameters['guestId'],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-
-                // 3. PRESTATAIRES (staff)
-                GoRoute(
-                  path: 'prestataires',
-                  name: staffPrestataires,
-                  builder: (c, s) => VendorsListPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffAddPrestataire,
-                      builder: (c, s) => AddVendorPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                    GoRoute(
-                      path: ':vendorId/edit',
-                      name: staffEditPrestataire,
-                      builder: (c, s) => AddVendorPage(
-                        weddingId: s.pathParameters['weddingId']!,
-                        editVendorId: s.pathParameters['vendorId'],
-                      ),
-                    ),
-                  ],
-                ),
-
-                // 4. MESSAGES
-                GoRoute(
-                  path: 'messages',
-                  name: staffMessages,
-                  builder: (c, s) => StaffMessagesPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: ':guestId',
-                      name: staffChatDetail,
-                      builder: (c, s) => ChatDetailPage(
-                        weddingId: s.pathParameters['weddingId']!,
-                        guestIdOrName: s.pathParameters['guestId']!,
-                      ),
-                    ),
-                  ],
-                ),
-
-                // 5. BUDGET
-                GoRoute(
-                  path: 'budget',
-                  name: staffBudget,
-                  builder: (c, s) =>
-                      BudgetPage(weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffBudgetAdd,
-                      builder: (c, s) => ExpenseFormPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                    GoRoute(
-                      path: ':expenseId/edit',
-                      name: staffBudgetEdit,
-                      builder: (c, s) => ExpenseFormPage(
-                        weddingId: s.pathParameters['weddingId']!,
-                        editExpenseId: s.pathParameters['expenseId'],
-                      ),
-                    ),
-                  ],
-                ),
-
-                // 6. PAIEMENTS
-                GoRoute(
-                  path: 'paiements',
-                  name: staffPaiements,
-                  builder: (c, s) =>
-                      PaymentsPage(weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffAddPaiement,
-                      builder: (c, s) => AddPaymentPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                    GoRoute(
-                      path: ':paymentId',
-                      name: staffPaiementDetail,
-                      builder: (c, s) => PaymentDetailPage(
-                        weddingId: s.pathParameters['weddingId']!,
-                        paymentId: s.pathParameters['paymentId']!,
-                      ),
-                    ),
-                  ],
-                ),
-
-                // 7. CHECKLIST
-                GoRoute(
-                  path: 'checklist',
-                  name: staffChecklist,
-                  builder: (c, s) => ChecklistPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffAddTask,
-                      builder: (c, s) => TaskFormPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                  ],
-                ),
-
-                // 8. PLANNING
-                GoRoute(
-                  path: 'planning',
-                  name: staffPlanning,
-                  builder: (c, s) => PlanningPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'add',
-                      name: staffPlanningAdd,
-                      builder: (c, s) => TaskFormPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                  ],
-                ),
-
-                // 9. GALERIE
-                GoRoute(
-                  path: 'galerie',
-                  name: staffGalerie,
-                  builder: (c, s) => GalleryManagementPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-
-                // 10. LIVRE D'OR
-                GoRoute(
-                  path: 'livre-or',
-                  name: staffLivreOr,
-                  builder: (c, s) => GuestbookManagementPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-
-                // 11. INVITATION STUDIO
-                GoRoute(
-                  path: 'invitation',
-                  name: staffInvitation,
-                  builder: (c, s) => PreviewInvitationPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                  routes: [
-                    GoRoute(
-                      path: 'preview',
-                      name: staffInvitationPreview,
-                      builder: (c, s) => PreviewInvitationPage(
-                          weddingId: s.pathParameters['weddingId']!),
-                    ),
-                  ],
-                ),
-
-                // 12. PLAN DE TABLE 3D
-                GoRoute(
-                  path: 'seating',
-                  name: staffSeating,
-                  builder: (c, s) => Seating3dPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-
-                // 13. CADEAUX (staff)
-                GoRoute(
-                  path: 'cadeaux',
-                  name: staffCadeaux,
-                  builder: (c, s) => GiftsManagementPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-
-                // 14. PARAMÈTRES
-                GoRoute(
-                  path: 'parametres',
-                  name: staffSettings,
-                  builder: (c, s) => SettingsPage(
-                      weddingId: s.pathParameters['weddingId']!),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ];
+class _P {
+  static const Color bg = Color(0xFFFAFAFA);
+  static const Color surface = Colors.white;
+  static const Color rose = Color(0xFFFF4D6D);
+  static const Color roseLight = Color(0xFFFF85A1);
+  static const Color ink = Color(0xFF1A1A2E);
+  static const Color inkSoft = Color(0xFF6B7280);
+  static const Color line = Color(0xFFE5E7EB);
+  static const Color green = Color(0xFF10B981);
+  static const Color red = Color(0xFFEF4444);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WIDGET ROUTE POUR LE FORMULAIRE D'OFFRE (résolution dynamique du provider)
+// LOGIN PAGE — 2 MODES (CODE THIX sans auth / EMAIL Supabase)
 // ═══════════════════════════════════════════════════════════════════════════
-class _ProviderOfferFormRoute extends ConsumerWidget {
-  final String? editId;
-  const _ProviderOfferFormRoute({this.editId});
+class ProviderLoginPage extends ConsumerStatefulWidget {
+  const ProviderLoginPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = Supabase.instance.client.auth.currentUser;
+  ConsumerState<ProviderLoginPage> createState() => _ProviderLoginPageState();
+}
 
-    if (user == null) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFFAFAFA),
-        body: Center(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
-              const SizedBox(height: 16),
-              Text('Connexion requise', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-              const SizedBox(height: 8),
-              TextButton(
-                onPressed: () => context.push('/thix-weeding/auth/login'),
-                child: const Text('Se connecter'),
-              ),
-            ],
-          ),
-        ),
-      );
+class _ProviderLoginPageState extends ConsumerState<ProviderLoginPage> {
+  final _formKey = GlobalKey<FormState>();
+  final _codeCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _passCtrl = TextEditingController();
+
+  bool _useCodeMode = true; // ✅ MODE SANS AUTH par défaut
+  bool _isLoading = false;
+  bool _obscure = true;
+  String? _error;
+
+  @override
+  void dispose() {
+    _codeCtrl.dispose();
+    _emailCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MODE 1 : CONNEXION PAR CODE THIX (SANS AUTHENTICATION)
+  // ═══════════════════════════════════════════════════════════════════════
+  Future<void> _loginWithCode() async {
+    final code = _codeCtrl.text.trim().toUpperCase();
+
+    if (!RegExp(r'^THIX-P-\d{3}[A-Z]{2}$').hasMatch(code)) {
+      HapticFeedback.heavyImpact();
+      setState(() => _error = 'Format invalide. Exemple : THIX-P-358GH');
+      return;
     }
 
-    final providerAsync = ref.watch(myProviderProvider(user.id));
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+    HapticFeedback.mediumImpact();
 
-    return providerAsync.when(
-      loading: () => const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      ),
-      error: (e, _) => Scaffold(
-        body: Center(child: Text('Erreur: $e')),
-      ),
-      data: (provider) {
-        if (provider == null) {
-          return Scaffold(
-            body: Center(
+    try {
+      final provider =
+          await ref.read(providerServiceProvider).getProviderByCode(code);
+
+      if (provider == null) {
+        throw Exception('Code introuvable. Vérifiez votre code ou créez un compte.');
+      }
+
+      // ✅ Sauvegarde locale = session sans auth
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('thix_current_provider_id', provider.id);
+      await prefs.setString('thix_current_provider_code', provider.uniqueCode);
+      await prefs.setString('thix_current_provider_name', provider.businessName);
+
+      ref.invalidate(providerByIdProvider(provider.id));
+
+      if (!mounted) return;
+      context.go('/thix-weeding/provider/dashboard');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = e.toString().replaceFirst('Exception: ', ''));
+      HapticFeedback.heavyImpact();
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // MODE 2 : CONNEXION EMAIL (SUPABASE AUTH — OPTIONNEL)
+  // ═══════════════════════════════════════════════════════════════════════
+  Future<void> _loginWithEmail() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    setState(() {
+      _isLoading = true;
+      _error = null;
+    });
+
+    try {
+      final res = await Supabase.instance.client.auth.signInWithPassword(
+        email: _emailCtrl.text.trim(),
+        password: _passCtrl.text,
+      );
+
+      if (!mounted) return;
+
+      if (res.user != null) {
+        final provider = await ref
+    .read(providerServiceProvider)
+    .getByOwner(res.user!.id);
+
+        if (provider != null) {
+          // ✅ Synchronise aussi la session locale
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('thix_current_provider_id', provider.id);
+          await prefs.setString('thix_current_provider_code', provider.uniqueCode);
+          await prefs.setString('thix_current_provider_name', provider.businessName);
+          ref.invalidate(providerByIdProvider(provider.id));
+          if (!mounted) return;
+          context.go('/thix-weeding/provider/dashboard');
+        } else {
+          // Pas de profil lié à cet email : vérifier une session locale existante
+          final prefs = await SharedPreferences.getInstance();
+          final localId = prefs.getString('thix_current_provider_id');
+          if (!mounted) return;
+          if (localId != null && localId.isNotEmpty) {
+            context.go('/thix-weeding/provider/dashboard');
+          } else {
+            context.go('/thix-weeding/provider/register');
+          }
+        }
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _error = 'Identifiants incorrects. Réessayez.');
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: _P.bg,
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Form(
+              key: _formKey,
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
-                  const SizedBox(height: 16),
-                  Text('Aucun profil prestataire', style: TextStyle(fontWeight: FontWeight.bold)),
+                  // LOGO
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.3), blurRadius: 20, offset: const Offset(0, 10))],
+                    ),
+                    child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 40),
+                  ),
+                  const SizedBox(height: 24),
+                  Text('Espace Prestataire', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
                   const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: () => context.go('/thix-weeding/provider/register'),
-                    child: const Text('Créer mon profil'),
+                  Text('Accédez à votre tableau de bord', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft)),
+                  const SizedBox(height: 28),
+
+                  // ══ SWITCH DE MODE ══
+                  Container(
+                    padding: const EdgeInsets.all(4),
+                    decoration: BoxDecoration(color: _P.line.withOpacity(0.4), borderRadius: BorderRadius.circular(14)),
+                    child: Row(
+                      children: [
+                        _ModeTab(
+                          label: 'Code THIX',
+                          isSelected: _useCodeMode,
+                          onTap: () => setState(() => _useCodeMode = true),
+                        ),
+                        _ModeTab(
+                          label: 'Email',
+                          isSelected: !_useCodeMode,
+                          onTap: () => setState(() => _useCodeMode = false),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // ══ MESSAGE D'ERREUR ══
+                  if (_error != null)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 16),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(color: _P.red.withOpacity(0.08), borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.red.withOpacity(0.3))),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.error_outline, color: _P.red, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(_error!, style: GoogleFonts.inter(fontSize: 12, color: _P.red, fontWeight: FontWeight.w600))),
+                        ],
+                      ),
+                    ),
+
+                  // ══ MODE CODE THIX ══
+                  if (_useCodeMode) ...[
+                    TextFormField(
+                      controller: _codeCtrl,
+                      textCapitalization: TextCapitalization.characters,
+                      inputFormatters: [
+                        LengthLimitingTextInputFormatter(11),
+                        UpperCaseFormatter(),
+                      ],
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, letterSpacing: 2, color: _P.ink),
+                      textAlign: TextAlign.center,
+                      decoration: InputDecoration(
+                        hintText: 'THIX-P-000AA',
+                        hintStyle: GoogleFonts.inter(color: _P.line, fontWeight: FontWeight.w900, letterSpacing: 2),
+                        prefixIcon: const Icon(Icons.qr_code_2_rounded, color: _P.rose),
+                        filled: true,
+                        fillColor: Colors.white,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+                        enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+                        focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.rose, width: 2)),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      '💡 Votre code THIX vous a été donné lors de la création de votre compte.',
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, height: 1.4),
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _loginWithCode,
+                        style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
+                        child: _isLoading
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Accéder à mon espace', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)),
+                      ),
+                    ),
+                  ] else ...[
+                    // ══ MODE EMAIL ══
+                    TextFormField(
+                      controller: _emailCtrl,
+                      keyboardType: TextInputType.emailAddress,
+                      decoration: _inputDecoration(label: 'Email', icon: Icons.email_outlined),
+                      validator: (v) => v == null || !v.contains('@') ? 'Email invalide' : null,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _passCtrl,
+                      obscureText: _obscure,
+                      decoration: _inputDecoration(
+                        label: 'Mot de passe',
+                        icon: Icons.lock_outline,
+                        suffix: IconButton(
+                          icon: Icon(_obscure ? Icons.visibility_off : Icons.visibility, color: _P.inkSoft),
+                          onPressed: () => setState(() => _obscure = !_obscure),
+                        ),
+                      ),
+                      validator: (v) => v == null || v.length < 6 ? 'Min 6 caractères' : null,
+                    ),
+                    const SizedBox(height: 24),
+                    SizedBox(
+                      height: 56,
+                      child: ElevatedButton(
+                        onPressed: _isLoading ? null : _loginWithEmail,
+                        style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), elevation: 0),
+                        child: _isLoading
+                            ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                            : Text('Se connecter', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w700)),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 20),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text('Pas encore prestataire ?', style: GoogleFonts.inter(color: _P.inkSoft)),
+                      TextButton(
+                        onPressed: () => context.push('/thix-weeding/provider/register'),
+                        child: Text("S'inscrire", style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w800)),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          );
-        }
+          ),
+        ),
+      ),
+    );
+  }
 
-        // Mode édition : charger l'offre existante si nécessaire
-        if (editId != null) {
-          final offersAsync = ref.watch(providerOffersProvider(provider.id));
-          return offersAsync.when(
-            loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
-            error: (e, _) => Scaffold(body: Center(child: Text('Erreur chargement offre: $e'))),
-            data: (offers) {
-              final existing = offers.where((o) => o.id == editId).firstOrNull;
-              return ProviderOfferFormPage(provider: provider, existing: existing);
-            },
-          );
-        }
+  InputDecoration _inputDecoration({required String label, required IconData icon, Widget? suffix}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: Icon(icon, color: _P.inkSoft),
+      suffixIcon: suffix,
+      filled: true,
+      fillColor: Colors.white,
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.line)),
+      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: const BorderSide(color: _P.rose, width: 2)),
+    );
+  }
+}
 
-        // Mode création
-        return ProviderOfferFormPage(provider: provider);
-      },
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGETS HELPERS
+// ═══════════════════════════════════════════════════════════════════════════
+class _ModeTab extends StatelessWidget {
+  final String label;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ModeTab({required this.label, required this.isSelected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: isSelected ? _P.rose : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+          ),
+          child: Text(
+            label,
+            textAlign: TextAlign.center,
+            style: GoogleFonts.inter(
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+              color: isSelected ? Colors.white : _P.inkSoft,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class UpperCaseFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(TextEditingValue oldValue, TextEditingValue newValue) {
+    return TextEditingValue(
+      text: newValue.text.toUpperCase(),
+      selection: newValue.selection,
     );
   }
 }
