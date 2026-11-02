@@ -1,10 +1,11 @@
 // lib/presentation/thix_weeding/pages/staff/staff_dashboard_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — STAFF DASHBOARD (PRODUCTION v2 — USD + ÉQUILIBRÉ)
+// THIX WEDDING & EVENTS — STAFF DASHBOARD (PRODUCTION v4)
+// ✅ Menu traiteur : section dédiée + stats + top plats + accès rapide
 // ✅ Lit balancedSummaryProvider (partagé avec budget_page) → chiffres identiques
 // ✅ Restant = Budget − Payé ; % = Payé / Budget ; Dette = Dépensé − Payé
 // ✅ Devise USD ($) partout (budget, paiements, prestataires)
-// ✅ Badge Dépassement / Dette selon l'état réel
+// ✅ Section « Expérience des invités » → Playlist, Menu, Navette, Dress code, FAQ
 // ============================================================================
 import 'dart:async';
 
@@ -12,6 +13,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weeding_models.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
@@ -89,7 +91,95 @@ class _Routes {
   static String myWeddings() => '/thix-weeding/staff/my-weddings';
   static String seating(String id) => '${_base(id)}/seating';
   static String cadeaux(String id) => '${_base(id)}/cadeaux';
+  static String playlist(String id) => '${_base(id)}/playlist';
+  static String menu(String id) => '${_base(id)}/menu';
+  static String info(String id, String kind) => '${_base(id)}/contenu/$kind';
 }
+
+// ============================================================================
+// COMPTEURS SUPPLÉMENTAIRES
+// ============================================================================
+final _playlistPendingProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
+  try {
+    final r = await Supabase.instance.client
+        .from('thix_weeding_playlist')
+        .select('id')
+        .eq('wedding_id', weddingId)
+        .eq('status', 'pending');
+    return (r as List).length;
+  } catch (_) {
+    return 0;
+  }
+});
+
+final _menuCountProvider =
+    FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
+  try {
+    final r = await Supabase.instance.client
+        .from('thix_weeding_menu_items')
+        .select('id')
+        .eq('wedding_id', weddingId);
+    return (r as List).length;
+  } catch (_) {
+    return 0;
+  }
+});
+
+// ✅ NOUVEAU : Stats détaillées du menu
+final _menuStatsProvider =
+    FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, weddingId) async {
+  try {
+    final c = Supabase.instance.client;
+    final items = await c
+        .from('thix_weeding_menu_items')
+        .select('*')
+        .eq('wedding_id', weddingId);
+    
+    final total = (items as List).length;
+    final validated = items.where((i) => i['is_validated'] == true).length;
+    final public = items.where((i) => i['is_public'] == true).length;
+    
+    // Compter les votes
+    final votes = await c
+        .from('thix_weeding_menu_votes')
+        .select('menu_item_id')
+        .eq('wedding_id', weddingId);
+    
+    final voteCounts = <String, int>{};
+    for (final v in votes) {
+      final id = v['menu_item_id'] as String;
+      voteCounts[id] = (voteCounts[id] ?? 0) + 1;
+    }
+    
+    final totalVotes = voteCounts.values.fold(0, (s, v) => s + v);
+    
+    // Top 3 plats
+    final topItems = items
+        .map((i) => {
+              'item': i,
+              'votes': voteCounts[i['id'] as String] ?? 0,
+            })
+        .toList()
+      ..sort((a, b) => (b['votes'] as int).compareTo(a['votes'] as int));
+    
+    return {
+      'total': total,
+      'validated': validated,
+      'public': public,
+      'totalVotes': totalVotes,
+      'top3': topItems.take(3).where((t) => (t['votes'] as int) > 0).toList(),
+    };
+  } catch (e) {
+    return {
+      'total': 0,
+      'validated': 0,
+      'public': 0,
+      'totalVotes': 0,
+      'top3': [],
+    };
+  }
+});
 
 // ============================================================================
 // PAGE PRINCIPALE
@@ -135,7 +225,10 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
     ref.invalidate(expensesProvider(id));
     ref.invalidate(dashboardStatsProvider(id));
     ref.invalidate(paymentsSummaryProvider(id));
-    ref.invalidate(balancedSummaryProvider(id)); // ← NOUVEAU
+    ref.invalidate(balancedSummaryProvider(id));
+    ref.invalidate(_playlistPendingProvider(id));
+    ref.invalidate(_menuCountProvider(id));
+    ref.invalidate(_menuStatsProvider(id));
   }
 
   @override
@@ -158,6 +251,9 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
           final payments = ref.watch(paymentsProvider(id)).valueOrNull ?? const [];
           final budget = ref.watch(budgetProvider(id)).valueOrNull;
           final balanced = ref.watch(balancedSummaryProvider(id)).valueOrNull;
+          final playlistPending = ref.watch(_playlistPendingProvider(id)).valueOrNull ?? 0;
+          final menuCount = ref.watch(_menuCountProvider(id)).valueOrNull ?? 0;
+          final menuStats = ref.watch(_menuStatsProvider(id)).valueOrNull ?? {};
 
           final unread = messages.where((m) => !m.isRead && m.senderType == 'guest').length;
 
@@ -192,18 +288,56 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
                           summary: balanced,
                           onTap: () => context.push(_Routes.budget(id)),
                         ),
+                        
+                        // ✅ NOUVEAU : Section Menu & Traiteur
+                        if (menuCount > 0) ...[
+                          const SizedBox(height: 24),
+                          _SectionTitle('Menu & Traiteur', 
+                              icon: Icons.restaurant_menu_outlined,
+                              actionLabel: 'Gérer',
+                              onAction: () => context.push(_Routes.menu(id))),
+                          const SizedBox(height: 12),
+                          _MenuCard(
+                            weddingId: id,
+                            stats: menuStats,
+                            onTap: () => context.push(_Routes.menu(id)),
+                          ),
+                        ],
+                        
                         const SizedBox(height: 24),
                         _SectionTitle('Tous les modules', icon: Icons.apps),
                         const SizedBox(height: 12),
                         _ModulesGrid(
                           weddingId: id,
                           wedding: wedding,
+                          guestExperience: false,
                           guestsCount: guests.length,
                           vendorsBooked: vendors.where((v) => v.isBooked).length,
                           pendingTasks: tasks.where((t) => !t.isDone).length,
                           photosCount: gallery.length,
                           guestbookCount: guestbook.where((g) => g.isApproved).length,
                           unreadMessages: unread,
+                          playlistPending: playlistPending,
+                          menuCount: menuCount,
+                        ),
+                        const SizedBox(height: 24),
+                        _SectionTitle('Expérience des invités', icon: Icons.celebration_outlined),
+                        const SizedBox(height: 4),
+                        Text('Ce que vos invités voient sur leur accueil',
+                            style: GoogleFonts.inter(fontSize: 11.5, color: _Royal.text2)),
+                        const SizedBox(height: 12),
+                        _ModulesGrid(
+                          weddingId: id,
+                          wedding: wedding,
+                          guestExperience: true,
+                          guestsCount: guests.length,
+                          vendorsBooked: vendors.where((v) => v.isBooked).length,
+                          pendingTasks: tasks.where((t) => !t.isDone).length,
+                          photosCount: gallery.length,
+                          guestbookCount: guestbook.where((g) => g.isApproved).length,
+                          unreadMessages: unread,
+                          playlistPending: playlistPending,
+                          menuCount: menuCount,
                         ),
                         const SizedBox(height: 24),
                         _SectionTitle('Checklist préparatifs',
@@ -248,6 +382,211 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ✅ NOUVEAU : Carte Menu & Traiteur
+class _MenuCard extends StatelessWidget {
+  final String weddingId;
+  final Map<String, dynamic> stats;
+  final VoidCallback onTap;
+
+  const _MenuCard({
+    required this.weddingId,
+    required this.stats,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final total = stats['total'] as int? ?? 0;
+    final validated = stats['validated'] as int? ?? 0;
+    final public = stats['public'] as int? ?? 0;
+    final totalVotes = stats['totalVotes'] as int? ?? 0;
+    final top3 = (stats['top3'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _Royal.cardBox(),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header avec stats
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      gradient: _Royal.goldG,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.restaurant_menu, color: Colors.white, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Menu du mariage',
+                            style: GoogleFonts.inter(
+                                fontSize: 15, fontWeight: FontWeight.w700)),
+                        Text('$total plat${total > 1 ? 's' : ''} • $totalVotes vote${totalVotes > 1 ? 's' : ''}',
+                            style: GoogleFonts.inter(fontSize: 11, color: _Royal.text2)),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: _Royal.text2),
+                ],
+              ),
+              const SizedBox(height: 16),
+              
+              // Stats row
+              Row(
+                children: [
+                  _MenuStatChip(label: 'Total', value: '$total', color: _Royal.blue),
+                  const SizedBox(width: 8),
+                  _MenuStatChip(label: 'Validés', value: '$validated', color: _Royal.green),
+                  const SizedBox(width: 8),
+                  _MenuStatChip(label: 'Publics', value: '$public', color: _Royal.purple),
+                  const SizedBox(width: 8),
+                  _MenuStatChip(label: 'Votes', value: '$totalVotes', color: _Royal.gold),
+                ],
+              ),
+              
+              // Top 3 plats
+              if (top3.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [_Royal.gold.withOpacity(0.1), _Royal.gold.withOpacity(0.05)],
+                    ),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _Royal.gold.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.emoji_events, size: 16, color: _Royal.gold),
+                          const SizedBox(width: 6),
+                          Text('Top 3 des plats',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                  color: _Royal.gold)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ...top3.asMap().entries.map((entry) {
+                        final i = entry.key;
+                        final data = entry.value;
+                        final item = data['item'] as Map<String, dynamic>;
+                        final votes = data['votes'] as int;
+                        final name = item['name'] as String? ?? 'Sans nom';
+                        
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: i < top3.length - 1 ? 8 : 0),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 24,
+                                height: 24,
+                                decoration: BoxDecoration(
+                                  color: i == 0 ? _Royal.gold : (i == 1 ? Colors.grey.shade400 : Colors.brown.shade400),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Center(
+                                  child: Text('${i + 1}',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white)),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Text(name,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 12, fontWeight: FontWeight.w600)),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: _Royal.rose.withOpacity(0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.favorite, size: 11, color: _Royal.rose),
+                                    const SizedBox(width: 3),
+                                    Text('$votes',
+                                        style: GoogleFonts.inter(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w800,
+                                            color: _Royal.rose)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MenuStatChip extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MenuStatChip({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.08),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Column(
+          children: [
+            Text(value,
+                style: GoogleFonts.inter(
+                    fontSize: 16, fontWeight: FontWeight.w900, color: color)),
+            Text(label,
+                style: GoogleFonts.inter(
+                    fontSize: 9, color: color.withOpacity(0.8), fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }
@@ -669,7 +1008,7 @@ class _RsvpChip extends StatelessWidget {
 }
 
 // ============================================================================
-// BUDGET CARD — ÉQUILIBRÉE (USD) — lit balancedSummaryProvider
+// BUDGET CARD
 // ============================================================================
 class _BudgetCard extends StatelessWidget {
   final double totalBudget;
@@ -684,7 +1023,6 @@ class _BudgetCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Aucun budget défini → carte d'invitation à créer
     if (totalBudget <= 0) {
       return Material(
         color: Colors.white,
@@ -719,7 +1057,7 @@ class _BudgetCard extends StatelessWidget {
 
     final spent = summary?.spent ?? 0.0;
     final paid = summary?.paid ?? 0.0;
-    final remaining = summary?.remaining ?? totalBudget; // budget − paid
+    final remaining = summary?.remaining ?? totalBudget;
     final debt = summary?.debt ?? 0.0;
 
     final cashRatio = totalBudget > 0 ? (paid / totalBudget).clamp(0.0, 1.0) : 0.0;
@@ -754,7 +1092,6 @@ class _BudgetCard extends StatelessWidget {
             Text('Budget global : ${_fmtMoney(totalBudget)}',
                 style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _Royal.text2)),
             const SizedBox(height: 10),
-            // Barre principale : décaissé
             ClipRRect(
                 borderRadius: BorderRadius.circular(6),
                 child: LinearProgressIndicator(
@@ -763,7 +1100,6 @@ class _BudgetCard extends StatelessWidget {
                     backgroundColor: _Royal.border,
                     valueColor: AlwaysStoppedAnimation(over ? _Royal.rose : _Royal.green))),
             const SizedBox(height: 5),
-            // Barre secondaire : engagé
             ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: LinearProgressIndicator(
@@ -835,33 +1171,40 @@ class _MoneyCell extends StatelessWidget {
 }
 
 // ============================================================================
-// MODULES GRID (14 modules tous connectés)
+// MODULES GRID
 // ============================================================================
 class _ModulesGrid extends StatelessWidget {
   final String weddingId;
   final WeddingModel wedding;
+  final bool guestExperience;
   final int guestsCount;
   final int vendorsBooked;
   final int pendingTasks;
   final int photosCount;
   final int guestbookCount;
   final int unreadMessages;
+  final int playlistPending;
+  final int menuCount;
 
   const _ModulesGrid({
     required this.weddingId,
     required this.wedding,
+    required this.guestExperience,
     required this.guestsCount,
     required this.vendorsBooked,
     required this.pendingTasks,
     required this.photosCount,
     required this.guestbookCount,
     required this.unreadMessages,
+    required this.playlistPending,
+    required this.menuCount,
   });
 
   @override
   Widget build(BuildContext context) {
     final id = weddingId;
-    final modules = <_Module>[
+
+    final core = <_Module>[
       _Module('Invités', '$guestsCount', Icons.people_outline, _Royal.royal, _Routes.invites(id)),
       _Module('Invitation', wedding.invitationPublished ? 'Publiée' : 'Brouillon', Icons.mail_outline, _Royal.roseG, _Routes.invitation(id)),
       _Module('Prestataires', '$vendorsBooked réservés', Icons.storefront_outlined, _Royal.goldG, _Routes.prestataires(id)),
@@ -877,6 +1220,18 @@ class _ModulesGrid extends StatelessWidget {
       _Module('Paramètres', 'Réglages', Icons.settings_outlined, LinearGradient(colors: [Colors.grey.shade600, Colors.grey.shade800]), _Routes.parametres(id)),
       _Module('Mes mariages', 'Multi-événements', Icons.favorite_border, _Royal.roseG, _Routes.myWeddings()),
     ];
+
+    final guestMods = <_Module>[
+      _Module('Playlist', playlistPending > 0 ? '$playlistPending à valider' : 'Musique', Icons.queue_music_rounded, _Royal.roseG, _Routes.playlist(id), badge: playlistPending),
+      _Module('Menu', menuCount > 0 ? '$menuCount plats' : 'Repas', Icons.restaurant_menu_rounded, _Royal.goldG, _Routes.menu(id)),
+      _Module('Navette', 'Transport', Icons.directions_bus_outlined, _Royal.royal, _Routes.info(id, 'navette')),
+      _Module('Dress code', 'Tenue', Icons.checkroom_outlined, _Royal.roseG, _Routes.info(id, 'dress_code')),
+      _Module('FAQ', 'Questions', Icons.help_outline_rounded, _Royal.greenG, _Routes.info(id, 'faq')),
+      _Module('Remerciements', 'Un mot', Icons.volunteer_activism_outlined, _Royal.goldG, _Routes.info(id, 'thanks')),
+      _Module('Live', 'En direct', Icons.podcasts_outlined, _Royal.royal, _Routes.info(id, 'live')),
+    ];
+
+    final modules = guestExperience ? guestMods : core;
 
     return GridView.builder(
       shrinkWrap: true,
@@ -1079,7 +1434,7 @@ class _GalleryStrip extends StatelessWidget {
 }
 
 // ============================================================================
-// VENDORS CARD (USD)
+// VENDORS CARD
 // ============================================================================
 class _VendorsCard extends StatelessWidget {
   final List<VendorModel> vendors;
@@ -1127,7 +1482,7 @@ class _VendorsCard extends StatelessWidget {
 }
 
 // ============================================================================
-// PAYMENTS CARD (USD)
+// PAYMENTS CARD
 // ============================================================================
 class _PaymentsCard extends StatelessWidget {
   final List<PaymentModel> payments;
@@ -1301,7 +1656,6 @@ class _ErrorView extends StatelessWidget {
 String _fmtDate(DateTime d) =>
     '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
-/// Format USD : $2,000 ou $1,234.56 (centimes seulement si nécessaires)
 String _fmtMoney(double v) {
   final neg = v < 0;
   final abs = v.abs();
