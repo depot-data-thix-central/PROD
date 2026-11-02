@@ -1,7 +1,7 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_register_simple.dart
 // ============================================================================
 // THIX WEDDING — INSCRIPTION PRESTATAIRE SIMPLIFIÉE (SANS AUTH)
-// ✅ Formulaire direct en 1 page (nom, email, téléphone, catégorie, ville)
+// ✅ Formulaire direct en 1 page
 // ✅ Génération auto du code unique Thix-CAT-XXX
 // ✅ Pas d'authentification Supabase requise (userId = null)
 // ✅ Redirection vers le dashboard après création
@@ -84,9 +84,9 @@ class _ProviderRegisterSimplePageState
     HapticFeedback.mediumImpact();
 
     try {
-      // ✅ SOLUTION PROPRE : userId = null (la colonne est nullable en BDD)
+      // ✅ SOLUTION : userId = null (la colonne est nullable en BDD)
       final provider = await ref.read(createProviderProvider)(
-        userId: null, 
+        userId: null,
         category: _category!,
         businessName: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
@@ -106,7 +106,6 @@ class _ProviderRegisterSimplePageState
       );
 
       if (!mounted) return;
-      // Redirection vers le dashboard (le shell gérera l'affichage même sans user_id)
       context.go('/thix-weeding/provider/dashboard');
       
     } catch (e) {
