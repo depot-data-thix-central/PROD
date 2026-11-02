@@ -1,697 +1,155 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_dashboard_page.dart
 // ============================================================================
-// THIX WEDDING PROVIDER DASHBOARD (PRODUCTION ENTERPRISE)
-// ✅ Stats temps réel (Revenus, Réservations, Tâches)
-// ✅ Design glassmorphism blanc/rose premium
-// ✅ Actions rapides et alertes de validation
-// ✅ FIX : IconData au lieu de Icon dans _VerificationBadge
-// ✅ FIX : SliverToBoxAdapter correct pour _EmptyState des tâches
+// THIX WEDDING — DASHBOARD PRESTATAIRE (PRODUCTION ENTERPRISE)
+// ✅ Statistiques réelles depuis Supabase (Réservations, Revenus, Tâches)
+// ✅ Actions rapides (Ajouter médias, Voir demandes)
 // ============================================================================
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 
-// ═══════════════════════════════════════════════════════════════════════════
-// PALETTE GLASSMORPHISM
-// ═══════════════════════════════════════════════════════════════════════════
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
   static const Color surface = Colors.white;
   static const Color rose = Color(0xFFFF4D6D);
-  static const Color roseLight = Color(0xFFFF85A1);
-  static const Color roseSoft = Color(0xFFFFF0F3);
   static const Color ink = Color(0xFF1A1A2E);
   static const Color inkSoft = Color(0xFF6B7280);
   static const Color line = Color(0xFFE5E7EB);
   static const Color green = Color(0xFF10B981);
+  static const Color blue = Color(0xFF0B3B8F);
   static const Color amber = Color(0xFFF59E0B);
 }
 
 class ProviderDashboardPage extends ConsumerWidget {
   final ThixProviderModel provider;
-
   const ProviderDashboardPage({super.key, required this.provider});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statsAsync = ref.watch(providerStatsProvider(provider.id));
-    final tasksAsync = ref.watch(providerTasksProvider(
-      ProviderTasksParams(providerId: provider.id),
-    ));
-    final reservationsAsync = ref.watch(providerReservationsProvider(
-      ProviderReservationsParams(providerId: provider.id),
-    ));
+    final reservationsAsync = ref.watch(providerReservationsProvider(ProviderReservationsParams(providerId: provider.id)));
+    final tasksAsync = ref.watch(providerTasksProvider(ProviderTasksParams(providerId: provider.id)));
 
-    return Scaffold(
-      backgroundColor: _P.bg,
-      body: CustomScrollView(
-        physics: const BouncingScrollPhysics(),
-        slivers: [
-          // ── HEADER ─────────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: _DashboardHeader(provider: provider),
-          ),
-
-          // ── ALERTES (Validation en attente) ────────────────────────────
-          if (provider.verificationStatus == ProviderVerificationStatus.pending)
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: _ValidationAlertCard(),
-              ),
-            ),
-
-          // ── STATS CARDS ────────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: statsAsync.when(
-                data: (stats) => _StatsGrid(stats: stats),
-                loading: () => const SizedBox(
-                  height: 120,
-                  child: Center(child: CircularProgressIndicator(color: _P.rose)),
-                ),
-                error: (e, _) => Center(child: Text('Erreur stats: $e')),
-              ),
-            ),
-          ),
-
-          // ── PROCHAINES RÉSERVATIONS ────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: _SectionTitle(title: 'Prochains événements', icon: Icons.event_note),
-            ),
-          ),
-          SliverToBoxAdapter(
-            child: SizedBox(
-              height: 160,
-              child: reservationsAsync.when(
-                data: (reservations) {
-                  final upcoming = reservations
-                      .where((r) =>
-                          r.status == ReservationStatus.confirmed ||
-                          r.status == ReservationStatus.pending)
-                      .take(5)
-                      .toList();
-                  if (upcoming.isEmpty) {
-                    return const _EmptyState(message: 'Aucune réservation à venir');
-                  }
-                  return ListView.separated(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                    scrollDirection: Axis.horizontal,
-                    itemCount: upcoming.length,
-                    separatorBuilder: (_, __) => const SizedBox(width: 12),
-                    itemBuilder: (_, i) => _ReservationCard(reservation: upcoming[i]),
-                  );
-                },
-                loading: () =>
-                    const Center(child: CircularProgressIndicator(color: _P.rose)),
-                error: (e, _) => Center(child: Text('Erreur: $e')),
-              ),
-            ),
-          ),
-
-          // ── TÂCHES RÉCENTES ────────────────────────────────────────────
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: _SectionTitle(title: 'Tâches à faire', icon: Icons.checklist_rtl),
-            ),
-          ),
-          SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            sliver: tasksAsync.when(
-              data: (tasks) {
-                final activeTasks = tasks
-                    .where((t) => t.status != TaskStatus.completed)
-                    .take(5)
-                    .toList();
-                if (activeTasks.isEmpty) {
-                  // ✅ FIX : retour direct d'un SliverToBoxAdapter (pas de .toSliver)
-                  return const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: _EmptyState(message: 'Aucune tâche en cours'),
-                    ),
-                  );
-                }
-                return SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (context, i) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: _TaskCard(task: activeTasks[i]),
-                    ),
-                    childCount: activeTasks.length,
-                  ),
-                );
-              },
-              loading: () => const SliverToBoxAdapter(
-                child: Center(child: CircularProgressIndicator(color: _P.rose)),
-              ),
-              error: (e, _) =>
-                  SliverToBoxAdapter(child: Center(child: Text('Erreur: $e'))),
-            ),
-          ),
-
-          const SliverToBoxAdapter(child: SizedBox(height: 100)),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// HEADER
-// ═══════════════════════════════════════════════════════════════════════════
-class _DashboardHeader extends StatelessWidget {
-  final ThixProviderModel provider;
-  const _DashboardHeader({required this.provider});
-
-  @override
-  Widget build(BuildContext context) {
-    final topPad = MediaQuery.of(context).padding.top;
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, topPad + 20, 16, 24),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [_P.rose, _P.roseLight],
-        ),
-        borderRadius: const BorderRadius.only(
-          bottomLeft: Radius.circular(32),
-          bottomRight: Radius.circular(32),
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Bonjour 👋',
-                    style: GoogleFonts.inter(
-                      color: Colors.white.withOpacity(0.9),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    provider.businessName,
-                    style: GoogleFonts.inter(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
-                    ),
-                  ),
-                ],
-              ),
-              _VerificationBadge(
-                level: provider.level,
-                status: provider.verificationStatus,
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.2),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.white.withOpacity(0.3)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.qr_code_2_rounded, color: Colors.white, size: 28),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Votre Code Unique',
-                      style: GoogleFonts.inter(
-                        color: Colors.white.withOpacity(0.9),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      provider.uniqueCode,
-                      style: GoogleFonts.inter(
-                        color: Colors.white,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BADGE DE VÉRIFICATION
-// ═══════════════════════════════════════════════════════════════════════════
-class _VerificationBadge extends StatelessWidget {
-  final TrackingLevel level;
-  final ProviderVerificationStatus status;
-
-  const _VerificationBadge({required this.level, required this.status});
-
-  @override
-  Widget build(BuildContext context) {
-    String label = level.displayName;
-    Color bgColor = Colors.white.withOpacity(0.2);
-    // ✅ FIX : IconData (et non Icon)
-    IconData icon = Icons.verified_outlined;
-
-    if (status == ProviderVerificationStatus.pending) {
-      label = 'En attente';
-      bgColor = Colors.amber.withOpacity(0.8);
-      icon = Icons.hourglass_empty;
-    } else if (status == ProviderVerificationStatus.rejected) {
-      label = 'Rejeté';
-      bgColor = Colors.red.withOpacity(0.8);
-      icon = Icons.error_outline;
-    } else if (level == TrackingLevel.platinum) {
-      bgColor = Colors.white.withOpacity(0.9);
-      icon = Icons.workspace_premium;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.5)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: Colors.white, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: GoogleFonts.inter(
-              color: Colors.white,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// STATS GRID
-// ═══════════════════════════════════════════════════════════════════════════
-class _StatsGrid extends StatelessWidget {
-  final Map<String, dynamic> stats;
-  const _StatsGrid({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final revenue = (stats['total_revenue'] as num?)?.toDouble() ?? 0.0;
-    final reservations = stats['total_reservations'] as int? ?? 0;
-    final tasks = stats['total_tasks'] as int? ?? 0;
-    final completedTasks = stats['completed_tasks'] as int? ?? 0;
-
-    return Row(
-      children: [
-        Expanded(
-          child: _StatCard(
-            title: 'Revenus',
-            value: '\$${revenue.toStringAsFixed(0)}',
-            icon: Icons.attach_money,
-            color: _P.green,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            title: 'Réservations',
-            value: '$reservations',
-            icon: Icons.event_available,
-            color: _P.rose,
-          ),
-        ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _StatCard(
-            title: 'Tâches',
-            value: '$completedTasks/$tasks',
-            icon: Icons.task_alt,
-            color: _P.amber,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _StatCard extends StatelessWidget {
-  final String title;
-  final String value;
-  final IconData icon;
-  final Color color;
-
-  const _StatCard({
-    required this.title,
-    required this.value,
-    required this.icon,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-        border: Border.all(color: _P.line),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            value,
-            style: GoogleFonts.inter(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
-              color: _P.ink,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            title,
-            style: GoogleFonts.inter(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _P.inkSoft,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CARDS
-// ═══════════════════════════════════════════════════════════════════════════
-class _ReservationCard extends StatelessWidget {
-  final ProviderReservationModel reservation;
-  const _ReservationCard({required this.reservation});
-
-  @override
-  Widget build(BuildContext context) {
-    final dateStr = DateFormat('dd MMM yyyy', 'fr_FR').format(reservation.eventDate);
-    final isPending = reservation.status == ReservationStatus.pending;
-
-    return Container(
-      width: 200,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isPending ? _P.amber : _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.calendar_today,
-                size: 16,
-                color: isPending ? _P.amber : _P.green,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                dateStr,
-                style: GoogleFonts.inter(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: _P.ink,
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Text(
-            reservation.clientName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-              color: _P.ink,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            reservation.eventType ?? 'Événement',
-            style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
-          ),
-          const Spacer(),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isPending ? _P.amber.withOpacity(0.1) : _P.green.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              isPending ? 'En attente' : 'Confirmé',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: isPending ? _P.amber : _P.green,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TaskCard extends StatelessWidget {
-  final ProviderTaskModel task;
-  const _TaskCard({required this.task});
-
-  @override
-  Widget build(BuildContext context) {
-    final isHighPriority = task.priority == 1;
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isHighPriority ? _P.rose.withOpacity(0.1) : _P.roseSoft,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Icon(
-              isHighPriority ? Icons.priority_high : Icons.task,
-              color: _P.rose,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  task.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _P.ink,
-                  ),
-                ),
+    return RefreshIndicator(
+      onRefresh: () async {
+        ref.invalidate(providerStatsProvider(provider.id));
+        ref.invalidate(providerReservationsProvider(ProviderReservationsParams(providerId: provider.id)));
+        ref.invalidate(providerTasksProvider(ProviderTasksParams(providerId: provider.id)));
+      },
+      child: Scaffold(
+        backgroundColor: _P.bg,
+        body: CustomScrollView(
+          physics: const BouncingScrollPhysics(),
+          slivers: [
+            SliverAppBar(
+              pinned: true, expandedHeight: 140, backgroundColor: _P.rose,
+              flexibleSpace: FlexibleSpaceBar(background: Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [_P.rose, Color(0xFFFF85A1)], begin: Alignment.topLeft, end: Alignment.bottomRight)), child: SafeArea(child: Padding(padding: const EdgeInsets.fromLTRB(20, 20, 20, 10), child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
+                Text('Bonjour 👋', style: GoogleFonts.inter(fontSize: 14, color: Colors.white70, fontWeight: FontWeight.w600)),
                 const SizedBox(height: 4),
-                Text(
-                  DateFormat('dd MMM, HH:mm', 'fr_FR').format(task.dueDateTime),
-                  style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
-                ),
-              ],
+                Text(provider.businessName, style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+              ]))))),
             ),
-          ),
-          Icon(Icons.chevron_right, color: _P.inkSoft),
-        ],
+            SliverPadding(
+              padding: const EdgeInsets.all(16),
+              sliver: SliverList(delegate: SliverChildListDelegate([
+                // ── STATS GRID ───────────────────────────────────────────
+                statsAsync.when(
+                  data: (stats) => GridView.count(crossAxisCount: 2, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.3, children: [
+                    _StatCard(title: 'Réservations', value: '${stats['total_reservations'] ?? 0}', icon: Icons.event_note_rounded, color: _P.blue),
+                    _StatCard(title: 'Confirmées', value: '${stats['confirmed_reservations'] ?? 0}', icon: Icons.check_circle_rounded, color: _P.green),
+                    _StatCard(title: 'Revenus', value: '\$${NumberFormat('#,###').format(stats['total_revenue'] ?? 0)}', icon: Icons.attach_money_rounded, color: _P.amber),
+                    _StatCard(title: 'Tâches actives', value: '${(stats['total_tasks'] ?? 0) - (stats['completed_tasks'] ?? 0)}', icon: Icons.assignment_turned_in_rounded, color: _P.rose),
+                  ]),
+                  loading: () => const Center(child: Padding(padding: EdgeInsets.all(30), child: CircularProgressIndicator())),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                
+                const SizedBox(height: 24),
+                Text('Actions rapides', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: _ActionTile(icon: Icons.add_photo_alternate_outlined, label: 'Ajouter\nmédias', color: _P.blue, onTap: () => context.go('/thix-weeding/provider/gallery'))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _ActionTile(icon: Icons.calendar_month_outlined, label: 'Voir\ndemandes', color: _P.green, onTap: () => context.go('/thix-weeding/provider/reservations'))),
+                  const SizedBox(width: 12),
+                  Expanded(child: _ActionTile(icon: Icons.task_alt_outlined, label: 'Mes\ntâches', color: _P.rose, onTap: () => context.go('/thix-weeding/provider/tasks'))),
+                ]),
+
+                const SizedBox(height: 24),
+                Row(children: [
+                  Text('Dernières activités', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
+                  const Spacer(),
+                  TextButton(onPressed: () => context.go('/thix-weeding/provider/reservations'), child: Text('Tout voir', style: GoogleFonts.inter(color: _P.rose, fontWeight: FontWeight.w700))),
+                ]),
+                const SizedBox(height: 8),
+                
+                // ── RECENT RESERVATIONS ──────────────────────────────────
+                reservationsAsync.when(
+                  data: (reservations) => reservations.isEmpty
+                      ? _EmptyState(icon: Icons.event_busy_outlined, message: 'Aucune réservation pour le moment.')
+                      : Column(children: reservations.take(3).map((r) => _ActivityItem(
+                          title: r.clientName, subtitle: DateFormat('dd MMM yyyy').format(r.eventDate), status: r.status.name, isPositive: r.status == ReservationStatus.confirmed,
+                        )).toList()),
+                  loading: () => const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator())),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                
+                const SizedBox(height: 16),
+                
+                // ── RECENT TASKS ─────────────────────────────────────────
+                tasksAsync.when(
+                  data: (tasks) => tasks.isEmpty
+                      ? _EmptyState(icon: Icons.task_outlined, message: 'Aucune tâche assignée.')
+                      : Column(children: tasks.where((t) => t.status != TaskStatus.completed).take(2).map((t) => _ActivityItem(
+                          title: t.title, subtitle: 'Échéance: ${DateFormat('dd MMM HH:mm').format(t.dueDateTime)}', status: t.status.name, isPositive: false,
+                        )).toList()),
+                  loading: () => const SizedBox.shrink(),
+                  error: (_, __) => const SizedBox.shrink(),
+                ),
+                
+                const SizedBox(height: 40),
+              ])),
+            ),
+          ],
+        ),
       ),
     );
   }
 }
 
-class _ValidationAlertCard extends StatelessWidget {
-  const _ValidationAlertCard();
-
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGETS INTERNES
+// ═══════════════════════════════════════════════════════════════════════════
+class _StatCard extends StatelessWidget {
+  final String title; final String value; final IconData icon; final Color color;
+  const _StatCard({required this.title, required this.value, required this.icon, required this.color});
   @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEF3C7),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: const Icon(
-              Icons.pending_actions,
-              color: Color(0xFFD97706),
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Validation en cours',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: const Color(0xFF92400E),
-                  ),
-                ),
-                Text(
-                  'Votre dossier est en cours de vérification par notre équipe.',
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: const Color(0xFFB45309),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(padding: const EdgeInsets.all(16), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(18), border: Border.all(color: _P.line), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: color, size: 20)), const Spacer(), Text(value, style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)), Text(title, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600, color: _P.inkSoft))]));
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  const _SectionTitle({required this.title, required this.icon});
-
+class _ActionTile extends StatelessWidget {
+  final IconData icon; final String label; final Color color; final VoidCallback onTap;
+  const _ActionTile({required this.icon, required this.label, required this.color, required this.onTap});
   @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: _P.rose),
-        const SizedBox(width: 8),
-        Text(
-          title,
-          style: GoogleFonts.inter(
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-            color: _P.ink,
-            letterSpacing: -0.3,
-          ),
-        ),
-        const Spacer(),
-        Text(
-          'Voir tout',
-          style: GoogleFonts.inter(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: _P.rose,
-          ),
-        ),
-      ],
-    );
-  }
+  Widget build(BuildContext context) => GestureDetector(onTap: onTap, child: Container(height: 90, decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: _P.line), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 3))]), child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [Container(padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: color.withOpacity(0.1), shape: BoxShape.circle), child: Icon(icon, color: color, size: 22)), const SizedBox(height: 8), Text(label, textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _P.ink, height: 1.2))])));
+}
+
+class _ActivityItem extends StatelessWidget {
+  final String title; final String subtitle; final String status; final bool isPositive;
+  const _ActivityItem({required this.title, required this.subtitle, required this.status, required this.isPositive});
+  @override
+  Widget build(BuildContext context) => Container(margin: const EdgeInsets.only(bottom: 8), padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line)), child: Row(children: [Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(title, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink)), Text(subtitle, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft))])), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4), decoration: BoxDecoration(color: (isPositive ? _P.green : _P.amber).withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Text(status.toUpperCase(), style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: isPositive ? _P.green : _P.amber)))]));
 }
 
 class _EmptyState extends StatelessWidget {
-  final String message;
-  const _EmptyState({required this.message});
-
+  final IconData icon; final String message;
+  const _EmptyState({required this.icon, required this.message});
   @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.inbox_outlined, size: 48, color: _P.line),
-          const SizedBox(height: 8),
-          Text(
-            message,
-            style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget build(BuildContext context) => Container(padding: const EdgeInsets.all(20), decoration: BoxDecoration(color: Colors.white.withOpacity(0.5), borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line, style: BorderStyle.solid)), child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [Icon(icon, color: _P.inkSoft, size: 18), const SizedBox(width: 8), Text(message, style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontStyle: FontStyle.italic))]));
 }
