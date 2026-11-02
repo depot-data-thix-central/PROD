@@ -1,9 +1,10 @@
 // lib/presentation/thix_weeding/pages/staff/parametres/settings_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — SETTINGS (PRODUCTION v2)
+// THIX WEDDING & EVENTS — SETTINGS (PRODUCTION v3)
 // ✅ Code d'accès THIX-W-JJMM-XXXYY intégré
 // ✅ Labels harmonisés avec la home page
 // ✅ _mono() helper pour tous les textes monospace
+// ✅ NOUVEAU : Bouton Publier pour quitter le mode Brouillon
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -92,13 +93,71 @@ final settingsProvider = FutureProvider.family<WeddingModel, String>((ref, weddi
 // ============================================================================
 // PAGE PRINCIPALE
 // ============================================================================
-class SettingsPage extends ConsumerWidget {
+class SettingsPage extends ConsumerStatefulWidget {
   final String weddingId;
   const SettingsPage({super.key, required this.weddingId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(settingsProvider(weddingId));
+  ConsumerState<SettingsPage> createState() => _SettingsPageState();
+}
+
+class _SettingsPageState extends ConsumerState<SettingsPage> {
+  bool _isPublishing = false;
+
+  Future<void> _publishWedding() async {
+    setState(() => _isPublishing = true);
+    
+    try {
+      // Mettre à jour le statut en publié
+      await Supabase.instance.client
+          .from('thix_weeding_weddings')
+          .update({
+            'invitation_published': true,
+            'updated_at': DateTime.now().toIso8601String(),
+          })
+          .eq('id', widget.weddingId);
+      
+      if (!mounted) return;
+      
+      // Invalider le cache pour rafraîchir
+      ref.invalidate(settingsProvider(widget.weddingId));
+      
+      // Afficher un message de succès
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.check_circle_outline, color: Colors.white),
+              const SizedBox(width: 8),
+              const Text('Mariage publié avec succès ! Vos invités peuvent maintenant y accéder.'),
+            ],
+          ),
+          backgroundColor: _R.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: _R.rose,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isPublishing = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(settingsProvider(widget.weddingId));
 
     return Scaffold(
       backgroundColor: _R.cream,
@@ -106,11 +165,13 @@ class SettingsPage extends ConsumerWidget {
         loading: () => const _LoadingView(),
         error: (e, _) => _ErrorView(
           message: '$e',
-          onRetry: () => ref.invalidate(settingsProvider(weddingId)),
+          onRetry: () => ref.invalidate(settingsProvider(widget.weddingId)),
         ),
         data: (wedding) => _SettingsContent(
-          weddingId: weddingId,
+          weddingId: widget.weddingId,
           wedding: wedding,
+          isPublishing: _isPublishing,
+          onPublish: _publishWedding,
         ),
       ),
     );
@@ -123,15 +184,29 @@ class SettingsPage extends ConsumerWidget {
 class _SettingsContent extends StatelessWidget {
   final String weddingId;
   final WeddingModel wedding;
+  final bool isPublishing;
+  final VoidCallback onPublish;
 
-  const _SettingsContent({required this.weddingId, required this.wedding});
+  const _SettingsContent({
+    required this.weddingId,
+    required this.wedding,
+    required this.isPublishing,
+    required this.onPublish,
+  });
 
   @override
   Widget build(BuildContext context) {
+    final isPublished = wedding.invitationPublished ?? false;
+    
     return CustomScrollView(
       physics: const BouncingScrollPhysics(),
       slivers: [
-        _SettingsAppBar(wedding: wedding),
+        _SettingsAppBar(
+          wedding: wedding,
+          isPublished: isPublished,
+          isPublishing: isPublishing,
+          onPublish: onPublish,
+        ),
         SliverPadding(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
           sliver: SliverList(
@@ -139,7 +214,67 @@ class _SettingsContent extends StatelessWidget {
               _WeddingHeroCard(wedding: wedding),
               const SizedBox(height: 20),
 
-              // ── CONFIGURATION ──────────────────────────────────────
+              // ── STATUT DE PUBLICATION ───────────────────────────────
+              if (!isPublished) ...[
+                Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [_R.amber.withOpacity(0.1), _R.amber.withOpacity(0.05)],
+                    ),
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _R.amber.withOpacity(0.3)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.info_outline, color: _R.amber, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Mode Brouillon',
+                            style: GoogleFonts.inter(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                              color: _R.amber,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Votre mariage n\'est pas encore visible par vos invités. Cliquez sur "Publier" pour le rendre accessible.',
+                        style: GoogleFonts.inter(fontSize: 12, color: _R.text2),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 44,
+                        child: ElevatedButton.icon(
+                          onPressed: isPublishing ? null : onPublish,
+                          icon: isPublishing
+                              ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                              : const Icon(Icons.publish, size: 18),
+                          label: Text(
+                            isPublishing ? 'Publication...' : 'Publier le mariage',
+                            style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: _R.amber,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+              ],
+
+              // ── CONFIGURATION ─────────────────────────────────────
               _SectionHeader(title: 'Configuration', icon: Icons.tune, color: _R.blue),
               const SizedBox(height: 12),
               _SettingsTile(
@@ -162,7 +297,6 @@ class _SettingsContent extends StatelessWidget {
               // ── ACCÈS & PARTAGE ────────────────────────────────────
               _SectionHeader(title: 'Accès & Partage', icon: Icons.share_outlined, color: _R.gold),
               const SizedBox(height: 12),
-              // ✅ MIS À JOUR : Titre et description harmonisés avec le nouveau format
               _CodeAccessCard(uniqueCode: wedding.uniqueCode, weddingId: weddingId),
               const SizedBox(height: 8),
               _SettingsTile(
@@ -199,7 +333,7 @@ class _SettingsContent extends StatelessWidget {
               ),
               const SizedBox(height: 24),
 
-              // ── FOOTER ─────────────────────────────────────────────
+              // ─ FOOTER ─────────────────────────────────────────────
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
@@ -215,7 +349,7 @@ class _SettingsContent extends StatelessWidget {
                         style: GoogleFonts.inter(fontSize: 10, color: _R.blue, fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 4),
-                  Text('THIX WEDDING & EVENTS v2.15.0',
+                  Text('THIX WEDDING & EVENTS v2.16.0',
                       style: GoogleFonts.inter(fontSize: 9, color: _R.text2)),
                 ]),
               ),
@@ -242,7 +376,6 @@ class _SettingsContent extends StatelessWidget {
               child: const Icon(Icons.qr_code_2, color: Colors.white, size: 32),
             ),
             const SizedBox(height: 16),
-            // ✅ MIS À JOUR : Label cohérent avec le nouveau format
             Text('QR Code Événement', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
             const SizedBox(height: 4),
             Text(wedding.coupleNames.isEmpty ? 'Mon Mariage' : wedding.coupleNames,
@@ -267,7 +400,6 @@ class _SettingsContent extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            // ✅ AJOUTÉ : Format expliqué sous le code
             Text(
               'Format: THIX-W-JJMM-XXXYY',
               style: GoogleFonts.inter(fontSize: 10, color: _R.text2, fontWeight: FontWeight.w500),
@@ -391,11 +523,20 @@ class _SettingsContent extends StatelessWidget {
 }
 
 // ============================================================================
-// APP BAR ROYALE
+// APP BAR ROYALE AVEC BOUTON PUBLIER
 // ============================================================================
 class _SettingsAppBar extends StatelessWidget {
   final WeddingModel wedding;
-  const _SettingsAppBar({required this.wedding});
+  final bool isPublished;
+  final bool isPublishing;
+  final VoidCallback onPublish;
+
+  const _SettingsAppBar({
+    required this.wedding,
+    required this.isPublished,
+    required this.isPublishing,
+    required this.onPublish,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -412,6 +553,29 @@ class _SettingsAppBar extends StatelessWidget {
         ),
         onPressed: () => context.pop(),
       ),
+      actions: [
+        if (!isPublished)
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ElevatedButton.icon(
+              onPressed: isPublishing ? null : onPublish,
+              icon: isPublishing
+                  ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : const Icon(Icons.publish, size: 16),
+              label: Text(
+                isPublishing ? '...' : 'Publier',
+                style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _R.amber,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+            ),
+          ),
+      ],
       flexibleSpace: Container(
         decoration: BoxDecoration(
           gradient: _R.royal,
@@ -429,6 +593,32 @@ class _SettingsAppBar extends StatelessWidget {
                     Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.settings_outlined, color: Colors.white, size: 16)),
                     const SizedBox(width: 8),
                     Text('PARAMÈTRES', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white.withOpacity(0.85), letterSpacing: 2)),
+                    const SizedBox(width: 12),
+                    if (isPublished)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _R.green.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.check_circle, color: Colors.white, size: 12),
+                            const SizedBox(width: 4),
+                            Text('PUBLIÉ', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1)),
+                          ],
+                        ),
+                      )
+                    else
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _R.amber.withOpacity(0.9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text('BROUILLON', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: Colors.white, letterSpacing: 1)),
+                      ),
                   ]),
                   const SizedBox(height: 6),
                   Text('Configuration du mariage', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w800, color: Colors.white)),
@@ -497,7 +687,7 @@ class _WeddingHeroCard extends StatelessWidget {
 }
 
 // ============================================================================
-// CODE ACCESS CARD — ✅ MIS À JOUR : Nouveau format + labels harmonisés
+// CODE ACCESS CARD
 // ============================================================================
 class _CodeAccessCard extends StatelessWidget {
   final String uniqueCode;
@@ -515,9 +705,7 @@ class _CodeAccessCard extends StatelessWidget {
           Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(gradient: _R.goldG, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.key_outlined, color: Colors.white, size: 16)),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // ✅ MIS À JOUR : Titre harmonisé avec la home page
             Text('Code d\'accès au mariage', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700)),
-            // ✅ MIS À JOUR : Description clarifiée pour les invités
             Text('Partagez ce code avec vos invités pour rejoindre l\'événement', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
           ])),
         ]),
@@ -544,7 +732,6 @@ class _CodeAccessCard extends StatelessWidget {
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: uniqueCode));
                   ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                    // ✅ MIS À JOUR : Message cohérent avec le nouveau label
                     content: Row(children: [const Icon(Icons.check_circle, color: Colors.white, size: 16), const SizedBox(width: 8), const Text('Code d\'accès copié ✓')]),
                     backgroundColor: _R.green,
                     behavior: SnackBarBehavior.floating,
@@ -561,7 +748,6 @@ class _CodeAccessCard extends StatelessWidget {
             ),
           ]),
         ),
-        // ✅ AJOUTÉ : Indication du format sous la carte
         const SizedBox(height: 8),
         Row(children: [
           const Icon(Icons.info_outline_rounded, size: 12, color: _R.text2),
