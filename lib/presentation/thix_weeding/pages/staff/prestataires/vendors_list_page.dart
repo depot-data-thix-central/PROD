@@ -250,11 +250,14 @@ class _VendorsListPageState extends ConsumerState<VendorsListPage>
                 controller: _tabCtrl,
                 children: [
                   _PrestatairesTab(
-                    weddingId: widget.weddingId,
-                    vendors: vendors,
-                    thixVendorIds: thixVendorIds,
-                    onRefresh: () => ref.invalidate(vendorsProvider(widget.weddingId)),
-                  ),
+  weddingId: widget.weddingId,
+  vendors: vendors,
+  thixVendorIds: thixVendorIds,
+  // 👇 Modifie cette ligne
+  onRefresh: () async {
+    ref.invalidate(vendorsProvider(widget.weddingId));
+  },
+),
                   _DemandesTab(
                     weddingId: widget.weddingId,
                     requestsAsync: requestsAsync,
