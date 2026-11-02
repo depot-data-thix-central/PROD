@@ -1,10 +1,13 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_portal_shell.dart
 // ============================================================================
-// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION v3)
-// ✅ LOGIQUE IDENTIQUE À my_weddings_page.dart
-// ✅ 1 seule session : Supabase.auth.currentUser (= compte THIX général)
-// ✅ 1 seule propriété : owner_id = user.id
-// ✅ ZÉRO SharedPreferences — fini les sessions parallèles qui désynchronisent
+// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION v4 — MULTI-ACTIVITÉS)
+// ✅ LOGIQUE IDENTIQUE À my_weddings_page.dart (1 session = Supabase.currentUser)
+// ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
+//    → barre de sélection d'activité affichée UNIQUEMENT si >= 2 activités
+//    → mono-activité = comportement v3 strictement inchangé (zéro casse)
+// ✅ L'activité courante est dérivée de myActivitiesProvider + selectedActivityIdProvider
+//    (même source que myProviderProvider) -> les pages reçoivent le bon provider
+// ✅ ZÉRO SharedPreferences — fini les sessions parallèles
 // ============================================================================
 
 import 'package:flutter/material.dart';
@@ -25,6 +28,7 @@ class _P {
   static const Color bg = Color(0xFFFAFAFA);
   static const Color surface = Colors.white;
   static const Color rose = Color(0xFFFF4D6D);
+  static const Color roseLight = Color(0xFFFF85A1);
   static const Color ink = Color(0xFF1A1A2E);
   static const Color inkSoft = Color(0xFF6B7280);
   static const Color line = Color(0xFFE5E7EB);
@@ -65,38 +69,72 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
     }
 
     // ═══════════════════════════════════════════════════════════════════
-    // CHARGEMENT : myProvidersProvider(user.id) = WHERE owner_id = user.id
+    // ✅ MULTI-ACTIVITÉS : on watch la LISTE des activités du compte
+    //    (1 owner_id = N métiers). C'est LA source de vérité du shell.
     // ═══════════════════════════════════════════════════════════════════
-    final providerAsync = ref.watch(myProviderProvider(user.id));
+    final activitiesAsync = ref.watch(myActivitiesProvider(user.id));
 
-    return providerAsync.when(
+    return activitiesAsync.when(
       loading: () => const _LoadingScreen(),
       error: (e, _) => _ErrorView(
         message: e.toString(),
-        onRetry: () => ref.invalidate(myProviderProvider(user.id)),
+        onRetry: () {
+          ref.invalidate(myActivitiesProvider(user.id));
+          ref.invalidate(myProviderProvider(user.id));
+        },
       ),
-      data: (provider) {
-        if (provider == null) {
-          // Connecté mais pas de profil → "Devenez prestataire"
+      data: (activities) {
+        if (activities.isEmpty) {
+          // Connecté mais aucune activité → "Devenez prestataire"
           return const _NoProviderScreen();
         }
-        return _buildDashboard(provider);
+
+        // Activité courante = sélectionnée (sinon 1ère / principale)
+        final selectedId = ref.watch(selectedActivityIdProvider);
+        final active = activities.firstWhere(
+          (a) => a.id == selectedId,
+          orElse: () => activities.first,
+        );
+
+        return _buildDashboard(
+          userId: user.id,
+          provider: active,
+          activities: activities,
+        );
       },
     );
   }
 
-  Widget _buildDashboard(ThixProviderModel provider) {
+  Widget _buildDashboard({
+    required String userId,
+    required ThixProviderModel provider,
+    required List<ThixProviderModel> activities,
+  }) {
+    final showPicker = activities.length >= 2; // mono-activité => aucune barre (v3)
+
     return Scaffold(
       backgroundColor: _P.bg,
-      body: IndexedStack(
-        index: _currentIndex,
+      body: Column(
         children: [
-          ProviderDashboardPage(provider: provider),
-          ProviderOffersPage(provider: provider),
-          ProviderGalleryPage(provider: provider),
-          ProviderReservationsPage(provider: provider),
-          ProviderTasksPage(provider: provider),
-          _ProfileTab(provider: provider),
+          if (showPicker)
+            _ActivityPickerBar(
+              activities: activities,
+              currentId: provider.id,
+              onTap: () => _openActivityPicker(userId, activities, provider.id),
+            ),
+          Expanded(
+            child: IndexedStack(
+              index: _currentIndex,
+              children: [
+                ProviderDashboardPage(provider: provider),
+                ProviderOffersPage(provider: provider),
+                ProviderGalleryPage(provider: provider),
+                ProviderReservationsPage(provider: provider),
+                ProviderTasksPage(provider: provider),
+                _ProfileTab(provider: provider, activitiesCount: activities.length),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: _BottomNavBar(
@@ -105,6 +143,317 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
           HapticFeedback.selectionClick();
           setState(() => _currentIndex = i);
         },
+      ),
+    );
+  }
+
+  // ── Feuille de sélection d'activité (bottom sheet) ──
+  void _openActivityPicker(
+    String userId,
+    List<ThixProviderModel> activities,
+    String currentId,
+  ) {
+    HapticFeedback.selectionClick();
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) => _ActivityPickerSheet(
+        activities: activities,
+        currentId: currentId,
+        onPick: (id) {
+          Navigator.pop(ctx);
+          ref.read(selectedActivityIdProvider.notifier).state = id;
+          setState(() => _currentIndex = 0); // revient au dashboard, activité changée
+        },
+        onManage: () {
+          Navigator.pop(ctx);
+          context.push('/thix-weeding/provider/activities');
+        },
+        onAdd: () {
+          Navigator.pop(ctx);
+          context.push('/thix-weeding/provider/activities/new');
+        },
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ BARRE DE SÉLECTION D'ACTIVITÉ (visible seulement si >= 2 activités)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ActivityPickerBar extends StatelessWidget {
+  final List<ThixProviderModel> activities;
+  final String currentId;
+  final VoidCallback onTap;
+  const _ActivityPickerBar({
+    required this.activities,
+    required this.currentId,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final current = activities.firstWhere(
+      (a) => a.id == currentId,
+      orElse: () => activities.first,
+    );
+    return SafeArea(
+      top: true,
+      bottom: false,
+      child: Material(
+        color: Colors.white,
+        child: InkWell(
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              border: Border(bottom: BorderSide(color: _P.line)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.03),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.workspaces_rounded, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      current.businessName.isEmpty ? 'Mon activité' : current.businessName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _P.ink),
+                    ),
+                    const SizedBox(height: 1),
+                    Row(children: [
+                      Text(
+                        current.category.displayName,
+                        style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose),
+                      ),
+                      const SizedBox(width: 6),
+                      Text('· ${activities.length} activités',
+                          style: GoogleFonts.inter(fontSize: 10.5, color: _P.inkSoft)),
+                    ]),
+                  ],
+                ),
+              ),
+              const Icon(Icons.swap_vert_rounded, color: _P.inkSoft, size: 22),
+              const SizedBox(width: 4),
+              const Icon(Icons.keyboard_arrow_down_rounded, color: _P.rose, size: 22),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ FEUILLE DE SÉLECTION (dumb widget — pas de riverpod interne)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ActivityPickerSheet extends StatelessWidget {
+  final List<ThixProviderModel> activities;
+  final String currentId;
+  final ValueChanged<String> onPick;
+  final VoidCallback onManage;
+  final VoidCallback onAdd;
+  const _ActivityPickerSheet({
+    required this.activities,
+    required this.currentId,
+    required this.onPick,
+    required this.onManage,
+    required this.onAdd,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+            child: Row(children: [
+              const Icon(Icons.workspaces_rounded, color: _P.rose, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text('Choisir une activité',
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+              ),
+            ]),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text('Basculez entre vos métiers (traiteur, salle, DJ…)',
+                  style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft)),
+            ),
+          ),
+          Flexible(
+            child: ListView.separated(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              itemCount: activities.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) {
+                final a = activities[i];
+                final sel = a.id == currentId;
+                return Material(
+                  color: sel ? _P.rose.withOpacity(0.06) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(16),
+                    onTap: () {
+                      HapticFeedback.selectionClick();
+                      onPick(a.id);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: sel ? _P.rose : _P.line, width: sel ? 2 : 1),
+                      ),
+                      child: Row(children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            gradient: sel
+                                ? const LinearGradient(colors: [_P.rose, _P.roseLight])
+                                : LinearGradient(colors: [_P.inkSoft.withOpacity(0.12), _P.inkSoft.withOpacity(0.06)]),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            Icons.storefront_outlined,
+                            color: sel ? Colors.white : _P.inkSoft,
+                            size: 22,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                a.businessName.isEmpty ? 'Activité' : a.businessName,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(a.category.displayName,
+                                  style: GoogleFonts.inter(fontSize: 11.5, fontWeight: FontWeight.w700, color: _P.rose)),
+                            ],
+                          ),
+                        ),
+                        if (sel)
+                          const Icon(Icons.check_circle_rounded, color: _P.rose, size: 24)
+                        else
+                          const Icon(Icons.radio_button_unchecked_rounded, color: _P.line, size: 24),
+                      ]),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+          const Divider(height: 1, color: _P.line),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+            child: Row(children: [
+              Expanded(
+                child: _SheetBtn(
+                  icon: Icons.settings_outlined,
+                  label: 'Gérer',
+                  color: _P.blue,
+                  onTap: onManage,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _SheetBtn(
+                  icon: Icons.add_rounded,
+                  label: 'Ajouter une activité',
+                  color: _P.rose,
+                  filled: true,
+                  onTap: onAdd,
+                ),
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SheetBtn extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final bool filled;
+  final VoidCallback onTap;
+  const _SheetBtn({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: filled ? color : Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: filled ? Colors.transparent : color.withOpacity(0.4), width: 1.5),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(icon, size: 18, color: filled ? Colors.white : color),
+              const SizedBox(width: 8),
+              Flexible(
+                child: Text(label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: filled ? Colors.white : color)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -172,7 +521,7 @@ class _AuthRequiredView extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// _NoProviderScreen — connecté mais pas encore de profil prestataire
+// _NoProviderScreen — connecté mais pas encore d'activité
 // ═══════════════════════════════════════════════════════════════════════════
 class _NoProviderScreen extends StatelessWidget {
   const _NoProviderScreen();
@@ -199,7 +548,7 @@ class _NoProviderScreen extends StatelessWidget {
               Text('Devenez prestataire', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
               const SizedBox(height: 8),
               Text(
-                'Créez votre profil pour accéder à votre dashboard, publier vos offres et recevoir des réservations.',
+                'Créez votre 1ère activité (traiteur, salle, DJ, photographe…). Vous pourrez ensuite ajouter plusieurs métiers sur le même compte.',
                 textAlign: TextAlign.center,
                 style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
               ),
@@ -220,6 +569,10 @@ class _NoProviderScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 10),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/provider/activities/new'),
+                child: Text('Ou ajouter directement une activité', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600)),
+              ),
               TextButton(
                 onPressed: () => context.go('/thix-weeding'),
                 child: Text('Retour à l\'accueil', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600)),
@@ -319,10 +672,12 @@ class _NavItem extends StatelessWidget {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // PROFILE TAB (avec déconnexion = Supabase.signOut global)
+// ✅ + entrée "Mes activités (N)" pour gérer le multi-métiers
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProfileTab extends ConsumerWidget {
   final ThixProviderModel provider;
-  const _ProfileTab({required this.provider});
+  final int activitiesCount;
+  const _ProfileTab({required this.provider, required this.activitiesCount});
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -345,6 +700,8 @@ class _ProfileTab extends ConsumerWidget {
 
     await Supabase.instance.client.auth.signOut();
     ref.invalidate(myProviderProvider(provider.ownerId ?? ''));
+    ref.invalidate(myActivitiesProvider(provider.ownerId ?? ''));
+    ref.read(selectedActivityIdProvider.notifier).state = null;
     if (context.mounted) context.go('/thix-weeding');
   }
 
@@ -402,6 +759,13 @@ class _ProfileTab extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
+                // ✅ NOUVEAU : gestion multi-activités
+                _MenuItem(
+                  icon: Icons.workspaces_rounded,
+                  label: 'Mes activités',
+                  badge: '$activitiesCount',
+                  onTap: () => context.push('/thix-weeding/provider/activities'),
+                ),
                 _MenuItem(icon: Icons.edit_outlined, label: 'Modifier mes informations', onTap: () {}),
                 _MenuItem(icon: Icons.document_scanner_outlined, label: 'Mes documents de validation', badge: provider.verificationStatus == ProviderVerificationStatus.pending ? 'En attente' : null, onTap: () {}),
                 _MenuItem(icon: Icons.payments_outlined, label: 'Mes revenus', onTap: () {}),
@@ -410,7 +774,7 @@ class _ProfileTab extends ConsumerWidget {
                 const SizedBox(height: 8),
                 _MenuItem(icon: Icons.logout, label: 'Se déconnecter', color: _P.red, onTap: () => _logout(context, ref)),
                 const SizedBox(height: 24),
-                Center(child: Text('Thix Wedding v5.0', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w500))),
+                Center(child: Text('Thix Wedding v5.1', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w500))),
                 const SizedBox(height: 40),
               ]),
             ),
@@ -446,7 +810,7 @@ class _MenuItem extends StatelessWidget {
               Container(padding: const EdgeInsets.all(8), decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)), child: Icon(icon, color: color, size: 20)),
               const SizedBox(width: 14),
               Expanded(child: Text(label, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: color))),
-              if (badge != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: _P.amber.withOpacity(0.15), borderRadius: BorderRadius.circular(8)), child: Text(badge!, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.amber))),
+              if (badge != null) Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), margin: const EdgeInsets.only(right: 8), decoration: BoxDecoration(color: _P.rose.withOpacity(0.12), borderRadius: BorderRadius.circular(8)), child: Text(badge!, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.rose))),
               const Icon(Icons.chevron_right, color: _P.inkSoft, size: 20),
             ]),
           ),
