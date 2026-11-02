@@ -1,11 +1,12 @@
 // lib/presentation/thix_weeding/providers/provider_providers.dart
 // ============================================================================
-// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v5 — MULTI-ACTIVITÉS)
+// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v6 — MULTI-PHOTOS + CATÉGORIE OFFRE)
 // ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
 // ✅ myProviderProvider(ownerId) = activité sélectionnée (fallback principale)
 // ✅ selectedActivityIdProvider = sélecteur global (barre du shell)
 // ✅ myActivitiesProvider / activityDetailProvider / CRUD activités
 // ✅ createProvider / update / delete / validate / offres / réservations / tâches
+// ✅ OFFRES : galleryUrls (multi-photos) + category (catégorie d'offre)
 // ✅ ZÉRO doublon — chaque provider déclaré une seule fois
 // ============================================================================
 
@@ -392,7 +393,7 @@ final providerStatsProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎁 OFFRES / SERVICES
+// 🎁 OFFRES / SERVICES (avec jointure provider)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerOffersProvider = FutureProvider.autoDispose
     .family<List<ProviderOfferModel>, String>((ref, providerId) async {
@@ -404,12 +405,15 @@ final providerOffersProvider = FutureProvider.autoDispose
   );
 });
 
+// ✅ OFFRES ACTIVES (home + catalogue) — filtre catégorie optionnel
 final activeOffersProvider =
-    FutureProvider.autoDispose<List<ProviderOfferModel>>((ref) async {
+    FutureProvider.autoDispose.family<List<ProviderOfferModel>, ProviderCategory?>((ref, category) async {
   final service = ref.watch(providerServiceProvider);
-  if (kDebugMode) debugPrint('🌟 Loading active offers (home/catalog)');
+  if (kDebugMode) {
+    debugPrint('🌟 Loading active offers (home/catalog) category=${category?.name ?? "all"}');
+  }
   return await _executeWithTimeout(
-    () => service.getActiveOffersWithProvider(),
+    () => service.getActiveOffersWithProvider(limit: 100, category: category),
     operationName: 'getActiveOffersWithProvider',
   );
 });
@@ -763,7 +767,7 @@ final deleteProviderProvider = Provider((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎁 ACTIONS OFFRES
+// 🎁 ACTIONS OFFRES (v6 : galleryUrls + category)
 // ═══════════════════════════════════════════════════════════════════════════
 final createOfferProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -776,9 +780,13 @@ final createOfferProvider = Provider((ref) {
     double? price,
     String? currency,
     String? imageUrl,
+    List<String>? galleryUrls,       // ✅ MULTI-PHOTOS
+    ProviderCategory? category,      // ✅ CATÉGORIE D'OFFRE
     bool isActive = true,
   }) async {
-    if (kDebugMode) debugPrint('🎁 Creating offer: $title');
+    if (kDebugMode) {
+      debugPrint('🎁 Creating offer: $title (category: ${category?.name})');
+    }
 
     final offer = await _executeWithTimeout(
       () => service.createOffer(
@@ -789,6 +797,8 @@ final createOfferProvider = Provider((ref) {
         price: price,
         currency: currency,
         imageUrl: imageUrl,
+        galleryUrls: galleryUrls,    // ✅ transmis au service
+        category: category,          // ✅ transmis au service
         isActive: isActive,
       ),
       operationName: 'createOffer',
@@ -811,9 +821,13 @@ final updateOfferProvider = Provider((ref) {
     String? description,
     double? price,
     String? imageUrl,
+    List<String>? galleryUrls,       // ✅ MULTI-PHOTOS
+    ProviderCategory? category,      // ✅ CATÉGORIE D'OFFRE
     bool? isActive,
   }) async {
-    if (kDebugMode) debugPrint('✏️ Updating offer: $offerId');
+    if (kDebugMode) {
+      debugPrint('✏️ Updating offer: $offerId (category: ${category?.name})');
+    }
 
     final offer = await _executeWithTimeout(
       () => service.updateOffer(
@@ -823,6 +837,8 @@ final updateOfferProvider = Provider((ref) {
         description: description,
         price: price,
         imageUrl: imageUrl,
+        galleryUrls: galleryUrls,    // ✅ transmis au service
+        category: category,          // ✅ transmis au service
         isActive: isActive,
       ),
       operationName: 'updateOffer($offerId)',
