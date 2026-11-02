@@ -1,6 +1,6 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_dashboard_page.dart
 // ============================================================================
-// THIX WEDDING — DASHBOARD PRESTATAIRE (PRODUCTION ENTERPRISE)
+// THIX WEDDING — DASHBOARD PRESTATAIRE (PRODUCTION v2)
 // ✅ Statistiques avancées avec graphiques et tendances
 // ✅ Calendrier intégré des événements
 // ✅ Notifications en temps réel avec priorités
@@ -9,6 +9,7 @@
 // ✅ Timeline d'activités enrichie
 // ✅ Vue d'ensemble financière avec projections
 // ✅ Actions rapides contextuelles
+// ✅ 🆕 ACCÈS DIRECT "GESTION DE LA PRESTATION" (demandes approuvées)
 // ============================================================================
 
 import 'dart:async';
@@ -22,6 +23,7 @@ import 'package:fl_chart/fl_chart.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
+import 'provider_business_pages.dart' show ProviderRequestsPage; // ✅ AJOUTÉ
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -83,6 +85,8 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
     final tasksAsync = ref.watch(providerTasksProvider(
       ProviderTasksParams(providerId: widget.provider.id),
     ));
+    // ✅ NOUVEAU : demandes en attente pour le bandeau
+    final requestsAsync = ref.watch(providerIncomingRequestsProvider(widget.provider.id));
 
     return RefreshIndicator(
       onRefresh: () async {
@@ -94,6 +98,7 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
         ref.invalidate(providerTasksProvider(
           ProviderTasksParams(providerId: widget.provider.id),
         ));
+        ref.invalidate(providerIncomingRequestsProvider(widget.provider.id));
         await Future.delayed(const Duration(milliseconds: 500));
       },
       child: Scaffold(
@@ -132,6 +137,11 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
                     
                     // ── ACTIONS RAPIDES ─────────────────────────────────
                     _buildQuickActions(),
+                    
+                    const SizedBox(height: 24),
+                    
+                    // ✅ NOUVEAU : CARTE "GESTION DE LA PRESTATION"
+                    _buildServiceManagementCard(requestsAsync),
                     
                     const SizedBox(height: 24),
                     
@@ -767,6 +777,120 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
           ],
         ),
       ],
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // ✅ NOUVEAU : CARTE "GESTION DE LA PRESTATION"
+  //    Accès direct aux demandes approuvées + compteur pending
+  // ═══════════════════════════════════════════════════════════════════════
+  Widget _buildServiceManagementCard(
+    AsyncValue<List<Map<String, dynamic>>> requestsAsync,
+  ) {
+    return requestsAsync.when(
+      data: (requests) {
+        final pending = requests.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+        final approved = requests.where((r) => r['status'] == 'approved').length;
+
+        return GestureDetector(
+          onTap: () {
+            HapticFeedback.mediumImpact();
+            Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => ProviderRequestsPage(provider: widget.provider),
+              ),
+            );
+          },
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_P.rose, _P.roseLight],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+              boxShadow: [
+                BoxShadow(
+                  color: _P.rose.withOpacity(0.3),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.2),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: const Icon(Icons.workspaces_rounded, color: Colors.white, size: 28),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Gestion de la prestation',
+                        style: GoogleFonts.inter(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        children: [
+                          if (pending > 0) ...[
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.25),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                '$pending en attente',
+                                style: GoogleFonts.inter(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          Text(
+                            '$approved acceptée${approved > 1 ? 's' : ''}',
+                            style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: Colors.white.withOpacity(0.9),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
+              ],
+            ),
+          ),
+        );
+      },
+      loading: () => Container(
+        height: 90,
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _P.line),
+        ),
+        child: const Center(child: CircularProgressIndicator(color: _P.rose)),
+      ),
+      error: (_, __) => const SizedBox.shrink(),
     );
   }
 
