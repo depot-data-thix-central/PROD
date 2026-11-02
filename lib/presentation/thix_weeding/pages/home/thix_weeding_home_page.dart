@@ -489,7 +489,7 @@ class _ThixWeedingHomePageState extends ConsumerState<ThixWeedingHomePage> {
               ref.invalidate(homeIsAdminProvider);
               ref.invalidate(homeCategoriesProvider);
               ref.invalidate(homeProvidersByCategoryProvider);
-              ref.invalidate(activeOffersProvider); // ✅ rafraîchit les offres
+              ref.invalidate(activeOffersProvider(null)); // ✅ rafraîchit les offres
               ref.invalidate(myActiveInvitationsProvider);
               await Future.delayed(const Duration(milliseconds: 400));
             },
