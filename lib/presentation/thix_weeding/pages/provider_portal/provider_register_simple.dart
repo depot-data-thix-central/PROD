@@ -14,7 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 
@@ -170,8 +170,10 @@ class _ProviderRegisterSimplePageState
     try {
       // 1. Création du prestataire via Supabase
       final provider = await ref.read(createProviderProvider)(
-        userId: null, // Inscription libre (sans Auth)
-        category: _category!,
+  userId: Supabase.instance.client.auth.currentUser?.id, // ✅ lie la session si elle existe, sinon null
+  category: _category!,
+  // ... reste identique
+
         businessName: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
         phone: _phoneCtrl.text.trim(),
