@@ -1,19 +1,20 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_offers_page.dart
 // ============================================================================
-// THIX WEDDING — GESTION DES OFFRES / SERVICES / MENUS (PRODUCTION v2)
-// ✅ Formulaire avec UPLOAD DE PHOTO réel (Storage Supabase)
-// ✅ Onglet "Offres" du dashboard : liste, toggle actif, édition, suppression
-// ✅ Widget réutilisable pour le HOME (ThixHomeOffersSection)
-// ✅ Affichage image dans les cartes + preview en temps réel
+// THIX WEDDING — GESTION DES OFFRES / SERVICES / MENUS (PRODUCTION v3)
+// ✅ MULTI-PHOTOS : galerie horizontale (cover + gallery) avec ajout/suppression
+// ✅ UPLOAD WEB-COMPATIBLE : Uint8List + uploadBinary (plus de dart:io File)
+// ✅ Preview locale instantanée avant upload
+// ✅ Widget HOME : ThixHomeOffersSection
 // ============================================================================
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:image_picker/image_picker.dart'; // ✅ AJOUTÉ
-import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ AJOUTÉ
-import 'dart:io' show File; // ✅ AJOUTÉ (upload binaire)
+import 'package:image_picker/image_picker.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -78,7 +79,8 @@ class ProviderOffersPage extends ConsumerWidget {
             backgroundColor: _P.bg,
             elevation: 0,
             automaticallyImplyLeading: false,
-            title: Text('Mes offres & services', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink)),
+            title: Text('Mes offres & services',
+                style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink)),
           ),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
@@ -98,9 +100,14 @@ class ProviderOffersPage extends ConsumerWidget {
                               child: const Icon(Icons.local_offer_outlined, size: 56, color: _P.rose),
                             ),
                             const SizedBox(height: 20),
-                            Text('Publiez votre première offre', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+                            Text('Publiez votre première offre',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
                             const SizedBox(height: 8),
-                            Text('Services, menus, formules ou promos : tout ce que vous publiez ici apparaît sur le catalogue et la page d\'accueil.', textAlign: TextAlign.center, style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5)),
+                            Text(
+                                'Services, menus, formules ou promos : tout ce que vous publiez ici apparaît sur le catalogue et la page d\'accueil.',
+                                textAlign: TextAlign.center,
+                                style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5)),
                           ],
                         ),
                       ),
@@ -117,8 +124,10 @@ class ProviderOffersPage extends ConsumerWidget {
                   ),
                 );
               },
-              loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: _P.rose))),
-              error: (e, _) => SliverFillRemaining(child: Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _P.inkSoft)))),
+              loading: () => const SliverFillRemaining(
+                  child: Center(child: CircularProgressIndicator(color: _P.rose))),
+              error: (e, _) => SliverFillRemaining(
+                  child: Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _P.inkSoft)))),
             ),
           ),
         ],
@@ -128,16 +137,27 @@ class ProviderOffersPage extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CARTE D'OFFRE (liste du dashboard) — ✅ AVEC IMAGE
+// CARTE D'OFFRE (liste du dashboard) — ✅ AVEC GALERIE MULTI-PHOTOS
 // ═══════════════════════════════════════════════════════════════════════════
 class _OfferCard extends ConsumerWidget {
   final ProviderOfferModel offer;
   final String providerId;
   const _OfferCard({required this.offer, required this.providerId});
 
+  // ✅ Récupère TOUTES les photos : cover + galerie
+  List<String> get _allImages {
+    final list = <String>[];
+    if ((offer.imageUrl ?? '').isNotEmpty) list.add(offer.imageUrl!);
+    for (final u in offer.galleryUrls) {
+      if (u.isNotEmpty && !list.contains(u)) list.add(u);
+    }
+    return list;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final color = offerTypeColor(offer.type);
+    final images = _allImages;
 
     return Container(
       decoration: BoxDecoration(
@@ -150,35 +170,59 @@ class _OfferCard extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ✅ IMAGE HEADER (si disponible)
-          if (offer.imageUrl != null && offer.imageUrl!.isNotEmpty)
+          // ✅ ZONE IMAGE (carrousel si plusieurs photos)
+          if (images.isNotEmpty)
             Stack(
               children: [
-                Image.network(
-                  offer.imageUrl!,
-                  width: double.infinity,
+                SizedBox(
                   height: 140,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(
-                    height: 140,
-                    color: color.withOpacity(0.1),
-                    child: Center(child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                  child: PageView.builder(
+                    itemCount: images.length,
+                    controller: PageController(viewportFraction: 1.0),
+                    itemBuilder: (_, i) => Image.network(
+                      images[i],
+                      width: double.infinity,
+                      height: 140,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        height: 140,
+                        color: color.withOpacity(0.1),
+                        child: Center(child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                      ),
+                    ),
                   ),
                 ),
+                // Indicateurs de pagination
+                if (images.length > 1)
+                  Positioned(
+                    bottom: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                          color: Colors.black.withOpacity(0.6),
+                          borderRadius: BorderRadius.circular(10)),
+                      child: Text('${images.length} photos',
+                          style: GoogleFonts.inter(fontSize: 10, color: Colors.white, fontWeight: FontWeight.w700)),
+                    ),
+                  ),
+                // Badge type
                 Positioned(
                   top: 8,
                   left: 8,
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-                    child: Text(offer.type.displayName.toUpperCase(), style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                    child: Text(offer.type.displayName.toUpperCase(),
+                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                   ),
                 ),
                 if (!offer.isActive)
                   Positioned.fill(
                     child: Container(
                       color: Colors.black.withOpacity(0.5),
-                      child: const Center(child: Icon(Icons.visibility_off_rounded, color: Colors.white, size: 40)),
+                      child: const Center(
+                          child: Icon(Icons.visibility_off_rounded, color: Colors.white, size: 40)),
                     ),
                   ),
               ],
@@ -186,13 +230,15 @@ class _OfferCard extends ConsumerWidget {
           else
             Container(
               height: 100,
-              decoration: BoxDecoration(gradient: LinearGradient(colors: [color.withOpacity(0.15), color.withOpacity(0.05)])),
+              decoration: BoxDecoration(
+                  gradient: LinearGradient(colors: [color.withOpacity(0.15), color.withOpacity(0.05)])),
               child: Row(
                 children: [
                   const SizedBox(width: 16),
                   Container(
                     padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                    decoration:
+                        BoxDecoration(color: color.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
                     child: Icon(offerTypeIcon(offer.type), color: color, size: 20),
                   ),
                   const SizedBox(width: 12),
@@ -201,9 +247,13 @@ class _OfferCard extends ConsumerWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Text(offer.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                        Text(offer.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
                         const SizedBox(height: 2),
-                        Text(offer.type.displayName, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
+                        Text(offer.type.displayName,
+                            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: color)),
                       ],
                     ),
                   ),
@@ -219,93 +269,64 @@ class _OfferCard extends ConsumerWidget {
                 ],
               ),
             ),
-          
-          // Contenu sous l'image (si image existe)
-          if (offer.imageUrl != null && offer.imageUrl!.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(offer.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
-                      ),
-                      Switch(
-                        value: offer.isActive,
-                        activeColor: _P.green,
-                        onChanged: (v) async {
-                          HapticFeedback.selectionClick();
-                          await ref.read(updateOfferProvider)(offer.id, providerId, isActive: v);
-                        },
-                      ),
-                    ],
-                  ),
-                  if ((offer.description ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Text(offer.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4)),
+
+          // Contenu
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(offer.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                    ),
+                    Switch(
+                      value: offer.isActive,
+                      activeColor: _P.green,
+                      onChanged: (v) async {
+                        HapticFeedback.selectionClick();
+                        await ref.read(updateOfferProvider)(offer.id, providerId, isActive: v);
+                      },
+                    ),
                   ],
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                        child: Text(
-                          offer.price != null ? '${offer.price!.toStringAsFixed(0)}\$' : 'Sur devis',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _P.green),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => context.push('/thix-weeding/provider/offers/edit/${offer.id}'),
-                        icon: const Icon(Icons.edit_outlined, size: 18, color: _P.inkSoft),
-                      ),
-                      IconButton(
-                        onPressed: () => _confirmDelete(context, ref),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: _P.red),
-                      ),
-                    ],
-                  ),
+                ),
+                if ((offer.description ?? '').isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text(offer.description!,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4)),
                 ],
-              ),
-            )
-          else
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if ((offer.description ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 8),
-                    Text(offer.description!, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4)),
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration:
+                          BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Text(
+                        offer.price != null ? '${offer.price!.toStringAsFixed(0)}\$' : 'Sur devis',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _P.green),
+                      ),
+                    ),
+                    const Spacer(),
+                    IconButton(
+                      onPressed: () => context.push('/thix-weeding/provider/offers/edit/${offer.id}'),
+                      icon: const Icon(Icons.edit_outlined, size: 18, color: _P.inkSoft),
+                    ),
+                    IconButton(
+                      onPressed: () => _confirmDelete(context, ref),
+                      icon: const Icon(Icons.delete_outline_rounded, size: 18, color: _P.red),
+                    ),
                   ],
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                        child: Text(
-                          offer.price != null ? '${offer.price!.toStringAsFixed(0)}\$' : 'Sur devis',
-                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _P.green),
-                        ),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        onPressed: () => context.push('/thix-weeding/provider/offers/edit/${offer.id}'),
-                        icon: const Icon(Icons.edit_outlined, size: 18, color: _P.inkSoft),
-                      ),
-                      IconButton(
-                        onPressed: () => _confirmDelete(context, ref),
-                        icon: const Icon(Icons.delete_outline_rounded, size: 18, color: _P.red),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -317,12 +338,18 @@ class _OfferCard extends ConsumerWidget {
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Supprimer cette offre ?', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
-        content: Text('"${offer.title}" sera définitivement retirée du catalogue.', style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14)),
+        content: Text('"${offer.title}" sera définitivement retirée du catalogue.',
+            style: GoogleFonts.inter(color: _P.inkSoft, fontSize: 14)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft))),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(backgroundColor: _P.red, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: _P.red,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
             child: Text('Supprimer', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           ),
         ],
@@ -331,19 +358,22 @@ class _OfferCard extends ConsumerWidget {
     if (ok == true) {
       await ref.read(deleteOfferProvider)(offer.id, providerId);
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Offre supprimée', style: GoogleFonts.inter(fontWeight: FontWeight.w600)), backgroundColor: _P.red, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Offre supprimée', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            backgroundColor: _P.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
       }
     }
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FORMULAIRE DE PUBLICATION / ÉDITION — ✅ AVEC UPLOAD PHOTO
+// FORMULAIRE — ✅ MULTI-PHOTOS + UPLOAD WEB-COMPATIBLE
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderOfferFormPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
-  final ProviderOfferModel? existing; // null = création
-
+  final ProviderOfferModel? existing;
   const ProviderOfferFormPage({super.key, required this.provider, this.existing});
 
   @override
@@ -358,10 +388,12 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
   late OfferType _type;
   bool _isActive = true;
   bool _saving = false;
-  
-  // ✅ UPLOAD PHOTO
-  String? _imageUrl; // URL finale après upload
-  File? _localFile; // fichier local temporaire
+
+  // ✅ MULTI-PHOTOS
+  // URL persistées côté serveur
+  final List<String> _imageUrls = [];
+  // Bytes locaux en attente d'upload (pour preview avant confirmation serveur)
+  final List<Uint8List> _localBytes = [];
   bool _uploading = false;
   final _picker = ImagePicker();
 
@@ -371,10 +403,17 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     final e = widget.existing;
     _titleCtrl = TextEditingController(text: e?.title ?? '');
     _descCtrl = TextEditingController(text: e?.description ?? '');
-    _priceCtrl = TextEditingController(text: e?.price != null ? e!.price!.toStringAsFixed(0) : '');
+    _priceCtrl =
+        TextEditingController(text: e?.price != null ? e!.price!.toStringAsFixed(0) : '');
     _type = e?.type ?? OfferType.service;
     _isActive = e?.isActive ?? true;
-    _imageUrl = e?.imageUrl;
+    // ✅ Chargement initial : cover + galerie
+    if (e?.imageUrl != null && e!.imageUrl!.isNotEmpty) _imageUrls.add(e.imageUrl!);
+    if (e != null) {
+      for (final u in e.galleryUrls) {
+        if (u.isNotEmpty) _imageUrls.add(u);
+      }
+    }
   }
 
   @override
@@ -385,7 +424,7 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     super.dispose();
   }
 
-  // ✅ CHOISIR UNE IMAGE (galerie ou caméra)
+  // ✅ PICK IMAGE (galerie ou caméra) — compatible Web + mobile
   Future<void> _pickImage(ImageSource source) async {
     try {
       final XFile? picked = await _picker.pickImage(
@@ -395,48 +434,67 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
         imageQuality: 85,
       );
       if (picked == null) return;
-      
+
+      final bytes = await picked.readAsBytes();
+      final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'jpg';
       setState(() {
-        _localFile = File(picked.path);
-        _imageUrl = null; // reset pendant l'upload
+        _localBytes.add(bytes);
+        // On ajoute temporairement une URL vide pour garder la longueur alignée
+        _imageUrls.add('');
       });
-      
-      await _uploadImage(File(picked.path));
+      await _uploadBytes(bytes, ext, _imageUrls.length - 1);
     } catch (e) {
       _toast('Erreur sélection image: $e', _P.red);
     }
   }
 
-  // ✅ UPLOADER VERS SUPABASE STORAGE
-  Future<void> _uploadImage(File file) async {
+  // ✅ UPLOAD VERS SUPABASE STORAGE (Web-compatible via uploadBinary)
+  Future<void> _uploadBytes(Uint8List bytes, String ext, int slot) async {
     setState(() => _uploading = true);
     try {
       final c = Supabase.instance.client;
-      final ext = file.path.contains('.') ? file.path.split('.').last.toLowerCase() : 'jpg';
       final safeExt = ['png', 'webp', 'jpg', 'jpeg'].contains(ext) ? ext : 'jpg';
-      final filename = '${widget.provider.id}/offers/${DateTime.now().millisecondsSinceEpoch}.$safeExt';
-      
-      await c.storage.from('thix-provider-media').upload(
-        filename,
-        file,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
-      );
-      
+      final filename =
+          '${widget.provider.id}/offers/${DateTime.now().millisecondsSinceEpoch}_${slot}.$safeExt';
+
+      await c.storage.from('thix-provider-media').uploadBinary(
+            filename,
+            bytes,
+            fileOptions: FileOptions(
+              cacheControl: '3600',
+              contentType: 'image/$safeExt',
+              upsert: false,
+            ),
+          );
+
       final url = c.storage.from('thix-provider-media').getPublicUrl(filename);
-      setState(() => _imageUrl = url);
-      _toast('Photo uploadée ✓', _P.green);
+      if (!mounted) return;
+      setState(() {
+        // On remplace la URL vide par la vraie URL
+        _imageUrls[slot] = url;
+        // On garde les bytes pour preview rapide et pour permettre re-upload si besoin
+      });
+      _toast('Photo ${slot + 1} uploadée ✓', _P.green);
     } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        // Rollback de la photo en échec
+        if (slot < _imageUrls.length) {
+          _imageUrls.removeAt(slot);
+          _localBytes.removeAt(slot);
+        }
+      });
       _toast('Erreur upload: $e', _P.red);
     } finally {
-      setState(() => _uploading = false);
+      if (mounted) setState(() => _uploading = false);
     }
   }
 
-  // ✅ SUPPRIMER L'IMAGE
-  void _removeImage() {
+  // ✅ SUPPRIMER UNE PHOTO (par son index)
+  void _removeImage(int index) {
     setState(() {
-      _localFile = null;
-      _imageUrl = null;
+      if (index < _imageUrls.length) _imageUrls.removeAt(index);
+      if (index < _localBytes.length) _localBytes.removeAt(index);
     });
   }
 
@@ -449,6 +507,10 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       final price = _priceCtrl.text.trim().isEmpty ? null : double.tryParse(_priceCtrl.text.trim());
       final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
 
+      // ✅ Cover = première photo, galerie = le reste
+      final cover = _imageUrls.isNotEmpty ? _imageUrls.first : null;
+      final gallery = _imageUrls.length > 1 ? _imageUrls.sublist(1) : <String>[];
+
       if (widget.existing == null) {
         await ref.read(createOfferProvider)(
           providerId: widget.provider.id,
@@ -456,7 +518,8 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
           type: _type,
           description: desc,
           price: price,
-          imageUrl: _imageUrl,
+          imageUrl: cover,
+          galleryUrls: gallery,
           isActive: _isActive,
         );
       } else {
@@ -467,24 +530,30 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
           type: _type,
           description: desc,
           price: price,
-          imageUrl: _imageUrl,
+          imageUrl: cover,
+          galleryUrls: gallery,
           isActive: _isActive,
         );
       }
 
       if (!mounted) return;
       context.pop();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(widget.existing == null ? 'Offre publiée ✔ Visible sur le catalogue & l\'accueil' : 'Offre mise à jour ✔', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-          backgroundColor: _P.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(
+            widget.existing == null
+                ? 'Offre publiée ✔ ${_imageUrls.length} photo(s) — Visible catalogue & accueil'
+                : 'Offre mise à jour ✔',
+            style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+        backgroundColor: _P.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.rose, behavior: SnackBarBehavior.floating));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: _P.rose,
+          behavior: SnackBarBehavior.floating));
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -506,7 +575,8 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       appBar: AppBar(
         backgroundColor: _P.bg,
         elevation: 0,
-        title: Text(widget.existing == null ? 'Publier une offre' : 'Modifier l\'offre', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+        title: Text(widget.existing == null ? 'Publier une offre' : 'Modifier l\'offre',
+            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
@@ -516,25 +586,44 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // ✅ ZONE PHOTO (nouveau)
-                Text('Photo de l\'offre', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                // ✅ ZONE MULTI-PHOTOS
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text('Photos de l\'offre',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                    ),
+                    if (_imageUrls.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                            color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                        child: Text('${_imageUrls.length} photo(s)',
+                            style: GoogleFonts.inter(
+                                fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose)),
+                      ),
+                  ],
+                ),
                 const SizedBox(height: 8),
-                _buildImageUploadZone(),
+                _buildMultiImageUploadZone(),
                 const SizedBox(height: 18),
 
                 // Titre
-                Text('Titre de l\'offre *', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text('Titre de l\'offre *',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _titleCtrl,
                   textCapitalization: TextCapitalization.words,
-                  validator: (v) => v == null || v.trim().length < 3 ? 'Titre requis (min 3 caractères)' : null,
+                  validator: (v) =>
+                      v == null || v.trim().length < 3 ? 'Titre requis (min 3 caractères)' : null,
                   decoration: _dec('Ex: Menu mariage 200 personnes', Icons.title_rounded),
                 ),
                 const SizedBox(height: 18),
 
                 // Type
-                Text('Type *', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text('Type *',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
                 const SizedBox(height: 10),
                 Wrap(
                   spacing: 8,
@@ -559,7 +648,11 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                           children: [
                             Icon(offerTypeIcon(t), size: 15, color: sel ? Colors.white : _P.inkSoft),
                             const SizedBox(width: 6),
-                            Text(t.displayName, style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: sel ? Colors.white : _P.ink)),
+                            Text(t.displayName,
+                                style: GoogleFonts.inter(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: sel ? Colors.white : _P.ink)),
                           ],
                         ),
                       ),
@@ -569,7 +662,8 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                 const SizedBox(height: 18),
 
                 // Prix
-                Text('Prix (USD) — laisser vide pour "Sur devis"', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text('Prix (USD) — laisser vide pour "Sur devis"',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _priceCtrl,
@@ -584,7 +678,8 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                 const SizedBox(height: 18),
 
                 // Description
-                Text('Description', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text('Description',
+                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
                 const SizedBox(height: 8),
                 TextFormField(
                   controller: _descCtrl,
@@ -598,12 +693,18 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                 // Visibilité
                 Container(
                   padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line)),
+                  decoration: BoxDecoration(
+                      color: _P.surface,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _P.line)),
                   child: Row(
                     children: [
                       Icon(Icons.visibility_rounded, color: _isActive ? _P.green : _P.inkSoft, size: 20),
                       const SizedBox(width: 12),
-                      Expanded(child: Text('Visible sur le catalogue et l\'accueil', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink))),
+                      Expanded(
+                          child: Text('Visible sur le catalogue et l\'accueil',
+                              style: GoogleFonts.inter(
+                                  fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink))),
                       Switch(value: _isActive, activeColor: _P.green, onChanged: (v) => setState(() => _isActive = v)),
                     ],
                   ),
@@ -615,10 +716,18 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
                   width: double.infinity,
                   child: ElevatedButton(
                     onPressed: _saving || _uploading ? null : _save,
-                    style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _P.rose,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                     child: _saving || _uploading
-                        ? const SizedBox(width: 24, height: 24, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                        : Text(widget.existing == null ? 'Publier l\'offre' : 'Enregistrer', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)),
+                        ? const SizedBox(
+                            width: 24,
+                            height: 24,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(widget.existing == null ? 'Publier l\'offre' : 'Enregistrer',
+                            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)),
                   ),
                 ),
               ],
@@ -629,80 +738,39 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     );
   }
 
-  // ✅ WIDGET ZONE UPLOAD
-  Widget _buildImageUploadZone() {
-    final hasImage = _imageUrl != null && _imageUrl!.isNotEmpty;
-    
-    return Container(
-      width: double.infinity,
-      height: 180,
-      decoration: BoxDecoration(
-        color: _P.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: hasImage ? _P.green : _P.line, width: hasImage ? 2 : 1.5),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: hasImage
-          ? Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.network(_imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => _placeholder()),
-                Positioned(top: 8, right: 8, child: _imageActionBtn(Icons.close_rounded, _removeImage)),
-                Positioned(bottom: 8, right: 8, child: _imageActionBtn(Icons.refresh_rounded, () => _pickImage(ImageSource.gallery))),
-              ],
-            )
-          : _placeholder(),
-    );
-  }
+  // ✅ WIDGET MULTI-PHOTOS : galerie horizontale + bouton "Ajouter une photo"
+  Widget _buildMultiImageUploadZone() {
+    final items = <Widget>[];
 
-  Widget _placeholder() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.cloud_upload_outlined, size: 40, color: _P.inkSoft),
-          const SizedBox(height: 8),
-          Text('Ajouter une photo', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _P.inkSoft)),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _smallBtn(Icons.photo_library_outlined, 'Galerie', () => _pickImage(ImageSource.gallery)),
-              const SizedBox(width: 10),
-              _smallBtn(Icons.photo_camera_outlined, 'Caméra', () => _pickImage(ImageSource.camera)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
+    // Cartes photos existantes + preview locale
+    for (var i = 0; i < _imageUrls.length; i++) {
+      final url = _imageUrls[i];
+      final bytes = i < _localBytes.length ? _localBytes[i] : null;
+      final hasUrl = url.isNotEmpty;
+      items.add(_PhotoCard(
+        index: i,
+        imageUrl: hasUrl ? url : null,
+        localBytes: (!hasUrl && bytes != null) ? bytes : null,
+        isCover: i == 0,
+        onRemove: () => _removeImage(i),
+        isUploading: !hasUrl,
+      ));
+    }
 
-  Widget _smallBtn(IconData icon, String label, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: _P.rose.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: _P.rose.withOpacity(0.3)),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Icon(icon, size: 16, color: _P.rose),
-          const SizedBox(width: 6),
-          Text(label, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose)),
-        ]),
-      ),
-    );
-  }
+    // Bouton "+" pour ajouter
+    items.add(_AddPhotoCard(
+      onPickGallery: () => _pickImage(ImageSource.gallery),
+      onPickCamera: () => _pickImage(ImageSource.camera),
+      uploading: _uploading,
+    ));
 
-  Widget _imageActionBtn(IconData icon, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.all(8),
-        decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
-        child: Icon(icon, color: Colors.white, size: 18),
+    return SizedBox(
+      height: 130,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => items[i],
       ),
     );
   }
@@ -715,6 +783,189 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
         fillColor: _P.surface,
         border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
       );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARTE PHOTO (uploadée ou en cours)
+// ═══════════════════════════════════════════════════════════════════════════
+class _PhotoCard extends StatelessWidget {
+  final int index;
+  final String? imageUrl;
+  final Uint8List? localBytes;
+  final bool isCover;
+  final VoidCallback onRemove;
+  final bool isUploading;
+
+  const _PhotoCard({
+    required this.index,
+    required this.imageUrl,
+    required this.localBytes,
+    required this.isCover,
+    required this.onRemove,
+    required this.isUploading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 130,
+      child: Container(
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: isCover ? _P.rose : _P.line, width: isCover ? 2 : 1),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Image (URL ou bytes locaux)
+            if (imageUrl != null)
+              Image.network(imageUrl!, fit: BoxFit.cover,
+                  errorBuilder: (_, __, ___) => _fallback())
+            else if (localBytes != null)
+              Image.memory(localBytes!, fit: BoxFit.cover)
+            else
+              _fallback(),
+
+            // Overlay en cas d'upload en cours
+            if (isUploading && imageUrl == null)
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withOpacity(0.4),
+                  child: const Center(
+                      child: SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))),
+                ),
+              ),
+
+            // Badge "COUVERTURE"
+            if (isCover)
+              Positioned(
+                top: 6,
+                left: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                      color: _P.rose, borderRadius: BorderRadius.circular(6)),
+                  child: Text('COUVERTURE',
+                      style: GoogleFonts.inter(
+                          fontSize: 8, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: 0.3)),
+                ),
+              ),
+
+            // Bouton ✕ supprimer
+            Positioned(
+              top: 6,
+              right: 6,
+              child: GestureDetector(
+                onTap: onRemove,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), shape: BoxShape.circle),
+                  child: const Icon(Icons.close_rounded, color: Colors.white, size: 14),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback() => Container(
+        color: _P.inkSoft.withOpacity(0.1),
+        child: const Icon(Icons.image_outlined, color: _P.inkSoft, size: 32),
+      );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BOUTON "AJOUTER UNE PHOTO" (ouvre Gallery/Camera)
+// ═══════════════════════════════════════════════════════════════════════════
+class _AddPhotoCard extends StatelessWidget {
+  final VoidCallback onPickGallery;
+  final VoidCallback onPickCamera;
+  final bool uploading;
+
+  const _AddPhotoCard({
+    required this.onPickGallery,
+    required this.onPickCamera,
+    required this.uploading,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: uploading ? null : _showSourceChoice(context),
+      child: SizedBox(
+        width: 130,
+        child: Container(
+          decoration: BoxDecoration(
+            color: _P.surface,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _P.rose.withOpacity(0.4), style: BorderStyle.solid),
+          ),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                      color: _P.rose.withOpacity(0.1), shape: BoxShape.circle),
+                  child: Icon(Icons.add_photo_alternate_outlined, color: _P.rose, size: 24),
+                ),
+                const SizedBox(height: 6),
+                Text('Ajouter',
+                    style: GoogleFonts.inter(
+                        fontSize: 11, fontWeight: FontWeight.w800, color: _P.ink)),
+                Text('une photo',
+                    style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: _P.inkSoft)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  VoidCallback? _showSourceChoice(BuildContext context) => () {
+        showModalBottomSheet(
+          context: context,
+          shape: const RoundedRectangleBorder(
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+          builder: (ctx) => SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    leading: const Icon(Icons.photo_library_outlined, color: _P.rose),
+                    title: Text('Depuis la galerie',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onPickGallery();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.photo_camera_outlined, color: _P.rose),
+                    title: Text('Prendre une photo',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      onPickCamera();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -737,9 +988,11 @@ class ThixHomeOffersSection extends ConsumerWidget {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                  Container(
+                      width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
                   const SizedBox(width: 8),
-                  Text('Offres du moment', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+                  Text('Offres du moment',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
                 ],
               ),
             ),
@@ -771,6 +1024,13 @@ class _HomeOfferCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = offerTypeColor(offer.type);
+    // ✅ Toutes les photos disponibles
+    final allImages = <String>[];
+    if ((offer.imageUrl ?? '').isNotEmpty) allImages.add(offer.imageUrl!);
+    for (final u in offer.galleryUrls) {
+      if (u.isNotEmpty && !allImages.contains(u)) allImages.add(u);
+    }
+
     return GestureDetector(
       onTap: () {
         HapticFeedback.mediumImpact();
@@ -793,16 +1053,47 @@ class _HomeOfferCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  offer.imageUrl != null && offer.imageUrl!.isNotEmpty
-                      ? Image.network(offer.imageUrl!, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: color.withOpacity(0.15), child: Icon(offerTypeIcon(offer.type), size: 40, color: color)))
-                      : Container(color: color.withOpacity(0.15), child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                  allImages.isNotEmpty
+                      ? PageView.builder(
+                          itemCount: allImages.length,
+                          itemBuilder: (_, i) => Image.network(
+                            allImages[i],
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                                color: color.withOpacity(0.15),
+                                child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                          ),
+                        )
+                      : Container(
+                          color: color.withOpacity(0.15),
+                          child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                  if (allImages.length > 1)
+                    Positioned(
+                      bottom: 6,
+                      right: 6,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.6),
+                            borderRadius: BorderRadius.circular(8)),
+                        child: Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Icon(Icons.photo_library_rounded, size: 10, color: Colors.white),
+                          const SizedBox(width: 3),
+                          Text('${allImages.length}',
+                              style: GoogleFonts.inter(
+                                  fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                        ]),
+                      ),
+                    ),
                   Positioned(
                     top: 8,
                     left: 8,
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                       decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
-                      child: Text(offer.type.displayName.toUpperCase(), style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                      child: Text(offer.type.displayName.toUpperCase(),
+                          style: GoogleFonts.inter(
+                              fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
                     ),
                   ),
                 ],
@@ -819,9 +1110,17 @@ class _HomeOfferCard extends StatelessWidget {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(offer.title, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                        Text(offer.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                                fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
                         const SizedBox(height: 2),
-                        Text(offer.providerBusinessName ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 10.5, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                        Text(offer.providerBusinessName ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.inter(
+                                fontSize: 10.5, color: _P.inkSoft, fontWeight: FontWeight.w600)),
                       ],
                     ),
                     Text(
