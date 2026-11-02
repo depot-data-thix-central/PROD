@@ -1,12 +1,10 @@
 // lib/presentation/thix_weeding/providers/provider_providers.dart
 // ============================================================================
-// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION ENTERPRISE)
-// ✅ Providers pour prestataires, réservations, tâches
-// ✅ Recherche par code unique Thix
-// ✅ Cache + Invalidation intelligente
-// ✅ Gestion d'erreurs robuste avec retry
-// ✅ Logging pour debugging production
-// ✅ Optimisation des performances
+// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v3)
+// ✅ LOGIQUE IDENTIQUE À thix_weeding_providers.dart (mariages)
+// ✅ myProviderProvider(ownerId) = getByOwner (comme myWeddingsProvider)
+// ✅ createProviderProvider(ownerId: user.id) comme createWedding
+// ✅ Cache + invalidation intelligente
 // ============================================================================
 
 import 'dart:async';
@@ -19,7 +17,6 @@ import '../services/provider_service.dart';
 // TYPES D'ERREURS PERSONNALISÉS
 // ═══════════════════════════════════════════════════════════════════════════
 
-/// Erreur personnalisée pour les opérations Provider
 class ProviderException implements Exception {
   final String message;
   final String? code;
@@ -35,39 +32,26 @@ class ProviderException implements Exception {
 
   @override
   String toString() {
-    if (code != null) {
-      return 'ProviderException[$code]: $message';
-    }
+    if (code != null) return 'ProviderException[$code]: $message';
     return 'ProviderException: $message';
   }
 }
 
-/// Erreur de timeout
 class ProviderTimeoutException extends ProviderException {
-  ProviderTimeoutException(String message) 
-      : super(message: message, code: 'TIMEOUT');
+  ProviderTimeoutException(String message) : super(message: message, code: 'TIMEOUT');
 }
 
-/// Erreur réseau
 class ProviderNetworkException extends ProviderException {
   ProviderNetworkException(String message, {dynamic originalError})
-      : super(
-          message: message,
-          code: 'NETWORK_ERROR',
-          originalError: originalError,
-        );
+      : super(message: message, code: 'NETWORK_ERROR', originalError: originalError);
 }
 
-/// Erreur de validation
 class ProviderValidationException extends ProviderException {
-  ProviderValidationException(String message)
-      : super(message: message, code: 'VALIDATION_ERROR');
+  ProviderValidationException(String message) : super(message: message, code: 'VALIDATION_ERROR');
 }
 
-/// Erreur de données introuvables
 class ProviderNotFoundException extends ProviderException {
-  ProviderNotFoundException(String message)
-      : super(message: message, code: 'NOT_FOUND');
+  ProviderNotFoundException(String message) : super(message: message, code: 'NOT_FOUND');
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -78,10 +62,8 @@ final providerServiceProvider = Provider<ProviderService>((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// UTILITAIRE : WRAPPER AVEC TIMEOUT ET GESTION D'ERREURS
+// WRAPPER TIMEOUT
 // ═══════════════════════════════════════════════════════════════════════════
-
-/// Exécute une opération async avec timeout et gestion d'erreurs
 Future<T> _executeWithTimeout<T>(
   Future<T> Function() operation, {
   Duration timeout = const Duration(seconds: 30),
@@ -90,28 +72,19 @@ Future<T> _executeWithTimeout<T>(
   try {
     return await operation().timeout(timeout);
   } on TimeoutException {
-    throw ProviderTimeoutException(
-        'L\'opération "$operationName" a pris trop de temps. Vérifiez votre connexion.');
+    throw ProviderTimeoutException('Opération "$operationName" trop longue');
   } on ProviderException {
     rethrow;
   } catch (e, stack) {
-    final errorMsg = e.toString();
-    
-    // Classification des erreurs
-    if (errorMsg.contains('SocketException') || 
-        errorMsg.contains('Network')) {
-      throw ProviderNetworkException(
-        'Erreur de connexion réseau',
-        originalError: e,
-      );
+    final msg = e.toString();
+    if (msg.contains('SocketException') || msg.contains('Network')) {
+      throw ProviderNetworkException('Erreur réseau', originalError: e);
     }
-    
-    if (errorMsg.contains('not found') || errorMsg.contains('404')) {
+    if (msg.contains('not found') || msg.contains('404')) {
       throw ProviderNotFoundException('Données introuvables');
     }
-    
     throw ProviderException(
-      message: 'Erreur inattendue: $errorMsg',
+      message: 'Erreur inattendue: $msg',
       code: 'UNKNOWN',
       originalError: e,
       stackTrace: stack,
@@ -120,18 +93,36 @@ Future<T> _executeWithTimeout<T>(
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LISTE DES PRESTATAIRES (PAGINÉ + FILTRES)
+// ✅ NOUVEAU : myProviderProvider (IDENTIQUE À myWeddingsProvider)
+// LOGIQUE : SELECT * FROM providers WHERE owner_id = userId
+// ═══════════════════════════════════════════════════════════════════════════
+final myProviderProvider = FutureProvider.autoDispose
+    .family<ThixProviderModel?, String>((ref, ownerId) async {
+  final service = ref.watch(providerServiceProvider);
+
+  if (kDebugMode) {
+    debugPrint('👤 [myProviderProvider] Loading for owner: $ownerId');
+  }
+
+  return await _executeWithTimeout(
+    () => service.getByOwner(ownerId),
+    operationName: 'getByOwner($ownerId)',
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LISTE DES PRESTATAIRES (PAGINÉ + FILTRES — pour catalogue public)
 // ═══════════════════════════════════════════════════════════════════════════
 final providersListProvider = FutureProvider.autoDispose
     .family<List<ThixProviderModel>, ProviderListParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('📋 Loading providers: page=${params.page}, '
         'category=${params.category?.name ?? "all"}, '
         'search="${params.search ?? ""}"');
   }
-  
+
   return await _executeWithTimeout(
     () => service.getAllProviders(
       page: params.page,
@@ -146,7 +137,6 @@ final providersListProvider = FutureProvider.autoDispose
   );
 });
 
-/// Paramètres pour la liste des prestataires
 class ProviderListParams {
   final int page;
   final int limit;
@@ -166,7 +156,6 @@ class ProviderListParams {
     this.search,
   });
 
-  /// Crée une copie avec des paramètres modifiés
   ProviderListParams copyWith({
     int? page,
     int? limit,
@@ -204,35 +193,20 @@ class ProviderListParams {
           search == other.search;
 
   @override
-  int get hashCode => Object.hash(
-        page,
-        limit,
-        category,
-        level,
-        city,
-        isAvailable,
-        search,
-      );
-
-  @override
-  String toString() {
-    return 'ProviderListParams(page: $page, limit: $limit, '
-        'category: ${category?.name}, level: ${level?.name}, '
-        'city: $city, search: $search)';
-  }
+  int get hashCode => Object.hash(page, limit, category, level, city, isAvailable, search);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRE PAR ID
+// PRESTATAIRE PAR ID (pour la page détail catalogue)
 // ═══════════════════════════════════════════════════════════════════════════
 final providerByIdProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, id) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('🔍 Loading provider by ID: $id');
   }
-  
+
   return await _executeWithTimeout(
     () => service.getProviderById(id),
     operationName: 'getProviderById($id)',
@@ -245,38 +219,14 @@ final providerByIdProvider = FutureProvider.autoDispose
 final providerByCodeProvider = FutureProvider.autoDispose
     .family<ThixProviderModel?, String>((ref, code) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('🔍 Loading provider by code: $code');
   }
-  
+
   return await _executeWithTimeout(
     () => service.getProviderByCode(code),
     operationName: 'getProviderByCode($code)',
-  );
-});
-
-// ═══════════════════════════════════════════════════════════════════════════
-// PRESTATAIRE COURANT (Espace prestataire connecté)
-// ═══════════════════════════════════════════════════════════════════════════
-final currentProviderProvider = FutureProvider.autoDispose
-    .family<ThixProviderModel?, String?>((ref, userId) async {
-  if (userId == null || userId.isEmpty) {
-    if (kDebugMode) {
-      debugPrint('⚠️ currentProviderProvider: userId is null/empty');
-    }
-    return null;
-  }
-  
-  final service = ref.watch(providerServiceProvider);
-  
-  if (kDebugMode) {
-    debugPrint('👤 Loading current provider for user: $userId');
-  }
-  
-  return await _executeWithTimeout(
-    () => service.getProviderByUserId(userId),
-    operationName: 'getProviderByUserId($userId)',
   );
 });
 
@@ -287,29 +237,22 @@ final providerReservationsProvider = FutureProvider.autoDispose
     .family<List<ProviderReservationModel>, ProviderReservationsParams>(
         (ref, params) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('📅 Loading reservations for provider: ${params.providerId}');
   }
-  
+
   return await _executeWithTimeout(
-    () => service.getProviderReservations(
-      params.providerId,
-      status: params.status,
-    ),
+    () => service.getProviderReservations(params.providerId, status: params.status),
     operationName: 'getProviderReservations(${params.providerId})',
   );
 });
 
-/// Paramètres pour les réservations
 class ProviderReservationsParams {
   final String providerId;
   final ReservationStatus? status;
 
-  const ProviderReservationsParams({
-    required this.providerId,
-    this.status,
-  });
+  const ProviderReservationsParams({required this.providerId, this.status});
 
   ProviderReservationsParams copyWith({
     String? providerId,
@@ -339,26 +282,22 @@ class ProviderReservationsParams {
 final providerTasksProvider = FutureProvider.autoDispose
     .family<List<ProviderTaskModel>, ProviderTasksParams>((ref, params) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('✅ Loading tasks for provider: ${params.providerId}');
   }
-  
+
   return await _executeWithTimeout(
     () => service.getProviderTasks(params.providerId, status: params.status),
     operationName: 'getProviderTasks(${params.providerId})',
   );
 });
 
-/// Paramètres pour les tâches
 class ProviderTasksParams {
   final String providerId;
   final TaskStatus? status;
 
-  const ProviderTasksParams({
-    required this.providerId,
-    this.status,
-  });
+  const ProviderTasksParams({required this.providerId, this.status});
 
   ProviderTasksParams copyWith({
     String? providerId,
@@ -388,11 +327,11 @@ class ProviderTasksParams {
 final providerStatsProvider = FutureProvider.autoDispose
     .family<Map<String, dynamic>, String>((ref, providerId) async {
   final service = ref.watch(providerServiceProvider);
-  
+
   if (kDebugMode) {
     debugPrint('📊 Loading stats for provider: $providerId');
   }
-  
+
   return await _executeWithTimeout(
     () => service.getProviderStats(providerId),
     operationName: 'getProviderStats($providerId)',
@@ -400,15 +339,45 @@ final providerStatsProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ACTIONS (CREATE, UPDATE, DELETE)
+// OFFRES / SERVICES / MENUS
 // ═══════════════════════════════════════════════════════════════════════════
+final providerOffersProvider = FutureProvider.autoDispose
+    .family<List<ProviderOfferModel>, String>((ref, providerId) async {
+  final service = ref.watch(providerServiceProvider);
 
-/// Créer un nouveau prestataire
+  if (kDebugMode) {
+    debugPrint('🎁 Loading offers for provider: $providerId');
+  }
+
+  return await _executeWithTimeout(
+    () => service.getOffersByProvider(providerId),
+    operationName: 'getOffersByProvider($providerId)',
+  );
+});
+
+final activeOffersProvider =
+    FutureProvider.autoDispose<List<ProviderOfferModel>>((ref) async {
+  final service = ref.watch(providerServiceProvider);
+
+  if (kDebugMode) {
+    debugPrint('🌟 Loading active offers (home/catalog)');
+  }
+
+  return await _executeWithTimeout(
+    () => service.getActiveOffersWithProvider(),
+    operationName: 'getActiveOffersWithProvider',
+  );
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — CRÉATION (LOGIQUE IDENTIQUE À createWedding)
+// ✅ ownerId = user.id (pas userId optionnel)
+// ═══════════════════════════════════════════════════════════════════════════
 final createProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
+
   return ({
-    String? userId,
+    required String ownerId,  // ← CHANGEMENT CLÉ : requis, pas optionnel
     required ProviderCategory category,
     required String businessName,
     String? description,
@@ -424,17 +393,16 @@ final createProviderProvider = Provider((ref) {
     Map<String, dynamic>? requirements,
   }) async {
     if (kDebugMode) {
-      debugPrint('➕ Creating provider: $businessName (${category.name})');
+      debugPrint('➕ Creating provider: $businessName (owner: $ownerId)');
     }
-    
-    // Validation basique
+
     if (businessName.trim().isEmpty) {
       throw ProviderValidationException('Le nom de l\'entreprise est requis');
     }
-    
+
     final provider = await _executeWithTimeout(
       () => service.createProvider(
-        userId: userId,
+        ownerId: ownerId,  // ← CHANGEMENT CLÉ
         category: category,
         businessName: businessName,
         description: description,
@@ -451,25 +419,29 @@ final createProviderProvider = Provider((ref) {
       ),
       operationName: 'createProvider',
     );
-    
-    // Invalidation intelligente des caches
+
+    // ✅ Invalidation ciblée : myProviderProvider(ownerId) + liste publique
+    ref.invalidate(myProviderProvider(ownerId));
     ref.invalidate(providersListProvider);
     ref.invalidate(providerByIdProvider(provider.id));
-    
+
     if (kDebugMode) {
       debugPrint('✅ Provider created: ${provider.id} - ${provider.uniqueCode}');
     }
-    
+
     return provider;
   };
 });
 
-/// Mettre à jour un prestataire existant
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — MISE À JOUR / SUPPRESSION / VALIDATION
+// ═══════════════════════════════════════════════════════════════════════════
 final updateProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
+
   return (
     String id, {
+    String? ownerId,  // ← pour invalider myProviderProvider
     String? businessName,
     String? description,
     String? phone,
@@ -488,10 +460,8 @@ final updateProviderProvider = Provider((ref) {
     bool? isAvailable,
     Map<String, dynamic>? requirements,
   }) async {
-    if (kDebugMode) {
-      debugPrint('✏️ Updating provider: $id');
-    }
-    
+    if (kDebugMode) debugPrint('✏️ Updating provider: $id');
+
     final provider = await _executeWithTimeout(
       () => service.updateProvider(
         id,
@@ -515,39 +485,30 @@ final updateProviderProvider = Provider((ref) {
       ),
       operationName: 'updateProvider($id)',
     );
-    
-    // Invalidation ciblée
+
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-    
-    if (kDebugMode) {
-      debugPrint('✅ Provider updated: $id');
-    }
-    
+    if (ownerId != null) ref.invalidate(myProviderProvider(ownerId));
+
     return provider;
   };
 });
 
-/// Valider/Rejeter un prestataire (Staff uniquement)
 final validateProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
+
   return (
     String id, {
     required bool approved,
     String? rejectionReason,
     TrackingLevel? newLevel,
   }) async {
-    if (kDebugMode) {
-      debugPrint('🔐 Validating provider: $id (approved: $approved)');
-    }
-    
-    // Validation
+    if (kDebugMode) debugPrint('🔐 Validating provider: $id (approved: $approved)');
+
     if (!approved && (rejectionReason == null || rejectionReason.isEmpty)) {
-      throw ProviderValidationException(
-          'Un motif de rejet est requis pour les refus');
+      throw ProviderValidationException('Un motif de rejet est requis');
     }
-    
+
     final provider = await _executeWithTimeout(
       () => service.validateProvider(
         id,
@@ -557,47 +518,127 @@ final validateProviderProvider = Provider((ref) {
       ),
       operationName: 'validateProvider($id)',
     );
-    
-    // Invalidation
+
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-    
-    if (kDebugMode) {
-      debugPrint('✅ Provider validated: $id (${approved ? "approved" : "rejected"})');
-    }
-    
+
     return provider;
   };
 });
 
-/// Supprimer un prestataire
 final deleteProviderProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
-  return (String id) async {
-    if (kDebugMode) {
-      debugPrint('🗑️ Deleting provider: $id');
-    }
-    
+
+  return (String id, {String? ownerId}) async {
+    if (kDebugMode) debugPrint('🗑️ Deleting provider: $id');
+
     await _executeWithTimeout(
       () => service.deleteProvider(id),
       operationName: 'deleteProvider($id)',
     );
-    
-    // Invalidation complète
+
     ref.invalidate(providerByIdProvider(id));
     ref.invalidate(providersListProvider);
-    
-    if (kDebugMode) {
-      debugPrint('✅ Provider deleted: $id');
-    }
+    if (ownerId != null) ref.invalidate(myProviderProvider(ownerId));
   };
 });
 
-/// Créer une réservation
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — OFFRES
+// ═══════════════════════════════════════════════════════════════════════════
+final createOfferProvider = Provider((ref) {
+  final service = ref.read(providerServiceProvider);
+
+  return ({
+    required String providerId,
+    required String title,
+    required OfferType type,
+    String? description,
+    double? price,
+    String? currency,
+    String? imageUrl,
+    bool isActive = true,
+  }) async {
+    if (kDebugMode) debugPrint('🎁 Creating offer: $title');
+
+    final offer = await _executeWithTimeout(
+      () => service.createOffer(
+        providerId: providerId,
+        title: title,
+        type: type,
+        description: description,
+        price: price,
+        currency: currency,
+        imageUrl: imageUrl,
+        isActive: isActive,
+      ),
+      operationName: 'createOffer',
+    );
+
+    ref.invalidate(providerOffersProvider(providerId));
+    ref.invalidate(activeOffersProvider);
+
+    return offer;
+  };
+});
+
+final updateOfferProvider = Provider((ref) {
+  final service = ref.read(providerServiceProvider);
+
+  return (
+    String offerId,
+    String providerId, {
+    String? title,
+    OfferType? type,
+    String? description,
+    double? price,
+    String? imageUrl,
+    bool? isActive,
+  }) async {
+    if (kDebugMode) debugPrint('✏️ Updating offer: $offerId');
+
+    final offer = await _executeWithTimeout(
+      () => service.updateOffer(
+        offerId,
+        title: title,
+        type: type,
+        description: description,
+        price: price,
+        imageUrl: imageUrl,
+        isActive: isActive,
+      ),
+      operationName: 'updateOffer($offerId)',
+    );
+
+    ref.invalidate(providerOffersProvider(providerId));
+    ref.invalidate(activeOffersProvider);
+
+    return offer;
+  };
+});
+
+final deleteOfferProvider = Provider((ref) {
+  final service = ref.read(providerServiceProvider);
+
+  return (String offerId, String providerId) async {
+    if (kDebugMode) debugPrint('🗑️ Deleting offer: $offerId');
+
+    await _executeWithTimeout(
+      () => service.deleteOffer(offerId),
+      operationName: 'deleteOffer($offerId)',
+    );
+
+    ref.invalidate(providerOffersProvider(providerId));
+    ref.invalidate(activeOffersProvider);
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — RÉSERVATIONS
+// ═══════════════════════════════════════════════════════════════════════════
 final createReservationProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
+
   return ({
     required String providerId,
     required String weddingId,
@@ -610,19 +651,15 @@ final createReservationProvider = Provider((ref) {
     String? currency,
     String? notes,
   }) async {
-    if (kDebugMode) {
-      debugPrint('📅 Creating reservation for provider: $providerId');
-    }
-    
-    // Validation
+    if (kDebugMode) debugPrint('📅 Creating reservation for provider: $providerId');
+
     if (eventDate.isBefore(DateTime.now())) {
-      throw ProviderValidationException('La date de l\'événement doit être future');
+      throw ProviderValidationException('La date doit être future');
     }
-    
     if (clientName.trim().isEmpty) {
       throw ProviderValidationException('Le nom du client est requis');
     }
-    
+
     final reservation = await _executeWithTimeout(
       () => service.createReservation(
         providerId: providerId,
@@ -638,55 +675,40 @@ final createReservationProvider = Provider((ref) {
       ),
       operationName: 'createReservation',
     );
-    
-    // Invalidation ciblée
+
     ref.invalidate(providerReservationsProvider(
       ProviderReservationsParams(providerId: providerId),
     ));
-    
-    if (kDebugMode) {
-      debugPrint('✅ Reservation created: ${reservation.id}');
-    }
-    
+
     return reservation;
   };
 });
 
-/// Mettre à jour le statut d'une réservation
 final updateReservationStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
-  return (
-    String reservationId,
-    ReservationStatus status,
-    String providerId,
-  ) async {
-    if (kDebugMode) {
-      debugPrint('🔄 Updating reservation status: $reservationId -> ${status.name}');
-    }
-    
+
+  return (String reservationId, ReservationStatus status, String providerId) async {
+    if (kDebugMode) debugPrint('🔄 Updating reservation: $reservationId -> ${status.name}');
+
     final reservation = await _executeWithTimeout(
       () => service.updateReservationStatus(reservationId, status),
       operationName: 'updateReservationStatus($reservationId)',
     );
-    
-    // Invalidation
+
     ref.invalidate(providerReservationsProvider(
       ProviderReservationsParams(providerId: providerId),
     ));
-    
-    if (kDebugMode) {
-      debugPrint('✅ Reservation status updated: $reservationId');
-    }
-    
+
     return reservation;
   };
 });
 
-/// Créer une tâche
+// ═══════════════════════════════════════════════════════════════════════════
+// ACTIONS — TÂCHES
+// ═══════════════════════════════════════════════════════════════════════════
 final createTaskProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
+
   return ({
     required String providerId,
     required String weddingId,
@@ -696,19 +718,15 @@ final createTaskProvider = Provider((ref) {
     required DateTime dueDateTime,
     int priority = 2,
   }) async {
-    if (kDebugMode) {
-      debugPrint('✅ Creating task for provider: $providerId');
-    }
-    
-    // Validation
+    if (kDebugMode) debugPrint('✅ Creating task for provider: $providerId');
+
     if (title.trim().isEmpty) {
-      throw ProviderValidationException('Le titre de la tâche est requis');
+      throw ProviderValidationException('Le titre est requis');
     }
-    
     if (dueDateTime.isBefore(DateTime.now())) {
       throw ProviderValidationException('La date d\'échéance doit être future');
     }
-    
+
     final task = await _executeWithTimeout(
       () => service.createTask(
         providerId: providerId,
@@ -721,47 +739,30 @@ final createTaskProvider = Provider((ref) {
       ),
       operationName: 'createTask',
     );
-    
-    // Invalidation
+
     ref.invalidate(providerTasksProvider(
       ProviderTasksParams(providerId: providerId),
     ));
-    
-    if (kDebugMode) {
-      debugPrint('✅ Task created: ${task.id}');
-    }
-    
+
     return task;
   };
 });
 
-/// Mettre à jour le statut d'une tâche
 final updateTaskStatusProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
-  
-  return (
-    String taskId,
-    TaskStatus status,
-    String providerId,
-  ) async {
-    if (kDebugMode) {
-      debugPrint('🔄 Updating task status: $taskId -> ${status.name}');
-    }
-    
+
+  return (String taskId, TaskStatus status, String providerId) async {
+    if (kDebugMode) debugPrint('🔄 Updating task: $taskId -> ${status.name}');
+
     final task = await _executeWithTimeout(
       () => service.updateTaskStatus(taskId, status),
       operationName: 'updateTaskStatus($taskId)',
     );
-    
-    // Invalidation
+
     ref.invalidate(providerTasksProvider(
       ProviderTasksParams(providerId: providerId),
     ));
-    
-    if (kDebugMode) {
-      debugPrint('✅ Task status updated: $taskId');
-    }
-    
+
     return task;
   };
 });
@@ -769,20 +770,14 @@ final updateTaskStatusProvider = Provider((ref) {
 // ═══════════════════════════════════════════════════════════════════════════
 // PROVIDERS UTILITAIRES
 // ═══════════════════════════════════════════════════════════════════════════
-
-/// Provider pour vérifier si un prestataire existe par code
 final providerExistsByCodeProvider = FutureProvider.autoDispose
     .family<bool, String>((ref, code) async {
   final provider = await ref.watch(providerByCodeProvider(code).future);
   return provider != null;
 });
 
-/// Provider pour obtenir le nombre total de prestataires
 final totalProvidersCountProvider = FutureProvider<int>((ref) async {
   final service = ref.watch(providerServiceProvider);
   final providers = await service.getAllProviders(page: 1, limit: 1);
-  
-  // Note: Cette implémentation simplifiée retourne 1 ou 0
-  // Pour un vrai count, il faudrait ajouter une méthode count() dans le service
   return providers.isNotEmpty ? 1 : 0;
 });
