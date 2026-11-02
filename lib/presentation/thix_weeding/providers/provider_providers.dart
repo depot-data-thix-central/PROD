@@ -1,12 +1,12 @@
 // lib/presentation/thix_weeding/providers/provider_providers.dart
 // ============================================================================
-// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v6 — MULTI-PHOTOS + CATÉGORIE OFFRE)
+// THIX WEDDING PROVIDER RIVERPOD PROVIDERS (PRODUCTION v7 — MULTI-CATÉGORIES OFFRES)
 // ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
 // ✅ myProviderProvider(ownerId) = activité sélectionnée (fallback principale)
 // ✅ selectedActivityIdProvider = sélecteur global (barre du shell)
 // ✅ myActivitiesProvider / activityDetailProvider / CRUD activités
 // ✅ createProvider / update / delete / validate / offres / réservations / tâches
-// ✅ OFFRES : galleryUrls (multi-photos) + category (catégorie d'offre)
+// ✅ OFFRES : galleryUrls (multi-photos) + categories[] (1 à 3 catégories d'offre)
 // ✅ ZÉRO doublon — chaque provider déclaré une seule fois
 // ============================================================================
 
@@ -406,6 +406,7 @@ final providerOffersProvider = FutureProvider.autoDispose
 });
 
 // ✅ OFFRES ACTIVES (home + catalogue) — filtre catégorie optionnel
+//    null = toutes catégories, sinon filtre côté serveur
 final activeOffersProvider =
     FutureProvider.autoDispose.family<List<ProviderOfferModel>, ProviderCategory?>((ref, category) async {
   final service = ref.watch(providerServiceProvider);
@@ -767,7 +768,7 @@ final deleteProviderProvider = Provider((ref) {
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 🎁 ACTIONS OFFRES (v6 : galleryUrls + category)
+// 🎁 ACTIONS OFFRES (v7 : galleryUrls + categories[] multi-catégories)
 // ═══════════════════════════════════════════════════════════════════════════
 final createOfferProvider = Provider((ref) {
   final service = ref.read(providerServiceProvider);
@@ -780,12 +781,13 @@ final createOfferProvider = Provider((ref) {
     double? price,
     String? currency,
     String? imageUrl,
-    List<String>? galleryUrls,       // ✅ MULTI-PHOTOS
-    ProviderCategory? category,      // ✅ CATÉGORIE D'OFFRE
+    List<String>? galleryUrls,
+    ProviderCategory? category,
+    List<ProviderCategory>? categories,  // ✅ MULTI-CATÉGORIES
     bool isActive = true,
   }) async {
     if (kDebugMode) {
-      debugPrint('🎁 Creating offer: $title (category: ${category?.name})');
+      debugPrint('🎁 Creating offer: $title (categories: ${categories?.map((c) => c.name).toList() ?? category?.name})');
     }
 
     final offer = await _executeWithTimeout(
@@ -797,15 +799,16 @@ final createOfferProvider = Provider((ref) {
         price: price,
         currency: currency,
         imageUrl: imageUrl,
-        galleryUrls: galleryUrls,    // ✅ transmis au service
-        category: category,          // ✅ transmis au service
+        galleryUrls: galleryUrls,
+        category: category,
+        categories: categories,  // ✅ transmis au service
         isActive: isActive,
       ),
       operationName: 'createOffer',
     );
 
     ref.invalidate(providerOffersProvider(providerId));
-    ref.invalidate(activeOffersProvider);
+    ref.invalidate(activeOffersProvider(null));  // ✅ family provider
     return offer;
   };
 });
@@ -821,12 +824,13 @@ final updateOfferProvider = Provider((ref) {
     String? description,
     double? price,
     String? imageUrl,
-    List<String>? galleryUrls,       // ✅ MULTI-PHOTOS
-    ProviderCategory? category,      // ✅ CATÉGORIE D'OFFRE
+    List<String>? galleryUrls,
+    ProviderCategory? category,
+    List<ProviderCategory>? categories,  // ✅ MULTI-CATÉGORIES
     bool? isActive,
   }) async {
     if (kDebugMode) {
-      debugPrint('✏️ Updating offer: $offerId (category: ${category?.name})');
+      debugPrint('✏️ Updating offer: $offerId (categories: ${categories?.map((c) => c.name).toList() ?? category?.name})');
     }
 
     final offer = await _executeWithTimeout(
@@ -837,15 +841,16 @@ final updateOfferProvider = Provider((ref) {
         description: description,
         price: price,
         imageUrl: imageUrl,
-        galleryUrls: galleryUrls,    // ✅ transmis au service
-        category: category,          // ✅ transmis au service
+        galleryUrls: galleryUrls,
+        category: category,
+        categories: categories,  // ✅ transmis au service
         isActive: isActive,
       ),
       operationName: 'updateOffer($offerId)',
     );
 
     ref.invalidate(providerOffersProvider(providerId));
-    ref.invalidate(activeOffersProvider);
+    ref.invalidate(activeOffersProvider(null));  // ✅ family provider
     return offer;
   };
 });
@@ -862,7 +867,7 @@ final deleteOfferProvider = Provider((ref) {
     );
 
     ref.invalidate(providerOffersProvider(providerId));
-    ref.invalidate(activeOffersProvider);
+    ref.invalidate(activeOffersProvider(null));  // ✅ family provider
   };
 });
 
