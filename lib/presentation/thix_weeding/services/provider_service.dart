@@ -5,7 +5,7 @@
 // ✅ Génération code unique Thix-CAT-XXX
 // ✅ Validation documents (surtout salles)
 // ✅ Gestion réservations et tâches
-// ✅ FIX : userId nullable géré correctement
+// ✅ FIX : Typage explicite <String, dynamic> pour toutes les maps de données
 // ============================================================================
 
 import 'dart:math';
@@ -120,7 +120,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // RÉCUPÉRER PRESTATAIRE PAR USER ID
-  // ✅ FIX : Gère les userId null ou vides
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel?> getProviderByUserId(String? userId) async {
     if (userId == null || userId.isEmpty) return null;
@@ -141,7 +140,6 @@ class ProviderService {
 
   // ═══════════════════════════════════════════════════════════════════════════
   // CRÉER UN NOUVEAU PRESTATAIRE
-  // ✅ FIX : userId nullable, gestion correcte des valeurs null
   // ═══════════════════════════════════════════════════════════════════════════
   Future<ThixProviderModel> createProvider({
     String? userId,
@@ -163,7 +161,7 @@ class ProviderService {
       final uniqueCode = await generateUniqueCode(category);
       final now = DateTime.now();
       
-      // ✅ Construire le map de données en excluant les champs null
+      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'unique_code': uniqueCode,
         'category': category.name,
@@ -178,7 +176,6 @@ class ProviderService {
         'updated_at': now.toIso8601String(),
       };
       
-      // ✅ Ajouter les champs optionnels uniquement s'ils ne sont pas null
       if (userId != null) data['user_id'] = userId;
       if (description != null) data['description'] = description;
       if (phone != null) data['phone'] = phone;
@@ -188,7 +185,6 @@ class ProviderService {
       if (minPrice != null) data['min_price'] = minPrice;
       if (maxPrice != null) data['max_price'] = maxPrice;
       
-      // ✅ Les arrays et jsonb ont des valeurs par défaut en BDD
       data['gallery_urls'] = galleryUrls ?? [];
       data['video_urls'] = videoUrls ?? [];
       data['requirements'] = requirements ?? {};
@@ -229,6 +225,7 @@ class ProviderService {
     Map<String, dynamic>? requirements,
   }) async {
     try {
+      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'updated_at': DateTime.now().toIso8601String(),
       };
@@ -274,6 +271,7 @@ class ProviderService {
     TrackingLevel? newLevel,
   }) async {
     try {
+      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'updated_at': DateTime.now().toIso8601String(),
         'verification_status': approved
@@ -326,7 +324,8 @@ class ProviderService {
   }) async {
     try {
       final now = DateTime.now();
-      final data = {
+      // ✅ FIX : Typage explicite <String, dynamic>
+      final data = <String, dynamic>{
         'provider_id': providerId,
         'wedding_id': weddingId,
         'client_name': clientName,
@@ -338,8 +337,8 @@ class ProviderService {
       };
       
       if (eventType != null) data['event_type'] = eventType;
-      if (guestCount != null) data['guest_count'] = guestCount;
-      if (totalPrice != null) data['total_price'] = totalPrice;
+      if (guestCount != null) data['guest_count'] = guestCount; // ✅ Fonctionne maintenant
+      if (totalPrice != null) data['total_price'] = totalPrice; // ✅ Fonctionne maintenant
       if (currency != null) data['currency'] = currency;
       if (notes != null) data['notes'] = notes;
       
@@ -382,7 +381,8 @@ class ProviderService {
     ReservationStatus status,
   ) async {
     try {
-      final data = {
+      // ✅ FIX : Typage explicite <String, dynamic>
+      final data = <String, dynamic>{
         'status': status.name,
         'updated_at': DateTime.now().toIso8601String(),
       };
@@ -415,7 +415,8 @@ class ProviderService {
   }) async {
     try {
       final now = DateTime.now();
-      final data = {
+      // ✅ FIX : Typage explicite <String, dynamic>
+      final data = <String, dynamic>{
         'provider_id': providerId,
         'wedding_id': weddingId,
         'assigned_by': assignedBy,
@@ -467,6 +468,7 @@ class ProviderService {
     TaskStatus status,
   ) async {
     try {
+      // ✅ FIX : Typage explicite <String, dynamic>
       final data = <String, dynamic>{
         'status': status.name,
       };
