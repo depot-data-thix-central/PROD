@@ -58,7 +58,7 @@ import 'pages/staff/cadeaux/gifts_management_page.dart';
 import 'pages/provider_portal/provider_portal_shell.dart';
 import 'pages/provider_portal/provider_auth_pages.dart';
 import 'pages/provider_portal/provider_catalog_pages.dart';
-
+import 'pages/provider_portal/provider_register_simple.dart';
 class ThixWeedingRoutes {
   static const String home = '/thix-weeding';
 
@@ -132,13 +132,11 @@ class ThixWeedingRoutes {
               path: 'provider/auth',
               name: providerAuth,
               builder: (c, s) => const ProviderLoginPage(),
-            ),
-            GoRoute(
-              path: 'provider/register',
-              name: providerRegister,
-              builder: (c, s) => const ProviderRegisterPage(),
-            ),
-
+            ),GoRoute(
+  path: 'provider/register',
+  name: providerRegister,
+  builder: (c, s) => const ProviderRegisterSimplePage(),
+),
             // ✅ FIX : catalogue au MÊME niveau que auth/register/dashboard
             GoRoute(
               path: 'provider/catalog',
