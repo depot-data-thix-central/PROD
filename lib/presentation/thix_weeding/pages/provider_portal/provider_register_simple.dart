@@ -3,7 +3,7 @@
 // THIX WEDDING — INSCRIPTION PRESTATAIRE SIMPLIFIÉE (SANS AUTH)
 // ✅ Formulaire direct en 1 page (nom, email, téléphone, catégorie, ville)
 // ✅ Génération auto du code unique Thix-CAT-XXX
-// ✅ Pas d'authentification Supabase requise
+// ✅ Pas d'authentification Supabase requise (userId = null)
 // ✅ Redirection vers le dashboard après création
 // ============================================================================
 import 'package:flutter/material.dart';
@@ -11,7 +11,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -85,9 +84,9 @@ class _ProviderRegisterSimplePageState
     HapticFeedback.mediumImpact();
 
     try {
-      // ✅ Création SANS user_id (nullable maintenant)
+      // ✅ SOLUTION PROPRE : userId = null (la colonne est nullable en BDD)
       final provider = await ref.read(createProviderProvider)(
-        userId: 'anonymous', // valeur placeholder, user_id est nullable
+        userId: null, 
         category: _category!,
         businessName: _nameCtrl.text.trim(),
         email: _emailCtrl.text.trim(),
@@ -102,11 +101,14 @@ class _ProviderRegisterSimplePageState
       // ✅ Afficher le code Thix puis rediriger
       await showDialog(
         context: context,
+        barrierDismissible: false,
         builder: (ctx) => _SuccessDialog(code: provider.uniqueCode),
       );
 
       if (!mounted) return;
+      // Redirection vers le dashboard (le shell gérera l'affichage même sans user_id)
       context.go('/thix-weeding/provider/dashboard');
+      
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
