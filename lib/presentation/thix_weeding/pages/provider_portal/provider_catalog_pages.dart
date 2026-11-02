@@ -1,14 +1,13 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_catalog_pages.dart
 // ============================================================================
-// THIX WEDDING PROVIDER CATALOG (PRODUCTION v5 — OFFRES ACTIVES + MULTI-PHOTOS)
+// THIX WEDDING PROVIDER CATALOG (PRODUCTION v6 — OFFRES + FILTRE SERVEUR)
 // ✅ Hero banner animé avec auto-scroll + zoom parallax
-// ✅ Section "Offres & Services" : offres actives filtrées par catégorie
+// ✅ Section "Offres & Services" filtrée PAR CATÉGORIE (côté serveur)
 // ✅ Section "Promotions" (offres avec prix réduit)
 // ✅ Section "Les plus réservés" (basée sur reviewCount + rating)
 // ✅ Section "Nouveaux prestataires" (10 derniers inscrits)
-// ✅ Multi-photos : carrousel PageView dans les cartes
-// ✅ Filtre verified assoupli : accepte pending + rejected exclu
-// ✅ Catégories étendues (10 au total)
+// ✅ Multi-photos : carrousel PageView dans toutes les cartes
+// ✅ Filtre verified assoupli : pending accepté, rejected exclu
 // ============================================================================
 
 import 'dart:async';
@@ -25,7 +24,7 @@ import '../../providers/provider_providers.dart';
 import 'provider_offers_page.dart' show offerTypeColor, offerTypeIcon;
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PALETTE GLASSMORPHISM
+// PALETTE
 // ═══════════════════════════════════════════════════════════════════════════
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -53,16 +52,16 @@ final _catalogRatingFilterProvider = StateProvider<double?>((ref) => null);
 final _catalogCityFilterProvider = StateProvider<String?>((ref) => null);
 final _favoritesProvider = StateProvider<Set<String>>((ref) => <String>{});
 
-// ✅ NOUVEAU : offres actives (home + catalogue), chargées une seule fois
-final _activeOffersCatalogProvider = FutureProvider<List<ProviderOfferModel>>((ref) async {
+// ✅ NOUVEAU : offres actives FILTRÉES PAR CATÉGORIE côté serveur
+final _activeOffersCatalogProvider = FutureProvider.autoDispose
+    .family<List<ProviderOfferModel>, ProviderCategory?>((ref, category) async {
   final service = ref.watch(providerServiceProvider);
-  return await service.getActiveOffersWithProvider(limit: 100);
+  return await service.getActiveOffersWithProvider(limit: 100, category: category);
 });
 
 final _topProvidersProvider = FutureProvider<List<ThixProviderModel>>((ref) async {
   final service = ref.watch(providerServiceProvider);
   final all = await service.getAllProviders(limit: 50);
-  // ✅ Assoupli : accepte pending + verified (exclut juste rejected)
   final usable = all.where((p) => p.verificationStatus != ProviderVerificationStatus.rejected).toList();
   usable.sort((a, b) {
     final scoreA = a.reviewCount * 10 + (a.rating * 100).toInt();
@@ -118,7 +117,6 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
   List<ThixProviderModel> _allProviders = [];
   bool _hasMore = true;
 
-  // Hero banner auto-scroll
   late final PageController _heroPageController;
   int _heroCurrentPage = 0;
   Timer? _heroAutoScrollTimer;
@@ -139,7 +137,6 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
   Future<void> _loadHeroProviders() async {
     final service = ref.read(providerServiceProvider);
     final all = await service.getAllProviders(limit: 10);
-    // ✅ Assoupli : accepte pending + verified
     final usable = all.where((p) => p.verificationStatus != ProviderVerificationStatus.rejected).toList();
     usable.sort((a, b) => b.rating.compareTo(a.rating));
     if (mounted) {
@@ -264,14 +261,14 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
     });
   }
 
-  // ✅ Filtre côté client : rejette juste 'rejected'
   bool _isUsable(ThixProviderModel p) =>
       p.verificationStatus != ProviderVerificationStatus.rejected;
 
   @override
   Widget build(BuildContext context) {
     final providersAsync = ref.watch(providersListProvider(_params));
-    final offersAsync = ref.watch(_activeOffersCatalogProvider);
+    // ✅ Passe la catégorie au provider → filtre côté serveur
+    final offersAsync = ref.watch(_activeOffersCatalogProvider(_category));
     final sort = ref.watch(_catalogSortProvider);
     final favorites = ref.watch(_favoritesProvider);
 
@@ -281,9 +278,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
         controller: _scrollController,
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // ═══════════════════════════════════════════════════════════
-          // HERO BANNER ANIMÉ
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ HERO BANNER ═══════════════
           if (_heroProviders.isNotEmpty)
             _HeroBannerSection(
               providers: _heroProviders,
@@ -292,9 +287,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
               onPageChanged: (i) => setState(() => _heroCurrentPage = i),
             ),
 
-          // ═══════════════════════════════════════════════════════════
-          // HEADER PREMIUM
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ HEADER ═══════════════
           SliverToBoxAdapter(
             child: _CatalogHeader(
               search: _search,
@@ -304,9 +297,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
             ),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // CHIPS CATÉGORIES
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ CHIPS CATÉGORIES ═══════════════
           SliverToBoxAdapter(
             child: SizedBox(
               height: 52,
@@ -337,20 +328,13 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
             ),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // ✅ NOUVEAU : OFFRES & SERVICES (filtrées par catégorie)
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ OFFRES & SERVICES (filtrées serveur) ═══════════════
           offersAsync.when(
             data: (allOffers) {
-              // Filtrer par catégorie d'offre (sélectionnée via les chips)
+              // ✅ Filtrage client uniquement sur : statut provider + recherche texte
+              //    (la catégorie est déjà filtrée côté serveur)
               final filtered = allOffers.where((o) {
-                if (_category == null) return true;
-                return o.category == _category;
-              }).where((o) {
-                // Exclure offres de prestataires rejetés
-                return o.providerVerificationStatus != 'rejected';
-              }).where((o) {
-                // Recherche textuelle
+                if (o.providerVerificationStatus == 'rejected') return false;
                 if (_search.isEmpty) return true;
                 final s = _search.toLowerCase();
                 return o.title.toLowerCase().contains(s) ||
@@ -369,36 +353,22 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
             error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // SECTION : LES PLUS RÉSERVÉS
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ LES PLUS RÉSERVÉS ═══════════════
           SliverToBoxAdapter(
-            child: _TopProvidersSection(
-              topProvidersAsync: ref.watch(_topProvidersProvider),
-            ),
+            child: _TopProvidersSection(topProvidersAsync: ref.watch(_topProvidersProvider)),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // SECTION : PROMOTIONS
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ PROMOTIONS ═══════════════
           SliverToBoxAdapter(
-            child: _PromoSection(
-              promoProvidersAsync: ref.watch(_promoProvidersProvider),
-            ),
+            child: _PromoSection(promoProvidersAsync: ref.watch(_promoProvidersProvider)),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // SECTION : NOUVEAUX PRESTATAIRES
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ NOUVEAUX PRESTATAIRES ═══════════════
           SliverToBoxAdapter(
-            child: _NewProvidersSection(
-              newProvidersAsync: ref.watch(_newProvidersProvider),
-            ),
+            child: _NewProvidersSection(newProvidersAsync: ref.watch(_newProvidersProvider)),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // BARRE D'INFOS (nombre de résultats + filtres actifs)
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ BARRE D'INFOS ═══════════════
           providersAsync.when(
             data: (providers) {
               final visible = providers.where(_isUsable).toList();
@@ -409,11 +379,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
                     children: [
                       Text(
                         '${visible.length} prestataire${visible.length > 1 ? 's' : ''} trouvé${visible.length > 1 ? 's' : ''}',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _P.inkSoft,
-                        ),
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.inkSoft),
                       ),
                       const Spacer(),
                       if (sort != CatalogSort.popular)
@@ -425,11 +391,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
                           ),
                           child: Text(
                             _getSortLabel(sort),
-                            style: GoogleFonts.inter(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w800,
-                              color: _P.rose,
-                            ),
+                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.rose),
                           ),
                         ),
                     ],
@@ -441,20 +403,16 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
             error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
           ),
 
-          // ═══════════════════════════════════════════════════════════
-          // GRILLE DES PRESTATAIRES
-          // ═══════════════════════════════════════════════════════════
+          // ═══════════════ GRILLE DES PRESTATAIRES ═══════════════
           providersAsync.when(
             data: (providers) {
               var visible = providers.where(_isUsable).toList();
               visible = _sortProviders(visible, sort);
 
-              // Empty state : seulement si AUCUN prestataire ET AUCUNE offre
               final offersData = offersAsync.valueOrNull ?? const <ProviderOfferModel>[];
-              final visibleOffers = offersData.where((o) {
-                if (_category == null) return true;
-                return o.category == _category;
-              }).toList();
+              final visibleOffers = offersData
+                  .where((o) => o.providerVerificationStatus != 'rejected')
+                  .toList();
 
               if (visible.isEmpty && visibleOffers.isEmpty) {
                 return SliverToBoxAdapter(
@@ -540,11 +498,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
                 child: Center(
                   child: Text(
                     'Vous avez vu tous les prestataires',
-                    style: GoogleFonts.inter(
-                      fontSize: 12,
-                      color: _P.inkSoft,
-                      fontStyle: FontStyle.italic,
-                    ),
+                    style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontStyle: FontStyle.italic),
                   ),
                 ),
               ),
@@ -556,10 +510,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
     );
   }
 
-  List<ThixProviderModel> _sortProviders(
-    List<ThixProviderModel> providers,
-    CatalogSort sort,
-  ) {
+  List<ThixProviderModel> _sortProviders(List<ThixProviderModel> providers, CatalogSort sort) {
     final sorted = List<ThixProviderModel>.from(providers);
     switch (sort) {
       case CatalogSort.popular:
@@ -661,7 +612,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : SECTION OFFRES & SERVICES (carrousel horizontal)
+// SECTION OFFRES & SERVICES
 // ═══════════════════════════════════════════════════════════════════════════
 class _CatalogOffersSection extends StatelessWidget {
   final List<ProviderOfferModel> offers;
@@ -735,7 +686,7 @@ class _CatalogOffersSection extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ CARTE OFFRE DU CATALOGUE (multi-photos PageView)
+// CARTE OFFRE DU CATALOGUE (multi-photos PageView)
 // ═══════════════════════════════════════════════════════════════════════════
 class _CatalogOfferCard extends StatelessWidget {
   final ProviderOfferModel offer;
@@ -757,9 +708,7 @@ class _CatalogOfferCard extends StatelessWidget {
           color: _P.surface,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(color: _P.line),
-          boxShadow: [
-            BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
         ),
         clipBehavior: Clip.antiAlias,
         child: Column(
@@ -770,7 +719,6 @@ class _CatalogOfferCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // ✅ Carrousel multi-photos
                   if (allImages.isNotEmpty)
                     PageView.builder(
                       itemCount: allImages.length,
@@ -788,8 +736,6 @@ class _CatalogOfferCard extends StatelessWidget {
                       color: color.withOpacity(0.15),
                       child: Icon(offerTypeIcon(offer.type), size: 40, color: color),
                     ),
-
-                  // Badge type
                   Positioned(
                     top: 8,
                     left: 8,
@@ -802,8 +748,6 @@ class _CatalogOfferCard extends StatelessWidget {
                       ),
                     ),
                   ),
-
-                  // Badge nombre de photos
                   if (allImages.length > 1)
                     Positioned(
                       top: 8,
@@ -867,7 +811,7 @@ class _CatalogOfferCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// HERO BANNER ANIMÉ AVEC AUTO-SCROLL + ZOOM PARALLAX
+// HERO BANNER ANIMÉ
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroBannerSection extends StatelessWidget {
   final List<ThixProviderModel> providers;
@@ -937,13 +881,7 @@ class _HeroCard extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 8),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(24),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 20,
-              offset: const Offset(0, 10),
-            ),
-          ],
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 10))],
         ),
         clipBehavior: Clip.antiAlias,
         child: Stack(
@@ -979,9 +917,7 @@ class _HeroCard extends StatelessWidget {
                   decoration: BoxDecoration(
                     gradient: const LinearGradient(colors: [_P.gold, Color(0xFFFFA500)]),
                     borderRadius: BorderRadius.circular(10),
-                    boxShadow: [
-                      BoxShadow(color: _P.gold.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2)),
-                    ],
+                    boxShadow: [BoxShadow(color: _P.gold.withOpacity(0.4), blurRadius: 8, offset: const Offset(0, 2))],
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -1231,10 +1167,7 @@ class _PromoSection extends StatelessWidget {
                     const SizedBox(width: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                      decoration: BoxDecoration(
-                        color: _P.red.withOpacity(0.1),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
+                      decoration: BoxDecoration(color: _P.red.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
                       child: Text('HOT',
                           style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: _P.red)),
                     ),
@@ -1629,7 +1562,7 @@ class _CategoryChip extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// CARTE DE PRESTATAIRE (avec multi-photos PageView)
+// CARTE DE PRESTATAIRE (multi-photos PageView)
 // ═══════════════════════════════════════════════════════════════════════════
 class _CatalogCard extends StatelessWidget {
   final ThixProviderModel provider;
@@ -1669,7 +1602,6 @@ class _CatalogCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // ✅ Carrousel multi-photos
                   PageView.builder(
                     itemCount: images.length,
                     itemBuilder: (_, i) => Image.network(
@@ -1682,7 +1614,6 @@ class _CatalogCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Badge Premium
                   if (provider.level == TrackingLevel.platinum)
                     Positioned(
                       top: 10,
@@ -1706,7 +1637,6 @@ class _CatalogCard extends StatelessWidget {
                       ),
                     ),
 
-                  // Badge vérifié / En attente
                   Positioned(
                     top: 10,
                     right: 10,
@@ -1727,17 +1657,13 @@ class _CatalogCard extends StatelessWidget {
                     ),
                   ),
 
-                  // Badge nombre de photos
                   if (images.length > 1)
                     Positioned(
                       bottom: 10,
                       left: 10,
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                        decoration: BoxDecoration(
-                          color: Colors.black.withOpacity(0.6),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
+                        decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(8)),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
@@ -1750,7 +1676,6 @@ class _CatalogCard extends StatelessWidget {
                       ),
                     ),
 
-                  // Bouton favori
                   Positioned(
                     bottom: 10,
                     right: 10,
@@ -1863,9 +1788,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(
-            child: Container(width: 44, height: 4, decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2))),
-          ),
+          Center(child: Container(width: 44, height: 4, decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 20),
           Text('Filtres avancés', style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink)),
           const SizedBox(height: 24),
@@ -1889,7 +1812,7 @@ class _FilterSheetState extends ConsumerState<_FilterSheet> {
             runSpacing: 8,
             children: [
               _FilterChip(label: 'Toutes', isSelected: _minRating == null, onTap: () => setState(() => _minRating = null)),
-              _FilterChip(label: '3+ ⭐', isSelected: _minRating == 3.0, onTap: () => setState(() => _minRating = 3.0)),
+              _FilterChip(label: '3+ ⭐', isSelected: _minRating == 3.0, onTap: () => setState(() => _minRating == 3.0)),
               _FilterChip(label: '4+ ⭐', isSelected: _minRating == 4.0, onTap: () => setState(() => _minRating == 4.0)),
               _FilterChip(label: '4.5+ ⭐', isSelected: _minRating == 4.5, onTap: () => setState(() => _minRating == 4.5)),
             ],
