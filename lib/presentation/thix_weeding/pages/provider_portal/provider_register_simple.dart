@@ -4,7 +4,7 @@
 // ✅ Formulaire direct en 1 page
 // ✅ Génération auto du code unique Thix-CAT-XXX
 // ✅ Pas d'authentification Supabase requise (userId = null)
-// ✅ Redirection vers le dashboard après création
+// ✅ FIX : Invalidation cache + redirection correcte vers le dashboard
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -84,7 +84,7 @@ class _ProviderRegisterSimplePageState
     HapticFeedback.mediumImpact();
 
     try {
-      // ✅ SOLUTION : userId = null (la colonne est nullable en BDD)
+      // ✅ Création sans auth (userId = null)
       final provider = await ref.read(createProviderProvider)(
         userId: null,
         category: _category!,
@@ -98,7 +98,7 @@ class _ProviderRegisterSimplePageState
 
       if (!mounted) return;
 
-      // ✅ Afficher le code Thix puis rediriger
+      // ✅ Afficher le code Thix
       await showDialog(
         context: context,
         barrierDismissible: false,
@@ -106,7 +106,15 @@ class _ProviderRegisterSimplePageState
       );
 
       if (!mounted) return;
-      context.go('/thix-weeding/provider/dashboard');
+
+      // ✅ FIX CRITIQUE : Invalider TOUS les caches providers
+      ref.invalidate(providersListProvider);
+      ref.invalidate(providerByIdProvider(provider.id));
+      ref.invalidate(providerByCodeProvider(provider.uniqueCode));
+
+      // ✅ Rediriger vers la page de détail du prestataire créé
+      // (pas le dashboard qui nécessite un user_id auth)
+      context.go('/thix-weeding/provider/detail/${provider.id}');
       
     } catch (e) {
       if (!mounted) return;
@@ -487,7 +495,7 @@ class _SuccessDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14)),
                 ),
                 child: Text(
-                  'Accéder à mon espace',
+                  'Voir mon profil',
                   style: GoogleFonts.inter(
                       fontSize: 14, fontWeight: FontWeight.w800),
                 ),
