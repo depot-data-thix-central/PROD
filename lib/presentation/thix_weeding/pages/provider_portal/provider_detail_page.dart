@@ -1,12 +1,12 @@
 // ============================================================================
-// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (v4 - COMPLET)
+// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (v4 - CORRIGÉ)
 // ✅ Hero = photos OFFRES + galerie uniquement
-// ✅ Code Thix + QR copiable
-// ✅ Badges (Vérifié / Niveau / Catégorie)
-// ✅ Tarifs (Sur devis ou prix)
+// ✅ Code Thix copiable
+// ✅ Badges
+// ✅ Tarifs
 // ✅ Offres & Services
-// ✅ Galerie photos
-// ✅ Demande de réservation (sheet)
+// ✅ Galerie
+// ✅ Demande de réservation
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
