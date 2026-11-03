@@ -1,4 +1,4 @@
-// lib/presentation/thix_weeding/models/provider_models.dart
+ // lib/presentation/thix_weeding/models/provider_models.dart
 // ============================================================================
 // THIX WEDDING PROVIDER MODELS (PRODUCTION v5 — MULTI-CATÉGORIES OFFRES)
 // ✅ ownerId ajouté (aligné sur la logique mariages)
@@ -9,6 +9,7 @@
 // ✅ categories[] ajouté (1 à 3 catégories d'offre, indépendante du prestataire)
 // ✅ isInCategory() helper pour filtrage côté client
 // ✅ Helpers de conversion ProviderCategory <-> String
+// ✅ NOUVEAU : videoUrl, contactEmail, contactPhone, code, typeSpecificData
 // ============================================================================
 
 import 'package:flutter/foundation.dart';
@@ -457,6 +458,7 @@ class ProviderTaskModel {
 // ═══════════════════════════════════════════════════════════════════════════
 // ✅ PROVIDER OFFER MODEL (Services / Menus / Formules / Promos)
 // ✅ v5 : multi-photos + MULTI-CATÉGORIES (1 à 3 catégories d'offre)
+// ✅ v6 : + videoUrl, contactEmail, contactPhone, code, typeSpecificData
 // ═══════════════════════════════════════════════════════════════════════════
 @immutable
 class ProviderOfferModel {
@@ -471,9 +473,6 @@ class ProviderOfferModel {
   final ProviderCategory category;
 
   /// ✅ TOUTES les catégories de l'offre (1 à 3 catégories)
-  /// Permet à une annonce "Salle + Traiteur" d'apparaître dans les deux sections.
-  /// Rétrocompatibilité : si la colonne `categories` est absente, on crée une
-  /// liste à 1 élément à partir de `category`.
   final List<ProviderCategory> categories;
 
   final double? price;
@@ -484,6 +483,22 @@ class ProviderOfferModel {
 
   /// ✅ Galerie complète (multi-photos). Le premier élément est le cover.
   final List<String> galleryUrls;
+
+  /// ✅ NOUVEAU : URL de la vidéo de présentation (max 2min50 / 50MB)
+  final String? videoUrl;
+
+  /// ✅ NOUVEAU : Email de contact spécifique à l'offre
+  final String? contactEmail;
+
+  /// ✅ NOUVEAU : Téléphone de contact spécifique à l'offre
+  final String? contactPhone;
+
+  /// ✅ NOUVEAU : Code unique promotionnel / référence offre
+  final String? code;
+
+  /// ✅ NOUVEAU : Données spécifiques selon le type d'offre
+  /// Ex: durée pour un service, nombre de personnes pour un menu, etc.
+  final Map<String, dynamic> typeSpecificData;
 
   final bool isActive;
   final DateTime createdAt;
@@ -506,7 +521,6 @@ class ProviderOfferModel {
   }
 
   /// ✅ Vérifie si l'offre appartient à une catégorie donnée
-  /// Utilisé par le HOME et le catalogue pour filtrer les offres multi-catégories
   bool isInCategory(ProviderCategory c) => categories.contains(c);
 
   const ProviderOfferModel({
@@ -521,6 +535,11 @@ class ProviderOfferModel {
     this.currency = 'USD',
     this.imageUrl,
     this.galleryUrls = const [],
+    this.videoUrl,
+    this.contactEmail,
+    this.contactPhone,
+    this.code,
+    this.typeSpecificData = const {},
     this.isActive = true,
     required this.createdAt,
     required this.updatedAt,
@@ -570,7 +589,7 @@ class ProviderOfferModel {
       title: json['title'] as String,
       description: json['description'] as String?,
       type: OfferType.values.firstWhere(
-        (t) => t.name == json['offer_type'],
+        (t) => t.name == (json['offer_type'] ?? json['type']),
         orElse: () => OfferType.service,
       ),
       category: mainCategory,
@@ -579,6 +598,12 @@ class ProviderOfferModel {
       currency: json['currency'] as String? ?? 'USD',
       imageUrl: json['image_url'] as String?,
       galleryUrls: gallery,
+      // ✅ NOUVEAUX CHAMPS
+      videoUrl: json['video_url'] as String?,
+      contactEmail: json['contact_email'] as String?,
+      contactPhone: json['contact_phone'] as String?,
+      code: json['code'] as String?,
+      typeSpecificData: (json['type_specific_data'] as Map<String, dynamic>?) ?? {},
       isActive: json['is_active'] as bool? ?? true,
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
@@ -600,12 +625,18 @@ class ProviderOfferModel {
       'title': title,
       'description': description,
       'offer_type': type.name,
-      'category': category.name, // ✅ catégorie principale (rétrocompat)
-      'categories': categories.map((c) => c.name).toList(), // ✅ toutes les catégories
+      'category': category.name,
+      'categories': categories.map((c) => c.name).toList(),
       'price': price,
       'currency': currency,
       'image_url': imageUrl,
       'gallery_urls': galleryUrls,
+      // ✅ NOUVEAUX CHAMPS
+      'video_url': videoUrl,
+      'contact_email': contactEmail,
+      'contact_phone': contactPhone,
+      'code': code,
+      'type_specific_data': typeSpecificData,
       'is_active': isActive,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -624,6 +655,11 @@ class ProviderOfferModel {
     String? currency,
     String? imageUrl,
     List<String>? galleryUrls,
+    String? videoUrl,
+    String? contactEmail,
+    String? contactPhone,
+    String? code,
+    Map<String, dynamic>? typeSpecificData,
     bool? isActive,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -643,6 +679,11 @@ class ProviderOfferModel {
       currency: currency ?? this.currency,
       imageUrl: imageUrl ?? this.imageUrl,
       galleryUrls: galleryUrls ?? this.galleryUrls,
+      videoUrl: videoUrl ?? this.videoUrl,
+      contactEmail: contactEmail ?? this.contactEmail,
+      contactPhone: contactPhone ?? this.contactPhone,
+      code: code ?? this.code,
+      typeSpecificData: typeSpecificData ?? this.typeSpecificData,
       isActive: isActive ?? this.isActive,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -655,7 +696,7 @@ class ProviderOfferModel {
 
   @override
   String toString() =>
-      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, categories: ${categories.map((c) => c.name).toList()}, photos: ${galleryUrls.length + (imageUrl != null ? 1 : 0)}, provider: $providerId)';
+      'ProviderOfferModel(id: $id, title: $title, type: ${type.name}, categories: ${categories.map((c) => c.name).toList()}, photos: ${galleryUrls.length + (imageUrl != null ? 1 : 0)}, video: ${videoUrl != null}, code: $code, provider: $providerId)';
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
