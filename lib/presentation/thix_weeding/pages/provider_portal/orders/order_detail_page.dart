@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'order_models.dart';
 import 'orders_provider.dart';
 import '../traiteur/traiteur_menu_page.dart';
-
+import 'provider_orders_page.dart';
 /// ═══════════════════════════════════════════════════════════════════════
 /// THIX WEDDING — DÉTAIL COMMANDE + WORKFLOW (Production v2)
 /// ✅ Timeline complète des actions
@@ -1339,6 +1339,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+
 extension OrderPriorityExtension on OrderPriority {
   Color get color {
     switch (this) {
@@ -1350,65 +1351,6 @@ extension OrderPriorityExtension on OrderPriority {
         return Colors.orange;
       case OrderPriority.urgent:
         return Colors.red;
-    }
-  }
-}
-
-extension OrderStatusColorExtension on OrderStatus {
-  Color get color {
-    switch (this) {
-      case OrderStatus.pending:
-        return const Color(0xFFF59E0B);
-      case OrderStatus.confirmed:
-        return const Color(0xFF3B82F6);
-      case OrderStatus.inProgress:
-        return const Color(0xFFF59E0B);
-      case OrderStatus.ready:
-        return const Color(0xFF10B981);
-      case OrderStatus.delivered:
-        return const Color(0xFF14B8A6);
-      case OrderStatus.completed:
-        return const Color(0xFF059669);
-      case OrderStatus.cancelled:
-        return const Color(0xFFEF4444);
-    }
-  }
-
-  IconData get icon {
-    switch (this) {
-      case OrderStatus.pending:
-        return Icons.hourglass_empty_rounded;
-      case OrderStatus.confirmed:
-        return Icons.check_circle_outline_rounded;
-      case OrderStatus.inProgress:
-        return Icons.sync_rounded;
-      case OrderStatus.ready:
-        return Icons.check_circle_rounded;
-      case OrderStatus.delivered:
-        return Icons.local_shipping_rounded;
-      case OrderStatus.completed:
-        return Icons.verified_rounded;
-      case OrderStatus.cancelled:
-        return Icons.cancel_rounded;
-    }
-  }
-
-  String get displayName {
-    switch (this) {
-      case OrderStatus.pending:
-        return 'En attente';
-      case OrderStatus.confirmed:
-        return 'Confirmée';
-      case OrderStatus.inProgress:
-        return 'En cours';
-      case OrderStatus.ready:
-        return 'Prête';
-      case OrderStatus.delivered:
-        return 'Livrée';
-      case OrderStatus.completed:
-        return 'Terminée';
-      case OrderStatus.cancelled:
-        return 'Annulée';
     }
   }
 }
