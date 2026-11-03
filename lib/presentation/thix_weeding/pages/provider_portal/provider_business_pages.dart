@@ -1,15 +1,20 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_business_pages.dart
 // ============================================================================
-// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v4 — COMPLET)
+// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v6 — ALIGNÉ HUB)
 // ✅ Réservations : filtres, recherche, détails, actions rapides, stats
 // ✅ Tâches : checklist interactive, priorités, tri, édition inline
 // ✅ DEMANDES DE PRESTATION : bandeau d'alerte + page dédiée
 //    → Approuver (crée le dossier vendor + redirige vers gestion)
 //    → Refuser (motif obligatoire)
-// ✅ GESTION POST-APPROBATION : espace spécifique par type de prestation
+// ✅ GESTION POST-APPROBATION : menu traiteur OU VendorServiceManager réel
+//    (Détails éditable / Documents upload / Paiements) — fini le placeholder
 // ✅ MENUS TRAITEUR : liste de plats, validation par élément, mise en public
-// ✅ PRÉFÉRENCES INVITÉS : vote sur les plats, affichage du plus populaire
 // ✅ Pull-to-refresh, haptic feedback, animations fluides
+// ----------------------------------------------------------------------------
+// 📦 FICHIER RECONSTRUIT EN 3 PARTIES À CONCATÉNER :
+//    PARTIE 1/3 : imports + providers + helpers + Réservations + sheets
+//    PARTIE 2/3 : Tâches + États vides/erreur + Demandes de prestation
+//    PARTIE 3/3 : Gestion post-approbation (v6) + Menus traiteur
 // ============================================================================
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -19,8 +24,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
+import 'provider_service_management_page.dart'; // ✅ v6 : VendorServiceManager
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -54,7 +61,7 @@ final _taskSortProvider = StateProvider<TaskSort>((ref) => TaskSort.date);
 enum TaskSort { date, priority, status }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PROVIDERS POUR LES MENUS (traiteurs)
+// ✅ PROVIDERS POUR LES MENUS (traiteurs)
 // ═══════════════════════════════════════════════════════════════════════════
 final vendorMenuItemsProvider = FutureProvider.autoDispose
     .family<List<Map<String, dynamic>>, String>((ref, vendorId) async {
@@ -678,7 +685,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
   }
 
   Widget _buildTab(
-    String label, AsyncValue<List<ProviderReservationModel>> asyncRes, ReservationStatus? status) {
+      String label, AsyncValue<List<ProviderReservationModel>> asyncRes, ReservationStatus? status) {
     return asyncRes.when(
       data: (reservations) {
         final count = status == null
@@ -1298,7 +1305,6 @@ class _ReservationDetailsSheet extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor(reservation.status);
-
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.of(context).size.height * 0.85,
@@ -1858,6 +1864,7 @@ class _TimelineItem extends StatelessWidget {
   }
 }
 
+// >>> FIN PARTIE 1/3 — coller la PARTIE 2/3 immédiatement après cette ligne <<<
 // ═══════════════════════════════════════════════════════════════════════════
 // TÂCHES - PAGE PRINCIPALE
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2090,7 +2097,6 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                       (a, b) => a.status.index.compareTo(b.status.index));
                   break;
               }
-
               if (filtered.isEmpty) {
                 return SliverFillRemaining(
                   child: _EmptyState(
@@ -2102,10 +2108,8 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                   ),
                 );
               }
-
               final urgent = filtered.where((t) => t.priority == 1).toList();
               final normal = filtered.where((t) => t.priority != 1).toList();
-
               return SliverList(
                 delegate: SliverChildListDelegate([
                   if (urgent.isNotEmpty) ...[
@@ -2195,7 +2199,7 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
   }
 
   Widget _buildTaskTab(
-    String label, AsyncValue<List<ProviderTaskModel>> asyncTasks, TaskStatus? status) {
+      String label, AsyncValue<List<ProviderTaskModel>> asyncTasks, TaskStatus? status) {
     return asyncTasks.when(
       data: (tasks) {
         final count = status == null
@@ -2731,6 +2735,7 @@ class _TaskDetailsSheet extends StatelessWidget {
 
 class _PriorityDots extends StatelessWidget {
   final int priority;
+
   const _PriorityDots({required this.priority});
 
   @override
@@ -2741,7 +2746,6 @@ class _PriorityDots extends StatelessWidget {
       3 => _P.blue,
       _ => _P.inkSoft,
     };
-
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
@@ -2759,6 +2763,7 @@ class _PriorityDots extends StatelessWidget {
     );
   }
 }
+
 class _SortOption extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -2929,7 +2934,7 @@ class _ErrorState extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
+// ✅ PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
 //    Ouverte via le bandeau d'alerte de l'onglet Résa. (Navigator.push)
 //    CORRIGÉ : ConsumerStatefulWidget + TabController créé/disposé proprement
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2937,7 +2942,6 @@ final _reqTabProvider = StateProvider<int>((ref) => 0); // 0=À traiter, 1=Histo
 
 class ProviderRequestsPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
-
   const ProviderRequestsPage({super.key, required this.provider});
 
   @override
@@ -3029,7 +3033,6 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
           final history =
               all.where((r) => (r['status'] ?? 'pending') != 'pending').toList();
           final list = tab == 0 ? pending : history;
-
           if (list.isEmpty) {
             return tab == 0
                 ? const _EmptyState(
@@ -3045,7 +3048,6 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
                         'Vos demandes traitées (acceptées ou refusées) s\'afficheront ici.',
                   );
           }
-
           return RefreshIndicator(
             color: _P.rose,
             onRefresh: () async => ref
@@ -3223,7 +3225,6 @@ class _IncomingRequestCard extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 12),
-
           // Ligne catégorie + code + prix
           Wrap(
             spacing: 8,
@@ -3281,8 +3282,7 @@ class _IncomingRequestCard extends ConsumerWidget {
               ),
             ],
           ),
-
-          // Message du staff
+          // Message du couple
           if (message.isNotEmpty) ...[
             const SizedBox(height: 10),
             Container(
@@ -3313,8 +3313,7 @@ class _IncomingRequestCard extends ConsumerWidget {
               ),
             ),
           ],
-
-          // Contact du staff
+          // Contact du couple
           if (contactName.isNotEmpty || contactPhone.isNotEmpty) ...[
             const SizedBox(height: 10),
             Row(
@@ -3335,7 +3334,6 @@ class _IncomingRequestCard extends ConsumerWidget {
               ],
             ),
           ],
-
           // Réponse déjà donnée (historique)
           if (response.isNotEmpty) ...[
             const SizedBox(height: 10),
@@ -3367,7 +3365,6 @@ class _IncomingRequestCard extends ConsumerWidget {
               ),
             ),
           ],
-
           // Actions (uniquement si en attente)
           if (status == 'pending') ...[
             const SizedBox(height: 14),
@@ -3394,8 +3391,7 @@ class _IncomingRequestCard extends ConsumerWidget {
               ],
             ),
           ],
-
-          // ✅ NOUVEAU : Bouton "Gérer la prestation" pour les demandes approuvées
+          // ✅ Bouton "Gérer la prestation" pour les demandes approuvées
           if (status == 'approved' && vendorId != null) ...[
             const SizedBox(height: 14),
             SizedBox(
@@ -3548,7 +3544,7 @@ class _IncomingRequestCard extends ConsumerWidget {
                               'Demande du couple : $staffMsg',
                             if (resp.isNotEmpty)
                               'Réponse prestataire : $resp',
-                          ].join('\n'),
+                          ].join('\n'), // ✅ FIX v6 : escape \n restauré
                         };
 
                         final vendorRes = await c
@@ -3780,9 +3776,12 @@ class _IncomingRequestCard extends ConsumerWidget {
       );
 }
 
+// >>> FIN PARTIE 2/3 — coller la PARTIE 3/3 immédiatement après cette ligne <<<
+
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PAGE DE GESTION POST-APPROBATION
-// Redirige vers la bonne page selon le type de prestation
+// ✅ PAGE DE GESTION POST-APPROBATION (v6 — ALIGNÉE HUB)
+// menu   → ProviderMenuManagementPage (plats, votes, publication)
+// autres → VendorServiceManager (Détails éditable, Documents, Paiements réels)
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderServiceManagementPage extends StatelessWidget {
   final String vendorId;
@@ -3802,7 +3801,6 @@ class ProviderServiceManagementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Router vers la bonne page selon le type de service
     switch (managementType) {
       case ServiceManagementType.menu:
         return ProviderMenuManagementPage(
@@ -3811,238 +3809,17 @@ class ProviderServiceManagementPage extends StatelessWidget {
           provider: provider,
           couple: couple,
         );
+      // ✅ v6 : FINI le placeholder « à implémenter »
       case ServiceManagementType.gallery:
-        return _GenericServicePage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
-          title: 'Galerie & Médias',
-          icon: Icons.photo_library_rounded,
-          color: _P.blue,
-          sections: const ['Photos', 'Vidéos', 'Albums'],
-        );
       case ServiceManagementType.timeline:
-        return _GenericServicePage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
-          title: 'Programme & Timeline',
-          icon: Icons.schedule_rounded,
-          color: _P.purple,
-          sections: const ['Préparatifs', 'Cérémonie', 'Soirée'],
-        );
       case ServiceManagementType.generic:
-        return _GenericServicePage(
+        return VendorServiceManager(
           vendorId: vendorId,
           weddingId: weddingId,
           provider: provider,
           couple: couple,
-          title: 'Gestion de la prestation',
-          icon: Icons.settings_rounded,
-          color: _P.rose,
-          sections: const ['Détails', 'Documents', 'Paiements'],
         );
     }
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ✅ PAGE GÉNÉRIQUE (photo/vidéo/MC/DJ/salle...)
-// ═══════════════════════════════════════════════════════════════════════════
-class _GenericServicePage extends StatelessWidget {
-  final String vendorId;
-  final String weddingId;
-  final ThixProviderModel provider;
-  final String couple;
-  final String title;
-  final IconData icon;
-  final Color color;
-  final List<String> sections;
-
-  const _GenericServicePage({
-    required this.vendorId,
-    required this.weddingId,
-    required this.provider,
-    required this.couple,
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.sections,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: _P.bg,
-      appBar: AppBar(
-        backgroundColor: color,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        title: Text(title, style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header avec couple
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                gradient: LinearGradient(colors: [color.withOpacity(0.1), color.withOpacity(0.05)]),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: color.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Icon(icon, color: color, size: 24),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Prestation pour',
-                          style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
-                        ),
-                        Text(
-                          couple,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: _P.ink,
-                          ),
-                        ),
-                        Text(
-                          provider.businessName,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: _P.inkSoft,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // Sections
-            ...sections.map((section) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _GenericSectionCard(
-                title: section,
-                icon: icon,
-                color: color,
-                itemCount: 0, // À remplir dynamiquement
-              ),
-            )),
-
-            const SizedBox(height: 20),
-
-            // Info
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: _P.blueLight.withOpacity(0.3),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _P.blue.withOpacity(0.2)),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.info_outline, color: _P.blue, size: 20),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      'Les éléments validés ici pourront être rendus publics pour les invités par le staff du mariage.',
-                      style: GoogleFonts.inter(fontSize: 12, color: _P.blue, height: 1.4),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _GenericSectionCard extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-  final int itemCount;
-
-  const _GenericSectionCard({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.itemCount,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _P.line),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 20),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
-                Text(
-                  '$itemCount élément${itemCount > 1 ? 's' : ''}',
-                  style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline, color: _P.blue),
-            onPressed: () {
-              HapticFeedback.selectionClick();
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: Text('Ajouter à $title (à implémenter)'),
-                backgroundColor: _P.blue,
-                behavior: SnackBarBehavior.floating,
-              ));
-            },
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -4135,7 +3912,8 @@ class _ProviderMenuManagementPageState
           'vendor_id': widget.vendorId,
           'wedding_id': widget.weddingId,
           'name': nameCtrl.text.trim(),
-          'description': descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
+          'description':
+              descCtrl.text.trim().isEmpty ? null : descCtrl.text.trim(),
           'price': double.tryParse(priceCtrl.text) ?? 0,
           'is_validated': false,
           'is_public': false,
@@ -4219,8 +3997,8 @@ class _ProviderMenuManagementPageState
         content: const Text('Cette action est irréversible.'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Annuler')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
@@ -4297,8 +4075,10 @@ class _ProviderMenuManagementPageState
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                      colors: [_P.amber.withOpacity(0.15), _P.gold.withOpacity(0.1)]),
+                  gradient: LinearGradient(colors: [
+                    _P.amber.withOpacity(0.15),
+                    _P.gold.withOpacity(0.1)
+                  ]),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: _P.amber.withOpacity(0.3)),
                 ),
@@ -4342,8 +4122,10 @@ class _ProviderMenuManagementPageState
             // Stats
             itemsAsync.when(
               data: (items) {
-                final validated = items.where((i) => i['is_validated'] == true).length;
-                final public = items.where((i) => i['is_public'] == true).length;
+                final validated =
+                    items.where((i) => i['is_validated'] == true).length;
+                final public =
+                    items.where((i) => i['is_public'] == true).length;
                 final votes = votesAsync.valueOrNull ?? {};
                 final totalVotes = votes.values.fold(0, (s, v) => s + v);
 
@@ -4385,7 +4167,8 @@ class _ProviderMenuManagementPageState
                 );
               },
               loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
-              error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
+              error: (_, __) =>
+                  const SliverToBoxAdapter(child: SizedBox.shrink()),
             ),
 
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
@@ -4436,12 +4219,14 @@ class _ProviderMenuManagementPageState
                 );
               },
               loading: () => const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator(color: _P.amber)),
+                child: Center(
+                    child: CircularProgressIndicator(color: _P.amber)),
               ),
               error: (e, _) => SliverFillRemaining(
                 child: _ErrorState(
                   message: '$e',
-                  onRetry: () => ref.invalidate(vendorMenuItemsProvider(widget.vendorId)),
+                  onRetry: () =>
+                      ref.invalidate(vendorMenuItemsProvider(widget.vendorId)),
                 ),
               ),
             ),
@@ -4481,7 +4266,9 @@ class _MenuStatCard extends StatelessWidget {
             const SizedBox(height: 4),
             Text(value,
                 style: GoogleFonts.inter(
-                    fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    color: _P.ink)),
             Text(label,
                 style: GoogleFonts.inter(fontSize: 9, color: _P.inkSoft)),
           ],
@@ -4523,7 +4310,12 @@ class _MenuItemCard extends StatelessWidget {
           color: isValidated ? _P.green.withOpacity(0.4) : _P.line,
           width: isValidated ? 2 : 1,
         ),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withOpacity(0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2))
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -4536,7 +4328,8 @@ class _MenuItemCard extends StatelessWidget {
                   color: _P.amber.withOpacity(0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.restaurant_rounded, color: _P.amber, size: 22),
+                child: const Icon(Icons.restaurant_rounded,
+                    color: _P.amber, size: 22),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -4545,7 +4338,9 @@ class _MenuItemCard extends StatelessWidget {
                   children: [
                     Text(name,
                         style: GoogleFonts.inter(
-                            fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: _P.ink)),
                     if (desc.isNotEmpty)
                       Text(desc,
                           maxLines: 2,
@@ -4557,14 +4352,17 @@ class _MenuItemCard extends StatelessWidget {
               ),
               if (price != null && price > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: _P.green.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text('${price.toStringAsFixed(0)}\$',
                       style: GoogleFonts.inter(
-                          fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          color: _P.green)),
                 ),
             ],
           ),
@@ -4612,7 +4410,9 @@ class _MenuItemCard extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               _ContactButton(
-                icon: isPublic ? Icons.visibility_off_rounded : Icons.visibility_rounded,
+                icon: isPublic
+                    ? Icons.visibility_off_rounded
+                    : Icons.visibility_rounded,
                 color: isPublic ? _P.blue : _P.inkSoft,
                 onTap: onTogglePublic,
               ),
@@ -4662,3 +4462,5 @@ class _Badge extends StatelessWidget {
     );
   }
 }
+
+// >>> FIN DU FICHIER provider_business_pages.dart <<<
