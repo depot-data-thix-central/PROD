@@ -2894,29 +2894,6 @@ class _MenuItemCard extends StatelessWidget {
   }
 }
 
-class _Badge extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  const _Badge({required this.icon, required this.label, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
-          Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
-        ],
-      ),
-    );
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════════════════
 // STATS VOTES INVITÉS (NOUVEAU v5)
 // ═══════════════════════════════════════════════════════════════════════════
