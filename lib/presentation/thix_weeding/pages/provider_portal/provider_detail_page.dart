@@ -1,11 +1,12 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_detail_page.dart
 // ============================================================================
-// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (PRODUCTION v3)
-// ✅ Hero = photos + VIDÉOS des OFFRES/PRODUITS (plus de photo Unsplash trompeuse)
+// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (PRODUCTION v3 - CORRECTED)
+// ✅ Hero = photos des OFFRES/PRODUITS + galerie (plus de photo Unsplash trompeuse)
 // ✅ Placeholder élégant (icône catégorie + initiales) si aucun média
-// ✅ Section Vidéos dédiée (lancement externe compatible web + mobile)
 // ✅ Galerie alimentée par les offres + galleryUrls
+// ✅ Viewer image plein écran avec zoom
 // ✅ Code THIX copiable, badges, sheet de réservation sans auth
+// ✅ SANS vidéo (videoUrl n'existe pas dans ProviderOfferModel)
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -14,7 +15,6 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
@@ -49,14 +49,12 @@ IconData _categoryIcon(ProviderCategory c) => switch (c) {
     };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// MODÈLE MÉDIA DU HERO (image OU vidéo issue d'une offre)
+// MODÈLE MÉDIA DU HERO (images des offres + galerie)
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroMedia {
   final String url;
-  final bool isVideo;
   final String? offerTitle;
-  const _HeroMedia.image(this.url, {this.offerTitle}) : isVideo = false;
-  const _HeroMedia.video(this.url, {this.offerTitle}) : isVideo = true;
+  const _HeroMedia({required this.url, this.offerTitle});
 }
 
 class ProviderDetailPage extends ConsumerWidget {
@@ -77,7 +75,7 @@ class ProviderDetailPage extends ConsumerWidget {
     );
   }
 
-  /// ✅ COLLECTE DES MÉDIAS : d'abord les offres/produits (images + vidéos),
+  /// ✅ COLLECTE DES MÉDIAS : d'abord les images des offres/produits,
   ///    ensuite la galerie propre du prestataire. AUCUN fallback Unsplash.
   List<_HeroMedia> _collectHeroMedia(
       ThixProviderModel provider, List<ProviderOfferModel> offers) {
@@ -88,22 +86,14 @@ class ProviderDetailPage extends ConsumerWidget {
       final u = (url ?? '').trim();
       if (u.isEmpty || seen.contains(u)) return;
       seen.add(u);
-      media.add(_HeroMedia.image(u, offerTitle: title));
+      media.add(_HeroMedia(url: u, offerTitle: title));
     }
 
-    void addVideo(String? url, String? title) {
-      final u = (url ?? '').trim();
-      if (u.isEmpty || seen.contains(u)) return;
-      seen.add(u);
-      media.add(_HeroMedia.video(u, offerTitle: title));
-    }
-
-    // 1) Médias des offres actives (priorité absolue = le vrai produit)
+    // 1) Images des offres actives (priorité absolue = le vrai produit)
     for (final o in offers.where((x) => x.isActive)) {
       for (final img in o.allImages) {
         addImage(img, o.title);
       }
-      addVideo(o.videoUrl, o.title);
     }
 
     // 2) Galerie propre du prestataire (complément)
@@ -114,44 +104,14 @@ class ProviderDetailPage extends ConsumerWidget {
     return media;
   }
 
-  List<String> _collectVideos(List<ProviderOfferModel> offers) {
-    final vids = <String>[];
-    final seen = <String>{};
-    for (final o in offers.where((x) => x.isActive)) {
-      final v = (o.videoUrl ?? '').trim();
-      if (v.isNotEmpty && !seen.contains(v)) {
-        seen.add(v);
-        vids.add(v);
-      }
-    }
-    return vids;
-  }
-
-  Future<void> _openMedia(BuildContext context, _HeroMedia m) async {
+  Future<void> _openImage(BuildContext context, _HeroMedia m) async {
     HapticFeedback.selectionClick();
-    if (m.isVideo) {
-      // Lancement externe (fiable web + mobile, pas de dépendance video_player)
-      final uri = Uri.parse(m.url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Impossible d\'ouvrir la vidéo',
-                style: GoogleFonts.inter(color: Colors.white)),
-            backgroundColor: _P.red,
-            behavior: SnackBarBehavior.floating,
-          ));
-        }
-      }
-    } else {
-      await showModalBottomSheet<void>(
-        context: context,
-        backgroundColor: Colors.black,
-        isScrollControlled: true,
-        builder: (_) => _FullScreenImageViewer(url: m.url, title: m.offerTitle),
-      );
-    }
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.black,
+      isScrollControlled: true,
+      builder: (_) => _FullScreenImageViewer(url: m.url, title: m.offerTitle),
+    );
   }
 
   @override
@@ -172,7 +132,6 @@ class ProviderDetailPage extends ConsumerWidget {
 
         final offers = offersAsync.valueOrNull ?? const <ProviderOfferModel>[];
         final heroMedia = _collectHeroMedia(provider, offers);
-        final videos = _collectVideos(offers);
         final activeOffers = offers.where((o) => o.isActive).toList();
 
         return Scaffold(
@@ -215,36 +174,14 @@ class ProviderDetailPage extends ConsumerWidget {
                           itemBuilder: (_, i) {
                             final m = heroMedia[i];
                             return GestureDetector(
-                              onTap: () => _openMedia(context, m),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  if (m.isVideo)
-                                    _VideoHeroTile(url: m.url)
-                                  else
-                                    Image.network(
-                                      m.url,
-                                      fit: BoxFit.cover,
-                                      errorBuilder: (_, __, ___) =>
-                                          _HeroPlaceholder(
-                                        icon: _categoryIcon(provider.category),
-                                        initials:
-                                            _initialsOf(provider.businessName),
-                                      ),
-                                    ),
-                                  if (m.isVideo)
-                                    Center(
-                                      child: Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.black.withOpacity(0.45),
-                                          shape: BoxShape.circle,
-                                        ),
-                                        child: const Icon(Icons.play_arrow_rounded,
-                                            color: Colors.white, size: 40),
-                                      ),
-                                    ),
-                                ],
+                              onTap: () => _openImage(context, m),
+                              child: Image.network(
+                                m.url,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => _HeroPlaceholder(
+                                  icon: _categoryIcon(provider.category),
+                                  initials: _initialsOf(provider.businessName),
+                                ),
                               ),
                             );
                           },
@@ -260,24 +197,21 @@ class ProviderDetailPage extends ConsumerWidget {
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: List.generate(
                               heroMedia.length,
-                              (i) => AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 3),
-                                width: i == _currentPage(heroMedia) ? 16 : 6,
+                              (i) => Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 3),
+                                width: 6,
                                 height: 6,
                                 decoration: BoxDecoration(
-                                  color: Colors.white
-                                      .withOpacity(i == _currentPage(heroMedia) ? 1 : 0.5),
-                                  borderRadius: BorderRadius.circular(3),
+                                  color: Colors.white.withOpacity(0.6),
+                                  shape: BoxShape.circle,
                                 ),
                               ),
                             ),
                           ),
                         ),
 
-                      // Compteur média (photos · vidéos)
-                      if (heroMedia.isNotEmpty)
+                      // Compteur photos
+                      if (heroMedia.length > 1)
                         Positioned(
                           top: 70,
                           right: 16,
@@ -291,13 +225,8 @@ class ProviderDetailPage extends ConsumerWidget {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(
-                                  heroMedia.any((m) => m.isVideo)
-                                      ? Icons.movie_creation_rounded
-                                      : Icons.photo_library_rounded,
-                                  size: 11,
-                                  color: Colors.white,
-                                ),
+                                const Icon(Icons.photo_library_rounded,
+                                    size: 11, color: Colors.white),
                                 const SizedBox(width: 4),
                                 Text('${heroMedia.length}',
                                     style: GoogleFonts.inter(
@@ -579,32 +508,9 @@ class ProviderDetailPage extends ConsumerWidget {
                         const SizedBox(height: 24),
                       ],
 
-                      // ═══════════════ VIDÉOS (nouvelle section) ═══════════════
-                      if (videos.isNotEmpty) ...[
-                        _SectionTitle('Vidéos (${videos.length})'),
-                        const SizedBox(height: 10),
-                        SizedBox(
-                          height: 150,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            physics: const BouncingScrollPhysics(),
-                            clipBehavior: Clip.none,
-                            itemCount: videos.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
-                            itemBuilder: (_, i) => _VideoThumbCard(
-                              url: videos[i],
-                              onTap: () => _openMedia(
-                                  context, _HeroMedia.video(videos[i])),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-
                       // ═══════════════ GALERIE (offres + galleryUrls) ═══════════════
-                      if (heroMedia.where((m) => !m.isVideo).length > 1) ...[
-                        _SectionTitle(
-                            'Galerie (${heroMedia.where((m) => !m.isVideo).length})'),
+                      if (heroMedia.length > 1) ...[
+                        _SectionTitle('Galerie (${heroMedia.length})'),
                         const SizedBox(height: 10),
                         SizedBox(
                           height: 120,
@@ -612,18 +518,15 @@ class ProviderDetailPage extends ConsumerWidget {
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
                             clipBehavior: Clip.none,
-                            itemCount:
-                                heroMedia.where((m) => !m.isVideo).length,
+                            itemCount: heroMedia.length,
                             separatorBuilder: (_, __) => const SizedBox(width: 10),
                             itemBuilder: (_, i) {
-                              final imgs =
-                                  heroMedia.where((m) => !m.isVideo).toList();
                               return GestureDetector(
-                                onTap: () => _openMedia(context, imgs[i]),
+                                onTap: () => _openImage(context, heroMedia[i]),
                                 child: ClipRRect(
                                   borderRadius: BorderRadius.circular(16),
                                   child: Image.network(
-                                    imgs[i].url,
+                                    heroMedia[i].url,
                                     width: 120,
                                     height: 120,
                                     fit: BoxFit.cover,
@@ -671,8 +574,8 @@ class ProviderDetailPage extends ConsumerWidget {
                     backgroundColor: _P.rose,
                     foregroundColor: Colors.white,
                     elevation: 0,
-                    shape:
-                        RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
               ),
@@ -690,9 +593,6 @@ class ProviderDetailPage extends ConsumerWidget {
                   style: GoogleFonts.inter(color: _P.inkSoft)))),
     );
   }
-
-  // Track page courante du hero (pour les indicateurs)
-  int _currentPage(List<_HeroMedia> media) => 0;
 
   String _initialsOf(String name) {
     final parts = name.trim().split(RegExp(r'\s+')).where((p) => p.isNotEmpty);
@@ -713,7 +613,7 @@ class ProviderDetailPage extends ConsumerWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PLACEHOLDER HERO (quand aucun média — remplace l'ancienne photo Unsplash)
+// PLACEHOLDER HERO (quand aucun média)
 // ═══════════════════════════════════════════════════════════════════════════
 class _HeroPlaceholder extends StatelessWidget {
   final IconData icon;
@@ -762,108 +662,6 @@ class _HeroPlaceholder extends StatelessWidget {
                     fontSize: 11,
                     color: _P.inkSoft,
                     fontWeight: FontWeight.w600)),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// tuile vidéo dans le hero (thumbnail via première frame si possible)
-// ═══════════════════════════════════════════════════════════════════════════
-class _VideoHeroTile extends StatelessWidget {
-  final String url;
-  const _VideoHeroTile({required this.url});
-
-  @override
-  Widget build(BuildContext context) {
-    // On tente de charger une miniature ; à défaut fond sombre + icône film
-    return Container(
-      color: const Color(0xFF111111),
-      child: Image.network(
-        url,
-        fit: BoxFit.cover,
-        errorBuilder: (_, __, ___) => const Center(
-          child: Icon(Icons.movie_creation_rounded,
-              size: 56, color: Colors.white54),
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// VIGNETTE VIDÉO (section Vidéos)
-// ═══════════════════════════════════════════════════════════════════════════
-class _VideoThumbCard extends StatelessWidget {
-  final String url;
-  final VoidCallback onTap;
-  const _VideoThumbCard({required this.url, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 200,
-        decoration: BoxDecoration(
-          color: const Color(0xFF111111),
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-                color: Colors.black.withOpacity(0.12),
-                blurRadius: 10,
-                offset: const Offset(0, 4)),
-          ],
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            Image.network(
-              url,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => const Center(
-                child: Icon(Icons.play_circle_fill_rounded,
-                    size: 48, color: Colors.white54),
-              ),
-            ),
-            Center(
-              child: Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: Colors.black.withOpacity(0.45),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.play_arrow_rounded,
-                    color: Colors.white, size: 28),
-              ),
-            ),
-            Positioned(
-              bottom: 8,
-              left: 8,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _P.rose,
-                  borderRadius: BorderRadius.circular(7),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.movie_rounded,
-                        size: 10, color: Colors.white),
-                    const SizedBox(width: 3),
-                    Text('Vidéo',
-                        style: GoogleFonts.inter(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white)),
-                  ],
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -1286,8 +1084,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
           BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       decoration: const BoxDecoration(
         color: _P.bg,
-        borderRadius:
-            BorderRadius.only(topLeft: Radius.circular(28), topRight: Radius.circular(28)),
+        borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(28), topRight: Radius.circular(28)),
       ),
       padding: const EdgeInsets.all(20),
       child: SingleChildScrollView(
@@ -1300,7 +1098,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                     width: 44,
                     height: 4,
                     decoration: BoxDecoration(
-                        color: _P.line, borderRadius: BorderRadius.circular(2)))),
+                        color: _P.line,
+                        borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
             Text('Réserver ${widget.provider.businessName}',
                 style: GoogleFonts.inter(
@@ -1317,7 +1116,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
-                      color: _P.roseSoft, borderRadius: BorderRadius.circular(14)),
+                      color: _P.roseSoft,
+                      borderRadius: BorderRadius.circular(14)),
                   child: Row(
                     children: [
                       const Icon(Icons.info_outline, color: _P.rose, size: 20),
@@ -1349,7 +1149,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                         borderSide: const BorderSide(color: _P.line)),
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(color: _P.rose, width: 2)),
+                        borderSide:
+                            const BorderSide(color: _P.rose, width: 2)),
                   ),
                   items: _weddings
                       .map((w) => DropdownMenuItem(
@@ -1366,7 +1167,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
             if (!widget.hasAuth) ...[
               TextField(
                 controller: _nameCtrl,
-                decoration: _sheetInput('Votre nom complet *', Icons.person_outline),
+                decoration:
+                    _sheetInput('Votre nom complet *', Icons.person_outline),
               ),
               const SizedBox(height: 14),
             ],
@@ -1383,7 +1185,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                     const Icon(Icons.calendar_today_outlined,
                         color: _P.rose, size: 18),
                     const SizedBox(width: 10),
-                    Text(DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(_date),
+                    Text(
+                        DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(_date),
                         style: GoogleFonts.inter(
                             fontSize: 13,
                             fontWeight: FontWeight.w700,
@@ -1401,14 +1204,15 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
             TextField(
                 controller: _guestsCtrl,
                 keyboardType: TextInputType.number,
-                decoration:
-                    _sheetInput('Nombre d\'invités (optionnel)', Icons.group_outlined)),
+                decoration: _sheetInput(
+                    'Nombre d\'invités (optionnel)', Icons.group_outlined)),
             const SizedBox(height: 14),
             TextField(
                 controller: _notesCtrl,
                 maxLines: 3,
                 decoration: _sheetInput(
-                    'Message au prestataire (optionnel)', Icons.edit_note_outlined)),
+                    'Message au prestataire (optionnel)',
+                    Icons.edit_note_outlined)),
             const SizedBox(height: 20),
             SizedBox(
               height: 54,
@@ -1425,7 +1229,8 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                     ? const SizedBox(
                         width: 22,
                         height: 22,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        child: CircularProgressIndicator(
+                            strokeWidth: 2, color: Colors.white))
                     : Text('Envoyer la demande',
                         style: GoogleFonts.inter(
                             fontSize: 15, fontWeight: FontWeight.w800)),
