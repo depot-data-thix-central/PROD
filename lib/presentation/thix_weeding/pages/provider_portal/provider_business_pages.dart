@@ -2084,22 +2084,31 @@ class _IncomingRequestCard extends ConsumerWidget {
                   Navigator.pop(ctx);
                   ref.invalidate(providerIncomingRequestsProvider(providerId));
 
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Demande acceptée ✓ Dossier créé', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-                      backgroundColor: _P.green, behavior: SnackBarBehavior.floating,
-                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                    ));
-                    Navigator.of(context).push(MaterialPageRoute(
-                      builder: (_) => ProviderServiceManagementPage(
-                        vendorId: vendorId,
-                        weddingId: weddingId,
-                        provider: provider,
-                        couple: couple,
-                        managementType: _managementTypeFor(prov['category'] as String?),
-                      ),
-                    ));
-                  }
+                  
+if (context.mounted) {
+  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+    content: Text(
+      'Demande acceptée ✓ Dossier créé',
+      style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+    backgroundColor: _P.green,
+    behavior: SnackBarBehavior.floating,
+    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+  ));
+  // ✅ Redirection automatique vers l'espace de gestion
+  final catKey = prov['category'] as String?;
+  final couple = _coupleNames(request);  // ← AJOUTER CETTE LIGNE
+  Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => ProviderServiceManagementPage(
+        vendorId: vendorId,
+        weddingId: weddingId,
+        provider: provider,
+        couple: couple,
+        managementType: _managementTypeFor(catKey),
+      ),
+    ),
+  );
+}
                 } catch (e) {
                   setSt(() => busy = false);
                   if (ctx.mounted) {
