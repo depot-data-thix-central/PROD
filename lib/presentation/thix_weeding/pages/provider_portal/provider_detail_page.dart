@@ -1,9 +1,12 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_detail_page.dart
 // ============================================================================
-// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (PRODUCTION ENTERPRISE)
-// ✅ Hero image + galerie horizontale
+// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (PRODUCTION v2)
+// ✅ Hero multi-photos (carrousel PageView)
 // ✅ Code THIX copiable
+// ✅ Section Offres & Services (carrousel horizontal)
+// ✅ Galerie multi-photos
 // ✅ Sheet de réservation (sans auth obligatoire)
+// ✅ Badges statut + catégories
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -11,11 +14,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
+import 'provider_offers_page.dart' show offerTypeColor, offerTypeIcon;
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -28,8 +31,22 @@ class _P {
   static const Color line = Color(0xFFE5E7EB);
   static const Color green = Color(0xFF10B981);
   static const Color gold = Color(0xFFFFD700);
+  static const Color amber = Color(0xFFF59E0B);
   static const Color red = Color(0xFFEF4444);
 }
+
+IconData _categoryIcon(ProviderCategory c) => switch (c) {
+      ProviderCategory.salle => Icons.meeting_room_rounded,
+      ProviderCategory.traiteur => Icons.restaurant_rounded,
+      ProviderCategory.photographe => Icons.camera_alt_rounded,
+      ProviderCategory.videaste => Icons.videocam_rounded,
+      ProviderCategory.decorateur => Icons.palette_rounded,
+      ProviderCategory.dj => Icons.music_note_rounded,
+      ProviderCategory.mc => Icons.mic_rounded,
+      ProviderCategory.maquilleur => Icons.face_rounded,
+      ProviderCategory.patissier => Icons.cake_rounded,
+      ProviderCategory.fleuriste => Icons.local_florist_rounded,
+    };
 
 class ProviderDetailPage extends ConsumerWidget {
   final String providerId;
@@ -40,7 +57,8 @@ class ProviderDetailPage extends ConsumerWidget {
     HapticFeedback.mediumImpact();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Code $code copié', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+        content: Text('Code $code copié',
+            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
         backgroundColor: _P.green,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -51,28 +69,30 @@ class ProviderDetailPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final providerAsync = ref.watch(providerByIdProvider(providerId));
+    final offersAsync = ref.watch(providerOffersProvider(providerId));
 
     return providerAsync.when(
       data: (provider) {
         if (provider == null) {
           return Scaffold(
             backgroundColor: _P.bg,
-            body: Center(child: Text('Prestataire introuvable', style: GoogleFonts.inter(color: _P.inkSoft))),
+            body: Center(
+                child: Text('Prestataire introuvable', style: GoogleFonts.inter(color: _P.inkSoft))),
           );
         }
 
-        final cover = provider.galleryUrls.isNotEmpty
-            ? provider.galleryUrls.first
-            : 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1200&q=80';
+        final images = provider.galleryUrls.isNotEmpty
+            ? provider.galleryUrls
+            : ['https://images.unsplash.com/photo-1519167758481-83f550bb49b3?w=1200&q=80'];
 
         return Scaffold(
           backgroundColor: _P.bg,
           body: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // HERO
+              // ═══════════════ HERO MULTI-PHOTOS ═══════════════
               SliverAppBar(
-                expandedHeight: 260,
+                expandedHeight: 280,
                 pinned: true,
                 backgroundColor: _P.surface,
                 foregroundColor: _P.ink,
@@ -81,13 +101,70 @@ class ProviderDetailPage extends ConsumerWidget {
                   child: GestureDetector(
                     onTap: () => context.pop(),
                     child: Container(
-                      decoration: BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
+                      decoration:
+                          BoxDecoration(color: Colors.white.withOpacity(0.9), shape: BoxShape.circle),
                       child: const Icon(Icons.arrow_back_ios_new, size: 16, color: _P.ink),
                     ),
                   ),
                 ),
                 flexibleSpace: FlexibleSpaceBar(
-                  background: Image.network(cover, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(color: _P.roseSoft)),
+                  background: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      PageView.builder(
+                        itemCount: images.length,
+                        itemBuilder: (_, i) => Image.network(
+                          images[i],
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(color: _P.roseSoft),
+                        ),
+                      ),
+                      if (images.length > 1)
+                        Positioned(
+                          bottom: 12,
+                          left: 0,
+                          right: 0,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: List.generate(
+                              images.length,
+                              (i) => Container(
+                                margin: const EdgeInsets.symmetric(horizontal: 3),
+                                width: 6,
+                                height: 6,
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.6),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      // Compteur de photos
+                      if (images.length > 1)
+                        Positioned(
+                          top: 70,
+                          right: 16,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withOpacity(0.55),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.photo_library_rounded, size: 11, color: Colors.white),
+                                const SizedBox(width: 4),
+                                Text('${images.length}',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11, fontWeight: FontWeight.w900, color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
               ),
 
@@ -97,120 +174,278 @@ class ProviderDetailPage extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Badges
-                      Row(
+                      // ═══════════════ BADGES ═══════════════
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
                         children: [
+                          // Statut de vérification
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(color: _P.green.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
-                            child: Row(mainAxisSize: MainAxisSize.min, children: [
-                              const Icon(Icons.verified, size: 13, color: _P.green),
-                              const SizedBox(width: 4),
-                              Text(provider.level.displayName, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
-                            ]),
+                            decoration: BoxDecoration(
+                              color: (provider.verificationStatus == ProviderVerificationStatus.verified
+                                      ? _P.green
+                                      : _P.amber)
+                                  .withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  provider.verificationStatus == ProviderVerificationStatus.verified
+                                      ? Icons.verified_rounded
+                                      : Icons.hourglass_top_rounded,
+                                  size: 13,
+                                  color: provider.verificationStatus == ProviderVerificationStatus.verified
+                                      ? _P.green
+                                      : _P.amber,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  provider.verificationStatus == ProviderVerificationStatus.verified
+                                      ? 'Vérifié'
+                                      : 'En vérification',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: provider.verificationStatus == ProviderVerificationStatus.verified
+                                          ? _P.green
+                                          : _P.amber),
+                                ),
+                              ],
+                            ),
                           ),
-                          const SizedBox(width: 8),
+                          // Niveau
+                          if (provider.level == TrackingLevel.platinum ||
+                              provider.level == TrackingLevel.gold)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                              decoration: BoxDecoration(
+                                gradient: provider.level == TrackingLevel.platinum
+                                    ? const LinearGradient(colors: [_P.gold, Color(0xFFFFA500)])
+                                    : null,
+                                color: provider.level == TrackingLevel.gold ? _P.green : null,
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(
+                                    provider.level == TrackingLevel.platinum
+                                        ? Icons.workspace_premium_rounded
+                                        : Icons.verified_rounded,
+                                    size: 13,
+                                    color: Colors.white,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(provider.level.displayName.toUpperCase(),
+                                      style: GoogleFonts.inter(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w900,
+                                          color: Colors.white,
+                                          letterSpacing: 0.5)),
+                                ],
+                              ),
+                            ),
+                          // Catégorie
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(color: _P.roseSoft, borderRadius: BorderRadius.circular(10)),
-                            child: Text(provider.category.displayName, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _P.rose)),
+                            decoration:
+                                BoxDecoration(color: _P.roseSoft, borderRadius: BorderRadius.circular(10)),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(_categoryIcon(provider.category), size: 13, color: _P.rose),
+                                const SizedBox(width: 4),
+                                Text(provider.category.displayName,
+                                    style: GoogleFonts.inter(
+                                        fontSize: 11, fontWeight: FontWeight.w800, color: _P.rose)),
+                              ],
+                            ),
                           ),
                         ],
                       ),
                       const SizedBox(height: 12),
 
-                      // Nom + note
+                      // ═══════════════ NOM + NOTE ═══════════════
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
-                            child: Text(provider.businessName, style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
+                            child: Text(provider.businessName,
+                                style: GoogleFonts.inter(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.w900,
+                                    color: _P.ink,
+                                    letterSpacing: -0.5)),
                           ),
-                          Row(children: [
-                            const Icon(Icons.star_rounded, size: 18, color: _P.gold),
-                            const SizedBox(width: 4),
-                            Text('${provider.rating.toStringAsFixed(1)} (${provider.reviewCount})', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
-                          ]),
+                          Row(
+                            children: [
+                              const Icon(Icons.star_rounded, size: 18, color: _P.gold),
+                              const SizedBox(width: 4),
+                              Text('${provider.rating.toStringAsFixed(1)} (${provider.reviewCount})',
+                                  style: GoogleFonts.inter(
+                                      fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                            ],
+                          ),
                         ],
                       ),
                       const SizedBox(height: 6),
-                      Row(children: [
-                        const Icon(Icons.location_on_outlined, size: 14, color: _P.inkSoft),
-                        const SizedBox(width: 4),
-                        Text(provider.city ?? 'RDC', style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w600)),
-                      ]),
+                      Row(
+                        children: [
+                          const Icon(Icons.location_on_outlined, size: 14, color: _P.inkSoft),
+                          const SizedBox(width: 4),
+                          Text(provider.city ?? 'RDC',
+                              style: GoogleFonts.inter(
+                                  fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                        ],
+                      ),
                       const SizedBox(height: 16),
 
-                      // Code Thix copiable
+                      // ═══════════════ CODE THIX ═══════════════
                       GestureDetector(
                         onTap: () => _copyCode(context, provider.uniqueCode),
                         child: Container(
                           padding: const EdgeInsets.all(14),
-                          decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(16), border: Border.all(color: _P.line)),
-                          child: Row(children: [
-                            const Icon(Icons.qr_code_2_rounded, color: _P.rose, size: 22),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                                Text('Code Thix', style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w600)),
-                                Text(provider.uniqueCode, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: 1)),
-                              ]),
-                            ),
-                            const Icon(Icons.copy_rounded, size: 16, color: _P.inkSoft),
-                          ]),
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Description
-                      if ((provider.description ?? '').isNotEmpty) ...[
-                        Text('À propos', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
-                        const SizedBox(height: 6),
-                        Text(provider.description!, style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5)),
-                        const SizedBox(height: 20),
-                      ],
-
-                      // Tarifs
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]), borderRadius: BorderRadius.circular(20)),
-                        child: Row(children: [
-                          const Icon(Icons.payments_outlined, color: Colors.white, size: 22),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                              Text('Tarifs', style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w600)),
-                              Text(
-                                provider.minPrice != null
-                                    ? 'À partir de ${provider.minPrice!.toStringAsFixed(0)}${provider.currency == 'USD' ? r'$' : provider.currency}'
-                                    : 'Sur devis — contactez-nous',
-                                style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+                          decoration: BoxDecoration(
+                              color: _P.surface,
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: _P.line)),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.qr_code_2_rounded, color: _P.rose, size: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('Code Thix',
+                                        style: GoogleFonts.inter(
+                                            fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                                    Text(provider.uniqueCode,
+                                        style: GoogleFonts.inter(
+                                            fontSize: 15,
+                                            fontWeight: FontWeight.w900,
+                                            color: _P.ink,
+                                            letterSpacing: 1)),
+                                  ],
+                                ),
                               ),
-                            ]),
+                              const Icon(Icons.copy_rounded, size: 16, color: _P.inkSoft),
+                            ],
                           ),
-                        ]),
+                        ),
                       ),
                       const SizedBox(height: 20),
 
-                      // Galerie
-                      if (provider.galleryUrls.isNotEmpty) ...[
-                        Text('Galerie (${provider.galleryUrls.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
+                      // ═══════════════ DESCRIPTION ═══════════════
+                      if ((provider.description ?? '').isNotEmpty) ...[
+                        _SectionTitle('À propos'),
+                        const SizedBox(height: 6),
+                        Text(provider.description!,
+                            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5)),
+                        const SizedBox(height: 20),
+                      ],
+
+                      // ═══════════════ TARIFS ═══════════════
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.payments_outlined, color: Colors.white, size: 22),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('Tarifs',
+                                      style: GoogleFonts.inter(
+                                          fontSize: 11,
+                                          color: Colors.white.withOpacity(0.9),
+                                          fontWeight: FontWeight.w600)),
+                                  Text(
+                                    provider.minPrice != null
+                                        ? 'À partir de ${provider.minPrice!.toStringAsFixed(0)}${provider.currency == 'USD' ? r'$' : provider.currency}'
+                                        : 'Sur devis — contactez-nous',
+                                    style: GoogleFonts.inter(
+                                        fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+
+                      // ═══════════════ OFFRES & SERVICES ═══════════════
+                      offersAsync.when(
+                        data: (offers) {
+                          if (offers.isEmpty) return const SizedBox.shrink();
+                          final activeOffers = offers.where((o) => o.isActive).toList();
+                          if (activeOffers.isEmpty) return const SizedBox.shrink();
+
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _SectionTitle('Offres & Services (${activeOffers.length})'),
+                              const SizedBox(height: 12),
+                              SizedBox(
+                                height: 260,
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const BouncingScrollPhysics(),
+                                  clipBehavior: Clip.none,
+                                  itemCount: activeOffers.length,
+                                  separatorBuilder: (_, __) => const SizedBox(width: 12),
+                                  itemBuilder: (_, i) => _DetailOfferCard(
+                                    offer: activeOffers[i],
+                                    onBook: () => _openBooking(context, ref, provider),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(height: 24),
+                            ],
+                          );
+                        },
+                        loading: () => const SizedBox.shrink(),
+                        error: (_, __) => const SizedBox.shrink(),
+                      ),
+
+                      // ═══════════════ GALERIE ═══════════════
+                      if (provider.galleryUrls.length > 1) ...[
+                        _SectionTitle('Galerie (${provider.galleryUrls.length})'),
                         const SizedBox(height: 10),
                         SizedBox(
-                          height: 110,
+                          height: 120,
                           child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
+                            clipBehavior: Clip.none,
                             itemCount: provider.galleryUrls.length,
                             separatorBuilder: (_, __) => const SizedBox(width: 10),
                             itemBuilder: (_, i) => ClipRRect(
                               borderRadius: BorderRadius.circular(16),
-                              child: Image.network(provider.galleryUrls[i], width: 110, height: 110, fit: BoxFit.cover, errorBuilder: (_, __, ___) => Container(width: 110, height: 110, color: _P.line)),
+                              child: Image.network(
+                                provider.galleryUrls[i],
+                                width: 120,
+                                height: 120,
+                                fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) =>
+                                    Container(width: 120, height: 120, color: _P.line),
+                              ),
                             ),
                           ),
                         ),
+                        const SizedBox(height: 20),
                       ],
-                      const SizedBox(height: 100),
+
+                      const SizedBox(height: 80),
                     ],
                   ),
                 ),
@@ -219,14 +454,20 @@ class ProviderDetailPage extends ConsumerWidget {
           ),
           bottomNavigationBar: Container(
             padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: _P.surface, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, -4))]),
+            decoration: BoxDecoration(
+              color: _P.surface,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, -4))
+              ],
+            ),
             child: SafeArea(
               child: SizedBox(
                 height: 54,
                 child: ElevatedButton.icon(
                   onPressed: () => _openBooking(context, ref, provider),
                   icon: const Icon(Icons.event_available_rounded, size: 18),
-                  label: Text('Demander une réservation', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
+                  label: Text('Demander une réservation',
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: _P.rose,
                     foregroundColor: Colors.white,
@@ -239,8 +480,11 @@ class ProviderDetailPage extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const Scaffold(backgroundColor: _P.bg, body: Center(child: CircularProgressIndicator(color: _P.rose))),
-      error: (e, _) => Scaffold(backgroundColor: _P.bg, body: Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _P.inkSoft)))),
+      loading: () => const Scaffold(
+          backgroundColor: _P.bg, body: Center(child: CircularProgressIndicator(color: _P.rose))),
+      error: (e, _) => Scaffold(
+          backgroundColor: _P.bg,
+          body: Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _P.inkSoft)))),
     );
   }
 
@@ -251,6 +495,200 @@ class ProviderDetailPage extends ConsumerWidget {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => _BookingSheet(provider: provider, hasAuth: user != null),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TITRE DE SECTION
+// ═══════════════════════════════════════════════════════════════════════════
+class _SectionTitle extends StatelessWidget {
+  final String title;
+  const _SectionTitle(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Container(
+          width: 3.5,
+          height: 17,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [_P.rose, _P.roseLight],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Text(title,
+            style: GoogleFonts.inter(
+                fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.4)),
+      ],
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// CARTE OFFRE DANS LE DÉTAIL PRESTATAIRE (multi-photos + catégories)
+// ═══════════════════════════════════════════════════════════════════════════
+class _DetailOfferCard extends StatelessWidget {
+  final ProviderOfferModel offer;
+  final VoidCallback onBook;
+
+  const _DetailOfferCard({required this.offer, required this.onBook});
+
+  @override
+  Widget build(BuildContext context) {
+    final color = offerTypeColor(offer.type);
+    final images = offer.allImages;
+
+    return Container(
+      width: 220,
+      decoration: BoxDecoration(
+        color: _P.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _P.line),
+        boxShadow: [
+          BoxShadow(color: _P.rose.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 6)),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 5,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (images.isNotEmpty)
+                  PageView.builder(
+                    itemCount: images.length,
+                    itemBuilder: (_, i) => Image.network(
+                      images[i],
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, __, ___) => Container(
+                        color: color.withOpacity(0.12),
+                        child: Icon(offerTypeIcon(offer.type), size: 36, color: color),
+                      ),
+                    ),
+                  )
+                else
+                  Container(
+                    color: color.withOpacity(0.12),
+                    child: Icon(offerTypeIcon(offer.type), size: 36, color: color),
+                  ),
+
+                // Badge type
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(7)),
+                    child: Text(offer.type.displayName.toUpperCase(),
+                        style: GoogleFonts.inter(
+                            fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.white)),
+                  ),
+                ),
+
+                // Compteur photos
+                if (images.length > 1)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      decoration:
+                          BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(8)),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.photo_library_rounded, size: 9, color: Colors.white),
+                          const SizedBox(width: 3),
+                          Text('${images.length}',
+                              style: GoogleFonts.inter(
+                                  fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 5,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(offer.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(
+                          fontSize: 13, fontWeight: FontWeight.w900, color: _P.ink, height: 1.2)),
+                  if ((offer.description ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(offer.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(
+                            fontSize: 10.5, color: _P.inkSoft, height: 1.3)),
+                  ],
+                  const SizedBox(height: 6),
+                  // Catégories (2 max)
+                  if (offer.categories.isNotEmpty)
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: offer.categories.take(2).map((c) {
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: _P.rose.withOpacity(0.08),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: _P.rose.withOpacity(0.25)),
+                          ),
+                          child: Text(c.displayName,
+                              style: GoogleFonts.inter(
+                                  fontSize: 8.5, fontWeight: FontWeight.w700, color: _P.rose)),
+                        );
+                      }).toList(),
+                    ),
+                  const Spacer(),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        offer.price != null ? '${offer.price!.toStringAsFixed(0)}\$' : 'Sur devis',
+                        style: GoogleFonts.inter(
+                            fontSize: 13, fontWeight: FontWeight.w900, color: _P.rose),
+                      ),
+                      GestureDetector(
+                        onTap: onBook,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text('Réserver',
+                              style: GoogleFonts.inter(
+                                  fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -326,14 +764,13 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
   }
 
   Future<void> _submit() async {
-    // Cas sans auth : on demande le nom du client
     if (!widget.hasAuth && _nameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Veuillez saisir votre nom', style: GoogleFonts.inter(color: Colors.white)), backgroundColor: _P.rose, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+      _snack('Veuillez saisir votre nom', error: true);
       return;
     }
 
     if (_phoneCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Téléphone requis', style: GoogleFonts.inter(color: Colors.white)), backgroundColor: _P.rose, behavior: SnackBarBehavior.floating, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))));
+      _snack('Téléphone requis', error: true);
       return;
     }
 
@@ -348,7 +785,6 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
         clientName = '${wedding['bride_name'] ?? ''} & ${wedding['groom_name'] ?? ''}'.trim();
         weddingId = _weddingId!;
       } else {
-        // Mode sans auth : on crée un mariage "fantôme" ou on utilise un ID générique
         clientName = _nameCtrl.text.trim();
         weddingId = 'guest-${DateTime.now().millisecondsSinceEpoch}';
       }
@@ -366,27 +802,25 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
 
       if (!mounted) return;
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Demande envoyée au prestataire ✔', style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w700)),
-          backgroundColor: _P.green,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      _snack('Demande envoyée au prestataire ✔');
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Erreur: $e', style: GoogleFonts.inter(color: Colors.white)),
-          backgroundColor: _P.rose,
-          behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        ),
-      );
+      _snack('Erreur: $e', error: true);
     } finally {
       if (mounted) setState(() => _submitting = false);
     }
+  }
+
+  void _snack(String msg, {bool error = false}) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg,
+            style: GoogleFonts.inter(color: Colors.white, fontWeight: FontWeight.w600)),
+        backgroundColor: error ? _P.rose : _P.green,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
 
   @override
@@ -403,24 +837,39 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Center(child: Container(width: 44, height: 4, decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)))),
+            Center(
+                child: Container(
+                    width: 44,
+                    height: 4,
+                    decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
-            Text('Réserver ${widget.provider.businessName}', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+            Text('Réserver ${widget.provider.businessName}',
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
             const SizedBox(height: 16),
 
             // Cas avec auth : choix du mariage
             if (widget.hasAuth) ...[
               if (_loadingWeddings)
-                const Padding(padding: EdgeInsets.all(12), child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.rose)))
+                const Padding(
+                    padding: EdgeInsets.all(12),
+                    child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.rose)))
               else if (_weddings.isEmpty)
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(color: _P.roseSoft, borderRadius: BorderRadius.circular(14)),
-                  child: Row(children: [
-                    const Icon(Icons.info_outline, color: _P.rose, size: 20),
-                    const SizedBox(width: 10),
-                    Expanded(child: Text('Créez d\'abord votre mariage depuis l\'espace staff pour pouvoir réserver.', style: GoogleFonts.inter(fontSize: 12, color: _P.rose, fontWeight: FontWeight.w600))),
-                  ]),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.info_outline, color: _P.rose, size: 20),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          'Créez d\'abord votre mariage depuis l\'espace staff pour pouvoir réserver.',
+                          style: GoogleFonts.inter(
+                              fontSize: 12, color: _P.rose, fontWeight: FontWeight.w600),
+                        ),
+                      ),
+                    ],
+                  ),
                 )
               else
                 DropdownButtonFormField<String>(
@@ -429,14 +878,19 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
                     labelText: 'Votre mariage',
                     filled: true,
                     fillColor: _P.surface,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-                    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.rose, width: 2)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: _P.rose, width: 2)),
                   ),
                   items: _weddings
                       .map((w) => DropdownMenuItem(
                             value: w['id'] as String,
-                            child: Text('${w['bride_name'] ?? ''} & ${w['groom_name'] ?? ''}', overflow: TextOverflow.ellipsis),
+                            child: Text('${w['bride_name'] ?? ''} & ${w['groom_name'] ?? ''}',
+                                overflow: TextOverflow.ellipsis),
                           ))
                       .toList(),
                   onChanged: (v) => setState(() => _weddingId = v),
@@ -458,21 +912,37 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
               onTap: _pickDate,
               child: Container(
                 padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line)),
-                child: Row(children: [
-                  const Icon(Icons.calendar_today_outlined, color: _P.rose, size: 18),
-                  const SizedBox(width: 10),
-                  Text(DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(_date), style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink)),
-                ]),
+                decoration: BoxDecoration(
+                    color: _P.surface,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: _P.line)),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calendar_today_outlined, color: _P.rose, size: 18),
+                    const SizedBox(width: 10),
+                    Text(DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(_date),
+                        style: GoogleFonts.inter(
+                            fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink)),
+                  ],
+                ),
               ),
             ),
             const SizedBox(height: 14),
 
-            TextField(controller: _phoneCtrl, keyboardType: TextInputType.phone, decoration: _sheetInput('Votre téléphone *', Icons.phone)),
+            TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: _sheetInput('Votre téléphone *', Icons.phone)),
             const SizedBox(height: 14),
-            TextField(controller: _guestsCtrl, keyboardType: TextInputType.number, decoration: _sheetInput('Nombre d\'invités (optionnel)', Icons.group_outlined)),
+            TextField(
+                controller: _guestsCtrl,
+                keyboardType: TextInputType.number,
+                decoration: _sheetInput('Nombre d\'invités (optionnel)', Icons.group_outlined)),
             const SizedBox(height: 14),
-            TextField(controller: _notesCtrl, maxLines: 3, decoration: _sheetInput('Message au prestataire (optionnel)', Icons.edit_note_outlined)),
+            TextField(
+                controller: _notesCtrl,
+                maxLines: 3,
+                decoration: _sheetInput('Message au prestataire (optionnel)', Icons.edit_note_outlined)),
             const SizedBox(height: 20),
 
             SizedBox(
@@ -480,10 +950,18 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _submitting ? null : _submit,
-                style: ElevatedButton.styleFrom(backgroundColor: _P.rose, foregroundColor: Colors.white, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
+                style: ElevatedButton.styleFrom(
+                    backgroundColor: _P.rose,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
                 child: _submitting
-                    ? const SizedBox(width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                    : Text('Envoyer la demande', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
+                    ? const SizedBox(
+                        width: 22,
+                        height: 22,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text('Envoyer la demande',
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800)),
               ),
             ),
             const SizedBox(height: 12),
@@ -499,9 +977,12 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
       filled: true,
       fillColor: _P.surface,
       prefixIcon: Icon(icon, color: _P.rose, size: 18),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.rose, width: 2)),
+      border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
+      enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
+      focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.rose, width: 2)),
     );
   }
 }
