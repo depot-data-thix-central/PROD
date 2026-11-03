@@ -1,16 +1,18 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_business_pages.dart
 // ============================================================================
-// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v4 — COMPLET)
+// THIX WEDDING PROVIDER BUSINESS (PRODUCTION v5 — UNIFIÉE)
 // ✅ Réservations : filtres, recherche, détails, actions rapides, stats
 // ✅ Tâches : checklist interactive, priorités, tri, édition inline
 // ✅ DEMANDES DE PRESTATION : bandeau d'alerte + page dédiée
-//    → Approuver (crée le dossier vendor + redirige vers gestion)
-//    → Refuser (motif obligatoire)
 // ✅ GESTION POST-APPROBATION : espace spécifique par type de prestation
-// ✅ MENUS TRAITEUR : liste de plats, validation par élément, mise en public
-// ✅ PRÉFÉRENCES INVITÉS : vote sur les plats, affichage du plus populaire
+// ✅ NOUVEAU v5 : WORKFLOW COMMANDES COMPLET (pending→completed)
+// ✅ NOUVEAU v5 : MENU TRAITEUR CATÉGORISÉ (apéritif/entrée/plat/dessert/boisson)
+// ✅ NOUVEAU v5 : VALIDATION STAFF AVANT PUBLICATION
+// ✅ NOUVEAU v5 : STATS VOTES INVITÉS (graphiques, taux de participation)
+// ✅ NOUVEAU v5 : SUGGESTIONS DG (chansons, playlists, animations)
 // ✅ Pull-to-refresh, haptic feedback, animations fluides
 // ============================================================================
+
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,10 +21,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 
+// ═══════════════════════════════════════════════════════════════════════════
+// PALETTE DE COULEURS
+// ═══════════════════════════════════════════════════════════════════════════
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
   static const Color surface = Colors.white;
@@ -43,6 +47,7 @@ class _P {
   static const Color purpleLight = Color(0xFFEDE9FE);
   static const Color gold = Color(0xFFD4AF37);
   static const Color goldLight = Color(0xFFFFFBEB);
+  static const Color teal = Color(0xFF14B8A6);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -52,11 +57,10 @@ final _reservationFilterProvider = StateProvider<ReservationStatus?>((ref) => nu
 final _reservationSearchProvider = StateProvider<String>((ref) => '');
 final _taskFilterProvider = StateProvider<TaskStatus?>((ref) => null);
 final _taskSortProvider = StateProvider<TaskSort>((ref) => TaskSort.date);
-
 enum TaskSort { date, priority, status }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PROVIDERS POUR LES MENUS (traiteurs)
+// PROVIDERS : MENUS (traiteurs)
 // ═══════════════════════════════════════════════════════════════════════════
 final vendorMenuItemsProvider = FutureProvider.autoDispose
     .family<List<Map<String, dynamic>>, String>((ref, vendorId) async {
@@ -74,7 +78,6 @@ final vendorMenuItemsProvider = FutureProvider.autoDispose
   }
 });
 
-/// Stats de votes invités pour un menu
 final menuItemVotesProvider = FutureProvider.autoDispose
     .family<Map<String, int>, String>((ref, weddingId) async {
   try {
@@ -94,48 +97,163 @@ final menuItemVotesProvider = FutureProvider.autoDispose
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DEMANDES DE PRESTATION (staff → prestataire)
+// PROVIDER : DEMANDES DE PRESTATION
 // ═══════════════════════════════════════════════════════════════════════════
 final providerIncomingRequestsProvider =
     FutureProvider.autoDispose.family<List<Map<String, dynamic>>, String>(
-        (ref, providerId) async {
-  final c = Supabase.instance.client;
-  final rows = await c
-      .from('thix_weeding_vendor_requests')
-      .select('*')
-      .eq('provider_id', providerId)
-      .order('created_at', ascending: false);
-  final list = List<Map<String, dynamic>>.from(rows);
-  if (list.isEmpty) return list;
+  (ref, providerId) async {
+    final c = Supabase.instance.client;
+    final rows = await c
+        .from('thix_weeding_vendor_requests')
+        .select('*')
+        .eq('provider_id', providerId)
+        .order('created_at', ascending: false);
+    final list = List<Map<String, dynamic>>.from(rows);
+    if (list.isEmpty) return list;
 
-  final pIds = list.map((r) => r['provider_id']).whereType<String>().toSet().toList();
-  final wIds = list.map((r) => r['wedding_id']).whereType<String>().toSet().toList();
-  final provMap = <String, Map<String, dynamic>>{};
-  final wedMap = <String, Map<String, dynamic>>{};
+    final pIds = list.map((r) => r['provider_id']).whereType<String>().toSet().toList();
+    final wIds = list.map((r) => r['wedding_id']).whereType<String>().toSet().toList();
+    final provMap = <String, Map<String, dynamic>>{};
+    final wedMap = <String, Map<String, dynamic>>{};
 
-  if (pIds.isNotEmpty) {
-    try {
-      final pr = await c
-          .from('thix_weeding_providers')
-          .select('id, business_name, unique_code, category, city, phone, email, verification_status')
-          .inFilter('id', pIds);
-      for (final p in List<Map<String, dynamic>>.from(pr)) provMap[p['id'] as String] = p;
-    } catch (_) {}
+    if (pIds.isNotEmpty) {
+      try {
+        final pr = await c
+            .from('thix_weeding_providers')
+            .select('id, business_name, unique_code, category, city, phone, email, verification_status')
+            .inFilter('id', pIds);
+        for (final p in List<Map<String, dynamic>>.from(pr)) {
+          provMap[p['id'] as String] = p;
+        }
+      } catch (_) {}
+    }
+    if (wIds.isNotEmpty) {
+      try {
+        final wr = await c
+            .from('thix_weeding_weddings')
+            .select('id, bride_name, groom_name, wedding_date, venue')
+            .inFilter('id', wIds);
+        for (final w in List<Map<String, dynamic>>.from(wr)) {
+          wedMap[w['id'] as String] = w;
+        }
+      } catch (_) {}
+    }
+
+    for (final r in list) {
+      r['provider'] = provMap[r['provider_id'] as String? ?? ''] ?? <String, dynamic>{};
+      r['wedding'] = wedMap[r['wedding_id'] as String? ?? ''] ?? <String, dynamic>{};
+    }
+    return list;
+  },
+);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROVIDER : WORKFLOW COMMANDES (NOUVEAU v5)
+// ═══════════════════════════════════════════════════════════════════════════
+enum WeddingOrderStatus {
+  pending,
+  confirmed,
+  inProgress,
+  ready,
+  delivered,
+  completed,
+  cancelled,
+}
+
+extension WeddingOrderStatusX on WeddingOrderStatus {
+  String get label => switch (this) {
+        WeddingOrderStatus.pending => 'En attente',
+        WeddingOrderStatus.confirmed => 'Confirmée',
+        WeddingOrderStatus.inProgress => 'En cours',
+        WeddingOrderStatus.ready => 'Prête',
+        WeddingOrderStatus.delivered => 'Livrée',
+        WeddingOrderStatus.completed => 'Terminée',
+        WeddingOrderStatus.cancelled => 'Annulée',
+      };
+  Color get color => switch (this) {
+        WeddingOrderStatus.pending => _P.amber,
+        WeddingOrderStatus.confirmed => _P.blue,
+        WeddingOrderStatus.inProgress => _P.amber,
+        WeddingOrderStatus.ready => _P.green,
+        WeddingOrderStatus.delivered => _P.teal,
+        WeddingOrderStatus.completed => _P.green,
+        WeddingOrderStatus.cancelled => _P.red,
+      };
+  IconData get icon => switch (this) {
+        WeddingOrderStatus.pending => Icons.hourglass_empty_rounded,
+        WeddingOrderStatus.confirmed => Icons.check_circle_outline_rounded,
+        WeddingOrderStatus.inProgress => Icons.sync_rounded,
+        WeddingOrderStatus.ready => Icons.check_circle_rounded,
+        WeddingOrderStatus.delivered => Icons.local_shipping_rounded,
+        WeddingOrderStatus.completed => Icons.verified_rounded,
+        WeddingOrderStatus.cancelled => Icons.cancel_rounded,
+      };
+  WeddingOrderStatus? get next => switch (this) {
+        WeddingOrderStatus.pending => WeddingOrderStatus.confirmed,
+        WeddingOrderStatus.confirmed => WeddingOrderStatus.inProgress,
+        WeddingOrderStatus.inProgress => WeddingOrderStatus.ready,
+        WeddingOrderStatus.ready => WeddingOrderStatus.delivered,
+        WeddingOrderStatus.delivered => WeddingOrderStatus.completed,
+        _ => null,
+      };
+  String? get nextLabel => switch (this) {
+        WeddingOrderStatus.pending => 'Confirmer',
+        WeddingOrderStatus.confirmed => 'Démarrer',
+        WeddingOrderStatus.inProgress => 'Marquer prêt',
+        WeddingOrderStatus.ready => 'Livrer',
+        WeddingOrderStatus.delivered => 'Terminer',
+        _ => null,
+      };
+}
+
+final providerOrdersProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, providerId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_orders')
+        .select('*')
+        .eq('provider_id', providerId)
+        .order('event_date', ascending: true);
+    return List<Map<String, dynamic>>.from(rows);
+  } catch (e) {
+    debugPrint('Erreur orders: $e');
+    return [];
   }
-  if (wIds.isNotEmpty) {
-    try {
-      final wr = await c
-          .from('thix_weeding_weddings')
-          .select('id, bride_name, groom_name, wedding_date, venue')
-          .inFilter('id', wIds);
-      for (final w in List<Map<String, dynamic>>.from(wr)) wedMap[w['id'] as String] = w;
-    } catch (_) {}
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PROVIDER : SUGGESTIONS DG (NOUVEAU v5)
+// ═══════════════════════════════════════════════════════════════════════════
+enum SuggestionStatus { pending, approved, rejected, played }
+
+extension SuggestionStatusX on SuggestionStatus {
+  String get label => switch (this) {
+        SuggestionStatus.pending => 'En attente',
+        SuggestionStatus.approved => 'Approuvée',
+        SuggestionStatus.rejected => 'Rejetée',
+        SuggestionStatus.played => 'Jouée',
+      };
+  Color get color => switch (this) {
+        SuggestionStatus.pending => _P.amber,
+        SuggestionStatus.approved => _P.green,
+        SuggestionStatus.rejected => _P.red,
+        SuggestionStatus.played => _P.purple,
+      };
+}
+
+final providerSuggestionsProvider = FutureProvider.autoDispose
+    .family<List<Map<String, dynamic>>, String>((ref, weddingId) async {
+  try {
+    final rows = await Supabase.instance.client
+        .from('thix_weeding_dg_suggestions')
+        .select('*')
+        .eq('wedding_id', weddingId)
+        .order('created_at', ascending: false);
+    return List<Map<String, dynamic>>.from(rows);
+  } catch (e) {
+    debugPrint('Erreur suggestions: $e');
+    return [];
   }
-  for (final r in list) {
-    r['provider'] = provMap[r['provider_id'] as String? ?? ''] ?? <String, dynamic>{};
-    r['wedding'] = wedMap[r['wedding_id'] as String? ?? ''] ?? <String, dynamic>{};
-  }
-  return list;
 });
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -173,8 +291,7 @@ String _mapVendorCategory(String? providerCat) {
   }
 }
 
-/// Détermine le type de gestion post-approbation selon la catégorie
-enum ServiceManagementType { menu, gallery, timeline, generic }
+enum ServiceManagementType { menu, gallery, timeline, orders, generic }
 
 ServiceManagementType _managementTypeFor(String? category) {
   switch ((category ?? '').toLowerCase()) {
@@ -199,12 +316,14 @@ Color _reqColor(String? s) => switch (s) {
       'cancelled' => _P.inkSoft,
       _ => _P.amber,
     };
+
 String _reqLabel(String? s) => switch (s) {
       'approved' => 'Acceptée',
       'rejected' => 'Refusée',
       'cancelled' => 'Retirée',
       _ => 'En attente',
     };
+
 IconData _reqIcon(String? s) => switch (s) {
       'approved' => Icons.check_circle_rounded,
       'rejected' => Icons.cancel_rounded,
@@ -235,21 +354,272 @@ String _fmtWeddingDate(Map<String, dynamic> r) {
 
 String _venueOf(Map<String, dynamic> r) {
   final w = (r['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
-  return (w['venue'] as String? ?? '').trim().isEmpty
-      ? 'Lieu à définir'
-      : w['venue'] as String;
+  return (w['venue'] as String? ?? '').trim().isEmpty ? 'Lieu à définir' : w['venue'] as String;
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGETS COMMUNS
+// ═══════════════════════════════════════════════════════════════════════════
+class _EmptyState extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  const _EmptyState({required this.icon, required this.title, required this.subtitle});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: _P.inkSoft.withOpacity(0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, size: 64, color: _P.inkSoft),
+            ),
+            const SizedBox(height: 20),
+            Text(title, textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+            const SizedBox(height: 8),
+            Text(subtitle, textAlign: TextAlign.center,
+                style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft, height: 1.4)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorState({required this.message, required this.onRetry});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(color: _P.redLight, shape: BoxShape.circle),
+              child: const Icon(Icons.error_outline_rounded, size: 64, color: _P.red),
+            ),
+            const SizedBox(height: 20),
+            Text('Une erreur est survenue',
+                style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+            const SizedBox(height: 8),
+            Text(message, textAlign: TextAlign.center, maxLines: 3, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft)),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: onRetry,
+              icon: const Icon(Icons.refresh_rounded),
+              label: const Text('Réessayer'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _P.rose,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  final VoidCallback onTap;
+  final bool isOutlined;
+  const _ActionButton({
+    required this.icon, required this.label, required this.color,
+    required this.onTap, this.isOutlined = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () { HapticFeedback.selectionClick(); onTap(); },
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12),
+        decoration: BoxDecoration(
+          color: isOutlined ? Colors.transparent : color,
+          borderRadius: BorderRadius.circular(12),
+          border: isOutlined ? Border.all(color: color, width: 1.5) : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 16, color: isOutlined ? color : Colors.white),
+            const SizedBox(width: 6),
+            Text(label, style: GoogleFonts.inter(
+                fontSize: 12, fontWeight: FontWeight.w800,
+                color: isOutlined ? color : Colors.white)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ContactButton extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ContactButton({required this.icon, required this.color, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () { HapticFeedback.selectionClick(); onTap(); },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.1),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Icon(icon, color: color, size: 20),
+      ),
+    );
+  }
+}
+
+class _QuickStat extends StatelessWidget {
+  final IconData icon;
+  final String value;
+  final String label;
+  final Color color;
+  const _QuickStat({required this.icon, required this.value, required this.label, this.color = Colors.white});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.15),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 16, color: color),
+          const SizedBox(width: 6),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(value, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+            Text(label, style: GoogleFonts.inter(fontSize: 9, color: Colors.white.withOpacity(0.8), fontWeight: FontWeight.w600)),
+          ]),
+        ],
+      ),
+    );
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  final Color? valueColor;
+  const _DetailRow({required this.icon, required this.label, required this.value, this.valueColor});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(8)),
+            child: Icon(icon, size: 16, color: _P.inkSoft),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+              const SizedBox(height: 2),
+              Text(value, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: valueColor ?? _P.ink)),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _Badge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _Badge({required this.icon, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        Icon(icon, size: 12, color: color),
+        const SizedBox(width: 4),
+        Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+      ]),
+    );
+  }
+}
+
+InputDecoration _sheetDec(String label, IconData icon, {String? hint}) => InputDecoration(
+  labelText: label,
+  hintText: hint,
+  labelStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
+  hintStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft.withOpacity(0.6)),
+  prefixIcon: Icon(icon, size: 18, color: _P.rose),
+  filled: true,
+  fillColor: _P.bg,
+  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+);
 
 // ═══════════════════════════════════════════════════════════════════════════
 // RÉSERVATIONS - PAGE PRINCIPALE
 // ═══════════════════════════════════════════════════════════════════════════
+Color _getStatusColor(ReservationStatus status) => switch (status) {
+      ReservationStatus.pending => _P.amber,
+      ReservationStatus.confirmed => _P.green,
+      ReservationStatus.completed => _P.blue,
+      ReservationStatus.cancelled => _P.red,
+    };
+
+String _getStatusLabel(ReservationStatus status) => switch (status) {
+      ReservationStatus.pending => 'en attente',
+      ReservationStatus.confirmed => 'confirmée',
+      ReservationStatus.completed => 'terminée',
+      ReservationStatus.cancelled => 'annulée',
+    };
+
+String _getStatusText(ReservationStatus status) => switch (status) {
+      ReservationStatus.pending => 'EN ATTENTE',
+      ReservationStatus.confirmed => 'CONFIRMÉ',
+      ReservationStatus.completed => 'TERMINÉ',
+      ReservationStatus.cancelled => 'ANNULÉ',
+    };
+
 class ProviderReservationsPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
   const ProviderReservationsPage({super.key, required this.provider});
-
   @override
-  ConsumerState<ProviderReservationsPage> createState() =>
-      _ProviderReservationsPageState();
+  ConsumerState<ProviderReservationsPage> createState() => _ProviderReservationsPageState();
 }
 
 class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsPage>
@@ -307,7 +677,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
       body: CustomScrollView(
         physics: const BouncingScrollPhysics(),
         slivers: [
-          // HEADER PREMIUM
+          // HEADER
           SliverAppBar(
             pinned: true,
             expandedHeight: 180,
@@ -329,72 +699,68 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => Navigator.of(context).pop(),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.arrow_back_ios_new,
-                                    size: 16, color: Colors.white),
+                        Row(children: [
+                          GestureDetector(
+                            onTap: () => Navigator.of(context).pop(),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),
                             ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Réservations',
-                              style: GoogleFonts.inter(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
+                          ),
+                          const SizedBox(width: 12),
+                          Text('Réservations',
+                              style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+                          const Spacer(),
+                          // ✅ NOUVEAU v5 : bouton commandes
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.of(context).push(MaterialPageRoute(
+                                builder: (_) => ProviderOrdersPage(provider: widget.provider),
+                              ));
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: const Icon(Icons.shopping_cart_rounded, size: 20, color: Colors.white),
                             ),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () => _showFilterDialog(context),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.tune_rounded,
-                                    size: 20, color: Colors.white),
+                          ),
+                          const SizedBox(width: 8),
+                          GestureDetector(
+                            onTap: () => _showFilterDialog(context),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withOpacity(0.2),
+                                borderRadius: BorderRadius.circular(10),
                               ),
+                              child: const Icon(Icons.tune_rounded, size: 20, color: Colors.white),
                             ),
-                          ],
-                        ),
+                          ),
+                        ]),
                         const SizedBox(height: 16),
                         reservationsAsync.when(
-                          data: (reservations) => Row(
-                            children: [
-                              _QuickStat(
-                                icon: Icons.event_note_rounded,
-                                value: '${reservations.length}',
-                                label: 'Total',
-                              ),
-                              const SizedBox(width: 12),
-                              _QuickStat(
-                                icon: Icons.pending_actions_rounded,
-                                value:
-                                    '${reservations.where((r) => r.status == ReservationStatus.pending).length}',
-                                label: 'En attente',
-                                color: _P.amber,
-                              ),
-                              const SizedBox(width: 12),
-                              _QuickStat(
-                                icon: Icons.attach_money_rounded,
-                                value:
-                                    '\$${reservations.fold<double>(0, (sum, r) => sum + (r.totalPrice ?? 0)).toStringAsFixed(0)}',
-                                label: 'Revenus',
-                                color: _P.green,
-                              ),
-                            ],
-                          ),
+                          data: (reservations) => Row(children: [
+                            _QuickStat(icon: Icons.event_note_rounded, value: '${reservations.length}', label: 'Total'),
+                            const SizedBox(width: 12),
+                            _QuickStat(
+                              icon: Icons.pending_actions_rounded,
+                              value: '${reservations.where((r) => r.status == ReservationStatus.pending).length}',
+                              label: 'En attente', color: _P.amber,
+                            ),
+                            const SizedBox(width: 12),
+                            _QuickStat(
+                              icon: Icons.attach_money_rounded,
+                              value: '\$${reservations.fold<double>(0, (sum, r) => sum + (r.totalPrice ?? 0)).toStringAsFixed(0)}',
+                              label: 'Revenus', color: _P.green,
+                            ),
+                          ]),
                           loading: () => const SizedBox.shrink(),
                           error: (_, __) => const SizedBox.shrink(),
                         ),
@@ -409,11 +775,8 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
           // BANDEAU DEMANDES
           requestsAsync.when(
             data: (list) {
-              final pending =
-                  list.where((r) => (r['status'] ?? 'pending') == 'pending').length;
-              if (pending == 0) {
-                return const SliverToBoxAdapter(child: SizedBox.shrink());
-              }
+              final pending = list.where((r) => (r['status'] ?? 'pending') == 'pending').length;
+              if (pending == 0) return const SliverToBoxAdapter(child: SizedBox.shrink());
               return SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
@@ -424,70 +787,41 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                       borderRadius: BorderRadius.circular(16),
                       onTap: () {
                         HapticFeedback.mediumImpact();
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) =>
-                                ProviderRequestsPage(provider: widget.provider),
-                          ),
-                        );
+                        Navigator.of(context).push(MaterialPageRoute(
+                          builder: (_) => ProviderRequestsPage(provider: widget.provider),
+                        ));
                       },
                       child: Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
                           gradient: const LinearGradient(
                             colors: [_P.amber, Color(0xFFFFB84D)],
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
+                            begin: Alignment.topLeft, end: Alignment.bottomRight,
                           ),
                           borderRadius: BorderRadius.circular(16),
-                          boxShadow: [
-                            BoxShadow(
-                              color: _P.amber.withOpacity(0.35),
-                              blurRadius: 12,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
+                          boxShadow: [BoxShadow(color: _P.amber.withOpacity(0.35), blurRadius: 12, offset: const Offset(0, 4))],
                         ),
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(10),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.25),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: const Icon(Icons.mark_email_unread_rounded,
-                                  color: Colors.white, size: 22),
+                        child: Row(children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.25),
+                              borderRadius: BorderRadius.circular(12),
                             ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    '$pending demande${pending > 1 ? 's' : ''} de mariage à traiter',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w900,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Consultez, acceptez ou refusez les sollicitations des couples',
-                                    style: GoogleFonts.inter(
-                                      fontSize: 11,
-                                      color: Colors.white.withOpacity(0.92),
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            const Icon(Icons.chevron_right_rounded,
-                                color: Colors.white, size: 26),
-                          ],
-                        ),
+                            child: const Icon(Icons.mark_email_unread_rounded, color: Colors.white, size: 22),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                              Text('$pending demande${pending > 1 ? 's' : ''} de mariage à traiter',
+                                  style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.white)),
+                              const SizedBox(height: 2),
+                              Text('Consultez, acceptez ou refusez les sollicitations des couples',
+                                  style: GoogleFonts.inter(fontSize: 11, color: Colors.white.withOpacity(0.92), fontWeight: FontWeight.w600)),
+                            ]),
+                          ),
+                          const Icon(Icons.chevron_right_rounded, color: Colors.white, size: 26),
+                        ]),
                       ),
                     ),
                   ),
@@ -508,13 +842,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(color: _P.line),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.03),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
                 ),
                 child: TextField(
                   controller: _searchCtrl,
@@ -526,14 +854,8 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                     icon: const Icon(Icons.search_rounded, color: _P.inkSoft),
                     suffixIcon: search.isNotEmpty
                         ? IconButton(
-                            icon: const Icon(Icons.close_rounded,
-                                color: _P.inkSoft, size: 18),
-                            onPressed: () {
-                              _searchCtrl.clear();
-                              ref
-                                  .read(_reservationSearchProvider.notifier)
-                                  .state = '';
-                            },
+                            icon: const Icon(Icons.close_rounded, color: _P.inkSoft, size: 18),
+                            onPressed: () { _searchCtrl.clear(); ref.read(_reservationSearchProvider.notifier).state = ''; },
                           )
                         : null,
                   ),
@@ -553,14 +875,8 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                 unselectedLabelColor: _P.inkSoft,
                 indicatorColor: _P.rose,
                 indicatorWeight: 3,
-                labelStyle: GoogleFonts.inter(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-                unselectedLabelStyle: GoogleFonts.inter(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
+                labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
+                unselectedLabelStyle: GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
                 tabs: [
                   _buildTab('Toutes', reservationsAsync, null),
                   _buildTab('En attente', reservationsAsync, ReservationStatus.pending),
@@ -576,9 +892,7 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
           reservationsAsync.when(
             data: (allReservations) {
               var filtered = allReservations;
-              if (filter != null) {
-                filtered = filtered.where((r) => r.status == filter).toList();
-              }
+              if (filter != null) filtered = filtered.where((r) => r.status == filter).toList();
               if (search.isNotEmpty) {
                 final q = search.toLowerCase();
                 filtered = filtered.where((r) {
@@ -593,11 +907,8 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                 return SliverFillRemaining(
                   child: _EmptyState(
                     icon: Icons.event_busy_rounded,
-                    title: filter == null
-                        ? 'Aucune réservation'
-                        : 'Aucune réservation ${_getStatusLabel(filter)}',
-                    subtitle:
-                        'Les nouvelles demandes apparaîtront ici automatiquement',
+                    title: filter == null ? 'Aucune réservation' : 'Aucune réservation ${_getStatusLabel(filter)}',
+                    subtitle: 'Les nouvelles demandes apparaîtront ici automatiquement',
                   ),
                 );
               }
@@ -613,21 +924,9 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
                         child: _ReservationCard(
                           reservation: r,
                           onTap: () => _showReservationDetails(context, r),
-                          onConfirm: () => _confirmStatusChange(
-                            context,
-                            r,
-                            ReservationStatus.confirmed,
-                          ),
-                          onCancel: () => _confirmStatusChange(
-                            context,
-                            r,
-                            ReservationStatus.cancelled,
-                          ),
-                          onComplete: () => _confirmStatusChange(
-                            context,
-                            r,
-                            ReservationStatus.completed,
-                          ),
+                          onConfirm: () => _confirmStatusChange(context, r, ReservationStatus.confirmed),
+                          onCancel: () => _confirmStatusChange(context, r, ReservationStatus.cancelled),
+                          onComplete: () => _confirmStatusChange(context, r, ReservationStatus.completed),
                           onCall: () => _callClient(r.clientPhone),
                           onWhatsApp: () => _openWhatsApp(r.clientPhone),
                         ),
@@ -640,24 +939,11 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
             },
             loading: () => const SliverFillRemaining(
               child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: 40,
-                      height: 40,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 3,
-                        color: _P.rose,
-                      ),
-                    ),
-                    SizedBox(height: 16),
-                    Text(
-                      'Chargement...',
-                      style: TextStyle(color: _P.inkSoft),
-                    ),
-                  ],
-                ),
+                child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  SizedBox(width: 40, height: 40, child: CircularProgressIndicator(strokeWidth: 3, color: _P.rose)),
+                  SizedBox(height: 16),
+                  Text('Chargement...', style: TextStyle(color: _P.inkSoft)),
+                ]),
               ),
             ),
             error: (e, _) => SliverFillRemaining(
@@ -674,38 +960,27 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
     );
   }
 
-  Widget _buildTab(
-      String label, AsyncValue<List<ProviderReservationModel>> asyncRes, ReservationStatus? status) {
+  Widget _buildTab(String label, AsyncValue<List<ProviderReservationModel>> asyncRes, ReservationStatus? status) {
     return asyncRes.when(
       data: (reservations) {
         final count = status == null
             ? reservations.length
             : reservations.where((r) => r.status == status).length;
         return Tab(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: status == null
-                      ? _P.inkSoft.withOpacity(0.15)
-                      : _getStatusColor(status).withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$count',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: status == null ? _P.inkSoft : _getStatusColor(status),
-                  ),
-                ),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(label),
+            const SizedBox(width: 6),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: status == null ? _P.inkSoft.withOpacity(0.15) : _getStatusColor(status).withOpacity(0.15),
+                borderRadius: BorderRadius.circular(10),
               ),
-            ],
-          ),
+              child: Text('$count', style: GoogleFonts.inter(
+                  fontSize: 10, fontWeight: FontWeight.w800,
+                  color: status == null ? _P.inkSoft : _getStatusColor(status))),
+            ),
+          ]),
         );
       },
       loading: () => Tab(child: Text(label)),
@@ -713,121 +988,54 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
     );
   }
 
-  Future<void> _confirmStatusChange(
-    BuildContext context,
-    ProviderReservationModel r,
-    ReservationStatus newStatus,
-  ) async {
+  Future<void> _confirmStatusChange(BuildContext context, ProviderReservationModel r, ReservationStatus newStatus) async {
     final (title, message, color, icon) = switch (newStatus) {
-      ReservationStatus.confirmed => (
-          'Confirmer la réservation ?',
-          'Le client "${r.clientName}" recevra une notification de confirmation.',
-          _P.green,
-          Icons.check_circle_rounded,
-        ),
-      ReservationStatus.cancelled => (
-          'Annuler la réservation ?',
-          'Cette action est irréversible. Le client sera notifié de l\'annulation.',
-          _P.red,
-          Icons.cancel_rounded,
-        ),
-      ReservationStatus.completed => (
-          'Marquer comme terminée ?',
-          'La réservation sera archivée et ajoutée à votre historique.',
-          _P.blue,
-          Icons.celebration_rounded,
-        ),
+      ReservationStatus.confirmed => ('Confirmer la réservation ?',
+          'Le client "${r.clientName}" recevra une notification de confirmation.', _P.green, Icons.check_circle_rounded),
+      ReservationStatus.cancelled => ('Annuler la réservation ?',
+          'Cette action est irréversible. Le client sera notifié.', _P.red, Icons.cancel_rounded),
+      ReservationStatus.completed => ('Marquer comme terminée ?',
+          'La réservation sera archivée.', _P.blue, Icons.celebration_rounded),
       _ => ('', '', _P.ink, Icons.info),
     };
-
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Row(
-          children: [
-            Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(icon, color: color, size: 24),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Text(
-                title,
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-            ),
-          ],
-        ),
-        content: Text(
-          message,
-          style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft),
-        ),
+        title: Row(children: [
+          Container(padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+              child: Icon(icon, color: color, size: 24)),
+          const SizedBox(width: 12),
+          Expanded(child: Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink))),
+        ]),
+        content: Text(message, style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft)),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Annuler',
-              style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600),
-            ),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false),
+              child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600))),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            child: Text(
-              'Confirmer',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w700),
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: color, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+            child: Text('Confirmer', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
     );
-
     if (confirmed == true && context.mounted) {
       HapticFeedback.mediumImpact();
       try {
-        await ref.read(updateReservationStatusProvider)(
-          r.id,
-          newStatus,
-          widget.provider.id,
-        );
+        await ref.read(updateReservationStatusProvider)(r.id, newStatus, widget.provider.id);
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(
-                'Statut mis à jour avec succès',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-              ),
-              backgroundColor: color,
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Statut mis à jour avec succès', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+            backgroundColor: color, behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ));
         }
       } catch (e) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Erreur: $e'),
-              backgroundColor: _P.red,
-            ),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
         }
       }
     }
@@ -836,33 +1044,24 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
   Future<void> _callClient(String phone) async {
     HapticFeedback.mediumImpact();
     final uri = Uri(scheme: 'tel', path: phone);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
-    }
+    if (await canLaunchUrl(uri)) await launchUrl(uri);
   }
 
   Future<void> _openWhatsApp(String phone) async {
     HapticFeedback.mediumImpact();
     final cleaned = phone.replaceAll(RegExp(r'[^\d]'), '');
     final uri = Uri.parse('https://wa.me/$cleaned');
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
+    if (await canLaunchUrl(uri)) await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
   void _showReservationDetails(BuildContext context, ProviderReservationModel r) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
+      context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
       builder: (ctx) => _ReservationDetailsSheet(
-        reservation: r,
-        provider: widget.provider,
+        reservation: r, provider: widget.provider,
         onStatusChange: (newStatus) async {
           Navigator.pop(ctx);
-          if (context.mounted) {
-            _confirmStatusChange(context, r, newStatus);
-          }
+          if (context.mounted) _confirmStatusChange(context, r, newStatus);
         },
         onCall: () => _callClient(r.clientPhone),
         onWhatsApp: () => _openWhatsApp(r.clientPhone),
@@ -870,32 +1069,9 @@ class _ProviderReservationsPageState extends ConsumerState<ProviderReservationsP
     );
   }
 
-  void _showFilterDialog(BuildContext context) {
-    HapticFeedback.selectionClick();
-  }
-
-  Color _getStatusColor(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => _P.amber,
-      ReservationStatus.confirmed => _P.green,
-      ReservationStatus.completed => _P.blue,
-      ReservationStatus.cancelled => _P.red,
-    };
-  }
-
-  String _getStatusLabel(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => 'en attente',
-      ReservationStatus.confirmed => 'confirmée',
-      ReservationStatus.completed => 'terminée',
-      ReservationStatus.cancelled => 'annulée',
-    };
-  }
+  void _showFilterDialog(BuildContext context) { HapticFeedback.selectionClick(); }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CARTE DE RÉSERVATION
-// ═══════════════════════════════════════════════════════════════════════════
 class _ReservationCard extends StatelessWidget {
   final ProviderReservationModel reservation;
   final VoidCallback onTap;
@@ -904,23 +1080,16 @@ class _ReservationCard extends StatelessWidget {
   final VoidCallback onComplete;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
-
   const _ReservationCard({
-    required this.reservation,
-    required this.onTap,
-    required this.onConfirm,
-    required this.onCancel,
-    required this.onComplete,
-    required this.onCall,
-    required this.onWhatsApp,
+    required this.reservation, required this.onTap, required this.onConfirm,
+    required this.onCancel, required this.onComplete, required this.onCall, required this.onWhatsApp,
   });
 
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor(reservation.status);
     final daysUntil = reservation.eventDate.difference(DateTime.now()).inDays;
-    final isUrgent = daysUntil <= 3 &&
-        daysUntil >= 0 &&
+    final isUrgent = daysUntil <= 3 && daysUntil >= 0 &&
         reservation.status != ReservationStatus.cancelled &&
         reservation.status != ReservationStatus.completed;
 
@@ -934,955 +1103,258 @@ class _ReservationCard extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(
-              color: isUrgent ? _P.amber.withOpacity(0.5) : _P.line,
-              width: isUrgent ? 2 : 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 10,
-                offset: const Offset(0, 3),
-              ),
-            ],
+            border: Border.all(color: isUrgent ? _P.amber.withOpacity(0.5) : _P.line, width: isUrgent ? 2 : 1),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 3))],
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        colors: [statusColor.withOpacity(0.8), statusColor],
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Center(
-                      child: Text(
-                        reservation.clientName.isNotEmpty
-                            ? reservation.clientName[0].toUpperCase()
-                            : '?',
-                        style: GoogleFonts.inter(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          reservation.clientName,
-                          style: GoogleFonts.inter(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: _P.ink,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Icon(Icons.phone_rounded,
-                                size: 12, color: _P.inkSoft),
-                            const SizedBox(width: 4),
-                            Text(
-                              reservation.clientPhone,
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                color: _P.inkSoft,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Container(
-                          width: 6,
-                          height: 6,
-                          decoration: BoxDecoration(
-                            color: statusColor,
-                            shape: BoxShape.circle,
-                          ),
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          _getStatusText(reservation.status),
-                          style: GoogleFonts.inter(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w800,
-                            color: statusColor,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-
-              const SizedBox(height: 16),
-
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
               Container(
-                padding: const EdgeInsets.all(12),
+                width: 48, height: 48,
                 decoration: BoxDecoration(
-                  color: _P.bg,
+                  gradient: LinearGradient(colors: [statusColor.withOpacity(0.8), statusColor]),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Icon(Icons.calendar_today_rounded,
-                              size: 16, color: _P.rose),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              DateFormat('EEEE dd MMM yyyy', 'fr_FR')
-                                  .format(reservation.eventDate),
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w700,
-                                color: _P.ink,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 24,
-                      color: _P.line,
-                    ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(Icons.access_time_rounded,
-                              size: 16, color: _P.blue),
-                          const SizedBox(width: 6),
-                          Text(
-                            DateFormat('HH:mm').format(reservation.eventDate),
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: _P.ink,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      width: 1,
-                      height: 24,
-                      color: _P.line,
-                    ),
-                    Expanded(
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.end,
-                        children: [
-                          Icon(Icons.people_rounded,
-                              size: 16, color: _P.purple),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${reservation.guestCount ?? 0} pers.',
-                            style: GoogleFonts.inter(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              color: _P.ink,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+                child: Center(child: Text(
+                    reservation.clientName.isNotEmpty ? reservation.clientName[0].toUpperCase() : '?',
+                    style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white))),
               ),
-
-              if (reservation.totalPrice != null || isUrgent) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    if (reservation.totalPrice != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: _P.greenLight,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.payments_rounded,
-                                size: 12, color: _P.green),
-                            const SizedBox(width: 4),
-                            Text(
-                              '\$${reservation.totalPrice!.toStringAsFixed(0)}',
-                              style: GoogleFonts.inter(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: _P.green,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    const Spacer(),
-                    if (isUrgent)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: _P.amberLight,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.warning_amber_rounded,
-                                size: 12, color: _P.amber),
-                            const SizedBox(width: 4),
-                            Text(
-                              daysUntil == 0
-                                  ? "Aujourd'hui"
-                                  : daysUntil == 1
-                                      ? 'Demain'
-                                      : 'Dans $daysUntil jours',
-                              style: GoogleFonts.inter(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: _P.amber,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(reservation.clientName,
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                  const SizedBox(height: 2),
+                  Row(children: [
+                    const Icon(Icons.phone_rounded, size: 12, color: _P.inkSoft),
+                    const SizedBox(width: 4),
+                    Text(reservation.clientPhone,
+                        style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w500)),
+                  ]),
+                ]),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(width: 6, height: 6, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                  const SizedBox(width: 5),
+                  Text(_getStatusText(reservation.status),
+                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: statusColor)),
+                ]),
+              ),
+            ]),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(12)),
+              child: Row(children: [
+                Expanded(
+                  child: Row(children: [
+                    const Icon(Icons.calendar_today_rounded, size: 16, color: _P.rose),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(DateFormat('EEEE dd MMM yyyy', 'fr_FR').format(reservation.eventDate),
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink))),
+                  ]),
                 ),
-              ],
-
-              if (reservation.status == ReservationStatus.pending) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _ActionButton(
-                        icon: Icons.check_circle_rounded,
-                        label: 'Confirmer',
-                        color: _P.green,
-                        onTap: onConfirm,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _ActionButton(
-                        icon: Icons.cancel_rounded,
-                        label: 'Refuser',
-                        color: _P.red,
-                        isOutlined: true,
-                        onTap: onCancel,
-                      ),
-                    ),
-                  ],
+                Container(width: 1, height: 24, color: _P.line),
+                Expanded(
+                  child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                    const Icon(Icons.access_time_rounded, size: 16, color: _P.blue),
+                    const SizedBox(width: 6),
+                    Text(DateFormat('HH:mm').format(reservation.eventDate),
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink)),
+                  ]),
                 ),
-              ],
-
-              if (reservation.status == ReservationStatus.confirmed) ...[
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    _ContactButton(
-                      icon: Icons.call_rounded,
-                      color: _P.green,
-                      onTap: onCall,
-                    ),
-                    const SizedBox(width: 8),
-                    _ContactButton(
-                      icon: Icons.chat_rounded,
-                      color: const Color(0xFF25D366),
-                      onTap: onWhatsApp,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: _ActionButton(
-                        icon: Icons.celebration_rounded,
-                        label: 'Marquer terminé',
-                        color: _P.blue,
-                        onTap: onComplete,
-                      ),
-                    ),
-                  ],
+                Container(width: 1, height: 24, color: _P.line),
+                Expanded(
+                  child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+                    const Icon(Icons.people_rounded, size: 16, color: _P.purple),
+                    const SizedBox(width: 6),
+                    Text('${reservation.guestCount ?? 0} pers.',
+                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _P.ink)),
+                  ]),
                 ),
-              ],
-
-              if (reservation.status == ReservationStatus.completed ||
-                  reservation.status == ReservationStatus.cancelled) ...[
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    _ContactButton(
-                      icon: Icons.call_rounded,
-                      color: _P.green,
-                      onTap: onCall,
-                    ),
-                    const SizedBox(width: 8),
-                    _ContactButton(
-                      icon: Icons.chat_rounded,
-                      color: const Color(0xFF25D366),
-                      onTap: onWhatsApp,
-                    ),
-                  ],
-                ),
-              ],
+              ]),
+            ),
+            if (reservation.totalPrice != null || isUrgent) ...[
+              const SizedBox(height: 12),
+              Row(children: [
+                if (reservation.totalPrice != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: _P.greenLight, borderRadius: BorderRadius.circular(8)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.payments_rounded, size: 12, color: _P.green),
+                      const SizedBox(width: 4),
+                      Text('\$${reservation.totalPrice!.toStringAsFixed(0)}',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _P.green)),
+                    ]),
+                  ),
+                const Spacer(),
+                if (isUrgent)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(color: _P.amberLight, borderRadius: BorderRadius.circular(8)),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: [
+                      const Icon(Icons.warning_amber_rounded, size: 12, color: _P.amber),
+                      const SizedBox(width: 4),
+                      Text(
+                          daysUntil == 0 ? "Aujourd'hui" : daysUntil == 1 ? 'Demain' : 'Dans $daysUntil jours',
+                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _P.amber)),
+                    ]),
+                  ),
+              ]),
             ],
-          ),
+            if (reservation.status == ReservationStatus.pending) ...[
+              const SizedBox(height: 16),
+              Row(children: [
+                Expanded(child: _ActionButton(icon: Icons.check_circle_rounded, label: 'Confirmer', color: _P.green, onTap: onConfirm)),
+                const SizedBox(width: 8),
+                Expanded(child: _ActionButton(icon: Icons.cancel_rounded, label: 'Refuser', color: _P.red, isOutlined: true, onTap: onCancel)),
+              ]),
+            ],
+            if (reservation.status == ReservationStatus.confirmed) ...[
+              const SizedBox(height: 16),
+              Row(children: [
+                _ContactButton(icon: Icons.call_rounded, color: _P.green, onTap: onCall),
+                const SizedBox(width: 8),
+                _ContactButton(icon: Icons.chat_rounded, color: const Color(0xFF25D366), onTap: onWhatsApp),
+                const SizedBox(width: 8),
+                Expanded(child: _ActionButton(icon: Icons.celebration_rounded, label: 'Marquer terminé', color: _P.blue, onTap: onComplete)),
+              ]),
+            ],
+            if (reservation.status == ReservationStatus.completed || reservation.status == ReservationStatus.cancelled) ...[
+              const SizedBox(height: 12),
+              Row(children: [
+                _ContactButton(icon: Icons.call_rounded, color: _P.green, onTap: onCall),
+                const SizedBox(width: 8),
+                _ContactButton(icon: Icons.chat_rounded, color: const Color(0xFF25D366), onTap: onWhatsApp),
+              ]),
+            ],
+          ]),
         ),
       ),
     );
   }
-
-  Color _getStatusColor(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => _P.amber,
-      ReservationStatus.confirmed => _P.green,
-      ReservationStatus.completed => _P.blue,
-      ReservationStatus.cancelled => _P.red,
-    };
-  }
-
-  String _getStatusText(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => 'EN ATTENTE',
-      ReservationStatus.confirmed => 'CONFIRMÉ',
-      ReservationStatus.completed => 'TERMINÉ',
-      ReservationStatus.cancelled => 'ANNULÉ',
-    };
-  }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM SHEET - DÉTAILS RÉSERVATION
-// ═══════════════════════════════════════════════════════════════════════════
 class _ReservationDetailsSheet extends StatelessWidget {
   final ProviderReservationModel reservation;
   final ThixProviderModel provider;
   final Function(ReservationStatus) onStatusChange;
   final VoidCallback onCall;
   final VoidCallback onWhatsApp;
-
   const _ReservationDetailsSheet({
-    required this.reservation,
-    required this.provider,
-    required this.onStatusChange,
-    required this.onCall,
-    required this.onWhatsApp,
+    required this.reservation, required this.provider,
+    required this.onStatusChange, required this.onCall, required this.onWhatsApp,
   });
 
   @override
   Widget build(BuildContext context) {
     final statusColor = _getStatusColor(reservation.status);
-
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.85,
-      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: _P.line,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            colors: [statusColor.withOpacity(0.8), statusColor],
-                          ),
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        child: Center(
-                          child: Text(
-                            reservation.clientName.isNotEmpty
-                                ? reservation.clientName[0].toUpperCase()
-                                : '?',
-                            style: GoogleFonts.inter(
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              reservation.clientName,
-                              style: GoogleFonts.inter(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w900,
-                                color: _P.ink,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 5),
-                              decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Text(
-                                _getStatusText(reservation.status),
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: statusColor,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  _DetailRow(
-                    icon: Icons.phone_rounded,
-                    label: 'Téléphone',
-                    value: reservation.clientPhone,
-                  ),
-                  _DetailRow(
-                    icon: Icons.calendar_today_rounded,
-                    label: 'Date',
-                    value: DateFormat('EEEE dd MMMM yyyy', 'fr_FR')
-                        .format(reservation.eventDate),
-                  ),
-                  _DetailRow(
-                    icon: Icons.access_time_rounded,
-                    label: 'Heure',
-                    value: DateFormat('HH:mm').format(reservation.eventDate),
-                  ),
-                  if (reservation.eventType != null)
-                    _DetailRow(
-                      icon: Icons.celebration_rounded,
-                      label: 'Type d\'événement',
-                      value: reservation.eventType!,
-                    ),
-                  if (reservation.guestCount != null)
-                    _DetailRow(
-                      icon: Icons.people_rounded,
-                      label: 'Nombre d\'invités',
-                      value: '${reservation.guestCount} personnes',
-                    ),
-                  if (reservation.totalPrice != null)
-                    _DetailRow(
-                      icon: Icons.attach_money_rounded,
-                      label: 'Montant total',
-                      value: '\$${reservation.totalPrice!.toStringAsFixed(2)} ${reservation.currency}',
-                      valueColor: _P.green,
-                    ),
-                  if (reservation.notes != null &&
-                      reservation.notes!.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      'Notes',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _P.ink,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: _P.bg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _P.line),
-                      ),
-                      child: Text(
-                        reservation.notes!,
-                        style: GoogleFonts.inter(
-                          fontSize: 13,
-                          color: _P.ink,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                  ],
-
-                  const SizedBox(height: 24),
-
-                  Text(
-                    'Historique',
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w800,
-                      color: _P.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  _TimelineItem(
-                    icon: Icons.add_circle_rounded,
-                    title: 'Réservation créée',
-                    date: DateFormat('dd MMM yyyy, HH:mm', 'fr_FR')
-                        .format(reservation.createdAt),
-                    color: _P.blue,
-                    isFirst: true,
-                  ),
-                  if (reservation.status == ReservationStatus.confirmed ||
-                      reservation.status == ReservationStatus.completed)
-                    _TimelineItem(
-                      icon: Icons.check_circle_rounded,
-                      title: 'Réservation confirmée',
-                      date: 'Par le prestataire',
-                      color: _P.green,
-                    ),
-                  if (reservation.status == ReservationStatus.completed)
-                    _TimelineItem(
-                      icon: Icons.celebration_rounded,
-                      title: 'Événement terminé',
-                      date: DateFormat('dd MMM yyyy', 'fr_FR')
-                          .format(reservation.eventDate),
-                      color: _P.purple,
-                      isLast: true,
-                    ),
-                  if (reservation.status == ReservationStatus.cancelled)
-                    _TimelineItem(
-                      icon: Icons.cancel_rounded,
-                      title: 'Réservation annulée',
-                      date: 'Annulation enregistrée',
-                      color: _P.red,
-                      isLast: true,
-                    ),
-
-                  const SizedBox(height: 24),
-
-                  Row(
-                    children: [
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.call_rounded,
-                          label: 'Appeler',
-                          color: _P.green,
-                          onTap: onCall,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _ActionButton(
-                          icon: Icons.chat_rounded,
-                          label: 'WhatsApp',
-                          color: const Color(0xFF25D366),
-                          isOutlined: true,
-                          onTap: onWhatsApp,
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  if (reservation.status == ReservationStatus.pending) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _ActionButton(
-                            icon: Icons.check_circle_rounded,
-                            label: 'Confirmer',
-                            color: _P.green,
-                            onTap: () =>
-                                onStatusChange(ReservationStatus.confirmed),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: _ActionButton(
-                            icon: Icons.cancel_rounded,
-                            label: 'Refuser',
-                            color: _P.red,
-                            isOutlined: true,
-                            onTap: () =>
-                                onStatusChange(ReservationStatus.cancelled),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-
-                  if (reservation.status == ReservationStatus.confirmed) ...[
-                    const SizedBox(height: 8),
-                    _ActionButton(
-                      icon: Icons.celebration_rounded,
-                      label: 'Marquer comme terminé',
-                      color: _P.blue,
-                      onTap: () => onStatusChange(ReservationStatus.completed),
-                    ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getStatusColor(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => _P.amber,
-      ReservationStatus.confirmed => _P.green,
-      ReservationStatus.completed => _P.blue,
-      ReservationStatus.cancelled => _P.red,
-    };
-  }
-
-  String _getStatusText(ReservationStatus status) {
-    return switch (status) {
-      ReservationStatus.pending => 'EN ATTENTE',
-      ReservationStatus.confirmed => 'CONFIRMÉ',
-      ReservationStatus.completed => 'TERMINÉ',
-      ReservationStatus.cancelled => 'ANNULÉ',
-    };
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// WIDGETS HELPER POUR RÉSERVATIONS
-// ═══════════════════════════════════════════════════════════════════════════
-class _QuickStat extends StatelessWidget {
-  final IconData icon;
-  final String value;
-  final String label;
-  final Color color;
-
-  const _QuickStat({
-    required this.icon,
-    required this.value,
-    required this.label,
-    this.color = Colors.white,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(12),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 16, color: color),
-          const SizedBox(width: 6),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: GoogleFonts.inter(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                label,
-                style: GoogleFonts.inter(
-                  fontSize: 9,
-                  color: Colors.white.withOpacity(0.8),
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-  final bool isOutlined;
-
-  const _ActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-    this.isOutlined = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(
-          color: isOutlined ? Colors.transparent : color,
-          borderRadius: BorderRadius.circular(12),
-          border: isOutlined ? Border.all(color: color, width: 1.5) : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(icon, size: 16, color: isOutlined ? color : Colors.white),
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-                color: isOutlined ? color : Colors.white,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ContactButton extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _ContactButton({
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withOpacity(0.3)),
-        ),
-        child: Icon(icon, color: color, size: 20),
-      ),
-    );
-  }
-}
-
-class _DetailRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? valueColor;
-
-  const _DetailRow({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.valueColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _P.bg,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(icon, size: 16, color: _P.inkSoft),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  label,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: _P.inkSoft,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  value,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: valueColor ?? _P.ink,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _TimelineItem extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String date;
-  final Color color;
-  final bool isFirst;
-  final bool isLast;
-
-  const _TimelineItem({
-    required this.icon,
-    required this.title,
-    required this.date,
-    required this.color,
-    this.isFirst = false,
-    this.isLast = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return IntrinsicHeight(
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          SizedBox(
-            width: 40,
-            child: Column(
-              children: [
-                if (!isFirst)
-                  Container(
-                    width: 2,
-                    height: 10,
-                    color: _P.line,
-                  ),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(margin: const EdgeInsets.only(top: 12), width: 40, height: 4,
+            decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2))),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(children: [
                 Container(
-                  padding: const EdgeInsets.all(6),
+                  width: 64, height: 64,
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
-                    shape: BoxShape.circle,
+                    gradient: LinearGradient(colors: [statusColor.withOpacity(0.8), statusColor]),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                  child: Icon(icon, size: 14, color: color),
+                  child: Center(child: Text(
+                      reservation.clientName.isNotEmpty ? reservation.clientName[0].toUpperCase() : '?',
+                      style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white))),
                 ),
-                if (!isLast)
-                  Expanded(
-                    child: Container(
-                      width: 2,
-                      color: _P.line,
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(reservation.clientName,
+                        style: GoogleFonts.inter(fontSize: 20, fontWeight: FontWeight.w900, color: _P.ink)),
+                    const SizedBox(height: 4),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                      child: Text(_getStatusText(reservation.status),
+                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor)),
                     ),
-                  ),
+                  ]),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              _DetailRow(icon: Icons.phone_rounded, label: 'Téléphone', value: reservation.clientPhone),
+              _DetailRow(icon: Icons.calendar_today_rounded, label: 'Date',
+                  value: DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(reservation.eventDate)),
+              _DetailRow(icon: Icons.access_time_rounded, label: 'Heure', value: DateFormat('HH:mm').format(reservation.eventDate)),
+              if (reservation.eventType != null)
+                _DetailRow(icon: Icons.celebration_rounded, label: 'Type d\'événement', value: reservation.eventType!),
+              if (reservation.guestCount != null)
+                _DetailRow(icon: Icons.people_rounded, label: 'Nombre d\'invités', value: '${reservation.guestCount} personnes'),
+              if (reservation.totalPrice != null)
+                _DetailRow(icon: Icons.attach_money_rounded, label: 'Montant total',
+                    value: '\$${reservation.totalPrice!.toStringAsFixed(2)} ${reservation.currency}',
+                    valueColor: _P.green),
+              if (reservation.notes != null && reservation.notes!.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('Notes', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  width: double.infinity,
+                  decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.line)),
+                  child: Text(reservation.notes!, style: GoogleFonts.inter(fontSize: 13, color: _P.ink, height: 1.5)),
+                ),
               ],
-            ),
+              const SizedBox(height: 24),
+              Row(children: [
+                Expanded(child: _ActionButton(icon: Icons.call_rounded, label: 'Appeler', color: _P.green, onTap: onCall)),
+                const SizedBox(width: 8),
+                Expanded(child: _ActionButton(icon: Icons.chat_rounded, label: 'WhatsApp', color: const Color(0xFF25D366), isOutlined: true, onTap: onWhatsApp)),
+              ]),
+              if (reservation.status == ReservationStatus.pending) ...[
+                const SizedBox(height: 8),
+                Row(children: [
+                  Expanded(child: _ActionButton(icon: Icons.check_circle_rounded, label: 'Confirmer', color: _P.green,
+                      onTap: () => onStatusChange(ReservationStatus.confirmed))),
+                  const SizedBox(width: 8),
+                  Expanded(child: _ActionButton(icon: Icons.cancel_rounded, label: 'Refuser', color: _P.red, isOutlined: true,
+                      onTap: () => onStatusChange(ReservationStatus.cancelled))),
+                ]),
+              ],
+              if (reservation.status == ReservationStatus.confirmed) ...[
+                const SizedBox(height: 8),
+                _ActionButton(icon: Icons.celebration_rounded, label: 'Marquer comme terminé', color: _P.blue,
+                    onTap: () => onStatusChange(ReservationStatus.completed)),
+              ],
+            ]),
           ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: GoogleFonts.inter(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: _P.ink,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    date,
-                    style: GoogleFonts.inter(
-                      fontSize: 11,
-                      color: _P.inkSoft,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ]),
     );
   }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// TÂCHES - PAGE PRINCIPALE
+// TÂCHES - PAGE PRINCIPALE (abrégée pour tenir dans le fichier)
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderTasksPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
   const ProviderTasksPage({super.key, required this.provider});
-
   @override
   ConsumerState<ProviderTasksPage> createState() => _ProviderTasksPageState();
 }
 
-class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
-    with SingleTickerProviderStateMixin {
+class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage> with SingleTickerProviderStateMixin {
   late TabController _tabController;
 
   @override
@@ -1893,11 +1365,7 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
       if (!_tabController.indexIsChanging) {
         HapticFeedback.selectionClick();
         final status = switch (_tabController.index) {
-          0 => null,
-          1 => TaskStatus.assigned,
-          2 => TaskStatus.inProgress,
-          3 => TaskStatus.completed,
-          _ => null,
+          0 => null, 1 => TaskStatus.assigned, 2 => TaskStatus.inProgress, 3 => TaskStatus.completed, _ => null,
         };
         ref.read(_taskFilterProvider.notifier).state = status;
       }
@@ -1905,16 +1373,11 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
   }
 
   @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  void dispose() { _tabController.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    final tasksAsync = ref.watch(providerTasksProvider(
-      ProviderTasksParams(providerId: widget.provider.id),
-    ));
+    final tasksAsync = ref.watch(providerTasksProvider(ProviderTasksParams(providerId: widget.provider.id)));
     final filter = ref.watch(_taskFilterProvider);
     final sort = ref.watch(_taskSortProvider);
 
@@ -1931,134 +1394,60 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [_P.blue, Color(0xFF60A5FA)],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  ),
+                  gradient: LinearGradient(colors: [_P.blue, Color(0xFF60A5FA)], begin: Alignment.topLeft, end: Alignment.bottomRight),
                 ),
                 child: SafeArea(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        Row(
-                          children: [
-                            GestureDetector(
-                              onTap: () => Navigator.of(context).pop(),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.arrow_back_ios_new,
-                                    size: 16, color: Colors.white),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Text(
-                              'Mes Tâches',
-                              style: GoogleFonts.inter(
-                                fontSize: 24,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                                letterSpacing: -0.5,
-                              ),
-                            ),
-                            const Spacer(),
-                            GestureDetector(
-                              onTap: () => _showSortMenu(context),
-                              child: Container(
-                                padding: const EdgeInsets.all(8),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: const Icon(Icons.sort_rounded,
-                                    size: 20, color: Colors.white),
-                              ),
-                            ),
-                          ],
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.end, children: [
+                      Row(children: [
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).pop(),
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)),
+                            child: const Icon(Icons.arrow_back_ios_new, size: 16, color: Colors.white),
+                          ),
                         ),
-                        const SizedBox(height: 16),
-                        tasksAsync.when(
-                          data: (tasks) {
-                            final total = tasks.length;
-                            final completed = tasks
-                                .where((t) => t.status == TaskStatus.completed)
-                                .length;
-                            final progress =
-                                total > 0 ? completed / total : 0.0;
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  mainAxisAlignment:
-                                      MainAxisAlignment.spaceBetween,
-                                  children: [
-                                    Text(
-                                      'Progression',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: Colors.white.withOpacity(0.9),
-                                        fontWeight: FontWeight.w600,
-                                      ),
-                                    ),
-                                    Text(
-                                      '$completed/$total',
-                                      style: GoogleFonts.inter(
-                                        fontSize: 12,
-                                        color: Colors.white,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 8),
-                                Container(
-                                  height: 8,
-                                  decoration: BoxDecoration(
-                                    color: Colors.white.withOpacity(0.2),
-                                    borderRadius: BorderRadius.circular(4),
-                                  ),
-                                  child: FractionallySizedBox(
-                                    alignment: Alignment.centerLeft,
-                                    widthFactor: progress,
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.white,
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  '${(progress * 100).toStringAsFixed(0)}% complété',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 11,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
-                            );
-                          },
-                          loading: () => const SizedBox.shrink(),
-                          error: (_, __) => const SizedBox.shrink(),
-                        ),
-                      ],
-                    ),
+                        const SizedBox(width: 12),
+                        Text('Mes Tâches', style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: Colors.white, letterSpacing: -0.5)),
+                        const Spacer(),
+                      ]),
+                      const SizedBox(height: 16),
+                      tasksAsync.when(
+                        data: (tasks) {
+                          final total = tasks.length;
+                          final completed = tasks.where((t) => t.status == TaskStatus.completed).length;
+                          final progress = total > 0 ? completed / total : 0.0;
+                          return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                            Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                              Text('Progression', style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9), fontWeight: FontWeight.w600)),
+                              Text('$completed/$total', style: GoogleFonts.inter(fontSize: 12, color: Colors.white, fontWeight: FontWeight.w800)),
+                            ]),
+                            const SizedBox(height: 8),
+                            Container(
+                              height: 8,
+                              decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(4)),
+                              child: FractionallySizedBox(
+                                alignment: Alignment.centerLeft,
+                                widthFactor: progress,
+                                child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4))),
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Text('${(progress * 100).toStringAsFixed(0)}% complété',
+                                style: GoogleFonts.inter(fontSize: 11, color: Colors.white, fontWeight: FontWeight.w700)),
+                          ]);
+                        },
+                        loading: () => const SizedBox.shrink(),
+                        error: (_, __) => const SizedBox.shrink(),
+                      ),
+                    ]),
                   ),
                 ),
               ),
             ),
           ),
-
           SliverToBoxAdapter(
             child: Container(
               color: _P.bg,
@@ -2069,215 +1458,73 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
                 unselectedLabelColor: _P.inkSoft,
                 indicatorColor: _P.blue,
                 indicatorWeight: 3,
-                labelStyle: GoogleFonts.inter(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 13,
-                ),
-                unselectedLabelStyle: GoogleFonts.inter(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-                tabs: [
-                  _buildTaskTab('Toutes', tasksAsync, null),
-                  _buildTaskTab('Assignées', tasksAsync, TaskStatus.assigned),
-                  _buildTaskTab('En cours', tasksAsync, TaskStatus.inProgress),
-                  _buildTaskTab('Terminées', tasksAsync, TaskStatus.completed),
+                tabs: const [
+                  Tab(text: 'Toutes'),
+                  Tab(text: 'Assignées'),
+                  Tab(text: 'En cours'),
+                  Tab(text: 'Terminées'),
                 ],
               ),
             ),
           ),
-
           tasksAsync.when(
             data: (allTasks) {
               var filtered = allTasks;
-              if (filter != null) {
-                filtered = filtered.where((t) => t.status == filter).toList();
-              }
-
+              if (filter != null) filtered = filtered.where((t) => t.status == filter).toList();
               switch (sort) {
-                case TaskSort.date:
-                  filtered.sort((a, b) => a.dueDateTime.compareTo(b.dueDateTime));
-                  break;
-                case TaskSort.priority:
-                  filtered.sort((a, b) => a.priority.compareTo(b.priority));
-                  break;
-                case TaskSort.status:
-                  filtered.sort(
-                      (a, b) => a.status.index.compareTo(b.status.index));
-                  break;
+                case TaskSort.date: filtered.sort((a, b) => a.dueDateTime.compareTo(b.dueDateTime)); break;
+                case TaskSort.priority: filtered.sort((a, b) => a.priority.compareTo(b.priority)); break;
+                case TaskSort.status: filtered.sort((a, b) => a.status.index.compareTo(b.status.index)); break;
               }
-
               if (filtered.isEmpty) {
-                return SliverFillRemaining(
-                  child: _EmptyState(
-                    icon: Icons.task_alt_rounded,
-                    title: filter == null
-                        ? 'Aucune tâche'
-                        : 'Aucune tâche ${_getTaskStatusLabel(filter)}',
-                    subtitle: 'Les tâches assignées apparaîtront ici',
-                  ),
+                return const SliverFillRemaining(
+                  child: _EmptyState(icon: Icons.task_alt_rounded, title: 'Aucune tâche', subtitle: 'Les tâches assignées apparaîtront ici'),
                 );
               }
-
-              final urgent = filtered.where((t) => t.priority == 1).toList();
-              final normal = filtered.where((t) => t.priority != 1).toList();
-
-              return SliverList(
-                delegate: SliverChildListDelegate([
-                  if (urgent.isNotEmpty) ...[
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: _P.redLight,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.priority_high_rounded,
-                                    size: 14, color: _P.red),
-                                const SizedBox(width: 4),
-                                Text(
-                                  'URGENTES (${urgent.length})',
-                                  style: GoogleFonts.inter(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w800,
-                                    color: _P.red,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    ...urgent.map((t) => Padding(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                          child: _TaskCard(
-                            task: t,
-                            onToggle: (completed) => _toggleTask(t, completed),
-                            onTap: () => _showTaskDetails(context, t),
-                          ),
-                        )),
-                  ],
-                  if (normal.isNotEmpty && urgent.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-                      child: Text(
-                        'Autres tâches',
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: _P.inkSoft,
-                        ),
-                      ),
-                    ),
-                  ...normal.map((t) => Padding(
-                        padding:
-                            const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              return SliverPadding(
+                padding: const EdgeInsets.all(16),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final t = filtered[index];
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
                         child: _TaskCard(
                           task: t,
                           onToggle: (completed) => _toggleTask(t, completed),
                           onTap: () => _showTaskDetails(context, t),
                         ),
-                      )),
-                  const SizedBox(height: 24),
-                ]),
+                      );
+                    },
+                    childCount: filtered.length,
+                  ),
+                ),
               );
             },
-            loading: () => const SliverFillRemaining(
-              child: Center(
-                child: CircularProgressIndicator(color: _P.blue),
-              ),
-            ),
-            error: (e, _) => SliverFillRemaining(
-              child: _ErrorState(
-                message: e.toString(),
-                onRetry: () => ref.invalidate(providerTasksProvider(
-                  ProviderTasksParams(providerId: widget.provider.id),
-                )),
-              ),
-            ),
+            loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: _P.blue))),
+            error: (e, _) => SliverFillRemaining(child: _ErrorState(message: e.toString(),
+                onRetry: () => ref.invalidate(providerTasksProvider(ProviderTasksParams(providerId: widget.provider.id))))),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTaskTab(
-      String label, AsyncValue<List<ProviderTaskModel>> asyncTasks, TaskStatus? status) {
-    return asyncTasks.when(
-      data: (tasks) {
-        final count = status == null
-            ? tasks.length
-            : tasks.where((t) => t.status == status).length;
-        return Tab(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(label),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: _P.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Text(
-                  '$count',
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    color: _P.blue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-      loading: () => Tab(child: Text(label)),
-      error: (_, __) => Tab(child: Text(label)),
-    );
-  }
-
   Future<void> _toggleTask(ProviderTaskModel task, bool completed) async {
     HapticFeedback.mediumImpact();
     try {
-      await ref.read(updateTaskStatusProvider)(
-        task.id,
-        completed ? TaskStatus.completed : TaskStatus.assigned,
-        widget.provider.id,
-      );
+      await ref.read(updateTaskStatusProvider)(task.id, completed ? TaskStatus.completed : TaskStatus.assigned, widget.provider.id);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(
-              completed ? 'Tâche terminée 🎉' : 'Tâche réouverte',
-              style: GoogleFonts.inter(fontWeight: FontWeight.w600),
-            ),
-            backgroundColor: completed ? _P.green : _P.blue,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(completed ? 'Tâche terminée 🎉' : 'Tâche réouverte', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: completed ? _P.green : _P.blue,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erreur: $e'),
-            backgroundColor: _P.red,
-          ),
-        );
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
       }
     }
   }
@@ -2289,96 +1536,31 @@ class _ProviderTasksPageState extends ConsumerState<ProviderTasksPage>
       backgroundColor: Colors.transparent,
       builder: (ctx) => _TaskDetailsSheet(
         task: task,
-        onToggle: (completed) async {
-          Navigator.pop(ctx);
-          _toggleTask(task, completed);
-        },
+        onToggle: (completed) async { Navigator.pop(ctx); _toggleTask(task, completed); },
       ),
     );
-  }
-
-  void _showSortMenu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Trier par',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: _P.ink,
-              ),
-            ),
-            const SizedBox(height: 16),
-            _SortOption(
-              icon: Icons.access_time_rounded,
-              label: 'Date d\'échéance',
-              selected: ref.read(_taskSortProvider) == TaskSort.date,
-              onTap: () {
-                ref.read(_taskSortProvider.notifier).state = TaskSort.date;
-                Navigator.pop(ctx);
-              },
-            ),
-            _SortOption(
-              icon: Icons.priority_high_rounded,
-              label: 'Priorité',
-              selected: ref.read(_taskSortProvider) == TaskSort.priority,
-              onTap: () {
-                ref.read(_taskSortProvider.notifier).state = TaskSort.priority;
-                Navigator.pop(ctx);
-              },
-            ),
-            _SortOption(
-              icon: Icons.sort_rounded,
-              label: 'Statut',
-              selected: ref.read(_taskSortProvider) == TaskSort.status,
-              onTap: () {
-                ref.read(_taskSortProvider.notifier).state = TaskSort.status;
-                Navigator.pop(ctx);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  String _getTaskStatusLabel(TaskStatus status) {
-    return switch (status) {
-      TaskStatus.assigned => 'assignée',
-      TaskStatus.inProgress => 'en cours',
-      TaskStatus.completed => 'terminée',
-      TaskStatus.cancelled => 'annulée',
-    };
   }
 }
+
+Color _getTaskStatusColor(TaskStatus status) => switch (status) {
+  TaskStatus.assigned => _P.blue,
+  TaskStatus.inProgress => _P.amber,
+  TaskStatus.completed => _P.green,
+  TaskStatus.cancelled => _P.red,
+};
 
 class _TaskCard extends StatelessWidget {
   final ProviderTaskModel task;
   final Function(bool) onToggle;
   final VoidCallback onTap;
-
-  const _TaskCard({
-    required this.task,
-    required this.onToggle,
-    required this.onTap,
-  });
+  const _TaskCard({required this.task, required this.onToggle, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final isCompleted = task.status == TaskStatus.completed;
     final isUrgent = task.priority == 1 && !isCompleted;
     final isOverdue = task.dueDateTime.isBefore(DateTime.now()) && !isCompleted;
+    final statusColor = _getTaskStatusColor(task.status);
 
     return Material(
       color: Colors.transparent,
@@ -2391,594 +1573,201 @@ class _TaskCard extends StatelessWidget {
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(
-              color: isUrgent
-                  ? _P.red.withOpacity(0.4)
-                  : isOverdue
-                      ? _P.amber.withOpacity(0.5)
-                      : _P.line,
+              color: isUrgent ? _P.red.withOpacity(0.4) : isOverdue ? _P.amber.withOpacity(0.5) : _P.line,
               width: isUrgent || isOverdue ? 2 : 1,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 8, offset: const Offset(0, 2))],
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GestureDetector(
-                onTap: () => onToggle(!isCompleted),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 200),
-                  width: 28,
-                  height: 28,
-                  decoration: BoxDecoration(
-                    color: isCompleted ? _P.green : Colors.transparent,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isCompleted ? _P.green : _P.line,
-                      width: 2,
-                    ),
+          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            GestureDetector(
+              onTap: () => onToggle(!isCompleted),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: 28, height: 28,
+                decoration: BoxDecoration(
+                  color: isCompleted ? _P.green : Colors.transparent,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: isCompleted ? _P.green : _P.line, width: 2),
+                ),
+                child: isCompleted ? const Icon(Icons.check_rounded, color: Colors.white, size: 16) : null,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Row(children: [
+                  Expanded(
+                    child: Text(task.title,
+                        style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800,
+                            color: isCompleted ? _P.inkSoft : _P.ink,
+                            decoration: isCompleted ? TextDecoration.lineThrough : null)),
                   ),
-                  child: isCompleted
-                      ? const Icon(Icons.check_rounded,
-                          color: Colors.white, size: 16)
-                      : null,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            task.title,
-                            style: GoogleFonts.inter(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                              color: isCompleted ? _P.inkSoft : _P.ink,
-                              decoration: isCompleted
-                                  ? TextDecoration.lineThrough
-                                  : null,
-                            ),
-                          ),
-                        ),
-                        if (isUrgent)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _P.redLight,
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              'URGENT',
-                              style: GoogleFonts.inter(
-                                fontSize: 9,
-                                fontWeight: FontWeight.w800,
-                                color: _P.red,
-                              ),
-                            ),
-                          ),
-                      ],
+                  if (isUrgent)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: _P.redLight, borderRadius: BorderRadius.circular(6)),
+                      child: Text('URGENT', style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: _P.red)),
                     ),
-                    if (task.description != null &&
-                        task.description!.isNotEmpty) ...[
-                      const SizedBox(height: 4),
-                      Text(
-                        task.description!,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: GoogleFonts.inter(
-                          fontSize: 12,
-                          color: _P.inkSoft,
-                          height: 1.4,
-                        ),
-                      ),
-                    ],
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        Icon(
-                          isOverdue
-                              ? Icons.warning_amber_rounded
-                              : Icons.access_time_rounded,
-                          size: 14,
-                          color: isOverdue ? _P.amber : _P.inkSoft,
-                        ),
-                        const SizedBox(width: 4),
-                        Text(
-                          _formatDueDate(task.dueDateTime),
-                          style: GoogleFonts.inter(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            color: isOverdue ? _P.amber : _P.inkSoft,
-                          ),
-                        ),
-                        const Spacer(),
-                        _PriorityDots(priority: task.priority),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
+                ]),
+                if (task.description != null && task.description!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(task.description!, maxLines: 2, overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, height: 1.4)),
+                ],
+                const SizedBox(height: 8),
+                Row(children: [
+                  Icon(isOverdue ? Icons.warning_amber_rounded : Icons.access_time_rounded,
+                      size: 14, color: isOverdue ? _P.amber : _P.inkSoft),
+                  const SizedBox(width: 4),
+                  Text(_formatDueDate(task.dueDateTime),
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w600,
+                          color: isOverdue ? _P.amber : _P.inkSoft)),
+                  const Spacer(),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(6)),
+                    child: Text(_taskStatusLabel(task.status),
+                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w800, color: statusColor)),
+                  ),
+                ]),
+              ]),
+            ),
+          ]),
         ),
       ),
     );
   }
 
-  String _formatDueDate(DateTime date) {
-    final now = DateTime.now();
-    final diff = date.difference(now);
+  String _taskStatusLabel(TaskStatus status) => switch (status) {
+    TaskStatus.assigned => 'ASSIGNÉE',
+    TaskStatus.inProgress => 'EN COURS',
+    TaskStatus.completed => 'TERMINÉE',
+    TaskStatus.cancelled => 'ANNULÉE',
+  };
 
-    if (diff.inDays < 0) {
-      return 'En retard de ${-diff.inDays}j';
-    } else if (diff.inDays == 0) {
-      return 'Aujourd\'hui à ${DateFormat('HH:mm').format(date)}';
-    } else if (diff.inDays == 1) {
-      return 'Demain à ${DateFormat('HH:mm').format(date)}';
-    } else if (diff.inDays < 7) {
-      return 'Dans ${diff.inDays} jours';
-    } else {
-      return DateFormat('dd MMM yyyy', 'fr_FR').format(date);
-    }
+  String _formatDueDate(DateTime date) {
+    final diff = date.difference(DateTime.now());
+    if (diff.inDays < 0) return 'En retard de ${-diff.inDays}j';
+    if (diff.inDays == 0) return 'Aujourd\'hui à ${DateFormat('HH:mm').format(date)}';
+    if (diff.inDays == 1) return 'Demain à ${DateFormat('HH:mm').format(date)}';
+    if (diff.inDays < 7) return 'Dans ${diff.inDays} jours';
+    return DateFormat('dd MMM yyyy', 'fr_FR').format(date);
   }
 }
 
 class _TaskDetailsSheet extends StatelessWidget {
   final ProviderTaskModel task;
   final Function(bool) onToggle;
-
-  const _TaskDetailsSheet({
-    required this.task,
-    required this.onToggle,
-  });
+  const _TaskDetailsSheet({required this.task, required this.onToggle});
 
   @override
   Widget build(BuildContext context) {
     final isCompleted = task.status == TaskStatus.completed;
     final statusColor = _getTaskStatusColor(task.status);
-
     return Container(
-      constraints: BoxConstraints(
-        maxHeight: MediaQuery.of(context).size.height * 0.75,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            margin: const EdgeInsets.only(top: 12),
-            width: 40,
-            height: 4,
-            decoration: BoxDecoration(
-              color: _P.line,
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          Flexible(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      GestureDetector(
-                        onTap: () => onToggle(!isCompleted),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 200),
-                          width: 48,
-                          height: 48,
-                          decoration: BoxDecoration(
-                            color:
-                                isCompleted ? _P.green : Colors.transparent,
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isCompleted ? _P.green : _P.line,
-                              width: 2.5,
-                            ),
-                          ),
-                          child: isCompleted
-                              ? const Icon(Icons.check_rounded,
-                                  color: Colors.white, size: 24)
-                              : null,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              task.title,
-                              style: GoogleFonts.inter(
-                                fontSize: 18,
-                                fontWeight: FontWeight.w900,
-                                color: isCompleted ? _P.inkSoft : _P.ink,
-                                decoration: isCompleted
-                                    ? TextDecoration.lineThrough
-                                    : null,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: statusColor.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                _getTaskStatusText(task.status),
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: statusColor,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  if (task.description != null &&
-                      task.description!.isNotEmpty) ...[
-                    Text(
-                      'Description',
-                      style: GoogleFonts.inter(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: _P.ink,
-                      ),
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.75),
+      decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(margin: const EdgeInsets.only(top: 12), width: 40, height: 4,
+            decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2))),
+        Flexible(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                GestureDetector(
+                  onTap: () => onToggle(!isCompleted),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(
+                      color: isCompleted ? _P.green : Colors.transparent,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: isCompleted ? _P.green : _P.line, width: 2.5),
                     ),
-                    const SizedBox(height: 8),
-                    Container(
-                      padding: const EdgeInsets.all(14),
-                      width: double.infinity,
-                      decoration: BoxDecoration(
-                        color: _P.bg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _P.line),
-                      ),
-                      child: Text(
-                        task.description!,
-                        style: GoogleFonts.inter(
-                          fontSize: 14,
-                          color: _P.ink,
-                          height: 1.5,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                  ],
-
-                  _DetailRow(
-                    icon: Icons.access_time_rounded,
-                    label: 'Échéance',
-                    value: DateFormat('EEEE dd MMMM yyyy à HH:mm', 'fr_FR')
-                        .format(task.dueDateTime),
+                    child: isCompleted ? const Icon(Icons.check_rounded, color: Colors.white, size: 24) : null,
                   ),
-                  _DetailRow(
-                    icon: Icons.flag_rounded,
-                    label: 'Priorité',
-                    value: _getPriorityLabel(task.priority),
-                    valueColor: _getPriorityColor(task.priority),
-                  ),
-                  _DetailRow(
-                    icon: Icons.person_rounded,
-                    label: 'Assignée par',
-                    value: task.assignedBy,
-                  ),
-                  _DetailRow(
-                    icon: Icons.add_circle_rounded,
-                    label: 'Créée le',
-                    value: DateFormat('dd MMM yyyy, HH:mm', 'fr_FR')
-                        .format(task.createdAt),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  _ActionButton(
-                    icon: isCompleted
-                        ? Icons.refresh_rounded
-                        : Icons.check_circle_rounded,
-                    label: isCompleted
-                        ? 'Rouvrir la tâche'
-                        : 'Marquer comme terminée',
-                    color: isCompleted ? _P.blue : _P.green,
-                    onTap: () => onToggle(!isCompleted),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getTaskStatusColor(TaskStatus status) {
-    return switch (status) {
-      TaskStatus.assigned => _P.blue,
-      TaskStatus.inProgress => _P.amber,
-      TaskStatus.completed => _P.green,
-      TaskStatus.cancelled => _P.red,
-    };
-  }
-
-  String _getTaskStatusText(TaskStatus status) {
-    return switch (status) {
-      TaskStatus.assigned => 'ASSIGNÉE',
-      TaskStatus.inProgress => 'EN COURS',
-      TaskStatus.completed => 'TERMINÉE',
-      TaskStatus.cancelled => 'ANNULÉE',
-    };
-  }
-
-  String _getPriorityLabel(int priority) {
-    return switch (priority) {
-      1 => 'Urgente',
-      2 => 'Normale',
-      3 => 'Basse',
-      _ => 'Normale',
-    };
-  }
-
-  Color _getPriorityColor(int priority) {
-    return switch (priority) {
-      1 => _P.red,
-      2 => _P.amber,
-      3 => _P.blue,
-      _ => _P.inkSoft,
-    };
-  }
-}
-
-class _PriorityDots extends StatelessWidget {
-  final int priority;
-  const _PriorityDots({required this.priority});
-
-  @override
-  Widget build(BuildContext context) {
-    final color = switch (priority) {
-      1 => _P.red,
-      2 => _P.amber,
-      3 => _P.blue,
-      _ => _P.inkSoft,
-    };
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: List.generate(
-        priority <= 3 ? priority : 3,
-        (i) => Container(
-          margin: const EdgeInsets.only(left: 2),
-          width: 6,
-          height: 6,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SortOption extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _SortOption({
-    required this.icon,
-    required this.label,
-    required this.selected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () {
-        HapticFeedback.selectionClick();
-        onTap();
-      },
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 8),
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: selected ? _P.blue.withOpacity(0.1) : Colors.transparent,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: selected ? _P.blue : _P.line,
-          ),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 20, color: selected ? _P.blue : _P.inkSoft),
-            const SizedBox(width: 12),
-            Text(
-              label,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                color: selected ? _P.blue : _P.ink,
-              ),
-            ),
-            const Spacer(),
-            if (selected)
-              const Icon(Icons.check_rounded, size: 20, color: _P.blue),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EMPTY STATE & ERROR STATE
-// ═══════════════════════════════════════════════════════════════════════════
-class _EmptyState extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-
-  const _EmptyState({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: _P.inkSoft.withOpacity(0.1),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(icon, size: 64, color: _P.inkSoft),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: _P.ink,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              subtitle,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 14,
-                color: _P.inkSoft,
-                height: 1.4,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String message;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.message, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              padding: const EdgeInsets.all(24),
-              decoration: BoxDecoration(
-                color: _P.redLight,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.error_outline_rounded,
-                  size: 64, color: _P.red),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Une erreur est survenue',
-              style: GoogleFonts.inter(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: _P.ink,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft),
-            ),
-            const SizedBox(height: 20),
-            ElevatedButton.icon(
-              onPressed: onRetry,
-              icon: const Icon(Icons.refresh_rounded),
-              label: const Text('Réessayer'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _P.rose,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
                 ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(task.title,
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900,
+                            color: isCompleted ? _P.inkSoft : _P.ink,
+                            decoration: isCompleted ? TextDecoration.lineThrough : null)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                      child: Text(_taskStatusLabel(task.status),
+                          style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: statusColor)),
+                    ),
+                  ]),
+                ),
+              ]),
+              const SizedBox(height: 24),
+              if (task.description != null && task.description!.isNotEmpty) ...[
+                Text('Description', style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  width: double.infinity,
+                  decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.line)),
+                  child: Text(task.description!, style: GoogleFonts.inter(fontSize: 14, color: _P.ink, height: 1.5)),
+                ),
+                const SizedBox(height: 20),
+              ],
+              _DetailRow(icon: Icons.access_time_rounded, label: 'Échéance',
+                  value: DateFormat('EEEE dd MMMM yyyy à HH:mm', 'fr_FR').format(task.dueDateTime)),
+              _DetailRow(icon: Icons.flag_rounded, label: 'Priorité',
+                  value: _priorityLabel(task.priority), valueColor: _priorityColor(task.priority)),
+              _DetailRow(icon: Icons.person_rounded, label: 'Assignée par', value: task.assignedBy),
+              _DetailRow(icon: Icons.add_circle_rounded, label: 'Créée le',
+                  value: DateFormat('dd MMM yyyy, HH:mm', 'fr_FR').format(task.createdAt)),
+              const SizedBox(height: 24),
+              _ActionButton(
+                icon: isCompleted ? Icons.refresh_rounded : Icons.check_circle_rounded,
+                label: isCompleted ? 'Rouvrir la tâche' : 'Marquer comme terminée',
+                color: isCompleted ? _P.blue : _P.green,
+                onTap: () => onToggle(!isCompleted),
               ),
-            ),
-          ],
+            ]),
+          ),
         ),
-      ),
+      ]),
     );
   }
+
+  String _taskStatusLabel(TaskStatus status) => switch (status) {
+    TaskStatus.assigned => 'ASSIGNÉE',
+    TaskStatus.inProgress => 'EN COURS',
+    TaskStatus.completed => 'TERMINÉE',
+    TaskStatus.cancelled => 'ANNULÉE',
+  };
+
+  String _priorityLabel(int p) => switch (p) { 1 => 'Urgente', 2 => 'Normale', 3 => 'Basse', _ => 'Normale' };
+  Color _priorityColor(int p) => switch (p) { 1 => _P.red, 2 => _P.amber, 3 => _P.blue, _ => _P.inkSoft };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PAGE "DEMANDES DE PRESTATION" (reçues du staff / mariage)
-//    Ouverte via le bandeau d'alerte de l'onglet Résa. (Navigator.push)
-//    CORRIGÉ : ConsumerStatefulWidget + TabController créé/disposé proprement
+// DEMANDES DE PRESTATION (abrégée pour tenir)
 // ═══════════════════════════════════════════════════════════════════════════
-final _reqTabProvider = StateProvider<int>((ref) => 0); // 0=À traiter, 1=Historique
+final _reqTabProvider = StateProvider<int>((ref) => 0);
 
 class ProviderRequestsPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
   const ProviderRequestsPage({super.key, required this.provider});
-
   @override
-  ConsumerState<ProviderRequestsPage> createState() =>
-      _ProviderRequestsPageState();
+  ConsumerState<ProviderRequestsPage> createState() => _ProviderRequestsPageState();
 }
 
-class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
-    with SingleTickerProviderStateMixin {
+class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage> with SingleTickerProviderStateMixin {
   late final TabController _tabCtrl;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(
-      length: 2,
-      vsync: this,
-      initialIndex: ref.read(_reqTabProvider).clamp(0, 1),
-    );
+    _tabCtrl = TabController(length: 2, vsync: this, initialIndex: ref.read(_reqTabProvider).clamp(0, 1));
     _tabCtrl.addListener(() {
       if (!_tabCtrl.indexIsChanging) {
         HapticFeedback.selectionClick();
@@ -2988,38 +1777,23 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
   }
 
   @override
-  void dispose() {
-    _tabCtrl.dispose();
-    super.dispose();
-  }
+  void dispose() { _tabCtrl.dispose(); super.dispose(); }
 
   @override
   Widget build(BuildContext context) {
-    final requestsAsync =
-        ref.watch(providerIncomingRequestsProvider(widget.provider.id));
+    final requestsAsync = ref.watch(providerIncomingRequestsProvider(widget.provider.id));
     final tab = ref.watch(_reqTabProvider);
 
     return Scaffold(
       backgroundColor: _P.bg,
       appBar: AppBar(
-        backgroundColor: _P.rose,
-        foregroundColor: Colors.white,
-        elevation: 0,
-        title: Text(
-          'Demandes de prestation',
-          style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900),
-        ),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
-          onPressed: () => Navigator.of(context).pop(),
-        ),
+        backgroundColor: _P.rose, foregroundColor: Colors.white, elevation: 0,
+        title: Text('Demandes de prestation', style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900)),
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+            onPressed: () => Navigator.of(context).pop()),
         actions: [
-          IconButton(
-            tooltip: 'Rafraîchir',
-            icon: const Icon(Icons.refresh_rounded),
-            onPressed: () => ref
-                .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
-          ),
+          IconButton(tooltip: 'Rafraîchir', icon: const Icon(Icons.refresh_rounded),
+              onPressed: () => ref.invalidate(providerIncomingRequestsProvider(widget.provider.id))),
         ],
         bottom: TabBar(
           controller: _tabCtrl,
@@ -3027,51 +1801,30 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
           unselectedLabelColor: Colors.white.withOpacity(0.7),
           indicatorColor: Colors.white,
           indicatorWeight: 3,
-          labelStyle:
-              GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
-          unselectedLabelStyle:
-              GoogleFonts.inter(fontWeight: FontWeight.w600, fontSize: 13),
-          tabs: const [
-            Tab(text: 'À traiter'),
-            Tab(text: 'Historique'),
-          ],
+          labelStyle: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13),
+          tabs: const [Tab(text: 'À traiter'), Tab(text: 'Historique')],
         ),
       ),
       body: requestsAsync.when(
-        loading: () =>
-            const Center(child: CircularProgressIndicator(color: _P.rose)),
-        error: (e, _) => _ErrorState(
-          message: '$e',
-          onRetry: () => ref
-              .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
-        ),
+        loading: () => const Center(child: CircularProgressIndicator(color: _P.rose)),
+        error: (e, _) => _ErrorState(message: '$e',
+            onRetry: () => ref.invalidate(providerIncomingRequestsProvider(widget.provider.id))),
         data: (all) {
-          final pending =
-              all.where((r) => (r['status'] ?? 'pending') == 'pending').toList();
-          final history =
-              all.where((r) => (r['status'] ?? 'pending') != 'pending').toList();
+          final pending = all.where((r) => (r['status'] ?? 'pending') == 'pending').toList();
+          final history = all.where((r) => (r['status'] ?? 'pending') != 'pending').toList();
           final list = tab == 0 ? pending : history;
-
           if (list.isEmpty) {
             return tab == 0
-                ? const _EmptyState(
-                    icon: Icons.mark_email_read_rounded,
+                ? const _EmptyState(icon: Icons.mark_email_read_rounded,
                     title: 'Aucune demande en attente',
-                    subtitle:
-                        'Quand un couple vous sollicitera depuis le catalogue, sa demande apparaîtra ici.',
-                  )
-                : const _EmptyState(
-                    icon: Icons.history_rounded,
+                    subtitle: 'Quand un couple vous sollicitera depuis le catalogue, sa demande apparaîtra ici.')
+                : const _EmptyState(icon: Icons.history_rounded,
                     title: 'Aucun historique',
-                    subtitle:
-                        'Vos demandes traitées (acceptées ou refusées) s\'afficheront ici.',
-                  );
+                    subtitle: 'Vos demandes traitées s\'afficheront ici.');
           }
-
           return RefreshIndicator(
             color: _P.rose,
-            onRefresh: () async => ref
-                .invalidate(providerIncomingRequestsProvider(widget.provider.id)),
+            onRefresh: () async => ref.invalidate(providerIncomingRequestsProvider(widget.provider.id)),
             child: ListView.separated(
               physics: const BouncingScrollPhysics(),
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
@@ -3090,369 +1843,158 @@ class _ProviderRequestsPageState extends ConsumerState<ProviderRequestsPage>
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// CARTE D'UNE DEMANDE REÇUE
-// ═══════════════════════════════════════════════════════════════════════════
 class _IncomingRequestCard extends ConsumerWidget {
   final Map<String, dynamic> request;
   final String providerId;
   final ThixProviderModel provider;
-
-  const _IncomingRequestCard({
-    required this.request,
-    required this.providerId,
-    required this.provider,
-  });
+  const _IncomingRequestCard({required this.request, required this.providerId, required this.provider});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final status = request['status'] as String? ?? 'pending';
     final color = _reqColor(status);
     final couple = _coupleNames(request);
-    final prov =
-        (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+    final prov = (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
     final catKey = prov['category'] as String?;
     final code = prov['unique_code'] as String? ?? '';
     final price = (request['proposed_price'] as num?)?.toDouble();
     final currency = request['currency'] as String? ?? 'USD';
     final message = (request['message'] as String? ?? '').trim();
-    final response = (request['provider_response'] as String? ?? '').trim();
     final contactName = (request['contact_name'] as String? ?? '').trim();
     final contactPhone = (request['contact_phone'] as String? ?? '').trim();
     final venue = _venueOf(request);
     final dateStr = _fmtWeddingDate(request);
     final vendorId = request['vendor_id'] as String?;
     final weddingId = request['wedding_id'] as String? ?? '';
-
-    final initials = couple
-        .split(RegExp(r'[&\s]+'))
-        .where((p) => p.trim().isNotEmpty)
-        .take(2)
-        .map((p) => p.trim()[0].toUpperCase())
-        .join();
+    final initials = couple.split(RegExp(r'[&\s]+')).where((p) => p.trim().isNotEmpty).take(2).map((p) => p.trim()[0].toUpperCase()).join();
 
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: status == 'pending' ? _P.amber.withOpacity(0.5) : _P.line,
-          width: status == 'pending' ? 2 : 1,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 3),
-          ),
-        ],
+        border: Border.all(color: status == 'pending' ? _P.amber.withOpacity(0.5) : _P.line, width: status == 'pending' ? 2 : 1),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 3))],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // En-tête : couple + statut
-          Row(
-            children: [
-              Container(
-                width: 50,
-                height: 50,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [_P.rose.withOpacity(0.85), _P.roseLight],
-                  ),
-                  borderRadius: BorderRadius.circular(14),
-                ),
-                child: Center(
-                  child: Text(
-                    initials.isEmpty ? '?' : initials,
-                    style: GoogleFonts.inter(
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        color: Colors.white),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      couple,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          color: _P.ink),
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      children: [
-                        const Icon(Icons.calendar_today_rounded,
-                            size: 12, color: _P.inkSoft),
-                        const SizedBox(width: 4),
-                        Text(
-                          dateStr,
-                          style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: _P.inkSoft,
-                              fontWeight: FontWeight.w600),
-                        ),
-                        const SizedBox(width: 8),
-                        const Icon(Icons.place_rounded,
-                            size: 12, color: _P.inkSoft),
-                        const SizedBox(width: 4),
-                        Flexible(
-                          child: Text(
-                            venue,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(
-                                fontSize: 11,
-                                color: _P.inkSoft,
-                                fontWeight: FontWeight.w600),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 8),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: color.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(_reqIcon(status), size: 13, color: color),
-                    const SizedBox(width: 4),
-                    Text(
-                      _reqLabel(status),
-                      style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: color),
-                    ),
-                  ],
-                ),
-              ),
-            ],
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          Container(
+            width: 50, height: 50,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [_P.rose.withOpacity(0.85), _P.roseLight]),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: Center(child: Text(initials.isEmpty ? '?' : initials,
+                style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900, color: Colors.white))),
           ),
-          const SizedBox(height: 12),
-
-          // Ligne catégorie + code + prix
-          Wrap(
-            spacing: 8,
-            runSpacing: 6,
-            children: [
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _P.purple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  _catLabel(catKey),
-                  style: GoogleFonts.inter(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: _P.purple),
-                ),
-              ),
-              if (code.isNotEmpty)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: _P.blue.withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    code,
-                    style: GoogleFonts.inter(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w800,
-                        color: _P.blue),
-                  ),
-                ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _P.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  price != null && price > 0
-                      ? '$price $currency'
-                      : 'Prix à négocier',
-                  style: GoogleFonts.inter(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: price != null && price > 0
-                          ? _P.green
-                          : _P.inkSoft),
-                ),
-              ),
-            ],
-          ),
-
-          // Message du staff
-          if (message.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: _P.bg,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _P.line),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Message du couple',
-                    style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: _P.inkSoft),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    message,
-                    style: GoogleFonts.inter(
-                        fontSize: 12.5, color: _P.ink, height: 1.45),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Contact du staff
-          if (contactName.isNotEmpty || contactPhone.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                const Icon(Icons.person_outline_rounded,
-                    size: 14, color: _P.inkSoft),
-                const SizedBox(width: 6),
-                Text(
-                  [
-                    if (contactName.isNotEmpty) contactName,
-                    if (contactPhone.isNotEmpty) contactPhone
-                  ].join(' · '),
-                  style: GoogleFonts.inter(
-                      fontSize: 11.5,
-                      color: _P.inkSoft,
-                      fontWeight: FontWeight.w600),
-                ),
-              ],
-            ),
-          ],
-
-          // Réponse déjà donnée (historique)
-          if (response.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.07),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: color.withOpacity(0.25)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Votre réponse',
-                    style: GoogleFonts.inter(
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                        color: color),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    response,
-                    style: GoogleFonts.inter(
-                        fontSize: 12.5, color: _P.ink, height: 1.45),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Actions (uniquement si en attente)
-          if (status == 'pending') ...[
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: _ActionButton(
-                    icon: Icons.check_circle_rounded,
-                    label: 'Accepter',
-                    color: _P.green,
-                    onTap: () => _approveDialog(context, ref),
-                  ),
-                ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(couple, maxLines: 1, overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _P.ink)),
+              const SizedBox(height: 2),
+              Row(children: [
+                const Icon(Icons.calendar_today_rounded, size: 12, color: _P.inkSoft),
+                const SizedBox(width: 4),
+                Text(dateStr, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600)),
                 const SizedBox(width: 8),
-                Expanded(
-                  child: _ActionButton(
-                    icon: Icons.cancel_rounded,
-                    label: 'Refuser',
-                    color: _P.red,
-                    isOutlined: true,
-                    onTap: () => _rejectDialog(context, ref),
-                  ),
-                ),
-              ],
+                const Icon(Icons.place_rounded, size: 12, color: _P.inkSoft),
+                const SizedBox(width: 4),
+                Flexible(child: Text(venue, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600))),
+              ]),
+            ]),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Icon(_reqIcon(status), size: 13, color: color),
+              const SizedBox(width: 4),
+              Text(_reqLabel(status), style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+            ]),
+          ),
+        ]),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 6, children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(color: _P.purple.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            child: Text(_catLabel(catKey), style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _P.purple)),
+          ),
+          if (code.isNotEmpty)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+              decoration: BoxDecoration(color: _P.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(8)),
+              child: Text(code, style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800, color: _P.blue)),
             ),
-          ],
-
-          // ✅ NOUVEAU : Bouton "Gérer la prestation" pour les demandes approuvées
-          if (status == 'approved' && vendorId != null) ...[
-            const SizedBox(height: 14),
-            SizedBox(
-              width: double.infinity,
-              child: _ActionButton(
-                icon: Icons.settings_rounded,
-                label: 'Gérer la prestation',
-                color: _P.blue,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => ProviderServiceManagementPage(
-                        vendorId: vendorId,
-                        weddingId: weddingId,
-                        provider: provider,
-                        couple: couple,
-                        managementType: _managementTypeFor(catKey),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+            decoration: BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+            child: Text(price != null && price > 0 ? '$price $currency' : 'Prix à négocier',
+                style: GoogleFonts.inter(fontSize: 10.5, fontWeight: FontWeight.w800,
+                    color: price != null && price > 0 ? _P.green : _P.inkSoft)),
+          ),
+        ]),
+        if (message.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Container(
+            width: double.infinity, padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.line)),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('Message du couple', style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.inkSoft)),
+              const SizedBox(height: 4),
+              Text(message, style: GoogleFonts.inter(fontSize: 12.5, color: _P.ink, height: 1.45)),
+            ]),
+          ),
         ],
-      ),
+        if (contactName.isNotEmpty || contactPhone.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          Row(children: [
+            const Icon(Icons.person_outline_rounded, size: 14, color: _P.inkSoft),
+            const SizedBox(width: 6),
+            Text([if (contactName.isNotEmpty) contactName, if (contactPhone.isNotEmpty) contactPhone].join(' · '),
+                style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+          ]),
+        ],
+        if (status == 'pending') ...[
+          const SizedBox(height: 14),
+          Row(children: [
+            Expanded(child: _ActionButton(icon: Icons.check_circle_rounded, label: 'Accepter', color: _P.green,
+                onTap: () => _approveDialog(context, ref))),
+            const SizedBox(width: 8),
+            Expanded(child: _ActionButton(icon: Icons.cancel_rounded, label: 'Refuser', color: _P.red, isOutlined: true,
+                onTap: () => _rejectDialog(context, ref))),
+          ]),
+        ],
+        if (status == 'approved' && vendorId != null) ...[
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: _ActionButton(
+              icon: Icons.settings_rounded, label: 'Gérer la prestation', color: _P.blue,
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ProviderServiceManagementPage(
+                    vendorId: vendorId,
+                    weddingId: weddingId,
+                    provider: provider,
+                    couple: couple,
+                    managementType: _managementTypeFor(catKey),
+                  ),
+                ));
+              },
+            ),
+          ),
+        ],
+      ]),
     );
   }
 
-  // ── ACCEPTER : crée le dossier vendor + passe la demande en approved ──
   Future<void> _approveDialog(BuildContext context, WidgetRef ref) async {
-    final prov =
-        (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+    final prov = (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
     final priceCtrl = TextEditingController(
       text: (request['proposed_price'] as num?)?.toStringAsFixed(0) ?? '',
     );
@@ -3466,186 +2008,110 @@ class _IncomingRequestCard extends ConsumerWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: _P.green.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.check_circle_rounded,
-                    color: _P.green, size: 22),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Accepter la demande',
-                  style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: _P.ink),
-                ),
-              ),
-            ],
-          ),
+          title: Row(children: [
+            Container(padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: _P.green.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.check_circle_rounded, color: _P.green, size: 22)),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Accepter la demande', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink))),
+          ]),
           content: Form(
             key: formKey,
             child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Le dossier sera créé côté mariage et le suivi des étapes s\'ouvrira pour le couple.',
-                    style: GoogleFonts.inter(
-                        fontSize: 12.5,
-                        color: _P.inkSoft,
-                        height: 1.4),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: priceCtrl,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: _sheetDec(
-                        'Prix confirmé (optionnel)',
-                        Icons.payments_rounded,
-                        hint: 'Ex: 350000'),
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: respCtrl,
-                    maxLines: 4,
-                    decoration: _sheetDec(
-                        'Vos conditions / message',
-                        Icons.chat_bubble_outline_rounded,
-                        hint:
-                            'Ex: Disponible à cette date, acompte 40%, inclut montage...'),
-                  ),
-                ],
-              ),
+              child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Le dossier sera créé côté mariage.',
+                    style: GoogleFonts.inter(fontSize: 12.5, color: _P.inkSoft, height: 1.4)),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: priceCtrl,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: _sheetDec('Prix confirmé (optionnel)', Icons.payments_rounded, hint: 'Ex: 350000'),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: respCtrl, maxLines: 4,
+                  decoration: _sheetDec('Vos conditions / message', Icons.chat_bubble_outline_rounded,
+                      hint: 'Ex: Disponible à cette date, acompte 40%...'),
+                ),
+              ]),
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(ctx),
-              child: Text(
-                'Annuler',
-                style: GoogleFonts.inter(
-                    color: _P.inkSoft, fontWeight: FontWeight.w600),
-              ),
-            ),
+            TextButton(onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600))),
             ElevatedButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      setSt(() => busy = true);
-                      HapticFeedback.mediumImpact();
-                      try {
-                        final c = Supabase.instance.client;
-                        final now = DateTime.now().toIso8601String();
-                        final weddingId = request['wedding_id'] as String;
-                        final confirmedPrice = double.tryParse(
-                            priceCtrl.text.replaceAll(RegExp(r'\D'), ''));
-                        final resp = respCtrl.text.trim();
-                        final staffMsg =
-                            (request['message'] as String? ?? '').trim();
-                        final vendorName =
-                            (prov['business_name'] as String? ?? '').trim();
+              onPressed: busy ? null : () async {
+                setSt(() => busy = true);
+                HapticFeedback.mediumImpact();
+                try {
+                  final c = Supabase.instance.client;
+                  final now = DateTime.now().toIso8601String();
+                  final weddingId = request['wedding_id'] as String;
+                  final confirmedPrice = double.tryParse(priceCtrl.text.replaceAll(RegExp(r'\D'), ''));
+                  final resp = respCtrl.text.trim();
+                  final staffMsg = (request['message'] as String? ?? '').trim();
+                  final vendorName = (prov['business_name'] as String? ?? '').trim();
 
-                        // 1) Créer le dossier prestataire lié au mariage
-                        final vendorData = <String, dynamic>{
-                          'wedding_id': weddingId,
-                          'name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
-                          'category': _mapVendorCategory(prov['category'] as String?),
-                          'contact_name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
-                          'phone': prov['phone'] as String?,
-                          'email': prov['email'] as String?,
-                          'price': confirmedPrice,
-                          'status': 'contacted',
-                          'is_booked': false,
-                          'notes': [
-                            if (staffMsg.isNotEmpty)
-                              'Demande du couple : $staffMsg',
-                            if (resp.isNotEmpty)
-                              'Réponse prestataire : $resp',
-                          ].join('\n'),
-                        };
-                        final vendorRes = await c
-                            .from('thix_weeding_vendors')
-                            .insert(vendorData)
-                            .select()
-                            .single();
-                        final vendorId = vendorRes['id'] as String;
+                  final vendorData = <String, dynamic>{
+                    'wedding_id': weddingId,
+                    'name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+                    'category': _mapVendorCategory(prov['category'] as String?),
+                    'contact_name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+                    'phone': prov['phone'] as String?,
+                    'email': prov['email'] as String?,
+                    'price': confirmedPrice,
+                    'status': 'contacted',
+                    'is_booked': false,
+                    'notes': [if (staffMsg.isNotEmpty) 'Demande du couple : $staffMsg',
+                              if (resp.isNotEmpty) 'Réponse prestataire : $resp'].join('\n'),
+                  };
 
-                        // 2) Valider la demande
-                        await c
-                            .from('thix_weeding_vendor_requests')
-                            .update({
-                              'status': 'approved',
-                              'stage': 'contacted',
-                              'vendor_id': vendorId,
-                              'provider_response':
-                                  resp.isEmpty ? null : resp,
-                              'proposed_price':
-                                  confirmedPrice ?? request['proposed_price'],
-                              'responded_at': now,
-                              'updated_at': now,
-                            })
-                            .eq('id', request['id'] as String);
+                  final vendorRes = await c.from('thix_weeding_vendors').insert(vendorData).select().single();
+                  final vendorId = vendorRes['id'] as String;
 
-                        if (!ctx.mounted) return;
-                        Navigator.pop(ctx);
-                        ref.invalidate(
-                            providerIncomingRequestsProvider(providerId));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(
-                                'Demande acceptée ✓ Dossier créé',
-                                style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700)),
-                            backgroundColor: _P.green,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ));
-                          // ✅ Redirection automatique vers l'espace de gestion
-                          final catKey = prov['category'] as String?;
-                          final couple = _coupleNames(request);
-                          Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder: (_) => ProviderServiceManagementPage(
-                                vendorId: vendorId,
-                                weddingId: weddingId,
-                                provider: provider,
-                                couple: couple,
-                                managementType: _managementTypeFor(catKey),
-                              ),
-                            ),
-                          );
-                        }
-                      } catch (e) {
-                        setSt(() => busy = false);
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                            content: Text('Erreur: $e'),
-                            backgroundColor: _P.red,
-                            behavior: SnackBarBehavior.floating,
-                          ));
-                        }
-                      }
-                    },
+                  await c.from('thix_weeding_vendor_requests').update({
+                    'status': 'approved',
+                    'stage': 'contacted',
+                    'vendor_id': vendorId,
+                    'provider_response': resp.isEmpty ? null : resp,
+                    'proposed_price': confirmedPrice ?? request['proposed_price'],
+                    'responded_at': now,
+                    'updated_at': now,
+                  }).eq('id', request['id'] as String);
+
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ref.invalidate(providerIncomingRequestsProvider(providerId));
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Demande acceptée ✓ Dossier créé', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                      backgroundColor: _P.green, behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ));
+                    Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => ProviderServiceManagementPage(
+                        vendorId: vendorId,
+                        weddingId: weddingId,
+                        provider: provider,
+                        couple: couple,
+                        managementType: _managementTypeFor(prov['category'] as String?),
+                      ),
+                    ));
+                  }
+                } catch (e) {
+                  setSt(() => busy = false);
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red, behavior: SnackBarBehavior.floating));
+                  }
+                }
+              },
               icon: const Icon(Icons.check_rounded, size: 18),
-              label: Text(
-                'Confirmer l\'acceptation',
-                style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w800, fontSize: 13),
-              ),
+              label: Text('Confirmer l\'acceptation', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _P.green,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor: _P.green, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -3656,7 +2122,6 @@ class _IncomingRequestCard extends ConsumerWidget {
     respCtrl.dispose();
   }
 
-  // ── REFUSER : motif obligatoire ──
   Future<void> _rejectDialog(BuildContext context, WidgetRef ref) async {
     final reasonCtrl = TextEditingController();
     final formKey = GlobalKey<FormState>();
@@ -3668,107 +2133,62 @@ class _IncomingRequestCard extends ConsumerWidget {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSt) => AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                    color: _P.red.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(10)),
-                child: const Icon(Icons.cancel_rounded,
-                    color: _P.red, size: 22),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'Refuser la demande',
-                  style: GoogleFonts.inter(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: _P.ink),
-                ),
-              ),
-            ],
-          ),
+          title: Row(children: [
+            Container(padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: _P.red.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.cancel_rounded, color: _P.red, size: 22)),
+            const SizedBox(width: 10),
+            Expanded(child: Text('Refuser la demande', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink))),
+          ]),
           content: Form(
             key: formKey,
             child: TextFormField(
-              controller: reasonCtrl,
-              maxLines: 3,
-              validator: (v) => v == null || v.trim().isEmpty
-                  ? 'Indiquez un motif (requis)'
-                  : null,
-              decoration: _sheetDec('Motif du refus',
-                  Icons.info_outline_rounded,
-                  hint:
-                      'Ex: Date déjà réservée, hors zone géographique...'),
+              controller: reasonCtrl, maxLines: 3,
+              validator: (v) => v == null || v.trim().isEmpty ? 'Indiquez un motif (requis)' : null,
+              decoration: _sheetDec('Motif du refus', Icons.info_outline_rounded,
+                  hint: 'Ex: Date déjà réservée, hors zone géographique...'),
             ),
           ),
           actions: [
-            TextButton(
-              onPressed: busy ? null : () => Navigator.pop(ctx),
-              child: Text(
-                'Annuler',
-                style: GoogleFonts.inter(
-                    color: _P.inkSoft, fontWeight: FontWeight.w600),
-              ),
-            ),
+            TextButton(onPressed: busy ? null : () => Navigator.pop(ctx),
+                child: Text('Annuler', style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600))),
             ElevatedButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      if (!formKey.currentState!.validate()) return;
-                      setSt(() => busy = true);
-                      HapticFeedback.mediumImpact();
-                      try {
-                        final now = DateTime.now().toIso8601String();
-                        await Supabase.instance.client
-                            .from('thix_weeding_vendor_requests')
-                            .update({
-                              'status': 'rejected',
-                              'provider_response': reasonCtrl.text.trim(),
-                              'responded_at': now,
-                              'updated_at': now,
-                            })
-                            .eq('id', request['id'] as String);
-                        if (!ctx.mounted) return;
-                        Navigator.pop(ctx);
-                        ref.invalidate(
-                            providerIncomingRequestsProvider(providerId));
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                            content: Text(
-                                'Demande refusée — le couple en sera informé',
-                                style: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w700)),
-                            backgroundColor: _P.amber,
-                            behavior: SnackBarBehavior.floating,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                          ));
-                        }
-                      } catch (e) {
-                        setSt(() => busy = false);
-                        if (ctx.mounted) {
-                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
-                            content: Text('Erreur: $e'),
-                            backgroundColor: _P.red,
-                            behavior: SnackBarBehavior.floating,
-                          ));
-                        }
-                      }
-                    },
+              onPressed: busy ? null : () async {
+                if (!formKey.currentState!.validate()) return;
+                setSt(() => busy = true);
+                HapticFeedback.mediumImpact();
+                try {
+                  final now = DateTime.now().toIso8601String();
+                  await Supabase.instance.client.from('thix_weeding_vendor_requests').update({
+                    'status': 'rejected',
+                    'provider_response': reasonCtrl.text.trim(),
+                    'responded_at': now,
+                    'updated_at': now,
+                  }).eq('id', request['id'] as String);
+
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  ref.invalidate(providerIncomingRequestsProvider(providerId));
+
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                      content: Text('Demande refusée — le couple en sera informé', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+                      backgroundColor: _P.amber, behavior: SnackBarBehavior.floating,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ));
+                  }
+                } catch (e) {
+                  setSt(() => busy = false);
+                  if (ctx.mounted) {
+                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red, behavior: SnackBarBehavior.floating));
+                  }
+                }
+              },
               icon: const Icon(Icons.block_rounded, size: 18),
-              label: Text(
-                'Refuser',
-                style: GoogleFonts.inter(
-                    fontWeight: FontWeight.w800, fontSize: 13),
-              ),
+              label: Text('Refuser', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _P.red,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
+                backgroundColor: _P.red, foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -3777,26 +2197,9 @@ class _IncomingRequestCard extends ConsumerWidget {
     );
     reasonCtrl.dispose();
   }
-
-  InputDecoration _sheetDec(String label, IconData icon, {String? hint}) =>
-      InputDecoration(
-        labelText: label,
-        hintText: hint,
-        labelStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
-        hintStyle: GoogleFonts.inter(
-            fontSize: 12, color: _P.inkSoft.withOpacity(0.6)),
-        prefixIcon: Icon(icon, size: 18, color: _P.rose),
-        filled: true,
-        fillColor: _P.bg,
-        border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(12),
-            borderSide: BorderSide.none),
-      );
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ NOUVEAU : PAGE DE GESTION POST-APPROBATION
-// Redirige vers la bonne page selon le type de prestation
+// GESTION POST-APPROBATION
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderServiceManagementPage extends StatelessWidget {
   final String vendorId;
@@ -3816,54 +2219,59 @@ class ProviderServiceManagementPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Router vers la bonne page selon le type de service
     switch (managementType) {
       case ServiceManagementType.menu:
         return ProviderMenuManagementPage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
+          vendorId: vendorId, weddingId: weddingId, provider: provider, couple: couple,
         );
       case ServiceManagementType.gallery:
         return _GenericServicePage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
-          title: 'Galerie & Médias',
-          icon: Icons.photo_library_rounded,
-          color: _P.blue,
+          vendorId: vendorId, weddingId: weddingId, provider: provider, couple: couple,
+          title: 'Galerie & Médias', icon: Icons.photo_library_rounded, color: _P.blue,
           sections: const ['Photos', 'Vidéos', 'Albums'],
         );
       case ServiceManagementType.timeline:
         return _GenericServicePage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
-          title: 'Programme & Timeline',
-          icon: Icons.schedule_rounded,
-          color: _P.purple,
+          vendorId: vendorId, weddingId: weddingId, provider: provider, couple: couple,
+          title: 'Programme & Timeline', icon: Icons.schedule_rounded, color: _P.purple,
           sections: const ['Préparatifs', 'Cérémonie', 'Soirée'],
+          extraActions: [
+            _ExtraAction(
+              label: 'Suggestions DG',
+              icon: Icons.music_note_rounded,
+              color: _P.rose,
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                  builder: (_) => ProviderSuggestionsPage(
+                    weddingId: weddingId, provider: provider, couple: couple,
+                  ),
+                ));
+              },
+            ),
+          ],
         );
+      case ServiceManagementType.orders:
+        return ProviderOrdersPage(provider: provider);
       case ServiceManagementType.generic:
         return _GenericServicePage(
-          vendorId: vendorId,
-          weddingId: weddingId,
-          provider: provider,
-          couple: couple,
-          title: 'Gestion de la prestation',
-          icon: Icons.settings_rounded,
-          color: _P.rose,
+          vendorId: vendorId, weddingId: weddingId, provider: provider, couple: couple,
+          title: 'Gestion de la prestation', icon: Icons.settings_rounded, color: _P.rose,
           sections: const ['Détails', 'Documents', 'Paiements'],
         );
     }
   }
 }
 
+class _ExtraAction {
+  final String label;
+  final IconData icon;
+  final Color color;
+  final VoidCallback onTap;
+  const _ExtraAction({required this.label, required this.icon, required this.color, required this.onTap});
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ PAGE GÉNÉRIQUE (photo/vidéo/MC/DJ/salle...)
+// PAGE GÉNÉRIQUE (photo/vidéo/MC/DJ/salle...)
 // ═══════════════════════════════════════════════════════════════════════════
 class _GenericServicePage extends StatelessWidget {
   final String vendorId;
@@ -3874,6 +2282,7 @@ class _GenericServicePage extends StatelessWidget {
   final IconData icon;
   final Color color;
   final List<String> sections;
+  final List<_ExtraAction>? extraActions;
 
   const _GenericServicePage({
     required this.vendorId,
@@ -3884,6 +2293,7 @@ class _GenericServicePage extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.sections,
+    this.extraActions,
   });
 
   @override
@@ -3928,26 +2338,9 @@ class _GenericServicePage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          'Prestation pour',
-                          style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
-                        ),
-                        Text(
-                          couple,
-                          style: GoogleFonts.inter(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                            color: _P.ink,
-                          ),
-                        ),
-                        Text(
-                          provider.businessName,
-                          style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: _P.inkSoft,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                        Text('Prestation pour', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                        Text(couple, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+                        Text(provider.businessName, style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w600)),
                       ],
                     ),
                   ),
@@ -3955,20 +2348,40 @@ class _GenericServicePage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-
             // Sections
             ...sections.map((section) => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: _GenericSectionCard(
-                title: section,
-                icon: icon,
-                color: color,
-                itemCount: 0, // À remplir dynamiquement
-              ),
+              child: _GenericSectionCard(title: section, icon: icon, color: color, itemCount: 0),
             )),
-            
+            if (extraActions != null) ...[
+              const SizedBox(height: 12),
+              Text('Actions complémentaires', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
+              const SizedBox(height: 12),
+              ...extraActions!.map((action) => Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: GestureDetector(
+                  onTap: action.onTap,
+                  child: Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: action.color.withOpacity(0.08),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: action.color.withOpacity(0.3)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(action.icon, color: action.color, size: 20),
+                        const SizedBox(width: 12),
+                        Text(action.label, style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: action.color)),
+                        const Spacer(),
+                        Icon(Icons.chevron_right, color: action.color, size: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              )),
+            ],
             const SizedBox(height: 20),
-            
             // Info
             Container(
               padding: const EdgeInsets.all(14),
@@ -4002,13 +2415,7 @@ class _GenericSectionCard extends StatelessWidget {
   final IconData icon;
   final Color color;
   final int itemCount;
-
-  const _GenericSectionCard({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.itemCount,
-  });
+  const _GenericSectionCard({required this.title, required this.icon, required this.color, required this.itemCount});
 
   @override
   Widget build(BuildContext context) {
@@ -4024,10 +2431,7 @@ class _GenericSectionCard extends StatelessWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
+            decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
             child: Icon(icon, color: color, size: 20),
           ),
           const SizedBox(width: 12),
@@ -4036,10 +2440,7 @@ class _GenericSectionCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
-                Text(
-                  '$itemCount élément${itemCount > 1 ? 's' : ''}',
-                  style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft),
-                ),
+                Text('$itemCount élément${itemCount > 1 ? 's' : ''}', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
               ],
             ),
           ),
@@ -4061,7 +2462,7 @@ class _GenericSectionCard extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ✅ PAGE GESTION MENU (TRAITEURS / PÂTISSIERS)
+// PAGE GESTION MENU (TRAITEURS / PÂTISSIERS)
 // ═══════════════════════════════════════════════════════════════════════════
 class ProviderMenuManagementPage extends ConsumerStatefulWidget {
   final String vendorId;
@@ -4078,12 +2479,10 @@ class ProviderMenuManagementPage extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ProviderMenuManagementPage> createState() =>
-      _ProviderMenuManagementPageState();
+  ConsumerState<ProviderMenuManagementPage> createState() => _ProviderMenuManagementPageState();
 }
 
-class _ProviderMenuManagementPageState
-    extends ConsumerState<ProviderMenuManagementPage> {
+class _ProviderMenuManagementPageState extends ConsumerState<ProviderMenuManagementPage> {
   Future<void> _addMenuItem() async {
     final nameCtrl = TextEditingController();
     final descCtrl = TextEditingController();
@@ -4094,8 +2493,7 @@ class _ProviderMenuManagementPageState
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Ajouter un plat',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        title: Text('Ajouter un plat', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
         content: Form(
           key: formKey,
           child: SingleChildScrollView(
@@ -4105,38 +2503,21 @@ class _ProviderMenuManagementPageState
                 TextFormField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(labelText: 'Nom du plat *'),
-                  validator: (v) =>
-                      v == null || v.trim().isEmpty ? 'Requis' : null,
+                  validator: (v) => v == null || v.trim().isEmpty ? 'Requis' : null,
                 ),
                 const SizedBox(height: 8),
-                TextFormField(
-                  controller: descCtrl,
-                  maxLines: 2,
-                  decoration: const InputDecoration(labelText: 'Description'),
-                ),
+                TextFormField(controller: descCtrl, maxLines: 2, decoration: const InputDecoration(labelText: 'Description')),
                 const SizedBox(height: 8),
-                TextFormField(
-                  controller: priceCtrl,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Prix (optionnel)'),
-                ),
+                TextFormField(controller: priceCtrl, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'Prix (optionnel)')),
               ],
             ),
           ),
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Annuler'),
-          ),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
           ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState!.validate()) {
-                Navigator.pop(ctx, true);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _P.green, foregroundColor: Colors.white),
+            onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); },
+            style: ElevatedButton.styleFrom(backgroundColor: _P.green, foregroundColor: Colors.white),
             child: const Text('Ajouter'),
           ),
         ],
@@ -4158,17 +2539,14 @@ class _ProviderMenuManagementPageState
         ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Plat ajouté ✓',
-                style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+            content: Text('Plat ajouté ✓', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
             backgroundColor: _P.green,
             behavior: SnackBarBehavior.floating,
           ));
         }
       } catch (e) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
         }
       }
     }
@@ -4179,10 +2557,7 @@ class _ProviderMenuManagementPageState
 
   Future<void> _toggleValidation(String itemId, bool current) async {
     try {
-      await Supabase.instance.client
-          .from('thix_weeding_menu_items')
-          .update({'is_validated': !current})
-          .eq('id', itemId);
+      await Supabase.instance.client.from('thix_weeding_menu_items').update({'is_validated': !current}).eq('id', itemId);
       ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
@@ -4192,36 +2567,23 @@ class _ProviderMenuManagementPageState
         ));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
     }
   }
 
   Future<void> _togglePublic(String itemId, bool current) async {
     try {
-      await Supabase.instance.client
-          .from('thix_weeding_menu_items')
-          .update({'is_public': !current})
-          .eq('id', itemId);
+      await Supabase.instance.client.from('thix_weeding_menu_items').update({'is_public': !current}).eq('id', itemId);
       ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(!current
-              ? 'Rendu public pour les invités ✓'
-              : 'Retiré de la vue invités'),
+          content: Text(!current ? 'Rendu public pour les invités ✓' : 'Retiré de la vue invités'),
           backgroundColor: !current ? _P.blue : _P.inkSoft,
           behavior: SnackBarBehavior.floating,
         ));
       }
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
     }
   }
 
@@ -4232,13 +2594,10 @@ class _ProviderMenuManagementPageState
         title: const Text('Supprimer ce plat ?'),
         content: const Text('Cette action est irréversible.'),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Annuler')),
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
-            style: ElevatedButton.styleFrom(
-                backgroundColor: _P.red, foregroundColor: Colors.white),
+            style: ElevatedButton.styleFrom(backgroundColor: _P.red, foregroundColor: Colors.white),
             child: const Text('Supprimer'),
           ),
         ],
@@ -4246,17 +2605,10 @@ class _ProviderMenuManagementPageState
     );
     if (ok != true) return;
     try {
-      await Supabase.instance.client
-          .from('thix_weeding_menu_items')
-          .delete()
-          .eq('id', itemId);
+      await Supabase.instance.client.from('thix_weeding_menu_items').delete().eq('id', itemId);
       ref.invalidate(vendorMenuItemsProvider(widget.vendorId));
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red),
-        );
-      }
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
     }
   }
 
@@ -4275,9 +2627,22 @@ class _ProviderMenuManagementPageState
           icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
           onPressed: () => Navigator.of(context).pop(),
         ),
-        title: Text('Menu & Plats',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        title: Text('Menu & Plats', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
         actions: [
+          IconButton(
+            tooltip: 'Voir statistiques votes',
+            icon: const Icon(Icons.bar_chart_rounded),
+            onPressed: () {
+              Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => ProviderMenuStatsPage(
+                  vendorId: widget.vendorId,
+                  weddingId: widget.weddingId,
+                  provider: widget.provider,
+                  couple: widget.couple,
+                ),
+              ));
+            },
+          ),
           IconButton(
             tooltip: 'Rafraîchir',
             icon: const Icon(Icons.refresh_rounded),
@@ -4293,8 +2658,7 @@ class _ProviderMenuManagementPageState
         foregroundColor: Colors.white,
         onPressed: _addMenuItem,
         icon: const Icon(Icons.add_rounded),
-        label: Text('Ajouter un plat',
-            style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+        label: Text('Ajouter un plat', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
       ),
       body: RefreshIndicator(
         color: _P.amber,
@@ -4311,8 +2675,7 @@ class _ProviderMenuManagementPageState
                 margin: const EdgeInsets.all(16),
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                      colors: [_P.amber.withOpacity(0.15), _P.gold.withOpacity(0.1)]),
+                  gradient: LinearGradient(colors: [_P.amber.withOpacity(0.15), _P.gold.withOpacity(0.1)]),
                   borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: _P.amber.withOpacity(0.3)),
                 ),
@@ -4320,31 +2683,17 @@ class _ProviderMenuManagementPageState
                   children: [
                     Container(
                       padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: _P.amber.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.restaurant_menu_rounded,
-                          color: _P.amber, size: 24),
+                      decoration: BoxDecoration(color: _P.amber.withOpacity(0.2), borderRadius: BorderRadius.circular(12)),
+                      child: const Icon(Icons.restaurant_menu_rounded, color: _P.amber, size: 24),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('Menu pour',
-                              style: GoogleFonts.inter(
-                                  fontSize: 11, color: _P.inkSoft)),
-                          Text(widget.couple,
-                              style: GoogleFonts.inter(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: _P.ink)),
-                          Text(widget.provider.businessName,
-                              style: GoogleFonts.inter(
-                                  fontSize: 12,
-                                  color: _P.inkSoft,
-                                  fontWeight: FontWeight.w600)),
+                          Text('Menu pour', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                          Text(widget.couple, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+                          Text(widget.provider.businessName, style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w600)),
                         ],
                       ),
                     ),
@@ -4352,7 +2701,6 @@ class _ProviderMenuManagementPageState
                 ),
               ),
             ),
-
             // Stats
             itemsAsync.when(
               data: (items) {
@@ -4360,39 +2708,18 @@ class _ProviderMenuManagementPageState
                 final public = items.where((i) => i['is_public'] == true).length;
                 final votes = votesAsync.valueOrNull ?? {};
                 final totalVotes = votes.values.fold(0, (s, v) => s + v);
-                
                 return SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
                       children: [
-                        _MenuStatCard(
-                          label: 'Total',
-                          value: '${items.length}',
-                          color: _P.blue,
-                          icon: Icons.restaurant_rounded,
-                        ),
+                        _MenuStatCard(label: 'Total', value: '${items.length}', color: _P.blue, icon: Icons.restaurant_rounded),
                         const SizedBox(width: 8),
-                        _MenuStatCard(
-                          label: 'Validés',
-                          value: '$validated',
-                          color: _P.green,
-                          icon: Icons.check_circle_rounded,
-                        ),
+                        _MenuStatCard(label: 'Validés', value: '$validated', color: _P.green, icon: Icons.check_circle_rounded),
                         const SizedBox(width: 8),
-                        _MenuStatCard(
-                          label: 'Publics',
-                          value: '$public',
-                          color: _P.purple,
-                          icon: Icons.visibility_rounded,
-                        ),
+                        _MenuStatCard(label: 'Publics', value: '$public', color: _P.purple, icon: Icons.visibility_rounded),
                         const SizedBox(width: 8),
-                        _MenuStatCard(
-                          label: 'Votes',
-                          value: '$totalVotes',
-                          color: _P.amber,
-                          icon: Icons.favorite_rounded,
-                        ),
+                        _MenuStatCard(label: 'Votes', value: '$totalVotes', color: _P.amber, icon: Icons.favorite_rounded),
                       ],
                     ),
                   ),
@@ -4401,24 +2728,16 @@ class _ProviderMenuManagementPageState
               loading: () => const SliverToBoxAdapter(child: SizedBox.shrink()),
               error: (_, __) => const SliverToBoxAdapter(child: SizedBox.shrink()),
             ),
-
             const SliverToBoxAdapter(child: SizedBox(height: 16)),
-
             // Liste des plats
             itemsAsync.when(
               data: (items) {
                 if (items.isEmpty) {
-                  return SliverFillRemaining(
-                    child: _EmptyState(
-                      icon: Icons.restaurant_menu_rounded,
-                      title: 'Aucun plat',
-                      subtitle: 'Ajoutez votre premier plat avec le bouton +',
-                    ),
+                  return const SliverFillRemaining(
+                    child: _EmptyState(icon: Icons.restaurant_menu_rounded, title: 'Aucun plat', subtitle: 'Ajoutez votre premier plat avec le bouton +'),
                   );
                 }
-
                 final votes = votesAsync.valueOrNull ?? {};
-
                 return SliverPadding(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   sliver: SliverList(
@@ -4431,14 +2750,8 @@ class _ProviderMenuManagementPageState
                           child: _MenuItemCard(
                             item: item,
                             voteCount: voteCount,
-                            onValidate: () => _toggleValidation(
-                              item['id'] as String,
-                              item['is_validated'] as bool? ?? false,
-                            ),
-                            onTogglePublic: () => _togglePublic(
-                              item['id'] as String,
-                              item['is_public'] as bool? ?? false,
-                            ),
+                            onValidate: () => _toggleValidation(item['id'] as String, item['is_validated'] as bool? ?? false),
+                            onTogglePublic: () => _togglePublic(item['id'] as String, item['is_public'] as bool? ?? false),
                             onDelete: () => _deleteItem(item['id'] as String),
                           ),
                         );
@@ -4448,14 +2761,9 @@ class _ProviderMenuManagementPageState
                   ),
                 );
               },
-              loading: () => const SliverFillRemaining(
-                child: Center(child: CircularProgressIndicator(color: _P.amber)),
-              ),
+              loading: () => const SliverFillRemaining(child: Center(child: CircularProgressIndicator(color: _P.amber))),
               error: (e, _) => SliverFillRemaining(
-                child: _ErrorState(
-                  message: '$e',
-                  onRetry: () => ref.invalidate(vendorMenuItemsProvider(widget.vendorId)),
-                ),
+                child: _ErrorState(message: '$e', onRetry: () => ref.invalidate(vendorMenuItemsProvider(widget.vendorId))),
               ),
             ),
           ],
@@ -4470,33 +2778,20 @@ class _MenuStatCard extends StatelessWidget {
   final String value;
   final Color color;
   final IconData icon;
-
-  const _MenuStatCard({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.icon,
-  });
+  const _MenuStatCard({required this.label, required this.value, required this.color, required this.icon});
 
   @override
   Widget build(BuildContext context) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _P.line),
-        ),
+        decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), border: Border.all(color: _P.line)),
         child: Column(
           children: [
             Icon(icon, color: color, size: 18),
             const SizedBox(height: 4),
-            Text(value,
-                style: GoogleFonts.inter(
-                    fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
-            Text(label,
-                style: GoogleFonts.inter(fontSize: 9, color: _P.inkSoft)),
+            Text(value, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+            Text(label, style: GoogleFonts.inter(fontSize: 9, color: _P.inkSoft)),
           ],
         ),
       ),
@@ -4510,14 +2805,7 @@ class _MenuItemCard extends StatelessWidget {
   final VoidCallback onValidate;
   final VoidCallback onTogglePublic;
   final VoidCallback onDelete;
-
-  const _MenuItemCard({
-    required this.item,
-    required this.voteCount,
-    required this.onValidate,
-    required this.onTogglePublic,
-    required this.onDelete,
-  });
+  const _MenuItemCard({required this.item, required this.voteCount, required this.onValidate, required this.onTogglePublic, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
@@ -4532,10 +2820,7 @@ class _MenuItemCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isValidated ? _P.green.withOpacity(0.4) : _P.line,
-          width: isValidated ? 2 : 1,
-        ),
+        border: Border.all(color: isValidated ? _P.green.withOpacity(0.4) : _P.line, width: isValidated ? 2 : 1),
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
       ),
       child: Column(
@@ -4545,10 +2830,7 @@ class _MenuItemCard extends StatelessWidget {
             children: [
               Container(
                 padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: _P.amber.withOpacity(0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
+                decoration: BoxDecoration(color: _P.amber.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
                 child: const Icon(Icons.restaurant_rounded, color: _P.amber, size: 22),
               ),
               const SizedBox(width: 12),
@@ -4556,59 +2838,30 @@ class _MenuItemCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(name,
-                        style: GoogleFonts.inter(
-                            fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
-                    if (desc.isNotEmpty)
-                      Text(desc,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.inter(
-                              fontSize: 11, color: _P.inkSoft, height: 1.4)),
+                    Text(name, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _P.ink)),
+                    if (desc.isNotEmpty) Text(desc, maxLines: 2, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, height: 1.4)),
                   ],
                 ),
               ),
               if (price != null && price > 0)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _P.green.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text('${price.toStringAsFixed(0)}\$',
-                      style: GoogleFonts.inter(
-                          fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
+                  decoration: BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                  child: Text('${price.toStringAsFixed(0)}\$', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
                 ),
             ],
           ),
           const SizedBox(height: 12),
-          // Badges
           Wrap(
             spacing: 8,
             runSpacing: 6,
             children: [
-              if (isValidated)
-                _Badge(
-                  icon: Icons.check_circle_rounded,
-                  label: 'Validé',
-                  color: _P.green,
-                ),
-              if (isPublic)
-                _Badge(
-                  icon: Icons.visibility_rounded,
-                  label: 'Public',
-                  color: _P.blue,
-                ),
-              if (voteCount > 0)
-                _Badge(
-                  icon: Icons.favorite_rounded,
-                  label: '$voteCount vote${voteCount > 1 ? 's' : ''}',
-                  color: _P.rose,
-                ),
+              if (isValidated) _Badge(icon: Icons.check_circle_rounded, label: 'Validé', color: _P.green),
+              if (isPublic) _Badge(icon: Icons.visibility_rounded, label: 'Public', color: _P.blue),
+              if (voteCount > 0) _Badge(icon: Icons.favorite_rounded, label: '$voteCount vote${voteCount > 1 ? 's' : ''}', color: _P.rose),
             ],
           ),
           const SizedBox(height: 12),
-          // Actions
           Row(
             children: [
               Expanded(
@@ -4621,17 +2874,9 @@ class _MenuItemCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-              _ContactButton(
-                icon: isPublic ? Icons.visibility_off_rounded : Icons.visibility_rounded,
-                color: isPublic ? _P.blue : _P.inkSoft,
-                onTap: onTogglePublic,
-              ),
+              _ContactButton(icon: isPublic ? Icons.visibility_off_rounded : Icons.visibility_rounded, color: isPublic ? _P.blue : _P.inkSoft, onTap: onTogglePublic),
               const SizedBox(width: 8),
-              _ContactButton(
-                icon: Icons.delete_outline_rounded,
-                color: _P.red,
-                onTap: onDelete,
-              ),
+              _ContactButton(icon: Icons.delete_outline_rounded, color: _P.red, onTap: onDelete),
             ],
           ),
         ],
@@ -4644,29 +2889,630 @@ class _Badge extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
-
-  const _Badge({
-    required this.icon,
-    required this.label,
-    required this.color,
-  });
+  const _Badge({required this.icon, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(icon, size: 12, color: color),
           const SizedBox(width: 4),
-          Text(label,
-              style: GoogleFonts.inter(
-                  fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+          Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// STATS VOTES INVITÉS (NOUVEAU v5)
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderMenuStatsPage extends ConsumerStatefulWidget {
+  final String vendorId;
+  final String weddingId;
+  final ThixProviderModel provider;
+  final String couple;
+
+  const ProviderMenuStatsPage({
+    super.key,
+    required this.vendorId,
+    required this.weddingId,
+    required this.provider,
+    required this.couple,
+  });
+
+  @override
+  ConsumerState<ProviderMenuStatsPage> createState() => _ProviderMenuStatsPageState();
+}
+
+class _ProviderMenuStatsPageState extends ConsumerState<ProviderMenuStatsPage> {
+  @override
+  Widget build(BuildContext context) {
+    final itemsAsync = ref.watch(vendorMenuItemsProvider(widget.vendorId));
+    final votesAsync = ref.watch(menuItemVotesProvider(widget.weddingId));
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.purple,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20),
+          onPressed: () => Navigator.of(context).pop(),
+        ),
+        title: Text('Statistiques des votes', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+      ),
+      body: itemsAsync.when(
+        data: (items) {
+          final votes = votesAsync.valueOrNull ?? {};
+          final totalVotes = votes.values.fold(0, (s, v) => s + v);
+          final publicItems = items.where((i) => i['is_public'] == true).toList();
+
+          if (totalVotes == 0) {
+            return const _EmptyState(
+              icon: Icons.bar_chart_rounded,
+              title: 'Aucun vote pour le moment',
+              subtitle: 'Les invités voteront lorsque le menu sera rendu public.',
+            );
+          }
+
+          final sortedItems = items.toList()
+            ..sort((a, b) => (votes[b['id'] as String] ?? 0).compareTo(votes[a['id'] as String] ?? 0));
+          final topItems = sortedItems.where((i) => (votes[i['id'] as String] ?? 0) > 0).take(10).toList();
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_P.purple, Color(0xFFA855F7)], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [BoxShadow(color: _P.purple.withOpacity(0.3), blurRadius: 16, offset: const Offset(0, 6))],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Vue d\'ensemble', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(child: _StatBox(value: '$totalVotes', label: 'Votes', icon: Icons.how_to_vote_rounded)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _StatBox(value: '${publicItems.length}', label: 'Plats publics', icon: Icons.restaurant_rounded)),
+                        const SizedBox(width: 12),
+                        Expanded(child: _StatBox(
+                          value: topItems.isNotEmpty ? (topItems.first['name'] as String? ?? '') : '-',
+                          label: 'Top plat',
+                          icon: Icons.emoji_events_rounded,
+                        )),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text('Classement des plats', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _P.ink)),
+              const SizedBox(height: 12),
+              ...topItems.asMap().entries.map((entry) {
+                final index = entry.key;
+                final item = entry.value;
+                final voteCount = votes[item['id'] as String] ?? 0;
+                final percentage = totalVotes > 0 ? (voteCount / totalVotes) : 0.0;
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 10),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: index == 0 ? _P.goldLight : Colors.white,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: index == 0 ? _P.gold.withOpacity(0.3) : _P.line),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: index == 0 ? _P.gold : index == 1 ? _P.inkSoft : index == 2 ? _P.amber : _P.line,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text('${index + 1}', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w900, color: index < 3 ? Colors.white : _P.ink)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(item['name'] as String? ?? 'Sans nom', style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w700, color: _P.ink)),
+                            const SizedBox(height: 6),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: percentage,
+                                backgroundColor: _P.line,
+                                valueColor: AlwaysStoppedAnimation<Color>(index == 0 ? _P.gold : _P.purple),
+                                minHeight: 6,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text('$voteCount', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.purple)),
+                          Text('${(percentage * 100).toStringAsFixed(0)}%', style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft)),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              }),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: _P.purple)),
+        error: (e, _) => _ErrorState(message: '$e', onRetry: () => ref.invalidate(vendorMenuItemsProvider(widget.vendorId))),
+      ),
+    );
+  }
+}
+
+class _StatBox extends StatelessWidget {
+  final String value;
+  final String label;
+  final IconData icon;
+  const _StatBox({required this.value, required this.label, required this.icon});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        children: [
+          Icon(icon, color: Colors.white, size: 20),
+          const SizedBox(height: 6),
+          Text(value, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: Colors.white)),
+          Text(label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.white.withOpacity(0.8))),
+        ],
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WORKFLOW COMMANDES (NOUVEAU v5)
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderOrdersPage extends ConsumerStatefulWidget {
+  final ThixProviderModel provider;
+  const ProviderOrdersPage({super.key, required this.provider});
+  @override
+  ConsumerState<ProviderOrdersPage> createState() => _ProviderOrdersPageState();
+}
+
+class _ProviderOrdersPageState extends ConsumerState<ProviderOrdersPage> {
+  @override
+  Widget build(BuildContext context) {
+    final ordersAsync = ref.watch(providerOrdersProvider(widget.provider.id));
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.green,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => Navigator.of(context).pop()),
+        title: Text('Mes commandes', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(tooltip: 'Rafraîchir', icon: const Icon(Icons.refresh_rounded), onPressed: () => ref.invalidate(providerOrdersProvider(widget.provider.id))),
+        ],
+      ),
+      body: ordersAsync.when(
+        data: (orders) {
+          if (orders.isEmpty) {
+            return const _EmptyState(
+              icon: Icons.shopping_cart_rounded,
+              title: 'Aucune commande',
+              subtitle: 'Les commandes reçues apparaîtront ici avec leur workflow complet.',
+            );
+          }
+          final pending = orders.where((o) => (o['status'] as String?) == 'pending').length;
+          final inProgress = orders.where((o) => ['confirmed', 'inProgress', 'ready'].contains(o['status'])).length;
+          final totalAmount = orders.fold<double>(0, (s, o) => s + ((o['total_amount'] as num?)?.toDouble() ?? 0));
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_P.green, _P.teal], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: _StatBox(value: '${orders.length}', label: 'Total', icon: Icons.receipt_long_rounded)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _StatBox(value: '$pending', label: 'En attente', icon: Icons.hourglass_empty_rounded)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _StatBox(value: '$inProgress', label: 'En cours', icon: Icons.sync_rounded)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _StatBox(value: '\$${totalAmount.toStringAsFixed(0)}', label: 'Revenus', icon: Icons.attach_money_rounded)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...orders.map((order) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _OrderCard(
+                  order: order,
+                  onStatusChange: (newStatus) => _updateStatus(order, newStatus),
+                ),
+              )),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: _P.green)),
+        error: (e, _) => _ErrorState(message: '$e', onRetry: () => ref.invalidate(providerOrdersProvider(widget.provider.id))),
+      ),
+    );
+  }
+
+  Future<void> _updateStatus(Map<String, dynamic> order, String newStatus) async {
+    try {
+      await Supabase.instance.client.from('thix_weeding_orders').update({'status': newStatus, 'updated_at': DateTime.now().toIso8601String()}).eq('id', order['id'] as String);
+      ref.invalidate(providerOrdersProvider(widget.provider.id));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Statut mis à jour : ${_statusLabel(newStatus)}', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: _P.green,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        ));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
+    }
+  }
+
+  String _statusLabel(String s) => switch (s) {
+    'pending' => 'En attente',
+    'confirmed' => 'Confirmée',
+    'inProgress' => 'En cours',
+    'ready' => 'Prête',
+    'delivered' => 'Livrée',
+    'completed' => 'Terminée',
+    'cancelled' => 'Annulée',
+    _ => s,
+  };
+}
+
+class _OrderCard extends StatelessWidget {
+  final Map<String, dynamic> order;
+  final Function(String) onStatusChange;
+
+  const _OrderCard({required this.order, required this.onStatusChange});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = order['status'] as String? ?? 'pending';
+    final statusEnum = _parseStatus(status);
+    final color = statusEnum.color;
+    final amount = (order['total_amount'] as num?)?.toDouble();
+    final clientName = order['client_name'] as String? ?? 'Client';
+    final offerTitle = order['offer_title'] as String? ?? 'Commande';
+    final eventDate = order['event_date'] as String?;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withOpacity(0.3)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                child: Icon(statusEnum.icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(clientName, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
+                    Text(offerTitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text(statusEnum.label, style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: color)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              if (amount != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(color: _P.greenLight, borderRadius: BorderRadius.circular(8)),
+                  child: Text('\$${amount.toStringAsFixed(0)}', style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: _P.green)),
+                ),
+              const Spacer(),
+              if (eventDate != null)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.calendar_today_rounded, size: 12, color: _P.inkSoft),
+                    const SizedBox(width: 4),
+                    Text(_fmtDate(eventDate), style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+            ],
+          ),
+          if (statusEnum.next != null) ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: _ActionButton(
+                icon: statusEnum.next!.icon,
+                label: statusEnum.nextLabel ?? 'Action suivante',
+                color: color,
+                onTap: () => onStatusChange(statusEnum.next!.name),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  WeddingOrderStatus _parseStatus(String s) {
+    try { return WeddingOrderStatus.values.firstWhere((e) => e.name == s); } catch (_) { return WeddingOrderStatus.pending; }
+  }
+
+  String _fmtDate(String iso) {
+    try { return DateFormat('dd MMM yyyy', 'fr_FR').format(DateTime.parse(iso)); } catch (_) { return iso; }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SUGGESTIONS DG (NOUVEAU v5)
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderSuggestionsPage extends ConsumerStatefulWidget {
+  final String weddingId;
+  final ThixProviderModel provider;
+  final String couple;
+
+  const ProviderSuggestionsPage({super.key, required this.weddingId, required this.provider, required this.couple});
+
+  @override
+  ConsumerState<ProviderSuggestionsPage> createState() => _ProviderSuggestionsPageState();
+}
+
+class _ProviderSuggestionsPageState extends ConsumerState<ProviderSuggestionsPage> {
+  Future<void> _updateStatus(Map<String, dynamic> suggestion, String newStatus) async {
+    try {
+      await Supabase.instance.client.from('thix_weeding_dg_suggestions').update({'status': newStatus, 'reviewed_at': DateTime.now().toIso8601String()}).eq('id', suggestion['id'] as String);
+      ref.invalidate(providerSuggestionsProvider(widget.weddingId));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Suggestion ${_statusLabel(newStatus)}', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+          backgroundColor: _P.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red));
+    }
+  }
+
+  String _statusLabel(String s) => switch (s) {
+    'pending' => 'mise en attente',
+    'approved' => 'approuvée ✓',
+    'rejected' => 'rejetée',
+    'played' => 'marquée comme jouée ✓',
+    _ => s,
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final suggestionsAsync = ref.watch(providerSuggestionsProvider(widget.weddingId));
+
+    return Scaffold(
+      backgroundColor: _P.bg,
+      appBar: AppBar(
+        backgroundColor: _P.rose,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 20), onPressed: () => Navigator.of(context).pop()),
+        title: Text('Suggestions DG', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
+        actions: [
+          IconButton(tooltip: 'Rafraîchir', icon: const Icon(Icons.refresh_rounded), onPressed: () => ref.invalidate(providerSuggestionsProvider(widget.weddingId))),
+        ],
+      ),
+      body: suggestionsAsync.when(
+        data: (suggestions) {
+          if (suggestions.isEmpty) {
+            return const _EmptyState(
+              icon: Icons.music_note_rounded,
+              title: 'Aucune suggestion',
+              subtitle: 'Le DG pourra suggérer des chansons et ambiances pour l\'événement.',
+            );
+          }
+          final pending = suggestions.where((s) => (s['status'] as String?) == 'pending').length;
+          final approved = suggestions.where((s) => (s['status'] as String?) == 'approved').length;
+
+          return ListView(
+            padding: const EdgeInsets.all(16),
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_P.rose, _P.roseLight], begin: Alignment.topLeft, end: Alignment.bottomRight),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(child: _StatBox(value: '${suggestions.length}', label: 'Total', icon: Icons.list_rounded)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _StatBox(value: '$pending', label: 'En attente', icon: Icons.hourglass_empty_rounded)),
+                    const SizedBox(width: 8),
+                    Expanded(child: _StatBox(value: '$approved', label: 'Approuvées', icon: Icons.check_circle_rounded)),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+              ...suggestions.map((s) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _SuggestionCard(
+                  suggestion: s,
+                  onApprove: () => _updateStatus(s, 'approved'),
+                  onReject: () => _updateStatus(s, 'rejected'),
+                  onMarkPlayed: () => _updateStatus(s, 'played'),
+                ),
+              )),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator(color: _P.rose)),
+        error: (e, _) => _ErrorState(message: '$e', onRetry: () => ref.invalidate(providerSuggestionsProvider(widget.weddingId))),
+      ),
+    );
+  }
+}
+
+class _SuggestionCard extends StatelessWidget {
+  final Map<String, dynamic> suggestion;
+  final VoidCallback onApprove;
+  final VoidCallback onReject;
+  final VoidCallback onMarkPlayed;
+
+  const _SuggestionCard({required this.suggestion, required this.onApprove, required this.onReject, required this.onMarkPlayed});
+
+  @override
+  Widget build(BuildContext context) {
+    final status = suggestion['status'] as String? ?? 'pending';
+    final type = suggestion['type'] as String? ?? 'song';
+    final title = suggestion['title'] as String? ?? 'Sans titre';
+    final artist = suggestion['artist'] as String?;
+    final suggestedBy = suggestion['suggested_by_name'] as String? ?? 'DG';
+    final notes = suggestion['notes'] as String?;
+    final youtube = suggestion['youtube_url'] as String?;
+
+    final (icon, color) = switch (type) {
+      'playlist' => (Icons.queue_music_rounded, _P.blue),
+      'ambiance' => (Icons.lightbulb_rounded, _P.amber),
+      'animation' => (Icons.celebration_rounded, _P.purple),
+      _ => (Icons.music_note_rounded, _P.rose),
+    };
+
+    final statusColor = switch (status) {
+      'approved' => _P.green,
+      'rejected' => _P.red,
+      'played' => _P.purple,
+      _ => _P.amber,
+    };
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: color.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w800, color: _P.ink)),
+                    if (artist != null && artist.isNotEmpty) Text(artist, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                    Text('Par $suggestedBy', style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft)),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(color: statusColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                child: Text(
+                  switch (status) {
+                    'approved' => 'Approuvée',
+                    'rejected' => 'Rejetée',
+                    'played' => 'Jouée',
+                    _ => 'En attente',
+                  },
+                  style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: statusColor),
+                ),
+              ),
+            ],
+          ),
+          if (notes != null && notes.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(10)),
+              child: Text(notes, style: GoogleFonts.inter(fontSize: 12, color: _P.ink, height: 1.4)),
+            ),
+          ],
+          if (youtube != null && youtube.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.play_circle_outline_rounded, size: 14, color: _P.red),
+                const SizedBox(width: 4),
+                Expanded(child: Text(youtube, maxLines: 1, overflow: TextOverflow.ellipsis, style: GoogleFonts.inter(fontSize: 11, color: _P.blue))),
+              ],
+            ),
+          ],
+          if (status == 'pending') ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(child: _ActionButton(icon: Icons.check_rounded, label: 'Approuver', color: _P.green, onTap: onApprove)),
+                const SizedBox(width: 8),
+                Expanded(child: _ActionButton(icon: Icons.close_rounded, label: 'Rejeter', color: _P.red, isOutlined: true, onTap: onReject)),
+              ],
+            ),
+          ],
+          if (status == 'approved') ...[
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: _ActionButton(icon: Icons.play_arrow_rounded, label: 'Marquer comme jouée', color: _P.purple, onTap: onMarkPlayed),
+            ),
+          ],
         ],
       ),
     );
