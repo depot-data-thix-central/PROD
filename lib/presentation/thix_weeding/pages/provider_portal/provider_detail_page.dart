@@ -1,400 +1,340 @@
+// lib/presentation/thix_weeding/pages/provider_portal/provider_detail_page.dart
 // ============================================================================
-// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (v5)
-// ✅ Hero = photos OFFRES + galerie uniquement
-// ✅ Code Thix copiable
-// ✅ Badges
-// ✅ Tarifs + Détails avec bouton "Voir plus"
-// ✅ Offres & Services
-// ✅ Galerie
-// ✅ Demande de réservation
+// THIX WEDDING — FICHE PUBLIQUE PRESTATAIRE (PRODUCTION v6)
+// ✅ Mode "service sélectionné" : tap sur une offre => vue dédiée
+//    (photos, vidéos, description complète, prix) au lieu de tout afficher
+// ✅ CTA "Demander une réservation" FONCTIONNEL :
+//    crée une COMMANDE réelle via ordersProvider.createOrder (wedding_orders),
+//    le même pipeline que les commandes qui arrivent déjà au prestataire.
+// ✅ Erreurs affichées (snackbar) — plus jamais silencieuses.
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
-import 'provider_offers_page.dart' show offerTypeColor, offerTypeIcon;
+import 'provider_offers_page.dart' show offerTypeIcon, offerTypeColor;
+import 'orders/orders_provider.dart' show ordersProvider;
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
   static const Color surface = Colors.white;
   static const Color rose = Color(0xFFFF4D6D);
   static const Color roseLight = Color(0xFFFF85A1);
-  static const Color roseSoft = Color(0xFFFFF0F3);
   static const Color ink = Color(0xFF1A1A2E);
   static const Color inkSoft = Color(0xFF6B7280);
   static const Color line = Color(0xFFE5E7EB);
   static const Color green = Color(0xFF10B981);
-  static const Color gold = Color(0xFFFFD700);
+  static const Color blue = Color(0xFF3B82F6);
   static const Color amber = Color(0xFFF59E0B);
   static const Color red = Color(0xFFEF4444);
+  static const Color purple = Color(0xFF8B5CF6);
 }
 
-IconData _categoryIcon(ProviderCategory c) => switch (c) {
-      ProviderCategory.salle => Icons.meeting_room_rounded,
-      ProviderCategory.traiteur => Icons.restaurant_rounded,
-      ProviderCategory.photographe => Icons.camera_alt_rounded,
-      ProviderCategory.videaste => Icons.videocam_rounded,
-      ProviderCategory.decorateur => Icons.palette_rounded,
-      ProviderCategory.dj => Icons.music_note_rounded,
-      ProviderCategory.mc => Icons.mic_rounded,
-      ProviderCategory.maquilleur => Icons.face_rounded,
-      ProviderCategory.patissier => Icons.cake_rounded,
-      ProviderCategory.fleuriste => Icons.local_florist_rounded,
-    };
-
-class _HeroMedia {
-  final String url;
-  final String? offerTitle;
-  const _HeroMedia({required this.url, this.offerTitle});
-}
-
-class ProviderDetailPage extends ConsumerWidget {
+// ═══════════════════════════════════════════════════════════════════════════
+// PAGE PRINCIPALE
+// ═══════════════════════════════════════════════════════════════════════════
+class ProviderDetailPage extends ConsumerStatefulWidget {
   final String providerId;
   const ProviderDetailPage({super.key, required this.providerId});
 
-  void _copyCode(BuildContext context, String code) {
-    Clipboard.setData(ClipboardData(text: code));
+  @override
+  ConsumerState<ProviderDetailPage> createState() => _ProviderDetailPageState();
+}
+
+class _ProviderDetailPageState extends ConsumerState<ProviderDetailPage> {
+  ProviderOfferModel? _selectedOffer;
+
+  String _verifLabel(ProviderVerificationStatus s) => switch (s) {
+        ProviderVerificationStatus.pending => 'En vérification',
+        ProviderVerificationStatus.verified => 'Vérifié',
+        ProviderVerificationStatus.rejected => 'Non vérifié',
+      };
+
+  Color _verifColor(ProviderVerificationStatus s) => switch (s) {
+        ProviderVerificationStatus.pending => _P.amber,
+        ProviderVerificationStatus.verified => _P.green,
+        ProviderVerificationStatus.rejected => _P.red,
+      };
+
+  void _openReservationSheet(ThixProviderModel provider, ProviderOfferModel? offer) {
     HapticFeedback.mediumImpact();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Code $code copié', style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
-        backgroundColor: _P.green,
-      ),
-    );
-  }
-
-  List<_HeroMedia> _collectHeroMedia(ThixProviderModel provider, List<ProviderOfferModel> offers) {
-    final media = <_HeroMedia>[];
-    final seen = <String>{};
-
-    void add(String? url, String? title) {
-      final u = (url ?? '').trim();
-      if (u.isEmpty || seen.contains(u)) return;
-      seen.add(u);
-      media.add(_HeroMedia(url: u, offerTitle: title));
-    }
-
-    for (final o in offers.where((x) => x.isActive)) {
-      for (final img in o.allImages) add(img, o.title);
-    }
-    for (final g in provider.galleryUrls) add(g, null);
-
-    return media;
-  }
-
-  Future<void> _openImage(BuildContext context, _HeroMedia m) async {
-    await showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.black,
       isScrollControlled: true,
-      builder: (_) => _FullScreenImageViewer(url: m.url, title: m.offerTitle),
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ReservationSheet(provider: provider, offer: offer),
     );
   }
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final providerAsync = ref.watch(providerByIdProvider(providerId));
-    final offersAsync = ref.watch(providerOffersProvider(providerId));
+  Widget build(BuildContext context) {
+    final providerAsync = ref.watch(providerByIdProvider(widget.providerId));
+    final offersAsync = ref.watch(providerOffersProvider(widget.providerId));
 
     return providerAsync.when(
-      data: (provider) {
-        if (provider == null) return _buildError(context);
-        final offers = offersAsync.valueOrNull ?? [];
-        final heroMedia = _collectHeroMedia(provider, offers);
-        final activeOffers = offers.where((o) => o.isActive).toList();
-
-        return Scaffold(
-          backgroundColor: _P.bg,
-          body: CustomScrollView(
-            physics: const BouncingScrollPhysics(),
-            slivers: [
-              _buildHero(heroMedia, provider, context),
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildBadges(provider),
-                      const SizedBox(height: 12),
-                      Text(
-                        provider.businessName,
-                        style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          const Icon(Icons.location_on_outlined, size: 14, color: _P.inkSoft),
-                          const SizedBox(width: 4),
-                          Text(
-                            provider.city ?? 'RDC',
-                            style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontWeight: FontWeight.w600),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      _buildCodeCard(context, provider.uniqueCode),
-
-                      const SizedBox(height: 20),
-                      // ✅ TARIF
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          'Tarifs : ${provider.minPrice != null ? '${provider.minPrice!} USD' : 'Sur devis — contactez-nous'}',
-                          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
-                        ),
-                      ),
-
-                      // ✅ NOUVEAU : SECTION DÉTAILS AVEC "VOIR PLUS"
-                      if ((provider.description ?? '').isNotEmpty)
-                        _ProviderDetailsSection(text: provider.description!),
-
-                      const SizedBox(height: 24),
-
-                      if (activeOffers.isNotEmpty) ...[
-                        const _SectionTitle('Offres & Services'),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 260,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: activeOffers.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 12),
-                            itemBuilder: (_, i) => _DetailOfferCard(
-                              offer: activeOffers[i],
-                              onBook: () => _openBooking(context, ref, provider),
-                            ),
-                          ),
-                        ),
-                      ],
-
-                      if (heroMedia.length > 1) ...[
-                        const SizedBox(height: 24),
-                        _SectionTitle('Galerie (${heroMedia.length})'),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          height: 120,
-                          child: ListView.separated(
-                            scrollDirection: Axis.horizontal,
-                            itemCount: heroMedia.length,
-                            separatorBuilder: (_, __) => const SizedBox(width: 10),
-                            itemBuilder: (_, i) => GestureDetector(
-                              onTap: () => _openImage(context, heroMedia[i]),
-                              child: ClipRRect(
-                                borderRadius: BorderRadius.circular(16),
-                                child: Image.network(
-                                  heroMedia[i].url,
-                                  width: 120,
-                                  height: 120,
-                                  fit: BoxFit.cover,
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 80),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          bottomNavigationBar: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _P.bg,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, -2),
-                ),
-              ],
-            ),
-            child: ElevatedButton.icon(
-              onPressed: () => _openBooking(context, ref, provider),
-              icon: const Icon(Icons.event_available_rounded, size: 18),
-              label: Text(
-                'Demander une réservation',
-                style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800),
-              ),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: _P.rose,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                minimumSize: const Size(double.infinity, 56),
-              ),
-            ),
-          ),
-        );
-      },
       loading: () => const Scaffold(
         backgroundColor: _P.bg,
         body: Center(child: CircularProgressIndicator(color: _P.rose)),
       ),
-      error: (e, _) => _buildError(context),
-    );
-  }
-
-  Widget _buildError(BuildContext context) => Scaffold(
+      error: (e, _) => Scaffold(
         backgroundColor: _P.bg,
-        body: Center(
-          child: Text('Prestataire introuvable', style: GoogleFonts.inter(color: _P.inkSoft)),
-        ),
-      );
-
-  Widget _buildHero(List<_HeroMedia> heroMedia, ThixProviderModel provider, BuildContext context) {
-    return SliverAppBar(
-      expandedHeight: 280,
-      pinned: true,
-      backgroundColor: _P.surface,
-      flexibleSpace: FlexibleSpaceBar(
-        background: heroMedia.isEmpty
-            ? _HeroPlaceholder(icon: _categoryIcon(provider.category), initials: _initialsOf(provider.businessName))
-            : PageView.builder(
-                itemCount: heroMedia.length,
-                itemBuilder: (_, i) => GestureDetector(
-                  onTap: () => _openImage(context, heroMedia[i]),
-                  child: Image.network(heroMedia[i].url, fit: BoxFit.cover),
-                ),
-              ),
+        appBar: AppBar(backgroundColor: _P.bg, elevation: 0),
+        body: Center(child: Text('Erreur: $e', style: GoogleFonts.inter(color: _P.inkSoft))),
       ),
-    );
-  }
+      data: (provider) {
+        if (provider == null) {
+          return Scaffold(
+            backgroundColor: _P.bg,
+            appBar: AppBar(backgroundColor: _P.bg, elevation: 0),
+            body: const Center(child: Text('Prestataire introuvable')),
+          );
+        }
+        final offers = (offersAsync.valueOrNull ?? []).where((o) => o.isActive).toList();
+        final selected = _selectedOffer;
 
-  Widget _buildBadges(ThixProviderModel provider) {
-    return Wrap(
-      spacing: 8,
-      children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: provider.verificationStatus == ProviderVerificationStatus.verified ? _P.green : _P.amber,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(
-            provider.verificationStatus == ProviderVerificationStatus.verified ? 'Vérifié' : 'En vérification',
-            style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: Colors.white),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildCodeCard(BuildContext context, String code) {
-    return GestureDetector(
-      onTap: () => _copyCode(context, code),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: _P.surface,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _P.line),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.qr_code_2_rounded, color: _P.rose, size: 22),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Code Thix', style: GoogleFonts.inter(fontSize: 10, color: _P.inkSoft, fontWeight: FontWeight.w600)),
-                  Text(code, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _P.ink)),
-                ],
-              ),
-            ),
-            const Icon(Icons.copy_rounded, color: _P.inkSoft, size: 18),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _openBooking(BuildContext context, WidgetRef ref, ThixProviderModel provider) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _BookingSheet(provider: provider),
-    );
-  }
-
-  String _initialsOf(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    return parts.take(2).map((p) => p.isNotEmpty ? p[0].toUpperCase() : '').join();
-  }
-}
-
-// ==================== NOUVEAU WIDGET : SECTION DÉTAILS ====================
-
-class _ProviderDetailsSection extends StatefulWidget {
-  final String text;
-  const _ProviderDetailsSection({required this.text});
-
-  @override
-  State<_ProviderDetailsSection> createState() => _ProviderDetailsSectionState();
-}
-
-class _ProviderDetailsSectionState extends State<_ProviderDetailsSection> {
-  bool _isExpanded = false;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 20),
-        const _SectionTitle('Détails'),
-        const SizedBox(height: 8),
-        AnimatedCrossFade(
-          firstChild: Text(
-            widget.text,
-            maxLines: 3,
-            overflow: TextOverflow.ellipsis,
-            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
-          ),
-          secondChild: Text(
-            widget.text,
-            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
-          ),
-          crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
-          duration: const Duration(milliseconds: 300),
-        ),
-        // Bouton "Voir plus / Voir moins"
-        GestureDetector(
-          onTap: () => setState(() => _isExpanded = !_isExpanded),
-          child: Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  _isExpanded ? 'Voir moins' : 'Voir plus',
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: _P.rose,
-                  ),
-                ),
-                Icon(
-                  _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                  color: _P.rose,
-                  size: 18,
-                ),
+        return Scaffold(
+          backgroundColor: _P.bg,
+          bottomNavigationBar: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(color: Colors.black.withOpacity(0.06), blurRadius: 16, offset: const Offset(0, -4)),
               ],
             ),
+            child: SafeArea(
+              child: SizedBox(
+                height: 54,
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _openReservationSheet(provider, selected),
+                  icon: const Icon(Icons.event_available_rounded, size: 20),
+                  label: Text(
+                    selected == null
+                        ? 'Demander une réservation'
+                        : 'Réserver « ${selected.title} »',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _P.rose,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          body: selected == null
+              ? _ProviderFullView(
+                  provider: provider,
+                  offers: offers,
+                  verifLabel: _verifLabel(provider.verificationStatus),
+                  verifColor: _verifColor(provider.verificationStatus),
+                  onSelect: (o) => setState(() => _selectedOffer = o),
+                  onReserve: (o) => _openReservationSheet(provider, o),
+                )
+              : _ServiceDetailView(
+                  provider: provider,
+                  offer: selected,
+                  onBack: () => setState(() => _selectedOffer = null),
+                ),
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// VUE COMPLÈTE DU PRESTATAIRE (par défaut)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderFullView extends StatelessWidget {
+  final ThixProviderModel provider;
+  final List<ProviderOfferModel> offers;
+  final String verifLabel;
+  final Color verifColor;
+  final ValueChanged<ProviderOfferModel> onSelect;
+  final ValueChanged<ProviderOfferModel> onReserve;
+
+  const _ProviderFullView({
+    required this.provider,
+    required this.offers,
+    required this.verifLabel,
+    required this.verifColor,
+    required this.onSelect,
+    required this.onReserve,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final heroUrl = provider.galleryUrls.isNotEmpty ? provider.galleryUrls.first : null;
+    final hasPrice = provider.minPrice != null || provider.maxPrice != null;
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 260,
+          pinned: true,
+          backgroundColor: _P.bg,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: _P.ink),
+            onPressed: () => Navigator.of(context).pop(),
+          ),
+          flexibleSpace: FlexibleSpaceBar(
+            background: heroUrl != null
+                ? Image.network(heroUrl, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(color: _P.rose.withOpacity(0.2)))
+                : Container(color: _P.rose.withOpacity(0.2)),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: verifColor, borderRadius: BorderRadius.circular(12)),
+                child: Text(verifLabel,
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: Colors.white)),
+              ),
+              const SizedBox(height: 12),
+              Text(provider.businessName,
+                  style: GoogleFonts.inter(fontSize: 26, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
+              const SizedBox(height: 6),
+              Row(children: [
+                const Icon(Icons.location_on_rounded, size: 16, color: _P.inkSoft),
+                const SizedBox(width: 4),
+                Text(provider.city ?? 'RDC', style: GoogleFonts.inter(fontSize: 14, color: _P.inkSoft)),
+              ]),
+              const SizedBox(height: 16),
+              // Code Thix
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: _P.surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _P.line),
+                ),
+                child: Row(children: [
+                  const Icon(Icons.qr_code_2, color: _P.rose, size: 26),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Code Thix', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                        Text(provider.uniqueCode,
+                            style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: 1)),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.copy_rounded, color: _P.inkSoft, size: 20),
+                    onPressed: () {
+                      Clipboard.setData(ClipboardData(text: provider.uniqueCode));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                        content: const Text('Code copié'),
+                        backgroundColor: _P.green,
+                        behavior: SnackBarBehavior.floating,
+                      ));
+                    },
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 16),
+              // Tarifs
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                  borderRadius: BorderRadius.circular(18),
+                ),
+                child: Text(
+                  hasPrice
+                      ? 'Tarifs : ${provider.minPrice?.toStringAsFixed(0) ?? '…'} – ${provider.maxPrice?.toStringAsFixed(0) ?? '…'} ${provider.currency}'
+                      : 'Tarifs : Sur devis — contactez-nous',
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: Colors.white),
+                ),
+              ),
+              const SizedBox(height: 24),
+              // ── OFFRES & SERVICES ──
+              Row(children: [
+                Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 8),
+                Text('Offres & Services', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+              ]),
+              const SizedBox(height: 12),
+              if (offers.isEmpty)
+                Text('Aucune offre publiée pour le moment.',
+                    style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontStyle: FontStyle.italic))
+              else
+                SizedBox(
+                  height: 300,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: offers.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 12),
+                    itemBuilder: (_, i) => _OfferCard(
+                      offer: offers[i],
+                      categoryLabel: provider.category.displayName,
+                      onTap: () => onSelect(offers[i]),
+                      onReserve: () => onReserve(offers[i]),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 24),
+              // ── GALERIE ──
+              if (provider.galleryUrls.isNotEmpty) ...[
+                Row(children: [
+                  Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(width: 8),
+                  Text('Galerie (${provider.galleryUrls.length})',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+                ]),
+                const SizedBox(height: 12),
+                GridView.count(
+                  crossAxisCount: 3,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  children: provider.galleryUrls
+                      .map((u) => ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(u, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(color: _P.line)),
+                          ))
+                      .toList(),
+                ),
+                const SizedBox(height: 24),
+              ],
+              // ── VIDÉOS ──
+              if (provider.videoUrls.isNotEmpty) ...[
+                Row(children: [
+                  Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(width: 8),
+                  Text('Vidéos (${provider.videoUrls.length})',
+                      style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink)),
+                ]),
+                const SizedBox(height: 12),
+                ...provider.videoUrls.map((u) => _VideoTile(url: u)),
+                const SizedBox(height: 24),
+              ],
+              const SizedBox(height: 20),
+            ]),
           ),
         ),
       ],
@@ -402,48 +342,124 @@ class _ProviderDetailsSectionState extends State<_ProviderDetailsSection> {
   }
 }
 
-// ==================== WIDGETS RESTANTS ====================
+// ═══════════════════════════════════════════════════════════════════════════
+// CARTE D'OFFRE (tap = voir le service en détail)
+// ═══════════════════════════════════════════════════════════════════════════
+class _OfferCard extends StatelessWidget {
+  final ProviderOfferModel offer;
+  final String categoryLabel;
+  final VoidCallback onTap;
+  final VoidCallback onReserve;
 
-class _HeroPlaceholder extends StatelessWidget {
-  final IconData icon;
-  final String initials;
-  const _HeroPlaceholder({required this.icon, required this.initials});
+  const _OfferCard({
+    required this.offer,
+    required this.categoryLabel,
+    required this.onTap,
+    required this.onReserve,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_P.roseSoft, Color(0xFFFFE4EC)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    final color = offerTypeColor(offer.type);
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 220,
+        decoration: BoxDecoration(
+          color: _P.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _P.line),
+          boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
         ),
-      ),
-      child: Center(
+        clipBehavior: Clip.antiAlias,
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 84,
-              height: 84,
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.7),
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(color: _P.rose.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 6)),
+            Expanded(
+              flex: 3,
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  offer.imageUrl != null && offer.imageUrl!.isNotEmpty
+                      ? Image.network(offer.imageUrl!, fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => Container(color: color.withOpacity(0.15)))
+                      : Container(
+                          color: color.withOpacity(0.15),
+                          child: Icon(offerTypeIcon(offer.type), size: 40, color: color)),
+                  Positioned(
+                    top: 8,
+                    left: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8)),
+                      child: Text(offer.type.displayName.toUpperCase(),
+                          style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white)),
+                    ),
+                  ),
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      padding: const EdgeInsets.all(6),
+                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.45), shape: BoxShape.circle),
+                      child: const Icon(Icons.arrow_outward_rounded, size: 14, color: Colors.white),
+                    ),
+                  ),
                 ],
               ),
-              child: Icon(icon, size: 40, color: _P.rose),
             ),
-            const SizedBox(height: 12),
-            Text(
-              initials,
-              style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.rose, letterSpacing: 1),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Médias à venir',
-              style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600),
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(offer.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _P.ink)),
+                    const SizedBox(height: 4),
+                    if ((offer.description ?? '').isNotEmpty)
+                      Text(offer.description!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft, height: 1.35)),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _P.rose.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _P.rose.withOpacity(0.25)),
+                      ),
+                      child: Text(categoryLabel,
+                          style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: _P.rose)),
+                    ),
+                    const Spacer(),
+                    Row(children: [
+                      Expanded(
+                        child: Text(
+                          offer.price != null ? '${offer.price!.toStringAsFixed(0)}\$' : 'Sur devis',
+                          style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900, color: _P.rose),
+                        ),
+                      ),
+                      GestureDetector(
+                        onTap: onReserve,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text('Réserver',
+                              style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.white)),
+                        ),
+                      ),
+                    ]),
+                  ],
+                ),
+              ),
             ),
           ],
         ),
@@ -452,342 +468,460 @@ class _HeroPlaceholder extends StatelessWidget {
   }
 }
 
-class _FullScreenImageViewer extends StatelessWidget {
-  final String url;
-  final String? title;
-  const _FullScreenImageViewer({required this.url, this.title});
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ VUE "SERVICE SÉLECTIONNÉ" : photos + vidéos + détails du service choisi
+// ═══════════════════════════════════════════════════════════════════════════
+class _ServiceDetailView extends StatelessWidget {
+  final ThixProviderModel provider;
+  final ProviderOfferModel offer;
+  final VoidCallback onBack;
+
+  const _ServiceDetailView({
+    required this.provider,
+    required this.offer,
+    required this.onBack,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: InteractiveViewer(
-            maxScale: 4,
-            child: Center(
-              child: Image.network(
-                url,
-                fit: BoxFit.contain,
-                errorBuilder: (_, __, ___) => const Icon(Icons.broken_image, color: Colors.white, size: 48),
+    final color = offerTypeColor(offer.type);
+    final photos = <String>[
+      if (offer.imageUrl != null && offer.imageUrl!.isNotEmpty) offer.imageUrl!,
+      ...provider.galleryUrls,
+    ];
+
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(),
+      slivers: [
+        SliverAppBar(
+          expandedHeight: 280,
+          pinned: true,
+          backgroundColor: _P.bg,
+          elevation: 0,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded, color: _P.ink),
+            onPressed: onBack,
+          ),
+          title: Text(offer.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+          flexibleSpace: FlexibleSpaceBar(
+            background: photos.isNotEmpty
+                ? Image.network(photos.first, fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) => Container(color: color.withOpacity(0.15)))
+                : Container(color: color.withOpacity(0.15)),
+          ),
+        ),
+        SliverPadding(
+          padding: const EdgeInsets.all(16),
+          sliver: SliverList(
+            delegate: SliverChildListDelegate([
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(10)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(offerTypeIcon(offer.type), size: 14, color: Colors.white),
+                    const SizedBox(width: 5),
+                    Text(offer.type.displayName.toUpperCase(),
+                        style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.white)),
+                  ]),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: _P.green.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                  child: Text(
+                      offer.price != null ? '${offer.price!.toStringAsFixed(0)} ${offer.currency}' : 'Sur devis',
+                      style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w900, color: _P.green)),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(color: _P.rose.withOpacity(0.08), borderRadius: BorderRadius.circular(10)),
+                  child: Text(provider.category.displayName,
+                      style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: _P.rose)),
+                ),
+              ]),
+              const SizedBox(height: 16),
+              Text(offer.title,
+                  style: GoogleFonts.inter(fontSize: 24, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.5)),
+              const SizedBox(height: 10),
+              if ((offer.description ?? '').isNotEmpty)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line)),
+                  child: Text(offer.description!,
+                      style: GoogleFonts.inter(fontSize: 13.5, color: _P.ink, height: 1.55)),
+                ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: _P.blue.withOpacity(0.06), borderRadius: BorderRadius.circular(12)),
+                child: Row(children: [
+                  const Icon(Icons.storefront_rounded, size: 18, color: _P.blue),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(provider.businessName,
+                            style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _P.ink)),
+                        Text('${provider.city ?? 'RDC'} • ${provider.uniqueCode}',
+                            style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
+                      ],
+                    ),
+                  ),
+                ]),
               ),
-            ),
+              const SizedBox(height: 24),
+              // ── PHOTOS DU SERVICE ──
+              Row(children: [
+                Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 8),
+                Text('Photos du service (${photos.length})',
+                    style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900, color: _P.ink)),
+              ]),
+              const SizedBox(height: 12),
+              if (photos.isEmpty)
+                Text('Aucune photo pour ce service.',
+                    style: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft, fontStyle: FontStyle.italic))
+              else
+                GridView.count(
+                  crossAxisCount: 2,
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  children: photos
+                      .map((u) => ClipRRect(
+                            borderRadius: BorderRadius.circular(14),
+                            child: Image.network(u, fit: BoxFit.cover,
+                                errorBuilder: (_, __, ___) => Container(color: _P.line)),
+                          ))
+                      .toList(),
+                ),
+              const SizedBox(height: 24),
+              // ── VIDÉOS ──
+              if (provider.videoUrls.isNotEmpty) ...[
+                Row(children: [
+                  Container(width: 4, height: 20, decoration: BoxDecoration(color: _P.rose, borderRadius: BorderRadius.circular(2))),
+                  const SizedBox(width: 8),
+                  Text('Vidéos (${provider.videoUrls.length})',
+                      style: GoogleFonts.inter(fontSize: 17, fontWeight: FontWeight.w900, color: _P.ink)),
+                ]),
+                const SizedBox(height: 12),
+                ...provider.videoUrls.map((u) => _VideoTile(url: u)),
+                const SizedBox(height: 16),
+              ],
+              const SizedBox(height: 20),
+            ]),
           ),
         ),
-        Positioned(
-          top: MediaQuery.of(context).padding.top + 12,
-          right: 12,
-          child: GestureDetector(
-            onTap: () => Navigator.pop(context),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.black.withOpacity(0.5), shape: BoxShape.circle),
-              child: const Icon(Icons.close_rounded, color: Colors.white, size: 20),
-            ),
-          ),
-        ),
-        if ((title ?? '').isNotEmpty)
-          Positioned(
-            bottom: MediaQuery.of(context).padding.bottom + 24,
-            left: 16,
-            right: 16,
-            child: Text(
-              title!,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white),
-            ),
-          ),
       ],
     );
   }
 }
 
-class _SectionTitle extends StatelessWidget {
-  final String title;
-  const _SectionTitle(this.title);
+// ═══════════════════════════════════════════════════════════════════════════
+// TUILE VIDÉO (ouverture externe)
+// ═══════════════════════════════════════════════════════════════════════════
+class _VideoTile extends StatelessWidget {
+  final String url;
+  const _VideoTile({required this.url});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8.0),
-      child: Row(
-        children: [
+    return GestureDetector(
+      onTap: () async {
+        final uri = Uri.parse(url);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        }
+      },
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(color: _P.surface, borderRadius: BorderRadius.circular(14), border: Border.all(color: _P.line)),
+        child: Row(children: [
           Container(
-            width: 3.5,
-            height: 17,
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
-              borderRadius: BorderRadius.circular(2),
-            ),
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(color: _P.red.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.play_circle_fill_rounded, color: _P.red, size: 24),
           ),
-          const SizedBox(width: 8),
-          Text(
-            title,
-            style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink, letterSpacing: -0.4),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.inter(fontSize: 12, color: _P.blue, fontWeight: FontWeight.w600)),
           ),
-        ],
+          const Icon(Icons.open_in_new_rounded, size: 16, color: _P.inkSoft),
+        ]),
       ),
     );
   }
 }
 
-class _BookingSheet extends ConsumerStatefulWidget {
+// ═══════════════════════════════════════════════════════════════════════════
+// ✅ SHEET DE RÉSERVATION → crée la COMMANDE (wedding_orders)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ReservationSheet extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
-  const _BookingSheet({required this.provider});
+  final ProviderOfferModel? offer;
+  const _ReservationSheet({required this.provider, this.offer});
 
   @override
-  ConsumerState<_BookingSheet> createState() => _BookingSheetState();
+  ConsumerState<_ReservationSheet> createState() => _ReservationSheetState();
 }
 
-class _BookingSheetState extends ConsumerState<_BookingSheet> {
+class _ReservationSheetState extends ConsumerState<_ReservationSheet> {
   final _nameCtrl = TextEditingController();
   final _phoneCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
+  final _locationCtrl = TextEditingController();
   final _guestsCtrl = TextEditingController();
-  final _notesCtrl = TextEditingController();
-  bool _submitting = false;
+  final _msgCtrl = TextEditingController();
+  late DateTime _date = DateTime.now().add(const Duration(days: 30));
+  bool _busy = false;
 
   @override
   void dispose() {
     _nameCtrl.dispose();
     _phoneCtrl.dispose();
+    _emailCtrl.dispose();
+    _locationCtrl.dispose();
     _guestsCtrl.dispose();
-    _notesCtrl.dispose();
+    _msgCtrl.dispose();
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
-      decoration: const BoxDecoration(
-        color: _P.bg,
-        borderRadius: BorderRadius.only(topLeft: Radius.circular(28), topRight: Radius.circular(28)),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                width: 44,
-                height: 4,
-                decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)),
+  void _toast(String msg, Color color) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(msg, style: GoogleFonts.inter(fontWeight: FontWeight.w600)),
+      backgroundColor: color,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+  }
+
+  Future<void> _pickDate() async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _date,
+      firstDate: DateTime.now(),
+      lastDate: DateTime.now().add(const Duration(days: 730)),
+    );
+    if (picked != null) setState(() => _date = picked);
+  }
+
+  Future<void> _submit() async {
+    if (_nameCtrl.text.trim().length < 2) {
+      _toast('Indiquez votre nom complet', _P.amber);
+      return;
+    }
+    if (_phoneCtrl.text.trim().isEmpty) {
+      _toast('Indiquez un téléphone de contact', _P.amber);
+      return;
+    }
+    setState(() => _busy = true);
+    HapticFeedback.mediumImpact();
+    try {
+      final user = Supabase.instance.client.auth.currentUser;
+      final email = _emailCtrl.text.trim().isEmpty
+          ? '${_phoneCtrl.text.trim().replaceAll(RegExp(r'[^\w]'), '')}@client.thix'
+          : _emailCtrl.text.trim();
+
+      // ✅ ENVOI RÉEL DE LA COMMANDE (même pipeline que le Hub prestataire)
+      await ref.read(ordersProvider(widget.provider.id).notifier).createOrder(
+            offerId: widget.offer?.id ?? 'reservation_directe',
+            offerTitle: widget.offer?.title ?? 'Réservation ${widget.provider.businessName}',
+            clientId: user?.id ?? 'client_externe',
+            clientName: _nameCtrl.text.trim(),
+            clientEmail: email,
+            clientPhone: _phoneCtrl.text.trim(),
+            providerId: widget.provider.id,
+            providerName: widget.provider.businessName,
+            eventDate: _date,
+            eventLocation: _locationCtrl.text.trim().isEmpty ? null : _locationCtrl.text.trim(),
+            orderData: {
+              'guest_count': int.tryParse(_guestsCtrl.text.trim()),
+              'message': _msgCtrl.text.trim(),
+              'offer_type': widget.offer?.type.name ?? 'service',
+              'source': 'fiche_prestataire',
+            },
+            totalAmount: widget.offer?.price ?? widget.provider.minPrice ?? 0,
+            notes: _msgCtrl.text.trim().isEmpty ? null : _msgCtrl.text.trim(),
+            isTraiteur: widget.provider.category == ProviderCategory.traiteur ||
+                widget.provider.category == ProviderCategory.patissier,
+          );
+
+      if (!mounted) return;
+      Navigator.pop(context);
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: _P.green.withOpacity(0.12), borderRadius: BorderRadius.circular(10)),
+              child: const Icon(Icons.check_circle_rounded, color: _P.green, size: 24),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text('Demande envoyée ✓',
+                  style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+            ),
+          ]),
+          content: Text(
+            'Votre commande a été transmise à ${widget.provider.businessName}. '
+            'Le prestataire la verra dans son espace (Commandes → En attente) et pourra la confirmer.',
+            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _P.rose,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
               ),
+              child: Text('Parfait', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
             ),
-            const SizedBox(height: 16),
-            Text(
-              'Réserver ${widget.provider.businessName}',
-              style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _P.ink),
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _nameCtrl,
-              decoration: _sheetInput('Votre nom complet *', Icons.person_outline),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _phoneCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: _sheetInput('Votre téléphone *', Icons.phone),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _guestsCtrl,
-              keyboardType: TextInputType.number,
-              decoration: _sheetInput('Nombre d\'invités (optionnel)', Icons.group_outlined),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: _notesCtrl,
-              maxLines: 3,
-              decoration: _sheetInput('Message au prestataire (optionnel)', Icons.edit_note_outlined),
-            ),
-            const SizedBox(height: 20),
-            SizedBox(
-              height: 54,
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: _submitting
-                    ? null
-                    : () {
-                        // TODO: Implement booking logic
-                        Navigator.pop(context);
-                      },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _P.rose,
-                  foregroundColor: Colors.white,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                ),
-                child: Text(
-                  'Envoyer la demande',
-                  style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800),
-                ),
-              ),
-            ),
-            SizedBox(height: MediaQuery.of(context).padding.bottom),
           ],
         ),
-      ),
-    );
+      );
+    } catch (e) {
+      if (mounted) {
+        setState(() => _busy = false);
+        _toast('Envoi impossible: $e', _P.red);
+      }
+    }
   }
-
-  InputDecoration _sheetInput(String label, IconData icon) {
-    return InputDecoration(
-      labelText: label,
-      filled: true,
-      fillColor: _P.surface,
-      prefixIcon: Icon(icon, color: _P.rose, size: 18),
-      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.line)),
-      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _P.rose, width: 2)),
-    );
-  }
-}
-
-class _DetailOfferCard extends StatelessWidget {
-  final ProviderOfferModel offer;
-  final VoidCallback onBook;
-  const _DetailOfferCard({required this.offer, required this.onBook});
 
   @override
   Widget build(BuildContext context) {
-    final color = offerTypeColor(offer.type);
-    final images = offer.allImages;
-
+    final offer = widget.offer;
     return Container(
-      width: 220,
-      decoration: BoxDecoration(
-        color: _P.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(color: _P.rose.withOpacity(0.08), blurRadius: 14, offset: const Offset(0, 6)),
-        ],
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      clipBehavior: Clip.antiAlias,
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            flex: 5,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                if (images.isNotEmpty)
-                  PageView.builder(
-                    itemCount: images.length,
-                    itemBuilder: (_, i) => Image.network(
-                      images[i],
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: color.withOpacity(0.12),
-                        child: Icon(offerTypeIcon(offer.type), size: 36, color: color),
-                      ),
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Row(children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                child: const Icon(Icons.event_available_rounded, color: _P.rose, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Demander une réservation',
+                        style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+                    Text(
+                      offer != null
+                          ? 'Service : ${offer.title} • ${widget.provider.businessName}'
+                          : widget.provider.businessName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 11.5, color: _P.inkSoft),
                     ),
-                  )
-                else
-                  Container(
-                    color: color.withOpacity(0.12),
-                    child: Icon(offerTypeIcon(offer.type), size: 36, color: color),
-                  ),
-                Positioned(
-                  top: 8,
-                  left: 8,
+                  ],
+                ),
+              ),
+            ]),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              children: [
+                _field('Nom complet *', _nameCtrl, Icons.person_rounded),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: _field('Téléphone *', _phoneCtrl, Icons.phone_rounded, keyboard: TextInputType.phone)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field('Email', _emailCtrl, Icons.email_rounded, keyboard: TextInputType.emailAddress)),
+                ]),
+                const SizedBox(height: 12),
+                GestureDetector(
+                  onTap: _pickDate,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(7)),
-                    child: Text(
-                      offer.type.displayName.toUpperCase(),
-                      style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w900, color: Colors.white),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+                    decoration: BoxDecoration(color: _P.bg, borderRadius: BorderRadius.circular(12)),
+                    child: Row(children: [
+                      const Icon(Icons.calendar_today_rounded, size: 18, color: _P.rose),
+                      const SizedBox(width: 10),
+                      Text('Date de l\'événement : ${DateFormat('EEEE dd MMM yyyy', 'fr_FR').format(_date)}',
+                          style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w700, color: _P.ink)),
+                      const Spacer(),
+                      const Icon(Icons.edit_calendar_rounded, size: 18, color: _P.inkSoft),
+                    ]),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(children: [
+                  Expanded(child: _field('Lieu de l\'événement', _locationCtrl, Icons.place_rounded)),
+                  const SizedBox(width: 10),
+                  Expanded(child: _field('Invités', _guestsCtrl, Icons.people_rounded, keyboard: TextInputType.number)),
+                ]),
+                const SizedBox(height: 12),
+                _field('Message / précisions', _msgCtrl, Icons.chat_bubble_outline_rounded, maxLines: 3),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 54,
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: _busy ? null : _submit,
+                    icon: _busy
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.send_rounded, size: 18),
+                    label: Text(_busy ? 'Envoi en cours…' : 'Envoyer la demande',
+                        style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w900)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _P.rose,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
                 ),
-                if (images.length > 1)
-                  Positioned(
-                    top: 8,
-                    right: 8,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-                      decoration: BoxDecoration(color: Colors.black.withOpacity(0.6), borderRadius: BorderRadius.circular(8)),
-                      child: Text(
-                        '${images.length}',
-                        style: GoogleFonts.inter(fontSize: 9, fontWeight: FontWeight.w900, color: Colors.white),
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
-          Expanded(
-            flex: 5,
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    offer.title,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _P.ink, height: 1.2),
-                  ),
-                  if ((offer.description ?? '').isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      offer.description!,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 10.5, color: _P.inkSoft, height: 1.3),
-                    ),
-                  ],
-                  const SizedBox(height: 6),
-                  if (offer.categories.isNotEmpty)
-                    Wrap(
-                      spacing: 4,
-                      children: offer.categories.take(2).map((c) => Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: _P.rose.withOpacity(0.08),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: _P.rose.withOpacity(0.25)),
-                            ),
-                            child: Text(
-                              c.displayName,
-                              style: GoogleFonts.inter(fontSize: 8.5, fontWeight: FontWeight.w700, color: _P.rose),
-                            ),
-                          )).toList(),
-                    ),
-                  const Spacer(),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(
-                        offer.price != null ? '\$${offer.price!.toStringAsFixed(0)}' : 'Sur devis',
-                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w900, color: _P.rose),
-                      ),
-                      GestureDetector(
-                        onTap: onBook,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(colors: [_P.rose, _P.roseLight]),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Text(
-                            'Réserver',
-                            style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w800, color: Colors.white),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
+
+  Widget _field(String label, TextEditingController ctrl, IconData icon,
+          {TextInputType? keyboard, int maxLines = 1}) =>
+      TextFormField(
+        controller: ctrl,
+        keyboardType: keyboard,
+        maxLines: maxLines,
+        decoration: InputDecoration(
+          labelText: label,
+          labelStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
+          prefixIcon: Icon(icon, size: 18, color: _P.rose),
+          filled: true,
+          fillColor: _P.bg,
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+        ),
+      );
 }
