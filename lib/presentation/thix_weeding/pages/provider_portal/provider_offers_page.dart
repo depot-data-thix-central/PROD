@@ -1,13 +1,12 @@
 // ============================================================================
-// THIX WEDDING — FORMULAIRE OFFRES (Production v5) — CORRIGÉ + COMPLET
+// THIX WEDDING — FORMULAIRE OFFRES (Production v5) — CORRIGÉ WEB
 // ✅ Choix multiple photos + preview locale
-// ✅ Vidéo (2 min 50 / 50 Mo)
+// ✅ Vidéo (2 min 50 / 50 Mo) — Lecture compatible Web et Mobile
 // ✅ Contact (email + téléphone)
 // ✅ Description longue
 // ✅ Code unique + copie
 // ✅ Multi-catégories (1-3)
 // ============================================================================
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -190,21 +189,22 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
     );
     if (picked == null) return;
 
-    final file = File(picked.path);
-    final size = await file.length();
+    // ✅ CORRECTION WEB : Lire via readAsBytes() au lieu de File(picked.path)
+    final bytes = await picked.readAsBytes();
+    final size = bytes.length;
+
     if (size > _maxVideoSizeBytes) {
       _showError('Vidéo trop volumineuse (max 50 MB)');
       return;
     }
-
-    final bytes = await file.readAsBytes();
 
     setState(() {
       _localVideoBytes = bytes;
       _videoUrl = null;
     });
 
-    await _uploadVideo(bytes, picked.name.split('.').last);
+    final ext = picked.name.contains('.') ? picked.name.split('.').last.toLowerCase() : 'mp4';
+    await _uploadVideo(bytes, ext);
   }
 
   Future<void> _uploadVideo(Uint8List bytes, String ext) async {
@@ -830,7 +830,19 @@ class _VideoCardState extends State<_VideoCard> {
     _initController();
   }
 
+  // ✅ CORRECTION : Réinitialiser le lecteur quand l'URL de la vidéo change après l'upload
+  @override
+  void didUpdateWidget(covariant _VideoCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.videoUrl != oldWidget.videoUrl) {
+      _initController();
+    }
+  }
+
   void _initController() {
+    _controller?.dispose();
+    _controller = null;
+    
     if (widget.videoUrl != null && widget.videoUrl!.isNotEmpty) {
       _controller = VideoPlayerController.networkUrl(Uri.parse(widget.videoUrl!))
         ..initialize().then((_) {
@@ -851,9 +863,11 @@ class _VideoCardState extends State<_VideoCard> {
       children: [
         Container(
           height: 120,
+          width: double.infinity,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(14),
             border: Border.all(color: _P.line),
+            color: _P.inkSoft.withOpacity(0.1),
           ),
           child: _controller != null && _controller!.value.isInitialized
               ? ClipRRect(
@@ -865,9 +879,10 @@ class _VideoCardState extends State<_VideoCard> {
                 )
               : _FallbackImage(),
         ),
-        if (widget.isUploading)
+        if (widget.isUploading || (widget.localBytes != null && widget.videoUrl == null))
           Container(
             height: 120,
+            width: double.infinity,
             decoration: BoxDecoration(
               color: Colors.black.withOpacity(0.5),
               borderRadius: BorderRadius.circular(14),
