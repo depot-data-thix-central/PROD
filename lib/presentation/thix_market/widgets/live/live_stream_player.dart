@@ -35,7 +35,7 @@ final _pinnedCountProvider = StreamProvider.family<int, String>((ref, sessionId)
       .from('live_pinned_products')
       .stream(primaryKey: ['id'])
       .eq('session_id', sessionId)
-      .eq('unpinned_at', null) // ✅ IS NULL via eq(null) — SupabaseStreamBuilder n'a pas .filter()
+      .isFilter('unpinned_at', null)
       .map((rows) => rows.length);
 });
 
