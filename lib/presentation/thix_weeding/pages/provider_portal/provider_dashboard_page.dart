@@ -1,18 +1,5 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_dashboard_page.dart
-// ============================================================================
-// THIX WEDDING — DASHBOARD PRESTATAIRE (PRODUCTION v2)
-// ✅ Statistiques avancées avec graphiques et tendances
-// ✅ Calendrier intégré des événements
-// ✅ Notifications en temps réel avec priorités
-// ✅ KPIs détaillés et objectifs de performance
-// ✅ Quick insights et recommandations
-// ✅ Timeline d'activités enrichie
-// ✅ Vue d'ensemble financière avec projections
-// ✅ Actions rapides contextuelles
-// ✅ 🆕 ACCÈS DIRECT "GESTION DE LA PRESTATION" (demandes approuvées)
-// ============================================================================
 
-import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,10 +7,25 @@ import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
-import 'provider_business_pages.dart' show providerIncomingRequestsProvider, ProviderRequestsPage;
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
-import 'provider_business_pages.dart' show ProviderRequestsPage; // ✅ AJOUTÉ
+import 'orders/order_models.dart';
+import 'orders/orders_provider.dart';
+import 'orders/provider_orders_page.dart';
+import 'traiteur/traiteur_menu_page.dart';
+import 'suggestions/dg_suggestions_page.dart';
+import 'offers/provider_offers_page.dart';
+
+/// ═══════════════════════════════════════════════════════════════════════
+/// THIX WEDDING — DASHBOARD PRESTATAIRE (Production v3)
+/// ✅ Statistiques commandes en temps réel
+/// ✅ Commandes urgentes avec alertes
+/// ✅ Workflow complet intégré
+/// ✅ Menu traiteur accessible
+/// ✅ Suggestions DG
+/// ✅ Graphiques de revenus
+/// ✅ Actions rapides contextuelles
+/// ═══════════════════════════════════════════════════════════════════════
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -40,23 +42,28 @@ class _P {
   static const Color amber = Color(0xFFF59E0B);
   static const Color amberLight = Color(0xFFFEF3C7);
   static const Color red = Color(0xFFEF4444);
+  static const Color redLight = Color(0xFFFEE2E2);
   static const Color purple = Color(0xFF8B5CF6);
+  static const Color purpleLight = Color(0xFFEDE9FE);
 }
 
 class ProviderDashboardPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
-  
-  const ProviderDashboardPage({super.key, required this.provider});
+
+  const ProviderDashboardPage({
+    super.key,
+    required this.provider,
+  });
 
   @override
   ConsumerState<ProviderDashboardPage> createState() => _ProviderDashboardPageState();
 }
 
-class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage> 
+class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
     with SingleTickerProviderStateMixin {
   late AnimationController _animController;
   late Animation<double> _fadeAnimation;
-  
+
   @override
   void initState() {
     super.initState();
@@ -78,27 +85,17 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
 
   @override
   Widget build(BuildContext context) {
-    final statsAsync = ref.watch(providerStatsProvider(widget.provider.id));
-    final reservationsAsync = ref.watch(providerReservationsProvider(
-      ProviderReservationsParams(providerId: widget.provider.id),
-    ));
-    final tasksAsync = ref.watch(providerTasksProvider(
-      ProviderTasksParams(providerId: widget.provider.id),
-    ));
-    // ✅ NOUVEAU : demandes en attente pour le bandeau
-    final requestsAsync = ref.watch(providerIncomingRequestsProvider(widget.provider.id));
+    final ordersAsync = ref.watch(ordersProvider(widget.provider.id));
+    final stats = ref.watch(orderStatsProvider(widget.provider.id));
+    final urgentOrders = ref.watch(urgentOrdersProvider(widget.provider.id));
+    final pendingOrders = ref.watch(pendingOrdersProvider(widget.provider.id));
+    final offersAsync = ref.watch(providerOffersProvider(widget.provider.id));
 
     return RefreshIndicator(
       onRefresh: () async {
         HapticFeedback.mediumImpact();
-        ref.invalidate(providerStatsProvider(widget.provider.id));
-        ref.invalidate(providerReservationsProvider(
-          ProviderReservationsParams(providerId: widget.provider.id),
-        ));
-        ref.invalidate(providerTasksProvider(
-          ProviderTasksParams(providerId: widget.provider.id),
-        ));
-        ref.invalidate(providerIncomingRequestsProvider(widget.provider.id));
+        ref.invalidate(ordersProvider(widget.provider.id));
+        ref.invalidate(providerOffersProvider(widget.provider.id));
         await Future.delayed(const Duration(milliseconds: 500));
       },
       child: Scaffold(
@@ -108,61 +105,62 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
           child: CustomScrollView(
             physics: const BouncingScrollPhysics(),
             slivers: [
-              // ═══════════════════════════════════════════════════════════
-              // HEADER AMÉLIORÉ
-              // ═══════════════════════════════════════════════════════════
-              _buildEnhancedHeader(),
+              // ═══════════════ HEADER ═══════════════
+              _buildHeader(),
 
-              // ═══════════════════════════════════════════════════════════
-              // CONTENU PRINCIPAL
-              // ═══════════════════════════════════════════════════════════
               SliverPadding(
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
-                    // ── AUJOURD'HUI ─────────────────────────────────────
-                    _buildTodaySection(reservationsAsync, tasksAsync),
-                    
+                    // ═══════════════ AUJOURD'HUI ═══════════════
+                    _TodaySection(
+                      ordersAsync: ordersAsync,
+                      stats: stats,
+                    ),
                     const SizedBox(height: 24),
-                    
-                    // ── STATISTIQUES AVANCÉES ───────────────────────────
-                    _buildAdvancedStats(statsAsync),
-                    
+
+                    // ═══════════════ ALERTES URGENTES ═══════════════
+                    if (urgentOrders.isNotEmpty)
+                      _UrgentAlertsSection(
+                        urgentOrders: urgentOrders,
+                        onViewAll: () => _navigateToOrders(),
+                      ),
+                    if (urgentOrders.isNotEmpty) const SizedBox(height: 24),
+
+                    // ═══════════════ COMMANDES EN ATTENTE ═══════════════
+                    if (pendingOrders.isNotEmpty)
+                      _PendingOrdersSection(
+                        pendingOrders: pendingOrders,
+                        onViewAll: () => _navigateToOrders(),
+                      ),
+                    if (pendingOrders.isNotEmpty) const SizedBox(height: 24),
+
+                    // ═══════════════ STATISTIQUES ═══════════════
+                    _StatsSection(stats: stats),
                     const SizedBox(height: 24),
-                    
-                    // ── GRAPHIQUE DE REVENUS ────────────────────────────
-                    _buildRevenueChart(statsAsync),
-                    
+
+                    // ═══════════════ GRAPHIQUE REVENUS ═══════════════
+                    _RevenueChart(ordersAsync: ordersAsync),
                     const SizedBox(height: 24),
-                    
-                    // ── ACTIONS RAPIDES ─────────────────────────────────
-                    _buildQuickActions(),
-                    
+
+                    // ═══════════════ ACTIONS RAPIDES ═══════════════
+                    _QuickActions(
+                      provider: widget.provider,
+                      offersCount: offersAsync.value?.length ?? 0,
+                      pendingOrdersCount: pendingOrders.length,
+                    ),
                     const SizedBox(height: 24),
-                    
-                    // ✅ NOUVEAU : CARTE "GESTION DE LA PRESTATION"
-                    _buildServiceManagementCard(requestsAsync),
-                    
+
+                    // ═══════════════ SERVICES SPÉCIAUX ═══════════════
+                    _SpecialServices(provider: widget.provider),
                     const SizedBox(height: 24),
-                    
-                    // ── CALENDRIER DES ÉVÉNEMENTS ───────────────────────
-                    _buildEventCalendar(reservationsAsync),
-                    
+
+                    // ═══════════════ PROCHAINS ÉVÉNEMENTS ═══════════════
+                    _UpcomingEventsSection(ordersAsync: ordersAsync),
                     const SizedBox(height: 24),
-                    
-                    // ── NOTIFICATIONS PRIORITAIRES ──────────────────────
-                    _buildPriorityNotifications(reservationsAsync, tasksAsync),
-                    
-                    const SizedBox(height: 24),
-                    
-                    // ── ACTIVITÉS RÉCENTES ──────────────────────────────
-                    _buildRecentActivities(reservationsAsync, tasksAsync),
-                    
-                    const SizedBox(height: 24),
-                    
-                    // ── OPPORTUNITÉS ET RECOMMANDATIONS ─────────────────
-                    _buildOpportunities(),
-                    
+
+                    // ═══════════════ RECOMMANDATIONS ═══════════════
+                    _RecommendationsSection(provider: widget.provider),
                     const SizedBox(height: 40),
                   ]),
                 ),
@@ -174,10 +172,7 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // HEADER AMÉLIORÉ AVEC NOTIFICATIONS ET PROFIL
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildEnhancedHeader() {
+  Widget _buildHeader() {
     return SliverAppBar(
       pinned: true,
       expandedHeight: 200,
@@ -201,7 +196,7 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
                 children: [
                   Row(
                     children: [
-                      // Avatar avec badge de vérification
+                      // Avatar
                       Stack(
                         children: [
                           Container(
@@ -233,7 +228,6 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
                               ),
                             ),
                           ),
-                          // Badge de vérification
                           if (widget.provider.verificationStatus ==
                               ProviderVerificationStatus.verified)
                             Positioned(
@@ -280,7 +274,6 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
                               overflow: TextOverflow.ellipsis,
                             ),
                             const SizedBox(height: 4),
-                            // Badge de niveau
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 10,
@@ -293,7 +286,7 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(
+                                  const Icon(
                                     Icons.stars_rounded,
                                     size: 14,
                                     color: Colors.white,
@@ -359,13 +352,34 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
     );
   }
 
-  // ═══════════════════════════════════════════════════════════════════════
-  // SECTION "AUJOURD'HUI"
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildTodaySection(
-    AsyncValue<List<ProviderReservationModel>> reservationsAsync,
-    AsyncValue<List<ProviderTaskModel>> tasksAsync,
-  ) {
+  void _navigateToOrders() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ProviderOrdersPage(
+          providerId: widget.provider.id,
+          providerName: widget.provider.businessName,
+        ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// WIDGETS SECTIONS
+// ═══════════════════════════════════════════════════════════════════════
+
+class _TodaySection extends StatelessWidget {
+  final AsyncValue<List<WeddingOrder>> ordersAsync;
+  final OrderStats stats;
+
+  const _TodaySection({
+    required this.ordersAsync,
+    required this.stats,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final today = DateTime.now();
     final todayStr = DateFormat('EEEE dd MMMM yyyy', 'fr_FR').format(today);
 
@@ -427,47 +441,44 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
             ],
           ),
           const SizedBox(height: 16),
-          // Statistiques du jour
-          reservationsAsync.when(
-            data: (reservations) {
-              final todayReservations = reservations.where((r) {
-                final eventDate = r.eventDate;
-                return eventDate.year == today.year &&
-                    eventDate.month == today.month &&
-                    eventDate.day == today.day;
+          ordersAsync.when(
+            data: (orders) {
+              final todayOrders = orders.where((o) {
+                return o.eventDate.year == today.year &&
+                    o.eventDate.month == today.month &&
+                    o.eventDate.day == today.day;
               }).toList();
+
+              final urgentCount = stats.urgent;
+              final pendingCount = stats.pending;
 
               return Row(
                 children: [
                   Expanded(
                     child: _TodayStat(
                       icon: Icons.event_rounded,
-                      value: '${todayReservations.length}',
-                      label: 'Événement${todayReservations.length > 1 ? 's' : ''}',
+                      value: '${todayOrders.length}',
+                      label: 'Événement${todayOrders.length > 1 ? 's' : ''}',
                       color: _P.blue,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  tasksAsync.when(
-                    data: (tasks) {
-                      final urgentTasks = tasks.where((t) {
-                        return t.status != TaskStatus.completed &&
-                            t.dueDateTime.isBefore(
-                              DateTime.now().add(const Duration(days: 1)),
-                            );
-                      }).length;
-
-                      return Expanded(
-                        child: _TodayStat(
-                          icon: Icons.task_alt_rounded,
-                          value: '$urgentTasks',
-                          label: 'Tâche${urgentTasks > 1 ? 's' : ''} urgente${urgentTasks > 1 ? 's' : ''}',
-                          color: urgentTasks > 0 ? _P.red : _P.green,
-                        ),
-                      );
-                    },
-                    loading: () => const Expanded(child: SizedBox()),
-                    error: (_, __) => const Expanded(child: SizedBox()),
+                  Expanded(
+                    child: _TodayStat(
+                      icon: Icons.hourglass_empty_rounded,
+                      value: '$pendingCount',
+                      label: 'En attente',
+                      color: pendingCount > 0 ? _P.amber : _P.green,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _TodayStat(
+                      icon: Icons.warning_amber_rounded,
+                      value: '$urgentCount',
+                      label: 'Urgente${urgentCount > 1 ? 's' : ''}',
+                      color: urgentCount > 0 ? _P.red : _P.green,
+                    ),
                   ),
                 ],
               );
@@ -484,786 +495,7 @@ class _ProviderDashboardPageState extends ConsumerState<ProviderDashboardPage>
       ),
     );
   }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // STATISTIQUES AVANCÉES
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildAdvancedStats(AsyncValue<Map<String, dynamic>> statsAsync) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Performance globale',
-          style: GoogleFonts.inter(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _P.ink,
-          ),
-        ),
-        const SizedBox(height: 16),
-        statsAsync.when(
-          data: (stats) => GridView.count(
-            crossAxisCount: 2,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
-            childAspectRatio: 1.4,
-            children: [
-              _StatCard(
-                title: 'Réservations totales',
-                value: '${stats['total_reservations'] ?? 0}',
-                icon: Icons.event_note_rounded,
-                color: _P.blue,
-                trend: '+12%',
-                isPositive: true,
-              ),
-              _StatCard(
-                title: 'Confirmées',
-                value: '${stats['confirmed_reservations'] ?? 0}',
-                icon: Icons.check_circle_rounded,
-                color: _P.green,
-                trend: '+8%',
-                isPositive: true,
-              ),
-              _StatCard(
-                title: 'Revenus totaux',
-                value: '\$${NumberFormat('#,###').format(stats['total_revenue'] ?? 0)}',
-                icon: Icons.attach_money_rounded,
-                color: _P.amber,
-                trend: '+23%',
-                isPositive: true,
-              ),
-              _StatCard(
-                title: 'Taux de complétion',
-                value: '${((stats['completion_rate'] as double? ?? 0) * 100).toStringAsFixed(0)}%',
-                icon: Icons.assignment_turned_in_rounded,
-                color: _P.purple,
-                trend: '+5%',
-                isPositive: true,
-              ),
-            ],
-          ),
-          loading: () => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(30),
-              child: CircularProgressIndicator(),
-            ),
-          ),
-          error: (_, __) => const SizedBox.shrink(),
-        ),
-      ],
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // GRAPHIQUE DE REVENUS
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildRevenueChart(AsyncValue<Map<String, dynamic>> statsAsync) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _P.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.trending_up_rounded,
-                  color: _P.green,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Évolution des revenus',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 200,
-            child: statsAsync.when(
-              data: (stats) {
-                // Données simulées pour le graphique (à remplacer par données réelles)
-                final revenue = (stats['total_revenue'] as num?)?.toDouble() ?? 0.0;
-                final monthlyData = [
-                  FlSpot(0, revenue * 0.6),
-                  FlSpot(1, revenue * 0.7),
-                  FlSpot(2, revenue * 0.75),
-                  FlSpot(3, revenue * 0.8),
-                  FlSpot(4, revenue * 0.9),
-                  FlSpot(5, revenue),
-                ];
-
-                return LineChart(
-                  LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      horizontalInterval: revenue / 4,
-                      getDrawingHorizontalLine: (value) {
-                        return FlLine(
-                          color: _P.line,
-                          strokeWidth: 1,
-                        );
-                      },
-                    ),
-                    titlesData: FlTitlesData(
-                      show: true,
-                      rightTitles: AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      topTitles: AxisTitles(
-                        sideTitles: SideTitles(showTitles: false),
-                      ),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 30,
-                          interval: 1,
-                          getTitlesWidget: (value, meta) {
-                            const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin'];
-                            if (value.toInt() >= 0 && value.toInt() < months.length) {
-                              return Text(
-                                months[value.toInt()],
-                                style: GoogleFonts.inter(
-                                  fontSize: 10,
-                                  color: _P.inkSoft,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              );
-                            }
-                            return const Text('');
-                          },
-                        ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          interval: revenue / 4,
-                          getTitlesWidget: (value, meta) {
-                            return Text(
-                              '\$${(value / 1000).toStringAsFixed(0)}k',
-                              style: GoogleFonts.inter(
-                                fontSize: 10,
-                                color: _P.inkSoft,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            );
-                          },
-                          reservedSize: 42,
-                        ),
-                      ),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    minX: 0,
-                    maxX: 5,
-                    minY: 0,
-                    maxY: revenue * 1.1,
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: monthlyData,
-                        isCurved: true,
-                        color: _P.green,
-                        barWidth: 3,
-                        isStrokeCapRound: true,
-                        dotData: FlDotData(
-                          show: true,
-                          getDotPainter: (spot, percent, barData, index) {
-                            return FlDotCirclePainter(
-                              radius: 4,
-                              color: Colors.white,
-                              strokeWidth: 2,
-                              strokeColor: _P.green,
-                            );
-                          },
-                        ),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: _P.green.withOpacity(0.1),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-              loading: () => const Center(child: CircularProgressIndicator()),
-              error: (_, __) => const Center(
-                child: Text('Données indisponibles'),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // ACTIONS RAPIDES
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildQuickActions() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          'Actions rapides',
-          style: GoogleFonts.inter(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _P.ink,
-          ),
-        ),
-        const SizedBox(height: 16),
-        Row(
-          children: [
-            Expanded(
-              child: _ActionTile(
-                icon: Icons.add_photo_alternate_outlined,
-                label: 'Ajouter\nmédias',
-                color: _P.blue,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  context.go('/thix-weeding/provider/gallery');
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionTile(
-                icon: Icons.calendar_month_outlined,
-                label: 'Voir\ndemandes',
-                color: _P.green,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  context.go('/thix-weeding/provider/reservations');
-                },
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _ActionTile(
-                icon: Icons.task_alt_outlined,
-                label: 'Mes\ntâches',
-                color: _P.rose,
-                onTap: () {
-                  HapticFeedback.mediumImpact();
-                  context.go('/thix-weeding/provider/tasks');
-                },
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // ✅ NOUVEAU : CARTE "GESTION DE LA PRESTATION"
-  //    Accès direct aux demandes approuvées + compteur pending
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildServiceManagementCard(
-    AsyncValue<List<Map<String, dynamic>>> requestsAsync,
-  ) {
-    return requestsAsync.when(
-      data: (requests) {
-        final pending = requests.where((r) => (r['status'] ?? 'pending') == 'pending').length;
-        final approved = requests.where((r) => r['status'] == 'approved').length;
-
-        return GestureDetector(
-          onTap: () {
-            HapticFeedback.mediumImpact();
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ProviderRequestsPage(provider: widget.provider),
-              ),
-            );
-          },
-          child: Container(
-            padding: const EdgeInsets.all(18),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [_P.rose, _P.roseLight],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(20),
-              boxShadow: [
-                BoxShadow(
-                  color: _P.rose.withOpacity(0.3),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(14),
-                  ),
-                  child: const Icon(Icons.workspaces_rounded, color: Colors.white, size: 28),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Gestion de la prestation',
-                        style: GoogleFonts.inter(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          if (pending > 0) ...[
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withOpacity(0.25),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Text(
-                                '$pending en attente',
-                                style: GoogleFonts.inter(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          Text(
-                            '$approved acceptée${approved > 1 ? 's' : ''}',
-                            style: GoogleFonts.inter(
-                              fontSize: 11,
-                              color: Colors.white.withOpacity(0.9),
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const Icon(Icons.arrow_forward_ios_rounded, color: Colors.white, size: 18),
-              ],
-            ),
-          ),
-        );
-      },
-      loading: () => Container(
-        height: 90,
-        decoration: BoxDecoration(
-          color: _P.surface,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: _P.line),
-        ),
-        child: const Center(child: CircularProgressIndicator(color: _P.rose)),
-      ),
-      error: (_, __) => const SizedBox.shrink(),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // CALENDRIER DES ÉVÉNEMENTS
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildEventCalendar(
-    AsyncValue<List<ProviderReservationModel>> reservationsAsync,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _P.amber.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.event_available_rounded,
-                  color: _P.amber,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Prochains événements',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: () => context.go('/thix-weeding/provider/reservations'),
-                child: Text(
-                  'Tout voir',
-                  style: GoogleFonts.inter(
-                    color: _P.rose,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          reservationsAsync.when(
-            data: (reservations) {
-              final upcomingReservations = reservations
-                  .where((r) =>
-                      r.eventDate.isAfter(DateTime.now()) &&
-                      r.status != ReservationStatus.cancelled)
-                  .toList()
-                ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
-
-              if (upcomingReservations.isEmpty) {
-                return _EmptyState(
-                  icon: Icons.event_busy_outlined,
-                  message: 'Aucun événement à venir',
-                );
-              }
-
-              return Column(
-                children: upcomingReservations.take(3).map((r) {
-                  final daysUntil = r.eventDate
-                      .difference(DateTime.now())
-                      .inDays;
-                  return _EventCard(
-                    reservation: r,
-                    daysUntil: daysUntil,
-                  );
-                }).toList(),
-              );
-            },
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // NOTIFICATIONS PRIORITAIRES
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildPriorityNotifications(
-    AsyncValue<List<ProviderReservationModel>> reservationsAsync,
-    AsyncValue<List<ProviderTaskModel>> tasksAsync,
-  ) {
-    final notifications = <_Notification>[];
-
-    reservationsAsync.whenData((reservations) {
-      // Nouvelles demandes en attente
-      final pendingCount = reservations
-          .where((r) => r.status == ReservationStatus.pending)
-          .length;
-      if (pendingCount > 0) {
-        notifications.add(_Notification(
-          icon: Icons.notifications_active_rounded,
-          title: '$pendingCount demande${pendingCount > 1 ? 's' : ''} en attente',
-          subtitle: 'Répondez rapidement pour ne pas perdre ces clients',
-          color: _P.amber,
-          priority: _NotificationPriority.high,
-        ));
-      }
-    });
-
-    tasksAsync.whenData((tasks) {
-      // Tâches urgentes
-      final urgentTasks = tasks.where((t) {
-        return t.status != TaskStatus.completed &&
-            t.dueDateTime.isBefore(
-              DateTime.now().add(const Duration(days: 1)),
-            );
-      }).length;
-
-      if (urgentTasks > 0) {
-        notifications.add(_Notification(
-          icon: Icons.warning_amber_rounded,
-          title: '$urgentTasks tâche${urgentTasks > 1 ? 's' : ''} urgente${urgentTasks > 1 ? 's' : ''}',
-          subtitle: 'À compléter avant demain',
-          color: _P.red,
-          priority: _NotificationPriority.urgent,
-        ));
-      }
-    });
-
-    if (notifications.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _P.red.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.priority_high_rounded,
-                  color: _P.red,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Notifications prioritaires',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...notifications.map((n) => _NotificationCard(notification: n)),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // ACTIVITÉS RÉCENTES
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildRecentActivities(
-    AsyncValue<List<ProviderReservationModel>> reservationsAsync,
-    AsyncValue<List<ProviderTaskModel>> tasksAsync,
-  ) {
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.line),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _P.purple.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.history_rounded,
-                  color: _P.purple,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Activités récentes',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-              const Spacer(),
-              TextButton(
-                onPressed: () => context.go('/thix-weeding/provider/reservations'),
-                child: Text(
-                  'Tout voir',
-                  style: GoogleFonts.inter(
-                    color: _P.rose,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 13,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          reservationsAsync.when(
-            data: (reservations) {
-              if (reservations.isEmpty) {
-                return _EmptyState(
-                  icon: Icons.event_busy_outlined,
-                  message: 'Aucune activité récente',
-                );
-              }
-
-              final recentReservations = reservations.take(5).toList();
-
-              return Column(
-                children: recentReservations.map((r) {
-                  final isPositive = r.status == ReservationStatus.confirmed ||
-                      r.status == ReservationStatus.completed;
-                  return _ActivityItem(
-                    title: r.clientName,
-                    subtitle: DateFormat('dd MMM yyyy - HH:mm').format(r.eventDate),
-                    status: r.status.name,
-                    isPositive: isPositive,
-                  );
-                }).toList(),
-              );
-            },
-            loading: () => const Center(
-              child: Padding(
-                padding: EdgeInsets.all(20),
-                child: CircularProgressIndicator(),
-              ),
-            ),
-            error: (_, __) => const SizedBox.shrink(),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════
-  // OPPORTUNITÉS ET RECOMMANDATIONS
-  // ═══════════════════════════════════════════════════════════════════════
-  Widget _buildOpportunities() {
-    final opportunities = <_Opportunity>[
-      _Opportunity(
-        icon: Icons.photo_library_rounded,
-        title: 'Ajoutez plus de photos',
-        description: 'Les profils avec 10+ photos reçoivent 3x plus de demandes',
-        actionLabel: 'Ajouter des photos',
-        color: _P.blue,
-        onTap: () => context.go('/thix-weeding/provider/gallery'),
-      ),
-      _Opportunity(
-        icon: Icons.verified_rounded,
-        title: 'Complétez votre profil',
-        description: 'Les profils complets inspirent plus confiance aux clients',
-        actionLabel: 'Compléter le profil',
-        color: _P.green,
-        onTap: () {}, // TODO: Page édition profil
-      ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [_P.roseLight.withOpacity(0.1), _P.rose.withOpacity(0.1)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _P.rose.withOpacity(0.2)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: _P.rose.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(
-                  Icons.lightbulb_outline_rounded,
-                  color: _P.rose,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Opportunités pour vous',
-                style: GoogleFonts.inter(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                  color: _P.ink,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          ...opportunities.map((o) => _OpportunityCard(opportunity: o)),
-        ],
-      ),
-    );
-  }
 }
-
-// ═══════════════════════════════════════════════════════════════════════════
-// WIDGETS INTERNES
-// ═══════════════════════════════════════════════════════════════════════════
 
 class _TodayStat extends StatelessWidget {
   final IconData icon;
@@ -1314,21 +546,331 @@ class _TodayStat extends StatelessWidget {
   }
 }
 
+class _UrgentAlertsSection extends StatelessWidget {
+  final List<WeddingOrder> urgentOrders;
+  final VoidCallback onViewAll;
+
+  const _UrgentAlertsSection({
+    required this.urgentOrders,
+    required this.onViewAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _P.red.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _P.red.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _P.red.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.warning_amber_rounded,
+                  color: _P.red,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Commandes urgentes (${urgentOrders.length})',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _P.red,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onViewAll,
+                child: Text(
+                  'Voir tout',
+                  style: GoogleFonts.inter(
+                    color: _P.red,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...urgentOrders.take(3).map((order) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _P.red.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _P.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.priority_high_rounded,
+                      color: _P.red,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.clientName,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: _P.ink,
+                          ),
+                        ),
+                        Text(
+                          order.offerTitle,
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: _P.inkSoft,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _P.red.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      order.daysUntilEvent == 0
+                          ? "Aujourd'hui"
+                          : 'J-${order.daysUntilEvent}',
+                      style: GoogleFonts.inter(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: _P.red,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _PendingOrdersSection extends StatelessWidget {
+  final List<WeddingOrder> pendingOrders;
+  final VoidCallback onViewAll;
+
+  const _PendingOrdersSection({
+    required this.pendingOrders,
+    required this.onViewAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: _P.amber.withOpacity(0.05),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _P.amber.withOpacity(0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _P.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.hourglass_empty_rounded,
+                  color: _P.amber,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'En attente de confirmation (${pendingOrders.length})',
+                  style: GoogleFonts.inter(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                    color: _P.amber,
+                  ),
+                ),
+              ),
+              TextButton(
+                onPressed: onViewAll,
+                child: Text(
+                  'Voir tout',
+                  style: GoogleFonts.inter(
+                    color: _P.amber,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ...pendingOrders.take(2).map((order) {
+            return Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _P.amber.withOpacity(0.2)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _P.amber.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.hourglass_top_rounded,
+                      color: _P.amber,
+                      size: 16,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          order.clientName,
+                          style: GoogleFonts.inter(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: _P.ink,
+                          ),
+                        ),
+                        Text(
+                          '${order.totalAmount.toStringAsFixed(0)}\$ • ${DateFormat('dd MMM', 'fr_FR').format(order.eventDate)}',
+                          style: GoogleFonts.inter(
+                            fontSize: 11,
+                            color: _P.inkSoft,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    size: 14,
+                    color: _P.amber,
+                  ),
+                ],
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatsSection extends StatelessWidget {
+  final OrderStats stats;
+
+  const _StatsSection({required this.stats});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Performance globale',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _P.ink,
+          ),
+        ),
+        const SizedBox(height: 16),
+        GridView.count(
+          crossAxisCount: 2,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 1.4,
+          children: [
+            _StatCard(
+              title: 'Commandes totales',
+              value: '${stats.total}',
+              icon: Icons.receipt_long_rounded,
+              color: _P.blue,
+            ),
+            _StatCard(
+              title: 'Confirmées',
+              value: '${stats.confirmed + stats.inProgress + stats.ready}',
+              icon: Icons.check_circle_rounded,
+              color: _P.green,
+            ),
+            _StatCard(
+              title: 'Revenus totaux',
+              value: '\$${stats.totalRevenue.toStringAsFixed(0)}',
+              icon: Icons.attach_money_rounded,
+              color: _P.amber,
+            ),
+            _StatCard(
+              title: 'Terminées',
+              value: '${stats.completed}',
+              icon: Icons.verified_rounded,
+              color: _P.purple,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   final String title;
   final String value;
   final IconData icon;
   final Color color;
-  final String? trend;
-  final bool isPositive;
 
   const _StatCard({
     required this.title,
     required this.value,
     required this.icon,
     required this.color,
-    this.trend,
-    this.isPositive = true,
   });
 
   @override
@@ -1360,39 +902,6 @@ class _StatCard extends StatelessWidget {
                 ),
                 child: Icon(icon, color: color, size: 20),
               ),
-              const Spacer(),
-              if (trend != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  decoration: BoxDecoration(
-                    color: (isPositive ? _P.green : _P.red).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        isPositive
-                            ? Icons.trending_up_rounded
-                            : Icons.trending_down_rounded,
-                        size: 12,
-                        color: isPositive ? _P.green : _P.red,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        trend!,
-                        style: GoogleFonts.inter(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: isPositive ? _P.green : _P.red,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
             ],
           ),
           const Spacer(),
@@ -1420,16 +929,295 @@ class _StatCard extends StatelessWidget {
   }
 }
 
+class _RevenueChart extends StatelessWidget {
+  final AsyncValue<List<WeddingOrder>> ordersAsync;
+
+  const _RevenueChart({required this.ordersAsync});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _P.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _P.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.trending_up_rounded,
+                  color: _P.green,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Évolution des revenus',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _P.ink,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 200,
+            child: ordersAsync.when(
+              data: (orders) {
+                // Calculer les revenus par mois
+                final monthlyRevenue = <int, double>{};
+                final now = DateTime.now();
+
+                for (var i = 5; i >= 0; i--) {
+                  final month = DateTime(now.year, now.month - i, 1);
+                  monthlyRevenue[month.month] = 0;
+                }
+
+                for (var order in orders) {
+                  if (order.status != OrderStatus.cancelled) {
+                    final month = order.orderDate.month;
+                    if (monthlyRevenue.containsKey(month)) {
+                      monthlyRevenue[month] = monthlyRevenue[month]! + order.totalAmount;
+                    }
+                  }
+                }
+
+                final spots = <FlSpot>[];
+                var index = 0;
+                monthlyRevenue.forEach((month, revenue) {
+                  spots.add(FlSpot(index.toDouble(), revenue));
+                  index++;
+                });
+
+                if (spots.isEmpty || spots.every((s) => s.y == 0)) {
+                  return Center(
+                    child: Text(
+                      'Pas encore de données',
+                      style: GoogleFonts.inter(color: _P.inkSoft),
+                    ),
+                  );
+                }
+
+                final maxY = spots.map((s) => s.y).reduce((a, b) => a > b ? a : b) * 1.2;
+
+                return LineChart(
+                  LineChartData(
+                    gridData: FlGridData(
+                      show: true,
+                      drawVerticalLine: false,
+                      horizontalInterval: maxY / 4,
+                      getDrawingHorizontalLine: (value) {
+                        return FlLine(
+                          color: _P.line,
+                          strokeWidth: 1,
+                        );
+                      },
+                    ),
+                    titlesData: FlTitlesData(
+                      show: true,
+                      rightTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      topTitles: AxisTitles(
+                        sideTitles: SideTitles(showTitles: false),
+                      ),
+                      bottomTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          reservedSize: 30,
+                          interval: 1,
+                          getTitlesWidget: (value, meta) {
+                            const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Juin', 'Juil', 'Août', 'Sep', 'Oct', 'Nov', 'Déc'];
+                            final monthIndex = (value.toInt() + now.month - 5) % 12;
+                            if (monthIndex >= 0 && monthIndex < months.length) {
+                              return Text(
+                                months[monthIndex],
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  color: _P.inkSoft,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              );
+                            }
+                            return const Text('');
+                          },
+                        ),
+                      ),
+                      leftTitles: AxisTitles(
+                        sideTitles: SideTitles(
+                          showTitles: true,
+                          interval: maxY / 4,
+                          getTitlesWidget: (value, meta) {
+                            return Text(
+                              '\$${(value / 1000).toStringAsFixed(0)}k',
+                              style: GoogleFonts.inter(
+                                fontSize: 10,
+                                color: _P.inkSoft,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            );
+                          },
+                          reservedSize: 42,
+                        ),
+                      ),
+                    ),
+                    borderData: FlBorderData(show: false),
+                    minX: 0,
+                    maxX: 5,
+                    minY: 0,
+                    maxY: maxY,
+                    lineBarsData: [
+                      LineChartBarData(
+                        spots: spots,
+                        isCurved: true,
+                        color: _P.green,
+                        barWidth: 3,
+                        isStrokeCapRound: true,
+                        dotData: FlDotData(
+                          show: true,
+                          getDotPainter: (spot, percent, barData, index) {
+                            return FlDotCirclePainter(
+                              radius: 4,
+                              color: Colors.white,
+                              strokeWidth: 2,
+                              strokeColor: _P.green,
+                            );
+                          },
+                        ),
+                        belowBarData: BarAreaData(
+                          show: true,
+                          color: _P.green.withOpacity(0.1),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              loading: () => const Center(child: CircularProgressIndicator()),
+              error: (_, __) => const Center(
+                child: Text('Données indisponibles'),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _QuickActions extends StatelessWidget {
+  final ThixProviderModel provider;
+  final int offersCount;
+  final int pendingOrdersCount;
+
+  const _QuickActions({
+    required this.provider,
+    required this.offersCount,
+    required this.pendingOrdersCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Actions rapides',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _P.ink,
+          ),
+        ),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: _ActionTile(
+                icon: Icons.add_photo_alternate_outlined,
+                label: 'Publier\nune offre',
+                color: _P.blue,
+                badge: offersCount > 0 ? '$offersCount' : null,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  context.push('/thix-weeding/provider/offers/new');
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ActionTile(
+                icon: Icons.receipt_long_rounded,
+                label: 'Mes\ncommandes',
+                color: _P.green,
+                badge: pendingOrdersCount > 0 ? '$pendingOrdersCount' : null,
+                badgeColor: _P.amber,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => ProviderOrdersPage(
+                        providerId: provider.id,
+                        providerName: provider.businessName,
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: _ActionTile(
+                icon: Icons.photo_library_outlined,
+                label: 'Ma\ngalerie',
+                color: _P.rose,
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  context.go('/thix-weeding/provider/gallery');
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 class _ActionTile extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color;
+  final String? badge;
+  final Color? badgeColor;
   final VoidCallback onTap;
 
   const _ActionTile({
     required this.icon,
     required this.label,
     required this.color,
+    this.badge,
+    this.badgeColor,
     required this.onTap,
   });
 
@@ -1438,7 +1226,7 @@ class _ActionTile extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        height: 100,
+        height: 110,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(16),
@@ -1451,27 +1239,179 @@ class _ActionTile extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+        child: Stack(
+          children: [
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.1),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, color: color, size: 24),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.inter(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _P.ink,
+                    height: 1.2,
+                  ),
+                ),
+              ],
+            ),
+            if (badge != null)
+              Positioned(
+                top: 8,
+                right: 8,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: badgeColor ?? color,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    badge!,
+                    style: GoogleFonts.inter(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SpecialServices extends StatelessWidget {
+  final ThixProviderModel provider;
+
+  const _SpecialServices({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final isTraiteur = provider.category == ProviderCategory.traiteur;
+    final isDJ = provider.category == ProviderCategory.dj;
+
+    if (!isTraiteur && !isDJ) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Services spéciaux',
+          style: GoogleFonts.inter(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: _P.ink,
+          ),
+        ),
+        const SizedBox(height: 16),
+        if (isTraiteur)
+          _ServiceCard(
+            icon: Icons.restaurant_menu_rounded,
+            title: 'Menu traiteur',
+            subtitle: 'Créez et gérez vos menus, validation staff, votes invités',
+            color: _P.amber,
+            onTap: () {
+              // TODO: Naviguer vers la liste des menus
+            },
+          ),
+        if (isDJ) ...[
+          if (isTraiteur) const SizedBox(height: 12),
+          _ServiceCard(
+            icon: Icons.music_note_rounded,
+            title: 'Suggestions DG',
+            subtitle: 'Recevez les suggestions de chansons et ambiances',
+            color: _P.purple,
+            onTap: () {
+              // TODO: Naviguer vers les suggestions
+            },
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ServiceCard extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+
+  const _ServiceCard({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [color.withOpacity(0.1), color.withOpacity(0.05)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.3)),
+        ),
+        child: Row(
           children: [
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: color.withOpacity(0.1),
-                shape: BoxShape.circle,
+                color: color.withOpacity(0.2),
+                borderRadius: BorderRadius.circular(12),
               ),
               child: Icon(icon, color: color, size: 24),
             ),
-            const SizedBox(height: 10),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.inter(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: _P.ink,
-                height: 1.2,
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: GoogleFonts.inter(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      color: _P.ink,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: GoogleFonts.inter(
+                      fontSize: 12,
+                      color: _P.inkSoft,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
               ),
+            ),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              size: 16,
+              color: color,
             ),
           ],
         ),
@@ -1480,106 +1420,181 @@ class _ActionTile extends StatelessWidget {
   }
 }
 
-class _EventCard extends StatelessWidget {
-  final ProviderReservationModel reservation;
-  final int daysUntil;
+class _UpcomingEventsSection extends StatelessWidget {
+  final AsyncValue<List<WeddingOrder>> ordersAsync;
 
-  const _EventCard({
-    required this.reservation,
-    required this.daysUntil,
-  });
+  const _UpcomingEventsSection({required this.ordersAsync});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: _P.bg,
-        borderRadius: BorderRadius.circular(14),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _P.line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              color: _P.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  '${reservation.eventDate.day}',
-                  style: GoogleFonts.inter(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: _P.blue,
-                  ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _P.amber.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                Text(
-                  DateFormat('MMM', 'fr_FR').format(reservation.eventDate),
-                  style: GoogleFonts.inter(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w600,
-                    color: _P.blue,
-                  ),
+                child: const Icon(
+                  Icons.event_available_rounded,
+                  color: _P.amber,
+                  size: 20,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Prochains événements',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _P.ink,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  reservation.clientName,
-                  style: GoogleFonts.inter(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                    color: _P.ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  DateFormat('HH:mm').format(reservation.eventDate),
-                  style: GoogleFonts.inter(
-                    fontSize: 12,
-                    color: _P.inkSoft,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: daysUntil == 0
-                  ? _P.red.withOpacity(0.1)
-                  : daysUntil <= 3
-                      ? _P.amber.withOpacity(0.1)
-                      : _P.green.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              daysUntil == 0
-                  ? "Aujourd'hui"
-                  : daysUntil == 1
-                      ? 'Demain'
-                      : 'Dans $daysUntil jours',
-              style: GoogleFonts.inter(
-                fontSize: 10,
-                fontWeight: FontWeight.w700,
-                color: daysUntil == 0
-                    ? _P.red
-                    : daysUntil <= 3
-                        ? _P.amber
-                        : _P.green,
+          const SizedBox(height: 16),
+          ordersAsync.when(
+            data: (orders) {
+              final upcomingOrders = orders
+                  .where((o) =>
+                      o.eventDate.isAfter(DateTime.now()) &&
+                      o.status != OrderStatus.cancelled)
+                  .toList()
+                ..sort((a, b) => a.eventDate.compareTo(b.eventDate));
+
+              if (upcomingOrders.isEmpty) {
+                return _EmptyState(
+                  icon: Icons.event_busy_outlined,
+                  message: 'Aucun événement à venir',
+                );
+              }
+
+              return Column(
+                children: upcomingOrders.take(3).map((order) {
+                  final daysUntil = order.daysUntilEvent;
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: _P.bg,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: _P.line),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 50,
+                          height: 50,
+                          decoration: BoxDecoration(
+                            color: _P.blue.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '${order.eventDate.day}',
+                                style: GoogleFonts.inter(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: _P.blue,
+                                ),
+                              ),
+                              Text(
+                                DateFormat('MMM', 'fr_FR').format(order.eventDate),
+                                style: GoogleFonts.inter(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: _P.blue,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                order.clientName,
+                                style: GoogleFonts.inter(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: _P.ink,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                order.offerTitle,
+                                style: GoogleFonts.inter(
+                                  fontSize: 12,
+                                  color: _P.inkSoft,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: daysUntil == 0
+                                ? _P.red.withOpacity(0.1)
+                                : daysUntil <= 3
+                                    ? _P.amber.withOpacity(0.1)
+                                    : _P.green.withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Text(
+                            daysUntil == 0
+                                ? "Aujourd'hui"
+                                : daysUntil == 1
+                                    ? 'Demain'
+                                    : 'Dans $daysUntil jours',
+                            style: GoogleFonts.inter(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: daysUntil == 0
+                                  ? _P.red
+                                  : daysUntil <= 3
+                                      ? _P.amber
+                                      : _P.green,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+            loading: () => const Center(
+              child: Padding(
+                padding: EdgeInsets.all(20),
+                child: CircularProgressIndicator(),
               ),
             ),
+            error: (_, __) => const SizedBox.shrink(),
           ),
         ],
       ),
@@ -1587,28 +1602,109 @@ class _EventCard extends StatelessWidget {
   }
 }
 
-enum _NotificationPriority { urgent, high, normal }
+class _RecommendationsSection extends StatelessWidget {
+  final ThixProviderModel provider;
 
-class _Notification {
+  const _RecommendationsSection({required this.provider});
+
+  @override
+  Widget build(BuildContext context) {
+    final recommendations = [
+      _Recommendation(
+        icon: Icons.photo_library_rounded,
+        title: 'Ajoutez plus de photos',
+        description: 'Les profils avec 10+ photos reçoivent 3x plus de demandes',
+        actionLabel: 'Ajouter',
+        color: _P.blue,
+        onTap: () => context.go('/thix-weeding/provider/gallery'),
+      ),
+      _Recommendation(
+        icon: Icons.verified_rounded,
+        title: 'Complétez votre profil',
+        description: 'Les profils complets inspirent plus confiance aux clients',
+        actionLabel: 'Compléter',
+        color: _P.green,
+        onTap: () {},
+      ),
+      _Recommendation(
+        icon: Icons.videocam_rounded,
+        title: 'Ajoutez une vidéo',
+        description: 'Les offres avec vidéo ont 2x plus de conversions',
+        actionLabel: 'Ajouter',
+        color: _P.purple,
+        onTap: () => context.push('/thix-weeding/provider/offers/new'),
+      ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [_P.roseLight.withOpacity(0.1), _P.rose.withOpacity(0.1)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _P.rose.withOpacity(0.2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: _P.rose.withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.lightbulb_outline_rounded,
+                  color: _P.rose,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Recommandations',
+                style: GoogleFonts.inter(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: _P.ink,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...recommendations.map((rec) => _RecommendationCard(recommendation: rec)),
+        ],
+      ),
+    );
+  }
+}
+
+class _Recommendation {
   final IconData icon;
   final String title;
-  final String subtitle;
+  final String description;
+  final String actionLabel;
   final Color color;
-  final _NotificationPriority priority;
+  final VoidCallback onTap;
 
-  _Notification({
+  const _Recommendation({
     required this.icon,
     required this.title,
-    required this.subtitle,
+    required this.description,
+    required this.actionLabel,
     required this.color,
-    required this.priority,
+    required this.onTap,
   });
 }
 
-class _NotificationCard extends StatelessWidget {
-  final _Notification notification;
+class _RecommendationCard extends StatelessWidget {
+  final _Recommendation recommendation;
 
-  const _NotificationCard({required this.notification});
+  const _RecommendationCard({required this.recommendation});
 
   @override
   Widget build(BuildContext context) {
@@ -1616,21 +1712,21 @@ class _NotificationCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: notification.color.withOpacity(0.05),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: notification.color.withOpacity(0.2)),
+        border: Border.all(color: _P.line),
       ),
       child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: notification.color.withOpacity(0.1),
+              color: recommendation.color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
-              notification.icon,
-              color: notification.color,
+              recommendation.icon,
+              color: recommendation.color,
               size: 20,
             ),
           ),
@@ -1640,7 +1736,7 @@ class _NotificationCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  notification.title,
+                  recommendation.title,
                   style: GoogleFonts.inter(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,
@@ -1649,7 +1745,7 @@ class _NotificationCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  notification.subtitle,
+                  recommendation.description,
                   style: GoogleFonts.inter(
                     fontSize: 11,
                     color: _P.inkSoft,
@@ -1658,71 +1754,22 @@ class _NotificationCard extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityItem extends StatelessWidget {
-  final String title;
-  final String subtitle;
-  final String status;
-  final bool isPositive;
-
-  const _ActivityItem({
-    required this.title,
-    required this.subtitle,
-    required this.status,
-    required this.isPositive,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: _P.bg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _P.line),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _P.ink,
-                  ),
+          const SizedBox(width: 8),
+          GestureDetector(
+            onTap: recommendation.onTap,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: recommendation.color,
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                recommendation.actionLabel,
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
                 ),
-                Text(
-                  subtitle,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: _P.inkSoft,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: (isPositive ? _P.green : _P.amber).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Text(
-              status.toUpperCase(),
-              style: GoogleFonts.inter(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                color: isPositive ? _P.green : _P.amber,
               ),
             ),
           ),
@@ -1736,7 +1783,10 @@ class _EmptyState extends StatelessWidget {
   final IconData icon;
   final String message;
 
-  const _EmptyState({required this.icon, required this.message});
+  const _EmptyState({
+    required this.icon,
+    required this.message,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1758,102 +1808,6 @@ class _EmptyState extends StatelessWidget {
               fontSize: 12,
               color: _P.inkSoft,
               fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Opportunity {
-  final IconData icon;
-  final String title;
-  final String description;
-  final String actionLabel;
-  final Color color;
-  final VoidCallback onTap;
-
-  _Opportunity({
-    required this.icon,
-    required this.title,
-    required this.description,
-    required this.actionLabel,
-    required this.color,
-    required this.onTap,
-  });
-}
-
-class _OpportunityCard extends StatelessWidget {
-  final _Opportunity opportunity;
-
-  const _OpportunityCard({required this.opportunity});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _P.line),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(10),
-            decoration: BoxDecoration(
-              color: opportunity.color.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              opportunity.icon,
-              color: opportunity.color,
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  opportunity.title,
-                  style: GoogleFonts.inter(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _P.ink,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  opportunity.description,
-                  style: GoogleFonts.inter(
-                    fontSize: 11,
-                    color: _P.inkSoft,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          GestureDetector(
-            onTap: opportunity.onTap,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: opportunity.color,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                opportunity.actionLabel,
-                style: GoogleFonts.inter(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.white,
-                ),
-              ),
             ),
           ),
         ],
