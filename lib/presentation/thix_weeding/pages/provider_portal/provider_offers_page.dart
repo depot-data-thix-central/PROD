@@ -1,5 +1,5 @@
 // ============================================================================
-// THIX WEDDING — FORMULAIRE OFFRE (Production v5) — CORRIGÉ + COMPLET
+// THIX WEDDING — PAGE DES OFFRES (Production v5) — CORRIGÉ + COMPLET
 // ✅ Choix multiple photos + preview locale
 // ✅ Vidéo (2 min 50 / 50 Mo)
 // ✅ Contact (email + téléphone)
@@ -34,17 +34,17 @@ class _P {
   static const Color red = Color(0xFFEF4444);
 }
 
-class ProviderOfferFormPage extends ConsumerStatefulWidget {
+class ProviderOffersPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
   final ProviderOfferModel? existing;
 
-  const ProviderOfferFormPage({super.key, required this.provider, this.existing});
+  const ProviderOffersPage({super.key, required this.provider, this.existing});
 
   @override
-  ConsumerState<ProviderOfferFormPage> createState() => _ProviderOfferFormPageState();
+  ConsumerState<ProviderOffersPage> createState() => _ProviderOffersPageState();
 }
 
-class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
+class _ProviderOffersPageState extends ConsumerState<ProviderOffersPage> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
 
