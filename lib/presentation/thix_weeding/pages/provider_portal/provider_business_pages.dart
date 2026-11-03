@@ -2045,60 +2045,93 @@ class _IncomingRequestCard extends ConsumerWidget {
                 setSt(() => busy = true);
                 HapticFeedback.mediumImpact();
                 try {
-                  final c = Supabase.instance.client;
-                  final now = DateTime.now().toIso8601String();
-                  final weddingId = request['wedding_id'] as String;
-                  final confirmedPrice = double.tryParse(priceCtrl.text.replaceAll(RegExp(r'\D'), ''));
-                  final resp = respCtrl.text.trim();
-                  final staffMsg = (request['message'] as String? ?? '').trim();
-                  final vendorName = (prov['business_name'] as String? ?? '').trim();
-
-                  final vendorData = <String, dynamic>{
-                    'wedding_id': weddingId,
-                    'name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
-                    'category': _mapVendorCategory(prov['category'] as String?),
-                    'contact_name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
-                    'phone': prov['phone'] as String?,
-                    'email': prov['email'] as String?,
-                    'price': confirmedPrice,
-                    'status': 'contacted',
-                    'is_booked': false,
-                    'notes': [if (staffMsg.isNotEmpty) 'Demande du couple : $staffMsg',
-                              if (resp.isNotEmpty) 'Réponse prestataire : $resp'].join('\n'),
-                  };
-
-                  final vendorRes = await c.from('thix_weeding_vendors').insert(vendorData).select().single();
-                  final vendorId = vendorRes['id'] as String;
-
-                  await c.from('thix_weeding_vendor_requests').update({
-                    'status': 'approved',
-                    'stage': 'contacted',
-                    'vendor_id': vendorId,
-                    'provider_response': resp.isEmpty ? null : resp,
-                    'proposed_price': confirmedPrice ?? request['proposed_price'],
-                    'responded_at': now,
-                    'updated_at': now,
-                  }).eq('id', request['id'] as String);
-
-                  if (!ctx.mounted) return;
-                  Navigator.pop(ctx);
-                  ref.invalidate(providerIncomingRequestsProvider(providerId));
-
-                  
-if (context.mounted) {
-  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-    content: Text(
-      'Demande acceptée ✓ Dossier créé',
-      style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
-    backgroundColor: _P.green,
-    behavior: SnackBarBehavior.floating,
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-  ));
-  // ✅ Redirection automatique vers l'espace de gestion
+  final c = Supabase.instance.client;
+  final now = DateTime.now().toIso8601String();
+  final weddingId = request['wedding_id'] as String;
+  final confirmedPrice =
+      double.tryParse(priceCtrl.text.replaceAll(RegExp(r'\D'), ''));
+  final resp = respCtrl.text.trim();
+  final staffMsg = (request['message'] as String? ?? '').trim();
+  final prov = (request['provider'] as Map?)?.cast<String, dynamic>() ?? {};
+  final wed = (request['wedding'] as Map?)?.cast<String, dynamic>() ?? {};
+  final vendorName = (prov['business_name'] as String? ?? '').trim();
+  final couple = _coupleNames(request);
+  final weddingDate = (wed['wedding_date'] as String? ?? '').trim();
+  final contactPhone = (request['contact_phone'] as String? ?? '').trim();
   final catKey = prov['category'] as String?;
-  final couple = _coupleNames(request);  // ← AJOUTER CETTE LIGNE
-  Navigator.of(context).push(
-    MaterialPageRoute(
+
+  // 1) Créer le dossier prestataire lié au mariage
+  final vendorData = <String, dynamic>{
+    'wedding_id': weddingId,
+    'name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+    'category': _mapVendorCategory(catKey),
+    'contact_name': vendorName.isEmpty ? 'Prestataire THIX' : vendorName,
+    'phone': prov['phone'] as String?,
+    'email': prov['email'] as String?,
+    'price': confirmedPrice,
+    'status': 'contacted',
+    'is_booked': false,
+    'notes': [
+      if (staffMsg.isNotEmpty) 'Demande du couple : $staffMsg',
+      if (resp.isNotEmpty) 'Réponse prestataire : $resp',
+    ].join('\n'),
+  };
+  final vendorRes =
+      await c.from('thix_weeding_vendors').insert(vendorData).select().single();
+  final vendorId = vendorRes['id'] as String;
+
+  // 2) ✅ NOUVEAU : créer la RÉSERVATION synchronisée (visible Résa + dashboard)
+  try {
+    await c.from('thix_weeding_reservations').insert({
+      'provider_id': providerId,
+      'wedding_id': weddingId,
+      'client_name': couple,
+      'client_phone':
+          contactPhone.isNotEmpty ? contactPhone : (prov['phone'] as String? ?? ''),
+      'event_date': weddingDate.isNotEmpty
+          ? DateTime.parse(weddingDate).toIso8601String()
+          : now,
+      'event_type': _catLabel(catKey),
+      'total_price': confirmedPrice,
+      'currency': 'USD',
+      'status': 'confirmed', // demande staff acceptée = confirmée
+      'notes': [
+        if (staffMsg.isNotEmpty) staffMsg,
+        if (resp.isNotEmpty) '— Prestataire : $resp',
+      ].join('\n'),
+    });
+  } catch (e) {
+    debugPrint('Insert reservation depuis demande échoué: $e');
+    // non bloquant : la demande reste acceptée même si la synchro échoue
+  }
+
+  // 3) Valider la demande
+  await c.from('thix_weeding_vendor_requests').update({
+    'status': 'approved',
+    'stage': 'contacted',
+    'vendor_id': vendorId,
+    'provider_response': resp.isEmpty ? null : resp,
+    'proposed_price': confirmedPrice ?? request['proposed_price'],
+    'responded_at': now,
+    'updated_at': now,
+  }).eq('id', request['id'] as String);
+
+  if (!ctx.mounted) return;
+  Navigator.pop(ctx);
+  ref.invalidate(providerIncomingRequestsProvider(providerId));
+  // ✅ Rafraîchit aussi réservations + dashboard
+  ref.invalidate(providerReservationsProvider(
+      ProviderReservationsParams(providerId: providerId)));
+
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('Demande acceptée ✓ Réservation créée',
+          style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+      backgroundColor: _P.green,
+      behavior: SnackBarBehavior.floating,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    ));
+    Navigator.of(context).push(MaterialPageRoute(
       builder: (_) => ProviderServiceManagementPage(
         vendorId: vendorId,
         weddingId: weddingId,
@@ -2106,16 +2139,18 @@ if (context.mounted) {
         couple: couple,
         managementType: _managementTypeFor(catKey),
       ),
-    ),
-  );
+    ));
+  }
+} catch (e) {
+  setSt(() => busy = false);
+  if (ctx.mounted) {
+    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+      content: Text('Erreur: $e'),
+      backgroundColor: _P.red,
+      behavior: SnackBarBehavior.floating,
+    ));
+  }
 }
-                } catch (e) {
-                  setSt(() => busy = false);
-                  if (ctx.mounted) {
-                    ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _P.red, behavior: SnackBarBehavior.floating));
-                  }
-                }
-              },
               icon: const Icon(Icons.check_rounded, size: 18),
               label: Text('Confirmer l\'acceptation', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 13)),
               style: ElevatedButton.styleFrom(
