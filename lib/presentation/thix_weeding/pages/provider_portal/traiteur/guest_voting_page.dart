@@ -1074,30 +1074,3 @@ class _EmptyVotesState extends StatelessWidget {
     );
   }
 }
-
-// ═══════════════════════════════════════════════════════════════════════
-// EXTENSIONS
-// ═══════════════════════════════════════════════════════════════════════
-
-
-
-extension DietaryRestrictionExtension on DietaryRestriction {
-  String get displayName {
-    switch (this) {
-      case DietaryRestriction.vegetarian:
-        return 'Végétarien';
-      case DietaryRestriction.vegan:
-        return 'Vegan';
-      case DietaryRestriction.halal:
-        return 'Halal';
-      case DietaryRestriction.kosher:
-        return 'Casher';
-      case DietaryRestriction.glutenFree:
-        return 'Sans gluten';
-      case DietaryRestriction.lactoseFree:
-        return 'Sans lactose';
-      case DietaryRestriction.nutFree:
-        return 'Sans noix';
-    }
-  }
-}
