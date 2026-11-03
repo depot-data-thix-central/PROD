@@ -4,15 +4,19 @@
 // ✅ Valider / refuser les propositions des invités
 // ✅ Ordre de passage (glisser-déposer), ⭐ incontournable, 🚫 à éviter
 // ✅ Marquer « jouée », ajouter vos propres titres, copier la liste
+// ✅ Charger et lire des fichiers audio locaux (MP3, WAV, etc.)
 // ✅ Temps réel + verre dépoli
 // ============================================================================
 import 'dart:async';
-
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:just_audio/just_audio.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 import 'playlist_models.dart';
@@ -42,6 +46,12 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
   String _query = '';
   RealtimeChannel? _ch;
   Timer? _deb;
+  
+  // 🎵 Lecteur audio local
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  List<LocalTrack> _localTracks = [];
+  String? _currentlyPlaying;
+  bool _isLoadingAudio = false;
 
   @override
   void initState() {
@@ -64,6 +74,16 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
           },
         )
         .subscribe();
+    
+    _audioPlayer.playerStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          if (!state.playing && _currentlyPlaying != null) {
+            _currentlyPlaying = null;
+          }
+        });
+      }
+    });
   }
 
   @override
@@ -71,6 +91,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     _deb?.cancel();
     if (_ch != null) _supa.removeChannel(_ch!);
     _tab.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -189,6 +210,76 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     }
   }
 
+  // 🎵 CHARGER DES FICHIERS AUDIO LOCAUX
+  Future<void> _pickLocalAudio() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      setState(() => _isLoadingAudio = true);
+
+      final tempDir = await getTemporaryDirectory();
+      final tracks = <LocalTrack>[];
+
+      for (final file in result.files) {
+        if (file.path == null) continue;
+        
+        final fileName = file.name;
+        final title = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+        final localPath = '${tempDir.path}/$fileName';
+        
+        // Copier le fichier dans le dossier temporaire
+        final originalFile = File(file.path!);
+        await originalFile.copy(localPath);
+
+        tracks.add(LocalTrack(
+          id: DateTime.now().millisecondsSinceEpoch.toString() + fileName,
+          title: title,
+          path: localPath,
+          fileName: fileName,
+          size: file.size,
+        ));
+      }
+
+      setState(() {
+        _localTracks.addAll(tracks);
+        _isLoadingAudio = false;
+      });
+
+      _toast('${tracks.length} fichier(s) chargé(s)');
+    } catch (e) {
+      setState(() => _isLoadingAudio = false);
+      _toast('Erreur chargement : $e', error: true);
+    }
+  }
+
+  // 🎵 LECTURE AUDIO LOCAL
+  Future<void> _playLocalTrack(LocalTrack track) async {
+    try {
+      if (_currentlyPlaying == track.id) {
+        await _audioPlayer.stop();
+        setState(() => _currentlyPlaying = null);
+        return;
+      }
+
+      setState(() => _currentlyPlaying = track.id);
+      await _audioPlayer.setFilePath(track.path);
+      await _audioPlayer.play();
+    } catch (e) {
+      setState(() => _currentlyPlaying = null);
+      _toast('Erreur lecture : $e', error: true);
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    await _audioPlayer.stop();
+    setState(() => _currentlyPlaying = null);
+  }
+
   void _addDialog() {
     final t = TextEditingController();
     final a = TextEditingController();
@@ -287,6 +378,11 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
         foregroundColor: _C.ink,
         title: Text('Playlist', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
         actions: [
+          IconButton(
+            tooltip: 'Charger des fichiers audio',
+            icon: const Icon(Icons.upload_file_rounded),
+            onPressed: _isLoadingAudio ? null : _pickLocalAudio,
+          ),
           IconButton(tooltip: 'Copier la playlist', icon: const Icon(Icons.copy_all_rounded), onPressed: _copyList),
         ],
         bottom: TabBar(
@@ -300,8 +396,8 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
           tabs: [
             Tab(text: 'À valider${pending > 0 ? ' ($pending)' : ''}'),
             Tab(text: 'Playlist (${_by('approved').length})'),
+            Tab(text: 'Locaux (${_localTracks.length})'),
             Tab(text: 'Jouées (${_by('played').length})'),
-            Tab(text: 'Refusées (${_by('rejected').length})'),
           ],
         ),
       ),
@@ -346,8 +442,8 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                           children: [
                             _list(_by('pending'), 'pending'),
                             _approvedList(),
+                            _localTracksList(),
                             _list(_by('played'), 'played'),
-                            _list(_by('rejected'), 'rejected'),
                           ],
                         ),
                       ),
@@ -434,6 +530,139 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
         key: ValueKey(l[i].id),
         padding: const EdgeInsets.only(bottom: 8),
         child: _tile(l[i], index: i),
+      ),
+    );
+  }
+
+  // 🎵 LISTE DES FICHIERS AUDIO LOCAUX
+  Widget _localTracksList() {
+    if (_localTracks.isEmpty) {
+      return _empty('Aucun fichier audio chargé.\nAppuyez sur 📁 pour charger des MP3/WAV depuis votre appareil.');
+    }
+    
+    return Column(
+      children: [
+        if (_currentlyPlaying != null)
+          Container(
+            margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(colors: [_C.rose.withOpacity(0.15), _C.green.withOpacity(0.15)]),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _C.rose.withOpacity(0.3)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.graphic_eq_rounded, color: _C.rose, size: 20),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Lecture en cours...',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _C.ink),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.stop_circle_rounded, color: _C.rose),
+                  onPressed: _stopAudio,
+                  tooltip: 'Arrêter',
+                ),
+              ],
+            ),
+          ),
+        Expanded(
+          child: RefreshIndicator(
+            onRefresh: () async {},
+            child: ListView.separated(
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.fromLTRB(14, 8, 14, 100),
+              itemCount: _localTracks.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (_, i) => _localTrackTile(_localTracks[i]),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _localTrackTile(LocalTrack track) {
+    final isPlaying = _currentlyPlaying == track.id;
+    final sizeMB = (track.size / 1024 / 1024).toStringAsFixed(1);
+    
+    return ThixGlass(
+      radius: 18,
+      opacity: 0.62,
+      padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: isPlaying ? _C.rose.withOpacity(0.2) : _C.green.withOpacity(0.15),
+              shape: BoxShape.circle,
+            ),
+            child: IconButton(
+              icon: Icon(
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                color: isPlaying ? _C.rose : _C.green,
+                size: 22,
+              ),
+              onPressed: () => _playLocalTrack(track),
+              tooltip: isPlaying ? 'Pause' : 'Lire',
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  track.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _C.ink),
+                ),
+                const SizedBox(height: 2),
+                Row(
+                  children: [
+                    Icon(Icons.audio_file_rounded, size: 12, color: _C.ink2),
+                    const SizedBox(width: 3),
+                    Text(
+                      track.fileName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.inter(fontSize: 10.5, color: _C.ink2),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$sizeMB MB',
+                      style: GoogleFonts.inter(fontSize: 10, color: _C.ink2, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, size: 20, color: _C.rose),
+            onPressed: () {
+              setState(() {
+                _localTracks.removeWhere((t) => t.id == track.id);
+                if (_currentlyPlaying == track.id) {
+                  _audioPlayer.stop();
+                  _currentlyPlaying = null;
+                }
+                // Supprimer le fichier temporaire
+                try {
+                  File(track.path).deleteSync();
+                } catch (_) {}
+              });
+              _toast('Fichier supprimé');
+            },
+            tooltip: 'Supprimer',
+          ),
+        ],
       ),
     );
   }
@@ -591,4 +820,21 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
       ),
     );
   }
+}
+
+// 🎵 MODÈLE POUR LES FICHIERS AUDIO LOCAUX
+class LocalTrack {
+  final String id;
+  final String title;
+  final String path;
+  final String fileName;
+  final int size;
+
+  LocalTrack({
+    required this.id,
+    required this.title,
+    required this.path,
+    required this.fileName,
+    required this.size,
+  });
 }
