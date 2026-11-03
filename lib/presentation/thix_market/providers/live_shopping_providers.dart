@@ -35,7 +35,7 @@ final livePinnedProductsProvider =
       .from('live_pinned_products')
       .stream(primaryKey: ['id'])
       .eq('session_id', sessionId)
-      .isFilter('unpinned_at', null)
+      .is('unpinned_at', null)  // ✅ MÉTHODE CORRECTE
       .map((rows) => rows
           .map((e) => LivePinnedProduct.fromJson(Map<String, dynamic>.from(e)))
           .toList()
