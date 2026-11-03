@@ -127,7 +127,7 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
               index: _currentIndex,
               children: [
                 ProviderDashboardPage(provider: provider),
-                ProviderOffersPage(provider: provider),
+                ProviderOfferFormPage(provider: provider),
                 ProviderGalleryPage(provider: provider),
                 ProviderReservationsPage(provider: provider),
                 ProviderTasksPage(provider: provider),
