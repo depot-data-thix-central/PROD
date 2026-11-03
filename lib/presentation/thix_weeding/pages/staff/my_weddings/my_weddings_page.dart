@@ -1,5 +1,8 @@
 // ============================================================================
-// THIX WEDDING & EVENTS — MY WEDDINGS (avec Recherche & Demandes d'accès)
+// THIX WEDDING & EVENTS — MY WEDDINGS (avec Recherche intelligente & Demandes d'accès)
+// ✅ Recherche par UUID, code unique (THIX-W-...) ou nom des mariés
+// ✅ Affichage de TOUS les résultats de recherche
+// ✅ Demandes d'accès staff avec gestion
 // ============================================================================
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -65,15 +68,26 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
   bool _isSearching = false;
   bool _hasSearched = false;
 
+  // ✅ Regex pour détecter un UUID valide
+  static final RegExp _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
   Future<void> _refresh(String userId) async {
     ref.invalidate(myWeddingsProvider(userId));
     await ref.read(myWeddingsProvider(userId).future);
   }
 
-  // ── RECHERCHE PAR ID ──
+  // ── RECHERCHE INTELLIGENTE (UUID, code unique ou nom des mariés) ──
   Future<void> _searchWedding() async {
     final query = _searchCtrl.text.trim();
-    if (query.isEmpty) return;
+    if (query.isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _hasSearched = false;
+      });
+      return;
+    }
 
     setState(() {
       _isSearching = true;
@@ -84,23 +98,42 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      final res = await Supabase.instance.client
-          .from('thix_weeding_weddings')
-          .select()
-          .eq('id', query)
-          .limit(1);
+      List<Map<String, dynamic>> res;
 
-      setState(() {
-        _searchResults = List<Map<String, dynamic>>.from(res);
-      });
+      if (_uuidRegex.hasMatch(query)) {
+        // ✅ Cas 1 : UUID valide → recherche par id
+        res = List<Map<String, dynamic>>.from(
+          await Supabase.instance.client
+              .from('thix_weeding_weddings')
+              .select()
+              .eq('id', query)
+              .limit(1),
+        );
+      } else {
+        // ✅ Cas 2 : code unique (THIX-W-…) ou nom des mariés
+        // On nettoie les caractères qui casseraient le filtre .or()
+        final safe = query.replaceAll(RegExp(r'[(),]'), ' ').trim();
+        res = List<Map<String, dynamic>>.from(
+          await Supabase.instance.client
+              .from('thix_weeding_weddings')
+              .select()
+              .or('unique_code.ilike.%$safe%,couple_names.ilike.%$safe%')
+              .order('created_at', ascending: false)
+              .limit(10),
+        );
+      }
+
+      if (!mounted) return;
+      setState(() => _searchResults = res);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose),
         );
+        setState(() => _searchResults = []);
       }
     } finally {
-      setState(() => _isSearching = false);
+      if (mounted) setState(() => _isSearching = false);
     }
   }
 
@@ -167,7 +200,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate(
                     [
-                      // 1. BARRE DE RECHERCHE (par ID)
+                      // 1. BARRE DE RECHERCHE (par ID, code ou nom)
                       _buildSearchBar(),
                       const SizedBox(height: 20),
 
@@ -228,15 +261,21 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
         controller: _searchCtrl,
         onSubmitted: (_) => _searchWedding(),
         decoration: InputDecoration(
-          hintText: 'Rechercher par ID (uuid)',
+          hintText: 'Code (THIX-W-…), nom ou ID (uuid)',
           hintStyle: GoogleFonts.inter(fontSize: 13, color: _R.text2),
           prefixIcon: const Icon(Icons.search, color: _R.blue),
-          suffixIcon: IconButton(
-            icon: _isSearching
-                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _R.blue))
-                : const Icon(Icons.arrow_forward, color: _R.blue),
-            onPressed: _searchWedding,
-          ),
+          suffixIcon: _searchCtrl.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear, color: _R.text2),
+                  onPressed: () {
+                    _searchCtrl.clear();
+                    setState(() {
+                      _searchResults = [];
+                      _hasSearched = false;
+                    });
+                  },
+                )
+              : null,
           border: InputBorder.none,
           contentPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
         ),
@@ -246,7 +285,9 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
 
   Widget _buildSearchResults() {
     if (_isSearching) {
-      return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+      return const Center(
+        child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()),
+      );
     }
     if (_searchResults.isEmpty) {
       return Padding(
@@ -258,50 +299,53 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       );
     }
 
-    final w = _searchResults.first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Résultats de recherche',
+          'Résultats de recherche (${_searchResults.length})',
           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _R.text),
         ),
         const SizedBox(height: 10),
-        Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: _R.border),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      w['couple_names'] ?? 'Sans nom',
-                      style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15),
+        ..._searchResults.map((w) => Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _R.border),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          '${w['couple_names'] ?? 'Sans nom'}',
+                          style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${w['unique_code'] ?? ''}',
+                          style: _mono(fontSize: 11, color: _R.blue),
+                        ),
+                      ],
                     ),
-                    Text('ID: ${w['id']}', style: _mono(fontSize: 11, color: _R.blue)),
-                  ],
-                ),
+                  ),
+                  ElevatedButton.icon(
+                    onPressed: () => _requestAccess('${w['id']}'),
+                    icon: const Icon(Icons.person_add_alt_1, size: 16),
+                    label: const Text('Demander accès'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _R.blue.withOpacity(0.1),
+                      foregroundColor: _R.blue,
+                      elevation: 0,
+                    ),
+                  ),
+                ],
               ),
-              ElevatedButton.icon(
-                onPressed: () => _requestAccess(w['id']),
-                icon: const Icon(Icons.person_add_alt_1, size: 16),
-                label: const Text('Demander accès'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _R.blue.withOpacity(0.1),
-                  foregroundColor: _R.blue,
-                  elevation: 0,
-                ),
-              ),
-            ],
-          ),
-        ),
+            )),
         const Divider(height: 30),
       ],
     );
@@ -356,7 +400,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
 }
 
 // ============================================================================
-// DEMANDES D'ACCÈS — CORRIGÉ (fusionné correctement)
+// DEMANDES D'ACCÈS (inchangé — ConsumerStatefulWidget)
 // ============================================================================
 class _IncomingRequestsWidget extends ConsumerStatefulWidget {
   final VoidCallback onActionDone;
@@ -475,11 +519,11 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
                 ),
                 IconButton(
                   icon: const Icon(Icons.check_circle, color: _R.green),
-                  onPressed: () => _handleRequest(r['id'], r['wedding_id'], r['user_id'], true),
+                  onPressed: () => _handleRequest('${r['id']}', '${r['wedding_id']}', '${r['user_id']}', true),
                 ),
                 IconButton(
                   icon: const Icon(Icons.cancel, color: _R.rose),
-                  onPressed: () => _handleRequest(r['id'], r['wedding_id'], r['user_id'], false),
+                  onPressed: () => _handleRequest('${r['id']}', '${r['wedding_id']}', '${r['user_id']}', false),
                 ),
               ],
             ),
