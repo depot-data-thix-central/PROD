@@ -1,14 +1,13 @@
 // lib/presentation/thix_weeding/pages/guest/guest_home_page.dart
 // ============================================================================
-// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v4)
+// THIX WEDDING — ACCUEIL INVITÉ (PRODUCTION v5)
+// ✅ COMPTEURS « NOUVEAU » sur chaque rubrique (annonces, menu, navette, dress
+//    code, FAQ, remerciements, live, galerie, livre d'or, prestataires, table,
+//    invitation, playlist) — temps réel, remis à zéro à l'ouverture
+// ✅ Pastille « Annonces » dans la barre du bas + « Plus » = somme des extras
 // ✅ Hero : 6 premières photos de la galerie, défilement automatique permanent
-// ✅ Tout est compact (rien ne déborde) — feuilles de détail défilables
-// ✅ « En un coup d'œil » supprimé → bande « Photos du mariage »
-// ✅ Infos pratiques = uniquement ce que le staff PUBLIE (photos, tag, titre)
-// ✅ Message d'invitation / table / place : visibles seulement par l'invité concerné
-// ✅ Cartes infos & prestataires avec photos
-// ✅ Temps réel (mariage, invité, table, messages) + verre dépoli
-// ✅ MENU : lien vers préférences repas avec badge compteur de plats
+// ✅ Infos pratiques = uniquement ce que le staff PUBLIE
+// ✅ Message d'invitation / table / place : visibles seulement par l'invité
 // ============================================================================
 import 'dart:async';
 import 'dart:ui' show ImageFilter;
@@ -30,6 +29,7 @@ import 'package:supabase_flutter/supabase_flutter.dart'
 import '../../core/failure.dart';
 import '../../providers/wedding_provider.dart';
 import '../../providers/countdown_provider.dart';
+import '../../providers/wedding_badges.dart';
 import '../../data/repositories/wedding_repository_impl.dart';
 import '../../domain/entities/wedding_entity.dart';
 import '../staff/providers/thix_weeding_providers.dart';
@@ -98,7 +98,6 @@ const List<_GuestMenuItem> _kGuestMenu = [
   _GuestMenuItem(title: 'Programme', subtitle: 'Déroulé de la journée', icon: Icons.event_note_outlined, route: 'programme'),
   _GuestMenuItem(title: 'Lieu & Accès', subtitle: 'Itinéraire & infos', icon: Icons.location_on_outlined, route: 'lieu'),
   _GuestMenuItem(title: 'RSVP', subtitle: 'Confirmer votre présence', icon: Icons.people_alt_outlined, route: 'rsvp', badgeType: _BadgeType.alert),
-  // ✅ MODIFIÉ : route vers meal-preferences + badge compteur
   _GuestMenuItem(title: 'Menu', subtitle: 'Choisir mes plats', icon: Icons.restaurant_menu_rounded, route: 'meal-preferences', badgeType: _BadgeType.count),
   _GuestMenuItem(title: 'Playlist', subtitle: 'Proposer vos titres', icon: Icons.queue_music_rounded, route: 'playlist'),
   _GuestMenuItem(title: 'Ma table', subtitle: 'Votre table & voisins', icon: Icons.table_restaurant_outlined, route: 'ma-table'),
@@ -117,6 +116,9 @@ const List<_GuestMenuItem> _kExtraMenu = [
   _GuestMenuItem(title: 'Remerciements', subtitle: 'Un mot pour vous', icon: Icons.volunteer_activism_outlined, route: 'remerciements'),
   _GuestMenuItem(title: 'Prestataires', subtitle: 'Ceux qui font la fête', icon: Icons.storefront_outlined, route: 'prestataires'),
 ];
+
+/// Clé de compteur d'une rubrique (la route « meal-preferences » = compteur « menu »).
+String _featureOf(String route) => route == 'meal-preferences' ? 'menu' : route;
 
 // ============================================================
 // PROVIDERS GÉNÉRÉS (inchangés — nécessaires au fichier .g.dart)
@@ -227,7 +229,7 @@ final guestVendorPhotosProvider =
   }
 });
 
-/// ✅ NOUVEAU : Compteur de plats publics pour le badge du menu
+/// Compteur de plats publics (conservé, utilisable ailleurs)
 final guestMenuCountProvider =
     FutureProvider.autoDispose.family<int, String>((ref, weddingId) async {
   try {
@@ -451,7 +453,8 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     ref.invalidate(galleryProvider(id));
     ref.invalidate(guestsProvider(id));
     ref.invalidate(messagesProvider(id));
-    ref.invalidate(guestMenuCountProvider(id)); // ✅ AJOUTÉ
+    ref.invalidate(guestMenuCountProvider(id));
+    ref.invalidate(weddingBadgesProvider((weddingId: id, role: 'guest')));
   }
 
   Future<void> _onRefresh() async {
@@ -480,12 +483,23 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     return tn != null ? 'Table $tn' : '';
   }
 
+  WeddingBadges get _badges =>
+      ref.read(weddingBadgesProvider((weddingId: widget.weddingId, role: 'guest'))).valueOrNull ??
+      WeddingBadges.empty;
+
   void _go(String route) {
     HapticFeedback.selectionClick();
     if (route == 'plus') {
       _openMore();
       return;
     }
+    // Remet le compteur de la rubrique à zéro (synchronisé entre appareils)
+    unawaited(markWeddingSeen(
+      ref,
+      weddingId: widget.weddingId,
+      role: 'guest',
+      feature: _featureOf(route),
+    ));
     context.push('/thix-weeding/guest/${widget.weddingId}/$route');
   }
 
@@ -561,6 +575,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
 
   void _openMore() {
     final all = [..._kGuestMenu.where((e) => e.route != 'plus'), ..._kExtraMenu];
+    final badges = _badges;
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
@@ -593,6 +608,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                     itemCount: all.length,
                     itemBuilder: (_, i) {
                       final it = all[i];
+                      final n = badges.of(_featureOf(it.route));
                       return ListTile(
                         dense: true,
                         contentPadding: const EdgeInsets.symmetric(horizontal: 2),
@@ -605,7 +621,13 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                         title: Text(it.title,
                             style: GoogleFonts.inter(fontWeight: FontWeight.w700, color: _P.ink, fontSize: 13)),
                         subtitle: Text(it.subtitle, style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft)),
-                        trailing: const Icon(Icons.chevron_right_rounded, color: _P.primary, size: 20),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (n > 0) _CountPill(count: n),
+                            const Icon(Icons.chevron_right_rounded, color: _P.primary, size: 20),
+                          ],
+                        ),
                         onTap: () {
                           Navigator.pop(ctx);
                           _go(it.route);
@@ -691,7 +713,10 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     final vendorPhotos = ref.watch(guestVendorPhotosProvider(widget.weddingId)).value ?? const <String, String>{};
     final annAsync = ref.watch(guestAnnouncementsProvider(widget.weddingId));
     final galleryRaw = ref.watch(galleryProvider(widget.weddingId)).value;
-    final menuCount = ref.watch(guestMenuCountProvider(widget.weddingId)).value ?? 0; // ✅ AJOUTÉ
+    final badges = ref
+            .watch(weddingBadgesProvider((weddingId: widget.weddingId, role: 'guest')))
+            .valueOrNull ??
+        WeddingBadges.empty;
     final bottom = MediaQuery.of(context).padding.bottom;
 
     final photos = <String>[];
@@ -715,7 +740,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                   vendorsAsync: vendorsAsync,
                   vendorPhotos: vendorPhotos,
                   annAsync: annAsync,
-                  menuCount: menuCount, // ✅ AJOUTÉ
+                  badges: badges,
                 );
               },
               loading: () => const Center(child: CircularProgressIndicator(strokeWidth: 2, color: _P.primary)),
@@ -728,6 +753,8 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
             right: 18,
             bottom: 10 + bottom,
             child: _GlassNav(
+              messagesBadge: badges.of('annonces'),
+              moreBadge: badges.of('remerciements') + badges.of('prestataires'),
               onHome: () => _scroll.animateTo(0,
                   duration: const Duration(milliseconds: 380), curve: Curves.easeOut),
               onAgenda: () => _go('programme'),
@@ -820,13 +847,12 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
     required AsyncValue<List<VendorModel>> vendorsAsync,
     required Map<String, String> vendorPhotos,
     required AsyncValue<List<GuestAnnouncement>> annAsync,
-    required int menuCount, // ✅ AJOUTÉ
+    required WeddingBadges badges,
   }) {
     final mq = MediaQuery.of(context);
     final headerH = mq.padding.top + 56;
     final contentH = (mq.size.height * 0.44).clamp(330.0, 440.0).toDouble();
     final photoH = contentH + 30;
-    final announcements = annAsync.value ?? const <GuestAnnouncement>[];
     final heroPhotos = photos.take(6).toList();
 
     return Stack(
@@ -910,7 +936,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                       _DisabledBanner(),
                       const SizedBox(height: 12),
                     ],
-                    _placeCard(),
+                    _placeCard(badges.of('ma-table')),
                     if (_guest != null) const SizedBox(height: 20),
 
                     const _SectionHeader(title: 'Toutes les rubriques'),
@@ -930,14 +956,18 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                         var type = item.badgeType;
                         int? count;
                         if (item.route == 'rsvp') {
+                          // RSVP : alerte tant que la réponse n'est pas donnée
                           type = _rsvpPending ? _BadgeType.alert : _BadgeType.none;
-                        } else if (item.route == 'annonces') {
-                          count = announcements.length;
-                          type = announcements.isNotEmpty ? _BadgeType.count : _BadgeType.none;
-                        } else if (item.route == 'meal-preferences') {
-                          // ✅ AJOUTÉ : badge pour le menu
-                          count = menuCount;
-                          type = menuCount > 0 ? _BadgeType.count : _BadgeType.none;
+                        } else {
+                          final n = item.route == 'plus'
+                              ? badges.of('remerciements') + badges.of('prestataires')
+                              : badges.of(_featureOf(item.route));
+                          if (n > 0) {
+                            type = _BadgeType.count;
+                            count = n;
+                          } else if (item.badgeType == _BadgeType.count) {
+                            type = _BadgeType.none;
+                          }
                         }
                         return _GuestMenuTile(
                           item: item,
@@ -1003,7 +1033,7 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
   }
 
   // ───────────────────────── CARTE "MA PLACE" (privée) ─────────────────────────
-  Widget _placeCard() {
+  Widget _placeCard(int newTableCount) {
     final g = _guest;
     if (g == null || !_invitationActive) return const SizedBox.shrink();
     final has = _tableName.isNotEmpty;
@@ -1033,9 +1063,15 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('VOTRE PLACE',
-                        style: GoogleFonts.inter(
-                            fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.6, color: _P.inkSoft)),
+                    Row(children: [
+                      Text('VOTRE PLACE',
+                          style: GoogleFonts.inter(
+                              fontSize: 9, fontWeight: FontWeight.w800, letterSpacing: 1.6, color: _P.inkSoft)),
+                      if (newTableCount > 0) ...[
+                        const SizedBox(width: 6),
+                        const _CountPill(count: 1, label: 'NOUVEAU'),
+                      ],
+                    ]),
                     Text(
                       has ? _tableName : 'En cours d\'attribution',
                       style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink),
@@ -1114,6 +1150,27 @@ class _GuestHomePageState extends ConsumerState<GuestHomePage> {
           ],
         ],
       ),
+    );
+  }
+}
+
+// ============================================================
+// PASTILLE DE COMPTEUR
+// ============================================================
+class _CountPill extends StatelessWidget {
+  final int count;
+  final String? label;
+  const _CountPill({required this.count, this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = label ?? (count > 99 ? '99+' : '$count');
+    return Container(
+      margin: const EdgeInsets.only(right: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(gradient: _P.gradPrimary, borderRadius: BorderRadius.circular(9)),
+      child: Text(text,
+          style: const TextStyle(fontSize: 9.5, color: Colors.white, fontWeight: FontWeight.w900, letterSpacing: 0.3)),
     );
   }
 }
@@ -1454,6 +1511,7 @@ class _GuestMenuTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final n = badgeCount ?? 0;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(14),
@@ -1484,12 +1542,13 @@ class _GuestMenuTile extends StatelessWidget {
                   right: -1,
                   child: _DotBadge(child: Text('!', style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.w800))),
                 ),
-              if (badge == _BadgeType.count)
+              if (badge == _BadgeType.count && n > 0)
                 Positioned(
-                  top: -1,
-                  right: -1,
+                  top: -3,
+                  right: -5,
                   child: _DotBadge(
-                    child: Text('${badgeCount ?? 0}',
+                    wide: n > 9,
+                    child: Text(n > 99 ? '99+' : '$n',
                         style: const TextStyle(fontSize: 8.5, color: Colors.white, fontWeight: FontWeight.w800)),
                   ),
                 ),
@@ -1522,17 +1581,18 @@ class _GuestMenuTile extends StatelessWidget {
 
 class _DotBadge extends StatelessWidget {
   final Widget child;
-  const _DotBadge({required this.child});
+  final bool wide;
+  const _DotBadge({required this.child, this.wide = false});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 17,
-      height: 17,
+      constraints: BoxConstraints(minWidth: 17, minHeight: 17, maxHeight: 17, maxWidth: wide ? 30 : 17),
+      padding: EdgeInsets.symmetric(horizontal: wide ? 4 : 0),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: _P.primary,
-        shape: BoxShape.circle,
+        borderRadius: BorderRadius.circular(9),
         border: Border.all(color: Colors.white, width: 1.5),
       ),
       child: child,
@@ -1978,12 +2038,16 @@ class _TrustRow extends StatelessWidget {
 // BARRE DE NAVIGATION FLOTTANTE (verre dépoli, compacte)
 // ============================================================
 class _GlassNav extends StatelessWidget {
+  final int messagesBadge;
+  final int moreBadge;
   final VoidCallback onHome;
   final VoidCallback onAgenda;
   final VoidCallback onHeart;
   final VoidCallback onMessages;
   final VoidCallback onProfile;
   const _GlassNav({
+    required this.messagesBadge,
+    required this.moreBadge,
     required this.onHome,
     required this.onAgenda,
     required this.onHeart,
@@ -2023,8 +2087,12 @@ class _GlassNav extends StatelessWidget {
                   child: const Icon(Icons.favorite_rounded, color: Colors.white, size: 21),
                 ),
               ),
-              _NavItem(icon: Icons.chat_bubble_outline_rounded, label: 'Annonces', onTap: onMessages),
-              _NavItem(icon: Icons.grid_view_rounded, label: 'Plus', onTap: onProfile),
+              _NavItem(
+                  icon: Icons.chat_bubble_outline_rounded,
+                  label: 'Annonces',
+                  badge: messagesBadge,
+                  onTap: onMessages),
+              _NavItem(icon: Icons.grid_view_rounded, label: 'Plus', badge: moreBadge, onTap: onProfile),
             ],
           ),
         ),
@@ -2037,8 +2105,15 @@ class _NavItem extends StatelessWidget {
   final IconData icon;
   final String label;
   final bool selected;
+  final int badge;
   final VoidCallback onTap;
-  const _NavItem({required this.icon, required this.label, this.selected = false, required this.onTap});
+  const _NavItem({
+    required this.icon,
+    required this.label,
+    this.selected = false,
+    this.badge = 0,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -2052,7 +2127,22 @@ class _NavItem extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 20, color: color),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, size: 20, color: color),
+                if (badge > 0)
+                  Positioned(
+                    top: -5,
+                    right: -9,
+                    child: _DotBadge(
+                      wide: badge > 9,
+                      child: Text(badge > 99 ? '99+' : '$badge',
+                          style: const TextStyle(fontSize: 8, color: Colors.white, fontWeight: FontWeight.w800)),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 1),
             Text(label,
                 style: GoogleFonts.inter(
