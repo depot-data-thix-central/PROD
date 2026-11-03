@@ -1,10 +1,8 @@
 // lib/presentation/thix_weeding/pages/staff/invités/add_guest_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v5)
-// ✅ Choix de la table + des places directement depuis le plan de salle 3D
-// ✅ La place est réservée (visible en temps réel dans le plan 3D)
-// ✅ Aperçu invitation : design Studio + table / place + QR code
-// ✅ Verre dépoli
+// THIX WEDDING & EVENTS — ADD/EDIT GUEST (PRODUCTION v6)
+// ✅ Correction : préservation du user_id et invitation_active lors de l'édition
+// ✅ Correction : affichage propre des erreurs
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -83,7 +81,6 @@ const Map<String, Color> _zoneColors = {
   'collegues': Color(0xFFD97706),
 };
 
-// Groupes
 const List<_Group> _GROUPS = [
   _Group('famille_marié', 'Famille du marié', Icons.family_restroom, Color(0xFF0B3B8F)),
   _Group('famille_mariée', 'Famille de la mariée', Icons.favorite, Color(0xFFE31C4E)),
@@ -129,8 +126,6 @@ class _HallTable {
       );
 }
 
-/// Même ordre de places que le plan 3D (rond : horaire depuis le haut ;
-/// rect : haut G→D puis bas G→D ; carré : haut, bas, gauche, droite).
 List<Offset> _seatOffsets(String kind, int n, Size b, double gap) {
   final out = <Offset>[];
   if (kind == 'table_round') {
@@ -180,14 +175,6 @@ class _ThixIdGenerator {
     final part2 = random.toString().padLeft(4, '0');
     return 'THIX-GST-$part1-$part2';
   }
-
-  static String checksum(String payload) {
-    var hash = 0;
-    for (var i = 0; i < payload.length; i++) {
-      hash = ((hash << 5) - hash + payload.codeUnitAt(i)) & 0xFFFFFFFF;
-    }
-    return (hash.abs() % 0xFFFF).toRadixString(16).toUpperCase().padLeft(4, '0');
-  }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -216,6 +203,10 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   late String _publicThixId;
   String? _dbGuestId;
 
+  // ✅ AJOUT : Variables d'état pour conserver l'invitation
+  bool _invitationActive = true;
+  String? _linkedUserId;
+
   String _group = 'amis';
   int _count = 1;
   bool _isVip = false;
@@ -225,12 +216,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
   bool _sendViaChat = true;
   bool _useThixSearch = true;
   bool _searchingThix = false;
-  String? _linkedUserId;
+  
   final _thixSearchCtrl = TextEditingController();
 
   // Plan de salle
   List<_HallTable> _halls = [];
-  Map<String, Map<int, String>> _occ = {}; // tableId -> (place -> nom)
+  Map<String, Map<int, String>> _occ = {};
   String? _hallTableId;
   Set<int> _seats = {};
   bool _hallLoading = true;
@@ -340,6 +331,12 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
       _tableCtrl.text = g.tableNumber?.toString() ?? '';
       _notesCtrl.text = g.notes ?? '';
       _publicThixId = g.thixId ?? _ThixIdGenerator.generate();
+      
+      // ✅ FIX : On conserve l'état actuel de l'invitation
+      _invitationActive = (data['invitation_active'] as bool?) ?? true;
+      // ✅ FIX : On conserve le lien THIX s'il existe déjà
+      _linkedUserId = data['user_id'] as String?;
+
       _hallTableId = data['hall_table_id'] as String?;
       _seats = ((data['seat_indices'] as List?) ?? const [])
           .map((e) => (e as num).toInt())
@@ -442,6 +439,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
         'is_companion': _isCompanion,
         'thix_id': _publicThixId,
         'user_id': _linkedUserId,
+        'invitation_active': _invitationActive, // ✅ FIX : On envoie toujours l'état (true ou false)
       };
 
       String? savedDbId;
@@ -480,7 +478,7 @@ class _AddGuestPageState extends ConsumerState<AddGuestPage>
       final msg = e.toString();
       _showError(msg.contains('déjà occupée')
           ? 'Une de ces places vient d’être prise. Rechoisissez vos places.'
-          : 'Erreur sauvegarde: $e');
+          : 'Erreur sauvegarde: $msg');
       _loadHall();
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -1125,7 +1123,7 @@ class _SeatMap extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// WIDGETS
+// WIDGETS SECONDAIRES
 // ═══════════════════════════════════════════════════════════════════════════
 class _ModeBtn extends StatelessWidget {
   final String label;
