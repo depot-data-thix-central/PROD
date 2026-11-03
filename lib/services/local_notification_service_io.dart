@@ -1,22 +1,12 @@
 // lib/services/local_notification_service_io.dart
 //
-// Local Notification Service IO v3.2 (Production Enterprise)
+// Local Notification Service IO v3.3 (Production Enterprise + Wedding)
 //
-// CHANGELOG v3.2 (depuis v3.1) :
-//   ✅ FIX BUILD: Retrait de `const` devant `iosSettings` et
-//      `InitializationSettings`. DarwinNotificationAction.text/plain
-//      ne sont pas des constructeurs const dans flutter_local_notifications,
-//      ce qui rendait toute la chaîne invalide en compilation release.
-//
-// CHANGELOG v3.1 :
-//   ✅ Catégories Darwin enregistrées pour iOS : REPLY (avec input texte),
-//      MARK_AS_READ, MUTE.
-//   ✅ Buffer d'actions en attente (cold-start).
-//   ✅ Réponse background forcée en foreground pour Quick Reply.
-//   ✅ Retrait du gate `context.mounted` qui bloquait les taps cold-start.
-//
-// Conserve tous les correctifs v3 : canaux _v3, validation, sanitization,
-// ringtone.mp3 dans res/raw/, showBadge, AndroidNotificationActionInput.
+// CHANGELOG v3.3 :
+//   ✅ Ajout de `showWeddingMessage` pour les messages de mariage avec actions.
+//   ✅ Ajout de `showWeddingAlert` pour les alertes de mariage (RSVP, menu, tâches).
+//   ✅ Ajout du channel "Wedding" pour séparer les notifications d'événements 
+//      des messages généraux.
 // ============================================================================
 
 import 'dart:async';
@@ -127,6 +117,7 @@ class LocalNotificationService {
   static const String channelDefault = 'thix_id_default_v3';
   static const String channelChat = 'thix_chat_v3';
   static const String channelCalls = 'thix_calls_v3';
+  static const String channelWedding = 'thix_wedding_v3'; // ✅ Nouveau canal
 
   static const List<String> _legacyChannels = [
     'thix_id_default_v2',
@@ -164,11 +155,6 @@ class LocalNotificationService {
       const androidSettings =
           AndroidInitializationSettings('notification_icon');
 
-      // ✅ v3.2 : `final` et NON `const` car DarwinNotificationAction.text()
-      // et DarwinNotificationAction.plain() ne sont pas des constructeurs
-      // const dans flutter_local_notifications. Utiliser `const` ici
-      // provoquait l'erreur "Cannot invoke a non-'const' factory where a
-      // const expression is expected" en build release.
       final iosSettings = DarwinInitializationSettings(
         requestAlertPermission: false,
         requestBadgePermission: false,
@@ -202,7 +188,6 @@ class LocalNotificationService {
         ],
       );
 
-      // ✅ v3.2 : Pas de `const` ici non plus, car iosSettings est `final`.
       await _plugin
           .initialize(
             InitializationSettings(
@@ -224,9 +209,8 @@ class LocalNotificationService {
       }
 
       _initialized = true;
-      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.2)');
+      debugPrint('[LocalNotif] ✓ Initialized successfully (v3.3)');
 
-      // Rejoue une action en attente (cold-start via action)
       _flushPendingAction();
     } on TimeoutException {
       debugPrint('[LocalNotif] ❌ Initialization timeout');
@@ -241,7 +225,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Rejoue l'action stockée au cold-start.
   void _flushPendingAction() {
     final pending = _PendingActionBuffer.consume();
     if (pending == null) return;
@@ -304,12 +287,25 @@ class LocalNotificationService {
           sound: RawResourceAndroidNotificationSound('ringtone'),
         ),
       );
+
+      // ✅ Nouveau canal pour les Mariages
+      await android.createNotificationChannel(
+        const AndroidNotificationChannel(
+          channelWedding,
+          'Mariages & Événements',
+          description: 'Mises à jour de vos mariages (RSVP, menu, tâches...)',
+          importance: Importance.high,
+          playSound: true,
+          enableVibration: true,
+          showBadge: true,
+          sound: RawResourceAndroidNotificationSound('notification'),
+        ),
+      );
     } catch (e) {
       debugPrint('[LocalNotif] ⚠️ Failed to create Android channels: $e');
     }
   }
 
-  /// Réponse au premier plan (app vivante).
   void _handleNotificationResponse(NotificationResponse response) {
     final payload = response.payload;
     final actionId = response.actionId;
@@ -321,7 +317,6 @@ class LocalNotificationService {
     onNotificationTap?.call(payload, actionId: actionId, input: input);
   }
 
-  /// Réponse en arrière-plan (app fermée / isolate séparé).
   @pragma('vm:entry-point')
   static void _handleBackgroundNotificationResponse(
       NotificationResponse response) {
@@ -356,7 +351,6 @@ class LocalNotificationService {
     }
   }
 
-  /// Affiche une notification locale avec actions selon le type.
   Future<bool> show({
     required int id,
     required String title,
@@ -383,6 +377,7 @@ class LocalNotificationService {
     final channel = channelId ?? channelDefault;
     final isCall = channel == channelCalls;
     final isChat = channel == channelChat;
+    final isWedding = channel == channelWedding;
 
     final List<AndroidNotificationAction> actions = [];
 
@@ -431,12 +426,14 @@ class LocalNotificationService {
 
     final androidDetails = AndroidNotificationDetails(
       channel,
-      isCall ? 'Appels THIX' : isChat ? 'Messages THIX Chat' : 'THIX ID',
+      isCall ? 'Appels THIX' : isWedding ? 'Mariages & Événements' : isChat ? 'Messages THIX Chat' : 'THIX ID',
       channelDescription: isCall
           ? 'Appels entrants'
-          : isChat
-              ? 'Nouveaux messages'
-              : 'Notifications THIX',
+          : isWedding
+              ? 'Mises à jour de mariages'
+              : isChat
+                  ? 'Nouveaux messages'
+                  : 'Notifications THIX',
       importance: Importance.max,
       priority: Priority.max,
       icon: 'notification_icon',
@@ -458,7 +455,7 @@ class LocalNotificationService {
       styleInformation: BigTextStyleInformation(
         sanitizedBody,
         contentTitle: sanitizedTitle,
-        summaryText: isChat ? 'THIX Chat' : 'THIX Hub',
+        summaryText: isWedding ? 'Mariage' : isChat ? 'THIX Chat' : 'THIX Hub',
       ),
     );
 
@@ -501,6 +498,44 @@ class LocalNotificationService {
       showReplyAction: true,
       showMarkAsReadAction: true,
       showMuteAction: true,
+    );
+  }
+
+  /// ✅ NOUVEAU : Afficher un message de mariage (avec options "Répondre")
+  Future<bool> showWeddingMessage({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) {
+    return show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      channelId: channelWedding, // Utilise le canal dédié
+      showReplyAction: true,
+      showMarkAsReadAction: true,
+      showMuteAction: true,
+    );
+  }
+
+  /// ✅ NOUVEAU : Afficher une alerte de mariage (RSVP, menu, tâche, etc.)
+  Future<bool> showWeddingAlert({
+    required int id,
+    required String title,
+    required String body,
+    String? payload,
+  }) {
+    return show(
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      channelId: channelWedding,
+      showReplyAction: false,
+      showMarkAsReadAction: false,
+      showMuteAction: false,
     );
   }
 
