@@ -19,7 +19,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
 import 'provider_offers_page.dart' show offerTypeColor, offerTypeIcon;
-import 'provider_offer_form_page.dart'; // formulaire multi-photos / vidéo
+import 'provider_offer_form_page.dart';
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
