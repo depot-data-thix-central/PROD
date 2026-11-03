@@ -1,17 +1,15 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.6 (PRODUCTION ENTERPRISE + MULTI-ACTIVITÉS)
+// THIX WEDDING ROUTES — v3.7 (PRODUCTION ENTERPRISE + WORKFLOW COMMANDES)
 // ✅ FIX 404 : meal-preferences déplacé DANS guest/:weddingId (weddingId hérité)
 // ✅ FIX 404 : route enfant :vendorId (détail prestataire) ajoutée sous prestataires
-// ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelon (doublon staffMenu)
-// ✅ ✅ Route 16 staff "menu" -> StaffMenuPage (staff_content_pages.dart)
-//       (TraiteurMenuStaffPage retiré : import supprimé, plus référencé)
+// ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelin (doublon staffMenu)
+// ✅ Route 16 staff "menu" -> StaffMenuPage (staff_content_pages.dart)
 // ✅ NOUVEAU invité : menu, playlist, ma-table (plan 3D), live, annonces,
 //    navette, dress-code, faq, remerciements, prestataires, meal-preferences
 // ✅ NOUVEAU staff  : playlist, menu (StaffMenuPage), contenu/:kind
-// ✅ 🆕 MULTI-ACTIVITÉS PRESTATAIRE (1 compte = N métiers : traiteur, salle…)
-//    → routes /provider/activities[/new][/edit/:id] + imports associés
-//    → _ProviderOfferFormRoute respecte selectedActivityIdProvider
+// ✅ MULTI-ACTIVITÉS PRESTATAIRE (1 compte = N métiers : traiteur, salle…)
+// ✅ NOUVEAU v3.7 : Workflow commandes, menu traiteur, votes invités, suggestions DG
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -81,6 +79,14 @@ import 'pages/provider_portal/provider_offers_page.dart';
 // ✅ NOUVEAU : Multi-activités prestataire (1 compte = N métiers)
 import 'pages/provider_portal/my_activities_page.dart';
 import 'pages/provider_portal/create_activity_page.dart';
+
+// ✅ NOUVEAU v3.7 : Workflow commandes + menu traiteur + suggestions
+import 'pages/provider_portal/orders/provider_orders_page.dart';
+import 'pages/provider_portal/orders/order_detail_page.dart';
+import 'pages/provider_portal/traiteur/traiteur_menu_page.dart';
+import 'pages/provider_portal/traiteur/guest_voting_page.dart';
+import 'pages/provider_portal/suggestions/dg_suggestions_page.dart';
+
 import 'providers/provider_providers.dart';
 
 class ThixWeedingRoutes {
@@ -148,10 +154,17 @@ class ThixWeedingRoutes {
   static const String providerReservations = 'providerReservations';
   static const String providerTasks = 'providerTasks';
   static const String providerProfile = 'providerProfile';
-  // ✅ NOUVEAU : Multi-activités
+  // ✅ Multi-activités
   static const String providerActivities = 'providerActivities';
   static const String providerNewActivity = 'providerNewActivity';
   static const String providerEditActivity = 'providerEditActivity';
+  
+  // ✅ NOUVEAU v3.7 : Workflow commandes
+  static const String providerOrders = 'providerOrders';
+  static const String providerOrderDetail = 'providerOrderDetail';
+  static const String providerMenu = 'providerMenu';
+  static const String providerMenuStats = 'providerMenuStats';
+  static const String providerSuggestions = 'providerSuggestions';
 
   static List<RouteBase> get routes => [
         GoRoute(
@@ -212,6 +225,42 @@ class ThixWeedingRoutes {
                 GoRoute(path: 'reservations', name: providerReservations, builder: (c, s) => const ProviderPortalShell(initialTab: 3)),
                 GoRoute(path: 'taches', name: providerTasks, builder: (c, s) => const ProviderPortalShell(initialTab: 4)),
                 GoRoute(path: 'profil', name: providerProfile, builder: (c, s) => const ProviderPortalShell(initialTab: 5)),
+                
+                // ✅ NOUVEAU v3.7 : Commandes (accessible depuis dashboard)
+                GoRoute(
+                  path: 'commandes',
+                  name: providerOrders,
+                  builder: (c, s) => const _ProviderOrdersRoute(),
+                ),
+                GoRoute(
+                  path: 'commandes/:orderId',
+                  name: providerOrderDetail,
+                  builder: (c, s) => _ProviderOrderDetailRoute(
+                    orderId: s.pathParameters['orderId']!,
+                  ),
+                ),
+                GoRoute(
+                  path: 'menu/:orderId',
+                  name: providerMenu,
+                  builder: (c, s) => _ProviderMenuRoute(
+                    orderId: s.pathParameters['orderId']!,
+                    menuId: s.uri.queryParameters['menuId'],
+                  ),
+                ),
+                GoRoute(
+                  path: 'menu/:menuId/stats',
+                  name: providerMenuStats,
+                  builder: (c, s) => GuestVotingPage(
+                    menuId: s.pathParameters['menuId']!,
+                  ),
+                ),
+                GoRoute(
+                  path: 'suggestions/:orderId',
+                  name: providerSuggestions,
+                  builder: (c, s) => _ProviderSuggestionsRoute(
+                    orderId: s.pathParameters['orderId']!,
+                  ),
+                ),
               ],
             ),
 
@@ -754,6 +803,259 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
 
         // Mode création
         return ProviderOfferFormPage(provider: provider);
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGET ROUTE POUR COMMANDES (résolution dynamique du provider)
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderOrdersRoute extends ConsumerWidget {
+  const _ProviderOrdersRoute();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('Connexion requise', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/provider/auth'),
+                child: const Text('Se connecter'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final providerAsync = ref.watch(myProviderProvider(user.id));
+
+    return providerAsync.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(body: Center(child: Text('Erreur: $e'))),
+      data: (provider) {
+        if (provider == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('Aucun profil prestataire', style: TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => context.go('/thix-weeding/provider/register'),
+                    child: const Text('Créer mon profil'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ProviderOrdersPage(
+          providerId: provider.id,
+          providerName: provider.businessName,
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGET ROUTE POUR DÉTAIL COMMANDE
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderOrderDetailRoute extends ConsumerWidget {
+  final String orderId;
+  const _ProviderOrderDetailRoute({required this.orderId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('Connexion requise'),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/provider/auth'),
+                child: const Text('Se connecter'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final providerAsync = ref.watch(myProviderProvider(user.id));
+    final ordersAsync = ref.watch(ordersProvider(user.id));
+
+    return providerAsync.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(body: Center(child: Text('Erreur: $e'))),
+      data: (provider) {
+        if (provider == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('Aucun profil prestataire'),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => context.go('/thix-weeding/provider/register'),
+                    child: const Text('Créer mon profil'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return ordersAsync.when(
+          loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+          error: (e, _) => Scaffold(body: Center(child: Text('Erreur: $e'))),
+          data: (orders) {
+            final order = orders.where((o) => o.id == orderId).firstOrNull;
+            if (order == null) {
+              return Scaffold(
+                appBar: AppBar(title: const Text('Commande introuvable')),
+                body: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.search_off, size: 64, color: Colors.grey),
+                      const SizedBox(height: 16),
+                      const Text('Commande introuvable', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      ElevatedButton(
+                        onPressed: () => context.go('/thix-weeding/provider/dashboard/commandes'),
+                        child: const Text('Retour aux commandes'),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
+            return OrderDetailPage(
+              order: order,
+              providerId: provider.id,
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGET ROUTE POUR MENU TRAITEUR
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderMenuRoute extends StatelessWidget {
+  final String orderId;
+  final String? menuId;
+
+  const _ProviderMenuRoute({
+    required this.orderId,
+    this.menuId,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return TraiteurMenuPage(
+      orderId: orderId,
+      menuId: menuId,
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// WIDGET ROUTE POUR SUGGESTIONS DG
+// ═══════════════════════════════════════════════════════════════════════════
+class _ProviderSuggestionsRoute extends ConsumerWidget {
+  final String orderId;
+
+  const _ProviderSuggestionsRoute({required this.orderId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = Supabase.instance.client.auth.currentUser;
+
+    if (user == null) {
+      return Scaffold(
+        backgroundColor: const Color(0xFFFAFAFA),
+        body: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.lock_outline, size: 48, color: Colors.grey),
+              const SizedBox(height: 16),
+              const Text('Connexion requise'),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => context.push('/thix-weeding/provider/auth'),
+                child: const Text('Se connecter'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final providerAsync = ref.watch(myProviderProvider(user.id));
+
+    return providerAsync.when(
+      loading: () => const Scaffold(body: Center(child: CircularProgressIndicator())),
+      error: (e, _) => Scaffold(body: Center(child: Text('Erreur: $e'))),
+      data: (provider) {
+        if (provider == null) {
+          return Scaffold(
+            body: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.storefront_outlined, size: 48, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('Aucun profil prestataire'),
+                  const SizedBox(height: 8),
+                  ElevatedButton(
+                    onPressed: () => context.go('/thix-weeding/provider/register'),
+                    child: const Text('Créer mon profil'),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+
+        return DGSuggestionsPage(
+          orderId: orderId,
+          userId: user.id,
+          userName: provider.businessName,
+          isStaff: true,
+        );
       },
     );
   }
