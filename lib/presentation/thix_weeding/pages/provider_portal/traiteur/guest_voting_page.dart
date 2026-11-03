@@ -1079,52 +1079,7 @@ class _EmptyVotesState extends StatelessWidget {
 // EXTENSIONS
 // ═══════════════════════════════════════════════════════════════════════
 
-extension MenuItemCategoryExtension on MenuItemCategory {
-  String get displayName {
-    switch (this) {
-      case MenuItemCategory.aperitif:
-        return 'Apéritif';
-      case MenuItemCategory.entree:
-        return 'Entrée';
-      case MenuItemCategory.plat:
-        return 'Plat principal';
-      case MenuItemCategory.dessert:
-        return 'Dessert';
-      case MenuItemCategory.boisson:
-        return 'Boisson';
-    }
-  }
 
-  Color get color {
-    switch (this) {
-      case MenuItemCategory.aperitif:
-        return const Color(0xFF8B5CF6);
-      case MenuItemCategory.entree:
-        return const Color(0xFF10B981);
-      case MenuItemCategory.plat:
-        return const Color(0xFFF59E0B);
-      case MenuItemCategory.dessert:
-        return const Color(0xFFEC4899);
-      case MenuItemCategory.boisson:
-        return const Color(0xFF3B82F6);
-    }
-  }
-
-  IconData get icon {
-    switch (this) {
-      case MenuItemCategory.aperitif:
-        return Icons.local_bar_rounded;
-      case MenuItemCategory.entree:
-        return Icons.restaurant_rounded;
-      case MenuItemCategory.plat:
-        return Icons.dinner_dining_rounded;
-      case MenuItemCategory.dessert:
-        return Icons.icecream_rounded;
-      case MenuItemCategory.boisson:
-        return Icons.local_drink_rounded;
-    }
-  }
-}
 
 extension DietaryRestrictionExtension on DietaryRestriction {
   String get displayName {
