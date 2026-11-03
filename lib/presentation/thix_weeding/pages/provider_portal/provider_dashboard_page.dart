@@ -14,8 +14,7 @@ import 'orders/orders_provider.dart';
 import 'orders/provider_orders_page.dart';
 import 'traiteur/traiteur_menu_page.dart';
 import 'suggestions/dg_suggestions_page.dart';
-import 'offers/provider_offers_page.dart';
-
+import 'provider_offers_page.dart';
 /// ═══════════════════════════════════════════════════════════════════════
 /// THIX WEDDING — DASHBOARD PRESTATAIRE (Production v3)
 /// ✅ Statistiques commandes en temps réel
