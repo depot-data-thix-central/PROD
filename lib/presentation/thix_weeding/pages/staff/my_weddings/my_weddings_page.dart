@@ -335,14 +335,14 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
               padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.start, // CORRIGÉ
+                mainAxisAlignment: MainAxisAlignment.start,
                 children: [
                   Text(
                     'Gérez vos événements',
                     style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
                   ),
                   Text(
-                    '${count} mariage${count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}', // CORRIGÉ
+                    '${count} mariage${count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}',
                     style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9)),
                   ),
                 ],
@@ -356,17 +356,17 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
 }
 
 // ============================================================================
-// DEMANDES D'ACCÈS (inchangé)
+// DEMANDES D'ACCÈS — CORRIGÉ (fusionné correctement)
 // ============================================================================
-class _IncomingRequestsWidget extends StatefulWidget {
+class _IncomingRequestsWidget extends ConsumerStatefulWidget {
   final VoidCallback onActionDone;
   const _IncomingRequestsWidget({required this.onActionDone});
 
   @override
-  State<_IncomingRequestsWidget> createState() => _IncomingRequestsWidgetState();
+  ConsumerState<_IncomingRequestsWidget> createState() => _IncomingRequestsWidgetState();
 }
 
-class _IncomingRequestsWidget extends ConsumerStatefulWidget {
+class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget> {
   List<Map<String, dynamic>> _requests = [];
   bool _loading = true;
 
@@ -600,7 +600,7 @@ class _WeddingCard extends ConsumerWidget {
   }
 }
 
-class _EmptyState extends StatelessWidget { // CORRIGÉ (Statelessheet -> StatelessWidget)
+class _EmptyState extends StatelessWidget {
   const _EmptyState();
   
   @override
