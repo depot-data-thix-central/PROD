@@ -366,7 +366,7 @@ class _IncomingRequestsWidget extends StatefulWidget {
   State<_IncomingRequestsWidget> createState() => _IncomingRequestsWidgetState();
 }
 
-class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget> {
+class _IncomingRequestsWidget extends ConsumerStatefulWidget {
   List<Map<String, dynamic>> _requests = [];
   bool _loading = true;
 
