@@ -1382,11 +1382,11 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
   }
 
   Widget _numField(String label, TextEditingController ctrl, IconData icon, {String? hint}) => TextFormField(
-        controller: ctrl,
-        keyboardType: TextInputType.number,
-        inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-        decoration: _dec(label, icon, hint: hint),
-      );
+      controller: ctrl,
+      keyboardType: TextInputType.number,
+      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+      decoration: _dec(hint ?? label, icon),
+    );
 
   InputDecoration _dec(String hint, IconData icon, {String? hint2}) => InputDecoration(
         hintText: hint2 ?? hint,
