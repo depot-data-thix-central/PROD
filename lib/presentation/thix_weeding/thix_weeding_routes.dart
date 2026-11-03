@@ -1,6 +1,6 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.7 (PRODUCTION ENTERPRISE + WORKFLOW COMMANDES)
+// THIX WEDDING ROUTES — v3.8 (PRODUCTION ENTERPRISE + WORKFLOW COMMANDES)
 // ✅ FIX 404 : meal-preferences déplacé DANS guest/:weddingId (weddingId hérité)
 // ✅ FIX 404 : route enfant :vendorId (détail prestataire) ajoutée sous prestataires
 // ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelin (doublon staffMenu)
@@ -10,6 +10,7 @@
 // ✅ NOUVEAU staff  : playlist, menu (StaffMenuPage), contenu/:kind
 // ✅ MULTI-ACTIVITÉS PRESTATAIRE (1 compte = N métiers : traiteur, salle…)
 // ✅ NOUVEAU v3.7 : Workflow commandes, menu traiteur, votes invités, suggestions DG
+// ✅ NOUVEAU v3.8 : provider/detail/:id?offer=<offerId> → ouvre directement l'offre
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -146,6 +147,7 @@ class ThixWeedingRoutes {
   static const String providerRegister = 'providerRegister';
   static const String providerCatalog = 'providerCatalog';
   static const String providerDetail = 'providerDetail';
+  static const String providerOfferDetail = 'providerOfferDetail'; // ✅ v3.8
   static const String providerDashboard = 'providerDashboard';
   static const String providerOffers = 'providerOffers';
   static const String providerNewOffer = 'providerNewOffer';
@@ -206,12 +208,21 @@ class ThixWeedingRoutes {
                 initialCategory: s.uri.queryParameters['category'],
               ),
             ),
+            // ✅ v3.8 : support de ?offer=<id> pour ouvrir directement l'offre
             GoRoute(
               path: 'provider/detail/:providerId',
               name: providerDetail,
               builder: (c, s) => ProviderDetailPage(
                 providerId: s.pathParameters['providerId']!,
+                offerId: s.uri.queryParameters['offer'], // ✅ v7 : ?offer=<id> → affiche directement l'offre
               ),
+            ),
+            // ✅ v3.8 : alias explicite pour les clics depuis une offre
+            GoRoute(
+              path: 'provider/offer/:providerId/:offerId',
+              name: providerOfferDetail,
+              redirect: (c, s) =>
+                  '/thix-weeding/provider/detail/${s.pathParameters['providerId']}?offer=${s.pathParameters['offerId']}',
             ),
 
             // ✅ SHELL + ONGLETS NICHÉS (indices corrigés : Offres=1)
@@ -697,9 +708,6 @@ class ThixWeedingRoutes {
                 ),
 
                 // ✅ 16. MENU / VALIDATION PLATS (staff)
-                //    ✅ Utilise StaffMenuPage (staff_content_pages.dart)
-                //    → 3 onglets : Menu | Suggestions | Résultats
-                //    (remplace l'ancien TraiteurMenuStaffPage retiré)
                 GoRoute(
                   path: 'menu',
                   name: staffMenu,
@@ -756,8 +764,6 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
       );
     }
 
-    // ✅ myProviderProvider(ownerId) renvoie DÉJÀ l'activité sélectionnée
-    //    (fallback principale) grâce à selectedActivityIdProvider interne.
     final providerAsync = ref.watch(myProviderProvider(user.id));
 
     return providerAsync.when(
@@ -788,7 +794,6 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
           );
         }
 
-        // Mode édition : charger l'offre existante si nécessaire
         if (editId != null) {
           final offersAsync = ref.watch(providerOffersProvider(provider.id));
           return offersAsync.when(
@@ -801,7 +806,6 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
           );
         }
 
-        // Mode création
         return ProviderOfferFormPage(provider: provider);
       },
     );
