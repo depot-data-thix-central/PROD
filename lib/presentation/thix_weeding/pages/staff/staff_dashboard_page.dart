@@ -1,11 +1,13 @@
 // lib/presentation/thix_weeding/pages/staff/staff_dashboard_page.dart
 // ============================================================================
-// THIX WEDDING & EVENTS — STAFF DASHBOARD (PRODUCTION v4)
+// THIX WEDDING & EVENTS — STAFF DASHBOARD (PRODUCTION v5)
+// ✅ COMPTEURS sur chaque module : nouveaux invités/RSVP, demandes prestataires
+//    traitées, paiements, livre d'or, galerie (« nouveau »), et à-traiter :
+//    playlist, suggestions de menu, invités sans table, tâches dues
+// ✅ Temps réel + remise à zéro à l'ouverture du module (synchronisée)
 // ✅ Menu traiteur : section dédiée + stats + top plats + accès rapide
 // ✅ Lit balancedSummaryProvider (partagé avec budget_page) → chiffres identiques
-// ✅ Restant = Budget − Payé ; % = Payé / Budget ; Dette = Dépensé − Payé
-// ✅ Devise USD ($) partout (budget, paiements, prestataires)
-// ✅ Section « Expérience des invités » → Playlist, Menu, Navette, Dress code, FAQ
+// ✅ Devise USD ($) partout
 // ============================================================================
 import 'dart:async';
 
@@ -19,6 +21,7 @@ import 'package:thix_id/presentation/thix_weeding/pages/staff/models/thix_weedin
 import 'package:thix_id/presentation/thix_weeding/pages/staff/providers/thix_weeding_providers.dart';
 import 'package:thix_id/presentation/thix_weeding/pages/staff/budget/budget_page.dart'
     show balancedSummaryProvider, BalancedSummary;
+import 'package:thix_id/presentation/thix_weeding/providers/wedding_badges.dart';
 
 // ============================================================================
 // DESIGN SYSTEM ROYAL
@@ -126,7 +129,7 @@ final _menuCountProvider =
   }
 });
 
-// ✅ NOUVEAU : Stats détaillées du menu
+// Stats détaillées du menu
 final _menuStatsProvider =
     FutureProvider.autoDispose.family<Map<String, dynamic>, String>((ref, weddingId) async {
   try {
@@ -135,25 +138,25 @@ final _menuStatsProvider =
         .from('thix_weeding_menu_items')
         .select('*')
         .eq('wedding_id', weddingId);
-    
+
     final total = (items as List).length;
     final validated = items.where((i) => i['is_validated'] == true).length;
     final public = items.where((i) => i['is_public'] == true).length;
-    
+
     // Compter les votes
     final votes = await c
         .from('thix_weeding_menu_votes')
         .select('menu_item_id')
         .eq('wedding_id', weddingId);
-    
+
     final voteCounts = <String, int>{};
     for (final v in votes) {
       final id = v['menu_item_id'] as String;
       voteCounts[id] = (voteCounts[id] ?? 0) + 1;
     }
-    
+
     final totalVotes = voteCounts.values.fold(0, (s, v) => s + v);
-    
+
     // Top 3 plats
     final topItems = items
         .map((i) => {
@@ -162,7 +165,7 @@ final _menuStatsProvider =
             })
         .toList()
       ..sort((a, b) => (b['votes'] as int).compareTo(a['votes'] as int));
-    
+
     return {
       'total': total,
       'validated': validated,
@@ -229,6 +232,7 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
     ref.invalidate(_playlistPendingProvider(id));
     ref.invalidate(_menuCountProvider(id));
     ref.invalidate(_menuStatsProvider(id));
+    ref.invalidate(weddingBadgesProvider((weddingId: id, role: 'staff')));
   }
 
   @override
@@ -254,6 +258,10 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
           final playlistPending = ref.watch(_playlistPendingProvider(id)).valueOrNull ?? 0;
           final menuCount = ref.watch(_menuCountProvider(id)).valueOrNull ?? 0;
           final menuStats = ref.watch(_menuStatsProvider(id)).valueOrNull ?? {};
+          final badges = ref
+                  .watch(weddingBadgesProvider((weddingId: id, role: 'staff')))
+                  .valueOrNull ??
+              WeddingBadges.empty;
 
           final unread = messages.where((m) => !m.isRead && m.senderType == 'guest').length;
 
@@ -288,11 +296,11 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
                           summary: balanced,
                           onTap: () => context.push(_Routes.budget(id)),
                         ),
-                        
-                        // ✅ NOUVEAU : Section Menu & Traiteur
+
+                        // Section Menu & Traiteur
                         if (menuCount > 0) ...[
                           const SizedBox(height: 24),
-                          _SectionTitle('Menu & Traiteur', 
+                          _SectionTitle('Menu & Traiteur',
                               icon: Icons.restaurant_menu_outlined,
                               actionLabel: 'Gérer',
                               onAction: () => context.push(_Routes.menu(id))),
@@ -303,7 +311,7 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
                             onTap: () => context.push(_Routes.menu(id)),
                           ),
                         ],
-                        
+
                         const SizedBox(height: 24),
                         _SectionTitle('Tous les modules', icon: Icons.apps),
                         const SizedBox(height: 12),
@@ -319,6 +327,7 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
                           unreadMessages: unread,
                           playlistPending: playlistPending,
                           menuCount: menuCount,
+                          badges: badges,
                         ),
                         const SizedBox(height: 24),
                         _SectionTitle('Expérience des invités', icon: Icons.celebration_outlined),
@@ -338,6 +347,7 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
                           unreadMessages: unread,
                           playlistPending: playlistPending,
                           menuCount: menuCount,
+                          badges: badges,
                         ),
                         const SizedBox(height: 24),
                         _SectionTitle('Checklist préparatifs',
@@ -387,7 +397,7 @@ class _StaffDashboardPageState extends ConsumerState<StaffDashboardPage>
   }
 }
 
-// ✅ NOUVEAU : Carte Menu & Traiteur
+// Carte Menu & Traiteur
 class _MenuCard extends StatelessWidget {
   final String weddingId;
   final Map<String, dynamic> stats;
@@ -419,7 +429,6 @@ class _MenuCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Header avec stats
               Row(
                 children: [
                   Container(
@@ -447,8 +456,6 @@ class _MenuCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 16),
-              
-              // Stats row
               Row(
                 children: [
                   _MenuStatChip(label: 'Total', value: '$total', color: _Royal.blue),
@@ -460,8 +467,6 @@ class _MenuCard extends StatelessWidget {
                   _MenuStatChip(label: 'Votes', value: '$totalVotes', color: _Royal.gold),
                 ],
               ),
-              
-              // Top 3 plats
               if (top3.isNotEmpty) ...[
                 const SizedBox(height: 16),
                 Container(
@@ -494,7 +499,7 @@ class _MenuCard extends StatelessWidget {
                         final item = data['item'] as Map<String, dynamic>;
                         final votes = data['votes'] as int;
                         final name = item['name'] as String? ?? 'Sans nom';
-                        
+
                         return Padding(
                           padding: EdgeInsets.only(bottom: i < top3.length - 1 ? 8 : 0),
                           child: Row(
@@ -1171,7 +1176,7 @@ class _MoneyCell extends StatelessWidget {
 }
 
 // ============================================================================
-// MODULES GRID
+// MODULES GRID — compteurs « nouveau / à traiter » sur chaque module
 // ============================================================================
 class _ModulesGrid extends StatelessWidget {
   final String weddingId;
@@ -1185,6 +1190,7 @@ class _ModulesGrid extends StatelessWidget {
   final int unreadMessages;
   final int playlistPending;
   final int menuCount;
+  final WeddingBadges badges;
 
   const _ModulesGrid({
     required this.weddingId,
@@ -1198,6 +1204,7 @@ class _ModulesGrid extends StatelessWidget {
     required this.unreadMessages,
     required this.playlistPending,
     required this.menuCount,
+    required this.badges,
   });
 
   @override
@@ -1205,25 +1212,37 @@ class _ModulesGrid extends StatelessWidget {
     final id = weddingId;
 
     final core = <_Module>[
-      _Module('Invités', '$guestsCount', Icons.people_outline, _Royal.royal, _Routes.invites(id)),
+      _Module('Invités', '$guestsCount', Icons.people_outline, _Royal.royal, _Routes.invites(id),
+          feature: 'invites', badge: badges.of('invites')),
       _Module('Invitation', wedding.invitationPublished ? 'Publiée' : 'Brouillon', Icons.mail_outline, _Royal.roseG, _Routes.invitation(id)),
-      _Module('Prestataires', '$vendorsBooked réservés', Icons.storefront_outlined, _Royal.goldG, _Routes.prestataires(id)),
+      _Module('Prestataires', '$vendorsBooked réservés', Icons.storefront_outlined, _Royal.goldG, _Routes.prestataires(id),
+          feature: 'prestataires', badge: badges.of('prestataires')),
       _Module('Planning', 'Jour J', Icons.schedule_outlined, _Royal.royal, _Routes.planning(id)),
-      _Module('Checklist', '$pendingTasks restantes', Icons.checklist_outlined, _Royal.greenG, _Routes.checklist(id), badge: pendingTasks),
+      _Module('Checklist', '$pendingTasks restantes', Icons.checklist_outlined, _Royal.greenG, _Routes.checklist(id),
+          feature: 'checklist', badge: badges.of('checklist')),
       _Module('Budget', 'Suivi USD', Icons.account_balance_wallet_outlined, _Royal.goldG, _Routes.budget(id)),
-      _Module('Paiements', 'Transactions', Icons.payments_outlined, _Royal.greenG, _Routes.paiements(id)),
-      _Module('Galerie', '$photosCount photos', Icons.photo_library_outlined, _Royal.roseG, _Routes.galerie(id)),
-      _Module("Livre d'or", '$guestbookCount msgs', Icons.menu_book_outlined, _Royal.goldG, _Routes.livreOr(id)),
-      _Module('Messages', unreadMessages > 0 ? '$unreadMessages nouveaux' : 'À jour', Icons.chat_bubble_outline, _Royal.royal, _Routes.messages(id), badge: unreadMessages),
-      _Module('Plan de table', 'Salle 3D', Icons.table_restaurant_outlined, _Royal.goldG, _Routes.seating(id)),
+      _Module('Paiements', 'Transactions', Icons.payments_outlined, _Royal.greenG, _Routes.paiements(id),
+          feature: 'paiements', badge: badges.of('paiements')),
+      _Module('Galerie', '$photosCount photos', Icons.photo_library_outlined, _Royal.roseG, _Routes.galerie(id),
+          feature: 'galerie', badge: badges.of('galerie')),
+      _Module("Livre d'or", '$guestbookCount msgs', Icons.menu_book_outlined, _Royal.goldG, _Routes.livreOr(id),
+          feature: 'livre-or', badge: badges.of('livre-or')),
+      _Module('Messages', unreadMessages > 0 ? '$unreadMessages nouveaux' : 'À jour', Icons.chat_bubble_outline, _Royal.royal, _Routes.messages(id),
+          feature: 'messages', badge: unreadMessages),
+      _Module('Plan de table', 'Salle 3D', Icons.table_restaurant_outlined, _Royal.goldG, _Routes.seating(id),
+          feature: 'seating', badge: badges.of('seating')),
       _Module('Cadeaux', 'Propositions', Icons.card_giftcard_outlined, _Royal.roseG, _Routes.cadeaux(id)),
       _Module('Paramètres', 'Réglages', Icons.settings_outlined, LinearGradient(colors: [Colors.grey.shade600, Colors.grey.shade800]), _Routes.parametres(id)),
       _Module('Mes mariages', 'Multi-événements', Icons.favorite_border, _Royal.roseG, _Routes.myWeddings()),
     ];
 
+    final menuPending = badges.of('menu');
     final guestMods = <_Module>[
-      _Module('Playlist', playlistPending > 0 ? '$playlistPending à valider' : 'Musique', Icons.queue_music_rounded, _Royal.roseG, _Routes.playlist(id), badge: playlistPending),
-      _Module('Menu', menuCount > 0 ? '$menuCount plats' : 'Repas', Icons.restaurant_menu_rounded, _Royal.goldG, _Routes.menu(id)),
+      _Module('Playlist', playlistPending > 0 ? '$playlistPending à valider' : 'Musique', Icons.queue_music_rounded, _Royal.roseG, _Routes.playlist(id),
+          feature: 'playlist', badge: playlistPending),
+      _Module('Menu', menuPending > 0 ? '$menuPending suggestion${menuPending > 1 ? 's' : ''}' : (menuCount > 0 ? '$menuCount plats' : 'Repas'),
+          Icons.restaurant_menu_rounded, _Royal.goldG, _Routes.menu(id),
+          feature: 'menu', badge: menuPending),
       _Module('Navette', 'Transport', Icons.directions_bus_outlined, _Royal.royal, _Routes.info(id, 'navette')),
       _Module('Dress code', 'Tenue', Icons.checkroom_outlined, _Royal.roseG, _Routes.info(id, 'dress_code')),
       _Module('FAQ', 'Questions', Icons.help_outline_rounded, _Royal.greenG, _Routes.info(id, 'faq')),
@@ -1239,7 +1258,7 @@ class _ModulesGrid extends StatelessWidget {
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3, mainAxisSpacing: 10, crossAxisSpacing: 10, childAspectRatio: 0.92),
       itemCount: modules.length,
-      itemBuilder: (_, i) => _ModuleTile(module: modules[i]),
+      itemBuilder: (_, i) => _ModuleTile(weddingId: weddingId, module: modules[i]),
     );
   }
 }
@@ -1251,19 +1270,30 @@ class _Module {
   final LinearGradient gradient;
   final String route;
   final int badge;
-  _Module(this.title, this.subtitle, this.icon, this.gradient, this.route, {this.badge = 0});
+
+  /// Clé du compteur (remise à zéro à l'ouverture). null = pas de compteur.
+  final String? feature;
+  _Module(this.title, this.subtitle, this.icon, this.gradient, this.route,
+      {this.badge = 0, this.feature});
 }
 
-class _ModuleTile extends StatelessWidget {
+class _ModuleTile extends ConsumerWidget {
+  final String weddingId;
   final _Module module;
-  const _ModuleTile({required this.module});
+  const _ModuleTile({required this.weddingId, required this.module});
 
   @override
-  Widget build(BuildContext context) => Material(
+  Widget build(BuildContext context, WidgetRef ref) => Material(
       color: Colors.white,
       borderRadius: BorderRadius.circular(16),
       child: InkWell(
-        onTap: () => context.push(module.route),
+        onTap: () {
+          final f = module.feature;
+          if (f != null) {
+            unawaited(markWeddingSeen(ref, weddingId: weddingId, role: 'staff', feature: f));
+          }
+          context.push(module.route);
+        },
         borderRadius: BorderRadius.circular(16),
         child: Container(
             padding: const EdgeInsets.all(10),
@@ -1279,17 +1309,19 @@ class _ModuleTile extends StatelessWidget {
                         child: Icon(module.icon, color: Colors.white, size: 18)),
                     if (module.badge > 0)
                       Positioned(
-                          right: -5,
-                          top: -5,
+                          right: -6,
+                          top: -6,
                           child: Container(
-                              padding: const EdgeInsets.all(5),
+                              constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                              alignment: Alignment.center,
                               decoration: BoxDecoration(
                                   color: _Royal.rose,
-                                  shape: BoxShape.circle,
+                                  borderRadius: BorderRadius.circular(10),
                                   border: Border.all(color: Colors.white, width: 2)),
-                              child: Text('${module.badge}',
+                              child: Text(module.badge > 99 ? '99+' : '${module.badge}',
                                   style: GoogleFonts.inter(
-                                      fontSize: 8, fontWeight: FontWeight.w800, color: Colors.white)))),
+                                      fontSize: 8.5, fontWeight: FontWeight.w800, color: Colors.white)))),
                   ]),
                   Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text(module.title,
