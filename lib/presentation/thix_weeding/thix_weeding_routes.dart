@@ -86,7 +86,7 @@ import 'pages/provider_portal/orders/order_detail_page.dart';
 import 'pages/provider_portal/traiteur/traiteur_menu_page.dart';
 import 'pages/provider_portal/traiteur/guest_voting_page.dart';
 import 'pages/provider_portal/suggestions/dg_suggestions_page.dart';
-
+import 'pages/provider_portal/orders/orders_provider.dart';
 import 'providers/provider_providers.dart';
 
 class ThixWeedingRoutes {
