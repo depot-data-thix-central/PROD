@@ -120,7 +120,8 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
   late final PageController _heroPageController;
   int _heroCurrentPage = 0;
   Timer? _heroAutoScrollTimer;
-  late List<ThixProviderModel> _heroProviders;
+  // CORRIGÉ : Initialisation immédiate avec liste vide
+  List<ThixProviderModel> _heroProviders = [];
 
   @override
   void initState() {
@@ -133,7 +134,7 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
     _heroPageController = PageController(viewportFraction: 0.92);
     _loadHeroProviders();
   }
-
+}
   Future<void> _loadHeroProviders() async {
     final service = ref.read(providerServiceProvider);
     final all = await service.getAllProviders(limit: 10);
