@@ -1,11 +1,6 @@
 // lib/presentation/thix_weeding/pages/staff/playlist/staff_playlist_page.dart
 // ============================================================================
-// THIX WEDDING — PLAYLIST (STAFF)
-// ✅ Valider / refuser les propositions des invités
-// ✅ Ordre de passage (glisser-déposer), ⭐ incontournable, 🚫 à éviter
-// ✅ Marquer « jouée », ajouter vos propres titres, copier la liste
-// ✅ Charger et lire des fichiers audio locaux (MP3, WAV, etc.)
-// ✅ Temps réel + verre dépoli
+// THIX WEDDING — PLAYLIST (STAFF) — AVEC UPLOAD SUPABASE STORAGE
 // ============================================================================
 import 'dart:async';
 import 'dart:io';
@@ -17,6 +12,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:mime/mime.dart';
 
 import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
 import 'playlist_models.dart';
@@ -46,12 +42,11 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
   String _query = '';
   RealtimeChannel? _ch;
   Timer? _deb;
-  
-  // 🎵 Lecteur audio local
+
   final AudioPlayer _audioPlayer = AudioPlayer();
-  List<LocalTrack> _localTracks = [];
   String? _currentlyPlaying;
   bool _isLoadingAudio = false;
+  bool _uploading = false;
 
   @override
   void initState() {
@@ -74,14 +69,10 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
           },
         )
         .subscribe();
-    
+
     _audioPlayer.playerStateStream.listen((state) {
-      if (mounted) {
-        setState(() {
-          if (!state.playing && _currentlyPlaying != null) {
-            _currentlyPlaying = null;
-          }
-        });
+      if (mounted && !state.playing && _currentlyPlaying != null) {
+        setState(() => _currentlyPlaying = null);
       }
     });
   }
@@ -137,6 +128,10 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     return l;
   }
 
+  // ✅ Filtre pour les titres locaux du staff (avec audio_url)
+  List<PlaylistSong> get _staffLocalTracks =>
+      _songs.where((s) => s.source == 'staff_local' && s.audioUrl != null).toList();
+
   Future<void> _update(PlaylistSong s, Map<String, dynamic> patch) async {
     try {
       await _supa.from('thix_weeding_playlist').update(patch).eq('id', s.id);
@@ -157,6 +152,18 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
 
   Future<void> _delete(PlaylistSong s) async {
     try {
+      // Si c'est un fichier uploadé, on le supprime aussi du storage
+      if (s.audioUrl != null && s.audioUrl!.contains('supabase.co/storage')) {
+        try {
+          final uri = Uri.parse(s.audioUrl!);
+          final pathSegments = uri.pathSegments;
+          final bucketIdx = pathSegments.indexOf('object');
+          if (bucketIdx >= 0 && bucketIdx + 2 < pathSegments.length) {
+            final storagePath = pathSegments.sublist(bucketIdx + 2).join('/');
+            await _supa.storage.from('thix-playlist-audio').remove([storagePath]);
+          }
+        } catch (_) {}
+      }
       await _supa.from('thix_weeding_playlist').delete().eq('id', s.id);
       await _load(silent: true);
     } catch (e) {
@@ -210,55 +217,11 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     }
   }
 
-  // 🎵 CHARGER DES FICHIERS AUDIO LOCAUX
-  Future<void> _pickLocalAudio() async {
-    try {
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.audio,
-        allowMultiple: true,
-      );
+  // ✅ LECTURE AUDIO (directe depuis URL)
+  Future<void> _playTrack(PlaylistSong track) async {
+    final url = track.audioUrl ?? track.linkUrl;
+    if (url == null) return;
 
-      if (result == null || result.files.isEmpty) return;
-
-      setState(() => _isLoadingAudio = true);
-
-      final tempDir = await getTemporaryDirectory();
-      final tracks = <LocalTrack>[];
-
-      for (final file in result.files) {
-        if (file.path == null) continue;
-        
-        final fileName = file.name;
-        final title = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
-        final localPath = '${tempDir.path}/$fileName';
-        
-        // Copier le fichier dans le dossier temporaire
-        final originalFile = File(file.path!);
-        await originalFile.copy(localPath);
-
-        tracks.add(LocalTrack(
-          id: DateTime.now().millisecondsSinceEpoch.toString() + fileName,
-          title: title,
-          path: localPath,
-          fileName: fileName,
-          size: file.size,
-        ));
-      }
-
-      setState(() {
-        _localTracks.addAll(tracks);
-        _isLoadingAudio = false;
-      });
-
-      _toast('${tracks.length} fichier(s) chargé(s)');
-    } catch (e) {
-      setState(() => _isLoadingAudio = false);
-      _toast('Erreur chargement : $e', error: true);
-    }
-  }
-
-  // 🎵 LECTURE AUDIO LOCAL
-  Future<void> _playLocalTrack(LocalTrack track) async {
     try {
       if (_currentlyPlaying == track.id) {
         await _audioPlayer.stop();
@@ -267,7 +230,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
       }
 
       setState(() => _currentlyPlaying = track.id);
-      await _audioPlayer.setFilePath(track.path);
+      await _audioPlayer.setUrl(url);
       await _audioPlayer.play();
     } catch (e) {
       setState(() => _currentlyPlaying = null);
@@ -278,6 +241,76 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
   Future<void> _stopAudio() async {
     await _audioPlayer.stop();
     setState(() => _currentlyPlaying = null);
+  }
+
+  // ✅ CHARGER + UPLOADER FICHIERS AUDIO DANS SUPABASE STORAGE
+  Future<void> _pickAndUploadAudio() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        allowMultiple: true,
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      setState(() => _uploading = true);
+      int successCount = 0;
+
+      for (final file in result.files) {
+        if (file.path == null) continue;
+
+        try {
+          final fileName = file.name;
+          final title = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+          final storagePath = '${widget.weddingId}/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+
+          // Déterminer le content type
+          final mimeType = lookupMimeType(fileName) ?? 'audio/mpeg';
+
+          // Upload dans Supabase Storage
+          final fileBytes = await File(file.path!).readAsBytes();
+          await _supa.storage.from('thix-playlist-audio').uploadBinary(
+            storagePath,
+            fileBytes,
+            fileOptions: FileOptions(
+              cacheControl: '3600',
+              contentType: mimeType,
+              upsert: false,
+            ),
+          );
+
+          // Récupérer l'URL publique
+          final audioUrl = _supa.storage.from('thix-playlist-audio').getPublicUrl(storagePath);
+
+          // Créer une entrée dans la playlist
+          await _supa.from('thix_weeding_playlist').insert({
+            'wedding_id': widget.weddingId,
+            'title': title,
+            'artist': null,
+            'audio_url': audioUrl,
+            'link_url': audioUrl, // Même URL pour compatibilité
+            'requested_by_name': 'Staff',
+            'source': 'staff_local',
+            'status': 'approved',
+            'priority': 'normal',
+            'position': _nextPos,
+          });
+
+          successCount++;
+        } catch (e) {
+          _toast('Erreur ${file.name}: $e', error: true);
+        }
+      }
+
+      if (successCount > 0) {
+        _toast('$successCount fichier(s) uploadé(s) avec succès ✓');
+        await _load(silent: true);
+      }
+    } catch (e) {
+      _toast('Erreur chargement : $e', error: true);
+    } finally {
+      if (mounted) setState(() => _uploading = false);
+    }
   }
 
   void _addDialog() {
@@ -379,9 +412,11 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
         title: Text('Playlist', style: GoogleFonts.inter(fontWeight: FontWeight.w900)),
         actions: [
           IconButton(
-            tooltip: 'Charger des fichiers audio',
-            icon: const Icon(Icons.upload_file_rounded),
-            onPressed: _isLoadingAudio ? null : _pickLocalAudio,
+            tooltip: 'Charger des MP3/WAV',
+            icon: _uploading
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                : const Icon(Icons.upload_file_rounded),
+            onPressed: _uploading ? null : _pickAndUploadAudio,
           ),
           IconButton(tooltip: 'Copier la playlist', icon: const Icon(Icons.copy_all_rounded), onPressed: _copyList),
         ],
@@ -396,7 +431,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
           tabs: [
             Tab(text: 'À valider${pending > 0 ? ' ($pending)' : ''}'),
             Tab(text: 'Playlist (${_by('approved').length})'),
-            Tab(text: 'Locaux (${_localTracks.length})'),
+            Tab(text: 'Fichiers (${_staffLocalTracks.length})'),
             Tab(text: 'Jouées (${_by('played').length})'),
           ],
         ),
@@ -415,13 +450,13 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                 ? Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24),
-                      child: Text('Erreur : $_error\n(Avez-vous exécuté le SQL de la playlist ?)',
-                          textAlign: TextAlign.center),
+                      child: Text('Erreur : $_error', textAlign: TextAlign.center),
                     ),
                   )
                 : Column(
                     children: [
                       _stats(),
+                      if (_currentlyPlaying != null) _playingBar(),
                       Padding(
                         padding: const EdgeInsets.fromLTRB(14, 0, 14, 6),
                         child: TextField(
@@ -449,6 +484,41 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                       ),
                     ],
                   ),
+      ),
+    );
+  }
+
+  Widget _playingBar() {
+    final track = _songs.where((s) => s.id == _currentlyPlaying).firstOrNull;
+    if (track == null) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [_C.rose.withOpacity(0.15), _C.green.withOpacity(0.15)]),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _C.rose.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.graphic_eq_rounded, color: _C.rose, size: 20),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Lecture en cours', style: GoogleFonts.inter(fontSize: 10, color: _C.ink2)),
+                Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w800, color: _C.ink)),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.stop_circle_rounded, color: _C.rose),
+            onPressed: _stopAudio,
+            tooltip: 'Arrêter',
+          ),
+        ],
       ),
     );
   }
@@ -493,7 +563,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
   Widget _list(List<PlaylistSong> l, String status) {
     if (l.isEmpty) {
       return _empty(status == 'pending'
-          ? 'Aucune proposition en attente.\nLes titres proposés par vos invités apparaîtront ici.'
+          ? 'Aucune proposition en attente.'
           : 'Rien ici pour le moment.');
     }
     return RefreshIndicator(
@@ -510,7 +580,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
 
   Widget _approvedList() {
     final l = _by('approved');
-    if (l.isEmpty) return _empty('Aucun titre validé.\nValidez des propositions ou ajoutez vos titres.');
+    if (l.isEmpty) return _empty('Aucun titre validé.');
     final canReorder = _query.isEmpty;
     if (!canReorder) {
       return ListView.separated(
@@ -534,141 +604,25 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     );
   }
 
-  // 🎵 LISTE DES FICHIERS AUDIO LOCAUX
+  // ✅ LISTE DES FICHIERS LOCAUX DU STAFF
   Widget _localTracksList() {
-    if (_localTracks.isEmpty) {
-      return _empty('Aucun fichier audio chargé.\nAppuyez sur 📁 pour charger des MP3/WAV depuis votre appareil.');
+    final l = _staffLocalTracks;
+    if (l.isEmpty) {
+      return _empty('Aucun fichier audio chargé.\nAppuyez sur 📁 pour uploader des MP3/WAV.\nLes invités pourront les voir et les écouter.');
     }
-    
-    return Column(
-      children: [
-        if (_currentlyPlaying != null)
-          Container(
-            margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [_C.rose.withOpacity(0.15), _C.green.withOpacity(0.15)]),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: _C.rose.withOpacity(0.3)),
-            ),
-            child: Row(
-              children: [
-                const Icon(Icons.graphic_eq_rounded, color: _C.rose, size: 20),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    'Lecture en cours...',
-                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700, color: _C.ink),
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.stop_circle_rounded, color: _C.rose),
-                  onPressed: _stopAudio,
-                  tooltip: 'Arrêter',
-                ),
-              ],
-            ),
-          ),
-        Expanded(
-          child: RefreshIndicator(
-            onRefresh: () async {},
-            child: ListView.separated(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 100),
-              itemCount: _localTracks.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _localTrackTile(_localTracks[i]),
-            ),
-          ),
-        ),
-      ],
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(14, 4, 14, 100),
+      itemCount: l.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (_, i) => _tile(l[i], key: ValueKey(l[i].id), isLocal: true),
     );
   }
 
-  Widget _localTrackTile(LocalTrack track) {
-    final isPlaying = _currentlyPlaying == track.id;
-    final sizeMB = (track.size / 1024 / 1024).toStringAsFixed(1);
-    
-    return ThixGlass(
-      radius: 18,
-      opacity: 0.62,
-      padding: const EdgeInsets.fromLTRB(10, 8, 4, 8),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: isPlaying ? _C.rose.withOpacity(0.2) : _C.green.withOpacity(0.15),
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              icon: Icon(
-                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-                color: isPlaying ? _C.rose : _C.green,
-                size: 22,
-              ),
-              onPressed: () => _playLocalTrack(track),
-              tooltip: isPlaying ? 'Pause' : 'Lire',
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  track.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _C.ink),
-                ),
-                const SizedBox(height: 2),
-                Row(
-                  children: [
-                    Icon(Icons.audio_file_rounded, size: 12, color: _C.ink2),
-                    const SizedBox(width: 3),
-                    Text(
-                      track.fileName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.inter(fontSize: 10.5, color: _C.ink2),
-                    ),
-                    const SizedBox(width: 8),
-                    Text(
-                      '$sizeMB MB',
-                      style: GoogleFonts.inter(fontSize: 10, color: _C.ink2, fontWeight: FontWeight.w600),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, size: 20, color: _C.rose),
-            onPressed: () {
-              setState(() {
-                _localTracks.removeWhere((t) => t.id == track.id);
-                if (_currentlyPlaying == track.id) {
-                  _audioPlayer.stop();
-                  _currentlyPlaying = null;
-                }
-                // Supprimer le fichier temporaire
-                try {
-                  File(track.path).deleteSync();
-                } catch (_) {}
-              });
-              _toast('Fichier supprimé');
-            },
-            tooltip: 'Supprimer',
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _tile(PlaylistSong s, {Key? key, int? index}) {
+  Widget _tile(PlaylistSong s, {Key? key, int? index, bool isLocal = false}) {
     final sc = kPlaylistStatusColor[s.status] ?? _C.ink2;
+    final isPlaying = _currentlyPlaying == s.id;
+    final hasAudio = s.audioUrl != null;
+
     return ThixGlass(
       key: key,
       radius: 18,
@@ -682,18 +636,30 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                 ReorderableDragStartListener(
                   index: index,
                   child: Container(
-                    width: 32,
-                    height: 32,
-                    alignment: Alignment.center,
+                    width: 32, height: 32, alignment: Alignment.center,
                     decoration: BoxDecoration(color: _C.rose.withOpacity(0.12), shape: BoxShape.circle),
-                    child: Text('${index + 1}',
-                        style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _C.rose)),
+                    child: Text('${index + 1}', style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _C.rose)),
+                  ),
+                )
+              else if (hasAudio)
+                GestureDetector(
+                  onTap: () => _playTrack(s),
+                  child: Container(
+                    width: 32, height: 32,
+                    decoration: BoxDecoration(
+                      color: isPlaying ? _C.rose.withOpacity(0.2) : _C.green.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                      color: isPlaying ? _C.rose : _C.green,
+                      size: 18,
+                    ),
                   ),
                 )
               else
                 Container(
-                  width: 32,
-                  height: 32,
+                  width: 32, height: 32,
                   decoration: BoxDecoration(color: sc.withOpacity(0.14), shape: BoxShape.circle),
                   child: Icon(Icons.music_note_rounded, size: 17, color: sc),
                 ),
@@ -704,137 +670,44 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                   children: [
                     Row(children: [
                       Flexible(
-                        child: Text(s.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+                        child: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _C.ink)),
                       ),
-                      if (s.isMust) const Padding(padding: EdgeInsets.only(left: 5), child: Text('⭐', style: TextStyle(fontSize: 13))),
-                      if (s.isAvoid) const Padding(padding: EdgeInsets.only(left: 5), child: Text('🚫', style: TextStyle(fontSize: 13))),
+                      if (s.isMust) const Padding(padding: EdgeInsets.only(left: 5), child: Text('⭐')),
+                      if (isLocal) const Padding(padding: EdgeInsets.only(left: 5), child: Text('📁')),
                     ]),
-                    Text(s.artist ?? 'Artiste inconnu',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(s.artist ?? (isLocal ? 'Fichier local' : 'Artiste inconnu'),
+                        maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(fontSize: 11.5, color: _C.ink2)),
-                    const SizedBox(height: 3),
-                    Row(children: [
-                      Icon(s.source == 'staff' ? Icons.verified_user_outlined : Icons.person_outline_rounded,
-                          size: 12, color: _C.ink2),
-                      const SizedBox(width: 3),
-                      Flexible(
-                        child: Text(s.requestedByName ?? (s.source == 'staff' ? 'Staff' : 'Invité'),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: GoogleFonts.inter(fontSize: 10.5, color: _C.ink2, fontWeight: FontWeight.w600)),
-                      ),
-                      if (s.votes > 0) ...[
-                        const SizedBox(width: 8),
-                        const Icon(Icons.favorite_rounded, size: 12, color: _C.rose),
-                        const SizedBox(width: 2),
-                        Text('${s.votes}',
-                            style: GoogleFonts.inter(fontSize: 10.5, color: _C.rose, fontWeight: FontWeight.w800)),
-                      ],
-                    ]),
                   ],
                 ),
               ),
-              if (s.linkUrl != null)
-                IconButton(
-                  tooltip: 'Écouter',
-                  visualDensity: VisualDensity.compact,
-                  icon: const Icon(Icons.play_circle_outline_rounded, color: _C.rose),
-                  onPressed: () => _openLink(s.linkUrl!),
-                ),
               PopupMenuButton<String>(
                 icon: const Icon(Icons.more_vert_rounded, size: 20),
                 onSelected: (v) {
                   switch (v) {
-                    case 'approve':
-                      _approve(s);
-                      break;
-                    case 'reject':
-                      _reject(s);
-                      break;
-                    case 'played':
-                      _played(s);
-                      break;
-                    case 'back':
-                      _backToList(s);
-                      break;
-                    case 'must':
-                      _must(s);
-                      break;
-                    case 'avoid':
-                      _avoid(s);
-                      break;
-                    case 'delete':
-                      _delete(s);
-                      break;
+                    case 'approve': _approve(s); break;
+                    case 'reject': _reject(s); break;
+                    case 'played': _played(s); break;
+                    case 'back': _backToList(s); break;
+                    case 'must': _must(s); break;
+                    case 'avoid': _avoid(s); break;
+                    case 'delete': _delete(s); break;
                   }
                 },
                 itemBuilder: (_) => [
                   if (s.status != 'approved') const PopupMenuItem(value: 'approve', child: Text('✓ Valider')),
                   if (s.status == 'approved') const PopupMenuItem(value: 'played', child: Text('▶ Marquer jouée')),
-                  if (s.status == 'played') const PopupMenuItem(value: 'back', child: Text('↩ Remettre dans la playlist')),
+                  if (s.status == 'played') const PopupMenuItem(value: 'back', child: Text('↩ Remettre')),
                   if (s.status == 'approved') PopupMenuItem(value: 'must', child: Text(s.isMust ? 'Retirer ⭐' : '⭐ Incontournable')),
                   if (s.status != 'rejected') const PopupMenuItem(value: 'reject', child: Text('✗ Refuser')),
-                  if (!s.isAvoid) const PopupMenuItem(value: 'avoid', child: Text('🚫 À ne pas jouer')),
                   const PopupMenuItem(value: 'delete', child: Text('Supprimer')),
                 ],
               ),
             ],
           ),
-          if (s.status == 'pending')
-            Padding(
-              padding: const EdgeInsets.fromLTRB(0, 6, 6, 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () => _reject(s),
-                      icon: const Icon(Icons.close_rounded, size: 16),
-                      label: const Text('Refuser'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _C.rose,
-                        side: BorderSide(color: _C.rose.withOpacity(0.5)),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () => _approve(s),
-                      icon: const Icon(Icons.check_rounded, size: 16),
-                      label: const Text('Valider'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _C.green,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
     );
   }
-}
-
-// 🎵 MODÈLE POUR LES FICHIERS AUDIO LOCAUX
-class LocalTrack {
-  final String id;
-  final String title;
-  final String path;
-  final String fileName;
-  final int size;
-
-  LocalTrack({
-    required this.id,
-    required this.title,
-    required this.path,
-    required this.fileName,
-    required this.size,
-  });
 }
