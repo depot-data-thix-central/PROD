@@ -206,6 +206,35 @@ class NotificationCountersService {
     'doc_shared': ThixSection.info,
     'doc_opened': ThixSection.info,
     'doc_screenshot': ThixSection.info,
+
+    // ✅ THIX WEDDING (Mariages)
+    'wedding_rsvp': ThixSection.events,
+    'wedding_invitation_status': ThixSection.events,
+    'wedding_table': ThixSection.events,
+    'wedding_invitation': ThixSection.events,
+    'wedding_announcement': ThixSection.events,
+    'wedding_playlist': ThixSection.events,
+    'wedding_playlist_status': ThixSection.events,
+    'wedding_menu_vendor': ThixSection.events,
+    'wedding_menu_suggestion': ThixSection.events,
+    'wedding_menu_status': ThixSection.events,
+    'wedding_menu_vendor_status': ThixSection.events,
+    'wedding_menu_vote': ThixSection.events,
+    'wedding_menu_diet': ThixSection.events,
+    'wedding_info_navette': ThixSection.events,
+    'wedding_info_dress_code': ThixSection.events,
+    'wedding_info_faq': ThixSection.events,
+    'wedding_info_thanks': ThixSection.events,
+    'wedding_info_live': ThixSection.events,
+    'wedding_guestbook': ThixSection.events,
+    'wedding_request': ThixSection.events,
+    'wedding_request_status': ThixSection.events,
+    'wedding_task': ThixSection.events,
+    'wedding_reminder': ThixSection.events,
+    
+    // Cas spécifiques
+    'wedding_message': ThixSection.messages,
+    'wedding_payment': ThixSection.money,
   };
 
   // ========================================================================
