@@ -1,10 +1,10 @@
 // lib/presentation/thix_weeding/pages/guest/meal_preferences_page.dart
 // ============================================================================
-// THIX WEDDING — PRÉFÉRENCES REPAS CÔTÉ INVITÉ (logique alignée guest_menu_page)
+// THIX WEDDING — PRÉFÉRENCES REPAS CÔTÉ INVITÉ
 // ✅ Voir le menu des mariés (photos, tags)
 // ✅ Choisir UN plat préféré par rubrique (compte pour tout le groupe)
 // ✅ Voir le nombre de choix par plat + badge « Le plus choisi »
-// ✅ Suggérer un plat (max 3, validé par les mariés)
+// ✅ Suggérer un plat (max 3, validé par les mariés) DIRECTEMENT par rubrique
 // ✅ Indiquer régime alimentaire et allergies pour le traiteur
 // ✅ Temps réel • verre dépoli
 // ============================================================================
@@ -189,7 +189,16 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
 
       if (!mounted) return;
       setState(() {
-        _dishes = all.where((e) => e.status == 'approved' && e.published).toList();
+        // ✅ FIX : On accepte les plats approuvés OU qui n'ont pas de statut bloquant, tant qu'ils sont publiés
+        _dishes = all.where((e) {
+          final isPublished = e.published;
+          final isApproved = e.status == 'approved' || e.status == 'null' || e.status == 'pending' && e.source == 'staff';
+          // Si le staff a ajouté le plat (source staff), on l'affiche s'il est publié
+          if (e.source == 'staff') return isPublished;
+          // Si c'est une suggestion d'invité, on ne l'affiche que si elle est approuvée
+          return isPublished && e.status == 'approved';
+        }).toList();
+        
         _mine = uid == null ? [] : all.where((e) => e.suggestedBy == uid).toList();
         _myChoice = choice;
         _votingOpen = voting;
@@ -279,9 +288,13 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     }
   }
 
-  void _openSuggest() {
+  void _openSuggest(String course) {
     if (_uid == null) {
       _toast('Connectez-vous pour suggérer un plat', error: true);
+      return;
+    }
+    if (_mine.length >= 3) {
+      _toast('Vous avez atteint la limite de 3 suggestions', error: true);
       return;
     }
     showModalBottomSheet(
@@ -291,6 +304,7 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
       builder: (_) => _SuggestSheet(
         weddingId: widget.weddingId,
         myName: _myName,
+        initialCourse: course, // ✅ On pré-remplit avec la rubrique
         onDone: () {
           _toast('Suggestion envoyée — les mariés vont la valider 🍽️');
           _load(silent: true);
@@ -333,7 +347,7 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
                       children: [
                         _intro(),
                         const SizedBox(height: 14),
-                        if (_dishes.isEmpty)
+                        if (_dishes.isEmpty && _mine.isEmpty)
                           SizedBox(
                             height: 260,
                             child: _empty(Icons.restaurant_menu_rounded,
@@ -343,8 +357,6 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
                           for (final c in kMenuCourses.keys)
                             ..._courseSection(c),
                         const SizedBox(height: 18),
-                        _suggestCard(),
-                        const SizedBox(height: 14),
                         _dietCard(),
                       ],
                     ),
@@ -477,8 +489,14 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
   // ───────────────────────── RUBRIQUES ─────────────────────────
   List<Widget> _courseSection(String c) {
     final list = _dishes.where((d) => d.course == c).toList();
-    if (list.isEmpty) return const [];
-    final maxVotes = list.map((d) => d.votes).fold<int>(0, math.max);
+    // On garde la rubrique si elle a des plats OU si c'est une rubrique où on peut suggérer
+    if (list.isEmpty && !_suggestOpen) return const [];
+
+    final maxVotes = list.isEmpty ? 0 : list.map((d) => d.votes).fold<int>(0, math.max);
+    
+    // On récupère les suggestions de l'invité pour cette rubrique précise
+    final mySuggestions = _mine.where((e) => e.course == c).toList();
+
     return [
       Padding(
         padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
@@ -500,9 +518,34 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
           if (_myChoice.containsKey(c)) _chip('Choisi ✓', color: _G.green),
         ]),
       ),
+      
+      // Liste des plats officiels
       ...list.map((d) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: _dish(d, maxVotes))),
+
+      // Liste des suggestions de l'invité pour cette rubrique
+      ...mySuggestions.map((e) => Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _mySuggestionTile(e))),
+
+      // Bouton pour proposer un plat dans cette rubrique
+      if (_suggestOpen)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 16, top: 4),
+          child: OutlinedButton.icon(
+            onPressed: () => _openSuggest(c),
+            icon: const Icon(Icons.add_rounded, size: 18),
+            label: Text('Proposer un plat en ${kMenuCourses[c]?.toLowerCase()}'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _G.rose,
+              side: BorderSide(color: _G.rose.withOpacity(0.3), style: BorderStyle.solid),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              minimumSize: const Size(double.infinity, 44),
+              backgroundColor: Colors.white.withOpacity(0.5),
+            ),
+          ),
+        ),
       const SizedBox(height: 6),
     ];
   }
@@ -649,8 +692,8 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     );
   }
 
-  // ───────────────────────── SUGGESTIONS ─────────────────────────
-  Widget _suggestCard() {
+  // Carte pour afficher la suggestion de l'invité (avec statut)
+  Widget _mySuggestionTile(MenuEntry e) {
     final statusColor = {
       'pending': _G.gold,
       'approved': _G.green,
@@ -661,87 +704,36 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
       'approved': 'Ajouté au menu ✓',
       'rejected': 'Non retenu'
     };
+    
     return ThixGlass(
-      radius: 24,
-      opacity: 0.62,
-      borderColor: _G.rose.withOpacity(0.15),
-      padding: const EdgeInsets.all(14),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      radius: 16,
+      opacity: 0.5,
+      borderColor: _G.gold.withOpacity(0.3),
+      padding: const EdgeInsets.all(12),
+      child: Row(
         children: [
-          Row(children: [
-            const Icon(Icons.lightbulb_outline_rounded, color: _G.rose),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text('Un plat à proposer ?',
-                  style: GoogleFonts.inter(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                      color: _G.ink)),
-            ),
-            Text('${_mine.length}/3',
-                style: GoogleFonts.inter(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                    color: _G.rose)),
-          ]),
-          const SizedBox(height: 6),
-          Text(
-            _suggestOpen
-                ? 'Suggérez jusqu\'à 3 plats. Les mariés décideront de les ajouter au menu.'
-                : 'Les suggestions sont fermées.',
-            style: GoogleFonts.inter(
-                fontSize: 12, color: _G.ink2, height: 1.35),
-          ),
-          if (_mine.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            ..._mine.map((e) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(e.name,
-                              style: GoogleFonts.inter(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w800,
-                                  color: _G.ink)),
-                          Text(kMenuCourses[e.course] ?? e.course,
-                              style: GoogleFonts.inter(
-                                  fontSize: 11, color: _G.ink2)),
-                        ],
-                      ),
-                    ),
-                    _chip(statusLabel[e.status] ?? e.status,
-                        color: statusColor[e.status] ?? _G.ink2),
-                    if (e.status == 'pending')
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        icon: const Icon(Icons.delete_outline_rounded,
-                            size: 19, color: _G.rose),
-                        onPressed: () => _deleteMine(e),
-                      ),
-                  ]),
-                )),
-          ],
-          const SizedBox(height: 8),
-          SizedBox(
-            width: double.infinity,
-            height: 46,
-            child: FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: _G.rose,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
-              ),
-              onPressed:
-                  _suggestOpen && _mine.length < 3 ? _openSuggest : null,
-              icon: const Icon(Icons.add_rounded, size: 20),
-              label: Text('Proposer un plat',
-                  style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+          const Icon(Icons.lightbulb_outline_rounded, color: _G.gold, size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Votre suggestion : ${e.name}',
+                    style: GoogleFonts.inter(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _G.ink)),
+                const SizedBox(height: 2),
+                _chip(statusLabel[e.status] ?? e.status, color: statusColor[e.status] ?? _G.ink2),
+              ],
             ),
           ),
+          if (e.status == 'pending')
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.delete_outline_rounded, size: 19, color: _G.rose),
+              onPressed: () => _deleteMine(e),
+            ),
         ],
       ),
     );
@@ -834,10 +826,12 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
 class _SuggestSheet extends StatefulWidget {
   final String weddingId;
   final String? myName;
+  final String initialCourse; // ✅ Reçoit la rubrique choisie
   final VoidCallback onDone;
   const _SuggestSheet({
     required this.weddingId,
     required this.myName,
+    required this.initialCourse,
     required this.onDone,
   });
 
@@ -848,10 +842,16 @@ class _SuggestSheet extends StatefulWidget {
 class _SuggestSheetState extends State<_SuggestSheet> {
   final _name = TextEditingController();
   final _desc = TextEditingController();
-  String _course = 'plat';
+  late String _course; // ✅ Initialisé avec la valeur reçue
   PickedPhoto? _photo;
   bool _busy = false;
   String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _course = widget.initialCourse;
+  }
 
   @override
   void dispose() {
@@ -893,6 +893,8 @@ class _SuggestSheetState extends State<_SuggestSheet> {
         'image_url': url,
         'suggested_by_name':
             (widget.myName ?? '').isEmpty ? null : widget.myName,
+        'source': 'guest', // ✅ Important pour distinguer des plats du staff
+        'status': 'pending', // ✅ En attente de validation par les mariés
       });
       widget.onDone();
       if (mounted) Navigator.pop(context);
