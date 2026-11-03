@@ -1,18 +1,16 @@
 // lib/presentation/thix_weeding/pages/guest/guest_playlist_page.dart
 // ============================================================================
-// THIX WEDDING — PLAYLIST (INVITÉ)
-// ✅ Proposer jusqu'à 5 titres (validés par les mariés)
-// ✅ Voir la playlist validée, voter pour vos titres préférés ❤
-// ✅ Suivre l'état de vos propositions • temps réel • verre dépoli
+// THIX WEDDING — PLAYLIST (INVITÉ) — AVEC LECTEUR AUDIO INTÉGRÉ
+// ✅ Lecture intégrée des fichiers audio du staff (via just_audio)
 // ============================================================================
 import 'dart:async';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:just_audio/just_audio.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/playlist/playlist_models.dart';
 import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
@@ -52,6 +50,12 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   String? _error;
   final Set<String> _voting = {};
 
+  // 🎵 Lecteur audio
+  final AudioPlayer _audioPlayer = AudioPlayer();
+  String? _currentlyPlaying;
+  Duration _duration = Duration.zero;
+  Duration _position = Duration.zero;
+
   RealtimeChannel? _ch;
   Timer? _deb;
 
@@ -62,6 +66,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     super.initState();
     _tab = TabController(length: 2, vsync: this);
     _load();
+
     _ch = _supa
         .channel('guest-playlist-${widget.weddingId}')
         .onPostgresChanges(
@@ -78,6 +83,21 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
           },
         )
         .subscribe();
+
+    // Écouter l'état du lecteur
+    _audioPlayer.playerStateStream.listen((state) {
+      if (mounted && !state.playing && _currentlyPlaying != null) {
+        // Ne pas reset si c'est juste une pause
+      }
+    });
+
+    _audioPlayer.positionStream.listen((p) {
+      if (mounted) setState(() => _position = p);
+    });
+
+    _audioPlayer.durationStream.listen((d) {
+      if (mounted) setState(() => _duration = d ?? Duration.zero);
+    });
   }
 
   @override
@@ -89,6 +109,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     _artist.dispose();
     _link.dispose();
     _name.dispose();
+    _audioPlayer.dispose();
     super.dispose();
   }
 
@@ -154,6 +175,43 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   List<PlaylistSong> get _public =>
       _songs.where((s) => (s.status == 'approved' || s.status == 'played') && !s.isAvoid).toList();
 
+  // 🎵 LECTURE AUDIO
+  Future<void> _playTrack(PlaylistSong track) async {
+    final url = track.audioUrl ?? track.linkUrl;
+    if (url == null) return;
+
+    try {
+      if (_currentlyPlaying == track.id) {
+        if (_audioPlayer.playing) {
+          await _audioPlayer.pause();
+        } else {
+          await _audioPlayer.play();
+        }
+        return;
+      }
+
+      setState(() {
+        _currentlyPlaying = track.id;
+        _position = Duration.zero;
+        _duration = Duration.zero;
+      });
+      await _audioPlayer.setUrl(url);
+      await _audioPlayer.play();
+    } catch (e) {
+      setState(() => _currentlyPlaying = null);
+      _toast('Erreur lecture : $e', error: true);
+    }
+  }
+
+  Future<void> _stopAudio() async {
+    await _audioPlayer.stop();
+    setState(() {
+      _currentlyPlaying = null;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+  }
+
   Future<void> _propose() async {
     final title = _title.text.trim();
     if (title.isEmpty) {
@@ -189,7 +247,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     } catch (e) {
       final s = '$e';
       if (s.contains('23505') || s.contains('duplicate')) {
-        _toast('Ce titre a déjà été proposé — votez pour lui dans la playlist !', error: true);
+        _toast('Ce titre a déjà été proposé — votez pour lui !', error: true);
       } else if (s.contains('Maximum 5')) {
         _toast('Maximum $kMaxProposals titres par invité', error: true);
       } else {
@@ -245,6 +303,13 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     }
   }
 
+  String _formatDuration(Duration d) {
+    String twoDigits(int n) => n.toString().padLeft(2, '0');
+    final minutes = twoDigits(d.inMinutes.remainder(60));
+    final seconds = twoDigits(d.inSeconds.remainder(60));
+    return '$minutes:$seconds';
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -285,6 +350,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
                   )
                 : Column(
                     children: [
+                      if (_currentlyPlaying != null) _playerBar(),
                       _form(),
                       Expanded(
                         child: TabBarView(
@@ -294,6 +360,90 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
                       ),
                     ],
                   ),
+      ),
+    );
+  }
+
+  // 🎵 BARRE DE LECTURE FLOTTANTE
+  Widget _playerBar() {
+    final track = _songs.where((s) => s.id == _currentlyPlaying).firstOrNull;
+    if (track == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(colors: [_C.rose.withOpacity(0.15), _C.green.withOpacity(0.15)]),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _C.rose.withOpacity(0.3)),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 36, height: 36,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(colors: [_C.rose, Color(0xFFE91E78)]),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.graphic_eq_rounded, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(track.title, maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w800, color: _C.ink)),
+                    Text(track.artist ?? 'Artiste inconnu', maxLines: 1, overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.inter(fontSize: 11, color: _C.ink2)),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(
+                  _audioPlayer.playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                  color: _C.rose,
+                  size: 36,
+                ),
+                onPressed: () async {
+                  if (_audioPlayer.playing) {
+                    await _audioPlayer.pause();
+                  } else {
+                    await _audioPlayer.play();
+                  }
+                  setState(() {});
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.stop_circle_rounded, color: _C.ink2),
+                onPressed: _stopAudio,
+              ),
+            ],
+          ),
+          if (_duration.inSeconds > 0)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Row(
+                children: [
+                  Text(_formatDuration(_position), style: GoogleFonts.inter(fontSize: 10, color: _C.ink2)),
+                  Expanded(
+                    child: Slider(
+                      value: _position.inSeconds.toDouble().clamp(0, _duration.inSeconds.toDouble()),
+                      max: _duration.inSeconds.toDouble(),
+                      onChanged: (v) async {
+                        await _audioPlayer.seek(Duration(seconds: v.toInt()));
+                      },
+                      activeColor: _C.rose,
+                      inactiveColor: _C.rose.withOpacity(0.2),
+                    ),
+                  ),
+                  Text(_formatDuration(_duration), style: GoogleFonts.inter(fontSize: 10, color: _C.ink2)),
+                ],
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -420,25 +570,46 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   Widget _publicTile(PlaylistSong s, int i) {
     final voted = _myVotes.contains(s.id);
     final played = s.status == 'played';
+    final isPlaying = _currentlyPlaying == s.id;
+    final hasAudio = s.audioUrl != null;
+    final isStaffLocal = s.source == 'staff_local';
+
     return ThixGlass(
       radius: 18,
       opacity: 0.62,
       padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
       child: Row(
         children: [
-          Container(
-            width: 32,
-            height: 32,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: (played ? const Color(0xFF6B46C1) : _C.rose).withOpacity(0.12),
-              shape: BoxShape.circle,
-            ),
-            child: played
-                ? const Icon(Icons.check_rounded, size: 17, color: Color(0xFF6B46C1))
-                : Text('${i + 1}',
-                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _C.rose)),
-          ),
+          // Bouton play ou numéro
+          hasAudio
+              ? GestureDetector(
+                  onTap: () => _playTrack(s),
+                  child: Container(
+                    width: 36, height: 36,
+                    decoration: BoxDecoration(
+                      color: isPlaying ? _C.rose.withOpacity(0.2) : _C.green.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      isPlaying
+                          ? (_audioPlayer.playing ? Icons.pause_rounded : Icons.play_arrow_rounded)
+                          : Icons.play_arrow_rounded,
+                      color: isPlaying ? _C.rose : _C.green,
+                      size: 20,
+                    ),
+                  ),
+                )
+              : Container(
+                  width: 36, height: 36, alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: (played ? const Color(0xFF6B46C1) : _C.rose).withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: played
+                      ? const Icon(Icons.check_rounded, size: 17, color: Color(0xFF6B46C1))
+                      : Text('${i + 1}',
+                          style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w900, color: _C.rose)),
+                ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -446,28 +617,31 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
               children: [
                 Row(children: [
                   Flexible(
-                    child: Text(s.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    child: Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _C.ink)),
                   ),
-                  if (s.isMust) const Padding(padding: EdgeInsets.only(left: 5), child: Text('⭐', style: TextStyle(fontSize: 12))),
+                  if (s.isMust) const Padding(padding: EdgeInsets.only(left: 5), child: Text('⭐')),
+                  if (isStaffLocal) const Padding(padding: EdgeInsets.only(left: 5), child: Text('📁')),
                 ]),
                 Text(s.artist ?? 'Artiste inconnu',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1, overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.inter(fontSize: 11.5, color: _C.ink2)),
                 if (played)
                   Text('Déjà jouée',
                       style: GoogleFonts.inter(fontSize: 10, color: const Color(0xFF6B46C1), fontWeight: FontWeight.w800)),
+                if (isStaffLocal && !played)
+                  Text('Titre des mariés',
+                      style: GoogleFonts.inter(fontSize: 10, color: _C.rose, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
-          if (s.linkUrl != null)
+          // Lien externe si pas de fichier audio
+          if (!hasAudio && s.linkUrl != null)
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.play_circle_outline_rounded, color: _C.rose),
+              icon: const Icon(Icons.open_in_new_rounded, color: _C.ink2),
               onPressed: () => _open(s.linkUrl!),
+              tooltip: 'Ouvrir dans YouTube/Spotify',
             ),
           GestureDetector(
             onTap: played ? null : () => _vote(s),
@@ -518,9 +692,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(s.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(s.title, maxLines: 1, overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.inter(fontSize: 13.5, fontWeight: FontWeight.w800, color: _C.ink)),
                     Text(s.artist ?? 'Artiste inconnu',
                         style: GoogleFonts.inter(fontSize: 11.5, color: _C.ink2)),
