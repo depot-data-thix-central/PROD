@@ -2,8 +2,11 @@
 // ============================================================================
 // THIX WEDDING — PLAYLIST (INVITÉ) — AVEC LECTEUR AUDIO INTÉGRÉ
 // ✅ Lecture intégrée des fichiers audio du staff (via just_audio)
+// ✅ Upload de fichiers locaux pour les propositions des invités (Web & Mobile)
 // ============================================================================
 import 'dart:async';
+import 'dart:io';
+import 'package:flutter/foundation.dart'; // ✅ AJOUTÉ : pour kIsWeb
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
@@ -11,6 +14,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:file_picker/file_picker.dart';
+import 'package:mime/mime.dart';
 
 import 'package:thix_id/presentation/thix_weeding/pages/staff/playlist/playlist_models.dart';
 import 'package:thix_id/presentation/thix_weeding/widgets/thix_glass.dart';
@@ -38,7 +43,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   late final TabController _tab;
   final _title = TextEditingController();
   final _artist = TextEditingController();
-  final _link = TextEditingController();
+  // ❌ _link supprimé
   final _name = TextEditingController();
 
   List<PlaylistSong> _songs = [];
@@ -49,6 +54,11 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   bool _sending = false;
   String? _error;
   final Set<String> _voting = {};
+
+  // 🎵 Variables d'upload
+  bool _uploadingAudio = false;
+  String? _uploadedAudioUrl;
+  String? _uploadedAudioName;
 
   // 🎵 Lecteur audio
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -84,13 +94,6 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
         )
         .subscribe();
 
-    // Écouter l'état du lecteur
-    _audioPlayer.playerStateStream.listen((state) {
-      if (mounted && !state.playing && _currentlyPlaying != null) {
-        // Ne pas reset si c'est juste une pause
-      }
-    });
-
     _audioPlayer.positionStream.listen((p) {
       if (mounted) setState(() => _position = p);
     });
@@ -107,7 +110,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     _tab.dispose();
     _title.dispose();
     _artist.dispose();
-    _link.dispose();
+    // ❌ _link.dispose() supprimé
     _name.dispose();
     _audioPlayer.dispose();
     super.dispose();
@@ -175,7 +178,57 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
   List<PlaylistSong> get _public =>
       _songs.where((s) => (s.status == 'approved' || s.status == 'played') && !s.isAvoid).toList();
 
-  // 🎵 LECTURE AUDIO
+  // ✅ CHARGER UN FICHIER AUDIO LOCAL
+  Future<void> _pickAndUploadAudio() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.audio,
+        withData: true, // ⚠️ IMPORTANT : Obligatoire pour le Web
+      );
+
+      if (result == null || result.files.isEmpty) return;
+
+      final file = result.files.first;
+      if (file.bytes == null && file.path == null) {
+        _toast('Erreur : Impossible de lire le fichier', error: true);
+        return;
+      }
+
+      setState(() => _uploadingAudio = true);
+
+      final fileName = file.name;
+      final storagePath = 'guests/${widget.weddingId}/${DateTime.now().millisecondsSinceEpoch}_$fileName';
+      final mimeType = lookupMimeType(fileName) ?? 'audio/mpeg';
+
+      // ⚠️ Utilisation de file.bytes sur le Web
+      final fileBytes = kIsWeb 
+          ? file.bytes! 
+          : await File(file.path!).readAsBytes();
+
+      await _supa.storage.from('thix-playlist-audio').uploadBinary(
+        storagePath,
+        fileBytes,
+        fileOptions: FileOptions(cacheControl: '3600', contentType: mimeType, upsert: false),
+      );
+
+      final audioUrl = _supa.storage.from('thix-playlist-audio').getPublicUrl(storagePath);
+      
+      setState(() {
+        _uploadedAudioUrl = audioUrl;
+        _uploadedAudioName = fileName;
+        // Pré-remplir le titre avec le nom du fichier (sans l'extension)
+        if (_title.text.trim().isEmpty) {
+          _title.text = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+        }
+      });
+      _toast('Fichier chargé avec succès ✓');
+    } catch (e) {
+      _toast('Erreur upload : $e', error: true);
+    } finally {
+      if (mounted) setState(() => _uploadingAudio = false);
+    }
+  }
+
   Future<void> _playTrack(PlaylistSong track) async {
     final url = track.audioUrl ?? track.linkUrl;
     if (url == null) return;
@@ -232,14 +285,18 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
         'wedding_id': widget.weddingId,
         'title': title,
         'artist': _artist.text.trim().isEmpty ? null : _artist.text.trim(),
-        'link_url': _link.text.trim().isEmpty ? null : _link.text.trim(),
+        'audio_url': _uploadedAudioUrl, // ✅ Ajout de l'URL locale
+        'link_url': _uploadedAudioUrl,  // Gardé pour compatibilité avec l'existant
         'requested_by_name': _name.text.trim(),
         'guest_id': _guestId,
-        'source': 'guest',
+        'source': _uploadedAudioUrl != null ? 'guest_local' : 'guest',
       });
       _title.clear();
       _artist.clear();
-      _link.clear();
+      setState(() {
+        _uploadedAudioUrl = null;
+        _uploadedAudioName = null;
+      });
       HapticFeedback.mediumImpact();
       _toast('Proposition envoyée — en attente de validation 🎶');
       await _load(silent: true);
@@ -286,6 +343,18 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
 
   Future<void> _deleteMine(PlaylistSong s) async {
     try {
+      // Supprimer aussi le fichier du storage si c'est un fichier invité
+      if (s.audioUrl != null && s.audioUrl!.contains('supabase.co/storage')) {
+        try {
+          final uri = Uri.parse(s.audioUrl!);
+          final pathSegments = uri.pathSegments;
+          final bucketIdx = pathSegments.indexOf('object');
+          if (bucketIdx >= 0 && bucketIdx + 2 < pathSegments.length) {
+            final storagePath = pathSegments.sublist(bucketIdx + 2).join('/');
+            await _supa.storage.from('thix-playlist-audio').remove([storagePath]);
+          }
+        } catch (_) {}
+      }
       await _supa.from('thix_weeding_playlist').delete().eq('id', s.id);
       await _load(silent: true);
     } catch (e) {
@@ -364,7 +433,6 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     );
   }
 
-  // 🎵 BARRE DE LECTURE FLOTTANTE
   Widget _playerBar() {
     final track = _songs.where((s) => s.id == _currentlyPlaying).firstOrNull;
     if (track == null) return const SizedBox.shrink();
@@ -488,7 +556,40 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
               ],
             ),
             const SizedBox(height: 8),
-            _in(_link, 'Lien (optionnel)', Icons.link_rounded),
+            
+            // ✅ ZONE D'UPLOAD REMPLAÇANT LE CHAMP LIEN
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _C.rose,
+                      side: BorderSide(color: _C.rose.withOpacity(0.5)),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                    ),
+                    onPressed: _uploadingAudio ? null : _pickAndUploadAudio,
+                    icon: _uploadingAudio 
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: _C.rose))
+                        : const Icon(Icons.upload_file_rounded, size: 18),
+                    label: Text(
+                      _uploadedAudioName ?? 'Charger un fichier audio (MP3/WAV)', 
+                      style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.w700),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                if (_uploadedAudioUrl != null)
+                  IconButton(
+                    icon: const Icon(Icons.close, color: _C.rose, size: 20),
+                    onPressed: () => setState(() {
+                      _uploadedAudioUrl = null;
+                      _uploadedAudioName = null;
+                    }),
+                  ),
+              ],
+            ),
+            
             if (!_knownName) ...[
               const SizedBox(height: 8),
               _in(_name, 'Votre nom *', Icons.badge_outlined),
@@ -573,6 +674,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
     final isPlaying = _currentlyPlaying == s.id;
     final hasAudio = s.audioUrl != null;
     final isStaffLocal = s.source == 'staff_local';
+    final isGuestLocal = s.source == 'guest_local'; // ✅ Nouveau badge
 
     return ThixGlass(
       radius: 18,
@@ -580,7 +682,6 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
       padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
       child: Row(
         children: [
-          // Bouton play ou numéro
           hasAudio
               ? GestureDetector(
                   onTap: () => _playTrack(s),
@@ -622,6 +723,7 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
                   ),
                   if (s.isMust) const Padding(padding: EdgeInsets.only(left: 5), child: Text('⭐')),
                   if (isStaffLocal) const Padding(padding: EdgeInsets.only(left: 5), child: Text('📁')),
+                  if (isGuestLocal) const Padding(padding: EdgeInsets.only(left: 5), child: Icon(Icons.person, size: 12, color: _C.rose)),
                 ]),
                 Text(s.artist ?? 'Artiste inconnu',
                     maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -632,10 +734,12 @@ class _GuestPlaylistPageState extends State<GuestPlaylistPage> with SingleTicker
                 if (isStaffLocal && !played)
                   Text('Titre des mariés',
                       style: GoogleFonts.inter(fontSize: 10, color: _C.rose, fontWeight: FontWeight.w700)),
+                if (isGuestLocal && !played)
+                  Text('Fichier invité',
+                      style: GoogleFonts.inter(fontSize: 10, color: _C.rose, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
-          // Lien externe si pas de fichier audio
           if (!hasAudio && s.linkUrl != null)
             IconButton(
               visualDensity: VisualDensity.compact,
