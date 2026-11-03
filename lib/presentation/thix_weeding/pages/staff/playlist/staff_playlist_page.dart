@@ -4,6 +4,7 @@
 // ============================================================================
 import 'dart:async';
 import 'dart:io';
+import 'package:flutter/foundation.dart'; // ✅ AJOUTÉ : nécessaire pour kIsWeb
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -243,12 +244,13 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
     setState(() => _currentlyPlaying = null);
   }
 
-  // ✅ CHARGER + UPLOADER FICHIERS AUDIO DANS SUPABASE STORAGE
+  // ✅ CHARGER + UPLOADER FICHIERS AUDIO DANS SUPABASE STORAGE (COMPATIBLE WEB)
   Future<void> _pickAndUploadAudio() async {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.audio,
         allowMultiple: true,
+        withData: true, // ⚠️ IMPORTANT : Obligatoire pour le Web
       );
 
       if (result == null || result.files.isEmpty) return;
@@ -257,7 +259,10 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
       int successCount = 0;
 
       for (final file in result.files) {
-        if (file.path == null) continue;
+        if (file.bytes == null && file.path == null) {
+          _toast('Erreur : Impossible de lire ${file.name}', error: true);
+          continue;
+        }
 
         try {
           final fileName = file.name;
@@ -267,8 +272,12 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
           // Déterminer le content type
           final mimeType = lookupMimeType(fileName) ?? 'audio/mpeg';
 
+          // ⚠️ CORRECTION : Utilisation de file.bytes sur le Web
+          final fileBytes = kIsWeb 
+              ? file.bytes! 
+              : await File(file.path!).readAsBytes();
+
           // Upload dans Supabase Storage
-          final fileBytes = await File(file.path!).readAsBytes();
           await _supa.storage.from('thix-playlist-audio').uploadBinary(
             storagePath,
             fileBytes,
@@ -288,7 +297,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
             'title': title,
             'artist': null,
             'audio_url': audioUrl,
-            'link_url': audioUrl, // Même URL pour compatibilité
+            'link_url': audioUrl, // Gardé pour compatibilité
             'requested_by_name': 'Staff',
             'source': 'staff_local',
             'status': 'approved',
@@ -316,7 +325,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
   void _addDialog() {
     final t = TextEditingController();
     final a = TextEditingController();
-    final l = TextEditingController();
+    // ❌ Lien supprimé ici
     var must = false;
     showModalBottomSheet(
       context: context,
@@ -338,8 +347,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                 _field(t, 'Titre *', Icons.music_note_rounded),
                 const SizedBox(height: 8),
                 _field(a, 'Artiste', Icons.person_outline_rounded),
-                const SizedBox(height: 8),
-                _field(l, 'Lien (YouTube, Spotify…)', Icons.link_rounded),
+                // ❌ Champ Lien supprimé ici
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('⭐ À jouer absolument'),
@@ -361,7 +369,7 @@ class _StaffPlaylistPageState extends State<StaffPlaylistPage> with SingleTicker
                           'wedding_id': widget.weddingId,
                           'title': t.text.trim(),
                           'artist': a.text.trim().isEmpty ? null : a.text.trim(),
-                          'link_url': l.text.trim().isEmpty ? null : l.text.trim(),
+                          // ❌ link_url supprimé ici
                           'requested_by_name': 'Staff',
                           'source': 'staff',
                           'status': 'approved',
