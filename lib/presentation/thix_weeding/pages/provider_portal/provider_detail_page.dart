@@ -211,7 +211,7 @@ class ProviderDetailPage extends ConsumerWidget {
                       else
                         PageView.builder(
                           itemCount: heroMedia.length,
-                          onPageChanged: (_) => setState(() {}),
+                          onPageChanged: (_) {},
                           itemBuilder: (_, i) {
                             final m = heroMedia[i];
                             return GestureDetector(
