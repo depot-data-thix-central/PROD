@@ -8,7 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'menu_models.dart';
 import 'traiteur_menu_provider.dart';
-
+import 'traiteur_menu_page.dart';
 /// ═══════════════════════════════════════════════════════════════════════
 /// THIX WEDDING — STATISTIQUES VOTES INVITÉS (Production v2)
 /// ✅ Statistiques en temps réel
