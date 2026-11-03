@@ -267,9 +267,9 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       };
 
       if (widget.existing == null) {
-        await ref.read(createOfferProvider)(providerId: widget.provider.id, ...);
+        await ref.read(createOfferProvider)(providerId: widget.provider.id, offerData);
       } else {
-        await ref.read(updateOfferProvider)(widget.existing!.id, widget.provider.id, ...);
+        await ref.read(updateOfferProvider)(widget.existing!.id, widget.provider.id, offerData);
       }
 
       if (!mounted) return;
@@ -434,7 +434,7 @@ class _SectionTitle extends StatelessWidget {
   final String? badge;
   const _SectionTitle({required this.title, required this.icon, this.badge});
   @override
-  Widget build(BuildContext context) => Row(children: [Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: _P.rose, size: 18)), const SizedBox(width: 10), Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)), if (badge != null) ...[const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Text(badge!, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose))]]]);
+  Widget build(BuildContext context) => Row(children: [Container(padding: const EdgeInsets.all(6), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Icon(icon, color: _P.rose, size: 18)), const SizedBox(width: 10), Text(title, style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800)), if (badge != null) ...[const SizedBox(width: 8), Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3), decoration: BoxDecoration(color: _P.rose.withOpacity(0.1), borderRadius: BorderRadius.circular(8)), child: Text(badge, style: GoogleFonts.inter(fontSize: 11, fontWeight: FontWeight.w700, color: _P.rose)))]]);
 }
 
 class _PhotoCard extends StatelessWidget { /* ... même implémentation que précédemment avec fallback ... */ }
