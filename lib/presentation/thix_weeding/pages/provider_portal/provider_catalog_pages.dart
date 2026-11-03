@@ -133,8 +133,8 @@ class _ProviderCatalogPageState extends ConsumerState<ProviderCatalogPage>
 
     _heroPageController = PageController(viewportFraction: 0.92);
     _loadHeroProviders();
-  }
-}
+  } // ✅ FIX : L'accolade en trop a été supprimée ici
+
   Future<void> _loadHeroProviders() async {
     final service = ref.read(providerServiceProvider);
     final all = await service.getAllProviders(limit: 10);
