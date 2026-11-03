@@ -281,29 +281,29 @@ class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
       final desc = _descCtrl.text.trim().isEmpty ? null : _descCtrl.text.trim();
 
       final cover = _imageUrls.isNotEmpty ? _imageUrls.first : null;
-      final gallery = _imageUrls.length > 1 ? _imageUrls.sublist(1) : <String>[];
-      final categoriesList = _categories.toList();
 
-      final offerData = {
-        'title': _titleCtrl.text.trim(),
-        'description': desc,
-        'price': price,
-        'type': _type.name,
-        'type_specific_data': _typeSpecificData,
-        'categories': categoriesList.map((c) => c.name).toList(),
-        'image_url': cover,
-        'gallery_urls': gallery,
-        'video_url': _videoUrl,
-        'is_active': _isActive,
-        'contact_email': _emailCtrl.text.trim(),
-        'contact_phone': _phoneCtrl.text.trim(),
-        'code': _codeCtrl.text.trim(),
-      };
-
+      // ✅ CORRECTION : utiliser les bons arguments nommés pour les providers
       if (widget.existing == null) {
-        await ref.read(createOfferProvider)(providerId: widget.provider.id, offerData);
+        await ref.read(createOfferProvider)(
+          providerId: widget.provider.id,
+          title: _titleCtrl.text.trim(),
+          type: _type,
+          description: desc,
+          price: price,
+          imageUrl: cover,
+          isActive: _isActive,
+        );
       } else {
-        await ref.read(updateOfferProvider)(widget.existing!.id, widget.provider.id, offerData);
+        await ref.read(updateOfferProvider)(
+          widget.existing!.id,
+          widget.provider.id,
+          title: _titleCtrl.text.trim(),
+          type: _type,
+          description: desc,
+          price: price,
+          imageUrl: cover,
+          isActive: _isActive,
+        );
       }
 
       if (!mounted) return;
@@ -800,8 +800,6 @@ class _AddPhotoCard extends StatelessWidget {
   }
 
   void _showPicker() {
-    // Simplified: just open gallery by default
-    // In production, show bottom sheet with gallery/camera options
     onPickGallery();
   }
 }
@@ -838,9 +836,6 @@ class _VideoCardState extends State<_VideoCard> {
         ..initialize().then((_) {
           if (mounted) setState(() {});
         });
-    } else if (widget.localBytes != null) {
-      // For local bytes, we'd need to save to temp file first
-      // Simplified for now
     }
   }
 
@@ -935,13 +930,13 @@ class _FallbackImage extends StatelessWidget {
 Color offerTypeColor(OfferType type) {
   switch (type) {
     case OfferType.service:
-      return const Color(0xFF3B82F6); // Bleu
+      return const Color(0xFF3B82F6);
     case OfferType.menu:
-      return const Color(0xFF10B981); // Vert
+      return const Color(0xFF10B981);
     case OfferType.package:
-      return const Color(0xFF8B5CF6); // Violet
+      return const Color(0xFF8B5CF6);
     case OfferType.promo:
-      return const Color(0xFFF59E0B); // Ambre
+      return const Color(0xFFF59E0B);
   }
 }
 
