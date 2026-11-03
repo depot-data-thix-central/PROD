@@ -70,11 +70,11 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
     await ref.read(myWeddingsProvider(userId).future);
   }
 
-  // ── RECHERCHE PAR ID (comme tu l’as mis dans la barre) ──
+  // ── RECHERCHE PAR ID ──
   Future<void> _searchWedding() async {
     final query = _searchCtrl.text.trim();
     if (query.isEmpty) return;
-    
+
     setState(() {
       _isSearching = true;
       _hasSearched = true;
@@ -95,7 +95,9 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       });
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose),
+        );
       }
     } finally {
       setState(() => _isSearching = false);
@@ -108,21 +110,28 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      await Supabase.instance.client.from('thix_weeding_staff_requests').upsert({
-        'wedding_id': weddingId,
-        'user_id': user.id,
-        'status': 'pending',
-      }, onConflict: 'wedding_id, user_id');
+      await Supabase.instance.client.from('thix_weeding_staff_requests').upsert(
+        {
+          'wedding_id': weddingId,
+          'user_id': user.id,
+          'status': 'pending',
+        },
+        onConflict: 'wedding_id, user_id',
+      );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Demande envoyée au propriétaire !'),
-          backgroundColor: _R.green,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Demande envoyée au propriétaire !'),
+            backgroundColor: _R.green,
+          ),
+        );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose),
+        );
       }
     }
   }
@@ -153,41 +162,48 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
             physics: const BouncingScrollPhysics(),
             slivers: [
               _buildAppBar(weddings.length),
-              
               SliverPadding(
                 padding: const EdgeInsets.all(16),
                 sliver: SliverList(
-                  delegate: SliverChildListDelegate([
-                    
-                    // 1. BARRE DE RECHERCHE (par ID)
-                    _buildSearchBar(),
-                    const SizedBox(height: 20),
+                  delegate: SliverChildListDelegate(
+                    [
+                      // 1. BARRE DE RECHERCHE (par ID)
+                      _buildSearchBar(),
+                      const SizedBox(height: 20),
 
-                    // 2. RÉSULTATS DE RECHERCHE
-                    if (_hasSearched) _buildSearchResults(),
-                    
-                    // 3. DEMANDES D'ACCÈS
-                    _IncomingRequestsWidget(onActionDone: () => _refresh(user.id)),
-                    const SizedBox(height: 10),
+                      // 2. RÉSULTATS DE RECHERCHE
+                      if (_hasSearched) _buildSearchResults(),
 
-                    // 4. LISTE DES MARIAGES
-                    Text('Mes événements', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _R.text)),
-                    const SizedBox(height: 12),
-                    if (weddings.isEmpty)
-                      const _EmptyState()
-                    else
-                      RefreshIndicator(
-                        color: _R.rose,
-                        onRefresh: () => _refresh(user.id),
-                        child: Column(
-                          children: weddings.map((w) => Padding(
-                            padding: const EdgeInsets.only(bottom: 14),
-                            child: _WeddingCard(wedding: w),
-                          )).toList(),
-                        ),
+                      // 3. DEMANDES D'ACCÈS
+                      _IncomingRequestsWidget(onActionDone: () => _refresh(user.id)),
+                      const SizedBox(height: 10),
+
+                      // 4. LISTE DES MARIAGES
+                      Text(
+                        'Mes événements',
+                        style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w900, color: _R.text),
                       ),
-                    const SizedBox(height: 100),
-                  ]),
+                      const SizedBox(height: 12),
+                      if (weddings.isEmpty)
+                        const _EmptyState()
+                      else
+                        RefreshIndicator(
+                          color: _R.rose,
+                          onRefresh: () => _refresh(user.id),
+                          child: Column(
+                            children: weddings
+                                .map(
+                                  (w) => Padding(
+                                    padding: const EdgeInsets.only(bottom: 14),
+                                    child: _WeddingCard(wedding: w),
+                                  ),
+                                )
+                                .toList(),
+                          ),
+                        ),
+                      const SizedBox(height: 100),
+                    ],
+                  ),
                 ),
               ),
             ],
@@ -204,7 +220,9 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
       ),
       child: TextField(
         controller: _searchCtrl,
@@ -214,7 +232,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
           hintStyle: GoogleFonts.inter(fontSize: 13, color: _R.text2),
           prefixIcon: const Icon(Icons.search, color: _R.blue),
           suffixIcon: IconButton(
-            icon: _isSearching 
+            icon: _isSearching
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: _R.blue))
                 : const Icon(Icons.arrow_forward, color: _R.blue),
             onPressed: _searchWedding,
@@ -227,11 +245,16 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
   }
 
   Widget _buildSearchResults() {
-    if (_isSearching) return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+    if (_isSearching) {
+      return const Center(child: Padding(padding: EdgeInsets.all(20), child: CircularProgressIndicator()));
+    }
     if (_searchResults.isEmpty) {
       return Padding(
         padding: const EdgeInsets.only(bottom: 20),
-        child: Text('Aucun mariage trouvé pour cette recherche.', style: GoogleFonts.inter(color: _R.text2, fontStyle: FontStyle.italic)),
+        child: Text(
+          'Aucun mariage trouvé pour cette recherche.',
+          style: GoogleFonts.inter(color: _R.text2, fontStyle: FontStyle.italic),
+        ),
       );
     }
 
@@ -239,19 +262,29 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Résultats de recherche', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _R.text)),
+        Text(
+          'Résultats de recherche',
+          style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _R.text),
+        ),
         const SizedBox(height: 10),
         Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: _R.border)),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _R.border),
+          ),
           child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(w['couple_names'] ?? 'Sans nom', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15)),
+                    Text(
+                      w['couple_names'] ?? 'Sans nom',
+                      style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15),
+                    ),
                     Text('ID: ${w['id']}', style: _mono(fontSize: 11, color: _R.blue)),
                   ],
                 ),
@@ -282,23 +315,36 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       leading: IconButton(
         icon: Container(
           padding: const EdgeInsets.all(8),
-          decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)]),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            shape: BoxShape.circle,
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 8)],
+          ),
           child: const Icon(Icons.arrow_back_ios_new, size: 14, color: _R.text),
         ),
         onPressed: () => context.pop(),
       ),
       flexibleSpace: Container(
-        decoration: const BoxDecoration(gradient: _R.roseG, borderRadius: BorderRadius.only(bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24))),
+        decoration: const BoxDecoration(
+          gradient: _R.roseG,
+          borderRadius: BorderRadius.only(bottomLeft: Radius.circular(24), bottomRight: Radius.circular(24)),
+        ),
         child: FlexibleSpaceBar(
           background: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: ColumnCrossAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.start, // CORRIGÉ
                 children: [
-                  Text('Gérez vos événements', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
-                  Text('\( count mariage \){count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}', style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
+                  Text(
+                    'Gérez vos événements',
+                    style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white),
+                  ),
+                  Text(
+                    '${count} mariage${count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}', // CORRIGÉ
+                    style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9)),
+                  ),
                 ],
               ),
             ),
@@ -341,7 +387,12 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
           .eq('status', 'pending')
           .eq('thix_weeding_weddings.owner_id', user.id);
 
-      if (mounted) setState(() { _requests = List<Map<String, dynamic>>.from(res); _loading = false; });
+      if (mounted) {
+        setState(() {
+          _requests = List<Map<String, dynamic>>.from(res);
+          _loading = false;
+        });
+      }
     } catch (e) {
       if (mounted) setState(() => _loading = false);
     }
@@ -354,16 +405,23 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
       }).eq('id', requestId);
 
       if (accept) {
-        await Supabase.instance.client.from('thix_weeding_staff_members').upsert({
-          'wedding_id': weddingId,
-          'user_id': userId,
-        }, onConflict: 'wedding_id, user_id');
+        await Supabase.instance.client.from('thix_weeding_staff_members').upsert(
+          {
+            'wedding_id': weddingId,
+            'user_id': userId,
+          },
+          onConflict: 'wedding_id, user_id',
+        );
       }
 
       _fetchRequests();
       widget.onActionDone();
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose),
+        );
+      }
     }
   }
 
@@ -379,7 +437,10 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
           children: [
             const Icon(Icons.notifications_active, color: _R.amber, size: 20),
             const SizedBox(width: 8),
-            Text('Demandes d\'accès (${_requests.length})', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _R.text)),
+            Text(
+              'Demandes d\'accès (${_requests.length})',
+              style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _R.text),
+            ),
           ],
         ),
         const SizedBox(height: 10),
@@ -388,7 +449,11 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
             padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(color: _R.amber.withOpacity(0.1), borderRadius: BorderRadius.circular(12), border: Border.all(color: _R.amber.withOpacity(0.3))),
+            decoration: BoxDecoration(
+              color: _R.amber.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _R.amber.withOpacity(0.3)),
+            ),
             child: Row(
               children: [
                 const CircleAvatar(backgroundColor: Colors.white, child: Icon(Icons.person, color: _R.amber)),
@@ -397,8 +462,14 @@ class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Demande pour ${w['couple_names']}', style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13)),
-                      Text('Souhaite rejoindre l\'équipe staff', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
+                      Text(
+                        'Demande pour ${w['couple_names']}',
+                        style: GoogleFonts.inter(fontWeight: FontWeight.w700, fontSize: 13),
+                      ),
+                      Text(
+                        'Souhaite rejoindre l\'équipe staff',
+                        style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
+                      ),
                     ],
                   ),
                 ),
@@ -440,37 +511,68 @@ class _WeddingCard extends ConsumerWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: wedding.invitationPublished ? _R.green.withOpacity(0.3) : _R.border, width: wedding.invitationPublished ? 1.5 : 1),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+            border: Border.all(
+              color: wedding.invitationPublished ? _R.green.withOpacity(0.3) : _R.border,
+              width: wedding.invitationPublished ? 1.5 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4)),
+            ],
           ),
-          child: Row(children: [
-            Container(
-              width: 60, height: 60,
-              decoration: const BoxDecoration(gradient: _R.roseG, borderRadius: BorderRadius.all(Radius.circular(16))),
-              child: const Center(child: Icon(Icons.favorite, color: Colors.white, size: 28)),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(wedding.coupleNames.isEmpty ? 'Mariage sans nom' : wedding.coupleNames, style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _R.text)),
-                const SizedBox(height: 4),
-                Text(wedding.venue ?? 'Lieu à définir', style: GoogleFonts.inter(fontSize: 11, color: _R.text2)),
-                const SizedBox(height: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(color: _R.blue.withOpacity(0.08), borderRadius: BorderRadius.circular(20)),
-                  child: Text(wedding.uniqueCode, style: _mono(fontSize: 9, fontWeight: FontWeight.w700, color: _R.blue)),
+          child: Row(
+            children: [
+              Container(
+                width: 60,
+                height: 60,
+                decoration: const BoxDecoration(
+                  gradient: _R.roseG,
+                  borderRadius: BorderRadius.all(Radius.circular(16)),
                 ),
-              ]),
-            ),
-            PopupMenuButton<String>(
-              icon: const Icon(Icons.more_vert, size: 20, color: _R.text2),
-              onSelected: (v) { if (v == 'delete') _delete(context, ref); },
-              itemBuilder: (_) => [
-                const PopupMenuItem(value: 'delete', child: Text('Supprimer', style: TextStyle(color: _R.rose))),
-              ],
-            ),
-          ]),
+                child: const Center(child: Icon(Icons.favorite, color: Colors.white, size: 28)),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      wedding.coupleNames.isEmpty ? 'Mariage sans nom' : wedding.coupleNames,
+                      style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w800, color: _R.text),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      wedding.venue ?? 'Lieu à définir',
+                      style: GoogleFonts.inter(fontSize: 11, color: _R.text2),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _R.blue.withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      child: Text(
+                        wedding.uniqueCode,
+                        style: _mono(fontSize: 9, fontWeight: FontWeight.w700, color: _R.blue),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, size: 20, color: _R.text2),
+                onSelected: (v) {
+                  if (v == 'delete') _delete(context, ref);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Text('Supprimer', style: TextStyle(color: _R.rose)),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -483,7 +585,10 @@ class _WeddingCard extends ConsumerWidget {
         title: const Text('Supprimer ce mariage ?'),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: _R.rose))),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Supprimer', style: TextStyle(color: _R.rose)),
+          ),
         ],
       ),
     );
@@ -495,19 +600,29 @@ class _WeddingCard extends ConsumerWidget {
   }
 }
 
-class _EmptyState extends Statelessheet {
+class _EmptyState extends StatelessWidget { // CORRIGÉ (Statelessheet -> StatelessWidget)
   const _EmptyState();
+  
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.all(32),
-      child: Column(children: [
-        const Icon(Icons.favorite_border, size: 48, color: _R.rose),
-        const SizedBox(height: 16),
-        Text('Aucun mariage', style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800)),
-        const SizedBox(height: 8),
-        FilledButton(onPressed: () => context.push('/thix-weeding/create'), child: const Text('Créer un mariage'), style: FilledButton.styleFrom(backgroundColor: _R.rose)),
-      ]),
+      child: Column(
+        children: [
+          const Icon(Icons.favorite_border, size: 48, color: _R.rose),
+          const SizedBox(height: 16),
+          Text(
+            'Aucun mariage',
+            style: GoogleFonts.inter(fontSize: 18, fontWeight: FontWeight.w800),
+          ),
+          const SizedBox(height: 8),
+          FilledButton(
+            onPressed: () => context.push('/thix-weeding/create'),
+            style: FilledButton.styleFrom(backgroundColor: _R.rose),
+            child: const Text('Créer un mariage'),
+          ),
+        ],
+      ),
     );
   }
 }
