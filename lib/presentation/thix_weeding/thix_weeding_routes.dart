@@ -1,13 +1,14 @@
 // lib/presentation/thix_weeding/thix_weeding_routes.dart
 // ============================================================================
-// THIX WEDDING ROUTES — v3.5 (PRODUCTION ENTERPRISE + MULTI-ACTIVITÉS)
+// THIX WEDDING ROUTES — v3.6 (PRODUCTION ENTERPRISE + MULTI-ACTIVITÉS)
 // ✅ FIX 404 : meal-preferences déplacé DANS guest/:weddingId (weddingId hérité)
 // ✅ FIX 404 : route enfant :vendorId (détail prestataire) ajoutée sous prestataires
 // ✅ FIX conflit de nom : suppression du bloc "menu" staff orphelon (doublon staffMenu)
-// ✅ Route 16 staff "menu" -> TraiteurMenuStaffPage (validation plats traiteur)
+// ✅ ✅ Route 16 staff "menu" -> StaffMenuPage (staff_content_pages.dart)
+//       (TraiteurMenuStaffPage retiré : import supprimé, plus référencé)
 // ✅ NOUVEAU invité : menu, playlist, ma-table (plan 3D), live, annonces,
 //    navette, dress-code, faq, remerciements, prestataires, meal-preferences
-// ✅ NOUVEAU staff  : playlist, menu(traitor), contenu/:kind
+// ✅ NOUVEAU staff  : playlist, menu (StaffMenuPage), contenu/:kind
 // ✅ 🆕 MULTI-ACTIVITÉS PRESTATAIRE (1 compte = N métiers : traiteur, salle…)
 //    → routes /provider/activities[/new][/edit/:id] + imports associés
 //    → _ProviderOfferFormRoute respecte selectedActivityIdProvider
@@ -17,8 +18,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ Pages menu / préférences (imports déjà présents)
-import 'pages/staff/traiteur/traiteur_menu_staff_page.dart';
+// ✅ Pages menu / préférences
 import 'pages/guest/meal_preferences_page.dart';
 
 // HOME
@@ -67,6 +67,8 @@ import 'pages/staff/parametres/settings_page.dart';
 import 'pages/staff/seating/seating_3d_page.dart';
 import 'pages/staff/cadeaux/gifts_management_page.dart';
 import 'pages/staff/playlist/staff_playlist_page.dart';
+
+// ✅ CONTENUS INVITÉS (inclut StaffMenuPage + StaffInfoPage)
 import 'pages/staff/content/staff_content_pages.dart';
 
 // ✅ ESPACE PRESTATAIRE
@@ -385,10 +387,6 @@ class ThixWeedingRoutes {
               ],
             ),
 
-            // ⚠️ SUPPRIMÉ : anciens blocs orphelins "meal-preferences" et "menu"
-            //    qui étaient déclarés ICI (niveau racine) au lieu d'être enfants
-            //    de guest/:weddingId et staff/:weddingId -> causaient les 404.
-
             // ================= DASHBOARD STAFF =================
             GoRoute(
               path: 'staff/:weddingId',
@@ -649,11 +647,14 @@ class ThixWeedingRoutes {
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
-                // ✅ 16. MENU / VALIDATION PLATS TRAITEUR (staff)
+                // ✅ 16. MENU / VALIDATION PLATS (staff)
+                //    ✅ Utilise StaffMenuPage (staff_content_pages.dart)
+                //    → 3 onglets : Menu | Suggestions | Résultats
+                //    (remplace l'ancien TraiteurMenuStaffPage retiré)
                 GoRoute(
                   path: 'menu',
                   name: staffMenu,
-                  builder: (c, s) => TraiteurMenuStaffPage(
+                  builder: (c, s) => StaffMenuPage(
                       weddingId: s.pathParameters['weddingId']!),
                 ),
 
@@ -708,7 +709,6 @@ class _ProviderOfferFormRoute extends ConsumerWidget {
 
     // ✅ myProviderProvider(ownerId) renvoie DÉJÀ l'activité sélectionnée
     //    (fallback principale) grâce à selectedActivityIdProvider interne.
-    //    Aucune modif nécessaire ici : on garde la même signature.
     final providerAsync = ref.watch(myProviderProvider(user.id));
 
     return providerAsync.when(
