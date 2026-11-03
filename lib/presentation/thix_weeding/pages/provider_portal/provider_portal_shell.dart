@@ -1,6 +1,7 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_portal_shell.dart
 // ============================================================================
-// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION v4 — MULTI-ACTIVITÉS)
+// THIX WEDDING PROVIDER PORTAL SHELL (PRODUCTION v5 — HUB DASHBOARD)
+// ✅ v5 : Dashboard remplacé par ProviderHubDashboard (agrégation complète)
 // ✅ LOGIQUE IDENTIQUE À my_weddings_page.dart (1 session = Supabase.currentUser)
 // ✅ 1 compte (owner_id) = PLUSIEURS activités/métiers (traiteur, salle, DJ…)
 //    → barre de sélection d'activité affichée UNIQUEMENT si >= 2 activités
@@ -19,10 +20,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../models/provider_models.dart';
 import '../../providers/provider_providers.dart';
-import 'provider_dashboard_page.dart';
+import 'provider_hub_dashboard.dart';   // ✅ NOUVEAU : remplace provider_dashboard_page.dart
 import 'provider_media_pages.dart';
 import 'provider_business_pages.dart';
-import 'provider_offers_page.dart';
+import 'provider_offers_page.dart';     // ProviderOffersPage (liste des offres)
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -85,11 +86,9 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
       ),
       data: (activities) {
         if (activities.isEmpty) {
-          // Connecté mais aucune activité → "Devenez prestataire"
           return const _NoProviderScreen();
         }
 
-        // Activité courante = sélectionnée (sinon 1ère / principale)
         final selectedId = ref.watch(selectedActivityIdProvider);
         final active = activities.firstWhere(
           (a) => a.id == selectedId,
@@ -110,7 +109,7 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
     required ThixProviderModel provider,
     required List<ThixProviderModel> activities,
   }) {
-    final showPicker = activities.length >= 2; // mono-activité => aucune barre (v3)
+    final showPicker = activities.length >= 2;
 
     return Scaffold(
       backgroundColor: _P.bg,
@@ -126,12 +125,21 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
             child: IndexedStack(
               index: _currentIndex,
               children: [
-                ProviderDashboardPage(provider: provider),
-                ProviderOfferFormPage(provider: provider),
+                // ✅ 0 = HUB DASHBOARD (nouveau) — remplace ProviderDashboardPage
+                ProviderHubDashboard(
+                  provider: provider,
+                  onOpenTab: (i) => setState(() => _currentIndex = i.clamp(0, 5)),
+                ),
+                // ✅ 1 = LISTE DES OFFRES (ProviderOffersPage, pas ProviderOfferFormPage)
+                ProviderOffersPage(provider: provider),
                 ProviderGalleryPage(provider: provider),
                 ProviderReservationsPage(provider: provider),
                 ProviderTasksPage(provider: provider),
-                _ProfileTab(provider: provider, activitiesCount: activities.length),
+                _ProfileTab(
+                  provider: provider,
+                  activitiesCount: activities.length,
+                  onEditProfile: () => _openEditProfile(provider),
+                ),
               ],
             ),
           ),
@@ -164,7 +172,7 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
         onPick: (id) {
           Navigator.pop(ctx);
           ref.read(selectedActivityIdProvider.notifier).state = id;
-          setState(() => _currentIndex = 0); // revient au dashboard, activité changée
+          setState(() => _currentIndex = 0);
         },
         onManage: () {
           Navigator.pop(ctx);
@@ -175,6 +183,17 @@ class _ProviderPortalShellState extends ConsumerState<ProviderPortalShell> {
           context.push('/thix-weeding/provider/activities/new');
         },
       ),
+    );
+  }
+
+  // ── Édition du profil depuis l'onglet Profil ──
+  void _openEditProfile(ThixProviderModel provider) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditProfileSheet(provider: provider),
     );
   }
 }
@@ -586,7 +605,7 @@ class _NoProviderScreen extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// BOTTOM NAVIGATION (inchangé)
+// BOTTOM NAVIGATION
 // ═══════════════════════════════════════════════════════════════════════════
 class _BottomNavBar extends StatelessWidget {
   final int currentIndex;
@@ -594,7 +613,7 @@ class _BottomNavBar extends StatelessWidget {
   const _BottomNavBar({required this.currentIndex, required this.onTap});
 
   static const _items = <_NavItemConfig>[
-    _NavItemConfig(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: 'Dashboard'),
+    _NavItemConfig(icon: Icons.dashboard_outlined, activeIcon: Icons.dashboard, label: 'Hub'),
     _NavItemConfig(icon: Icons.local_offer_outlined, activeIcon: Icons.local_offer, label: 'Offres'),
     _NavItemConfig(icon: Icons.photo_library_outlined, activeIcon: Icons.photo_library, label: 'Galerie'),
     _NavItemConfig(icon: Icons.event_outlined, activeIcon: Icons.event, label: 'Résa.'),
@@ -671,13 +690,18 @@ class _NavItem extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// PROFILE TAB (avec déconnexion = Supabase.signOut global)
-// ✅ + entrée "Mes activités (N)" pour gérer le multi-métiers
+// PROFILE TAB (avec déconnexion + édition du profil branchée)
 // ═══════════════════════════════════════════════════════════════════════════
 class _ProfileTab extends ConsumerWidget {
   final ThixProviderModel provider;
   final int activitiesCount;
-  const _ProfileTab({required this.provider, required this.activitiesCount});
+  final VoidCallback onEditProfile;   // ✅ NOUVEAU : ouvre la sheet d'édition
+
+  const _ProfileTab({
+    required this.provider,
+    required this.activitiesCount,
+    required this.onEditProfile,
+  });
 
   Future<void> _logout(BuildContext context, WidgetRef ref) async {
     final confirmed = await showDialog<bool>(
@@ -759,15 +783,24 @@ class _ProfileTab extends ConsumerWidget {
             padding: const EdgeInsets.all(16),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // ✅ NOUVEAU : gestion multi-activités
                 _MenuItem(
                   icon: Icons.workspaces_rounded,
                   label: 'Mes activités',
                   badge: '$activitiesCount',
                   onTap: () => context.push('/thix-weeding/provider/activities'),
                 ),
-                _MenuItem(icon: Icons.edit_outlined, label: 'Modifier mes informations', onTap: () {}),
-                _MenuItem(icon: Icons.document_scanner_outlined, label: 'Mes documents de validation', badge: provider.verificationStatus == ProviderVerificationStatus.pending ? 'En attente' : null, onTap: () {}),
+                // ✅ EDIT PROFIL → branche le callback du shell (ouvre la sheet)
+                _MenuItem(
+                  icon: Icons.edit_outlined,
+                  label: 'Modifier mes informations',
+                  onTap: onEditProfile,
+                ),
+                _MenuItem(
+                  icon: Icons.document_scanner_outlined,
+                  label: 'Mes documents de validation',
+                  badge: provider.verificationStatus == ProviderVerificationStatus.pending ? 'En attente' : null,
+                  onTap: () {}, // TODO: brancher page validation
+                ),
                 _MenuItem(icon: Icons.payments_outlined, label: 'Mes revenus', onTap: () {}),
                 _MenuItem(icon: Icons.notifications_outlined, label: 'Préférences de notifications', onTap: () {}),
                 _MenuItem(icon: Icons.help_outline, label: 'Aide & Support', onTap: () {}),
@@ -818,6 +851,193 @@ class _MenuItem extends StatelessWidget {
       ),
     );
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SHEET ÉDITION DU PROFIL (appelée depuis l'onglet Profil)
+// ═══════════════════════════════════════════════════════════════════════════
+class _EditProfileSheet extends ConsumerStatefulWidget {
+  final ThixProviderModel provider;
+  const _EditProfileSheet({required this.provider});
+
+  @override
+  ConsumerState<_EditProfileSheet> createState() => _EditProfileSheetState();
+}
+
+class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
+  late final TextEditingController _name;
+  late final TextEditingController _city;
+  late final TextEditingController _phone;
+  late final TextEditingController _email;
+  late final TextEditingController _desc;
+  late ProviderCategory _category;
+  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final p = widget.provider;
+    _name = TextEditingController(text: p.businessName);
+    _city = TextEditingController(text: p.city ?? '');
+    _phone = TextEditingController(text: p.phone ?? '');
+    _email = TextEditingController(text: p.email ?? '');
+    _desc = TextEditingController(text: p.description ?? '');
+    _category = p.category;
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    _city.dispose();
+    _phone.dispose();
+    _email.dispose();
+    _desc.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_name.text.trim().isEmpty) return;
+    setState(() => _saving = true);
+    HapticFeedback.mediumImpact();
+    try {
+      await ref.read(updateActivityProvider)(
+        widget.provider.id,
+        ownerId: widget.provider.ownerId,
+        businessName: _name.text.trim(),
+        category: _category.name,
+        city: _city.text.trim(),
+        phone: _phone.text.trim(),
+        email: _email.text.trim(),
+        description: _desc.text.trim(),
+      );
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Profil mis à jour ✓', style: GoogleFonts.inter(fontWeight: FontWeight.w700)),
+          backgroundColor: _P.green,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _saving = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Erreur: $e'),
+          backgroundColor: _P.red,
+          behavior: SnackBarBehavior.floating,
+        ));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            margin: const EdgeInsets.only(top: 12),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+            child: Row(
+              children: [
+                const Icon(Icons.badge_outlined, color: _P.rose, size: 20),
+                const SizedBox(width: 10),
+                Text('Modifier mon profil',
+                    style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: _P.ink)),
+              ],
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              children: [
+                _field('Nom commercial *', _name, Icons.storefront_rounded),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<ProviderCategory>(
+                  value: _category,
+                  decoration: _dec('Métier (catégorie)', Icons.work_rounded),
+                  items: ProviderCategory.values
+                      .map((c) => DropdownMenuItem(value: c, child: Text(c.displayName)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _category = v!),
+                ),
+                const SizedBox(height: 12),
+                _field('Ville', _city, Icons.location_on_rounded),
+                const SizedBox(height: 12),
+                _field('Téléphone', _phone, Icons.phone_rounded, keyboard: TextInputType.phone),
+                const SizedBox(height: 12),
+                _field('Email', _email, Icons.email_rounded, keyboard: TextInputType.emailAddress),
+                const SizedBox(height: 12),
+                _field('Description', _desc, Icons.edit_note_rounded, maxLines: 3),
+                const SizedBox(height: 20),
+                SizedBox(
+                  height: 52,
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: _saving ? null : _save,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _P.rose,
+                      foregroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                    child: _saving
+                        ? const SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          )
+                        : Text('Enregistrer', style: GoogleFonts.inter(fontWeight: FontWeight.w800)),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(context);
+                    context.push('/thix-weeding/provider/activities');
+                  },
+                  child: Text('Gérer mes activités (multi-métiers)',
+                      style: GoogleFonts.inter(color: _P.inkSoft, fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field(String label, TextEditingController ctrl, IconData icon,
+          {TextInputType? keyboard, int maxLines = 1}) =>
+      TextFormField(
+        controller: ctrl,
+        keyboardType: keyboard,
+        maxLines: maxLines,
+        decoration: _dec(label, icon),
+      );
+
+  InputDecoration _dec(String label, IconData icon) => InputDecoration(
+        labelText: label,
+        labelStyle: GoogleFonts.inter(fontSize: 12, color: _P.inkSoft),
+        prefixIcon: Icon(icon, size: 18, color: _P.rose),
+        filled: true,
+        fillColor: _P.bg,
+        border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none),
+      );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
