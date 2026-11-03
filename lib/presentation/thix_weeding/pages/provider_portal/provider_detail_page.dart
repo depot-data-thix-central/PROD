@@ -205,7 +205,7 @@ class _HeroPlaceholder extends StatelessWidget {
   final String initials;
   const _HeroPlaceholder({required this.icon, required this.initials});
   @override
-  Widget build(BuildContext context) => Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [_P.roseSoft, Color(0xFFFFE4EC)], begin: Alignment.topLeft, end: Alignment.bottomRight)), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Container(width: 84, height: 84, decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), shape: BoxShape.circle, boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 6))]), child: Icon(icon, size: 40, color: _P.rose)), const SizedBox(height: 12), Text(initials, style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.rose, letterSpacing: 1)), const SizedBox(height: 4), Text('Médias à venir', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600))]])));
+  Widget build(BuildContext context) => Container(decoration: const BoxDecoration(gradient: LinearGradient(colors: [_P.roseSoft, Color(0xFFFFE4EC)], begin: Alignment.topLeft, end: Alignment.bottomRight)), child: Center(child: Column(mainAxisSize: mainAxisSize.min, children: [Container(width: 84, height: 84, decoration: BoxDecoration(color: Colors.white.withOpacity(0.7), shape: BoxShape.circle, boxShadow: [BoxShadow(color: _P.rose.withOpacity(0.15), blurRadius: 20, offset: const Offset(0, 6))]), child: Icon(icon, size: 40, color: _P.rose)), const SizedBox(height: 12), Text(initials, style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w900, color: _P.rose, letterSpacing: 1)), const SizedBox(height: 4), Text('Médias à venir', style: GoogleFonts.inter(fontSize: 11, color: _P.inkSoft, fontWeight: FontWeight.w600))]])));
 }
 
 class _FullScreenImageViewer extends StatelessWidget {
@@ -246,7 +246,7 @@ class _BookingSheetState extends ConsumerState<_BookingSheet> {
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: mainAxisSize.min,
           children: [
             Center(child: Container(width: 44, height: 4, decoration: BoxDecoration(color: _P.line, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
