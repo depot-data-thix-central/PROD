@@ -1,5 +1,5 @@
 // ============================================================================
-// THIX WEDDING — PAGE DES OFFRES (Production v5) — CORRIGÉ + COMPLET
+// THIX WEDDING — FORMULAIRE OFFRES (Production v5) — CORRIGÉ + COMPLET
 // ✅ Choix multiple photos + preview locale
 // ✅ Vidéo (2 min 50 / 50 Mo)
 // ✅ Contact (email + téléphone)
@@ -18,6 +18,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:video_player/video_player.dart';
 import '../../models/provider_models.dart';
+import '../../providers/provider_providers.dart';
 
 class _P {
   static const Color bg = Color(0xFFFAFAFA);
@@ -34,17 +35,17 @@ class _P {
   static const Color red = Color(0xFFEF4444);
 }
 
-class ProviderOffersPage extends ConsumerStatefulWidget {
+class ProviderOfferFormPage extends ConsumerStatefulWidget {
   final ThixProviderModel provider;
   final ProviderOfferModel? existing;
 
-  const ProviderOffersPage({super.key, required this.provider, this.existing});
+  const ProviderOfferFormPage({super.key, required this.provider, this.existing});
 
   @override
-  ConsumerState<ProviderOffersPage> createState() => _ProviderOffersPageState();
+  ConsumerState<ProviderOfferFormPage> createState() => _ProviderOfferFormPageState();
 }
 
-class _ProviderOffersPageState extends ConsumerState<ProviderOffersPage> {
+class _ProviderOfferFormPageState extends ConsumerState<ProviderOfferFormPage> {
   final _formKey = GlobalKey<FormState>();
   final _picker = ImagePicker();
 
@@ -924,5 +925,35 @@ class _FallbackImage extends StatelessWidget {
       color: _P.inkSoft.withOpacity(0.1),
       child: const Icon(Icons.image_outlined, color: _P.inkSoft, size: 32),
     );
+  }
+}
+
+// ============================================================================
+// HELPERS PARTAGÉS (utilisés par home_page, catalog_pages, detail_page)
+// ============================================================================
+
+Color offerTypeColor(OfferType type) {
+  switch (type) {
+    case OfferType.service:
+      return const Color(0xFF3B82F6); // Bleu
+    case OfferType.menu:
+      return const Color(0xFF10B981); // Vert
+    case OfferType.package:
+      return const Color(0xFF8B5CF6); // Violet
+    case OfferType.promo:
+      return const Color(0xFFF59E0B); // Ambre
+  }
+}
+
+IconData offerTypeIcon(OfferType type) {
+  switch (type) {
+    case OfferType.service:
+      return Icons.miscellaneous_services_rounded;
+    case OfferType.menu:
+      return Icons.restaurant_menu_rounded;
+    case OfferType.package:
+      return Icons.inventory_2_rounded;
+    case OfferType.promo:
+      return Icons.local_offer_rounded;
   }
 }
