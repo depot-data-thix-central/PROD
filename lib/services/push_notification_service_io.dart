@@ -1,24 +1,6 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v8.9 (Production)
-// CHANGELOG v8.9 (depuis v8.8) :
-//   ✅ Suppression de _kStaleCallPush (90 s) : les pushs livrés en retard
-//      par Doze/OEM/Xiaomi/OPPO ne sont plus rejetés. On s'appuie sur le push
-//      call_hangup ET le statut Supabase au moment du décrochage.
-//   ✅ ringtonePath corrigé : 'system_ringtone_default' (son natif bouclé,
-//      ignoré du mode silencieux). 'ringtone' seul faisait planter le plugin
-//      et coupait la vibration.
-//   ✅ Notifications chat en arrière-plan : skipIfSystemNotification retiré
-//      pour que LocalNotificationService.showChatMessage crée l'UI locale
-//      avec actions (Ouvrir / Répondre / Lu / Muet). Sinon seul le pop
-//      système FCM (sans actions) s'affichait.
-//   ✅ Gate foreground CallKit : ne plus déclencher showCallkitIncoming
-//      quand l'app est au premier plan et que la page in-app est déjà
-//      apparue (évite le double écran).
-//   ✅ Commentaire iOS PushKit : ce fichier NE REMPLACE PAS PushKit.
-//      Sur iOS, les pushs FCM data-only sont throttlés → voir AppDelegate.
-//
-// Conserve tous les correctifs v8.4 / v8.5 / v8.8.
+// Push Notification Service IO v9.0 (Production + Thix Wedding)
 // ============================================================================
 
 import 'dart:async';
@@ -52,9 +34,6 @@ const Duration _kCallkitTimeout = Duration(seconds: 8);
 const Duration _kInitialTapDelay = Duration(milliseconds: 1500);
 const Duration _kForegroundCallFallbackDelay = Duration(milliseconds: 2500);
 
-// v8.9 : seuil « périmé » relevé à 3 min pour absorber les livraisons Doze/OEM.
-// Un push > 3 min correspond presque toujours à un appel déjà terminé →
-// on laisse le serveur envoyer call_hangup qui déclenchera endCall() proprement.
 const Duration _kStaleCallPush = Duration(minutes: 3);
 
 const int _kMaxRetries = 3;
@@ -77,11 +56,16 @@ const int _kCallDurationMs = 60000;
 class PushTypes {
   PushTypes._();
 
+  // Chat / Messages
   static const String chatMessage = 'chat_message';
   static const String chat = 'chat';
   static const String message = 'message';
+  
+  // Appels
   static const String incomingCall = 'incoming_call';
   static const String callHangup = 'call_hangup';
+  
+  // Système / Réseau
   static const String notification = 'notification';
   static const String sos = 'sos';
   static const String like = 'like';
@@ -92,21 +76,29 @@ class PushTypes {
   static const String repost = 'repost';
   static const String connection = 'connection';
 
+  // ✅ THIX WEDDING (Mariages)
+  static const String weddingRsvp = 'wedding_rsvp';
+  static const String weddingMessage = 'wedding_message';
+  static const String weddingMenuStatus = 'wedding_menu_status';
+  static const String weddingMenuSuggestion = 'wedding_menu_suggestion';
+  static const String weddingMenuVendor = 'wedding_menu_vendor';
+  static const String weddingMenuVendorStatus = 'wedding_menu_vendor_status';
+  static const String weddingMenuVote = 'wedding_menu_vote';
+  static const String weddingMenuDiet = 'wedding_menu_diet';
+  static const String weddingGuestbook = 'wedding_guestbook';
+  static const String weddingPayment = 'wedding_payment';
+  static const String weddingRequest = 'wedding_request';
+  static const String weddingTask = 'wedding_task';
+  static const String weddingInvitation = 'wedding_invitation';
+
   static const Set<String> allowed = <String>{
-    chatMessage,
-    chat,
-    message,
-    incomingCall,
-    callHangup,
-    notification,
-    sos,
-    like,
-    follow,
-    comment,
-    commentReply,
-    commentLike,
-    repost,
-    connection,
+    chatMessage, chat, message, incomingCall, callHangup,
+    notification, sos, like, follow, comment, commentReply,
+    commentLike, repost, connection,
+    // Wedding
+    weddingRsvp, weddingMessage, weddingMenuStatus, weddingMenuSuggestion,
+    weddingMenuVendor, weddingMenuVendorStatus, weddingMenuVote, weddingMenuDiet,
+    weddingGuestbook, weddingPayment, weddingRequest, weddingTask, weddingInvitation,
   };
 
   static bool isAllowed(String type) => allowed.contains(type);
@@ -116,6 +108,9 @@ class PushTypes {
 
   static bool isChatType(String type) =>
       type == chatMessage || type == chat || type == message;
+      
+  // ✅ Ajout spécifique : permet d'avoir l'UI "Répondre" pour les messages de mariage
+  static bool isWeddingChat(String type) => type == weddingMessage;
 }
 
 // ============================================================================
@@ -179,6 +174,7 @@ class _Validators {
       '/country',
       '/doc',
       '/ia',
+      '/thix-weeding', // ✅ FIX : Ajout du préfixe pour les mariages
     ];
 
     for (final prefix in prefixes) {
@@ -263,9 +259,6 @@ class _VoipCallManager {
       return;
     }
 
-    // v8.9 : on signale que l'UI CallKit a été demandée, pour éviter
-    // qu'un push Supabase Realtime (GlobalCallListener) n'ouvre aussi
-    // la page in-app → double écran.
     CallHandledRegistry.markShownCallkit(safeInviteId);
 
     final params = CallKitParams(
@@ -284,11 +277,6 @@ class _VoipCallManager {
         'caller_name': safeName,
         'is_video': isVideo,
       },
-      // v8.9 : sonnerie/vibration natives gérées par le système (pas par Dart).
-      // - 'system_ringtone_default' : sonne en boucle, ignoré du mode silencieux
-      //   sur Android 11+, et la vibration native CallKit est enclenchée.
-      // - Évite le bug v8.8 où 'ringtone' faisait crasher le plugin et tuait
-      //   la vibration (d'où les « 2 vibrations seulement »).
       android: const AndroidParams(
         isCustomNotification: true,
         isShowLogo: true,
@@ -301,8 +289,6 @@ class _VoipCallManager {
         iconName: 'AppIcon',
         handleType: 'generic',
         supportsVideo: isVideo,
-        // iOS : CallKit utilise la sonnerie de l'utilisateur (définie dans
-        // Réglages). Pas de chemin custom nécessaire.
         ringtonePath: 'default_ringtone',
       ),
     );
@@ -312,8 +298,6 @@ class _VoipCallManager {
           .timeout(_kCallkitTimeout);
       debugPrint('[VOIP] ✓ CallKit shown: $safeInviteId');
     } catch (e) {
-      // v8.9 : si CallKit échoue (ex. iOS sans PushKit), on retombe sur une
-      // notification locale riche pour ne pas perdre l'appel.
       debugPrint('[VOIP] ❌ showCallkitIncoming failed: $e → fallback local');
       try {
         await LocalNotificationService.instance.show(
@@ -345,8 +329,6 @@ class _VoipCallManager {
     }
   }
 
-  /// Appel accepté (évènement CallKit OU rattrapage au démarrage) :
-  /// un même appel n'est transmis qu'une seule fois.
   void _emitAccept(String inviteId, String channelName, bool isVideo) {
     if (!CallHandledRegistry.markAccepted(inviteId)) {
       debugPrint('[VOIP] ℹ️ Acceptation en double ignorée: $inviteId');
@@ -355,7 +337,6 @@ class _VoipCallManager {
     onAcceptCall?.call(inviteId, channelName, isVideo);
   }
 
-  /// App lancée par un appel accepté depuis l'écran verrouillé.
   Future<void> resumeAcceptedCalls() async {
     try {
       final calls = await FlutterCallkitIncoming.activeCalls();
@@ -442,7 +423,6 @@ class _BadgeManager {
     }
   }
 
-  /// Retourne -1 si Supabase n'est pas disponible (ex. isolate d'arrière-plan)
   Future<int> fetchUnreadCount() async {
     try {
       final uid = SupabaseConfig.currentUser?.id;
@@ -491,9 +471,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
       '${message.notification != null}');
 
   if (type == PushTypes.incomingCall) {
-    // v8.9 : on garde _kStaleCallPush seulement comme LOG informatif.
-    // On ne rejette JAMAIS un push d'appel : le serveur doit envoyer
-    // call_hangup pour annuler un appel périmé.
     final sent = message.sentTime;
     if (sent != null && DateTime.now().difference(sent) > _kStaleCallPush) {
       debugPrint('[FCM-BG] ⏱️ incoming_call ancien '
@@ -502,7 +479,6 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
     }
 
     try {
-      // CallKit en premier : sonnerie + vibration + pop-up natifs
       await _VoipCallManager.instance.initialize();
       await _VoipCallManager.instance.showIncomingCall(
         inviteId: (data['invite_id'] ?? data['inviteId'] ?? '').toString(),
@@ -536,13 +512,12 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         .initialize()
         .timeout(_kForegroundInitTimeout);
 
-    // v8.9 : pour les types CHAT, on NE skippe PAS même si le message
-    // contient un bloc notification FCM. Sinon l'UI créée est le pop
-    // système FCM (sans actions Ouvrir/Répondre/Lu/Muet). On affiche
-    // TOUJOURS la notification locale riche avec actions.
+    // ✅ On force l'affichage local pour les chats et les messages de mariage
+    final isChat = PushTypes.isChatType(type) || PushTypes.isWeddingChat(type);
+    
     await _showFromRemoteMessage(
       message,
-      skipIfSystemNotification: !PushTypes.isChatType(type),
+      skipIfSystemNotification: !isChat,
     );
   } catch (e) {
     debugPrint('[FCM-BG] ❌ $e');
@@ -601,7 +576,7 @@ Future<void> _showFromRemoteMessage(
     final payload = _buildPayload(data);
     final notifId = _generateNotifId(message);
 
-    if (PushTypes.isChatType(type)) {
+    if (PushTypes.isChatType(type) || PushTypes.isWeddingChat(type)) {
       await LocalNotificationService.instance.showChatMessage(
         id: notifId,
         title: title,
@@ -626,7 +601,7 @@ String _getChannelForType(String type) {
   if (type == PushTypes.incomingCall || type == PushTypes.sos) {
     return LocalNotificationService.channelCalls;
   }
-  if (PushTypes.isChatType(type)) {
+  if (PushTypes.isChatType(type) || PushTypes.isWeddingChat(type)) {
     return LocalNotificationService.channelChat;
   }
   return LocalNotificationService.channelDefault;
@@ -656,6 +631,23 @@ String _defaultTitle(String type) {
       return 'Republication';
     case PushTypes.connection:
       return 'Nouvelle connexion';
+      
+    // ✅ Titres par défaut pour les Mariages
+    case PushTypes.weddingRsvp:
+      return 'Mise à jour RSVP';
+    case PushTypes.weddingMessage:
+      return 'Message des mariés';
+    case PushTypes.weddingInvitation:
+      return 'Invitation de mariage';
+    case PushTypes.weddingMenuStatus:
+    case PushTypes.weddingMenuVote:
+      return 'Menu & Repas';
+    case PushTypes.weddingTask:
+      return 'Tâche de mariage';
+    case PushTypes.weddingPayment:
+      return 'Paiement de mariage';
+    case PushTypes.weddingRequest:
+      return 'Demande de prestation';
     default:
       return 'THIX Hub';
   }
@@ -855,10 +847,6 @@ class PushNotificationService {
     _openedAppSub = null;
   }
 
-  /// App ouverte : l'écran d'appel de l'app (GlobalCallListener) est prioritaire.
-  /// CallKit n'intervient qu'en secours, si la page n'est pas apparue après 2,5 s
-  /// ET que l'app est toujours au premier plan (pas si l'utilisateur vient
-  /// de changer d'appli entre-temps).
   void _handleForegroundIncomingCall(Map<String, dynamic> data) {
     final inviteId = (data['invite_id'] ?? data['inviteId'] ?? '').toString();
     if (inviteId.isEmpty) return;
@@ -869,16 +857,12 @@ class PushNotificationService {
     final isVideo = (data['is_video'] ?? 'false').toString() == 'true';
 
     Future<void>.delayed(_kForegroundCallFallbackDelay, () {
-      // v8.9 : conditions de non-affichage CallKit plus complètes
       if (CallHandledRegistry.isShownInApp(inviteId) ||
           CallHandledRegistry.isEnded(inviteId) ||
           CallHandledRegistry.isAccepted(inviteId) ||
           CallHandledRegistry.isShownCallkit(inviteId)) {
         return;
       }
-      // v8.9 : ne pas déclencher CallKit si l'app n'est plus au 1er plan
-      // (sinon on ouvre CallKit sur une app en arrière-plan, ce qui crée
-      // un écran fantôme au retour).
       if (WidgetsBinding.instance.lifecycleState != AppLifecycleState.resumed) {
         return;
       }
@@ -981,7 +965,6 @@ class PushNotificationService {
   Future<void> _saveTokenRow(String uid, String token) async {
     final client = SupabaseConfig.client;
 
-    // Un appareil = un seul compte
     try {
       await client
           .from(_tokensTable)
