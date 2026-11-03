@@ -1462,7 +1462,7 @@ class _HomeOfferCard extends StatelessWidget {
     return GestureDetector(
       onTap: () {
         HapticFeedback.mediumImpact();
-        context.push('/thix-weeding/provider/detail/${offer.providerId}');
+        context.push('/thix-weeding/provider/detail/${offer.providerId}?offer=${offer.id}');
       },
       child: Container(
         width: 200,
