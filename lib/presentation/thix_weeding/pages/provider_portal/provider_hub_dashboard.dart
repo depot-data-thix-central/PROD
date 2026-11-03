@@ -1,11 +1,13 @@
 // lib/presentation/thix_weeding/pages/provider_portal/provider_hub_dashboard.dart
 // ============================================================================
-// THIX WEDDING — HUB PRESTATAIRE (PRODUCTION v6)
+// THIX WEDDING — HUB PRESTATAIRE (PRODUCTION v6.1)
 // ✅ Agrège TOUT : demandes, commandes, réservations, offres, menus, tâches,
 //    suggestions, revenus + ÉDITION DU PROFIL inline.
 // ✅ Error-resilient : chaque section gère son propre état (valueOrNull).
 // ✅ Navigation : onglets du shell (onOpenTab) + Navigator.push vers les pages
 //    existantes (commandes, menus, suggestions, demandes, détail commande).
+// ✅ v6.1 FIX BUILD : getStatusColor() n'existe pas sur l'enum OrderStatus
+//    (elle est sur WeddingOrder). Helpers locaux orderStatusColor / Label.
 // ============================================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -44,6 +46,32 @@ class _P {
   static const Color purple = Color(0xFF8B5CF6);
   static const Color teal = Color(0xFF14B8A6);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+// HELPERS STATUT COMMANDE
+// L'enum OrderStatus (order_models.dart) n'a PAS de méthode getStatusColor() :
+// elle existe sur WeddingOrder. Ces helpers reproduisent les mêmes couleurs
+// pour pouvoir colorer les chips du pipeline directement depuis l'enum.
+// ═══════════════════════════════════════════════════════════════════════════
+Color orderStatusColor(OrderStatus s) => switch (s) {
+      OrderStatus.pending => const Color(0xFFF59E0B),
+      OrderStatus.confirmed => const Color(0xFF3B82F6),
+      OrderStatus.inProgress => const Color(0xFFF59E0B),
+      OrderStatus.ready => const Color(0xFF10B981),
+      OrderStatus.delivered => const Color(0xFF14B8A6),
+      OrderStatus.completed => const Color(0xFF059669),
+      OrderStatus.cancelled => const Color(0xFFEF4444),
+    };
+
+String orderStatusLabel(OrderStatus s) => switch (s) {
+      OrderStatus.pending => 'En attente',
+      OrderStatus.confirmed => 'Confirmée',
+      OrderStatus.inProgress => 'En cours',
+      OrderStatus.ready => 'Prête',
+      OrderStatus.delivered => 'Livrée',
+      OrderStatus.completed => 'Terminée',
+      OrderStatus.cancelled => 'Annulée',
+    };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // HUB — remplace ProviderDashboardPage dans le shell
@@ -485,7 +513,7 @@ class _ProviderHubDashboardState extends ConsumerState<ProviderHubDashboard> {
           );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Commande → ${s.name}'),
+          content: Text('Commande → ${orderStatusLabel(s)}'),
           backgroundColor: _P.green,
           behavior: SnackBarBehavior.floating,
         ));
@@ -919,29 +947,30 @@ class _OrdersSection extends StatelessWidget {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Pipeline chips
+              // ✅ Pipeline chips (FR + couleurs locales)
               SizedBox(
                 height: 34,
                 child: ListView(
                   scrollDirection: Axis.horizontal,
                   children: OrderStatus.values.map((s) {
                     final c = counts[s] ?? 0;
+                    final col = orderStatusColor(s);
                     return Container(
                       margin: const EdgeInsets.only(right: 6),
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                       decoration: BoxDecoration(
-                        color: (s.getStatusColor()).withOpacity(c > 0 ? 0.12 : 0.04),
+                        color: col.withOpacity(c > 0 ? 0.12 : 0.04),
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: s.getStatusColor().withOpacity(c > 0 ? 0.4 : 0.15)),
+                        border: Border.all(color: col.withOpacity(c > 0 ? 0.4 : 0.15)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Text(s.name,
-                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: s.getStatusColor())),
+                          Text(orderStatusLabel(s),
+                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w700, color: col)),
                           const SizedBox(width: 5),
                           Text('$c',
-                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: s.getStatusColor())),
+                              style: GoogleFonts.inter(fontSize: 10, fontWeight: FontWeight.w900, color: col)),
                         ],
                       ),
                     );
@@ -1066,8 +1095,8 @@ class _OrderTile extends StatelessWidget {
                   child: OutlinedButton(
                     onPressed: () => onQuickStatus(order, order.nextStatus!),
                     style: OutlinedButton.styleFrom(
-                      foregroundColor: order.nextStatus!.getStatusColor(),
-                      side: BorderSide(color: order.nextStatus!.getStatusColor()),
+                      foregroundColor: orderStatusColor(order.nextStatus!),
+                      side: BorderSide(color: orderStatusColor(order.nextStatus!)),
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                     ),
