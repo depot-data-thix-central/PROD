@@ -35,7 +35,7 @@ final _pinnedCountProvider = StreamProvider.family<int, String>((ref, sessionId)
       .from('live_pinned_products')
       .stream(primaryKey: ['id'])
       .eq('session_id', sessionId)
-      .isFilter('unpinned_at', null)
+      .is('unpinned_at', null)  // ✅ MÉTHODE CORRECTE
       .map((rows) => rows.length);
 });
 
