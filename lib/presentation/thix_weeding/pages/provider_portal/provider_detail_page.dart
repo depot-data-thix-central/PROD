@@ -1,9 +1,9 @@
 // ============================================================================
-// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (v4 - CORRIGÉ)
+// THIX WEDDING — PAGE DÉTAIL PRESTATAIRE (v5)
 // ✅ Hero = photos OFFRES + galerie uniquement
 // ✅ Code Thix copiable
 // ✅ Badges
-// ✅ Tarifs
+// ✅ Tarifs + Détails avec bouton "Voir plus"
 // ✅ Offres & Services
 // ✅ Galerie
 // ✅ Demande de réservation
@@ -141,16 +141,8 @@ class ProviderDetailPage extends ConsumerWidget {
                       const SizedBox(height: 16),
                       _buildCodeCard(context, provider.uniqueCode),
 
-                      if ((provider.description ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        const _SectionTitle('À propos'),
-                        Text(
-                          provider.description!,
-                          style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
-                        ),
-                      ],
-
                       const SizedBox(height: 20),
+                      // ✅ TARIF
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
@@ -162,6 +154,11 @@ class ProviderDetailPage extends ConsumerWidget {
                           style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white),
                         ),
                       ),
+
+                      // ✅ NOUVEAU : SECTION DÉTAILS AVEC "VOIR PLUS"
+                      if ((provider.description ?? '').isNotEmpty)
+                        _ProviderDetailsSection(text: provider.description!),
+
                       const SizedBox(height: 24),
 
                       if (activeOffers.isNotEmpty) ...[
@@ -337,6 +334,71 @@ class ProviderDetailPage extends ConsumerWidget {
   String _initialsOf(String name) {
     final parts = name.trim().split(RegExp(r'\s+'));
     return parts.take(2).map((p) => p.isNotEmpty ? p[0].toUpperCase() : '').join();
+  }
+}
+
+// ==================== NOUVEAU WIDGET : SECTION DÉTAILS ====================
+
+class _ProviderDetailsSection extends StatefulWidget {
+  final String text;
+  const _ProviderDetailsSection({required this.text});
+
+  @override
+  State<_ProviderDetailsSection> createState() => _ProviderDetailsSectionState();
+}
+
+class _ProviderDetailsSectionState extends State<_ProviderDetailsSection> {
+  bool _isExpanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 20),
+        const _SectionTitle('Détails'),
+        const SizedBox(height: 8),
+        AnimatedCrossFade(
+          firstChild: Text(
+            widget.text,
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
+          ),
+          secondChild: Text(
+            widget.text,
+            style: GoogleFonts.inter(fontSize: 13, color: _P.inkSoft, height: 1.5),
+          ),
+          crossFadeState: _isExpanded ? CrossFadeState.showSecond : CrossFadeState.showFirst,
+          duration: const Duration(milliseconds: 300),
+        ),
+        // Bouton "Voir plus / Voir moins"
+        GestureDetector(
+          onTap: () => setState(() => _isExpanded = !_isExpanded),
+          child: Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  _isExpanded ? 'Voir moins' : 'Voir plus',
+                  style: GoogleFonts.inter(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: _P.rose,
+                  ),
+                ),
+                Icon(
+                  _isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                  color: _P.rose,
+                  size: 18,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 
