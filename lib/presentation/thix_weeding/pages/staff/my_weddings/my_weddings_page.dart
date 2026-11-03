@@ -1,4 +1,3 @@
-// lib/presentation/thix_weeding/pages/staff/my_weddings/my_weddings_page.dart
 // ============================================================================
 // THIX WEDDING & EVENTS — MY WEDDINGS (avec Recherche & Demandes d'accès)
 // ============================================================================
@@ -71,7 +70,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
     await ref.read(myWeddingsProvider(userId).future);
   }
 
-  // ── RECHERCHE DE MARIAGE ──
+  // ── RECHERCHE PAR ID (comme tu l’as mis dans la barre) ──
   Future<void> _searchWedding() async {
     final query = _searchCtrl.text.trim();
     if (query.isEmpty) return;
@@ -85,13 +84,11 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      // Recherche par nom du couple ou par code unique (en excluant ceux dont on est déjà propriétaire)
       final res = await Supabase.instance.client
           .from('thix_weeding_weddings')
           .select()
-          .or('couple_names.ilike.%$query%,unique_code.ilike.%$query%')
-          .neq('owner_id', user.id)
-          .limit(10);
+          .eq('id', query)
+          .limit(1);
 
       setState(() {
         _searchResults = List<Map<String, dynamic>>.from(res);
@@ -162,14 +159,14 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
                 sliver: SliverList(
                   delegate: SliverChildListDelegate([
                     
-                    // 1. BARRE DE RECHERCHE
+                    // 1. BARRE DE RECHERCHE (par ID)
                     _buildSearchBar(),
                     const SizedBox(height: 20),
 
                     // 2. RÉSULTATS DE RECHERCHE
                     if (_hasSearched) _buildSearchResults(),
                     
-                    // 3. DEMANDES D'ACCÈS (Visible seulement par le propriétaire)
+                    // 3. DEMANDES D'ACCÈS
                     _IncomingRequestsWidget(onActionDone: () => _refresh(user.id)),
                     const SizedBox(height: 10),
 
@@ -200,7 +197,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
     );
   }
 
-  // ── WIDGETS DE LA PAGE ──
+  // ── WIDGETS ──
 
   Widget _buildSearchBar() {
     return Container(
@@ -213,7 +210,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
         controller: _searchCtrl,
         onSubmitted: (_) => _searchWedding(),
         decoration: InputDecoration(
-          hintText: 'Rechercher un mariage (Code, Noms...)',
+          hintText: 'Rechercher par ID (uuid)',
           hintStyle: GoogleFonts.inter(fontSize: 13, color: _R.text2),
           prefixIcon: const Icon(Icons.search, color: _R.blue),
           suffixIcon: IconButton(
@@ -238,12 +235,13 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
       );
     }
 
+    final w = _searchResults.first;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Résultats de recherche', style: GoogleFonts.inter(fontSize: 16, fontWeight: FontWeight.w800, color: _R.text)),
         const SizedBox(height: 10),
-        ..._searchResults.map((w) => Container(
+        Container(
           margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.all(16),
           decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(16), border: Border.all(color: _R.border)),
@@ -254,7 +252,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(w['couple_names'] ?? 'Sans nom', style: GoogleFonts.inter(fontWeight: FontWeight.w800, fontSize: 15)),
-                    Text('Code: ${w['unique_code']}', style: _mono(fontSize: 11, color: _R.blue)),
+                    Text('ID: ${w['id']}', style: _mono(fontSize: 11, color: _R.blue)),
                   ],
                 ),
               ),
@@ -270,7 +268,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
               ),
             ],
           ),
-        )),
+        ),
         const Divider(height: 30),
       ],
     );
@@ -297,10 +295,10 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
               padding: const EdgeInsets.fromLTRB(20, 60, 20, 20),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.end,
+                mainAxisAlignment: ColumnCrossAlignment.start,
                 children: [
                   Text('Gérez vos événements', style: GoogleFonts.inter(fontSize: 22, fontWeight: FontWeight.w800, color: Colors.white)),
-                  Text('$count mariage${count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}', style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
+                  Text('\( count mariage \){count > 1 ? 's' : ''} créé${count > 1 ? 's' : ''}', style: GoogleFonts.inter(fontSize: 12, color: Colors.white.withOpacity(0.9))),
                 ],
               ),
             ),
@@ -312,7 +310,7 @@ class _MyWeddingsPageState extends ConsumerState<MyWeddingsPage> {
 }
 
 // ============================================================================
-// WIDGET : DEMANDES D'ACCÈS ENTRANTES (Pour le propriétaire)
+// DEMANDES D'ACCÈS (inchangé)
 // ============================================================================
 class _IncomingRequestsWidget extends StatefulWidget {
   final VoidCallback onActionDone;
@@ -322,7 +320,7 @@ class _IncomingRequestsWidget extends StatefulWidget {
   State<_IncomingRequestsWidget> createState() => _IncomingRequestsWidgetState();
 }
 
-class _IncomingRequestsWidgetState extends State<_IncomingRequestsWidget> {
+class _IncomingRequestsWidgetState extends ConsumerState<_IncomingRequestsWidget> {
   List<Map<String, dynamic>> _requests = [];
   bool _loading = true;
 
@@ -337,7 +335,6 @@ class _IncomingRequestsWidgetState extends State<_IncomingRequestsWidget> {
       final user = Supabase.instance.client.auth.currentUser;
       if (user == null) return;
 
-      // On récupère les demandes pour les mariages dont on est propriétaire
       final res = await Supabase.instance.client
           .from('thix_weeding_staff_requests')
           .select('*, thix_weeding_weddings!inner(couple_names, owner_id)')
@@ -352,12 +349,10 @@ class _IncomingRequestsWidgetState extends State<_IncomingRequestsWidget> {
 
   Future<void> _handleRequest(String requestId, String weddingId, String userId, bool accept) async {
     try {
-      // 1. Mettre à jour le statut de la demande
       await Supabase.instance.client.from('thix_weeding_staff_requests').update({
         'status': accept ? 'approved' : 'rejected',
       }).eq('id', requestId);
 
-      // 2. Si accepté, on ajoute le membre au staff
       if (accept) {
         await Supabase.instance.client.from('thix_weeding_staff_members').upsert({
           'wedding_id': weddingId,
@@ -365,8 +360,8 @@ class _IncomingRequestsWidgetState extends State<_IncomingRequestsWidget> {
         }, onConflict: 'wedding_id, user_id');
       }
 
-      _fetchRequests(); // Rafraîchir la liste
-      widget.onActionDone(); // Rafraîchir la page principale
+      _fetchRequests();
+      widget.onActionDone();
     } catch (e) {
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erreur: $e'), backgroundColor: _R.rose));
     }
@@ -426,30 +421,11 @@ class _IncomingRequestsWidgetState extends State<_IncomingRequestsWidget> {
 }
 
 // ============================================================================
-// CARTE MARIAGE (INCHANGÉE)
+// CARTE MARIAGE (inchangée)
 // ============================================================================
 class _WeddingCard extends ConsumerWidget {
   final WeddingModel wedding;
   const _WeddingCard({required this.wedding});
-
-  Future<void> _delete(BuildContext context, WidgetRef ref) async {
-    // ... Logique de suppression inchangée ...
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Supprimer ce mariage ?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
-          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: _R.rose))),
-        ],
-      ),
-    );
-    if (ok == true) {
-      await ref.read(weddingServiceProvider).delete(wedding.id);
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId != null) ref.invalidate(myWeddingsProvider(userId));
-    }
-  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -499,9 +475,27 @@ class _WeddingCard extends ConsumerWidget {
       ),
     );
   }
+
+  Future<void> _delete(BuildContext context, WidgetRef ref) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Supprimer ce mariage ?'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('Supprimer', style: TextStyle(color: _R.rose))),
+        ],
+      ),
+    );
+    if (ok == true) {
+      await ref.read(weddingServiceProvider).delete(wedding.id);
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) ref.invalidate(myWeddingsProvider(userId));
+    }
+  }
 }
 
-class _EmptyState extends StatelessWidget {
+class _EmptyState extends Statelessheet {
   const _EmptyState();
   @override
   Widget build(BuildContext context) {
