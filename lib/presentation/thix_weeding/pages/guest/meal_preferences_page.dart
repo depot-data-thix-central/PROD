@@ -1,12 +1,6 @@
 // lib/presentation/thix_weeding/pages/guest/meal_preferences_page.dart
 // ============================================================================
 // THIX WEDDING — PRÉFÉRENCES REPAS CÔTÉ INVITÉ
-// ✅ Voir le menu des mariés (photos, tags)
-// ✅ Choisir UN plat préféré par rubrique (compte pour tout le groupe)
-// ✅ Voir le nombre de choix par plat + badge « Le plus choisi »
-// ✅ Suggérer un plat (max 3, validé par les mariés) DIRECTEMENT par rubrique
-// ✅ Indiquer régime alimentaire et allergies pour le traiteur
-// ✅ Temps réel • verre dépoli
 // ============================================================================
 import 'dart:async';
 import 'dart:math' as math;
@@ -52,7 +46,7 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
 
   List<MenuEntry> _dishes = [];
   List<MenuEntry> _mine = [];
-  Map<String, String> _myChoice = {}; // rubrique -> id du plat
+  Map<String, String> _myChoice = {}; 
   bool _votingOpen = true;
   bool _suggestOpen = true;
   int _persons = 1;
@@ -189,17 +183,13 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
 
       if (!mounted) return;
       setState(() {
-        // ✅ FIX : On accepte les plats approuvés OU qui n'ont pas de statut bloquant, tant qu'ils sont publiés
         _dishes = all.where((e) {
-          final isPublished = e.published;
-          final isApproved = e.status == 'approved' || e.status == 'null' || e.status == 'pending' && e.source == 'staff';
-          // Si le staff a ajouté le plat (source staff), on l'affiche s'il est publié
-          if (e.source == 'staff') return isPublished;
-          // Si c'est une suggestion d'invité, on ne l'affiche que si elle est approuvée
-          return isPublished && e.status == 'approved';
+          if (e.source == 'staff') return e.published;
+          return e.published && e.status == 'approved';
         }).toList();
         
         _mine = uid == null ? [] : all.where((e) => e.suggestedBy == uid).toList();
+        
         _myChoice = choice;
         _votingOpen = voting;
         _suggestOpen = suggest;
@@ -231,7 +221,6 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
       ));
   }
 
-  // ───────────────────────── ACTIONS ─────────────────────────
   Future<void> _choose(MenuEntry d) async {
     if (_uid == null) {
       _toast('Connectez-vous pour choisir vos plats', error: true);
@@ -304,7 +293,7 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
       builder: (_) => _SuggestSheet(
         weddingId: widget.weddingId,
         myName: _myName,
-        initialCourse: course, // ✅ On pré-remplit avec la rubrique
+        initialCourse: course,
         onDone: () {
           _toast('Suggestion envoyée — les mariés vont la valider 🍽️');
           _load(silent: true);
@@ -313,7 +302,6 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     );
   }
 
-  // ───────────────────────── BUILD ─────────────────────────
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -347,11 +335,11 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
                       children: [
                         _intro(),
                         const SizedBox(height: 14),
-                        if (_dishes.isEmpty && _mine.isEmpty)
+                        if (_dishes.isEmpty && _mine.isEmpty && !_suggestOpen)
                           SizedBox(
                             height: 260,
                             child: _empty(Icons.restaurant_menu_rounded,
-                                'Le menu n\'est pas encore publié.\nLes mariés l\'afficheront bientôt.'),
+                                'Le menu n\'est pas encore publié.'),
                           )
                         else
                           for (final c in kMenuCourses.keys)
@@ -394,7 +382,6 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
                 color: color)),
       );
 
-  // ───────────────────────── INTRO ─────────────────────────
   Widget _intro() {
     final courses = kMenuCourses.keys
         .where((c) => _dishes.any((d) => d.course == c))
@@ -486,15 +473,15 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     );
   }
 
-  // ───────────────────────── RUBRIQUES ─────────────────────────
   List<Widget> _courseSection(String c) {
     final list = _dishes.where((d) => d.course == c).toList();
-    // On garde la rubrique si elle a des plats OU si c'est une rubrique où on peut suggérer
-    if (list.isEmpty && !_suggestOpen) return const [];
+    
+    // On ne masque la rubrique que si elle est vide ET qu'on ne peut pas suggérer
+    if (list.isEmpty && !_suggestOpen && _mine.where((e) => e.course == c).isEmpty) {
+      return const [];
+    }
 
     final maxVotes = list.isEmpty ? 0 : list.map((d) => d.votes).fold<int>(0, math.max);
-    
-    // On récupère les suggestions de l'invité pour cette rubrique précise
     final mySuggestions = _mine.where((e) => e.course == c).toList();
 
     return [
@@ -519,17 +506,17 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
         ]),
       ),
       
-      // Liste des plats officiels
+      // Plats du staff
       ...list.map((d) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: _dish(d, maxVotes))),
 
-      // Liste des suggestions de l'invité pour cette rubrique
+      // Suggestions de l'invité
       ...mySuggestions.map((e) => Padding(
           padding: const EdgeInsets.only(bottom: 10),
           child: _mySuggestionTile(e))),
 
-      // Bouton pour proposer un plat dans cette rubrique
+      // Bouton pour proposer un plat
       if (_suggestOpen)
         Padding(
           padding: const EdgeInsets.only(bottom: 16, top: 4),
@@ -554,145 +541,149 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     final chosen = _myChoice[d.course] == d.id;
     final leader = maxVotes > 0 && d.votes == maxVotes;
     final busy = _busy.contains(d.id);
+    
     return ThixGlass(
       radius: 22,
       opacity: chosen ? 0.82 : 0.62,
       borderColor: chosen ? _G.rose : _G.rose.withOpacity(0.15),
       padding: EdgeInsets.zero,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (d.imageUrl != null)
-            GestureDetector(
-              onTap: () => showPhotoViewer(context, [d.imageUrl!]),
-              child: ClipRRect(
-                borderRadius:
-                    const BorderRadius.horizontal(left: Radius.circular(22)),
-                child: SizedBox(
-                  width: 104,
-                  child: Image.network(d.imageUrl!,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) =>
-                          Container(color: _G.roseSoft)),
+      // ✅ FIX : IntrinsicHeight empêche le Row de prendre une hauteur infinie dans la liste
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (d.imageUrl != null)
+              GestureDetector(
+                onTap: () => showPhotoViewer(context, [d.imageUrl!]),
+                child: ClipRRect(
+                  borderRadius:
+                      const BorderRadius.horizontal(left: Radius.circular(22)),
+                  child: SizedBox(
+                    width: 104,
+                    child: Image.network(d.imageUrl!,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) =>
+                            Container(color: _G.roseSoft)),
+                  ),
+                ),
+              ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center, // Centre le texte si l'image est plus grande
+                  children: [
+                    Row(children: [
+                      Expanded(
+                        child: Text(d.name,
+                            style: GoogleFonts.inter(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w900,
+                                color: _G.ink)),
+                      ),
+                      if (leader) _chip('🔥 Le plus choisi', color: _G.gold),
+                    ]),
+                    if (d.description != null) ...[
+                      const SizedBox(height: 3),
+                      Text(d.description!,
+                          style: GoogleFonts.inter(
+                              fontSize: 12,
+                              color: _G.ink2,
+                              height: 1.35)),
+                    ],
+                    if (d.tags.isNotEmpty) ...[
+                      const SizedBox(height: 6),
+                      Wrap(
+                          spacing: 5,
+                          runSpacing: 4,
+                          children: d.tags
+                              .map((t) => _chip(kMenuTags[t] ?? t))
+                              .toList()),
+                    ],
+                    const SizedBox(height: 8),
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(5),
+                      child: LinearProgressIndicator(
+                        value: maxVotes == 0 ? 0 : d.votes / maxVotes,
+                        minHeight: 6,
+                        backgroundColor: Colors.white.withOpacity(0.7),
+                        valueColor:
+                            AlwaysStoppedAnimation(leader ? _G.gold : _G.rose),
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(children: [
+                      Text(
+                          d.votes == 0
+                              ? 'Aucun choix pour l\'instant'
+                              : '${d.votes} choix',
+                          style: GoogleFonts.inter(
+                              fontSize: 11,
+                              color: _G.ink2,
+                              fontWeight: FontWeight.w700)),
+                      const Spacer(),
+                      SizedBox(
+                        height: 34,
+                        child: chosen
+                            ? FilledButton.icon(
+                                onPressed:
+                                    !_votingOpen || busy ? null : () => _choose(d),
+                                icon: busy
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2, color: Colors.white))
+                                    : const Icon(Icons.check_circle_rounded,
+                                        size: 16),
+                                label: const Text('Mon choix'),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: _G.rose,
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  textStyle: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12),
+                                ),
+                              )
+                            : OutlinedButton(
+                                onPressed:
+                                    !_votingOpen || busy ? null : () => _choose(d),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: _G.rose,
+                                  side: BorderSide(
+                                      color: _G.rose.withOpacity(0.6)),
+                                  padding:
+                                      const EdgeInsets.symmetric(horizontal: 14),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12)),
+                                  textStyle: GoogleFonts.inter(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12),
+                                ),
+                                child: busy
+                                    ? const SizedBox(
+                                        width: 14,
+                                        height: 14,
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))
+                                    : const Text('Choisir'),
+                              ),
+                      ),
+                    ]),
+                  ],
                 ),
               ),
             ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Expanded(
-                      child: Text(d.name,
-                          style: GoogleFonts.inter(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w900,
-                              color: _G.ink)),
-                    ),
-                    if (leader) _chip('🔥 Le plus choisi', color: _G.gold),
-                  ]),
-                  if (d.description != null) ...[
-                    const SizedBox(height: 3),
-                    Text(d.description!,
-                        style: GoogleFonts.inter(
-                            fontSize: 12,
-                            color: _G.ink2,
-                            height: 1.35)),
-                  ],
-                  if (d.tags.isNotEmpty) ...[
-                    const SizedBox(height: 6),
-                    Wrap(
-                        spacing: 5,
-                        runSpacing: 4,
-                        children: d.tags
-                            .map((t) => _chip(kMenuTags[t] ?? t))
-                            .toList()),
-                  ],
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(5),
-                    child: LinearProgressIndicator(
-                      value: maxVotes == 0 ? 0 : d.votes / maxVotes,
-                      minHeight: 6,
-                      backgroundColor: Colors.white.withOpacity(0.7),
-                      valueColor:
-                          AlwaysStoppedAnimation(leader ? _G.gold : _G.rose),
-                    ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(children: [
-                    Text(
-                        d.votes == 0
-                            ? 'Aucun choix pour l\'instant'
-                            : '${d.votes} choix',
-                        style: GoogleFonts.inter(
-                            fontSize: 11,
-                            color: _G.ink2,
-                            fontWeight: FontWeight.w700)),
-                    const Spacer(),
-                    SizedBox(
-                      height: 34,
-                      child: chosen
-                          ? FilledButton.icon(
-                              onPressed:
-                                  !_votingOpen || busy ? null : () => _choose(d),
-                              icon: busy
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2, color: Colors.white))
-                                  : const Icon(Icons.check_circle_rounded,
-                                      size: 16),
-                              label: const Text('Mon choix'),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: _G.rose,
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                textStyle: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12),
-                              ),
-                            )
-                          : OutlinedButton(
-                              onPressed:
-                                  !_votingOpen || busy ? null : () => _choose(d),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: _G.rose,
-                                side: BorderSide(
-                                    color: _G.rose.withOpacity(0.6)),
-                                padding:
-                                    const EdgeInsets.symmetric(horizontal: 14),
-                                shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(12)),
-                                textStyle: GoogleFonts.inter(
-                                    fontWeight: FontWeight.w800,
-                                    fontSize: 12),
-                              ),
-                              child: busy
-                                  ? const SizedBox(
-                                      width: 14,
-                                      height: 14,
-                                      child: CircularProgressIndicator(
-                                          strokeWidth: 2))
-                                  : const Text('Choisir'),
-                            ),
-                    ),
-                  ]),
-                ],
-              ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  // Carte pour afficher la suggestion de l'invité (avec statut)
   Widget _mySuggestionTile(MenuEntry e) {
     final statusColor = {
       'pending': _G.gold,
@@ -739,7 +730,6 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
     );
   }
 
-  // ───────────────────────── RÉGIMES ─────────────────────────
   Widget _dietCard() {
     final diets = kMenuTags.entries.where((e) => e.key != 'epice');
     return ThixGlass(
@@ -820,13 +810,10 @@ class _MealPreferencesPageState extends State<MealPreferencesPage> {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// FEUILLE « PROPOSER UN PLAT »
-// ═══════════════════════════════════════════════════════════════════════════
 class _SuggestSheet extends StatefulWidget {
   final String weddingId;
   final String? myName;
-  final String initialCourse; // ✅ Reçoit la rubrique choisie
+  final String initialCourse;
   final VoidCallback onDone;
   const _SuggestSheet({
     required this.weddingId,
@@ -842,7 +829,7 @@ class _SuggestSheet extends StatefulWidget {
 class _SuggestSheetState extends State<_SuggestSheet> {
   final _name = TextEditingController();
   final _desc = TextEditingController();
-  late String _course; // ✅ Initialisé avec la valeur reçue
+  late String _course;
   PickedPhoto? _photo;
   bool _busy = false;
   String? _error;
@@ -891,10 +878,10 @@ class _SuggestSheetState extends State<_SuggestSheet> {
         'name': n,
         'description': _desc.text.trim().isEmpty ? null : _desc.text.trim(),
         'image_url': url,
-        'suggested_by_name':
-            (widget.myName ?? '').isEmpty ? null : widget.myName,
-        'source': 'guest', // ✅ Important pour distinguer des plats du staff
-        'status': 'pending', // ✅ En attente de validation par les mariés
+        'suggested_by': Supabase.instance.client.auth.currentUser?.id,
+        'suggested_by_name': (widget.myName ?? '').isEmpty ? null : widget.myName,
+        'source': 'guest', 
+        'status': 'pending', 
       });
       widget.onDone();
       if (mounted) Navigator.pop(context);
