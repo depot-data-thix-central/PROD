@@ -1,15 +1,21 @@
 // lib/presentation/chat/call/providers/call_provider.dart
 //
 // ============================================================================
-// CALL PROVIDER — v3.4 (Group Calls + bip d'attente indépendant du silencieux)
+// CALL PROVIDER — v3.5 (réseau faible, style WhatsApp)
 // ============================================================================
-// FIX v3.4 : bip d'attente / tonalité de fin sur le flux d'APPEL VOCAL
-//            (voiceCommunication) : le mode silencieux / vibreur du téléphone
-//            ne le coupe plus. Volume = volume des appels.
-// FIX v3.4 : contexte audio réappliqué avant chaque lecture + 2e essai avec
-//            le contexte par défaut si le premier échoue.
-// FIX v3.3 : la sonnerie démarre AVANT l'aperçu caméra Agora (appel vidéo).
-// NEW v3.2 : promoteToGroup() : un appel 1-to-1 devient un appel de groupe.
+// NEW v3.5 : join Agora avec 3 tentatives + reconnexion automatique si Agora
+//            passe en « failed » (plus de coupure sur erreur passagère)
+// NEW v3.5 : délai maximum de connexion (75 s) : plus de « Connexion… » infini
+// NEW v3.5 : appelant : sondage de secours du statut de l'invitation (3 s)
+//            si l'événement Realtime « accepté » est perdu
+// NEW v3.5 : appelé : rejoint Agora EN PARALLÈLE de la requête accept
+// NEW v3.5 : token pré-chargé pendant la sonnerie
+// NEW v3.5 : raccrocher ferme tout de suite, la signalisation se termine
+//            en arrière-plan
+// NEW v3.5 : sonnerie 60 s, timeouts réseau plus larges
+// v3.4 : bip d'attente indépendant du mode silencieux
+// v3.3 : la sonnerie démarre AVANT l'aperçu caméra Agora
+// v3.2 : promoteToGroup()
 // ============================================================================
 
 import 'dart:async';
@@ -25,17 +31,22 @@ import 'package:thix_id/presentation/chat/call/call_peer_profile.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/services/chat/call_service.dart';
 import 'package:thix_id/services/chat/call_signaling_service.dart';
+import 'package:thix_id/services/chat/call_token_service.dart';
 
 // ============================================================================
 // CONSTANTS
 // ============================================================================
-const Duration _kRingTimeout = Duration(seconds: 45);
+const Duration _kRingTimeout = Duration(seconds: 60);
+const Duration _kConnectTimeout = Duration(seconds: 75);
+const Duration _kStatusPollInterval = Duration(seconds: 3);
 const Duration _kBusyDelay = Duration(seconds: 3);
 const Duration _kFailDelay = Duration(seconds: 2);
 const Duration _kUserLeftDelay = Duration(seconds: 1);
-const Duration _kNetworkTimeout = Duration(seconds: 15);
+const Duration _kNetworkTimeout = Duration(seconds: 20);
 const Duration _kRingStartTimeout = Duration(seconds: 3);
-const int _kMaxRetries = 2;
+const int _kMaxRetries = 3;
+const int _kMaxJoinAttempts = 3;
+const int _kMaxRejoins = 3;
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxNameLength = 100;
 const int _kMaxChannelLength = 100;
@@ -207,10 +218,17 @@ class CallNotifier extends StateNotifier<CallState> {
 
   Timer? _timer;
   Timer? _ringTimeout;
+  Timer? _connectTimer;
+  Timer? _statusPoll;
   StreamSubscription? _statusSub;
   bool _isDisposed = false;
   bool _agoraJoinStarted = false;
+  bool _joinInProgress = false;
+  bool _rejoining = false;
+  bool _polling = false;
   bool _hangingUp = false;
+  int _rejoinCount = 0;
+  String? _myUserId;
 
   CallNotifier(this._ref, this._media, this._signal) : super(const CallState()) {
     debugPrint('[CallProvider] 🚀 Initialized');
@@ -221,11 +239,6 @@ class CallNotifier extends StateNotifier<CallState> {
   // ==================================================================
   // SONS
   // ==================================================================
-
-  /// Contexte « appel vocal » : le bip d'attente passe par le flux d'appel
-  /// (comme une vraie communication). Le mode silencieux / vibreur du
-  /// téléphone ne le coupe pas. Sortie haut-parleur.
-  /// iOS : playAndRecord ignore l'interrupteur silencieux.
   AudioContext _voiceCallContext() {
     return AudioContext(
       iOS: AudioContextIOS(
@@ -254,7 +267,6 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
-  /// Joue un son d'attente. 2e essai avec le contexte par défaut si échec.
   Future<void> _playAsset(String asset, ReleaseMode mode, String label) async {
     Future<void> attempt() async {
       await _ringPlayer.stop();
@@ -281,8 +293,6 @@ class CallNotifier extends StateNotifier<CallState> {
     }
   }
 
-  /// Retourne dès que la lecture a démarré (3 s max) pour pouvoir lancer
-  /// l'aperçu caméra Agora APRÈS la sonnerie.
   Future<void> _playRingtone() =>
       _playAsset('sounds/ringtone.mp3', ReleaseMode.loop, 'Ringback');
 
@@ -369,8 +379,6 @@ class CallNotifier extends StateNotifier<CallState> {
     state = state.copyWith(peers: newPeers);
   }
 
-  /// Ajoute un utilisateur invité en cours d'appel (pour retrouver son profil
-  /// depuis son Agora UID).
   void addInvitedUser(String userId) {
     if (!_CallValidators.isValidUuid(userId)) return;
     if (state.invitedUserIds.contains(userId)) return;
@@ -380,8 +388,6 @@ class CallNotifier extends StateNotifier<CallState> {
     debugPrint('[CallProvider] ➕ Invited user added: ${_obfuscate(userId)}');
   }
 
-  /// Un appel 1-to-1 devient un appel de groupe (invitation en cours d'appel).
-  /// Le correspondant actuel est conservé dans la liste des participants.
   void promoteToGroup() {
     if (_isDisposed || state.isGroup || !state.isActive) return;
 
@@ -425,7 +431,7 @@ class CallNotifier extends StateNotifier<CallState> {
 
   String _friendlyError(Object e) {
     final msg = e.toString().toLowerCase();
-    if (msg.contains('timeout')) return 'Délai d\'attente dépassé';
+    if (msg.contains('timeout') || msg.contains('délai')) return 'Délai d\'attente dépassé';
     if (msg.contains('network')) return 'Erreur de connexion réseau';
     if (msg.contains('permission')) return 'Permission refusée';
     if (msg.contains('busy')) return 'Destinataire occupé';
@@ -448,16 +454,59 @@ class CallNotifier extends StateNotifier<CallState> {
           debugPrint('[CallProvider] ❌ $label: timeout after $attempt attempts');
           rethrow;
         }
-        await Future.delayed(_kRetryDelay);
+        await Future.delayed(_kRetryDelay * attempt);
       } catch (e) {
         attempt++;
         if (attempt > maxRetries) {
           debugPrint('[CallProvider] ❌ $label failed after $attempt attempts: $e');
           rethrow;
         }
-        await Future.delayed(_kRetryDelay);
+        await Future.delayed(_kRetryDelay * attempt);
       }
     }
+  }
+
+  CallStatus _statusFromString(String? raw) {
+    switch ((raw ?? '').toLowerCase()) {
+      case 'ringing':
+        return CallStatus.ringing;
+      case 'accepted':
+      case 'ongoing':
+      case 'active':
+        return CallStatus.accepted;
+      case 'rejected':
+        return CallStatus.rejected;
+      case 'cancelled':
+      case 'canceled':
+        return CallStatus.canceled;
+      case 'ended':
+        return CallStatus.ended;
+      case 'missed':
+        return CallStatus.missed;
+      default:
+        return CallStatus.idle;
+    }
+  }
+
+  void _prefetchToken(String channel, String myUserId) {
+    unawaited(CallTokenService().prefetch(
+      channel: channel,
+      uid: _CallValidators.uidFromUuid(myUserId),
+    ));
+  }
+
+  // ==================================================================
+  // DÉLAI MAXIMUM DE CONNEXION
+  // ==================================================================
+  void _armConnectTimer() {
+    _connectTimer?.cancel();
+    _connectTimer = Timer(_kConnectTimeout, () {
+      if (_isDisposed) return;
+      if (state.status == CallStatus.accepted) {
+        debugPrint('[CallProvider] ⏱️ Connect timeout (no remote after $_kConnectTimeout)');
+        _failAndClose('connect', 'timeout');
+      }
+    });
   }
 
   // ==================================================================
@@ -479,6 +528,74 @@ class CallNotifier extends StateNotifier<CallState> {
     } catch (e) {
       debugPrint('[CallProvider] ⚠️ Local preview failed: $e');
     }
+  }
+
+  // ==================================================================
+  // STATUT D'INVITATION (appelant 1-to-1) : Realtime + sondage de secours
+  // ==================================================================
+  Future<void> _onCallerInviteStatus(
+    String inviteId,
+    CallStatus s,
+    String myUserId,
+  ) async {
+    if (_isDisposed) return;
+    if (state.inviteId != inviteId || !state.isActive) return;
+
+    if (s == CallStatus.accepted || s == CallStatus.ongoing) {
+      if (_agoraJoinStarted) return;
+      _ringTimeout?.cancel();
+      _stopRingtone();
+      if (state.status == CallStatus.ringing) {
+        state = state.copyWith(status: CallStatus.accepted);
+      }
+      _armConnectTimer();
+      await _joinAgora(myUserId);
+    } else if (s == CallStatus.rejected || s == CallStatus.canceled) {
+      _stopRingtone();
+      _playOfflineTone();
+      Future.delayed(_kFailDelay, () {
+        if (!_isDisposed) hangUp(skipSignal: true);
+      });
+    } else if (s.isFinished) {
+      await hangUp(skipSignal: true);
+    }
+  }
+
+  /// Filet de sécurité : si l'événement Realtime « accepté » est perdu
+  /// (réseau faible), on interroge la base toutes les 3 s.
+  void _startStatusPoll(String inviteId, String myUserId) {
+    _statusPoll?.cancel();
+    _statusPoll = Timer.periodic(_kStatusPollInterval, (t) async {
+      if (_isDisposed || state.inviteId != inviteId || !state.isActive) {
+        t.cancel();
+        return;
+      }
+      if (_agoraJoinStarted) {
+        t.cancel(); // la suite est gérée par Agora
+        return;
+      }
+      if (_polling) return;
+      _polling = true;
+      try {
+        final row = await _db
+            .from('call_invites')
+            .select('status')
+            .eq('id', inviteId)
+            .maybeSingle()
+            .timeout(_kNetworkTimeout);
+        if (row != null) {
+          await _onCallerInviteStatus(
+            inviteId,
+            _statusFromString(row['status']?.toString()),
+            myUserId,
+          );
+        }
+      } catch (e) {
+        debugPrint('[CallProvider] ⚠️ Status poll error: $e');
+      } finally {
+        _polling = false;
+      }
+    });
   }
 
   // ==================================================================
@@ -508,6 +625,8 @@ class CallNotifier extends StateNotifier<CallState> {
     }
 
     _agoraJoinStarted = false;
+    _rejoinCount = 0;
+    _myUserId = myUserId;
     final sanitizedName = _CallValidators.sanitizeName(calleeName);
     debugPrint('[CallProvider] 📞 Starting call to ${_obfuscate(calleeId)} (type=${type.name})');
 
@@ -551,7 +670,9 @@ class CallNotifier extends StateNotifier<CallState> {
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
 
-      // La sonnerie démarre AVANT l'aperçu caméra Agora
+      // ⚡ Token pré-chargé pendant que ça sonne
+      _prefetchToken(channelName, myUserId);
+
       await _playRingtone();
       if (_isDisposed) return;
 
@@ -574,28 +695,12 @@ class CallNotifier extends StateNotifier<CallState> {
 
       final watchedInvite = invite.id;
       _statusSub?.cancel();
-      _statusSub = _signal.watchInviteStatus(watchedInvite).listen((s) async {
-        if (_isDisposed) return;
-        if (state.inviteId != watchedInvite || !state.isActive) return;
-
-        if (s == CallStatus.accepted || s == CallStatus.ongoing) {
-          if (_agoraJoinStarted) return;
-          _ringTimeout?.cancel();
-          _stopRingtone();
-          if (state.status == CallStatus.ringing) {
-            state = state.copyWith(status: CallStatus.accepted);
-          }
-          await _joinAgora(myUserId);
-        } else if (s == CallStatus.rejected || s == CallStatus.canceled) {
-          _stopRingtone();
-          _playOfflineTone();
-          Future.delayed(_kFailDelay, () {
-            if (!_isDisposed) hangUp(skipSignal: true);
-          });
-        } else if (s.isFinished) {
-          await hangUp(skipSignal: true);
-        }
+      _statusSub = _signal.watchInviteStatus(watchedInvite).listen((s) {
+        _onCallerInviteStatus(watchedInvite, s, myUserId);
       });
+
+      // Filet de sécurité si Realtime perd l'événement
+      _startStatusPoll(watchedInvite, myUserId);
     } catch (e) {
       debugPrint('[CallProvider] ❌ start failed: $e');
       _failAndClose('start', e);
@@ -623,6 +728,8 @@ class CallNotifier extends StateNotifier<CallState> {
     }
 
     _agoraJoinStarted = false;
+    _rejoinCount = 0;
+    _myUserId = myUserId;
     debugPrint('[CallProvider] 👥 Starting group call with ${participantIds.length} participants');
 
     try {
@@ -655,6 +762,7 @@ class CallNotifier extends StateNotifier<CallState> {
       }
 
       state = state.copyWith(inviteId: invite.id, channelName: channelName);
+      _prefetchToken(channelName, myUserId);
 
       await _playRingtone();
       if (_isDisposed) return;
@@ -676,7 +784,8 @@ class CallNotifier extends StateNotifier<CallState> {
         }
       });
 
-      await _joinAgora(myUserId);
+      // Le join (avec ses nouvelles tentatives) ne bloque plus l'écoute du statut
+      unawaited(_joinAgora(myUserId));
 
       final watchedInvite = invite.id;
       _statusSub?.cancel();
@@ -689,6 +798,7 @@ class CallNotifier extends StateNotifier<CallState> {
           _stopRingtone();
           if (state.status == CallStatus.ringing) {
             state = state.copyWith(status: CallStatus.accepted);
+            _armConnectTimer();
           }
         } else if (s == CallStatus.rejected || s == CallStatus.canceled) {
           _stopRingtone();
@@ -737,6 +847,8 @@ class CallNotifier extends StateNotifier<CallState> {
     }
 
     _agoraJoinStarted = false;
+    _rejoinCount = 0;
+    _myUserId = myUserId;
     final sanitizedName = _CallValidators.sanitizeName(
       (callerName ?? '').trim().isNotEmpty ? callerName : invite.callerName,
     );
@@ -766,11 +878,13 @@ class CallNotifier extends StateNotifier<CallState> {
       unawaited(_hydratePeer(invite.callerId));
 
       _stopRingtone();
+      _armConnectTimer();
+
+      // ⚡ Token + join Agora lancés TOUT DE SUITE, en parallèle de « accept »
+      _prefetchToken(channelName, myUserId);
+      unawaited(_joinAgora(myUserId));
 
       await _retry(() => _signal.accept(invite.id), label: 'accept');
-      if (_isDisposed) return;
-
-      unawaited(_joinAgora(myUserId));
     } catch (e) {
       debugPrint('[CallProvider] ❌ acceptIncoming failed: $e');
       _failAndClose('acceptIncoming', e);
@@ -794,7 +908,7 @@ class CallNotifier extends StateNotifier<CallState> {
   }
 
   // ==================================================================
-  // JOIN AGORA
+  // JOIN AGORA (3 tentatives)
   // ==================================================================
   Future<void> _joinAgora(String myUserId) async {
     if (_isDisposed || _agoraJoinStarted) return;
@@ -812,83 +926,151 @@ class CallNotifier extends StateNotifier<CallState> {
     }
 
     _agoraJoinStarted = true;
+    _myUserId = myUserId;
     final uid = _CallValidators.uidFromUuid(myUserId);
     debugPrint('[CallProvider] 📞 Joining Agora channel=$channel uid=$uid type=${state.type.name}');
 
-    try {
-      await _media.join(
-        channel: channel,
-        type: state.type,
-        uid: uid,
-        onUserJoined: (remoteUid) async {
-          if (_isDisposed) return;
+    Future<void> onUserJoined(int remoteUid) async {
+      if (_isDisposed) return;
 
-          if (state.isGroup) {
-            if (state.remoteUids.contains(remoteUid)) return;
-            final newUids = List<int>.from(state.remoteUids)..add(remoteUid);
-            state = state.copyWith(
-              remoteUids: newUids,
-              status: CallStatus.ongoing,
-            );
-            unawaited(_hydrateGroupPeer(remoteUid));
-          } else {
-            if (state.status == CallStatus.ongoing && state.remoteUid == remoteUid) return;
-            debugPrint('[CallProvider] 👤 Remote user join: $remoteUid');
-            state = state.copyWith(remoteUid: remoteUid, status: CallStatus.ongoing);
-          }
+      if (state.isGroup) {
+        if (state.remoteUids.contains(remoteUid)) return;
+        final newUids = List<int>.from(state.remoteUids)..add(remoteUid);
+        state = state.copyWith(
+          remoteUids: newUids,
+          status: CallStatus.ongoing,
+        );
+        unawaited(_hydrateGroupPeer(remoteUid));
+      } else {
+        if (state.status == CallStatus.ongoing && state.remoteUid == remoteUid) return;
+        debugPrint('[CallProvider] 👤 Remote user join: $remoteUid');
+        state = state.copyWith(remoteUid: remoteUid, status: CallStatus.ongoing);
+      }
 
-          _stopRingtone();
-          if (_timer == null) _startTimer();
-          if (inviteId != null) {
-            try {
-              await _retry(
-                () => _signal.markOngoing(inviteId),
-                label: 'markOngoing',
-                maxRetries: 1,
-              );
-            } catch (e) {
-              debugPrint('[CallProvider] ⚠️ markOngoing error: $e');
-            }
-          }
-        },
-        onUserLeft: (remoteUid) async {
-          if (_isDisposed) return;
+      _connectTimer?.cancel();
+      _connectTimer = null;
+      _rejoinCount = 0;
+      _stopRingtone();
+      if (_timer == null) _startTimer();
+      if (inviteId != null) {
+        try {
+          await _retry(
+            () => _signal.markOngoing(inviteId),
+            label: 'markOngoing',
+            maxRetries: 1,
+          );
+        } catch (e) {
+          debugPrint('[CallProvider] ⚠️ markOngoing error: $e');
+        }
+      }
+    }
 
-          if (state.isGroup) {
-            debugPrint('[CallProvider] 👋 Remote user left (group): $remoteUid');
-            final newUids = List<int>.from(state.remoteUids)..remove(remoteUid);
-            final newPeers = Map<int, CallPeer>.from(state.peers)..remove(remoteUid);
-            state = state.copyWith(remoteUids: newUids, peers: newPeers);
+    Future<void> onUserLeft(int remoteUid) async {
+      if (_isDisposed) return;
 
-            if (newUids.isEmpty && !state.isCaller) {
-              _playOfflineTone();
-              Future.delayed(_kUserLeftDelay, () {
-                if (!_isDisposed) hangUp();
-              });
-            }
-          } else {
-            debugPrint('[CallProvider] 👋 Remote user left (1-to-1)');
-            _playOfflineTone();
-            Future.delayed(_kUserLeftDelay, () {
-              if (!_isDisposed) hangUp();
-            });
-          }
-        },
-        onError: _onMediaError,
-      );
-    } catch (e) {
-      debugPrint('[CallProvider] ❌ _joinAgora failed: $e');
-      _agoraJoinStarted = false;
-      _failAndClose('_joinAgora', e);
+      if (state.isGroup) {
+        debugPrint('[CallProvider] 👋 Remote user left (group): $remoteUid');
+        final newUids = List<int>.from(state.remoteUids)..remove(remoteUid);
+        final newPeers = Map<int, CallPeer>.from(state.peers)..remove(remoteUid);
+        state = state.copyWith(remoteUids: newUids, peers: newPeers);
+
+        if (newUids.isEmpty && !state.isCaller) {
+          _playOfflineTone();
+          Future.delayed(_kUserLeftDelay, () {
+            if (!_isDisposed) hangUp();
+          });
+        }
+      } else {
+        debugPrint('[CallProvider] 👋 Remote user left (1-to-1)');
+        _playOfflineTone();
+        Future.delayed(_kUserLeftDelay, () {
+          if (!_isDisposed) hangUp();
+        });
+      }
+    }
+
+    Object? lastError;
+
+    for (var attempt = 1; attempt <= _kMaxJoinAttempts; attempt++) {
+      // L'appel s'est terminé (ou a échoué) entre-temps : on arrête
+      if (_isDisposed || !state.isActive) {
+        _agoraJoinStarted = false;
+        return;
+      }
+
+      _joinInProgress = true;
+      try {
+        await _media.join(
+          channel: channel,
+          type: state.type,
+          uid: uid,
+          onUserJoined: onUserJoined,
+          onUserLeft: onUserLeft,
+          onError: _onMediaError,
+        );
+        _joinInProgress = false;
+        return; // ✓ connecté
+      } catch (e) {
+        _joinInProgress = false;
+        lastError = e;
+        debugPrint('[CallProvider] ⚠️ Join attempt $attempt/$_kMaxJoinAttempts failed: $e');
+        if (e is PermissionDeniedException) break; // inutile de réessayer
+        if (attempt < _kMaxJoinAttempts) {
+          await Future.delayed(Duration(seconds: 2 * attempt));
+        }
+      }
+    }
+
+    debugPrint('[CallProvider] ❌ _joinAgora failed after retries: $lastError');
+    _agoraJoinStarted = false;
+    if (!_isDisposed && state.isActive) {
+      _failAndClose('_joinAgora', lastError ?? 'join failed');
     }
   }
 
+  /// Erreurs envoyées par le service média.
+  /// - Pendant un join : ignorées (join() relance l'exception, gérée avec retry)
+  /// - « connection failed » : reconnexion automatique
+  /// - Autres : simple log, Agora gère lui-même la reconnexion
   void _onMediaError(String err) {
     if (_isDisposed) return;
-    debugPrint('[CallProvider] ❌ media onError: $err');
-    if (state.status == CallStatus.ongoing || state.status == CallStatus.failed) return;
-    _agoraJoinStarted = false;
-    _failAndClose('media', err);
+    debugPrint('[CallProvider] ⚠️ media onError: $err');
+
+    if (_joinInProgress) return;
+    if (state.status == CallStatus.failed || !state.isActive) return;
+
+    if (err.startsWith('agora: connection failed')) {
+      unawaited(_rejoin());
+    }
+  }
+
+  /// Reconnexion automatique (max 3 fois) quand Agora passe en « failed ».
+  Future<void> _rejoin() async {
+    if (_isDisposed || _rejoining || !state.isActive) return;
+    final myId = _myUserId;
+    if (myId == null) return;
+
+    if (_rejoinCount >= _kMaxRejoins) {
+      _failAndClose('rejoin', 'timeout');
+      return;
+    }
+
+    _rejoining = true;
+    _rejoinCount++;
+    debugPrint('[CallProvider] 🔁 Rejoin $_rejoinCount/$_kMaxRejoins');
+
+    try {
+      await Future.delayed(Duration(seconds: 2 * _rejoinCount));
+      if (_isDisposed || !state.isActive) return;
+
+      try {
+        await _media.leave();
+      } catch (_) {}
+      _agoraJoinStarted = false;
+      await _joinAgora(myId);
+    } finally {
+      _rejoining = false;
+    }
   }
 
   // ==================================================================
@@ -954,7 +1136,7 @@ class CallNotifier extends StateNotifier<CallState> {
   }
 
   // ==================================================================
-  // RACCROCHER
+  // RACCROCHER (ferme tout de suite, signalisation en arrière-plan)
   // ==================================================================
   Future<void> hangUp({bool skipSignal = false}) async {
     if (_isDisposed || _hangingUp) return;
@@ -978,9 +1160,16 @@ class CallNotifier extends StateNotifier<CallState> {
       _timer = null;
       _ringTimeout?.cancel();
       _ringTimeout = null;
+      _connectTimer?.cancel();
+      _connectTimer = null;
+      _statusPoll?.cancel();
+      _statusPoll = null;
       _statusSub?.cancel();
       _statusSub = null;
       _agoraJoinStarted = false;
+      _joinInProgress = false;
+      _rejoining = false;
+      _rejoinCount = 0;
 
       try {
         await _media.leave();
@@ -988,52 +1177,77 @@ class CallNotifier extends StateNotifier<CallState> {
         debugPrint('[CallProvider] ⚠️ media.leave error: $e');
       }
 
-      if (!skipSignal && inviteId != null && _CallValidators.isValidUuid(inviteId)) {
-        try {
-          if (wasRinging && wasCaller) {
-            await _retry(() => _signal.cancel(inviteId), label: 'cancel', maxRetries: 1);
-          } else {
-            await _retry(
-              () => _signal.end(inviteId, durationSec: secs),
-              label: 'end',
-              maxRetries: 1,
-            );
-          }
-        } catch (e) {
-          debugPrint('[CallProvider] ⚠️ Signal error: $e');
-        }
-      }
-
-      // Historique dans la conversation
-      if (convId != null && convId.isNotEmpty && wasCaller) {
-        try {
-          final chatSvc = _ref.read(chatServiceProvider);
-          final isMissed = duration.inSeconds == 0;
-          final mediaTypeStr = isVideoCall ? 'call_video' : 'call_audio';
-
-          final m = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
-          final s = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
-          final h = duration.inHours;
-          final timeStr = h > 0 ? '$h:$m:$s' : '$m:$s';
-
-          final textType = isGroup
-              ? (isVideoCall ? 'Appel vidéo de groupe' : 'Appel audio de groupe')
-              : (isVideoCall ? 'Appel vidéo' : 'Appel audio');
-          final content = isMissed ? '$textType manqué' : '$textType ($timeStr)';
-
-          await chatSvc.sendMessage(
-            conversationId: convId,
-            content: content,
-            mediaType: mediaTypeStr,
-          );
-        } catch (e) {
-          debugPrint('[CallProvider] ⚠️ Call history error: $e');
-        }
-      }
-
+      // L'écran se ferme immédiatement, même sans réseau
       if (!_isDisposed) state = const CallState();
+
+      unawaited(_finishCall(
+        inviteId: inviteId,
+        secs: secs,
+        wasCaller: wasCaller,
+        wasRinging: wasRinging,
+        skipSignal: skipSignal,
+        convId: convId,
+        isVideoCall: isVideoCall,
+        duration: duration,
+        isGroup: isGroup,
+      ));
     } finally {
       _hangingUp = false;
+    }
+  }
+
+  /// Fin de signalisation + historique, en arrière-plan.
+  Future<void> _finishCall({
+    required String? inviteId,
+    required int secs,
+    required bool wasCaller,
+    required bool wasRinging,
+    required bool skipSignal,
+    required String? convId,
+    required bool isVideoCall,
+    required Duration duration,
+    required bool isGroup,
+  }) async {
+    if (!skipSignal && inviteId != null && _CallValidators.isValidUuid(inviteId)) {
+      try {
+        if (wasRinging && wasCaller) {
+          await _retry(() => _signal.cancel(inviteId), label: 'cancel', maxRetries: 2);
+        } else {
+          await _retry(
+            () => _signal.end(inviteId, durationSec: secs),
+            label: 'end',
+            maxRetries: 2,
+          );
+        }
+      } catch (e) {
+        debugPrint('[CallProvider] ⚠️ Signal error: $e');
+      }
+    }
+
+    if (convId != null && convId.isNotEmpty && wasCaller) {
+      try {
+        final chatSvc = _ref.read(chatServiceProvider);
+        final isMissed = duration.inSeconds == 0;
+        final mediaTypeStr = isVideoCall ? 'call_video' : 'call_audio';
+
+        final m = duration.inMinutes.remainder(60).toString().padLeft(2, '0');
+        final s = duration.inSeconds.remainder(60).toString().padLeft(2, '0');
+        final h = duration.inHours;
+        final timeStr = h > 0 ? '$h:$m:$s' : '$m:$s';
+
+        final textType = isGroup
+            ? (isVideoCall ? 'Appel vidéo de groupe' : 'Appel audio de groupe')
+            : (isVideoCall ? 'Appel vidéo' : 'Appel audio');
+        final content = isMissed ? '$textType manqué' : '$textType ($timeStr)';
+
+        await chatSvc.sendMessage(
+          conversationId: convId,
+          content: content,
+          mediaType: mediaTypeStr,
+        );
+      } catch (e) {
+        debugPrint('[CallProvider] ⚠️ Call history error: $e');
+      }
     }
   }
 
@@ -1051,6 +1265,10 @@ class CallNotifier extends StateNotifier<CallState> {
     _timer = null;
     _ringTimeout?.cancel();
     _ringTimeout = null;
+    _connectTimer?.cancel();
+    _connectTimer = null;
+    _statusPoll?.cancel();
+    _statusPoll = null;
     _statusSub?.cancel();
     _statusSub = null;
 
