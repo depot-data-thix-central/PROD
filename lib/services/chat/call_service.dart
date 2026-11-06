@@ -1,18 +1,22 @@
 // lib/services/chat/call_service.dart
 //
 // ============================================================================
-// CALL MEDIA SERVICE — v2.2
+// CALL MEDIA SERVICE — v3.0 (réseau faible, style WhatsApp)
 // ============================================================================
-// Corrections v2.1 :
-//  ✅ Création du moteur Agora SÉRIALISÉE (plus de 2 moteurs en parallèle)
-//  ✅ join() idempotent : un 2e appel pour le même canal ne coupe plus l'appel en cours
-//  ✅ disposeEngine() ne rend plus le singleton inutilisable
-// Nouveau v2.2 :
-//  ✅ Service de premier plan Android (micro actif en arrière-plan) :
-//     démarré après le join, arrêté dans leave() / disposeEngine()
+// Nouveau v3.0 :
+//  ✅ Profil audio basse bande passante + repli « audio seul » en vidéo
+//  ✅ Vidéo adaptative (640x360 @15fps, double flux)
+//  ✅ Les erreurs Agora ne coupent plus l'appel (seul l'état « failed » le fait)
+//  ✅ Délai de grâce 25 s avant de retirer un participant dont le réseau a sauté
+//  ✅ Reconnexion automatique visible (reconnecting / remoteWeak / networkQuality)
+//  ✅ Renouvellement automatique du token (renewToken)
+//  ✅ Cache du token + 4 tentatives, permission micro 60 s, token en parallèle
+//  ✅ Service de premier plan : un échec ne casse plus l'appel
+// Hérite v2.2 : moteur sérialisé, join idempotent, foreground service Android
 // ============================================================================
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/foundation.dart';
@@ -27,11 +31,13 @@ import 'package:thix_id/services/chat/call_token_service.dart';
 // ============================================================================
 const int _kMinAppIdLength = 10;
 const int _kMaxChannelLength = 100;
-const Duration _kTokenTimeout = Duration(seconds: 15);
+const Duration _kTokenTimeout = Duration(seconds: 10);
 const Duration _kJoinTimeout = Duration(seconds: 30);
-const Duration _kPermissionTimeout = Duration(seconds: 10);
-const Duration _kRetryDelay = Duration(milliseconds: 500);
-const int _kMaxRetries = 2;
+const Duration _kPermissionTimeout = Duration(seconds: 60);
+const Duration _kRetryDelay = Duration(milliseconds: 400);
+const int _kMaxRetries = 3; // 4 tentatives au total
+const Duration _kTokenCacheTtl = Duration(minutes: 30);
+const Duration _kRemoteDropGrace = Duration(seconds: 25);
 
 // ============================================================================
 // VALIDATORS
@@ -67,6 +73,12 @@ class _CallMediaValidators {
   }
 }
 
+class _CachedToken {
+  final CallTokenResult cred;
+  final DateTime at;
+  _CachedToken(this.cred, this.at);
+}
+
 // ============================================================================
 // CALL MEDIA SERVICE (Singleton)
 // ============================================================================
@@ -85,11 +97,33 @@ class CallMediaService {
   bool _joining = false;
   bool _joinIssued = false; // joinChannel déjà envoyé pour _channel
   String? _channel;
+  int? _uid;
   bool _isDisposed = false;
 
   void Function(int)? _onUserJoined;
   void Function(int)? _onUserLeft;
   void Function(String)? _onError;
+
+  // Cache de token + délais de grâce des participants déconnectés
+  final Map<String, _CachedToken> _tokenCache = {};
+  final Map<int, Timer> _dropTimers = {};
+
+  // ── ÉTAT RÉSEAU (écoutable par l'UI) ─────────────────────────────────
+  /// Ma qualité réseau : 0 inconnue · 1 excellente · 2 bonne · 3 moyenne ·
+  /// 4 mauvaise · 5 très mauvaise · 6 coupée
+  final ValueNotifier<int> networkQuality = ValueNotifier<int>(0);
+
+  /// Agora tente de se reconnecter (mon réseau a sauté)
+  final ValueNotifier<bool> reconnecting = ValueNotifier<bool>(false);
+
+  /// Le réseau de l'autre participant est instable
+  final ValueNotifier<bool> remoteWeak = ValueNotifier<bool>(false);
+
+  void _resetNetworkState() {
+    networkQuality.value = 0;
+    reconnecting.value = false;
+    remoteWeak.value = false;
+  }
 
   // ── PUBLIC GETTERS ───────────────────────────────────────────────────
   RtcEngine? get engine => _engine;
@@ -136,7 +170,6 @@ class CallMediaService {
   Future<RtcEngine> _ensureEngine(String appId) async {
     if (_isDisposed) throw StateError('CallMediaService disposed');
 
-    // Si une création est en cours, on attend sa fin avant de décider.
     while (_engineInit != null) {
       try {
         await _engineInit;
@@ -186,16 +219,42 @@ class CallMediaService {
           if (_isDisposed) return;
           debugPrint('[CallMediaService] ✓ Joined ${conn.channelId} (elapsed: ${elapsed}ms)');
           _joined = true;
+          reconnecting.value = false;
+        },
+        onRejoinChannelSuccess: (conn, elapsed) {
+          if (_isDisposed) return;
+          debugPrint('[CallMediaService] 🔁 Rejoined ${conn.channelId}');
+          _joined = true;
+          reconnecting.value = false;
         },
         onUserJoined: (conn, remoteUid, elapsed) {
           if (_isDisposed) return;
           debugPrint('[CallMediaService] 👤 Remote joined: $remoteUid');
+          _dropTimers.remove(remoteUid)?.cancel(); // il est revenu : on annule
+          remoteWeak.value = false;
           _onUserJoined?.call(remoteUid);
         },
         onUserOffline: (conn, remoteUid, reason) {
           if (_isDisposed) return;
           debugPrint('[CallMediaService] 👋 Remote offline: $remoteUid (reason: $reason)');
-          _onUserLeft?.call(remoteUid);
+
+          // Départ volontaire → immédiat.
+          if (reason == UserOfflineReasonType.userOfflineQuit) {
+            _dropTimers.remove(remoteUid)?.cancel();
+            remoteWeak.value = false;
+            _onUserLeft?.call(remoteUid);
+            return;
+          }
+
+          // Coupure réseau → délai de grâce (comme WhatsApp : « Reconnexion… »)
+          remoteWeak.value = true;
+          _dropTimers.remove(remoteUid)?.cancel();
+          _dropTimers[remoteUid] = Timer(_kRemoteDropGrace, () {
+            _dropTimers.remove(remoteUid);
+            if (_isDisposed) return;
+            remoteWeak.value = false;
+            _onUserLeft?.call(remoteUid);
+          });
         },
         onLeaveChannel: (conn, stats) {
           if (_isDisposed) return;
@@ -203,15 +262,70 @@ class CallMediaService {
           _joined = false;
           _joinIssued = false;
         },
+        onConnectionStateChanged: (conn, state, reason) {
+          if (_isDisposed) return;
+          debugPrint('[CallMediaService] 📶 Connection: $state ($reason)');
+          switch (state) {
+            case ConnectionStateType.connectionStateReconnecting:
+              reconnecting.value = true;
+              break;
+            case ConnectionStateType.connectionStateConnected:
+              reconnecting.value = false;
+              break;
+            case ConnectionStateType.connectionStateFailed:
+              reconnecting.value = false;
+              _onError?.call('agora: connection failed (${reason.name})');
+              break;
+            default:
+              break;
+          }
+        },
+        onNetworkQuality: (conn, remoteUid, txQuality, rxQuality) {
+          if (_isDisposed) return;
+          final worst = math.max(txQuality.value(), rxQuality.value());
+          if (remoteUid == 0) {
+            networkQuality.value = worst;
+          } else {
+            remoteWeak.value = txQuality.value() >= 4;
+          }
+        },
+        onTokenPrivilegeWillExpire: (conn, token) {
+          unawaited(_renewToken());
+        },
+        onRequestToken: (conn) {
+          unawaited(_renewToken());
+        },
         onError: (err, msg) {
           if (_isDisposed) return;
-          debugPrint('[CallMediaService] ❌ Agora error: code=$err msg=$msg');
-          _onError?.call('agora: $err $msg');
+          // Log seulement : Agora gère lui-même la reconnexion.
+          // Les vraies pannes arrivent via onConnectionStateChanged(failed).
+          debugPrint('[CallMediaService] ⚠️ Agora error: code=$err msg=$msg');
         },
       ),
     );
 
     await engine.enableAudio();
+
+    // Audio optimisé pour réseau faible (≈ 18 kbps, voix)
+    try {
+      await engine.setAudioProfile(
+        profile: AudioProfileType.audioProfileSpeechStandard,
+        scenario: AudioScenarioType.audioScenarioChatroom,
+      );
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ setAudioProfile: $e');
+    }
+
+    // Si le réseau se dégrade fortement : on coupe la vidéo, on garde la voix
+    try {
+      await engine.setLocalPublishFallbackOption(
+          StreamFallbackOptions.streamFallbackOptionAudioOnly);
+      await engine.setRemoteSubscribeFallbackOption(
+          StreamFallbackOptions.streamFallbackOptionAudioOnly);
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ fallback options: $e');
+    }
+
     try {
       await engine.setEnableSpeakerphone(true);
     } catch (e) {
@@ -225,11 +339,38 @@ class CallMediaService {
     return engine;
   }
 
+  /// Vidéo légère et adaptative (réseau faible).
+  Future<void> _applyVideoProfile(RtcEngine engine) async {
+    try {
+      await engine.setVideoEncoderConfiguration(
+        const VideoEncoderConfiguration(
+          dimensions: VideoDimensions(width: 640, height: 360),
+          frameRate: 15,
+          bitrate: 0, // débit standard Agora, adapté automatiquement
+          degradationPreference: DegradationPreference.maintainFramerate,
+        ),
+      );
+      await engine.enableDualStreamMode(enabled: true);
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ applyVideoProfile: $e');
+    }
+  }
+
   // ── TOKEN RETRIEVAL ──────────────────────────────────────────────────
   Future<CallTokenResult> _getTokenWithRetry({
     required String channel,
     required int uid,
+    bool forceFresh = false,
   }) async {
+    final key = '$channel:$uid';
+
+    if (!forceFresh) {
+      final cached = _tokenCache[key];
+      if (cached != null && DateTime.now().difference(cached.at) < _kTokenCacheTtl) {
+        return cached.cred;
+      }
+    }
+
     int attempt = 0;
     Object? lastError;
 
@@ -245,18 +386,33 @@ class CallMediaService {
         if (_CallMediaValidators.sanitizeToken(cred.token).isEmpty) {
           throw FormatException('Empty token received');
         }
+        _tokenCache[key] = _CachedToken(cred, DateTime.now());
         return cred;
       } on TimeoutException {
         lastError = TimeoutException('Token request timeout');
-        attempt++;
-        if (attempt <= _kMaxRetries) await Future.delayed(_kRetryDelay);
       } catch (e) {
         lastError = e;
-        attempt++;
-        if (attempt <= _kMaxRetries) await Future.delayed(_kRetryDelay);
+      }
+      attempt++;
+      if (attempt <= _kMaxRetries) {
+        await Future.delayed(_kRetryDelay * attempt); // 400, 800, 1200 ms
       }
     }
     throw lastError ?? Exception('Token retrieval failed after retries');
+  }
+
+  /// Renouvelle le token en cours d'appel (l'appel ne coupe plus à l'expiration).
+  Future<void> _renewToken() async {
+    final channel = _channel;
+    final uid = _uid;
+    if (_isDisposed || channel == null || uid == null || _engine == null) return;
+    try {
+      final cred = await _getTokenWithRetry(channel: channel, uid: uid, forceFresh: true);
+      await _engine?.renewToken(_CallMediaValidators.sanitizeToken(cred.token));
+      debugPrint('[CallMediaService] 🔑 Token renewed');
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ Token renew failed: $e');
+    }
   }
 
   // ── LOCAL PREVIEW ────────────────────────────────────────────────────
@@ -272,12 +428,17 @@ class CallMediaService {
 
     debugPrint('[CallMediaService] 📹 Preparing local preview (uid=$uid)');
 
+    // Token demandé en parallèle de la permission ; il sera réutilisé par join()
+    final tokenFuture = _getTokenWithRetry(channel: channel, uid: uid);
+    unawaited(tokenFuture.then((_) {}, onError: (_) {}));
+
     await _ensurePermissions(CallType.video);
-    final cred = await _getTokenWithRetry(channel: channel, uid: uid);
+    final cred = await tokenFuture;
 
     try {
       final engine = await _ensureEngine(cred.appId.trim());
       await engine.enableVideo();
+      await _applyVideoProfile(engine);
       await engine.enableLocalVideo(true);
       await engine.startPreview();
       debugPrint('[CallMediaService] ✓ Local preview started');
@@ -308,7 +469,7 @@ class CallMediaService {
       throw ArgumentError('Invalid uid');
     }
 
-    // ✅ Idempotence : déjà connecté (ou en cours) à CE canal → on garde
+    // Idempotence : déjà connecté (ou en cours) à CE canal → on garde
     // l'appel tel quel, on met seulement les callbacks à jour.
     if (_channel == channel && (_joined || _joinIssued || _joining)) {
       _onUserJoined = onUserJoined;
@@ -327,6 +488,10 @@ class CallMediaService {
     _onUserLeft = onUserLeft;
     _onError = onError;
 
+    // ⚡ Token et permissions EN PARALLÈLE (gain de temps sur réseau lent)
+    final tokenFuture = _getTokenWithRetry(channel: channel, uid: uid);
+    unawaited(tokenFuture.then((_) {}, onError: (_) {}));
+
     try {
       await _ensurePermissions(type);
     } catch (e) {
@@ -338,7 +503,7 @@ class CallMediaService {
 
     late final CallTokenResult cred;
     try {
-      cred = await _getTokenWithRetry(channel: channel, uid: uid);
+      cred = await tokenFuture;
     } catch (e) {
       debugPrint('[CallMediaService] ❌ Token failed: '
           '${kDebugMode ? e : e.toString().split('\n').first}');
@@ -361,6 +526,7 @@ class CallMediaService {
 
       if (type == CallType.video) {
         await engine.enableVideo();
+        await _applyVideoProfile(engine);
         await engine.enableLocalVideo(true);
         await engine.startPreview();
       } else {
@@ -370,7 +536,9 @@ class CallMediaService {
       await engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
 
       _channel = channel;
+      _uid = uid;
       _joined = false;
+      reconnecting.value = false;
 
       await engine
           .joinChannel(
@@ -390,9 +558,6 @@ class CallMediaService {
 
       _joinIssued = true;
       debugPrint('[CallMediaService] ✓ Join sent (uid=$uid, video=${type == CallType.video})');
-
-      // ✅ v2.2 : service de premier plan → l'appel survit à l'arrière-plan
-      await CallForegroundService.start(video: type == CallType.video);
     } on TimeoutException {
       debugPrint('[CallMediaService] ❌ Join timeout');
       onError('agora: join timeout');
@@ -409,6 +574,13 @@ class CallMediaService {
     }
 
     _joining = false;
+
+    // Service de premier plan : un échec ne doit JAMAIS casser l'appel
+    try {
+      await CallForegroundService.start(video: type == CallType.video);
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ Foreground service: $e');
+    }
   }
 
   // ── MEDIA CONTROLS ───────────────────────────────────────────────────
@@ -454,11 +626,20 @@ class CallMediaService {
 
   // ── LEAVE / DISPOSE ──────────────────────────────────────────────────
 
+  void _cancelDropTimers() {
+    for (final t in _dropTimers.values) {
+      t.cancel();
+    }
+    _dropTimers.clear();
+  }
+
   /// Quitte le canal SANS détruire le moteur (à utiliser entre les appels).
   Future<void> leave() async {
     if (_isDisposed) return;
 
     debugPrint('[CallMediaService] 🚪 Leaving channel');
+    _cancelDropTimers();
+
     try {
       await _engine?.stopPreview();
     } catch (e) {
@@ -473,10 +654,15 @@ class CallMediaService {
     _joined = false;
     _joinIssued = false;
     _channel = null;
+    _uid = null;
     _joining = false;
+    _resetNetworkState();
 
-    // ✅ v2.2 : fin d'appel → on retire la notification « Appel en cours »
-    await CallForegroundService.stop();
+    try {
+      await CallForegroundService.stop();
+    } catch (e) {
+      debugPrint('[CallMediaService] ⚠️ Foreground stop: $e');
+    }
   }
 
   /// Libère le moteur RTC (fermeture de l'app uniquement).
@@ -486,6 +672,7 @@ class CallMediaService {
 
     debugPrint('[CallMediaService] 🧹 Disposing engine');
     _isDisposed = true; // bloque les callbacks pendant la libération
+    _cancelDropTimers();
 
     try {
       await _engine?.stopPreview();
@@ -506,13 +693,18 @@ class CallMediaService {
     _joinIssued = false;
     _joining = false;
     _channel = null;
+    _uid = null;
     _onUserJoined = null;
     _onUserLeft = null;
     _onError = null;
+    _tokenCache.clear();
+    _resetNetworkState();
 
-    await CallForegroundService.stop();
+    try {
+      await CallForegroundService.stop();
+    } catch (_) {}
 
-    _isDisposed = false; // ✅ le singleton redevient utilisable
+    _isDisposed = false; // le singleton redevient utilisable
     debugPrint('[CallMediaService] 👋 Engine disposed');
   }
 }
