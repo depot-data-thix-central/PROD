@@ -1,10 +1,11 @@
 // lib/presentation/chat/call/call_page.dart
 //
 // ============================================================================
-// CALL PAGE — v3.1 (Group Calls + corrections)
+// CALL PAGE — v3.2 (Group Calls + réseau faible)
 // ============================================================================
-// FIX v3.1 : markCallPageOpened / markCallPageClosed restaurés (barre
-//            « Appel en cours » quand la page est réduite)
+// NEW v3.2 : statuts « Connexion lente… », « Reconnexion… », « Connexion
+//            instable » + badge « Réseau faible » (comme WhatsApp)
+// FIX v3.1 : markCallPageOpened / markCallPageClosed restaurés
 // FIX v3.1 : vidéo distante 1-to-1 de nouveau affichée (remoteUid)
 // FIX v3.1 : textes de secours si une clé l10n est absente
 // FIX v3.1 : invitation → addInvitedUser + promoteToGroup + type d'appel réel
@@ -32,6 +33,7 @@ const double _kAvatarRadius = 64.0;
 const double _kPipWidth = 100.0;
 const double _kPipHeight = 150.0;
 const Duration _kAutoCloseDelay = Duration(seconds: 4);
+const Duration _kSlowConnectDelay = Duration(seconds: 12);
 
 /// Traduction avec texte de secours si la clé est absente du fichier l10n.
 String _t(AppLocalizations l10n, String key, String fallback) {
@@ -54,9 +56,11 @@ class CallPage extends ConsumerStatefulWidget {
 class _CallPageState extends ConsumerState<CallPage> {
   late final CallMediaService _media;
   Timer? _autoCloseTimer;
+  Timer? _slowTimer;
   bool _isHangingUp = false;
   bool _closed = false;
   bool _errorShown = false;
+  bool _slowConnect = false;
   Offset _pipPosition = const Offset(16, 100);
 
   @override
@@ -64,6 +68,17 @@ class _CallPageState extends ConsumerState<CallPage> {
     super.initState();
     _media = ref.read(callMediaServiceProvider);
     markCallPageOpened(); // la barre « Appel en cours » se masque
+
+    // État réseau : rafraîchit l'écran quand il change
+    _media.reconnecting.addListener(_onNetChanged);
+    _media.remoteWeak.addListener(_onNetChanged);
+    _media.networkQuality.addListener(_onNetChanged);
+
+    // Après 12 s sans connexion établie → « Connexion lente… »
+    _slowTimer = Timer(_kSlowConnectDelay, () {
+      if (!mounted) return;
+      setState(() => _slowConnect = true);
+    });
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -74,9 +89,17 @@ class _CallPageState extends ConsumerState<CallPage> {
 
   @override
   void dispose() {
+    _media.reconnecting.removeListener(_onNetChanged);
+    _media.remoteWeak.removeListener(_onNetChanged);
+    _media.networkQuality.removeListener(_onNetChanged);
+    _slowTimer?.cancel();
     _autoCloseTimer?.cancel();
     markCallPageClosed(); // la barre réapparaît si l'appel continue
     super.dispose();
+  }
+
+  void _onNetChanged() {
+    if (mounted) setState(() {});
   }
 
   void _closePage() {
@@ -137,17 +160,27 @@ class _CallPageState extends ConsumerState<CallPage> {
   String _getStatusLabel(CallState state, AppLocalizations l10n) {
     final calling = _t(l10n, 'call_status_calling', 'Appel en cours…');
     final connecting = _t(l10n, 'call_status_connecting', 'Connexion…');
+    final slow = _t(l10n, 'call_status_slow', 'Connexion lente… patientez');
 
     switch (state.status) {
       case CallStatus.idle:
       case CallStatus.ringing:
-        return state.isCaller ? calling : connecting;
+        if (state.isCaller) return calling;
+        return _slowConnect ? slow : connecting;
       case CallStatus.accepted:
-        return connecting;
+        return _slowConnect ? slow : connecting;
       case CallStatus.ongoing:
         final time = _formatDuration(state.duration);
         final count = _remotes(state).length + 1;
-        return (state.isGroup && count > 2) ? '$count participants · $time' : time;
+        final base =
+            (state.isGroup && count > 2) ? '$count participants · $time' : time;
+        if (_media.reconnecting.value) {
+          return _t(l10n, 'call_status_reconnecting', 'Reconnexion…');
+        }
+        if (_media.remoteWeak.value) {
+          return '${_t(l10n, 'call_status_remote_weak', 'Connexion instable')} · $time';
+        }
+        return base;
       case CallStatus.busy:
         return _t(l10n, 'call_status_busy', 'Occupé');
       case CallStatus.failed:
@@ -689,11 +722,16 @@ class _CallPageState extends ConsumerState<CallPage> {
   }
 
   Widget _buildStatusIndicators(CallState state) {
+    final weakNetwork = _media.reconnecting.value || _media.networkQuality.value >= 4;
+
     return Positioned(
       top: 100,
       left: 16,
       child: Column(
         children: [
+          if (weakNetwork)
+            _buildStatusBadge(
+                Icons.network_check_rounded, 'Réseau faible', Colors.deepOrange),
           if (state.muted)
             _buildStatusBadge(Icons.mic_off_rounded, 'Muet', Colors.orange),
           if (state.videoOff)
