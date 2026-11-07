@@ -1,6 +1,8 @@
 // lib/services/push_notification_service_io.dart
 //
-// Push Notification Service IO v9.0 (Production + Thix Wedding)
+// Push Notification Service IO v9.1 (Production + Thix Wedding)
+// v9.1 : appel déjà terminé / accepté / affiché → CallKit ne sonne pas
+//        (push "call_hangup" arrivée avant "incoming_call", ou push en double)
 // ============================================================================
 
 import 'dart:async';
@@ -60,11 +62,11 @@ class PushTypes {
   static const String chatMessage = 'chat_message';
   static const String chat = 'chat';
   static const String message = 'message';
-  
+
   // Appels
   static const String incomingCall = 'incoming_call';
   static const String callHangup = 'call_hangup';
-  
+
   // Système / Réseau
   static const String notification = 'notification';
   static const String sos = 'sos';
@@ -76,7 +78,7 @@ class PushTypes {
   static const String repost = 'repost';
   static const String connection = 'connection';
 
-  // ✅ THIX WEDDING (Mariages)
+  // THIX WEDDING (Mariages)
   static const String weddingRsvp = 'wedding_rsvp';
   static const String weddingMessage = 'wedding_message';
   static const String weddingMenuStatus = 'wedding_menu_status';
@@ -108,8 +110,8 @@ class PushTypes {
 
   static bool isChatType(String type) =>
       type == chatMessage || type == chat || type == message;
-      
-  // ✅ Ajout spécifique : permet d'avoir l'UI "Répondre" pour les messages de mariage
+
+  // Permet d'avoir l'UI "Répondre" pour les messages de mariage
   static bool isWeddingChat(String type) => type == weddingMessage;
 }
 
@@ -174,7 +176,7 @@ class _Validators {
       '/country',
       '/doc',
       '/ia',
-      '/thix-weeding', // ✅ FIX : Ajout du préfixe pour les mariages
+      '/thix-weeding',
     ];
 
     for (final prefix in prefixes) {
@@ -256,6 +258,21 @@ class _VoipCallManager {
       debugPrint(
           '[VOIP] ⚠️ Appel ignoré : invite_id invalide ou channel_name vide '
           '(inviteId="$inviteId", channel="$channelName")');
+      return;
+    }
+
+    // ✅ v9.1 : appel déjà terminé (hangup arrivé en premier), déjà accepté,
+    // ou déjà affiché (push FCM en double) → on ne sonne pas.
+    if (CallHandledRegistry.isEnded(safeInviteId)) {
+      debugPrint('[VOIP] ℹ️ Appel déjà terminé, CallKit ignoré: $safeInviteId');
+      return;
+    }
+    if (CallHandledRegistry.isAccepted(safeInviteId)) {
+      debugPrint('[VOIP] ℹ️ Appel déjà accepté, CallKit ignoré: $safeInviteId');
+      return;
+    }
+    if (CallHandledRegistry.isShownCallkit(safeInviteId)) {
+      debugPrint('[VOIP] ℹ️ CallKit déjà affiché (doublon): $safeInviteId');
       return;
     }
 
@@ -512,9 +529,9 @@ Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
         .initialize()
         .timeout(_kForegroundInitTimeout);
 
-    // ✅ On force l'affichage local pour les chats et les messages de mariage
+    // On force l'affichage local pour les chats et les messages de mariage
     final isChat = PushTypes.isChatType(type) || PushTypes.isWeddingChat(type);
-    
+
     await _showFromRemoteMessage(
       message,
       skipIfSystemNotification: !isChat,
@@ -631,8 +648,8 @@ String _defaultTitle(String type) {
       return 'Republication';
     case PushTypes.connection:
       return 'Nouvelle connexion';
-      
-    // ✅ Titres par défaut pour les Mariages
+
+    // Titres par défaut pour les Mariages
     case PushTypes.weddingRsvp:
       return 'Mise à jour RSVP';
     case PushTypes.weddingMessage:
