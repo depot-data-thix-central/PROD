@@ -1,17 +1,15 @@
 // lib/services/chat/call_handled_registry.dart
 //
 // Registre partagé entre PushNotificationService (CallKit) et GlobalCallListener
-// (écran d'appel dans l'app). Il évite :
-//  - le double écran d'appel (CallKit + page dans l'app)
-//  - le rejet automatique d'un appel déjà accepté depuis CallKit
-//  - les sonneries fantômes d'un appel déjà terminé
-//  - un refus CallKit jamais transmis à l'appelant
+// (écran d'appel dans l'app).
+//
+// CHANGELOG v2.5 :
+//   ✅ markShownCallkit ne marque plus _shownInApp (les deux sources sont
+//      distinctes ; chaque consommateur teste isShownCallkit lui-même)
+//   ✅ markDeclineSent / isDeclineSent : un refus n'est envoyé qu'une fois
 //
 // CHANGELOG v2.4 :
-//   ✅ Ajout de markShownCallkit / isShownCallkit : marque que l'UI CallKit
-//      a été déclenchée pour cet inviteId. Utilisé par
-//      PushNotificationService pour bloquer le fallback CallKit et par
-//      GlobalCallListener pour bloquer l'ouverture de IncomingCallPage.
+//   ✅ markShownCallkit / isShownCallkit
 // ============================================================================
 import 'dart:async';
 
@@ -22,8 +20,9 @@ class CallHandledRegistry {
 
   static final List<String> _accepted = <String>[];
   static final List<String> _shownInApp = <String>[];
-  static final List<String> _shownCallkit = <String>[]; // v2.4
+  static final List<String> _shownCallkit = <String>[];
   static final List<String> _ended = <String>[];
+  static final List<String> _declineSent = <String>[];
 
   static final StreamController<String> _acceptedCtrl =
       StreamController<String>.broadcast();
@@ -40,7 +39,6 @@ class CallHandledRegistry {
   }
 
   // ── Accepté (CallKit) ────────────────────────────────────────
-  /// true = première acceptation (à traiter), false = doublon.
   static bool markAccepted(String id) {
     final first = _add(_accepted, id);
     if (first && id.isNotEmpty) _acceptedCtrl.add(id);
@@ -58,15 +56,8 @@ class CallHandledRegistry {
       id.isNotEmpty && _shownInApp.contains(id);
 
   // ── Affiché via CallKit (UI système) ─────────────────────────
-  /// Marque que CallKit a été déclenché pour cet appel. Bloque :
-  ///  - le fallback CallKit dans PushNotificationService
-  ///  - l'ouverture de IncomingCallPage dans GlobalCallListener
   static void markShownCallkit(String id) {
     _add(_shownCallkit, id);
-    // On marque aussi comme "shown in app" de façon défensive : si l'app
-    // vient de recevoir ce push pendant que l'appel est déjà sur CallKit,
-    // elle ne doit JAMAIS ouvrir IncomingCallPage.
-    _add(_shownInApp, id);
   }
 
   static bool isShownCallkit(String id) =>
@@ -79,6 +70,16 @@ class CallHandledRegistry {
 
   static bool isEnded(String id) => id.isNotEmpty && _ended.contains(id);
 
+  // ── Refus transmis au serveur ────────────────────────────────
+  /// true = première fois (à envoyer), false = déjà envoyé / en cours.
+  static bool markDeclineSent(String id) => _add(_declineSent, id);
+
+  static bool isDeclineSent(String id) =>
+      id.isNotEmpty && _declineSent.contains(id);
+
+  /// Annule la marque (échec d'envoi : permet une nouvelle tentative).
+  static void clearDeclineSent(String id) => _declineSent.remove(id);
+
   /// Refus depuis CallKit : l'app doit prévenir le serveur.
   static void emitDeclined(String id) {
     markEnded(id);
@@ -88,11 +89,11 @@ class CallHandledRegistry {
   static Stream<String> get acceptedStream => _acceptedCtrl.stream;
   static Stream<String> get declinedStream => _declinedCtrl.stream;
 
-  // ── Utilitaire debug ─────────────────────────────────────────
   static Map<String, dynamic> debugSnapshot(String id) => {
         'accepted': isAccepted(id),
         'shownInApp': isShownInApp(id),
         'shownCallkit': isShownCallkit(id),
         'ended': isEnded(id),
+        'declineSent': isDeclineSent(id),
       };
 }
