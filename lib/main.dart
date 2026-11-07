@@ -1,6 +1,10 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.11)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.12)
+//
+// CHANGELOG v2.12 :
+//   ✅ Refus CallKit dédupliqué (CallHandledRegistry.markDeclineSent) :
+//      un seul rpc_reject_call même si GlobalCallListener le fait aussi
 //
 // CHANGELOG v2.11 (réseau faible / appels) :
 //   ✅ Refus CallKit : transmis à rpc_reject_call (3 tentatives)
@@ -9,17 +13,9 @@
 //   ✅ PushNotificationService.initialize() ne bloque plus runApp
 //   ✅ Nouvel essai de la navigation en attente dès que la session est prête
 //
-// CHANGELOG v2.10 :
-//   ✅ JustAudioBackground.init() : lecture audio arrière-plan + contrôles
-//      sur écran verrouillé (just_audio + audio_service)
-//
-// CHANGELOG v2.9 :
-//   ✅ Buffer d'actions pending de LocalNotificationService v3.1
-//   ✅ CallPermissionHelper.ensureAtStartup() après le login
-//   ✅ Signature onNotificationTap alignée sur v3.1 (paramètre `input`)
-//
-// Conserve tous les correctifs v2.8 : actions notif Supabase, pending nav,
-// route normalization, zone error handling, offline-safe auth.
+// CHANGELOG v2.10 : JustAudioBackground.init()
+// CHANGELOG v2.9  : buffer d'actions pending, CallPermissionHelper, `input`
+// Conserve tous les correctifs v2.8.
 // ============================================================================
 import 'dart:async';
 import 'dart:io';
@@ -46,6 +42,7 @@ import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
 import 'package:thix_id/services/chat/call_permission_helper.dart';
+import 'package:thix_id/services/chat/call_handled_registry.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
 import 'package:thix_id/presentation/chat/call/callkit_call_handler.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
@@ -119,9 +116,11 @@ Future<void> _acceptWithRetry(String inviteId) async {
 }
 
 /// Refus depuis CallKit : prévient l'appelant (3 tentatives).
-/// Idempotent : si GlobalCallListener a déjà refusé, le 2e appel est sans effet.
+/// Dédupliqué : si GlobalCallListener l'a déjà envoyé, on ne le refait pas.
 Future<void> _rejectInvite(String inviteId) async {
   if (inviteId.isEmpty) return;
+
+  if (!CallHandledRegistry.markDeclineSent(inviteId)) return;
 
   for (var attempt = 1; attempt <= _kCallRetries; attempt++) {
     try {
@@ -137,6 +136,7 @@ Future<void> _rejectInvite(String inviteId) async {
       }
     }
   }
+  CallHandledRegistry.clearDeclineSent(inviteId);
   _log('❌ Refus non transmis: $inviteId');
 }
 
@@ -188,8 +188,6 @@ Future<void> _handleNotificationAction(
         'content': input.trim(),
         'type': 'text',
       });
-      // Ne pas cancelAll ici : l'utilisateur peut avoir d'autres notifs
-      // non liées à cette conversation. Le badge se met à jour via Realtime.
     } else if (actionId == kActionMarkAsRead) {
       _log('👁️ Marquer comme lu pour conv: $convId');
       await supabase
@@ -302,8 +300,6 @@ Future<void> main() async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // Lecture audio en arrière-plan + notification média.
-      // Doit être appelé AVANT toute création de AudioPlayer just_audio.
       try {
         await JustAudioBackground.init(
           androidNotificationChannelId: 'com.thix.info.channel.audio',
@@ -389,8 +385,6 @@ Future<void> main() async {
         _log('⚠️ Supabase: $e');
       }
 
-      // Initialisation LocalNotificationService AVANT le callback
-      // pour que le buffer pending soit prêt à recevoir les actions cold-start.
       try {
         await LocalNotificationService.instance
             .initialize()
@@ -398,7 +392,6 @@ Future<void> main() async {
 
         LocalNotificationService.instance.onNotificationTap =
             (payload, {actionId, input}) async {
-          // 1. Actions spécifiques (Répondre, Lu, Muet)
           if (actionId == kActionReply ||
               actionId == kActionMarkAsRead ||
               actionId == kActionMute) {
@@ -406,7 +399,6 @@ Future<void> main() async {
             return;
           }
 
-          // 2. Ouverture classique (tap sur notification ou bouton Ouvrir)
           _handleLocalNotificationTap(payload, actionId: actionId, input: input);
         };
 
@@ -441,7 +433,7 @@ Future<void> main() async {
           unawaited(_rejectInvite(inviteId));
         };
 
-        // ✅ v2.11 : ne bloque plus le démarrage (réseau faible).
+        // Ne bloque plus le démarrage (réseau faible).
         // _syncPush relance initialize() après la connexion de toute façon.
         unawaited(
           PushNotificationService.instance
@@ -574,7 +566,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _routerReady = true;
-      // ✅ v2.11 : essais étalés jusqu'à 20 s (session lente à se restaurer)
+      // Essais étalés jusqu'à 20 s (session lente à se restaurer)
       for (final ms in const [600, 2500, 6000, 12000, 20000]) {
         Future.delayed(Duration(milliseconds: ms), _flushPendingNav);
       }
@@ -595,7 +587,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       return;
     }
 
-    // ✅ v2.11 : session prête → on rejoue l'appel / la navigation en attente
+    // Session prête → on rejoue l'appel / la navigation en attente
     _flushPendingNav();
 
     if (_pushRegistered) return;
@@ -611,8 +603,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         _log('✓ Badge Realtime started for ${_maskUid(uid)}');
       }
 
-      // Permissions système critiques UNE FOIS par session
-      // (NOTIFICATIONS, PHONE, FSI, BATTERY). Ne bloque pas le flux si refusé.
       if (!_startupPermissionsRequested && Platform.isAndroid && mounted) {
         _startupPermissionsRequested = true;
         unawaited(_requestStartupPermissions());
@@ -623,9 +613,6 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
   }
 
-  /// Demande les permissions système critiques pour VoIP.
-  /// Non-bloquant : si l'utilisateur refuse, les appels fonctionnent
-  /// partiellement (pas de push en arrière-plan, pas d'écran verrouillé).
   Future<void> _requestStartupPermissions() async {
     try {
       final ctx = rootNavigatorKey.currentContext;
