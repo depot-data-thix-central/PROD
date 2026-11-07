@@ -1,19 +1,14 @@
 // lib/presentation/chat/call/global_call_listener.dart
 //
 // ============================================================================
-// GLOBAL CALL LISTENER — v2.4
+// GLOBAL CALL LISTENER — v2.5
 // ============================================================================
-// v2.4 (coordination CallKit v8.9) :
-//  ✅ Si CallKit a déjà été déclenché (push FCM/VoIP), on n'ouvre PAS
-//     IncomingCallPage. Évite le double écran d'appel.
-//  ✅ markShownCallkit appelé dans push_notification_service_io.dart
-//     marque automatiquement isShownInApp = true → ce listener ignore
-//     l'invite même si Supabase Realtime arrive en parallèle.
-//
+// v2.5 : refus CallKit dédupliqué (markDeclineSent) : un seul rpc_reject_call
+//        même si main.dart l'envoie aussi ; réessai possible en cas d'échec
+// v2.4 : si CallKit a déjà été déclenché, on n'ouvre PAS IncomingCallPage
 // v2.3 : coordination CallKit (accept/refuse/terminate)
-// v2.2 : barre « Appel en cours » en haut de toute l'app quand l'appel est réduit.
-// v2.1 : plus de double route, page d'appel entrant fermée si l'appelant annule,
-//        un seul affichage par invitation.
+// v2.2 : barre « Appel en cours » en haut de toute l'app quand l'appel est réduit
+// v2.1 : plus de double route, page d'appel entrant fermée si l'appelant annule
 // ============================================================================
 
 import 'dart:async';
@@ -38,6 +33,7 @@ import 'package:thix_id/services/chat/call_signaling_service.dart';
 // ============================================================================
 const Duration _kNavigationRetryDelay = Duration(milliseconds: 500);
 const int _kMaxNavigationRetries = 3;
+const int _kRejectRetries = 3;
 
 // ============================================================================
 // VALIDATORS
@@ -118,8 +114,6 @@ class GlobalCallListener extends ConsumerStatefulWidget {
   final Widget child;
 
   /// Clé du Navigator racine (la même que celle de ton MaterialApp / routeur).
-  /// Nécessaire pour ouvrir la page d'appel entrant et revenir à l'appel
-  /// depuis la barre quand ce widget est placé au-dessus du Navigator.
   final GlobalKey<NavigatorState>? navigatorKey;
 
   const GlobalCallListener({
@@ -188,19 +182,30 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     _closeIncomingRouteIfFor(inviteId);
   }
 
-  /// Appel refusé depuis CallKit : on prévient l'appelant.
+  /// Appel refusé depuis CallKit : on prévient l'appelant (3 tentatives).
+  /// Dédupliqué : main.dart peut l'avoir déjà envoyé.
   Future<void> _onDeclinedViaCallKit(String inviteId) async {
     if (_isDisposed) return;
     _lastShownInviteId = inviteId;
     _closeIncomingRouteIfFor(inviteId);
 
-    try {
-      _signal ??= CallSignalingService();
-      await _signal!.reject(inviteId);
-      debugPrint('[GlobalCallListener] ✓ Refus CallKit transmis: ${_obfuscate(inviteId)}');
-    } catch (e) {
-      debugPrint('[GlobalCallListener] ❌ Refus CallKit non transmis: $e');
+    if (!CallHandledRegistry.markDeclineSent(inviteId)) return;
+
+    for (var attempt = 1; attempt <= _kRejectRetries; attempt++) {
+      try {
+        _signal ??= CallSignalingService();
+        await _signal!.reject(inviteId);
+        debugPrint('[GlobalCallListener] ✓ Refus CallKit transmis: ${_obfuscate(inviteId)}');
+        return;
+      } catch (e) {
+        debugPrint('[GlobalCallListener] ⚠️ Refus CallKit $attempt/$_kRejectRetries: $e');
+        if (attempt < _kRejectRetries) {
+          await Future.delayed(Duration(seconds: 2 * attempt));
+        }
+      }
     }
+    CallHandledRegistry.clearDeclineSent(inviteId);
+    debugPrint('[GlobalCallListener] ❌ Refus CallKit non transmis: ${_obfuscate(inviteId)}');
   }
 
   void _closeIncomingRouteIfFor(String inviteId) {
@@ -293,14 +298,14 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
     if (!_CallListenerValidators.isValidInvite(invite)) return;
     if (_lastShownInviteId == invite.id) return;
 
-    // ✅ v2.3 : déjà accepté ou terminé via CallKit → ni page, ni rejet « occupé »
+    // Déjà accepté ou terminé via CallKit → ni page, ni rejet « occupé »
     if (CallHandledRegistry.isAccepted(invite.id) || CallHandledRegistry.isEnded(invite.id)) {
       _lastShownInviteId = invite.id;
       debugPrint('[GlobalCallListener] ℹ️ Invitation déjà traitée via CallKit: ${_obfuscate(invite.id)}');
       return;
     }
 
-    // ✅ v2.4 : CallKit a déjà été déclenché par un push FCM/VoIP
+    // CallKit déjà déclenché par un push FCM/VoIP
     // → on n'ouvre PAS IncomingCallPage (évite le double écran d'appel).
     if (CallHandledRegistry.isShownCallkit(invite.id)) {
       _lastShownInviteId = invite.id;
@@ -359,7 +364,7 @@ class _GlobalCallListenerState extends ConsumerState<GlobalCallListener> with Wi
 
       _incomingRoute = route;
       _incomingInviteId = invite.id;
-      // ✅ v2.3 : marque que la page d'appel entrant de l'app a été affichée.
+      // Marque que la page d'appel entrant de l'app a été affichée.
       // Cela empêche CallKit de se déclencher en parallèle (fallback foreground).
       CallHandledRegistry.markShownInApp(invite.id);
       _watchInviteEnd(invite, route);
