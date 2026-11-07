@@ -1,19 +1,22 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.9)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.11)
 //
-// CHANGELOG v2.9 (depuis v2.8) :
-//   ✅ Intégration du buffer d'actions pending de LocalNotificationService v3.1
-//      (les actions tapées au cold-start sont maintenant rejouées)
-//   ✅ Appel à CallPermissionHelper.ensureAtStartup() après le login
-//      (permissions NOTIFICATIONS, PHONE, FSI, BATTERY demandées une fois)
-//   ✅ Signature onNotificationTap alignée sur v3.1 (paramètre `input`)
-//   ✅ Import de call_permission_helper ajouté
-//   ✅ Nettoyage : plus aucune référence à VoipCallService (supprimé)
+// CHANGELOG v2.11 (réseau faible / appels) :
+//   ✅ Refus CallKit : transmis à rpc_reject_call (3 tentatives)
+//   ✅ Appel accepté au cold-start : attend la session (jusqu'à 20 s) +
+//      3 tentatives sur CallKitCallHandler.accept
+//   ✅ PushNotificationService.initialize() ne bloque plus runApp
+//   ✅ Nouvel essai de la navigation en attente dès que la session est prête
 //
 // CHANGELOG v2.10 :
 //   ✅ JustAudioBackground.init() : lecture audio arrière-plan + contrôles
 //      sur écran verrouillé (just_audio + audio_service)
+//
+// CHANGELOG v2.9 :
+//   ✅ Buffer d'actions pending de LocalNotificationService v3.1
+//   ✅ CallPermissionHelper.ensureAtStartup() après le login
+//   ✅ Signature onNotificationTap alignée sur v3.1 (paramètre `input`)
 //
 // Conserve tous les correctifs v2.8 : actions notif Supabase, pending nav,
 // route normalization, zone error handling, offline-safe auth.
@@ -29,7 +32,7 @@ import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:just_audio_background/just_audio_background.dart'; // ✅ v2.10
+import 'package:just_audio_background/just_audio_background.dart';
 
 import 'package:thix_id/auth/auth_controller.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
@@ -42,7 +45,7 @@ import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/services/local_notification_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
 import 'package:thix_id/services/notifications/app_badge_sync_service.dart';
-import 'package:thix_id/services/chat/call_permission_helper.dart'; // ✅ v2.9
+import 'package:thix_id/services/chat/call_permission_helper.dart';
 import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener.dart';
 import 'package:thix_id/presentation/chat/call/callkit_call_handler.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
@@ -59,6 +62,8 @@ const String kActionReply = 'REPLY';
 const String kActionMarkAsRead = 'MARK_AS_READ';
 const String kActionMute = 'MUTE';
 const Duration _kInitTimeout = Duration(seconds: 10);
+const Duration _kRpcTimeout = Duration(seconds: 15);
+const int _kCallRetries = 3;
 
 void _log(String message) => debugPrint('[MAIN] $message');
 
@@ -71,8 +76,11 @@ bool _appLaunched = false;
 bool _routerReady = false;
 
 String? _pendingCallId;
-({String payload, String? actionId, String? input})? _pendingTap; // ✅ v2.9 : +input
+({String payload, String? actionId, String? input})? _pendingTap;
 
+/// Appel accepté depuis CallKit.
+/// Si le routeur ou la session ne sont pas prêts (cold start, réseau lent),
+/// l'appel reste en attente et est rejoué par _flushPendingNav.
 void _openCall(String inviteId, String channelName, bool isVideo) {
   if (inviteId.isEmpty) return;
 
@@ -83,9 +91,53 @@ void _openCall(String inviteId, String channelName, bool isVideo) {
     return;
   }
 
+  if (!AuthController.instance.isAuthenticated) {
+    _pendingCallId = inviteId;
+    _log('📞 Appel accepté mis en attente (session pas prête)');
+    return;
+  }
+
   _pendingCallId = null;
   _log('📞 Appel accepté → ouverture de l\'appel');
-  unawaited(CallKitCallHandler.accept(inviteId));
+  unawaited(_acceptWithRetry(inviteId));
+}
+
+/// 3 tentatives : un échec réseau passager ne perd plus l'appel accepté.
+Future<void> _acceptWithRetry(String inviteId) async {
+  for (var attempt = 1; attempt <= _kCallRetries; attempt++) {
+    try {
+      await CallKitCallHandler.accept(inviteId);
+      return;
+    } catch (e) {
+      _log('⚠️ CallKit accept $attempt/$_kCallRetries: $e');
+      if (attempt < _kCallRetries) {
+        await Future.delayed(Duration(seconds: 2 * attempt));
+      }
+    }
+  }
+  _log('❌ CallKit accept abandonné: $inviteId');
+}
+
+/// Refus depuis CallKit : prévient l'appelant (3 tentatives).
+/// Idempotent : si GlobalCallListener a déjà refusé, le 2e appel est sans effet.
+Future<void> _rejectInvite(String inviteId) async {
+  if (inviteId.isEmpty) return;
+
+  for (var attempt = 1; attempt <= _kCallRetries; attempt++) {
+    try {
+      await SupabaseConfig.client
+          .rpc('rpc_reject_call', params: {'p_invite_id': inviteId})
+          .timeout(_kRpcTimeout);
+      _log('✓ Refus transmis: $inviteId');
+      return;
+    } catch (e) {
+      _log('⚠️ Refus $attempt/$_kCallRetries: $e');
+      if (attempt < _kCallRetries) {
+        await Future.delayed(Duration(seconds: 2 * attempt));
+      }
+    }
+  }
+  _log('❌ Refus non transmis: $inviteId');
 }
 
 void _flushPendingNav() {
@@ -93,6 +145,7 @@ void _flushPendingNav() {
 
   final callId = _pendingCallId;
   if (callId != null) {
+    // _openCall remet l'appel en attente si la session n'est pas prête
     _openCall(callId, '', false);
   }
 
@@ -102,7 +155,7 @@ void _flushPendingNav() {
     _handleLocalNotificationTap(
       tap.payload,
       actionId: tap.actionId,
-      input: tap.input, // ✅ v2.9
+      input: tap.input,
     );
   }
 }
@@ -193,8 +246,6 @@ String _normalizeRoute(String route) {
 // NOTIFICATION TAP HANDLER (global)
 // ============================================================================
 
-/// ✅ v2.9 : signature enrichie avec `input` pour supporter Quick Reply
-/// depuis le buffer pending et depuis les taps au premier plan.
 void _handleLocalNotificationTap(
   String? payload, {
   String? actionId,
@@ -251,10 +302,8 @@ Future<void> main() async {
     () async {
       WidgetsFlutterBinding.ensureInitialized();
 
-      // ✅ v2.10 : Lecture audio en arrière-plan + notification média
-      // (écran verrouillé, boutons play/pause/next via audio_service).
+      // Lecture audio en arrière-plan + notification média.
       // Doit être appelé AVANT toute création de AudioPlayer just_audio.
-      // Non-bloquant : si l'init échoue, l'app démarre quand même.
       try {
         await JustAudioBackground.init(
           androidNotificationChannelId: 'com.thix.info.channel.audio',
@@ -340,14 +389,13 @@ Future<void> main() async {
         _log('⚠️ Supabase: $e');
       }
 
-      // ✅ v2.9 : Initialisation LocalNotificationService AVANT le callback
+      // Initialisation LocalNotificationService AVANT le callback
       // pour que le buffer pending soit prêt à recevoir les actions cold-start.
       try {
         await LocalNotificationService.instance
             .initialize()
             .timeout(_kInitTimeout);
 
-        // ✅ v2.9 : Callback enrichi avec `input` pour Quick Reply
         LocalNotificationService.instance.onNotificationTap =
             (payload, {actionId, input}) async {
           // 1. Actions spécifiques (Répondre, Lu, Muet)
@@ -390,17 +438,18 @@ Future<void> main() async {
         };
         PushNotificationService.instance.onVoipDecline = (inviteId) {
           _log('📞 VoIP declined: $inviteId');
+          unawaited(_rejectInvite(inviteId));
         };
 
-        try {
-          await PushNotificationService.instance
+        // ✅ v2.11 : ne bloque plus le démarrage (réseau faible).
+        // _syncPush relance initialize() après la connexion de toute façon.
+        unawaited(
+          PushNotificationService.instance
               .initialize()
-              .timeout(_kInitTimeout);
-
-          _log('✓ Push/VoIP OK');
-        } catch (e) {
-          _log('⚠️ Push/VoIP init: $e');
-        }
+              .timeout(const Duration(seconds: 30))
+              .then((_) => _log('✓ Push/VoIP OK'))
+              .catchError((Object e) => _log('⚠️ Push/VoIP init: $e')),
+        );
       }
 
       _appLaunched = true;
@@ -473,7 +522,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
   GoRouter? _router;
   bool _ready = false;
   bool _pushRegistered = false;
-  bool _startupPermissionsRequested = false; // ✅ v2.9
+  bool _startupPermissionsRequested = false;
 
   @override
   void initState() {
@@ -525,8 +574,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _routerReady = true;
-      Future.delayed(const Duration(milliseconds: 600), _flushPendingNav);
-      Future.delayed(const Duration(milliseconds: 2500), _flushPendingNav);
+      // ✅ v2.11 : essais étalés jusqu'à 20 s (session lente à se restaurer)
+      for (final ms in const [600, 2500, 6000, 12000, 20000]) {
+        Future.delayed(Duration(milliseconds: ms), _flushPendingNav);
+      }
     });
   }
 
@@ -536,13 +587,16 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     if (!_auth.isAuthenticated) {
       if (_pushRegistered) {
         _pushRegistered = false;
-        _startupPermissionsRequested = false; // ✅ v2.9 : reset au logout
+        _startupPermissionsRequested = false;
         AppBadgeSyncService.stopListening();
         unawaited(AppBadgeSyncService.sync(0));
         _log('ℹ️ Session absente : badge arrêté (token push conservé)');
       }
       return;
     }
+
+    // ✅ v2.11 : session prête → on rejoue l'appel / la navigation en attente
+    _flushPendingNav();
 
     if (_pushRegistered) return;
     _pushRegistered = true;
@@ -557,7 +611,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
         _log('✓ Badge Realtime started for ${_maskUid(uid)}');
       }
 
-      // ✅ v2.9 : Demander les permissions système critiques UNE FOIS par session
+      // Permissions système critiques UNE FOIS par session
       // (NOTIFICATIONS, PHONE, FSI, BATTERY). Ne bloque pas le flux si refusé.
       if (!_startupPermissionsRequested && Platform.isAndroid && mounted) {
         _startupPermissionsRequested = true;
@@ -569,7 +623,7 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
     }
   }
 
-  /// ✅ v2.9 : Demande les permissions système critiques pour VoIP.
+  /// Demande les permissions système critiques pour VoIP.
   /// Non-bloquant : si l'utilisateur refuse, les appels fonctionnent
   /// partiellement (pas de push en arrière-plan, pas d'écran verrouillé).
   Future<void> _requestStartupPermissions() async {
