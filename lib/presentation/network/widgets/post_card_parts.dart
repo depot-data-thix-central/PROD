@@ -1,4 +1,3 @@
-
 // lib/presentation/network/widgets/post_card_parts.dart
 //
 // Parties communes de PostCard : config, thème, validateurs, cache, notifier
