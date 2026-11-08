@@ -74,6 +74,35 @@ class StatusService {
     }
   }
 
+  /// ✅ NOUVEAU : Créer un statut vidéo.
+  /// Même logique que [createImageStatus] mais avec media_type = 'video'.
+  Future<String?> createVideoStatus({
+    required Uint8List bytes,
+    required String extension,
+    String? caption,
+  }) async {
+    try {
+      if (_uid.isEmpty) return null;
+
+      final name = '${const Uuid().v4()}.$extension';
+      final path = 'statuses/$_uid/$name';
+
+      await _supabase.storage.from('chat-media').uploadBinary(path, bytes);
+      final url = _supabase.storage.from('chat-media').getPublicUrl(path);
+
+      final id = await _supabase.rpc('rpc_create_status', params: {
+        'p_content': caption,
+        'p_media_url': url,
+        'p_media_type': 'video',
+        'p_background': '#000000',
+      });
+      return id?.toString();
+    } catch (e) {
+      debugPrint('❌ createVideoStatus: $e');
+      return null;
+    }
+  }
+
   /// Marquer comme vu
   Future<void> markViewed(String statusId) async {
     try {
