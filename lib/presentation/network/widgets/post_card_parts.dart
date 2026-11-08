@@ -1522,7 +1522,7 @@ class PcActionBtn extends StatelessWidget {
   const PcActionBtn({
     super.key,
     required this.icon,
-    required this.label,
+    this.label = '',
     required this.color,
     required this.onTap,
     this.onLongPress,
