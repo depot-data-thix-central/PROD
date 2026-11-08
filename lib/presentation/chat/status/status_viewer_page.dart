@@ -7,11 +7,11 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
 import 'package:intl/intl.dart';
+import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/chat/user_status_story.dart';
-import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
 import 'package:thix_id/presentation/chat/providers/status_provider.dart';
 import 'package:thix_id/presentation/chat/status/create_status_page.dart';
 import 'package:thix_id/services/chat/status_service.dart';
@@ -21,9 +21,10 @@ import 'package:thix_id/services/chat/status_service.dart';
 // ============================================================================
 const Duration _kTextDuration = Duration(seconds: 5);
 const Duration _kImageDuration = Duration(seconds: 7);
+const Duration _kMaxVideoDuration = Duration(seconds: 120); // 2 min max
 const double _kProgressHeight = 3.0;
 const double _kAvatarRadius = 18.0;
-const double _kFontSizeContent = 28.0;
+const double _kFontSizeContent = 32.0;
 const double _kFontSizeName = 14.0;
 const double _kFontSizeTime = 11.0;
 const int _kMaxNameLength = 80;
@@ -65,6 +66,19 @@ class _StatusValidators {
     }
   }
 
+  /// Détecte si l'URL pointe vers une vidéo (par extension ou path).
+  static bool isVideoUrl(String? url) {
+    if (url == null) return false;
+    final lower = url.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.avi') ||
+        lower.contains('/videos/') ||
+        lower.contains('/video/');
+  }
+
   static String friendlyError(dynamic e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
@@ -78,19 +92,15 @@ class _StatusValidators {
 // STATUS VIEWER PAGE
 // ============================================================================
 
-/// Visionneuse de statuts (Stories) avec navigation, réactions et métriques.
-///
-/// Fonctionnalités :
-/// - Navigation tactile (gauche/droite) ou swipe
-/// - Appui long pour pause
-/// - Barres de progression multiples
-/// - Réactions rapides
-/// - Menu actions (propriétaire) : vues, edit, delete
-/// - Repost (non propriétaire)
 class StatusViewerPage extends ConsumerStatefulWidget {
   final List<UserStatusStory> stories;
+  final int initialIndex;
 
-  const StatusViewerPage({super.key, required this.stories});
+  const StatusViewerPage({
+    super.key,
+    required this.stories,
+    this.initialIndex = 0,
+  });
 
   @override
   ConsumerState<StatusViewerPage> createState() => _StatusViewerPageState();
@@ -102,20 +112,30 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   late AnimationController _progress;
   int _index = 0;
   bool _paused = false;
-  bool _isNavigating = false; // Protection race condition
+  bool _isNavigating = false;
+
+  // Video
+  VideoPlayerController? _videoCtrl;
+  bool _videoReady = false;
+  Duration _videoDuration = Duration.zero;
+  Timer? _videoProgressTimer;
+
+  // Floating reactions
+  final List<_FloatingReaction> _floatingReactions = [];
 
   @override
   void initState() {
     super.initState();
-    _pageCtrl = PageController();
+    _index = widget.initialIndex.clamp(0, (widget.stories.length - 1).clamp(0, 999999));
+    _pageCtrl = PageController(initialPage: _index);
     _progress = AnimationController(vsync: this)
       ..addStatusListener((s) {
+        if (s == AnimationStatus.completed && !_isNavigating && !mounted) return;
         if (s == AnimationStatus.completed && !_isNavigating) _next();
       });
-    
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _markCurrent();
-      _startProgress();
+      _onStoryChanged();
     });
   }
 
@@ -123,18 +143,126 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   void dispose() {
     _progress.dispose();
     _pageCtrl.dispose();
+    _disposeVideo();
+    _videoProgressTimer?.cancel();
     super.dispose();
   }
 
-  Duration get _currentDuration {
-    if (widget.stories.isEmpty) return _kTextDuration;
+  // ============================================================================
+  // VIDEO MANAGEMENT
+  // ============================================================================
+
+  void _disposeVideo() {
+    _videoProgressTimer?.cancel();
+    _videoProgressTimer = null;
+    final c = _videoCtrl;
+    _videoCtrl = null;
+    _videoReady = false;
+    if (c != null) {
+      try {
+        c.dispose();
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _initVideoIfNeeded(UserStatusStory s) async {
+    _disposeVideo();
+    final url = _StatusValidators.sanitizeUrl(s.mediaUrl);
+    if (url == null || !s.isVideo) return;
+
+    final uri = Uri.tryParse(url);
+    if (uri == null) return;
+
+    final c = VideoPlayerController.networkUrl(
+      uri,
+      videoPlayerOptions: VideoPlayerOptions(mixWithOthers: false),
+    );
+    _videoCtrl = c;
+    _videoReady = false;
+
+    try {
+      await c.initialize();
+      if (!mounted || _videoCtrl != c) return;
+
+      // Clamp la durée à 2 min max
+      final realDur = c.value.duration;
+      _videoDuration = realDur > _kMaxVideoDuration ? _kMaxVideoDuration : realDur;
+
+      await c.setLooping(false);
+      await c.setVolume(1.0);
+      if (!_paused) await c.play();
+
+      if (!mounted) return;
+      setState(() => _videoReady = true);
+
+      // Poll la position vidéo pour synchroniser la barre de progression
+      _videoProgressTimer = Timer.periodic(const Duration(milliseconds: 100), (_) {
+        if (!mounted || _videoCtrl != c) return;
+        if (_paused) return;
+        final pos = c.value.position;
+        if (pos >= _videoDuration && _videoDuration > Duration.zero) {
+          _next();
+        } else {
+          setState(() {}); // force rebuild pour mettre à jour la barre
+        }
+      });
+    } catch (e) {
+      debugPrint('[StatusViewer] ❌ Video init error: $e');
+      _videoReady = false;
+      // Fallback : progress via animation controller
+      _startProgress();
+    }
+  }
+
+  double _videoProgress() {
+    final c = _videoCtrl;
+    if (c == null || !_videoReady || _videoDuration == Duration.zero) return 0;
+    final pos = c.value.position;
+    return (pos.inMilliseconds / _videoDuration.inMilliseconds).clamp(0.0, 1.0);
+  }
+
+  void _pauseVideo() {
+    try {
+      _videoCtrl?.pause();
+    } catch (_) {}
+  }
+
+  void _resumeVideo() {
+    try {
+      _videoCtrl?.play();
+    } catch (_) {}
+  }
+
+  // ============================================================================
+  // STORY LIFECYCLE
+  // ============================================================================
+
+  Duration _durationFor(UserStatusStory s) {
+    if (s.isVideo) return _videoDuration > Duration.zero ? _videoDuration : _kImageDuration;
+    if (s.isImage) return _kImageDuration;
+    return _kTextDuration;
+  }
+
+  void _onStoryChanged() {
+    if (widget.stories.isEmpty) return;
     final s = widget.stories[_index];
-    return s.isImage ? _kImageDuration : _kTextDuration;
+    _markCurrent();
+
+    if (s.isVideo) {
+      _progress.stop();
+      _progress.reset();
+      _initVideoIfNeeded(s);
+    } else {
+      _disposeVideo();
+      _startProgress();
+    }
   }
 
   void _startProgress() {
     if (_paused || widget.stories.isEmpty || _isNavigating) return;
-    _progress.duration = _currentDuration;
+    final s = widget.stories[_index];
+    if (s.isVideo) return; // progress gérée par le video timer
+    _progress.duration = _durationFor(s);
     _progress.forward(from: 0);
   }
 
@@ -142,53 +270,68 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     if (!_paused) {
       _paused = true;
       _progress.stop();
+      _pauseVideo();
     }
   }
 
   void _resume() {
     if (_paused) {
       _paused = false;
-      _progress.forward();
+      final s = widget.stories[_index];
+      if (s.isVideo) {
+        _resumeVideo();
+      } else {
+        _progress.forward();
+      }
     }
   }
 
   void _next() {
-    if (_isNavigating || _index >= widget.stories.length - 1) {
-      if (!_isNavigating && mounted) Navigator.pop(context);
+    if (_isNavigating) return;
+    if (_index >= widget.stories.length - 1) {
+      if (mounted) Navigator.pop(context);
       return;
     }
-
     _isNavigating = true;
     setState(() => _index++);
     _pageCtrl.jumpToPage(_index);
-    _markCurrent();
-    
-    // Petit délai pour éviter les conflits d'animation
+
     Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) {
         _isNavigating = false;
-        _startProgress();
+        _onStoryChanged();
       }
     });
   }
 
   void _prev() {
-    if (_isNavigating || _index <= 0) {
-      if (!_isNavigating && mounted) Navigator.pop(context);
+    if (_isNavigating) return;
+    if (_index <= 0) {
+      // Restart current
+      _restartCurrent();
       return;
     }
-
     _isNavigating = true;
     setState(() => _index--);
     _pageCtrl.jumpToPage(_index);
-    _markCurrent();
 
     Future.delayed(const Duration(milliseconds: 50), () {
       if (mounted) {
         _isNavigating = false;
-        _startProgress();
+        _onStoryChanged();
       }
     });
+  }
+
+  void _restartCurrent() {
+    if (widget.stories.isEmpty) return;
+    final s = widget.stories[_index];
+    if (s.isVideo) {
+      _videoCtrl?.seekTo(Duration.zero);
+      _videoCtrl?.play();
+    } else {
+      _progress.forward(from: 0);
+    }
   }
 
   void _markCurrent() {
@@ -199,14 +342,17 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     }
   }
 
+  // ============================================================================
+  // TIME FORMATTING
+  // ============================================================================
+
   String _formatTime(DateTime dt, AppLocalizations l10n) {
     final local = dt.toLocal();
     final now = DateTime.now();
     final diff = now.difference(local);
 
     if (diff.inMinutes < 1) return l10n.t('status_just_now');
-    // CORRECTION 1 : Interpolation de texte pour l'argument
-    if (diff.inMinutes < 60) return "${diff.inMinutes} ${l10n.t('status_minutes_ago')}";
+    if (diff.inMinutes < 60) return '${diff.inMinutes} ${l10n.t('status_minutes_ago')}';
     if (diff.inHours < 24 && local.day == now.day) {
       return DateFormat('HH:mm').format(local);
     }
@@ -215,6 +361,10 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     }
     return DateFormat('dd/MM HH:mm').format(local);
   }
+
+  // ============================================================================
+  // ACTIONS
+  // ============================================================================
 
   Future<void> _delete() async {
     final l10n = AppLocalizations.of(context);
@@ -228,7 +378,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
           borderRadius: BorderRadius.circular(16),
           side: BorderSide(color: ThixPolicy.border),
         ),
-        title: Text(l10n.t('status_delete_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold)),
+        title: Text(l10n.t('status_delete_title'), style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800)),
         content: Text(l10n.t('status_delete_message'), style: ThixPolicy.bodyStyle),
         actions: [
           TextButton(
@@ -253,11 +403,10 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
 
     final s = widget.stories[_index];
     try {
-      debugPrint('[StatusViewer] ️ Deleting status: ${s.statusId}');
+      debugPrint('[StatusViewer] 🗑️ Deleting status: ${s.statusId}');
       await ref.read(statusServiceProvider).deleteStatus(s.statusId);
       await ref.read(statusProvider.notifier).refresh();
       if (mounted) Navigator.pop(context);
-      debugPrint('[StatusViewer] ✓ Status deleted');
     } catch (e) {
       debugPrint('[StatusViewer] ❌ Delete error: $e');
       if (mounted) _showError(_StatusValidators.friendlyError(e));
@@ -267,20 +416,35 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   Future<void> _react(String emoji) async {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.selectionClick();
-    
+
+    // Floating reaction animation
+    setState(() {
+      _floatingReactions.add(_FloatingReaction(
+        emoji: emoji,
+        key: UniqueKey(),
+      ));
+    });
+
+    // Clean up old reactions
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          _floatingReactions.removeWhere((r) => r.createdAt.isBefore(DateTime.now().subtract(const Duration(seconds: 2))));
+        });
+      }
+    });
+
     final s = widget.stories[_index];
     try {
-      debugPrint('[StatusViewer] ❤️ Reacting with $emoji');
       await ref.read(statusServiceProvider).react(s.statusId, emoji);
       if (!mounted) return;
-      
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(children: [
             Text(emoji, style: const TextStyle(fontSize: 18)),
             const SizedBox(width: 8),
-            // CORRECTION 2 : Interpolation de texte pour la réaction
-            Expanded(child: Text("${l10n.t('status_reaction_sent')} $emoji")),
+            Expanded(child: Text('${l10n.t('status_reaction_sent')} $emoji')),
           ]),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
@@ -293,16 +457,31 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     }
   }
 
+  /// Double-tap = ❤️ flottant + réaction auto
+  void _doubleTapHeart() {
+    HapticFeedback.mediumImpact();
+    setState(() {
+      _floatingReactions.add(_FloatingReaction(
+        emoji: '❤️',
+        key: UniqueKey(),
+        large: true,
+      ));
+    });
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) setState(() => _floatingReactions.clear());
+    });
+    _react('❤️');
+  }
+
   Future<void> _repost() async {
     final l10n = AppLocalizations.of(context);
     HapticFeedback.mediumImpact();
 
     final s = widget.stories[_index];
     try {
-      debugPrint('[StatusViewer] 🔄 Reposting status');
       final id = await ref.read(statusServiceProvider).repost(s);
       await ref.read(statusProvider.notifier).refresh();
-      
+
       if (!mounted) return;
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -330,9 +509,8 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
   Future<void> _showViewers(String statusId) async {
     final l10n = AppLocalizations.of(context);
     _pause();
-    
+
     try {
-      debugPrint('[StatusViewer] 👁️ Fetching viewers for $statusId');
       final viewers = await ref.read(statusServiceProvider).getViewers(statusId);
       if (!mounted) return;
 
@@ -345,9 +523,9 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
         ),
         builder: (ctx) {
           return DraggableScrollableSheet(
-            initialChildSize: 0.45,
+            initialChildSize: 0.55,
             minChildSize: 0.3,
-            maxChildSize: 0.85,
+            maxChildSize: 0.9,
             expand: false,
             builder: (_, scrollCtrl) {
               return Column(
@@ -367,10 +545,9 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       children: [
                         const Icon(Icons.visibility_outlined, size: 20, color: ThixPolicy.textMain),
                         const SizedBox(width: 8),
-                        // CORRECTION 3 : Interpolation de texte
                         Text(
-                          "${l10n.t('status_viewed_by')} ${viewers.length}",
-                          style: ThixPolicy.titleStyle.copyWith(fontWeight: ThixPolicy.bold, fontSize: 16),
+                          '${l10n.t('status_viewed_by')} ${viewers.length}',
+                          style: ThixPolicy.titleStyle.copyWith(fontWeight: FontWeight.w800, fontSize: 16),
                         ),
                       ],
                     ),
@@ -450,6 +627,10 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     );
   }
 
+  // ============================================================================
+  // BUILD
+  // ============================================================================
+
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -471,7 +652,6 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
     final safeName = _StatusValidators.sanitize(current.displayName, maxLength: _kMaxNameLength);
     final safeContent = _StatusValidators.sanitize(current.content ?? '', maxLength: _kMaxContentLength);
     final safeAvatar = _StatusValidators.sanitizeUrl(current.avatarUrl);
-    final safeMedia = _StatusValidators.sanitizeUrl(current.mediaUrl);
     final bgColor = _StatusValidators.parseBg(current.background);
 
     return Scaffold(
@@ -479,65 +659,40 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
       body: GestureDetector(
         onLongPressStart: (_) => _pause(),
         onLongPressEnd: (_) => _resume(),
+        onDoubleTap: _doubleTapHeart,
         onTapUp: (d) {
           if (_isNavigating) return;
           final w = MediaQuery.of(context).size.width;
-          if (d.localPosition.dx < w / 3) {
+          // Zones de tap : 30% gauche = prev, 30% droite = next, 40% centre = rien (pour ne pas gêner le long press)
+          if (d.localPosition.dx < w * 0.3) {
             _prev();
-          } else if (d.localPosition.dx > 2 * w / 3) {
+          } else if (d.localPosition.dx > w * 0.7) {
             _next();
           }
         },
         child: Stack(
           fit: StackFit.expand,
           children: [
-            // ─ Contenu (Image ou Texte) ──
+            // ── CONTENU : format portrait 9:16 ──
             PageView.builder(
               controller: _pageCtrl,
               physics: const NeverScrollableScrollPhysics(),
               itemCount: stories.length,
               onPageChanged: (i) {
-                // Sync index si swipe manuel
-                if (i != _index) {
+                if (i != _index && !_isNavigating) {
                   setState(() => _index = i);
-                  _markCurrent();
+                  _onStoryChanged();
                 }
               },
               itemBuilder: (_, i) {
-                final s = stories[i];
-                final mediaUrl = _StatusValidators.sanitizeUrl(s.mediaUrl);
-                
-                if (s.isImage && mediaUrl != null) {
-                  return CachedNetworkImage(
-                    imageUrl: mediaUrl,
-                    fit: BoxFit.contain,
-                    // CORRECTION 4 : Suppression de backgroundColor
-                    placeholder: (_, __) => const Center(child: CircularProgressIndicator(color: Colors.white)),
-                    errorWidget: (_, __, ___) => Center(
-                      child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
-                    ),
-                  );
-                }
-                
-                return Container(
-                  color: bgColor,
-                  alignment: Alignment.center,
-                  padding: const EdgeInsets.all(32),
-                  child: Text(
-                    safeContent.isEmpty ? '—' : safeContent,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: _kFontSizeContent,
-                      fontWeight: FontWeight.w700,
-                      height: 1.3,
-                    ),
-                  ),
-                );
+                return _buildStoryContent(stories[i], i == _index, bgColor, safeContent);
               },
             ),
 
-            // ── Top Bar (Progress + Info) ──
+            // ── Floating reactions ──
+            ..._floatingReactions.map((r) => _FloatingHeart(key: r.key, emoji: r.emoji, large: r.large)),
+
+            // ── TOP BAR ──
             SafeArea(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
@@ -553,15 +708,13 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                               animation: _progress,
                               builder: (_, __) {
                                 double value = 0;
-                                if (i < _index) value = 1;
-                                if (i == _index) value = _progress.value;
-                                return LinearProgressIndicator(
-                                  value: value,
-                                  minHeight: _kProgressHeight,
-                                  backgroundColor: Colors.white30,
-                                  valueColor: const AlwaysStoppedAnimation(Colors.white),
-                                  borderRadius: BorderRadius.circular(2),
-                                );
+                                if (i < _index) {
+                                  value = 1;
+                                } else if (i == _index) {
+                                  final s = stories[i];
+                                  value = s.isVideo && _videoReady ? _videoProgress() : _progress.value;
+                                }
+                                return _StoryProgressBar(value: value);
                               },
                             ),
                           ),
@@ -569,7 +722,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                       }),
                     ),
                     const SizedBox(height: 12),
-                    
+
                     // Header Info
                     Row(
                       children: [
@@ -587,8 +740,10 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                current.isMine ? l10n.t('status_my_status') : (safeName.isEmpty ? l10n.t('status_unknown_user') : safeName),
-                                style: TextStyle(
+                                current.isMine
+                                    ? l10n.t('status_my_status')
+                                    : (safeName.isEmpty ? l10n.t('status_unknown_user') : safeName),
+                                style: const TextStyle(
                                   color: Colors.white,
                                   fontWeight: FontWeight.w700,
                                   fontSize: _kFontSizeName,
@@ -596,7 +751,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                               ),
                               Text(
                                 _formatTime(current.createdAt, l10n),
-                                style: TextStyle(
+                                style: const TextStyle(
                                   color: Colors.white70,
                                   fontSize: _kFontSizeTime,
                                 ),
@@ -661,7 +816,22 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
               ),
             ),
 
-            // ── Bottom Actions ──
+            // ── Pause indicator ──
+            if (_paused)
+              Center(
+                child: IgnorePointer(
+                  child: Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withOpacity(0.4),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.pause_rounded, color: Colors.white, size: 48),
+                  ),
+                ),
+              ),
+
+            // ── BOTTOM ACTIONS ──
             Positioned(
               left: 0,
               right: 0,
@@ -689,8 +859,8 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                             onPressed: () => _showViewers(current.statusId),
                             icon: const Icon(Icons.visibility, color: Colors.white70, size: 18),
                             label: Text(
-                              l10n.t('status_views_count'),
-                              style: TextStyle(
+                              '${current.viewsCount ?? 0}',
+                              style: const TextStyle(
                                 color: Colors.white70,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -712,7 +882,7 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
                             icon: const Icon(Icons.repeat, color: Colors.white, size: 18),
                             label: Text(
                               l10n.t('status_repost'),
-                              style: TextStyle(
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -729,12 +899,124 @@ class _StatusViewerPageState extends ConsumerState<StatusViewerPage>
       ),
     );
   }
+
+  // ============================================================================
+  // STORY CONTENT (portrait 9:16)
+  // ============================================================================
+
+  Widget _buildStoryContent(UserStatusStory s, bool isCurrent, Color bgColor, String safeContent) {
+    final mediaUrl = _StatusValidators.sanitizeUrl(s.mediaUrl);
+
+    // ── VIDEO ──
+    if (s.isVideo && mediaUrl != null) {
+      if (isCurrent && _videoReady && _videoCtrl != null && _videoCtrl!.value.isInitialized) {
+        return Container(
+          color: Colors.black,
+          child: Center(
+            child: AspectRatio(
+              aspectRatio: _videoCtrl!.value.aspectRatio > 0
+                  ? _videoCtrl!.value.aspectRatio
+                  : 9 / 16,
+              child: VideoPlayer(_videoCtrl!),
+            ),
+          ),
+        );
+      }
+      // Loading state
+      return Container(
+        color: Colors.black,
+        child: const Center(
+          child: CircularProgressIndicator(color: Colors.white),
+        ),
+      );
+    }
+
+    // ── IMAGE (format portrait 9:16) ──
+    if (s.isImage && mediaUrl != null) {
+      return Container(
+        color: Colors.black,
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              maxHeight: double.infinity,
+              maxWidth: double.infinity,
+            ),
+            child: CachedNetworkImage(
+              imageUrl: mediaUrl,
+              // ✅ BoxFit.cover pour remplir le cadre 9:16 vertical
+              fit: BoxFit.cover,
+              alignment: Alignment.center,
+              placeholder: (_, __) => Container(
+                color: Colors.black,
+                child: const Center(
+                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                ),
+              ),
+              errorWidget: (_, __, ___) => Center(
+                child: Icon(Icons.broken_image_outlined, color: Colors.white54, size: 64),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    // ── TEXT ──
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            bgColor,
+            HSLColor.fromColor(bgColor).withLightness((HSLColor.fromColor(bgColor).lightness - 0.15).clamp(0.0, 1.0)).toColor(),
+          ],
+        ),
+      ),
+      alignment: Alignment.center,
+      padding: const EdgeInsets.all(32),
+      child: Text(
+        safeContent.isEmpty ? '—' : safeContent,
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: _kFontSizeContent,
+          fontWeight: FontWeight.w800,
+          height: 1.3,
+          letterSpacing: -0.5,
+          shadows: [
+            Shadow(color: Colors.black26, blurRadius: 8, offset: Offset(0, 2)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// PROGRESS BAR (style WhatsApp avec bordures arrondies)
+// ============================================================================
+class _StoryProgressBar extends StatelessWidget {
+  final double value;
+  const _StoryProgressBar({required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(2),
+      child: LinearProgressIndicator(
+        value: value,
+        minHeight: 2.5,
+        backgroundColor: Colors.white24,
+        valueColor: const AlwaysStoppedAnimation(Colors.white),
+      ),
+    );
+  }
 }
 
 // ============================================================================
 // REACT BUTTON
 // ============================================================================
-
 class _ReactBtn extends StatelessWidget {
   final String emoji;
   final VoidCallback onTap;
@@ -752,6 +1034,95 @@ class _ReactBtn extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 6),
           child: Text(emoji, style: const TextStyle(fontSize: 22)),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// FLOATING REACTION (animation type Instagram/WhatsApp)
+// ============================================================================
+class _FloatingReaction {
+  final String emoji;
+  final Key key;
+  final DateTime createdAt;
+  final bool large;
+
+  _FloatingReaction({
+    required this.emoji,
+    required this.key,
+    this.large = false,
+  }) : createdAt = DateTime.now();
+}
+
+class _FloatingHeart extends StatefulWidget {
+  final String emoji;
+  final bool large;
+
+  const _FloatingHeart({super.key, required this.emoji, this.large = false});
+
+  @override
+  State<_FloatingHeart> createState() => _FloatingHeartState();
+}
+
+class _FloatingHeartState extends State<_FloatingHeart>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl = AnimationController(
+    vsync: this,
+    duration: Duration(milliseconds: widget.large ? 900 : 1800),
+  );
+  late final Animation<double> _opacity = Tween<double>(begin: 1.0, end: 0.0).animate(
+    CurvedAnimation(parent: _ctrl, curve: const Interval(0.6, 1.0, curve: Curves.easeOut)),
+  );
+  late final Animation<double> _scale = TweenSequence<double>([
+    TweenSequenceItem(tween: Tween(begin: 0.0, end: 1.2).chain(CurveTween(curve: Curves.easeOutBack)), weight: 30),
+    TweenSequenceItem(tween: Tween(begin: 1.2, end: 1.0).chain(CurveTween(curve: Curves.easeOut)), weight: 20),
+    TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.0).chain(CurveTween(curve: Curves.linear)), weight: 50),
+  ]).animate(_ctrl);
+  late final Animation<Offset> _float = Tween<Offset>(
+    begin: Offset.zero,
+    end: const Offset(0, -120),
+  ).animate(CurvedAnimation(parent: _ctrl, curve: Curves.easeOutCubic));
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _ctrl,
+          builder: (context, _) {
+            return Opacity(
+              opacity: _opacity.value,
+              child: Transform.translate(
+                offset: Offset(0, widget.large ? 0 : _float.value.dy),
+                child: Transform.scale(
+                  scale: _scale.value,
+                  child: Text(
+                    widget.emoji,
+                    style: TextStyle(
+                      fontSize: widget.large ? 110 : 48,
+                      shadows: [
+                        Shadow(color: Colors.black.withOpacity(0.3), blurRadius: 12, offset: const Offset(0, 4)),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
         ),
       ),
     );
