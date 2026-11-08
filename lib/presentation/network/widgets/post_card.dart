@@ -1,10 +1,13 @@
 // lib/presentation/network/widgets/post_card.dart
 //
-// PostCard — v7
-// ✅ compteurs ⚡ / commentaires lus en base (plus de « 0 » faux)
-// ✅ photos à ratio réel (façon Facebook), coupe en bas jamais en haut
-// ✅ scroll fluide : pas de keep-alive, pas de SelectableText, overrides stables
-// ✅ style aligné sur la home (zinc + or, mode sombre)
+// PostCard — v8
+// ✅ « voir plus » INLINE façon Facebook (… voir plus à la fin du texte)
+// ✅ bande violette + micro animé quand l'utilisateur est dans un Space
+// ✅ hashtags / mentions / liens : pill colorée de fond + styles renforcés
+// ✅ double-tap = like ❤️ avec burst animé
+// ✅ compteurs animés (pop à chaque changement)
+// ✅ appui long sur l'heure → date complète
+// ✅ compteurs ⚡ / commentaires lus en base, photos ratio réel, scroll fluide
 // Les parties communes sont dans post_card_parts.dart
 import 'dart:async';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -66,9 +69,8 @@ class PostCard extends ConsumerStatefulWidget {
 }
 
 class _PostCardState extends ConsumerState<PostCard> {
-  // Overrides créés UNE seule fois → le state du post ne se réinitialise plus
   late final List<Override> _overrides;
-  WidgetRef? _innerRef; // ref DANS le ProviderScope du post
+  WidgetRef? _innerRef;
 
   bool _isReposting = false;
   bool _isExpanded = false;
@@ -83,6 +85,10 @@ class _PostCardState extends ConsumerState<PostCard> {
   bool _impressionRegistered = false;
   Timer? _impressionDebounce;
   DateTime? _lastContentUpdate;
+
+  // ✅ NOUVEAU : burst ❤️ au double-tap
+  bool _loveBurst = false;
+  Timer? _burstTimer;
 
   final GlobalKey _likeKey = GlobalKey();
 
@@ -147,6 +153,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     _disposeRecognizers();
     _quoteController.dispose();
     _impressionDebounce?.cancel();
+    _burstTimer?.cancel();
     super.dispose();
   }
 
@@ -205,6 +212,9 @@ class _PostCardState extends ConsumerState<PostCard> {
     return PcValidators.isValidUrl(url) ? url : null;
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // ✅ CACHE DU CONTENU + « VOIR PLUS » INLINE
+  // ════════════════════════════════════════════════════════════════════
   void _cacheParsedContent() {
     final raw = PcValidators.sanitize(widget.post.content);
     _previewUrl = _extractFirstUrl(raw);
@@ -221,13 +231,70 @@ class _PostCardState extends ConsumerState<PostCard> {
 
     final truncated = _truncate(content);
     _isTruncatable = truncated.length < content.length;
-    _cachedTruncatedSpans = _isTruncatable ? _parseContent('$truncated…', baseStyle, 0, l10n) : _cachedFullSpans;
+
+    if (_isTruncatable) {
+      // ✅ « … voir plus » INLINE à la fin du texte tronqué (façon Facebook)
+      final tSpans = _parseContent(truncated, baseStyle, 0, l10n);
+      final moreRec = TapGestureRecognizer()
+        ..onTap = () {
+          HapticFeedback.selectionClick();
+          if (mounted) setState(() => _isExpanded = true);
+        };
+      _recognizers.add(moreRec);
+      tSpans.add(TextSpan(
+        text: ' … ${pcTr(l10n, 'post_see_more', 'voir plus')}',
+        style: baseStyle.copyWith(color: PcMono.accent, fontWeight: FontWeight.w800),
+        recognizer: moreRec,
+      ));
+      _cachedTruncatedSpans = tSpans;
+
+      // ✅ « voir moins » inline à la fin du texte complet
+      final fSpans = List<InlineSpan>.from(_cachedFullSpans ?? const <InlineSpan>[]);
+      final lessRec = TapGestureRecognizer()
+        ..onTap = () {
+          HapticFeedback.selectionClick();
+          if (mounted) setState(() => _isExpanded = false);
+        };
+      _recognizers.add(lessRec);
+      fSpans.add(TextSpan(
+        text: '  ${pcTr(l10n, 'post_see_less', 'voir moins')}',
+        style: baseStyle.copyWith(color: PcTheme.text2(context), fontWeight: FontWeight.w700),
+        recognizer: lessRec,
+      ));
+      _cachedFullSpans = fSpans;
+    } else {
+      _cachedTruncatedSpans = _cachedFullSpans;
+    }
   }
 
+  // ════════════════════════════════════════════════════════════════════
+  // ✅ PARSAGE RICHE : mentions / hashtags / liens avec PILL COLORÉE
+  // ════════════════════════════════════════════════════════════════════
   List<InlineSpan> _parseContent(String content, TextStyle baseStyle, int depth, AppLocalizations l10n) {
     if (depth > PcConfig.maxParseDepth || content.isEmpty) return [TextSpan(text: content, style: baseStyle)];
     final spans = <InlineSpan>[];
     var lastIndex = 0;
+
+    // ✅ Styles améliorés : fond coloré (pill) + gras + liens soulignés proprement
+    final mentionStyle = baseStyle.copyWith(
+      color: PcMono.accent,
+      fontWeight: FontWeight.w800,
+      background: Paint()..color = PcMono.accent.withValues(alpha: 0.10),
+    );
+    final tagStyle = baseStyle.copyWith(
+      color: PcMono.accentDeep,
+      fontWeight: FontWeight.w800,
+      background: Paint()..color = PcMono.accentSoft.withValues(alpha: 0.18),
+    );
+    final linkStyle = baseStyle.copyWith(
+      color: PcMono.accent,
+      fontWeight: FontWeight.w600,
+      decoration: TextDecoration.underline,
+      decorationColor: PcMono.accent.withValues(alpha: 0.55),
+      decorationThickness: 1.1,
+      decorationStyle: TextDecorationStyle.solid,
+    );
+
     for (final match in kRichContentRegex.allMatches(content)) {
       if (match.start > lastIndex) spans.add(TextSpan(text: content.substring(lastIndex, match.start), style: baseStyle));
       if (match.group(1) != null) {
@@ -245,16 +312,18 @@ class _PostCardState extends ConsumerState<PostCard> {
       } else if (match.group(4) != null) {
         spans.addAll(_parseContent(match.group(4)!, baseStyle.copyWith(fontStyle: FontStyle.italic), depth + 1, l10n));
       } else if (match.group(5) != null) {
+        // ✅ MENTION : pill dorée + tap profil
         final username = match.group(5)!;
         final rec = TapGestureRecognizer()..onTap = () => _openMention(username);
         _recognizers.add(rec);
         spans.add(TextSpan(
-          text: '@$username',
-          style: baseStyle.copyWith(color: PcMono.accent, fontWeight: FontWeight.bold),
+          text: ' @$username ',
+          style: mentionStyle,
           recognizer: rec,
           semanticsLabel: l10n.t('post_mention', args: [username]),
         ));
       } else if (match.group(6) != null) {
+        // ✅ HASHTAG : pill ambrée + tap route hashtag
         final tag = match.group(6)!;
         final rec = TapGestureRecognizer()
           ..onTap = () {
@@ -264,12 +333,13 @@ class _PostCardState extends ConsumerState<PostCard> {
           };
         _recognizers.add(rec);
         spans.add(TextSpan(
-          text: '#$tag',
-          style: baseStyle.copyWith(color: PcMono.accent, fontWeight: FontWeight.bold),
+          text: ' #$tag ',
+          style: tagStyle,
           recognizer: rec,
           semanticsLabel: l10n.t('post_hashtag', args: [tag]),
         ));
       } else if (match.group(7) != null) {
+        // ✅ LIEN : soulignement propre + tap externe
         var raw = match.group(7)!;
         var trailing = '';
         final punct = kUrlTrailingPunct.firstMatch(raw);
@@ -289,7 +359,7 @@ class _PostCardState extends ConsumerState<PostCard> {
           _recognizers.add(rec);
           spans.add(TextSpan(
             text: raw,
-            style: baseStyle.copyWith(color: PcMono.accent, decoration: TextDecoration.underline),
+            style: linkStyle,
             recognizer: rec,
             semanticsLabel: l10n.t('post_link'),
           ));
@@ -316,7 +386,6 @@ class _PostCardState extends ConsumerState<PostCard> {
   }
 
   // ── Navigation ──
-  /// ✅ Ouvre les commentaires puis relit les compteurs réels au retour
   Future<void> _openComments(String postId) async {
     if (!mounted || !PcValidators.isValidId(postId)) return;
     HapticFeedback.mediumImpact();
@@ -353,7 +422,7 @@ class _PostCardState extends ConsumerState<PostCard> {
         pcToast(context, 'Profil @$username introuvable');
       }
     } catch (_) {
-      if (mounted) pcToast(context, 'Impossible d’ouvrir @$username', bg: ThixPolicy.danger);
+      if (mounted) pcToast(context, 'Impossible d'ouvrir @$username', bg: ThixPolicy.danger);
     }
   }
 
@@ -369,6 +438,18 @@ class _PostCardState extends ConsumerState<PostCard> {
     if (!mounted || !PcValidators.isValidUrl(url)) return;
     HapticFeedback.mediumImpact();
     Navigator.of(context).push(MaterialPageRoute(builder: (_) => PcFullScreenVideoPlayer(videoUrl: url)));
+  }
+
+  // ── ✅ DOUBLE-TAP = LIKE ❤️ AVEC BURST ──
+  void _doubleTapLike(NetworkPost post, WidgetRef ref) {
+    if (!_isAuthenticated) return;
+    HapticFeedback.mediumImpact();
+    if (!post.isLiked) ref.read(postItemProvider.notifier).toggleLike();
+    setState(() => _loveBurst = true);
+    _burstTimer?.cancel();
+    _burstTimer = Timer(const Duration(milliseconds: 700), () {
+      if (mounted) setState(() => _loveBurst = false);
+    });
   }
 
   // ── Partage ──
@@ -449,6 +530,15 @@ class _PostCardState extends ConsumerState<PostCard> {
 
     if (_displayContent.isEmpty) return preview;
 
+    // ✅ Texte tronqué + « … voir plus » inline
+    if (_isTruncatable && !_isExpanded) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text.rich(TextSpan(children: _cachedTruncatedSpans ?? [])),
+        preview,
+      ]);
+    }
+
+    // ✅ Texte complet multi-paragraphes + « voir moins »
     if (_isMultiParagraph && _cachedParagraphSpans != null) {
       final list = _cachedParagraphSpans!;
       return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -456,31 +546,28 @@ class _PostCardState extends ConsumerState<PostCard> {
           Text.rich(TextSpan(children: list[i])),
           if (i < list.length - 1) const SizedBox(height: 12),
         ],
-        preview,
-      ]);
-    }
-
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text.rich(TextSpan(children: _isExpanded ? (_cachedFullSpans ?? []) : (_cachedTruncatedSpans ?? []))),
-      if (_isTruncatable)
-        Semantics(
-          button: true,
-          label: _isExpanded ? l10n.t('post_see_less') : l10n.t('post_see_more'),
-          child: GestureDetector(
+        if (_isTruncatable)
+          GestureDetector(
             behavior: HitTestBehavior.opaque,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _isExpanded = !_isExpanded);
+              setState(() => _isExpanded = false);
             },
             child: Padding(
               padding: const EdgeInsets.only(top: 6),
               child: Text(
-                _isExpanded ? l10n.t('post_see_less') : l10n.t('post_see_more'),
+                l10n.t('post_see_less'),
                 style: ThixPolicy.labelStyle.copyWith(color: PcMono.accent, fontSize: 13, fontWeight: FontWeight.bold),
               ),
             ),
           ),
-        ),
+        preview,
+      ]);
+    }
+
+    // ✅ Texte complet (spans avec « voir moins » inline)
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text.rich(TextSpan(children: _cachedFullSpans ?? [])),
       preview,
     ]);
   }
@@ -499,7 +586,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     );
   }
 
-  // ── ✅ Médias : 1 photo = ratio réel ; 2+ = grille, coupe en bas ──
+  // ── Médias : 1 photo = ratio réel ; 2+ = grille, coupe en bas ──
   Widget _buildMedia(List<String> rawUrls, AppLocalizations l10n) {
     final urls = rawUrls.where(PcValidators.isValidUrl).toList();
     if (urls.isEmpty) return const SizedBox.shrink();
@@ -1040,13 +1127,13 @@ class _PostCardState extends ConsumerState<PostCard> {
     await ref.read(postItemProvider.notifier).react(code);
   }
 
-  // ── Menu ⋯ ──
+  // ── Stats ──
   int _impressionsOf(NetworkPost post) => post.views ?? 0;
 
   void _showStats(NetworkPost post, AppLocalizations l10n) {
     final rows = <MapEntry<String, int>>[
       MapEntry(pcTr(l10n, 'post_stats_impressions', 'Impressions'), _impressionsOf(post)),
-      MapEntry(pcTr(l10n, 'post_stats_likes', 'J’aime'), post.likesCount),
+      MapEntry(pcTr(l10n, 'post_stats_likes', 'J'aime'), post.likesCount),
       MapEntry(pcTr(l10n, 'post_stats_comments', 'Commentaires'), post.commentsCount),
       MapEntry(pcTr(l10n, 'post_stats_reposts', 'Republications'), post.repostsCount),
     ];
@@ -1128,7 +1215,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                 tile(Icons.send_outlined, l10n.t('post_share'), () => _sharePost(post)),
                 tile(
                   post.isSaved ? Icons.bookmark_remove_outlined : Icons.bookmark_add_outlined,
-                  post.isSaved ? pcTr(l10n, 'post_unsave_menu', 'Retirer des enregistrements') : pcTr(l10n, 'post_save_menu', 'Enregistrer'),
+                  post.isSaved ? pcTr(l10n, 'post_unsave_menu', 'Retiré des enregistrements') : pcTr(l10n, 'post_save_menu', 'Enregistrer'),
                   () => _toggleSaveUi(post, ref, l10n),
                 ),
                 if (images.length == 1)
@@ -1187,6 +1274,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     );
   }
 
+  // ── Header (✅ appui long sur l'heure = date complète) ──
   Widget _buildHeader(
     NetworkPost post,
     bool isOwner,
@@ -1287,20 +1375,24 @@ class _PostCardState extends ConsumerState<PostCard> {
                 const Padding(padding: EdgeInsets.only(left: 6), child: Icon(Icons.verified_rounded, color: PcMono.accent, size: 15)),
             ]),
             const SizedBox(height: 2),
-            Text(pcTimeAgo(context, post.createdAt),
-                style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: PcTheme.text2(context), fontWeight: FontWeight.w600)),
+            // ✅ Appui long → date complète
+            GestureDetector(
+              onLongPress: () => pcToast(context, pcFullDate(post.createdAt), seconds: 2),
+              child: Text(pcTimeAgo(context, post.createdAt),
+                  style: ThixPolicy.captionStyle.copyWith(fontSize: 11, color: PcTheme.text2(context), fontWeight: FontWeight.w600)),
+            ),
           ]),
         ),
       ),
       IconButton(
-        tooltip: pcTr(l10n, 'post_more_options', 'Plus d’options'),
+        tooltip: pcTr(l10n, 'post_more_options', 'Plus d'options'),
         onPressed: () => _showPostMenu(post, isOwner, isCurrentUserFree, ref, l10n),
         icon: Icon(Icons.more_horiz_rounded, color: PcTheme.text2(context)),
       ),
     ]);
   }
 
-  // ── Barre d'actions : une ligne, compteurs toujours visibles ──
+  // ── ✅ Barre d'actions : compteurs ANIMÉS ──
   Widget _buildActionRow(NetworkPost post, bool isLiked, bool isOwner, WidgetRef ref, AppLocalizations l10n) {
     final emoji = isLiked ? pcReactionEmoji(PcCache.instance.myReactions[post.id]) : null;
     final grey = PcTheme.text2(context);
@@ -1317,7 +1409,7 @@ class _PostCardState extends ConsumerState<PostCard> {
                 ? Text(emoji, style: const TextStyle(fontSize: 21, height: 1.1))
                 : Icon(isLiked ? Icons.bolt_rounded : Icons.bolt_outlined, size: 24, color: isLiked ? PcTheme.gold : grey),
           ),
-          label: pcCount(post.likesCount),
+          labelWidget: PcAnimatedCount(count: post.likesCount, color: isLiked ? PcTheme.goldDeep : grey),
           color: isLiked ? PcTheme.goldDeep : grey,
           onTap: () {
             if (!_isAuthenticated) return;
@@ -1329,21 +1421,21 @@ class _PostCardState extends ConsumerState<PostCard> {
         ),
         PcActionBtn(
           icon: Icons.chat_bubble_outline_rounded,
-          label: pcCount(post.commentsCount),
+          labelWidget: PcAnimatedCount(count: post.commentsCount, color: grey),
           color: grey,
           onTap: () => _openComments(post.id),
           semanticsLabel: l10n.t('post_comments'),
         ),
         PcActionBtn(
           icon: Icons.repeat_rounded,
-          label: pcCount(post.repostsCount),
+          labelWidget: PcAnimatedCount(count: post.repostsCount, color: post.isReposted ? ThixPolicy.success : grey),
           color: post.isReposted ? ThixPolicy.success : grey,
           onTap: () => _repost(post, ref, l10n),
           semanticsLabel: l10n.t('post_repost'),
         ),
         PcActionBtn(
           icon: Icons.bar_chart_rounded,
-          label: pcCount(impressions),
+          labelWidget: PcAnimatedCount(count: impressions, color: grey),
           color: grey,
           onTap: () {
             HapticFeedback.selectionClick();
@@ -1373,7 +1465,7 @@ class _PostCardState extends ConsumerState<PostCard> {
     );
   }
 
-  // ── BUILD ──
+  // ── BUILD ─
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1406,65 +1498,100 @@ class _PostCardState extends ConsumerState<PostCard> {
           final showContent = post.content.isNotEmpty && !pcIsGhostRepost(post);
           final gold = ThixPolicy.gold;
 
-          return RepaintBoundary(
-            child: Container(
-              decoration: BoxDecoration(
-                color: PcTheme.card(context),
-                border: Border(
-                  top: widget.isFirst ? BorderSide(color: gold, width: PcConfig.cardFirstTopBorderWidth) : BorderSide.none,
-                  bottom: BorderSide(color: gold.withValues(alpha: 0.45), width: PcConfig.cardBottomBorderWidth),
-                ),
+          final card = Container(
+            decoration: BoxDecoration(
+              color: PcTheme.card(context),
+              border: Border(
+                top: widget.isFirst ? BorderSide(color: gold, width: PcConfig.cardFirstTopBorderWidth) : BorderSide.none,
+                bottom: BorderSide(color: gold.withValues(alpha: 0.45), width: PcConfig.cardBottomBorderWidth),
               ),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: widget.onTap ?? () => _openComments(post.id),
-                  onLongPress: () => _showPostMenu(post, isOwner, isCurrentUserFree, ref, l10n),
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                      if (post.isPinned) _buildPinnedBadge(l10n),
-                      _buildPostBadge(post, l10n),
-                      _buildHeader(post, isOwner, isFollowing, isCertified, tier, status, isLegacyVerified, isCurrentUserFree, ref, l10n),
-                      if (post.isRepostCard)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 8, bottom: 4),
-                          child: Row(children: [
-                            Icon(Icons.repeat_rounded, size: 14, color: PcTheme.text2(context)),
-                            const SizedBox(width: 6),
-                            Text(l10n.t('reposted_label'),
-                                style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: PcTheme.text2(context))),
-                          ]),
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: widget.onTap ?? () => _openComments(post.id),
+                onLongPress: () => _showPostMenu(post, isOwner, isCurrentUserFree, ref, l10n),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+                  child: Stack(children: [
+                    // ✅ Double-tap = like ❤️
+                    GestureDetector(
+                      onDoubleTap: () => _doubleTapLike(post, ref),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                        if (post.isPinned) _buildPinnedBadge(l10n),
+                        _buildPostBadge(post, l10n),
+                        _buildHeader(post, isOwner, isFollowing, isCertified, tier, status, isLegacyVerified, isCurrentUserFree, ref, l10n),
+                        if (post.isRepostCard)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 4),
+                            child: Row(children: [
+                              Icon(Icons.repeat_rounded, size: 14, color: PcTheme.text2(context)),
+                              const SizedBox(width: 6),
+                              Text(l10n.t('reposted_label'),
+                                  style: ThixPolicy.captionStyle.copyWith(fontSize: 11.5, fontWeight: FontWeight.w600, color: PcTheme.text2(context))),
+                            ]),
+                          ),
+                        const SizedBox(height: 12),
+                        if (showContent) _buildPostContent(post, l10n),
+                        if (post.isRepostCard && PcValidators.isValidId(post.repostOfId)) ...[
+                          const SizedBox(height: 12),
+                          PcOriginalPostEmbed(postId: post.repostOfId!),
+                        ],
+                        if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
+                          const SizedBox(height: 12),
+                          RepaintBoundary(child: _buildMedia([...post.imageUrls, ...post.videoUrls], l10n)),
+                        ],
+                        if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
+                          const SizedBox(height: 12),
+                          RepaintBoundary(child: PcAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
+                        ],
+                        if (post.postType == PostType.poll && PcValidators.isValidPollData(post.pollData)) ...[
+                          const SizedBox(height: 12),
+                          _buildPollWidget(post, l10n),
+                        ] else if (post.postType == PostType.challenge) ...[
+                          const SizedBox(height: 12),
+                          _buildChallengeWidget(post, l10n),
+                        ],
+                        const SizedBox(height: 12),
+                        if (post.likesCount > 0)
+                          PcLikersStack(count: post.likesCount, postId: post.id, isLikedByMe: post.isLiked, l10n: l10n),
+                        _buildActionRow(post, post.isLiked, isOwner, ref, l10n),
+                      ]),
+                    ),
+                    // ✅ Burst ❤️ au centre (double-tap)
+                    if (_loveBurst)
+                      Positioned.fill(
+                        child: Center(
+                          child: IgnorePointer(
+                            child: PcPop(
+                              active: _loveBurst,
+                              child: Icon(
+                                Icons.favorite_rounded,
+                                size: 92,
+                                color: Colors.white.withValues(alpha: 0.95),
+                                shadows: [
+                                  Shadow(color: Colors.black.withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 4)),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
-                      const SizedBox(height: 12),
-                      if (showContent) _buildPostContent(post, l10n),
-                      if (post.isRepostCard && PcValidators.isValidId(post.repostOfId)) ...[
-                        const SizedBox(height: 12),
-                        PcOriginalPostEmbed(postId: post.repostOfId!),
-                      ],
-                      if (!post.isRepostCard && (post.hasImages || post.hasVideos)) ...[
-                        const SizedBox(height: 12),
-                        RepaintBoundary(child: _buildMedia([...post.imageUrls, ...post.videoUrls], l10n)),
-                      ],
-                      if (post.hasAudio && post.audioUrls.isNotEmpty) ...[
-                        const SizedBox(height: 12),
-                        RepaintBoundary(child: PcAudioPlayer(audioUrl: post.audioUrls.first, duration: post.audioDurationSeconds)),
-                      ],
-                      if (post.postType == PostType.poll && PcValidators.isValidPollData(post.pollData)) ...[
-                        const SizedBox(height: 12),
-                        _buildPollWidget(post, l10n),
-                      ] else if (post.postType == PostType.challenge) ...[
-                        const SizedBox(height: 12),
-                        _buildChallengeWidget(post, l10n),
-                      ],
-                      const SizedBox(height: 12),
-                      if (post.likesCount > 0)
-                        PcLikersStack(count: post.likesCount, postId: post.id, isLikedByMe: post.isLiked, l10n: l10n),
-                      _buildActionRow(post, post.isLiked, isOwner, ref, l10n),
-                    ]),
-                  ),
+                      ),
+                  ]),
                 ),
               ),
+            ),
+          );
+
+          return RepaintBoundary(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // ✅ Bande violette + micro si l'utilisateur est dans un Space
+                if (widget.isFirst) const PcSpaceLiveBandHost(),
+                card,
+              ],
             ),
           );
         },
