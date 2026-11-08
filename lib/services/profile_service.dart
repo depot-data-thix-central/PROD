@@ -1,4 +1,15 @@
 // lib/services/profile_service.dart
+//
+// v2 :
+//  ✅ FIX ID — ensureProfileExists() utilise ON CONFLICT DO NOTHING
+//     (ignoreDuplicates: true) pour ne PAS écraser un profil existant
+//     avec des valeurs par défaut (THIX-PENDING, etc.).
+//     Avant : un ensure après perte de réseau réécrivait thix_id='THIX-PENDING'
+//     et registration_status='draft_step2' sur un compte déjà activé,
+//     ce qui forçait l'utilisateur à refaire l'onboarding.
+//
+// v1 : version originale (streams realtime, updateProfile sécurisé, etc.)
+
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
@@ -57,6 +68,9 @@ class ProfileService {
     return t;
   }
 
+  static String _maskId(String s) =>
+      s.length <= 8 ? '***' : '${s.substring(0, 4)}...${s.substring(s.length - 3)}';
+
   // ─── Récupération publique (PAGINATION SCALABLE) ──────────────────────
 
   /// Récupère des suggestions de profils avec pagination (Offset/Limit)
@@ -83,28 +97,82 @@ class ProfileService {
     }
   }
 
-  // ─── Garantir l’existence d’un profil ──────────────────────────────────
+  // ─── Garantir l'existence d'un profil ──────────────────────────────────
 
+  /// ✅ FIX ID : version "soft" qui ne peut PAS écraser un profil existant.
+  ///
+  /// Avant : `SupabaseSafeWrite.upsert()` faisait un upsert classique
+  /// (ON CONFLICT DO UPDATE SET ...) qui réécrivait `thix_id`, `avatar_url`,
+  /// `display_name` avec des valeurs par défaut si le profil existait déjà.
+  /// Conséquence : après une perte de réseau, un `ensureProfileExists`
+  /// réinitialisait `thix_id` à `'THIX-PENDING'` sur un compte déjà activé,
+  /// forçant l'utilisateur à refaire l'onboarding et à générer un nouveau
+  /// THIX ID.
+  ///
+  /// Maintenant : utilise `ignoreDuplicates: true` (ON CONFLICT DO NOTHING).
+  /// Si le profil existe, il reste intact. Sinon, il est créé avec les
+  /// valeurs fournies (uniquement si non-vides/non-pending).
   Future<void> ensureProfileExists({required AppUser user}) async {
-    final base = ThixProfile.fallback(
-      userId: user.id,
-      thixId: user.thixId,
-      displayName: user.displayName,
-    );
+    final payload = <String, dynamic>{
+      'id': user.id,
+      // ✅ FIX : n'écris thix_id que s'il est valide (non-pending, non-vide)
+      if (user.thixId.trim().isNotEmpty &&
+          !_isPendingThixId(user.thixId))
+        'thix_id': user.thixId.trim(),
+      // ✅ FIX : n'écris avatar_url que s'il est fourni
+      if (user.photoUrl != null && user.photoUrl!.trim().isNotEmpty)
+        'avatar_url': user.photoUrl,
+      // ✅ FIX : display_name avec fallback, mais ne pas écraser un existant
+      'display_name': user.displayName.trim().isEmpty
+          ? 'Utilisateur THIX'
+          : user.displayName.trim(),
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    };
+
     try {
-      await SupabaseSafeWrite.upsert(
-        client: SupabaseConfig.client,
-        table: table,
-        payload: {
-          'id': base.userId,
-          'thix_id': base.thixId,
-          'avatar_url': user.photoUrl,
-        },
-        onUnknownColumn: _reloadSchemaCache,
+      // ✅ FIX ID : bypass SupabaseSafeWrite pour passer ignoreDuplicates: true
+      // (ON CONFLICT DO NOTHING). SupabaseSafeWrite ne supporte pas encore
+      // ce paramètre dans sa signature publique.
+      await SupabaseConfig.client.from(table).upsert(
+        payload,
+        onConflict: 'id',
+        ignoreDuplicates: true, // ← ON CONFLICT DO NOTHING
       );
+      debugPrint('ProfileService: ensureProfileExists (soft, no-overwrite) '
+          'uid=${_maskId(user.id)}');
     } catch (e) {
-      debugPrint('ensureProfileExists failed: $e');
+      // Les erreurs réseau ne doivent pas faire crasher l'app
+      final msg = e.toString().toLowerCase();
+      if (msg.contains('socket') ||
+          msg.contains('network') ||
+          msg.contains('failed host lookup') ||
+          msg.contains('timeout') ||
+          msg.contains('authretryable')) {
+        debugPrint('ProfileService: ensureProfileExists offline '
+            '(ignored) uid=${_maskId(user.id)}: $e');
+      } else {
+        debugPrint('ensureProfileExists failed uid=${_maskId(user.id)}: $e');
+      }
     }
+  }
+
+  /// ✅ NOUVEAU : détection centralisée des thix_id "pending".
+  /// Même logique que dans supabase_auth_manager.dart.
+  static bool _isPendingThixId(String? id) {
+    if (id == null) return true;
+    final v = id.trim().toUpperCase();
+    if (v.isEmpty) return true;
+    const prefixes = [
+      'THIX-PENDING',
+      'THIX-000000',
+      'THIX-PENDING-',
+      'THIX-CD-FALLBACK',
+      'THIX-0',
+    ];
+    for (final prefix in prefixes) {
+      if (v == prefix || v.startsWith('$prefix-')) return true;
+    }
+    return false;
   }
 
   // ─── Streams en temps réel (Supabase Realtime) avec Cache ────────────
@@ -165,11 +233,11 @@ class ProfileService {
           );
     } catch (e) {
       debugPrint('ProfileService: failed to create stream $cacheKey: $e');
-      // Stream vide en cas d’échec total
+      // Stream vide en cas d'échec total
       return const Stream<ThixProfile?>.empty();
     }
 
-    // Quand plus personne n’écoute, on nettoie
+    // Quand plus personne n'écoute, on nettoie
     controller.onCancel = () {
       // Petit délai pour éviter de tuer le stream trop vite si un autre listener arrive
       Future.delayed(const Duration(seconds: 2), () {
@@ -227,7 +295,7 @@ class ProfileService {
     }
   }
 
-  // ─── Streams des sous‑tables (Realtime) ───────────────────────────────
+  // ─── Streams des sous-tables (Realtime) ───────────────────────────────
 
   Stream<List<Map<String, dynamic>>> streamFormations(String userId) =>
       _streamSubTable(formationsTable, userId);
@@ -483,7 +551,7 @@ class ProfileService {
     }
   }
 
-  // ─── Gestion des sous‑tables (remplacement complet) ──────────────────
+  // ─── Gestion des sous-tables (remplacement complet) ──────────────────
 
   Future<void> replaceFormations({
     required String userId,
