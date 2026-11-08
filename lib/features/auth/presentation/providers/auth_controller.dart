@@ -1,4 +1,11 @@
 // lib/features/auth/presentation/providers/auth_controller.dart
+//
+// v2 :
+//  ✅ FIX OFFLINE — isAuthenticated considère le snapshot Hive comme session valide
+//  ✅ FIX SESSION — signOut() efface le snapshot (seul endroit volontaire)
+//
+// v1 : Legacy ChangeNotifier + AsyncNotifier Riverpod.
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -10,6 +17,8 @@ import 'package:thix_id/auth/supabase_auth_manager.dart';
 import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/account_type.dart';
 import 'package:thix_id/services/profile_service.dart';
+import 'package:thix_id/services/session_snapshot.dart'; // ✅ NOUVEAU
+import 'package:thix_id/supabase/supabase_config.dart';     // ✅ NOUVEAU
 
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 
@@ -31,10 +40,25 @@ class AuthController extends ChangeNotifier {
   }
 
   AppUser? get currentUser => _auth.currentUser;
-  
-  bool get isAuthenticated => 
-      currentUser != null || 
-      Supabase.instance.client.auth.currentSession != null;
+
+  // ✅ FIX OFFLINE — considère le snapshot Hive comme session valide.
+  //
+  // Avant : si Supabase perdait la session (jeton refresh refusé après perte
+  // de réseau prolongée), isAuthenticated retournait false → le router
+  // redirigeait vers /login → l'utilisateur était forcé de se réinscrire.
+  //
+  // Maintenant : si on a un snapshot Hive récent, on considère l'utilisateur
+  // comme "en attente de reconnexion" plutôt que "déconnecté". Le router
+  // affichera /no-connection au lieu de /login.
+  bool get isAuthenticated {
+    if (currentUser != null) return true;
+    if (SupabaseConfig.isInitialized &&
+        Supabase.instance.client.auth.currentSession != null) {
+      return true;
+    }
+    // ✅ Snapshot Hive = session "souvenue"
+    return SessionSnapshot.load() != null;
+  }
 
   Future<void> init() => _auth.init();
 
@@ -109,12 +133,28 @@ class AuthController extends ChangeNotifier {
     return u;
   }
 
+  // ✅ FIX SESSION — efface le snapshot Hive en plus du cache chat.
+  //
+  // C'est le SEUL endroit où le snapshot est effacé. Une déconnexion
+  // non-volontaire (jeton refresh refusé par Supabase) ne passe PAS par
+  // cette méthode → le snapshot est préservé pour pouvoir restaurer
+  // l'état de l'utilisateur au retour du réseau.
   Future<void> signOut() async {
+    debugPrint('[AuthController] 👋 signOut() volontaire');
+
     try {
       await ChatOfflineCache.instance.clear();
     } catch (e) {
       debugPrint('[Auth] offline cache clear: $e');
     }
+
+    // ✅ NOUVEAU : effacer le snapshot Hive
+    try {
+      await SessionSnapshot.clear();
+    } catch (e) {
+      debugPrint('[Auth] snapshot clear: $e');
+    }
+
     await _auth.signOut();
     notifyListeners();
   }
@@ -253,7 +293,6 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
     state = const AsyncLoading();
     try {
       final draft = profileDraft != null ? ProfileDraft.fromMap(profileDraft) : null;
-      // ✅ Correction ici : Pas de paramètre accountType superflu
       final user = await _auth.registerEnterprise(
         email: email,
         password: password,
@@ -372,10 +411,12 @@ class AuthControllerNotifier extends AsyncNotifier<AppUser?> {
     }
   }
 
+  // Note : cette méthode délègue à AuthController.signOut() (Partie 1),
+  // qui efface déjà le snapshot Hive. Aucune modification nécessaire ici.
   Future<void> signOut() async {
     state = const AsyncLoading();
     try {
-      await _auth.signOut();
+      await _auth.signOut(); // ← appelle AuthController.signOut() corrigé
       state = const AsyncData(null);
     } catch (e, st) {
       state = AsyncError(e, st);
