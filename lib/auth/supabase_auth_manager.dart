@@ -1,13 +1,23 @@
 // lib/auth/supabase_auth_manager.dart
 //
-// v2 :
+// v3 :
+//  ✅ FIX OFFLINE — _selectProfileRow lève sur erreur réseau (plus de retour null
+//     qui confondait "profil absent" et "DNS mort" → plus de création de profil fantôme)
+//  ✅ FIX OFFLINE — _hydrateUser ne réécrit JAMAIS registration_status/thix_id en offline
+//     (garde le fallback / snapshot au lieu de forcer draft_step2)
+//  ✅ FIX ID — _ensureProfileRow passe ignoreDuplicates: true → ON CONFLICT DO NOTHING
+//     (un ensure ne peut plus écraser un THIX ID / registration_status existant)
+//  ✅ FIX ID — finalizeRegistration() court-circuitée si déjà active/completed
+//     (plus de régénération du THIX ID après une perte de réseau)
+//  ✅ FIX SESSION — snapshot local (SessionSnapshot) sauvegardé après chaque hydratation
+//     réussie, restauré au démarrage si pas de session Supabase → l'utilisateur
+//     reste "connecté" après redémarrage offline.
+//
+// v2 (conservé) :
 //  ✅ la déconnexion NON volontaire (signedOut déclenché par Supabase quand le
-//     renouvellement du jeton échoue) ne supprime plus le token push →
-//     les notifications et appels entrants ne meurent plus
-//  ✅ le token push n'est retiré que par signOut() (déconnexion volontaire),
-//     et AVANT la fin de session (sinon la RLS peut refuser la suppression)
+//     renouvellement du jeton échoue) ne supprime plus le token push
+//  ✅ le token push n'est retiré que par signOut() (déconnexion volontaire)
 //  ✅ un renouvellement de jeton (tokenRefreshed) ne relance plus l'hydratation
-//     ni l'initialisation du push
 //  ✅ chaque évènement d'authentification est journalisé : [Auth] 🔔 event=...
 
 import 'dart:async';
@@ -21,6 +31,7 @@ import 'package:thix_id/models/app_user.dart';
 import 'package:thix_id/models/thix_profile.dart';
 import 'package:thix_id/services/profile_service.dart';
 import 'package:thix_id/services/push_notification_service.dart';
+import 'package:thix_id/services/session_snapshot.dart'; // ✅ FIX SESSION
 import 'package:thix_id/services/supabase_safe_write.dart';
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/models/account_type.dart';
@@ -59,8 +70,6 @@ String _maskId(String s) =>
 // AUTH ERROR CODES (découplage UI/Service)
 // ============================================================================
 
-/// Codes d'erreur authentification.
-/// L'UI se charge de traduire chaque code via i18n.
 enum AuthErrorCode {
   identifierRequired,
   passwordRequired,
@@ -94,11 +103,10 @@ enum AuthErrorCode {
   resetPasswordFailed,
 }
 
-/// Exception d'authentification avec code découplé de l'UI.
 class AuthException implements Exception {
   final AuthErrorCode code;
-  final Map<String, dynamic>? data; // Données additionnelles pour i18n
-  final String? rawMessage; // Message brut pour debug uniquement
+  final Map<String, dynamic>? data;
+  final String? rawMessage;
 
   AuthException(this.code, {this.data, this.rawMessage});
 
@@ -112,7 +120,6 @@ class AuthException implements Exception {
 class _AuthValidators {
   _AuthValidators._();
 
-  /// Sanitize une entrée utilisateur (XSS + caractères de contrôle)
   static String sanitize(String? input, {int maxLength = 500}) {
     if (input == null || input.trim().isEmpty) return '';
     var s = input
@@ -159,7 +166,7 @@ Future<T> _authRetry<T>(
       debugPrint('[Auth] ⏱️ $label timeout — retry $attempt/$maxRetries');
       await Future.delayed(_kRetryDelay);
     } on sup.AuthException {
-      rethrow; // Pas de retry sur erreurs auth (credentials invalides, etc.)
+      rethrow;
     } catch (e) {
       attempt++;
       final msg = e.toString().toLowerCase();
@@ -179,11 +186,24 @@ Future<T> _authRetry<T>(
   }
 }
 
+/// ✅ FIX OFFLINE — détection centralisée des erreurs réseau (utilisée dans
+/// _selectProfileRowStrict pour ne plus confondre "profil absent" et "DNS mort").
+bool _isNetworkError(Object e) {
+  final msg = e.toString().toLowerCase();
+  return msg.contains('socket') ||
+      msg.contains('network') ||
+      msg.contains('connection reset') ||
+      msg.contains('connection refused') ||
+      msg.contains('failed host lookup') ||
+      msg.contains('authretryablefetchexception') ||
+      msg.contains('handshakeexception') ||
+      msg.contains('unreachable');
+}
+
 // ============================================================================
 // SUPABASE AUTH MANAGER
 // ============================================================================
 
-/// Implémentation Supabase de AuthManager.
 class SupabaseAuthManager implements AuthManager {
   final SupabaseClient _client;
   final ProfileService _profiles;
@@ -193,10 +213,7 @@ class SupabaseAuthManager implements AuthManager {
   StreamSubscription<ThixProfile?>? _profileSub;
 
   bool _initialized = false;
-  bool _isBindingProfile = false; // évite race
-
-  /// Utilisateur pour lequel le push est enregistré (évite de tout
-  /// réinitialiser à chaque évènement d'authentification).
+  bool _isBindingProfile = false;
   String? _pushUserId;
 
   SupabaseAuthManager({SupabaseClient? client, ProfileService? profiles})
@@ -213,7 +230,6 @@ class SupabaseAuthManager implements AuthManager {
   // INITIALISATION ET GESTION DE SESSION
   // ==========================================================================
 
-  /// Enregistre le push une seule fois par utilisateur.
   void _registerPushIfNeeded(String uid) {
     if (_pushUserId == uid) return;
     _pushUserId = uid;
@@ -230,7 +246,6 @@ class SupabaseAuthManager implements AuthManager {
 
     debugPrint('[Auth] 🚀 Initializing auth manager');
 
-    // Annule proprement l'ancien listener
     await _sub?.cancel();
     _sub = null;
 
@@ -243,19 +258,17 @@ class SupabaseAuthManager implements AuthManager {
             debugPrint('[Auth] 🔔 event=${event.name} '
                 'user=${user == null ? 'none' : _maskId(user.id)}');
 
-            // Session absente : déconnexion volontaire OU perdue (renouvellement
-            // du jeton refusé). Dans les deux cas on vide l'état local, mais on
-            // NE retire PAS le token push (voir signOut()).
             if (user == null) {
               if (event == AuthChangeEvent.signedOut && _pushUserId != null) {
                 debugPrint('[Auth] ⚠️ signedOut reçu : session perdue ou '
                     'déconnexion (token push conservé)');
               }
-              await _cleanupSession();
+              // ✅ FIX SESSION — NE PAS effacer le snapshot sur déconnexion
+              // non-volontaire. Seul signOut() (volontaire) le fait.
+              await _cleanupSession(clearSnapshot: false);
               return;
             }
 
-            // Renouvellement de jeton du même utilisateur : rien à refaire
             if (event == AuthChangeEvent.tokenRefreshed &&
                 _currentUser.value?.id == user.id) {
               return;
@@ -265,21 +278,25 @@ class SupabaseAuthManager implements AuthManager {
               final hydrated = await _hydrateUser(user);
               _currentUser.value = hydrated;
               _bindProfileSync(user.id);
+              // ✅ FIX SESSION — persister l'état authentifié réussi
+              unawaited(SessionSnapshot.save(hydrated));
               debugPrint('[Auth] ✓ User hydrated: ${_maskId(user.id)}');
             } catch (e) {
-              // Offline / network → on garde la session locale
-              debugPrint('[Auth] ⚠️ Hydrate offline, keeping session alive: $e');
-              _currentUser.value ??= _buildFallbackUser(user);
+              debugPrint('[Auth] ⚠️ Hydrate failed, keeping session alive: $e');
+              // ✅ FIX OFFLINE — préférer le snapshot au fallback vide si disponible
+              final cached = SessionSnapshot.load();
+              if (cached != null && cached.id == user.id) {
+                _currentUser.value ??= cached;
+              } else {
+                _currentUser.value ??= _buildFallbackUser(user);
+              }
             }
             _registerPushIfNeeded(user.id);
           } catch (e) {
-            // Ne jamais laisser remonter une erreur de stream
             debugPrint('[Auth] ❌ Auth state error (swallowed): $e');
           }
         },
         onError: (e, st) {
-          // Empêche "Stream has already been listened to" et les
-          // AuthRetryableFetchException de crasher l'UI
           debugPrint('[Auth] ⚠️ onAuthStateChange error (ignored): $e');
         },
         cancelOnError: false,
@@ -292,22 +309,37 @@ class SupabaseAuthManager implements AuthManager {
     final s = _client.auth.currentSession;
     final u = s?.user;
     if (u == null) {
-      debugPrint('[Auth] ℹ️ Aucune session au démarrage');
-      await _cleanupSession();
+      debugPrint('[Auth] ℹ️ Aucune session Supabase au démarrage');
+      // ✅ FIX SESSION — tenter de restaurer depuis le snapshot local
+      final cached = SessionSnapshot.load();
+      if (cached != null) {
+        debugPrint('[Auth] 📦 Session restaurée depuis snapshot: ${_maskId(cached.id)}');
+        _currentUser.value = cached;
+        _pushUserId = cached.id;
+        return;
+      }
+      await _cleanupSession(clearSnapshot: false);
       return;
     }
 
-    // Le push est déjà initialisé par main.dart au démarrage
     _pushUserId = u.id;
 
     try {
       final hydrated = await _hydrateUser(u);
       _currentUser.value = hydrated;
       _bindProfileSync(u.id);
+      // ✅ FIX SESSION
+      unawaited(SessionSnapshot.save(hydrated));
       debugPrint('[Auth] ✓ Initial user hydrated: ${_maskId(u.id)}');
     } catch (e) {
       debugPrint('[Auth] ⚠️ Initial hydration failed (likely offline): $e');
-      _currentUser.value ??= _buildFallbackUser(u);
+      // ✅ FIX SESSION — snapshot en priorité, fallback sinon
+      final cached = SessionSnapshot.load();
+      if (cached != null && cached.id == u.id) {
+        _currentUser.value = cached;
+      } else {
+        _currentUser.value ??= _buildFallbackUser(u);
+      }
     }
   }
 
@@ -338,16 +370,19 @@ class SupabaseAuthManager implements AuthManager {
     );
   }
 
-  /// Vide l'état LOCAL uniquement.
-  ///
-  /// ⚠️ Ne touche PAS au token push : une déconnexion non volontaire (jeton
-  /// refusé par le serveur) ne doit pas couper notifications et appels
-  /// entrants. Le token n'est retiré que par signOut().
-  Future<void> _cleanupSession() async {
-    debugPrint('[Auth] 👋 Cleaning up local session state');
+  /// ✅ FIX SESSION — [clearSnapshot] n'est vrai QUE pour une déconnexion
+  /// volontaire. Une déconnexion non-volontaire (jeton refusé par Supabase
+  /// après perte de réseau prolongée) conserve le snapshot pour qu'on
+  /// puisse restaurer l'état de l'utilisateur au retour du réseau.
+  Future<void> _cleanupSession({bool clearSnapshot = false}) async {
+    debugPrint('[Auth] 👋 Cleaning up local session state '
+        '(clearSnapshot=$clearSnapshot)');
     await _profileSub?.cancel();
     _profileSub = null;
     _currentUser.value = null;
+    if (clearSnapshot) {
+      unawaited(SessionSnapshot.clear());
+    }
   }
 
   // ==========================================================================
@@ -437,10 +472,11 @@ class SupabaseAuthManager implements AuthManager {
 
             if (unchanged) return;
             _currentUser.value = merged;
+            // ✅ FIX SESSION — mettre à jour le snapshot après sync
+            unawaited(SessionSnapshot.save(merged));
             debugPrint('[Auth] ✓ Profile synced for ${_maskId(uid)}');
           },
           onError: (e, st) {
-            // Ne jamais laisser l'erreur de stream tuer l'app
             debugPrint('[Auth] ❌ Profile sync stream failed uid=${_maskId(uid)} err=$e');
           },
           cancelOnError: false,
@@ -481,8 +517,25 @@ class SupabaseAuthManager implements AuthManager {
       return const <String>[];
     }
 
-    final row = await _selectProfileRow(uid);
+    // ✅ FIX OFFLINE — _selectProfileRowStrict lève sur erreur réseau
+    // au lieu de retourner null (qui confondait "absent" et "hors-ligne").
+    Map<String, dynamic>? row;
+    try {
+      row = await _selectProfileRowStrict(uid);
+    } on AuthException catch (e) {
+      if (e.code == AuthErrorCode.networkError) {
+        debugPrint('[Auth] ⚠️ Profile select offline — NO write, using fallback');
+        // ✅ CRITIQUE : on ne crée PAS de profil en offline. On préfère le
+        // snapshot existant ou un fallback minimal.
+        final cached = SessionSnapshot.load();
+        if (cached != null && cached.id == uid) return cached;
+        return _buildFallbackUser(user);
+      }
+      rethrow;
+    }
+
     if (row == null) {
+      // Vrai profil absent → création légitime (nouvel utilisateur)
       final base = AppUser(
         id: uid,
         thixId: _kPendingThixId,
@@ -520,19 +573,29 @@ class SupabaseAuthManager implements AuthManager {
         updatedAt: DateTime.now(),
       );
 
-      await _ensureProfileRow(user: base);
+      // ✅ FIX ID — ignoreDuplicates: true (ON CONFLICT DO NOTHING)
+      await _ensureProfileRow(user: base, ignoreIfPresent: true);
       await _profiles.ensureProfileExists(user: base);
 
-      final fresh = await _selectProfileRow(uid);
-      if (fresh != null) {
-        return _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
+      // Tenter de relire; si offline ici, on retourne base sans insister.
+      try {
+        final fresh = await _selectProfileRowStrict(uid);
+        if (fresh != null) {
+          return _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
+        }
+      } on AuthException catch (e) {
+        if (e.code == AuthErrorCode.networkError) {
+          debugPrint('[Auth] ⚠️ Re-read after creation offline, returning base');
+        } else {
+          rethrow;
+        }
       }
       return base;
     }
 
     var appUser = _appUserFromProfileRow(uid: uid, email: email, row: row, phone: user.phone);
 
-    // Backfill si données manquantes
+    // Backfill si données manquantes (mais PAS en offline → catch explicite)
     final metaFullName = s('display_name') ?? s('full_name');
     final needsBackfill = appUser.displayName.trim().isEmpty ||
         (appUser.displayName == _kDefaultDisplayName && metaFullName != null && metaFullName.isNotEmpty);
@@ -560,12 +623,22 @@ class SupabaseAuthManager implements AuthManager {
       );
 
       try {
-        await _ensureProfileRow(user: backfillUser);
-        final fresh = await _selectProfileRow(uid);
-        if (fresh != null) {
-          appUser = _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
-        } else {
-          appUser = backfillUser;
+        // ✅ FIX ID — ne pas écraser les champs protégés (thix_id, registration_status)
+        await _ensureProfileRow(user: backfillUser, ignoreIfPresent: true);
+        try {
+          final fresh = await _selectProfileRowStrict(uid);
+          if (fresh != null) {
+            appUser = _appUserFromProfileRow(uid: uid, email: email, row: fresh, phone: user.phone);
+          } else {
+            appUser = backfillUser;
+          }
+        } on AuthException catch (e) {
+          if (e.code == AuthErrorCode.networkError) {
+            debugPrint('[Auth] ⚠️ Backfill re-read offline, using backfillUser');
+            appUser = backfillUser;
+          } else {
+            rethrow;
+          }
         }
         debugPrint('[Auth] ✓ Profile backfilled for ${_maskId(uid)}');
       } catch (e) {
@@ -655,41 +728,47 @@ class SupabaseAuthManager implements AuthManager {
     );
   }
 
-  Future<Map<String, dynamic>?> _selectProfileRow(String uid) async {
+  /// ✅ FIX OFFLINE — version stricte : lève AuthException(networkError) si
+  /// problème réseau au lieu de retourner null. Cela permet à _hydrateUser de
+  /// distinguer "profil absent" (null) de "DNS mort" (exception) et de ne
+  /// JAMAIS créer/écraser un profil en offline.
+  Future<Map<String, dynamic>?> _selectProfileRowStrict(String uid) async {
     try {
       final row = await _authRetry(
         () => _client.from('profiles').select('*').eq('id', uid).maybeSingle(),
         label: 'selectProfileRow[${_maskId(uid)}]',
       );
       if (row != null) return (row as Map).cast<String, dynamic>();
+      return null; // vrai profil absent
     } catch (e) {
-      final msg = e.toString().toLowerCase();
-      // En offline on ne rethrow pas → on laisse le fallback s'occuper
-      if (msg.contains('socket') ||
-          msg.contains('network') ||
-          msg.contains('connection') ||
-          msg.contains('timeout') ||
-          msg.contains('authretryable')) {
-        debugPrint('[Auth] ⚠️ Profiles select offline/network → null (uid=${_maskId(uid)})');
-        return null;
+      if (_isNetworkError(e)) {
+        debugPrint('[Auth] ⚠️ Profiles select OFFLINE uid=${_maskId(uid)}: $e');
+        throw AuthException(AuthErrorCode.networkError, rawMessage: e.toString());
       }
-      debugPrint('[Auth] ❌ Profiles select by id failed uid=${_maskId(uid)} err=$e');
+      debugPrint('[Auth] ❌ Profiles select failed uid=${_maskId(uid)} err=$e');
       rethrow;
     }
-    return null;
   }
 
-  Future<void> _ensureProfileRow({required AppUser user}) async {
+  /// ✅ FIX ID — [ignoreIfPresent] = true passe `ignoreDuplicates: true` à
+  /// l'upsert Supabase (ON CONFLICT DO NOTHING) et **n'écrit PAS** les champs
+  /// protégés (thix_id, registration_status) pour ne pas écraser les valeurs
+  /// existantes lors d'un ensure.
+  Future<void> _ensureProfileRow({
+    required AppUser user,
+    bool ignoreIfPresent = false,
+  }) async {
     final now = DateTime.now().toUtc().toIso8601String();
 
-    // Sanitize chaque champ texte librement saisi avant écriture (même filtre
-    // XSS / caractères de contrôle que _hydrateUser() applique en lecture).
     String? san(String? v, {int max = 500}) =>
         v == null ? null : _AuthValidators.sanitize(v, maxLength: max);
 
     final payload = <String, dynamic>{
       'id': user.id,
-      if (!_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
+      // ✅ FIX ID — en mode "ensure" (ignoreIfPresent), on n'écrit PAS thix_id
+      // ni registration_status. Ces champs sont gérés par les RPC serveur
+      // (finalize_registration, thix_activate_account_after_payment).
+      if (!ignoreIfPresent && !_isPendingThixId(user.thixId)) 'thix_id': user.thixId,
       if (user.thixChat.trim().isNotEmpty) 'thix_chat': san(user.thixChat, max: _kMaxChatLength),
       'display_name': san(user.displayName, max: _kMaxDisplayNameLength) ?? _kDefaultDisplayName,
       if (user.bio?.isNotEmpty == true) 'bio': san(user.bio, max: 500),
@@ -711,29 +790,39 @@ class SupabaseAuthManager implements AuthManager {
       if (user.emergencyContactRelation?.isNotEmpty == true) 'emergency_contact_relation': san(user.emergencyContactRelation, max: 50),
       if (user.languages.isNotEmpty)
         'languages': user.languages.map((l) => _AuthValidators.sanitize(l, maxLength: 50)).where((l) => l.isNotEmpty).toList(),
-      'registration_status': user.registrationStatus ?? 'draft_step2',
+      if (!ignoreIfPresent) 'registration_status': user.registrationStatus ?? 'draft_step2',
       'updated_at': now,
     };
 
     try {
-      await _authRetry(
-        () => SupabaseSafeWrite.upsert(
-          client: _client,
-          table: 'profiles',
-          payload: payload,
-          // Sans ceci, une colonne critique manquante à cause d'une migration
-          // cassée serait silencieusement retirée du payload.
-          criticalColumns: SupabaseSafeWrite.profilesCriticalColumns,
-          onUnknownColumn: () async {
-            try {
-              await _client.functions.invoke('pgrst_schema_reload', body: const {});
-            } catch (e) {
-              debugPrint('[Auth] ⚠️ Schema reload invoke failed err=$e');
-            }
-          },
-        ),
-        label: 'ensureProfileRow[${_maskId(user.id)}]',
-      );
+      if (ignoreIfPresent) {
+        // ✅ FIX ID — bypass SupabaseSafeWrite pour passer ignoreDuplicates
+        await _authRetry(
+          () => _client.from('profiles').upsert(
+            payload,
+            onConflict: 'id',
+            ignoreDuplicates: true, // ON CONFLICT DO NOTHING
+          ),
+          label: 'ensureProfileRow-soft[${_maskId(user.id)}]',
+        );
+      } else {
+        await _authRetry(
+          () => SupabaseSafeWrite.upsert(
+            client: _client,
+            table: 'profiles',
+            payload: payload,
+            criticalColumns: SupabaseSafeWrite.profilesCriticalColumns,
+            onUnknownColumn: () async {
+              try {
+                await _client.functions.invoke('pgrst_schema_reload', body: const {});
+              } catch (e) {
+                debugPrint('[Auth] ⚠️ Schema reload invoke failed err=$e');
+              }
+            },
+          ),
+          label: 'ensureProfileRow[${_maskId(user.id)}]',
+        );
+      }
     } catch (e) {
       debugPrint('[Auth] ❌ Profiles upsert failed uid=${_maskId(user.id)} err=$e');
     }
@@ -775,7 +864,6 @@ class SupabaseAuthManager implements AuthManager {
         throw AuthException(AuthErrorCode.signInFailed);
       }
 
-      // Compte non confirmé → bloquer et renvoyer code
       if (user.emailConfirmedAt == null) {
         try {
           await _client.auth.resend(type: OtpType.signup, email: id.toLowerCase());
@@ -788,6 +876,8 @@ class SupabaseAuthManager implements AuthManager {
       _currentUser.value = hydrated;
       _bindProfileSync(user.id);
       _registerPushIfNeeded(user.id);
+      // ✅ FIX SESSION
+      unawaited(SessionSnapshot.save(hydrated));
       debugPrint('[Auth] ✓ Sign in successful: ${_maskId(user.id)}');
       return hydrated;
     } on sup.AuthException catch (e) {
@@ -890,6 +980,8 @@ class SupabaseAuthManager implements AuthManager {
         _currentUser.value = appUser;
         _bindProfileSync(user.id);
         _registerPushIfNeeded(user.id);
+        // ✅ FIX SESSION
+        unawaited(SessionSnapshot.save(appUser));
         return appUser;
       }
       throw AuthException(AuthErrorCode.accountAlreadyExists);
@@ -952,6 +1044,8 @@ class SupabaseAuthManager implements AuthManager {
       _currentUser.value = appUser;
       _bindProfileSync(res.user!.id);
       _registerPushIfNeeded(res.user!.id);
+      // ✅ FIX SESSION
+      unawaited(SessionSnapshot.save(appUser));
       debugPrint('[Auth] ✓ OTP verified and user hydrated: ${_maskId(res.user!.id)}');
     } on AuthException {
       rethrow;
@@ -991,6 +1085,11 @@ class SupabaseAuthManager implements AuthManager {
     }
   }
 
+  /// ✅ FIX ID — idempotente côté client. Si l'utilisateur a déjà finalisé
+  /// son inscription (registration_status active/completed ET thixId non
+  /// pending), on retourne les valeurs connues SANS appeler la RPC serveur.
+  /// Cela empêche la régénération d'un nouveau THIX ID après une perte de
+  /// réseau qui avait fait rater la lecture précédente.
   @override
   Future<Map<String, dynamic>> finalizeRegistration({
     required String desiredChat,
@@ -998,6 +1097,25 @@ class SupabaseAuthManager implements AuthManager {
   }) async {
     final sanitizedChat = _AuthValidators.sanitize(desiredChat, maxLength: _kMaxChatLength);
     final sanitizedCountry = _AuthValidators.sanitize(countryCode, maxLength: _kMaxCountryCodeLength);
+
+    // ✅ FIX ID — court-circuit si déjà finalisé
+    final cur = _currentUser.value;
+    final regStatus = (cur?.registrationStatus ?? '').toLowerCase();
+    final alreadyDone = (regStatus == 'active' || regStatus == 'completed') &&
+        cur != null &&
+        !_isPendingThixId(cur.thixId) &&
+        cur.thixId.trim().isNotEmpty &&
+        (cur.thixChat.trim().isNotEmpty || sanitizedChat.isEmpty);
+
+    if (alreadyDone) {
+      debugPrint('[Auth] ℹ️ finalizeRegistration skipped (already done): '
+          'thixId=${cur!.thixId}, chat=${cur.thixChat}, status=$regStatus');
+      return {
+        'thix_id': cur.thixId,
+        'thix_chat': cur.thixChat,
+        'registration_status': cur.registrationStatus ?? 'active',
+      };
+    }
 
     debugPrint('[Auth] 🏁 Finalizing registration: chat=$sanitizedChat, country=$sanitizedCountry');
 
@@ -1010,15 +1128,28 @@ class SupabaseAuthManager implements AuthManager {
         label: 'finalizeRegistration',
         timeout: _kLongRequestTimeout,
       );
+      Map<String, dynamic> map;
       if (result is Map<String, dynamic>) {
-        debugPrint('[Auth] ✓ Registration finalized');
-        return result;
+        map = result;
+      } else if (result is Map) {
+        map = Map<String, dynamic>.from(result);
+      } else {
+        throw Exception('Invalid server response');
       }
-      if (result is Map) {
-        debugPrint('[Auth] ✓ Registration finalized');
-        return Map<String, dynamic>.from(result);
+
+      // ✅ FIX SESSION — mettre à jour le snapshot avec les nouvelles valeurs
+      if (cur != null) {
+        final updated = cur.copyWith(
+          thixId: (map['thix_id'] ?? cur.thixId).toString(),
+          thixChat: (map['thix_chat'] ?? cur.thixChat).toString(),
+          registrationStatus: (map['registration_status'] ?? 'active').toString(),
+        );
+        _currentUser.value = updated;
+        unawaited(SessionSnapshot.save(updated));
       }
-      throw Exception('Invalid server response');
+
+      debugPrint('[Auth] ✓ Registration finalized');
+      return map;
     } catch (e) {
       debugPrint('[Auth] ❌ FinalizeRegistration failed err=$e');
       throw AuthException(AuthErrorCode.finalizeRegistrationFailed);
@@ -1051,6 +1182,8 @@ class SupabaseAuthManager implements AuthManager {
     final hydrated = await _hydrateUser(session.user);
     _currentUser.value = hydrated;
     _bindProfileSync(session.user.id);
+    // ✅ FIX SESSION
+    unawaited(SessionSnapshot.save(hydrated));
     return hydrated;
   }
 
@@ -1086,10 +1219,7 @@ class SupabaseAuthManager implements AuthManager {
     throw AuthException(AuthErrorCode.phoneAuthNotAvailable);
   }
 
-  /// Déconnexion VOLONTAIRE (bouton « Se déconnecter »).
-  ///
-  /// C'est le SEUL endroit où le token push est retiré, et il l'est AVANT la
-  /// fin de session (sinon la RLS peut refuser la suppression).
+  /// Déconnexion VOLONTAIRE — SEUL endroit où on efface le snapshot.
   @override
   Future<void> signOut() async {
     debugPrint('[Auth] 👋 Signing out (volontaire)');
@@ -1104,7 +1234,8 @@ class SupabaseAuthManager implements AuthManager {
     _pushUserId = null;
 
     await _client.auth.signOut();
-    await _cleanupSession();
+    // ✅ FIX SESSION — seul signOut volontaire efface le snapshot
+    await _cleanupSession(clearSnapshot: true);
   }
 
   @override
@@ -1174,6 +1305,8 @@ class SupabaseAuthManager implements AuthManager {
     }
     _currentUser.value = safeUser;
     _bindProfileSync(user.id);
+    // ✅ FIX SESSION
+    unawaited(SessionSnapshot.save(safeUser));
   }
 
   // ==========================================================================
