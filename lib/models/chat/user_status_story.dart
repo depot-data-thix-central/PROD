@@ -13,6 +13,8 @@ class UserStatusStory {
   final DateTime expiresAt;
   final bool isMine;
   final bool hasViewed;
+  /// ✅ NOUVEAU : compteur de vues (fallback 0 si absent)
+  final int viewsCount;
 
   const UserStatusStory({
     required this.statusId,
@@ -27,6 +29,7 @@ class UserStatusStory {
     required this.expiresAt,
     required this.isMine,
     required this.hasViewed,
+    this.viewsCount = 0,
   });
 
   factory UserStatusStory.fromJson(Map<String, dynamic> j) {
@@ -44,10 +47,45 @@ class UserStatusStory {
           DateTime.now().add(const Duration(hours: 24)),
       isMine: j['is_mine'] == true,
       hasViewed: j['has_viewed'] == true,
+      viewsCount: (j['views_count'] as num?)?.toInt() ?? 0,
     );
   }
 
   bool get isExpired => expiresAt.isBefore(DateTime.now());
   bool get isImage => mediaType == 'image';
   bool get isText => mediaType == 'text';
+
+  /// ✅ NOUVEAU : détecte si c'est une vidéo (par type OU par URL)
+  bool get isVideo {
+    if (mediaType == 'video') return true;
+    final url = mediaUrl?.toLowerCase() ?? '';
+    return url.endsWith('.mp4') ||
+        url.endsWith('.mov') ||
+        url.endsWith('.m4v') ||
+        url.endsWith('.webm') ||
+        url.endsWith('.avi') ||
+        url.contains('/videos/') ||
+        url.contains('/video/');
+  }
+
+  UserStatusStory copyWith({
+    bool? hasViewed,
+    int? viewsCount,
+  }) {
+    return UserStatusStory(
+      statusId: statusId,
+      userId: userId,
+      displayName: displayName,
+      avatarUrl: avatarUrl,
+      content: content,
+      mediaUrl: mediaUrl,
+      mediaType: mediaType,
+      background: background,
+      createdAt: createdAt,
+      expiresAt: expiresAt,
+      isMine: isMine,
+      hasViewed: hasViewed ?? this.hasViewed,
+      viewsCount: viewsCount ?? this.viewsCount,
+    );
+  }
 }
