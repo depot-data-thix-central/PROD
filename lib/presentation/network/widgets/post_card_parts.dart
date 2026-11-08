@@ -1,8 +1,18 @@
+
 // lib/presentation/network/widgets/post_card_parts.dart
 //
 // Parties communes de PostCard : config, thème, validateurs, cache, notifier
 // (compteurs réels like/commentaires), image adaptative, galerie, vidéo,
 // badges, audio, aperçu de lien, miniature vidéo, likers, boutons, réactions.
+//
+// v2 :
+//  ✅ PcActionBtn accepte un [labelWidget] custom (pour compteurs animés)
+//  ✅ PcAnimatedCount : compteur avec pop animé (scale+fade)
+//  ✅ SpaceLiveBus + PcSpaceLiveBand : bande violette avec micro pulsant
+//     quand l'utilisateur est dans un Space audio
+//
+// v1 : version originale
+
 import 'dart:async';
 import 'dart:collection';
 import 'dart:math';
@@ -74,17 +84,14 @@ class PcConfig {
   static const double cardBottomBorderWidth = 1.0;
   static const double cardFirstTopBorderWidth = 1.5;
   static const String permalinkBase = 'https://thix.id/network/post/';
-
   /// ⚠️ Nom de la table des commentaires (adapte si différent)
   static const String commentsTable = 'post_comments';
-
   // Médias : ratio réel de la photo, borné (façon Facebook)
   static const double minImageRatio = 0.75; // 3:4 (plus haut → coupé en bas)
   static const double maxImageRatio = 1.91; // paysage max
   static const double videoRatio = 16 / 9;
   static const double twoMediaRatio = 1.6;
   static const double multiMediaRatio = 1.4;
-
   static const Set<String> knownRedirectDomains = {
     'facebook.com', 'fb.me', 'l.facebook.com', 'share.google', 'goo.gl', 'g.co',
   };
@@ -114,7 +121,6 @@ class PcValidators {
     r'^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|::1$|fc00:|fd00:)',
     caseSensitive: false,
   );
-
   static String sanitize(String? input, {int maxLength = PcConfig.maxSanitizedLength, bool multiline = true}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -181,6 +187,7 @@ final RegExp kRichContentRegex = RegExp(
   r'((?:https?:\/\/|www\.)[^\s]+)',
   unicode: true,
 );
+
 final RegExp kUrlFinder = RegExp(r'((?:https?:\/\/|www\.)[^\s]+)');
 final RegExp kUrlTrailingPunct = RegExp(r'[.,;:!?)\]]+$');
 
@@ -272,10 +279,12 @@ Future<void> pcDownloadMedia(BuildContext context, String url) async {
   final l10n = AppLocalizations.of(context);
   final messenger = ScaffoldMessenger.of(context);
   final isVideo = pcIsVideoUrl(url);
+
   if (kIsWeb) {
     await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
     return;
   }
+
   final progress = ValueNotifier<double>(0);
   messenger
     ..hideCurrentSnackBar()
@@ -297,13 +306,15 @@ Future<void> pcDownloadMedia(BuildContext context, String url) async {
         ]),
       ),
     ));
+
   final result = await MediaSaver.save(url, isVideo: isVideo, onProgress: (v) => progress.value = v);
   messenger.hideCurrentSnackBar();
   progress.dispose();
+
   final ok = result == MediaSaveResult.saved;
   final msg = switch (result) {
     MediaSaveResult.saved => pcTr(l10n, 'post_download_saved', 'Enregistré dans votre galerie'),
-    MediaSaveResult.denied => pcTr(l10n, 'post_download_denied', 'Autorisez l’accès aux photos dans les réglages'),
+    MediaSaveResult.denied => pcTr(l10n, 'post_download_denied', 'Autorisez l'accès aux photos dans les réglages'),
     _ => pcTr(l10n, 'post_download_failed', 'Impossible de télécharger'),
   };
   messenger.showSnackBar(SnackBar(
@@ -346,14 +357,15 @@ class PcCache {
   final Map<String, bool> optimisticReposts = {};
   final Map<String, int> optimisticRepostCounts = {};
   final Map<String, PcCounts> counts = {};
-
   /// postId → code de réaction (like, love, haha, wow, fire)
   final Map<String, String> myReactions = {};
 
   List<String>? getLikers(String id) => _get(_likers, id);
   void setLikers(String id, List<String> v) => _set(_likers, id, v);
+
   Map<String, dynamic>? getLinkPreview(String url) => _get(_linkPreviews, url);
   void setLinkPreview(String url, Map<String, dynamic> d) => _set(_linkPreviews, url, d);
+
   String? getVideoThumb(String url) => _get(_videoThumbs, url);
   void setVideoThumb(String url, String t) => _set(_videoThumbs, url, t);
 
@@ -407,7 +419,6 @@ String? pcReactionEmoji(String? code) {
 
 class PcReactionPicker {
   PcReactionPicker._();
-
   static Future<String?> show(BuildContext context, Rect anchor) {
     return showGeneralDialog<String>(
       context: context,
@@ -506,11 +517,13 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       comments = cn.comments;
     }
     if (liked && likes < 1) likes = 1;
+
     if (c.optimisticSaves.containsKey(post.id)) saved = c.optimisticSaves[post.id]!;
     if (c.optimisticReposts.containsKey(post.id)) {
       reposted = c.optimisticReposts[post.id]!;
       reposts = c.optimisticRepostCounts[post.id] ?? reposts;
     }
+
     state = state.copyWith(
       isLiked: liked,
       likesCount: likes,
@@ -557,11 +570,13 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     final id = state.id;
     final cached = PcCache.instance.counts[id];
     if (!force && cached != null && cached.fresh) return;
+
     final results = await Future.wait<int?>([
       _count('post_likes', 'post_id', id),
       _count(PcConfig.commentsTable, 'id', id),
     ]);
     if (_isDisposed) return;
+
     final likes = results[0];
     final comments = results[1];
     if (likes == null && comments == null) return;
@@ -569,6 +584,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     var l = _likeBusy ? state.likesCount : (likes ?? state.likesCount);
     if (state.isLiked && l < 1) l = 1;
     final cm = comments ?? state.commentsCount;
+
     if (l != state.likesCount || cm != state.commentsCount) {
       state = state.copyWith(likesCount: l, commentsCount: cm);
     }
@@ -588,6 +604,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
           .maybeSingle()
           .timeout(PcConfig.likeVerifyTimeout);
       if (_isDisposed || _likeBusy) return;
+
       final reallyLiked = res != null;
       if (reallyLiked != state.isLiked) {
         var n = state.likesCount;
@@ -596,6 +613,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       } else if (reallyLiked && state.likesCount < 1) {
         state = state.copyWith(likesCount: 1);
       }
+
       PcCache.instance.optimisticLikes[postId] = reallyLiked;
       PcCache.instance.optimisticLikeCounts[postId] = state.likesCount;
 
@@ -628,22 +646,23 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     final oldCount = state.likesCount;
     final newLiked = !wasLiked;
     final newCount = wasLiked ? (oldCount - 1).clamp(0, 1 << 30) : oldCount + 1;
+
     state = state.copyWith(isLiked: newLiked, likesCount: newCount);
     PcCache.instance.optimisticLikes[id] = newLiked;
     PcCache.instance.optimisticLikeCounts[id] = newCount;
     PcCache.instance.setCounts(id, newCount, state.commentsCount);
+
     if (wasLiked) {
       PcCache.instance.myReactions.remove(id);
       _deleteReaction(id);
     }
+
     var failed = false;
     try {
       final service = ref.read(networkServiceProvider);
       try {
         final result = await service.togglePostLike(id).timeout(PcConfig.networkTimeout);
         if (_isDisposed) return;
-        // On ne fait PAS confiance à result.likesCount (peut valoir 0) :
-        // seul l'état liked est pris, le compteur est relu en base ensuite.
         state = state.copyWith(isLiked: result.liked);
         PcCache.instance.optimisticLikes[id] = result.liked;
       } catch (_) {
@@ -675,6 +694,7 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
     final id = state.id;
     PcCache.instance.myReactions[id] = code;
     if (!state.isLiked) await toggleLike();
+
     final uid = Supabase.instance.client.auth.currentUser?.id;
     if (uid == null) return;
     try {
@@ -742,7 +762,6 @@ class PcPop extends StatefulWidget {
   final bool active;
   final Widget child;
   const PcPop({super.key, required this.active, required this.child});
-
   @override
   State<PcPop> createState() => _PcPopState();
 }
@@ -771,17 +790,48 @@ class _PcPopState extends State<PcPop> with SingleTickerProviderStateMixin {
 }
 
 // ============================================================================
+// ✅ COMPTEUR ANIMÉ (petit pop à chaque changement de valeur)
+// ============================================================================
+class PcAnimatedCount extends StatelessWidget {
+  final int count;
+  final Color color;
+  final double fontSize;
+  const PcAnimatedCount({
+    super.key,
+    required this.count,
+    required this.color,
+    this.fontSize = 12.5,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 180),
+      transitionBuilder: (child, anim) => ScaleTransition(
+        scale: anim,
+        child: FadeTransition(opacity: anim, child: child),
+      ),
+      child: Text(
+        pcCount(count),
+        key: ValueKey<int>(count),
+        style: ThixPolicy.labelStyle.copyWith(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // IMAGE ADAPTATIVE — ratio réel de la photo (façon Facebook)
-//   • ratio borné [minImageRatio, maxImageRatio]
-//   • si coupe nécessaire → coupe EN BAS (alignement haut), jamais en haut
-//   • ratio mémorisé → pas de saut de hauteur au re-scroll
 // ============================================================================
 class PcAdaptiveImage extends StatefulWidget {
   final String url;
   final int cacheWidth;
   final VoidCallback? onTap;
   const PcAdaptiveImage({super.key, required this.url, required this.cacheWidth, this.onTap});
-
   @override
   State<PcAdaptiveImage> createState() => _PcAdaptiveImageState();
 }
@@ -940,6 +990,7 @@ class PcOriginalPostEmbed extends ConsumerWidget {
       ...original.imageUrls.where(PcValidators.isValidUrl),
       ...original.videoUrls.where(PcValidators.isValidUrl),
     ];
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
@@ -1103,7 +1154,6 @@ class PcFullScreenGallery extends StatefulWidget {
   final List<String> imageUrls;
   final int initialIndex;
   const PcFullScreenGallery({super.key, required this.imageUrls, required this.initialIndex});
-
   @override
   State<PcFullScreenGallery> createState() => _PcFullScreenGalleryState();
 }
@@ -1181,7 +1231,6 @@ class _PcFullScreenGalleryState extends State<PcFullScreenGallery> {
 class PcFullScreenVideoPlayer extends StatefulWidget {
   final String videoUrl;
   const PcFullScreenVideoPlayer({super.key, required this.videoUrl});
-
   @override
   State<PcFullScreenVideoPlayer> createState() => _PcFullScreenVideoPlayerState();
 }
@@ -1300,6 +1349,7 @@ class _PcFullScreenVideoPlayerState extends State<PcFullScreenVideoPlayer> {
     }
     final c = _controller;
     if (!_initialized || c == null) return const Center(child: CircularProgressIndicator(color: Colors.white));
+
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: _toggleControls,
@@ -1380,7 +1430,6 @@ class PcStaticBadgeChip extends StatelessWidget {
   final PcBadgeStyle style;
   final String label;
   const PcStaticBadgeChip({super.key, required this.style, required this.label});
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -1404,7 +1453,6 @@ class PcPulsingBadge extends StatefulWidget {
   final PcBadgeStyle style;
   final String label;
   const PcPulsingBadge({super.key, required this.style, required this.label});
-
   @override
   State<PcPulsingBadge> createState() => _PcPulsingBadgeState();
 }
@@ -1457,7 +1505,7 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
 }
 
 // ============================================================================
-// BOUTON D'ACTION (tap + appui long + emoji de réaction)
+// BOUTON D'ACTION (tap + appui long + emoji de réaction + labelWidget custom)
 // ============================================================================
 class PcActionBtn extends StatelessWidget {
   const PcActionBtn({
@@ -1469,6 +1517,7 @@ class PcActionBtn extends StatelessWidget {
     this.onLongPress,
     this.iconWidget,
     this.semanticsLabel,
+    this.labelWidget, // ✅ NOUVEAU : widget custom à la place du label texte
   });
   final IconData icon;
   final String label;
@@ -1477,6 +1526,7 @@ class PcActionBtn extends StatelessWidget {
   final VoidCallback? onLongPress;
   final Widget? iconWidget;
   final String? semanticsLabel;
+  final Widget? labelWidget;
 
   @override
   Widget build(BuildContext context) {
@@ -1491,7 +1541,10 @@ class PcActionBtn extends StatelessWidget {
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             iconWidget ?? Icon(icon, size: 22, color: color),
-            if (label.isNotEmpty) ...[
+            if (labelWidget != null) ...[
+              const SizedBox(width: 4),
+              labelWidget!,
+            ] else if (label.isNotEmpty) ...[
               const SizedBox(width: 4),
               Text(label, style: ThixPolicy.labelStyle.copyWith(fontSize: 12.5, fontWeight: FontWeight.w600, color: color)),
             ],
@@ -1509,7 +1562,6 @@ class PcAudioPlayer extends StatefulWidget {
   final String audioUrl;
   final int? duration;
   const PcAudioPlayer({super.key, required this.audioUrl, this.duration});
-
   @override
   State<PcAudioPlayer> createState() => _PcAudioPlayerState();
 }
@@ -1573,6 +1625,7 @@ class _PcAudioPlayerState extends State<PcAudioPlayer> {
     final progress = _duration.inMilliseconds > 0 ? _position.inMilliseconds / _duration.inMilliseconds : 0.0;
     final remaining = _duration - _position;
     final t2 = PcTheme.text2(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -1661,7 +1714,6 @@ class _WaveformPainter extends CustomPainter {
   final Color color;
   _WaveformPainter({required this.progress, required this.color});
   static const int _bars = 40;
-
   @override
   void paint(Canvas canvas, Size size) {
     final bw = size.width / (_bars * 1.5);
@@ -1691,16 +1743,13 @@ class PcLinkPreview extends StatefulWidget {
   final String url;
   final bool hasMedia;
   const PcLinkPreview({super.key, required this.url, this.hasMedia = false});
-
   @override
   State<PcLinkPreview> createState() => _PcLinkPreviewState();
 }
 
 class _PcLinkPreviewState extends State<PcLinkPreview> {
   Map<String, dynamic>? _data;
-
   String get _domain => Uri.tryParse(widget.url)?.host.replaceFirst('www.', '') ?? '';
-
   String get _favicon {
     final host = Uri.tryParse(widget.url)?.host ?? '';
     return 'https://www.google.com/s2/favicons?domain=$host&sz=${PcConfig.avatarFallbackSize}';
@@ -1892,7 +1941,6 @@ class PcVideoThumbTile extends StatefulWidget {
   final double? height;
   final VoidCallback onTap;
   const PcVideoThumbTile({super.key, required this.videoUrl, this.width, this.height, required this.onTap});
-
   @override
   State<PcVideoThumbTile> createState() => _PcVideoThumbTileState();
 }
@@ -1933,10 +1981,12 @@ class _PcVideoThumbTileState extends State<PcVideoThumbTile> {
   Future<void> _loadFirstFrame() async {
     if (!mounted || _frameController != null) return;
     if (_activeFrameReaders >= PcConfig.maxVideoFrameFallbacks) return;
+
     final uri = Uri.tryParse(widget.videoUrl);
     if (uri == null || !PcValidators.isValidUrl(widget.videoUrl)) return;
     _activeFrameReaders++;
     _countedActive = true;
+
     final c = VideoPlayerController.networkUrl(uri, videoPlayerOptions: VideoPlayerOptions(mixWithOthers: true));
     _frameController = c;
     try {
@@ -2064,7 +2114,6 @@ class PcLikersStack extends StatefulWidget {
   final bool isLikedByMe;
   final AppLocalizations l10n;
   const PcLikersStack({super.key, required this.count, required this.postId, required this.isLikedByMe, required this.l10n});
-
   @override
   State<PcLikersStack> createState() => _PcLikersStackState();
 }
@@ -2139,6 +2188,7 @@ class _PcLikersStackState extends State<PcLikersStack> {
             : widget.l10n.t('post_liked_by_you_and_others', args: ['${widget.count - 1}']))
         : widget.l10n.t('post_liked_by_others', args: ['${widget.count}']);
     final t2 = PcTheme.text2(context);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 6),
       child: Row(children: [
@@ -2172,6 +2222,263 @@ class _PcLikersStackState extends State<PcLikersStack> {
           child: Text(text, style: ThixPolicy.captionStyle.copyWith(fontSize: 12.5, color: t2), overflow: TextOverflow.ellipsis),
         ),
       ]),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ SPACE LIVE — BUS GLOBAL + BANDE VIOLETTE (micro animé)
+// ============================================================================
+//
+// Quand l'utilisateur est dans un Space audio, une bande violette avec un
+// micro animé s'affiche en haut du feed (première PostCard) pour pouvoir :
+//   - retourner dans le space (tap sur la bande)
+//   - muter / démuter le micro (bouton micro)
+//   - quitter le space (bouton ✕)
+//
+// Intégration côté contrôleur / écran du space :
+//   SpaceLiveBus.instance.update(active: true, title: 'TALK…', listeners: 2, muted: true, isHost: true);
+//   SpaceLiveBus.onMuteToggle = () => controller.toggleMute();
+//   SpaceLiveBus.onReopen     = () => context.push('/space/room');
+//   SpaceLiveBus.onLeave      = () => controller.leave();
+//   // À la sortie du space :
+//   SpaceLiveBus.instance.leave();
+
+class SpaceLiveState {
+  final bool active;
+  final String title;
+  final int listeners;
+  final bool muted;
+  final bool isHost;
+  final String? spaceId;
+  const SpaceLiveState({
+    this.active = false,
+    this.title = '',
+    this.listeners = 0,
+    this.muted = true,
+    this.isHost = false,
+    this.spaceId,
+  });
+}
+
+class SpaceLiveBus extends ChangeNotifier {
+  SpaceLiveBus._();
+  static final SpaceLiveBus instance = SpaceLiveBus._();
+
+  // Hooks optionnels définis par l'écran / le contrôleur du space
+  static VoidCallback? onReopen;
+  static VoidCallback? onMuteToggle;
+  static VoidCallback? onLeave;
+
+  SpaceLiveState _state = const SpaceLiveState();
+  SpaceLiveState get state => _state;
+
+  void update({
+    bool? active,
+    String? title,
+    int? listeners,
+    bool? muted,
+    bool? isHost,
+    String? spaceId,
+  }) {
+    _state = SpaceLiveState(
+      active: active ?? _state.active,
+      title: title ?? _state.title,
+      listeners: listeners ?? _state.listeners,
+      muted: muted ?? _state.muted,
+      isHost: isHost ?? _state.isHost,
+      spaceId: spaceId ?? _state.spaceId,
+    );
+    notifyListeners();
+  }
+
+  void leave() {
+    _state = const SpaceLiveState();
+    notifyListeners();
+  }
+}
+
+/// Bande violette "EN SPACE" avec micro pulsant.
+class PcSpaceLiveBand extends StatefulWidget {
+  final String title;
+  final int listeners;
+  final bool muted;
+  final bool isHost;
+  final VoidCallback? onReopen;
+  final VoidCallback? onToggleMute;
+  final VoidCallback? onLeave;
+  const PcSpaceLiveBand({
+    super.key,
+    required this.title,
+    required this.listeners,
+    required this.muted,
+    required this.isHost,
+    this.onReopen,
+    this.onToggleMute,
+    this.onLeave,
+  });
+
+  @override
+  State<PcSpaceLiveBand> createState() => _PcSpaceLiveBandState();
+}
+
+class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
+    with SingleTickerProviderStateMixin {
+  static const Color _violet = Color(0xFF7C3AED);
+  static const Color _violetDeep = Color(0xFF5B21B6);
+
+  late final AnimationController _pulse = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, _) {
+        final glow = 0.25 + 0.25 * _pulse.value;
+        final micScale = 1.0 + 0.07 * _pulse.value;
+        return GestureDetector(
+          onTap: widget.onReopen,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [_violet, _violetDeep],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(
+                  color: _violet.withValues(alpha: glow),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Row(children: [
+              // ✅ Micro pulsant
+              Transform.scale(
+                scale: micScale,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+                  ),
+                  child: Icon(
+                    widget.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    size: 16,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      widget.isHost ? 'EN SPACE · HÔTE' : 'EN SPACE · AUDITEUR',
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                    Text(
+                      widget.title.isEmpty ? 'Space en cours' : widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              // Auditeurs
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Icon(Icons.headphones_rounded, size: 13, color: Colors.white),
+                  const SizedBox(width: 4),
+                  Text('${widget.listeners}',
+                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                ]),
+              ),
+              const SizedBox(width: 6),
+              // ✅ Toggle micro
+              GestureDetector(
+                onTap: widget.onToggleMute,
+                child: Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+                  child: Icon(
+                    widget.muted ? Icons.mic_off_rounded : Icons.mic_rounded,
+                    size: 15,
+                    color: _violetDeep,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              // Quitter
+              GestureDetector(
+                onTap: widget.onLeave,
+                child: const Padding(
+                  padding: EdgeInsets.all(4),
+                  child: Icon(Icons.close_rounded, size: 18, color: Colors.white70),
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// Hôte à placer en haut de la PREMIÈRE PostCard : n'affiche rien si pas de space.
+class PcSpaceLiveBandHost extends StatelessWidget {
+  const PcSpaceLiveBandHost({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: SpaceLiveBus.instance,
+      builder: (context, _) {
+        final s = SpaceLiveBus.instance.state;
+        if (!s.active) return const SizedBox.shrink();
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+          child: PcSpaceLiveBand(
+            title: s.title,
+            listeners: s.listeners,
+            muted: s.muted,
+            isHost: s.isHost,
+            onReopen: SpaceLiveBus.onReopen,
+            onToggleMute: SpaceLiveBus.onMuteToggle,
+            onLeave: SpaceLiveBus.onLeave,
+          ),
+        );
+      },
     );
   }
 }
