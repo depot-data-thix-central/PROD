@@ -13,15 +13,12 @@ import 'package:thix_id/presentation/chat/status/create_status_page.dart';
 import 'package:thix_id/presentation/chat/status/status_viewer_page.dart';
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS (Format WhatsApp Cards)
 // ============================================================================
-const double _kStoryHeight = 98.0;
-const double _kAvatarRadius = 26.0;
-const double _kRingPadding = 2.5;
-const double _kAddBadgeSize = 20.0;
-const double _kAddBadgeBorder = 2.0;
-const double _kLabelWidth = 64.0;
-const int _kMaxLabelLength = 15;
+const double _kCardHeight = 170.0; // Hauteur des cartes
+const double _kCardWidth = 115.0;  // Largeur des cartes
+const double _kCardRadius = 16.0;  // Arrondi des coins
+const int _kMaxLabelLength = 20;
 
 // ============================================================================
 // VALIDATORS
@@ -49,7 +46,6 @@ class _StoryValidators {
     return t.replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
   }
 
-  /// Retourne le prénom de manière sûre (jamais de crash sur string vide)
   static String safeFirstName(String? displayName, String fallback) {
     final name = sanitize(displayName, maxLength: 80);
     if (name.isEmpty) return fallback;
@@ -57,7 +53,6 @@ class _StoryValidators {
     return first.isEmpty ? fallback : first;
   }
 
-  /// Initiale sûre pour avatar fallback
   static String safeInitial(String? name) {
     final s = sanitize(name, maxLength: 10);
     if (s.isEmpty) return '?';
@@ -66,7 +61,7 @@ class _StoryValidators {
 }
 
 // ============================================================================
-// STATUS STORY ROW
+// STATUS STORY ROW (Format WhatsApp)
 // ============================================================================
 class StatusStoryRow extends ConsumerWidget {
   final String currentUserId;
@@ -86,14 +81,10 @@ class StatusStoryRow extends ConsumerWidget {
     final state = ref.watch(statusProvider);
 
     if (state.isLoading && state.items.isEmpty) {
-      return SizedBox(
-        height: _kStoryHeight,
+      return const SizedBox(
+        height: _kCardHeight,
         child: Center(
-          child: SizedBox(
-            width: 22,
-            height: 22,
-            child: CircularProgressIndicator(strokeWidth: 2, color: ThixPolicy.primary),
-          ),
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
@@ -105,22 +96,22 @@ class StatusStoryRow extends ConsumerWidget {
     final safeCurrentUserAvatar = _StoryValidators.sanitizeUrl(currentUserAvatar);
 
     return SizedBox(
-      height: _kStoryHeight,
+      height: _kCardHeight,
       child: RepaintBoundary(
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           itemCount: ordered.length + (hasMine ? 0 : 1),
-          separatorBuilder: (_, __) => const SizedBox(width: 14),
+          separatorBuilder: (_, __) => const SizedBox(width: 10),
           itemBuilder: (ctx, i) {
-            // Bouton "Mon statut" toujours en premier si pas encore de statut
+            // Carte "Mon statut" (si pas encore de statut actif)
             if (!hasMine && i == 0) {
-              return _StatusAvatar(
+              return _StatusCard(
                 label: l10n.t('status_my_status'),
                 avatarUrl: safeCurrentUserAvatar,
                 isAdd: true,
                 hasUnseen: false,
-                semanticsLabel: l10n.t('status_add_status'),
+                isMine: true,
                 onTap: () {
                   HapticFeedback.selectionClick();
                   _openCreate(context);
@@ -139,35 +130,23 @@ class StatusStoryRow extends ConsumerWidget {
 
             final displayName = isMine
                 ? l10n.t('status_my_status')
-                : _StoryValidators.safeFirstName(
-                    first.displayName,
-                    _StoryValidators.safeInitial(first.displayName),
-                  );
-            final safeAvatar = _StoryValidators.sanitizeUrl(first.avatarUrl);
+                : _StoryValidators.safeFirstName(first.displayName, 'User');
 
-            final semanticsLabel = isMine
-                ? (hasUnseen
-                    ? l10n.t('status_my_status_unseen')
-                    : l10n.t('status_my_status_seen'))
-                : (hasUnseen
-                    ? "${l10n.t('status_user_unseen')} $displayName" 
-: "${l10n.t('status_user_seen')} $displayName");
+            // L'image de fond (si c'est une vidéo, on affiche un placeholder ou une miniature)
+            final mediaUrl = _StoryValidators.sanitizeUrl(first.mediaUrl);
+            final isVideo = first.mediaType == 'video';
 
-
-            return _StatusAvatar(
+            return _StatusCard(
               label: displayName,
-              avatarUrl: safeAvatar,
-              isAdd: isMine && stories.isEmpty,
+              avatarUrl: _StoryValidators.sanitizeUrl(first.avatarUrl),
+              mediaUrl: isVideo ? null : mediaUrl, // On ne met pas l'URL vidéo en background direct
+              textContent: first.content,
+              background: first.background,
               hasUnseen: hasUnseen,
               isMine: isMine,
-              semanticsLabel: semanticsLabel,
               onTap: () {
                 HapticFeedback.selectionClick();
-                if (isMine && stories.isEmpty) {
-                  _openCreate(context);
-                } else {
-                  _openViewer(context, stories);
-                }
+                _openViewer(context, stories);
               },
               onLongPress: isMine
                   ? () {
@@ -183,127 +162,194 @@ class StatusStoryRow extends ConsumerWidget {
   }
 
   void _openCreate(BuildContext context) {
-    debugPrint('[StatusStory] ➕ Opening create status page');
     Navigator.push(context, MaterialPageRoute(builder: (_) => const CreateStatusPage()));
   }
 
   void _openViewer(BuildContext context, List<UserStatusStory> stories) {
-    debugPrint('[StatusStory] 👁️ Opening viewer with ${stories.length} stories');
     Navigator.push(context, MaterialPageRoute(builder: (_) => StatusViewerPage(stories: stories)));
   }
 }
 
 // ============================================================================
-// STATUS AVATAR
+// WIDGET CARTE (Style WhatsApp)
 // ============================================================================
-class _StatusAvatar extends StatelessWidget {
+class _StatusCard extends StatelessWidget {
   final String label;
   final String? avatarUrl;
+  final String? mediaUrl;
+  final String? textContent;
+  final String? background;
   final bool isAdd;
   final bool hasUnseen;
   final bool isMine;
-  final String semanticsLabel;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
 
-  const _StatusAvatar({
+  const _StatusCard({
     required this.label,
     this.avatarUrl,
+    this.mediaUrl,
+    this.textContent,
+    this.background,
     this.isAdd = false,
     this.hasUnseen = false,
     this.isMine = false,
-    required this.semanticsLabel,
     required this.onTap,
     this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-
-    // Couleurs du ring selon état
-    final ringColor = hasUnseen
-        ? ThixPolicy.gold
-        : (isMine ? ThixPolicy.primary : ThixPolicy.border);
-
     final safeLabel = _StoryValidators.sanitize(label, maxLength: _kMaxLabelLength);
+
+    // Couleurs de la bordure d'état (Vert si non vu, Gris si vu)
+    final borderColor = hasUnseen ? const Color(0xFF25D366) : Colors.transparent;
+
+    // Décodage de la couleur de fond du statut texte
+    Color bgColor = Colors.grey[300]!;
+    if (background != null && background!.startsWith('#') && background!.length >= 7) {
+      try {
+        bgColor = Color(int.parse('FF${background!.replaceAll('#', '')}', radix: 16));
+      } catch (_) {}
+    }
 
     return Semantics(
       button: true,
-      label: semanticsLabel,
+      label: label,
       child: GestureDetector(
         onTap: onTap,
         onLongPress: onLongPress,
-        child: Column(
-          children: [
-            Stack(
-              clipBehavior: Clip.none,
+        child: Container(
+          width: _kCardWidth,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(_kCardRadius),
+            border: hasUnseen 
+                ? Border.all(color: borderColor, width: 2.5) 
+                : Border.all(color: Colors.black12, width: 1), // Bordure fine si vu
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(_kCardRadius - 2),
+            child: Stack(
+              fit: StackFit.expand,
               children: [
-                // Ring gradient/coloré
-                Container(
-                  padding: const EdgeInsets.all(_kRingPadding),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: hasUnseen || isMine
-                        ? LinearGradient(
-                            colors: hasUnseen
-                                ? [ThixPolicy.gold, ThixPolicy.gold.withOpacity(0.6)]
-                                : [ThixPolicy.primary, ThixPolicy.primary.withOpacity(0.6)],
-                          )
-                        : null,
-                    color: hasUnseen || isMine ? null : ringColor,
-                  ),
-                  child: CircleAvatar(
-                    radius: _kAvatarRadius,
-                    backgroundColor: ThixPolicy.tint,
-                    backgroundImage: avatarUrl != null
-                        ? CachedNetworkImageProvider(avatarUrl!)
-                        : null,
-                    child: avatarUrl == null
-                        ? Icon(
-                            isAdd ? Icons.add : Icons.person_rounded,
-                            color: ThixPolicy.primaryDeep,
-                            size: isAdd ? 26 : 22,
-                          )
-                        : null,
-                  ),
-                ),
-                // Badge "+" pour ajouter statut
-                if (isAdd || isMine)
-                  Positioned(
-                    right: 0,
-                    bottom: 0,
-                    child: Container(
-                      width: _kAddBadgeSize,
-                      height: _kAddBadgeSize,
-                      decoration: BoxDecoration(
-                        color: ThixPolicy.primary,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: ThixPolicy.card, width: _kAddBadgeBorder),
+                // 1. FOND (Image, Texte ou Couleur)
+                _buildBackground(bgColor),
+
+                // 2. DÉGRADÉ NOIR EN BAS (Pour lire le texte)
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  height: 70,
+                  child: Container(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          Colors.transparent,
+                          Colors.black.withOpacity(0.8),
+                        ],
                       ),
-                      child: const Icon(Icons.add, size: 14, color: Colors.white),
                     ),
                   ),
+                ),
+
+                // 3. BOUTON "+" (Uniquement pour "Mon statut")
+                if (isAdd)
+                  Positioned(
+                    top: 8,
+                    right: 8,
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF25D366), // Vert WhatsApp
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                      ),
+                      child: const Icon(Icons.add, size: 18, color: Colors.white),
+                    ),
+                  ),
+
+                // 4. NOM DU CONTACT (En bas)
+                Positioned(
+                  bottom: 10,
+                  left: 10,
+                  right: 10,
+                  child: Text(
+                    safeLabel.isEmpty ? 'Statut' : safeLabel,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      height: 1.2,
+                    ),
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 6),
-            SizedBox(
-              width: _kLabelWidth,
-              child: Text(
-                safeLabel.isEmpty ? l10n.t('status_unknown') : safeLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: ThixPolicy.captionStyle.copyWith(
-                  fontSize: 11,
-                  fontWeight: ThixPolicy.bold,
-                  color: ThixPolicy.textMain,
-                ),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
+  }
+
+  Widget _buildBackground(Color bgColor) {
+    // Cas 1 : Bouton "Mon statut" (avec avatar centré sur fond gris)
+    if (isAdd || isMine && mediaUrl == null && textContent == null) {
+      return Container(
+        color: const Color(0xFFF0F2F5), // Gris clair WhatsApp
+        alignment: Alignment.center,
+        child: CircleAvatar(
+          radius: 28,
+          backgroundColor: Colors.grey[300],
+          backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl!) : null,
+          child: avatarUrl == null ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
+        ),
+      );
+    }
+
+    // Cas 2 : Statut avec Image
+    if (mediaUrl != null) {
+      return CachedNetworkImage(
+        imageUrl: mediaUrl!,
+        fit: BoxFit.cover,
+        placeholder: (_, __) => Container(color: Colors.grey[300]),
+        errorWidget: (_, __, ___) => Container(color: Colors.grey[400]),
+      );
+    }
+
+    // Cas 3 : Statut Texte (Fond coloré + texte au centre)
+    if (textContent != null && textContent!.isNotEmpty) {
+      return Container(
+        color: bgColor,
+        padding: const EdgeInsets.all(12),
+        alignment: Alignment.center,
+        child: Text(
+          textContent!,
+          textAlign: TextAlign.center,
+          maxLines: 5,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      );
+    }
+
+    // Fallback
+    return Container(color: Colors.grey[300]);
   }
 }
