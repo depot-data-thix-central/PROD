@@ -4,13 +4,15 @@
 // (compteurs réels like/commentaires), image adaptative, galerie, vidéo,
 // badges, audio, aperçu de lien, miniature vidéo, likers, boutons, réactions.
 //
-// v2 :
-//  ✅ PcActionBtn accepte un [labelWidget] custom (pour compteurs animés)
-//  ✅ PcAnimatedCount : compteur avec pop animé (scale+fade)
-//  ✅ SpaceLiveBus + PcSpaceLiveBand : bande violette avec micro pulsant
-//     quand l'utilisateur est dans un Space audio
+// v2.1 :
+//  ✅ FIX SYNTAXE — PcValidators.sanitize() : les '\n' étaient devenus de vrais
+//     retours à la ligne dans les chaînes (copier-coller) → erreur de parsing.
+//  ✅ PcActionBtn accepte un [labelWidget] optionnel (compteurs animés).
+//  ✅ PcAnimatedCount : compteur avec pop animé.
+//  ✅ SpaceLiveBus + PcSpaceLiveBand + PcSpaceLiveBandHost : bande violette
+//     avec micro pulsant quand l'utilisateur est dans un Space audio.
 //
-// v1 : version originale
+// v1 : version originale.
 
 import 'dart:async';
 import 'dart:collection';
@@ -120,6 +122,9 @@ class PcValidators {
     r'^(localhost|127\.|0\.|10\.|192\.168\.|169\.254\.|::1$|fc00:|fd00:)',
     caseSensitive: false,
   );
+
+  // ✅ FIX SYNTAXE v2.1 : les '\n' / '\r\n' sont de nouveau de vraies séquences
+  // d'échappement (et non des retours à la ligne littéraux dans les chaînes).
   static String sanitize(String? input, {int maxLength = PcConfig.maxSanitizedLength, bool multiline = true}) {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
@@ -313,7 +318,8 @@ Future<void> pcDownloadMedia(BuildContext context, String url) async {
   final ok = result == MediaSaveResult.saved;
   final msg = switch (result) {
     MediaSaveResult.saved => pcTr(l10n, 'post_download_saved', 'Enregistré dans votre galerie'),
-    MediaSaveResult.denied => pcTr(l10n, 'post_download_denied', 'Autorisez l'accès aux photos dans les réglages'),
+    // ✅ FIX SYNTAXE : guillemets doubles pour l'apostrophe "l'accès"
+    MediaSaveResult.denied => pcTr(l10n, 'post_download_denied', "Autorisez l'accès aux photos dans les réglages"),
     _ => pcTr(l10n, 'post_download_failed', 'Impossible de télécharger'),
   };
   messenger.showSnackBar(SnackBar(
@@ -662,6 +668,8 @@ class PostItemNotifier extends StateNotifier<NetworkPost> {
       try {
         final result = await service.togglePostLike(id).timeout(PcConfig.networkTimeout);
         if (_isDisposed) return;
+        // On ne fait PAS confiance à result.likesCount (peut valoir 0) :
+        // seul l'état liked est pris, le compteur est relu en base ensuite.
         state = state.copyWith(isLiked: result.liked);
         PcCache.instance.optimisticLikes[id] = result.liked;
       } catch (_) {
@@ -789,7 +797,7 @@ class _PcPopState extends State<PcPop> with SingleTickerProviderStateMixin {
 }
 
 // ============================================================================
-// ✅ COMPTEUR ANIMÉ (petit pop à chaque changement de valeur)
+// ✅ COMPTEUR ANIMÉ (pop à chaque changement de valeur)
 // ============================================================================
 class PcAnimatedCount extends StatelessWidget {
   final int count;
@@ -825,6 +833,9 @@ class PcAnimatedCount extends StatelessWidget {
 
 // ============================================================================
 // IMAGE ADAPTATIVE — ratio réel de la photo (façon Facebook)
+//   • ratio borné [minImageRatio, maxImageRatio]
+//   • si coupe nécessaire → coupe EN BAS (alignement haut), jamais en haut
+//   • ratio mémorisé → pas de saut de hauteur au re-scroll
 // ============================================================================
 class PcAdaptiveImage extends StatefulWidget {
   final String url;
@@ -1494,6 +1505,7 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
           child: Row(mainAxisSize: MainAxisSize.min, children: [
             Icon(widget.style.icon, size: 15, color: Colors.white),
             const SizedBox(width: 7),
+            // ✅ FIX : "widget.label" (le label est sur PcPulsingBadge, pas sur PcBadgeStyle)
             Text(widget.label,
                 style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 0.9, height: 1)),
           ]),
@@ -1504,7 +1516,7 @@ class _PcPulsingBadgeState extends State<PcPulsingBadge> with SingleTickerProvid
 }
 
 // ============================================================================
-// BOUTON D'ACTION (tap + appui long + emoji de réaction + labelWidget custom)
+// BOUTON D'ACTION (tap + appui long + emoji de réaction + labelWidget)
 // ============================================================================
 class PcActionBtn extends StatelessWidget {
   const PcActionBtn({
@@ -1516,7 +1528,7 @@ class PcActionBtn extends StatelessWidget {
     this.onLongPress,
     this.iconWidget,
     this.semanticsLabel,
-    this.labelWidget, // ✅ NOUVEAU : widget custom à la place du label texte
+    this.labelWidget, // ✅ v2 : widget custom à la place du label texte
   });
   final IconData icon;
   final String label;
@@ -2230,7 +2242,7 @@ class _PcLikersStackState extends State<PcLikersStack> {
 // ============================================================================
 //
 // Quand l'utilisateur est dans un Space audio, une bande violette avec un
-// micro animé s'affiche en haut du feed (première PostCard) pour pouvoir :
+// micro animé peut s'afficher (via PcSpaceLiveBandHost) pour :
 //   - retourner dans le space (tap sur la bande)
 //   - muter / démuter le micro (bouton micro)
 //   - quitter le space (bouton ✕)
@@ -2321,8 +2333,7 @@ class PcSpaceLiveBand extends StatefulWidget {
   State<PcSpaceLiveBand> createState() => _PcSpaceLiveBandState();
 }
 
-class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
-    with SingleTickerProviderStateMixin {
+class _PcSpaceLiveBandState extends State<PcSpaceLiveBand> with SingleTickerProviderStateMixin {
   static const Color _violet = Color(0xFF7C3AED);
   static const Color _violetDeep = Color(0xFF5B21B6);
 
@@ -2364,7 +2375,6 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
               ],
             ),
             child: Row(children: [
-              // ✅ Micro pulsant
               Transform.scale(
                 scale: micScale,
                 child: Container(
@@ -2409,7 +2419,6 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
                   ],
                 ),
               ),
-              // Auditeurs
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
@@ -2424,7 +2433,6 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
                 ]),
               ),
               const SizedBox(width: 6),
-              // ✅ Toggle micro
               GestureDetector(
                 onTap: widget.onToggleMute,
                 child: Container(
@@ -2438,7 +2446,6 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
                 ),
               ),
               const SizedBox(width: 6),
-              // Quitter
               GestureDetector(
                 onTap: widget.onLeave,
                 child: const Padding(
@@ -2454,7 +2461,7 @@ class _PcSpaceLiveBandState extends State<PcSpaceLiveBand>
   }
 }
 
-/// Hôte à placer en haut de la PREMIÈRE PostCard : n'affiche rien si pas de space.
+/// Hôte : n'affiche la bande que si un Space est actif.
 class PcSpaceLiveBandHost extends StatelessWidget {
   const PcSpaceLiveBandHost({super.key});
 
