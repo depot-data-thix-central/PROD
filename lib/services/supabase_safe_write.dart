@@ -1,3 +1,16 @@
+// lib/services/supabase_safe_write.dart
+//
+// v2 :
+//  ✅ FIX ID — upsert() accepte désormais `ignoreDuplicates: true`
+//     pour passer ON CONFLICT DO NOTHING à PostgREST.
+//     Utile pour les "soft ensure" qui ne doivent JAMAIS écraser un
+//     enregistrement existant (ex: ensureProfileExists, ensureUserExists).
+//     Sans ce flag, un upsert classique fait ON CONFLICT DO UPDATE SET ...
+//     et peut réinitialiser des colonnes critiques (thix_id, registration_status)
+//     avec des valeurs par défaut, forçant l'utilisateur à refaire l'onboarding.
+//
+// v1 : schema-drift tolerance (PGRST204), criticalColumns, security guard.
+
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -7,7 +20,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 /// "Could not find the '<col>' column of '<table>' in the schema cache".
 ///
 /// These helpers retry by removing unknown columns from the payload.
-/// 
+///
 /// ⚠️ IMPORTANT : Columns marked as [criticalColumns] will cause an immediate
 /// failure if they don't exist in the schema. Never remove critical columns
 /// silently as this can lead to data inconsistencies.
@@ -69,10 +82,30 @@ class SupabaseSafeWrite {
   /// Upserts [payload] into [table].
   ///
   /// If Supabase rejects a column due to schema cache, we remove it and retry.
-  /// 
+  ///
   /// [criticalColumns] are columns that MUST exist in the schema. If any of them
   /// is unknown, the operation fails immediately instead of silently removing it.
   /// Example: ['thix_id', 'registration_status', 'account_status']
+  ///
+  /// ✅ NOUVEAU [ignoreDuplicates] : si `true`, passe `ignoreDuplicates: true`
+  /// à PostgREST, ce qui génère un `ON CONFLICT DO NOTHING` au lieu de
+  /// `ON CONFLICT DO UPDATE SET ...`.
+  ///
+  /// Usage typique : "soft ensure" qui ne doit JAMAIS écraser un
+  /// enregistrement existant (ex: ensureProfileExists après une perte de
+  /// réseau — on veut juste garantir que la ligne existe, sans réinitialiser
+  /// `thix_id`, `registration_status` ou `avatar_url`).
+  ///
+  /// Exemple :
+  /// ```dart
+  /// await SupabaseSafeWrite.upsert(
+  ///   client: client,
+  ///   table: 'profiles',
+  ///   payload: {'id': uid, 'display_name': name},
+  ///   onConflict: 'id',
+  ///   ignoreDuplicates: true, // ON CONFLICT DO NOTHING
+  /// );
+  /// ```
   static Future<void> upsert({
     required SupabaseClient client,
     required String table,
@@ -81,13 +114,19 @@ class SupabaseSafeWrite {
     int maxRetries = 6,
     List<String> criticalColumns = const [],
     Future<void> Function()? onUnknownColumn,
+    bool ignoreDuplicates = false, // ✅ NOUVEAU
   }) async {
     final data = Map<String, dynamic>.from(payload);
     var reloaded = false;
-    
+
     for (var attempt = 0; attempt <= maxRetries; attempt++) {
       try {
-        await client.from(table).upsert(data, onConflict: onConflict);
+        // ✅ FIX ID : transmettre ignoreDuplicates à PostgREST
+        await client.from(table).upsert(
+          data,
+          onConflict: onConflict,
+          ignoreDuplicates: ignoreDuplicates,
+        );
         return;
       } on PostgrestException catch (e, st) {
         if (_isUnknownColumn(e) && !reloaded && onUnknownColumn != null) {
@@ -101,18 +140,20 @@ class SupabaseSafeWrite {
         }
 
         if (!_isUnknownColumn(e) || attempt == maxRetries) {
-          debugPrint('SupabaseSafeWrite.upsert failed table=$table payloadKeys=${data.keys.toList()} err=${e.message}');
+          debugPrint('SupabaseSafeWrite.upsert failed table=$table '
+              'payloadKeys=${data.keys.toList()} '
+              'ignoreDuplicates=$ignoreDuplicates err=${e.message}');
           debugPrint('$st');
           rethrow;
         }
-        
+
         final col = _extractUnknownColumn(e);
         if (col == null) {
           debugPrint('SupabaseSafeWrite.upsert: unknown column but could not extract name. table=$table err=${e.message}');
           debugPrint('$st');
           rethrow;
         }
-        
+
         if (criticalColumns.contains(col)) {
           final errorMsg = 'CRITICAL: Column "$col" is marked as critical but does not exist in schema. '
               'This indicates a missing migration. table=$table';
@@ -120,13 +161,13 @@ class SupabaseSafeWrite {
           debugPrint('$st');
           throw Exception(errorMsg);
         }
-        
+
         if (!data.containsKey(col)) {
           debugPrint('SupabaseSafeWrite.upsert: unknown column "$col" not in payload keys=${data.keys.toList()} table=$table');
           debugPrint('$st');
           rethrow;
         }
-        
+
         data.remove(col);
         if (kDebugMode) {
           print('⚠️ WARNING: SupabaseSafeWrite.upsert removed unknown column "$col" from payload. '
@@ -148,7 +189,7 @@ class SupabaseSafeWrite {
   }) async {
     final data = Map<String, dynamic>.from(patch);
     var reloaded = false;
-    
+
     for (var attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         var q = client.from(table).update(data);
@@ -171,27 +212,27 @@ class SupabaseSafeWrite {
           debugPrint('$st');
           rethrow;
         }
-        
+
         final col = _extractUnknownColumn(e);
         if (col == null) {
           debugPrint('SupabaseSafeWrite.update: unknown column but could not extract name. table=$table err=${e.message}');
           debugPrint('$st');
           rethrow;
         }
-        
+
         if (criticalColumns.contains(col)) {
           final errorMsg = 'CRITICAL: Column "$col" is marked as critical but does not exist in schema. table=$table';
           debugPrint(errorMsg);
           debugPrint('$st');
           throw Exception(errorMsg);
         }
-        
+
         if (!data.containsKey(col)) {
           debugPrint('SupabaseSafeWrite.update: unknown column "$col" not in payload keys=${data.keys.toList()} table=$table');
           debugPrint('$st');
           rethrow;
         }
-        
+
         data.remove(col);
         if (kDebugMode) {
           print('⚠️ WARNING: SupabaseSafeWrite.update removed unknown column "$col" from payload. table=$table');
@@ -241,14 +282,14 @@ class SupabaseSafeWrite {
           debugPrint('$st');
           rethrow;
         }
-        
+
         if (criticalColumns.contains(col)) {
           final errorMsg = 'CRITICAL: Column "$col" is marked as critical but does not exist in schema. table=$table';
           debugPrint(errorMsg);
           debugPrint('$st');
           throw Exception(errorMsg);
         }
-        
+
         removed.add(col);
         for (final r in data) {
           r.remove(col);
