@@ -273,7 +273,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     setState(() => _sending = true);
 
     try {
-      final service = StatusService();
+      final service = ref.read(statusServiceProvider);
       final sanitizedCaption = _StatusValidators.sanitizeText(
         _textCtrl.text.trim(),
         maxLength: 100,
