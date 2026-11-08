@@ -2,14 +2,16 @@
 //
 // FeedProvider — Production Enterprise (Riverpod AsyncNotifier)
 //
-// Timeouts + retry sur erreurs 5xx
-// Logs structurés avec niveaux INFO/WARN/ERROR
-//  Validation des inputs et données reçues
-//  Throttling sur actions utilisateur
-//  Protection contre race conditions
-//  Error recovery robuste
-//  Observabilité complète
-//  Onglet "Pour vous" (foryou) branché sur le smart feed DB
+// v2 :
+//  ✅ FIX CRITIQUE — L'onglet "Pour vous" ('all') applique désormais le
+//     SmartMix côté client. Avant : passthrough DB (ordre figé) → le feed
+//     "ne bougeait pas" et les nouvelles publications ne remontaient jamais.
+//  ✅ Chaque page paginée est mixée indépendamment → cohérent au scroll.
+//  ✅ Conserve : timeouts, retry 5xx, throttling, optimistic updates,
+//     memory limit, anti-doublons, protection race conditions.
+//
+// v1 : version originale (passthrough DB pour 'all').
+
 import 'dart:math';
 
 import 'package:flutter/foundation.dart';
@@ -76,8 +78,6 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // ════════════════════════════════════════════════════════════════════
 
   /// "Pour vous" (foryou, for_you, smart, ...) → 'all' = smart feed DB.
-  /// Avant : 'foryou' n'était pas reconnu, donc l'app lisait le feed
-  /// par date de création au lieu du smart feed.
   String _normalizeType(String type) {
     final t = type.trim().toLowerCase().replaceAll(' ', '').replaceAll('_', '');
     switch (t) {
@@ -121,7 +121,10 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
           {'count': _connectionIds.length});
     } catch (e) {
       _FeedLogger.error('Connections load failed', {'error': '$e'});
-      _connectionIds = {};
+      // ✅ En offline : garde l'ancien cache si disponible (ne vide plus)
+      if (_connectionIds.isEmpty) {
+        _connectionIds = {};
+      }
     }
   }
 
@@ -175,7 +178,7 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
   // FETCH WITH RETRY
   // ════════════════════════════════════════════════════════════════════
 
-  Future<List<NetworkPost>> _fetchWithRetry<T>(
+  Future<List<NetworkPost>> _fetchWithRetry(
     Future<List<NetworkPost>> Function() fetcher, {
     int maxAttempts = _kMaxRetryAttempts,
   }) async {
@@ -243,7 +246,8 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
 
       _hasMore = true;
       _lastPostDate = null;
-      // ✅ NOUVEAU seed à chaque refresh pour varier le contenu
+      // ✅ Nouveau seed à chaque refresh → la DB varie les candidats,
+      //    et le SmartMix client recompose un ordre frais.
       _feedSeed = Random().nextInt(1000000000);
 
       _FeedLogger.info('Loading feed',
@@ -308,7 +312,8 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     _isFetchingMore = true;
 
     try {
-      // ✅ MÊME seed que le refresh initial → pagination cohérente
+      // ✅ La page suivante est mixée indépendamment, puis ajoutée :
+      //    l'ordre déjà vu ne change pas (stabilité UX façon Facebook).
       final more = await _fetch(offset: current.length);
 
       // Anti-doublon
@@ -339,7 +344,11 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
     final limit = _currentType == 'all' ? (offset == 0 ? 50 : 30) : 20;
 
     if (_currentType == 'all') {
-      // ✅ SMART FEED : La DB s'occupe du tri
+      // ✅ FIX v2 CRITIQUE : avant, ce bloc faisait un "passthrough"
+      //    (ordre DB conservé, aucun ranking client) → le feed ne bougeait
+      //    jamais. Maintenant : la DB fournit les CANDIDATS (seed), et le
+      //    SmartMix client (FeedRanker) compose l'ordre final :
+      //    épinglés en top, puis alternance récents / anciens performants.
       final posts = await _fetchWithRetry(
         () => service.getFeedPosts(
           feedType: 'all',
@@ -350,10 +359,12 @@ class Feed extends AsyncNotifier<List<NetworkPost>> {
       );
 
       _hasMore = posts.length >= limit;
-      return _enforceMemoryLimit(_filterValidPosts(posts));
+      if (posts.isNotEmpty) _lastPostDate = posts.last.createdAt;
+
+      return _enforceMemoryLimit(_rank(_filterValidPosts(posts)));
     }
 
-    // ── Autres onglets ──
+    // ── Autres onglets (Réseau, Récents, Populaires) ──
     final posts = await _fetchWithRetry(
       () => service.getFeedPosts(
         feedType: _currentType,
