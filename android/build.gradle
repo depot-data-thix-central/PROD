@@ -1,5 +1,9 @@
 buildscript {
     repositories {
+        // 👇 AJOUT : miroirs Aliyun AVANT les dépôts officiels
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         google()
         mavenCentral()
     }
@@ -11,6 +15,10 @@ buildscript {
 
 allprojects {
     repositories {
+        // 👇 AJOUT : miroirs Aliyun AVANT les dépôts officiels
+        maven { url 'https://maven.aliyun.com/repository/public' }
+        maven { url 'https://maven.aliyun.com/repository/google' }
+        maven { url 'https://maven.aliyun.com/repository/gradle-plugin' }
         google()
         mavenCentral()
     }
@@ -38,8 +46,8 @@ subprojects {
             }
         }
     }
-} 
- 
+}
+
 subprojects {
     afterEvaluate { project ->
         if (project.plugins.hasPlugin("com.android.application") ||
