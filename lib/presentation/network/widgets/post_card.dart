@@ -422,7 +422,8 @@ class _PostCardState extends ConsumerState<PostCard> {
         pcToast(context, 'Profil @$username introuvable');
       }
     } catch (_) {
-      if (mounted) pcToast(context, 'Impossible d'ouvrir @$username', bg: ThixPolicy.danger);
+      // ✅ FIX : guillemets doubles car apostrophe dans "d'ouvrir"
+      if (mounted) pcToast(context, "Impossible d'ouvrir @$username", bg: ThixPolicy.danger);
     }
   }
 
@@ -1133,7 +1134,8 @@ class _PostCardState extends ConsumerState<PostCard> {
   void _showStats(NetworkPost post, AppLocalizations l10n) {
     final rows = <MapEntry<String, int>>[
       MapEntry(pcTr(l10n, 'post_stats_impressions', 'Impressions'), _impressionsOf(post)),
-      MapEntry(pcTr(l10n, 'post_stats_likes', 'J'aime'), post.likesCount),
+      // ✅ FIX : guillemets doubles car apostrophe dans "J'aime"
+      MapEntry(pcTr(l10n, 'post_stats_likes', "J'aime"), post.likesCount),
       MapEntry(pcTr(l10n, 'post_stats_comments', 'Commentaires'), post.commentsCount),
       MapEntry(pcTr(l10n, 'post_stats_reposts', 'Republications'), post.repostsCount),
     ];
@@ -1385,7 +1387,8 @@ class _PostCardState extends ConsumerState<PostCard> {
         ),
       ),
       IconButton(
-        tooltip: pcTr(l10n, 'post_more_options', 'Plus d'options'),
+        // ✅ FIX : guillemets doubles car apostrophe dans "d'options"
+        tooltip: pcTr(l10n, 'post_more_options', "Plus d'options"),
         onPressed: () => _showPostMenu(post, isOwner, isCurrentUserFree, ref, l10n),
         icon: Icon(Icons.more_horiz_rounded, color: PcTheme.text2(context)),
       ),
