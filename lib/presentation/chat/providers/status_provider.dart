@@ -3,10 +3,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
-// ✅ PLUS BESOIN DE AUTH_CONTROLLER ICI NON PLUS !
 import 'package:thix_id/models/chat/user_status_story.dart';
 import 'package:thix_id/presentation/chat/providers/chat_providers.dart';
+import 'package:thix_id/services/chat/status_service.dart';
 
 // ============================================================================
 // CONSTANTS
@@ -17,6 +18,13 @@ const int _kMaxStatusIdLength = 100;
 const Duration _kStatusTimeout = Duration(seconds: 15);
 const Duration _kRetryDelay = Duration(milliseconds: 500);
 const int _kMaxRetries = 2;
+
+// ============================================================================
+// ✅ SERVICE PROVIDER (manquant — cause du build failure)
+// ============================================================================
+final statusServiceProvider = Provider<StatusService>((ref) {
+  return StatusService(Supabase.instance.client);
+});
 
 // ============================================================================
 // VALIDATORS
@@ -49,9 +57,9 @@ class _StatusValidators {
     return isValidHexColor(sanitized) ? sanitized : fallback;
   }
 
+  // ✅ FIX : expiresAt est non-nullable → pas besoin de check null
   static bool isExpired(UserStatusStory status) {
-    if (status.expiresAt == null) return false;
-    return DateTime.now().isAfter(status.expiresAt!);
+    return DateTime.now().isAfter(status.expiresAt);
   }
 }
 
@@ -110,7 +118,6 @@ class StatusState {
     for (final entry in map.entries) {
       final userId = entry.key;
       final list = entry.value;
-
       if (list.isEmpty) continue;
 
       final isMine = list.any((s) => s.isMine);
@@ -151,7 +158,6 @@ class StatusNotifier extends StateNotifier<StatusState> {
     super.dispose();
   }
 
-  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
   bool _isAuthenticated() {
     final userId = _ref.read(supabaseUserIdProvider);
     if (userId == null) {
@@ -161,7 +167,6 @@ class StatusNotifier extends StateNotifier<StatusState> {
     return true;
   }
 
-  // ✅ CORRIGÉ : Utilisation de supabaseUserIdProvider
   String? _currentUserId() => _ref.read(supabaseUserIdProvider);
 
   void _purgeExpired() {
@@ -317,24 +322,10 @@ class StatusNotifier extends StateNotifier<StatusState> {
 
     final previousItems = List<UserStatusStory>.from(state.items);
 
+    // ✅ FIX : utilise copyWith au lieu de reconstruire le modèle
     state = state.copyWith(
       items: state.items
-          .map((s) => s.statusId == sanitizedId
-              ? UserStatusStory(
-                  statusId: s.statusId,
-                  userId: s.userId,
-                  displayName: s.displayName,
-                  avatarUrl: s.avatarUrl,
-                  content: s.content,
-                  mediaUrl: s.mediaUrl,
-                  mediaType: s.mediaType,
-                  background: s.background,
-                  createdAt: s.createdAt,
-                  expiresAt: s.expiresAt,
-                  isMine: s.isMine,
-                  hasViewed: true,
-                )
-              : s)
+          .map((s) => s.statusId == sanitizedId ? s.copyWith(hasViewed: true) : s)
           .toList(),
     );
 
