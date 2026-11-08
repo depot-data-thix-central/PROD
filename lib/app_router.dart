@@ -25,7 +25,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:provider/provider.dart' as app_provider;
-
+import 'package:thix_id/services/session_snapshot.dart';
 // === CORE, AUTH & MAIN ===
 import 'package:thix_id/supabase/supabase_config.dart';
 import 'package:thix_id/services/network_service.dart';
@@ -349,7 +349,7 @@ class NoTransitionPage<T> extends Page<T> {
 }
 
 // ============================================================================
-// RÉSEAU GLOBAL : sans réseau, le routeur affiche la page "Pas de connexion"
+// RÉSEAU GLOBAL + ÉTAT BACKEND SUPABASE
 // ============================================================================
 const String kNoConnectionPath = '/no-connection';
 
@@ -358,16 +358,27 @@ class AppConnectivity extends ChangeNotifier {
   static final AppConnectivity instance = AppConnectivity._();
 
   bool _offline = false;
+  bool _backendDown = false;  // ✅ NOUVEAU : Supabase inaccessible
   bool _started = false;
   StreamSubscription<List<ConnectivityResult>>? _sub;
+  Timer? _backendRecheckTimer;
 
-  bool get offline => _offline;
+  /// `true` si l'utilisateur est considéré hors-ligne (réseau OU backend down).
+  bool get offline => _offline || _backendDown;
+
+  bool get backendDown => _backendDown;
+  bool get localOffline => _offline;
 
   void start() {
     if (_started) return;
     _started = true;
     unawaited(_check());
     _sub = Connectivity().onConnectivityChanged.listen(_apply);
+    // ✅ Recheck backend toutes les 10s tant qu'il est marqué down
+    _backendRecheckTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _recheckBackend(),
+    );
   }
 
   Future<void> _check() async {
@@ -380,8 +391,44 @@ class AppConnectivity extends ChangeNotifier {
     final off = results.isEmpty || results.every((r) => r == ConnectivityResult.none);
     if (off != _offline) {
       _offline = off;
+      // Quand le réseau local revient, on retente le backend immédiatement
+      if (!off) unawaited(_recheckBackend());
       notifyListeners();
     }
+  }
+
+  /// ✅ NOUVEAU : appelé par le handler de zone (main.dart) ou par AuthManager
+  /// quand une erreur réseau Supabase est détectée.
+  void markBackendDown() {
+    if (!_backendDown) {
+      _backendDown = true;
+      debugPrint('[AppConnectivity] 🔴 backend marked DOWN');
+      notifyListeners();
+    }
+  }
+
+  /// ✅ NOUVEAU : relance SupabaseConfig.initialize() puis rafraîchit l'état.
+  Future<void> markBackendUp() async {
+    if (!_backendDown) return;
+    try {
+      await SupabaseConfig.initialize();
+      _backendDown = false;
+      debugPrint('[AppConnectivity] 🟢 backend marked UP');
+      notifyListeners();
+    } catch (e) {
+      debugPrint('[AppConnectivity] backend still down after recheck: $e');
+    }
+  }
+
+  Future<void> _recheckBackend() async {
+    if (!_backendDown) return;
+    if (_offline) return; // réseau local toujours coupé → inutile
+    await markBackendUp();
+  }
+
+  void dispose() {
+    _sub?.cancel();
+    _backendRecheckTimer?.cancel();
   }
 }
 
@@ -390,10 +437,27 @@ class _NoConnectionPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const PopScope(
+    return PopScope(
       canPop: false,
       child: Scaffold(
-        body: Stack(fit: StackFit.expand, children: [NoConnectionOverlay()]),
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const NoConnectionOverlay(),
+            // ✅ Bouton "Réessayer" étendu : relance aussi le backend
+            Positioned(
+              bottom: 40,
+              left: 0,
+              right: 0,
+              child: Center(
+                child: TextButton(
+                  onPressed: () => AppConnectivity.instance.markBackendUp(),
+                  child: const Text('Forcer reconnexion au serveur'),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -430,128 +494,152 @@ class AppRouter {
         ])),
       ),
 
-      redirect: (context, state) {
-        try {
-          final loc = state.matchedLocation;
+      
+          redirect: (context, state) {
+  try {
+    final loc = state.matchedLocation;
 
-          // 0) RÉSEAU
-          final offline = AppConnectivity.instance.offline;
-          if (offline && loc != kNoConnectionPath) {
-            return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
-          }
-          if (!offline && loc == kNoConnectionPath) {
-            final from = state.uri.queryParameters['from'];
-            if (from != null &&
-                from.startsWith('/') &&
-                !from.startsWith('//') &&
-                !from.startsWith(kNoConnectionPath)) {
-              return from;
-            }
-            return AppRoutes.home;
-          }
-          if (offline) return null;
+    // ─── 0) IMPORT : SessionSnapshot pour le fallback ───
+    // (ajoute en haut du fichier : import 'package:thix_id/services/session_snapshot.dart';)
+    final snapshot = SessionSnapshot.load();
+    final hasSnapshot = snapshot != null;
 
-          // 1) RETOUR OAUTH
-          // ✅ FIX : on NE vide PLUS oauthReturnPath ici. redirect() peut être appelé
-          // plusieurs fois pour un même retour (lien profond en double, rafraîchissement
-          // à la connexion) : le 2e appel trouvait null et renvoyait vers /login.
-          // La page d'inscription remet oauthReturnPath à null elle-même.
-          if (loc.startsWith('/login-callback')) {
-            return oauthReturnPath ?? AppRoutes.login;
-          }
+    // ─── 0) RÉSEAU + BACKEND ───
+    final connectivity = AppConnectivity.instance;
+    final offline = connectivity.offline;
+    final supabaseReady = SupabaseConfig.isInitialized;
 
-          final isLoginPage = loc == AppRoutes.login;
-          final isStartPage = loc == AppRoutes.start;
-          final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
-          const accountStatusPath = '/settings/account-status';
-          final isAccountStatusRoute = loc == accountStatusPath;
-          final isPolicyRoute = loc.startsWith('/settings/policy/');
+    // Cas A : hors-ligne ET on a un snapshot → page "pas de connexion"
+    //          (on NE redirige PAS vers /login même si isAuthenticated=false)
+    if (offline && hasSnapshot && loc != kNoConnectionPath) {
+      return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
+    }
 
-          final isPublic = isStartPage ||
-              isLoginPage ||
-              isRegPage ||
-              isPolicyRoute ||
-              loc == AppRoutes.publicProfile ||
-              loc == AppRoutes.jobs ||
-              loc == AppRoutes.opportunities ||
-              loc == AppRoutes.education ||
-              loc == AppRoutes.trainingHome ||
-              loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
-              loc == AppRoutes.monPays ||
-              loc.startsWith('${AppRoutes.monPays}/') ||
-              loc.startsWith('/thix-event') ||
-              loc.startsWith('/thix-retrouve') ||
-              loc.startsWith('/thix-weeding') ||
-              loc.startsWith('/thix-reservation/delivery');
+    // Cas B : Supabase pas encore initialisé ET on a un snapshot → idem
+    if (!supabaseReady && hasSnapshot && loc != kNoConnectionPath) {
+      return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
+    }
 
-          final logged = auth.isAuthenticated;
-          final currentUser = auth.currentUser;
+    // Cas C : retour en ligne depuis /no-connection → restauration
+    if (!offline && supabaseReady && loc == kNoConnectionPath) {
+      final from = state.uri.queryParameters['from'];
+      if (from != null &&
+          from.startsWith('/') &&
+          !from.startsWith('//') &&
+          !from.startsWith(kNoConnectionPath)) {
+        // ✅ Relance une hydratation pour être sûr d'avoir le profil à jour
+        unawaited(AuthController.instance.init());
+        return from;
+      }
+      return AppRoutes.home;
+    }
 
-          // ✅ FIX : retour Google lancé depuis l'inscription. Si on atterrit sur le
-          // login alors que la session est là, on repart directement sur l'inscription
-          // (plus besoin de rappuyer sur « Créer »).
-          if (logged && isLoginPage && oauthReturnPath != null) {
-            return oauthReturnPath;
-          }
+    // Cas D : hors-ligne sans snapshot → page "pas de connexion" aussi
+    //          (meilleur UX que /login qui échouera)
+    if (offline && loc != kNoConnectionPath) {
+      return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
+    }
+    if (offline) return null;
 
-          // 2) PAS CONNECTÉ
-          if (!logged) {
-            return isPublic ? null : AppRoutes.login;
-          }
+    // ─── 1) RETOUR OAUTH ───
+    if (loc.startsWith('/login-callback')) {
+      return oauthReturnPath ?? AppRoutes.login;
+    }
 
-          // 3) CONNECTÉ MAIS PROFIL EN CHARGEMENT
-          if (currentUser == null) {
-            if (isLoginPage || isStartPage) return AppRoutes.home;
-            return null;
-          }
+    final isLoginPage = loc == AppRoutes.login;
+    final isStartPage = loc == AppRoutes.start;
+    final isRegPage = loc == AppRoutes.personalReg || loc == AppRoutes.enterpriseReg;
+    const accountStatusPath = '/settings/account-status';
+    final isAccountStatusRoute = loc == accountStatusPath;
+    final isPolicyRoute = loc.startsWith('/settings/policy/');
 
-          // 4) STATUT DU COMPTE
-          final rawLifecycle = currentUser.accountStatus?.toLowerCase();
-          final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
-          final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
-          final isLifecycleBlocked = isDeactivated || isPendingDeletion;
+    final isPublic = isStartPage ||
+        isLoginPage ||
+        isRegPage ||
+        isPolicyRoute ||
+        loc == AppRoutes.publicProfile ||
+        loc == AppRoutes.jobs ||
+        loc == AppRoutes.opportunities ||
+        loc == AppRoutes.education ||
+        loc == AppRoutes.trainingHome ||
+        loc.startsWith('${AppRoutes.trainingDetailsBasePath}/') ||
+        loc == AppRoutes.monPays ||
+        loc.startsWith('${AppRoutes.monPays}/') ||
+        loc.startsWith('/thix-event') ||
+        loc.startsWith('/thix-retrouve') ||
+        loc.startsWith('/thix-weeding') ||
+        loc.startsWith('/thix-reservation/delivery');
 
-          // 5) STATUT D'INSCRIPTION
-          final regStatus = currentUser.registrationStatus?.trim().toLowerCase() ?? '';
-          final isRegistrationCompleted = regStatus == 'active' || regStatus == 'completed';
-          final needsOnboarding = regStatus.isNotEmpty && !isRegistrationCompleted;
+    final logged = auth.isAuthenticated;
+    final currentUser = auth.currentUser;
 
-          final targetDashboard = AppRoutes.userDashboard;
-          final resumeRegistration = '${AppRoutes.personalReg}?step=3';
+    if (logged && isLoginPage && oauthReturnPath != null) {
+      return oauthReturnPath;
+    }
 
-          // 6) COMPTE DÉSACTIVÉ / SUPPRESSION
-          if (isLifecycleBlocked) {
-            if (isAccountStatusRoute || isLoginPage || isStartPage) return null;
-            return accountStatusPath;
-          }
+    // ─── 2) PAS CONNECTÉ ───
+    // ✅ FIX CRITIQUE : si on a un snapshot, on considère l'utilisateur
+    // comme « en attente de reconnexion » et on affiche /no-connection
+    // plutôt que de le forcer à se réinscrire.
+    if (!logged) {
+      if (hasSnapshot && !isPublic) {
+        return '$kNoConnectionPath?from=${Uri.encodeComponent(state.uri.toString())}';
+      }
+      return isPublic ? null : AppRoutes.login;
+    }
 
-          // 7) COMPTE SAIN SUR LA PAGE STATUT
-          if (isAccountStatusRoute) return targetDashboard;
+    // ─── 3) CONNECTÉ MAIS PROFIL EN CHARGEMENT ───
+    if (currentUser == null) {
+      if (isLoginPage || isStartPage) return AppRoutes.home;
+      return null;
+    }
 
-          // 8) CONNECTÉ + SUR LOGIN / START
-          if (isLoginPage || isStartPage) {
-            if (isRegistrationCompleted) return targetDashboard;
-            return resumeRegistration;
-          }
+    // ─── 4) STATUT DU COMPTE ───
+    final rawLifecycle = currentUser.accountStatus?.toLowerCase();
+    final isDeactivated = rawLifecycle == 'deactivated' || currentUser.isDeactivated == true;
+    final isPendingDeletion = rawLifecycle == 'pending_deletion' || currentUser.isPendingDeletion == true;
+    final isLifecycleBlocked = isDeactivated || isPendingDeletion;
 
-          // 9) INSCRIPTION TERMINÉE MAIS SUR LA PAGE D'INSCRIPTION
-          if (isRegPage && isRegistrationCompleted) {
-            if (registrationFinalStepActive) return null;
-            return targetDashboard;
-          }
+    // ─── 5) STATUT D'INSCRIPTION ───
+    final regStatus = currentUser.registrationStatus?.trim().toLowerCase() ?? '';
+    final isRegistrationCompleted = regStatus == 'active' || regStatus == 'completed';
+    final needsOnboarding = regStatus.isNotEmpty && !isRegistrationCompleted;
 
-          // 10) ONBOARDING INACHEVÉ
-          if (!isRegPage && !isPolicyRoute && !isAccountStatusRoute && needsOnboarding) {
-            return resumeRegistration;
-          }
+    final targetDashboard = AppRoutes.userDashboard;
+    final resumeRegistration = '${AppRoutes.personalReg}?step=3';
 
-          return null;
-        } catch (e) {
-          debugPrint('GoRouter redirect error: $e');
-          return null;
-        }
-      },
+    // ─── 6) COMPTE DÉSACTIVÉ / SUPPRESSION ───
+    if (isLifecycleBlocked) {
+      if (isAccountStatusRoute || isLoginPage || isStartPage) return null;
+      return accountStatusPath;
+    }
 
+    // ─── 7) COMPTE SAIN SUR LA PAGE STATUT ───
+    if (isAccountStatusRoute) return targetDashboard;
+
+    // ─── 8) CONNECTÉ + SUR LOGIN / START ───
+    if (isLoginPage || isStartPage) {
+      if (isRegistrationCompleted) return targetDashboard;
+      return resumeRegistration;
+    }
+
+    // ─── 9) INSCRIPTION TERMINÉE MAIS SUR LA PAGE D'INSCRIPTION ───
+    if (isRegPage && isRegistrationCompleted) {
+      if (registrationFinalStepActive) return null;
+      return targetDashboard;
+    }
+
+    // ─── 10) ONBOARDING INACHEVÉ ───
+    if (!isRegPage && !isPolicyRoute && !isAccountStatusRoute && needsOnboarding) {
+      return resumeRegistration;
+    }
+
+    return null;
+  } catch (e) {
+    debugPrint('GoRouter redirect error: $e');
+    return null;
+  }
+},
       routes: [
         // ═══════════════════════════════════════════════════════════════════
         // 1. CORE, AUTH & MAIN
