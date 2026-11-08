@@ -1,6 +1,17 @@
 // lib/main.dart
 //
-// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.12)
+// THIX ID CENTRAL — Point d'entrée (Production Enterprise v2.13)
+//
+// CHANGELOG v2.13 (offline-safe) :
+//   ✅ Supabase init avec retry automatique au retour du réseau
+//      (un cold-start offline ne laisse plus l'app dans un état cassé)
+//   ✅ ErrorWidget.builder affiche "Pas de connexion" au lieu de l'écran
+//      rouge pour les erreurs réseau (SocketException, RealtimeSubscribeException,
+//      Failed host lookup…)
+//   ✅ Handler de zone : AppConnectivity.instance.markBackendDown() sur
+//      erreur réseau → le router affiche /no-connection au lieu de /login
+//   ✅ Au resumed (AppLifecycleState.resumed), retry de Supabase init si
+//      dernière tentative avait échoué
 //
 // CHANGELOG v2.12 :
 //   ✅ Refus CallKit dédupliqué (CallHandledRegistry.markDeclineSent) :
@@ -26,6 +37,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:provider/provider.dart' as app_provider;
 import 'package:go_router/go_router.dart';
+import 'package:connectivity_plus/connectivity_plus.dart'; // ✅ NOUVEAU
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:just_audio_background/just_audio_background.dart';
@@ -47,6 +59,7 @@ import 'package:thix_id/presentation/notifications/widgets/notif_banner_listener
 import 'package:thix_id/presentation/chat/call/callkit_call_handler.dart';
 import 'package:thix_id/presentation/chat/call/global_call_listener.dart';
 import 'package:thix_id/presentation/thix_sos/widgets/global_sos_listener.dart';
+import 'package:thix_id/widgets/no_connection_overlay.dart'; // ✅ NOUVEAU
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:thix_id/data/offline/chat_offline_cache.dart';
 import 'package:thix_id/core/security/security_reporter.dart';
@@ -66,6 +79,55 @@ void _log(String message) => debugPrint('[MAIN] $message');
 
 late final LocaleController _localeController;
 bool _appLaunched = false;
+
+// ============================================================================
+// ✅ NOUVEAU : détection centralisée d'erreur réseau
+// ============================================================================
+
+/// Détecte si un message d'erreur indique une panne réseau ou Supabase.
+/// Utilisé par :
+///   - ErrorWidget.builder (→ afficher "Pas de connexion" au lieu de l'écran rouge)
+///   - FlutterError.onError (→ markBackendDown)
+///   - runZonedGuarded (→ markBackendDown)
+bool _isNetworkError(String msg) {
+  final m = msg.toLowerCase();
+  return m.contains('socketexception') ||
+      m.contains('failed host lookup') ||
+      m.contains('network is unreachable') ||
+      m.contains('connection reset') ||
+      m.contains('connection refused') ||
+      m.contains('authretryablefetchexception') ||
+      m.contains('realtimesubscribeexception') ||
+      m.contains('websocketchannelexception') ||
+      m.contains('channelerror') ||
+      m.contains('handshakeexception') ||
+      m.contains('timeoutexception');
+}
+
+/// ✅ NOUVEAU : tente de (ré)initialiser Supabase.
+/// Appelé :
+///   - au cold-start (depuis main())
+///   - au retour du réseau (listener Connectivity)
+///   - au resumed (AppLifecycleState) si dernière tentative avait échoué
+Future<void> _tryInitSupabase({required String reason}) async {
+  if (SupabaseConfig.isInitialized) return;
+  _log('🔄 Trying Supabase init ($reason)…');
+  try {
+    await SupabaseConfig.initialize().timeout(_kInitTimeout);
+    _log('✅ Supabase init succeeded ($reason)');
+    AppConnectivity.instance.markBackendUp();
+    // Relance AuthController.init() pour hydrater la session depuis le snapshot
+    try {
+      await AuthController.instance.init().timeout(_kInitTimeout);
+      _log('✓ Auth hydrated after late Supabase init');
+    } catch (e) {
+      _log('⚠️ Auth init after Supabase: $e');
+    }
+  } catch (e) {
+    _log('⚠️ Supabase init still failing ($reason): $e');
+    AppConnectivity.instance.markBackendDown();
+  }
+}
 
 // ============================================================================
 // NAVIGATION EN ATTENTE (cold start : le routeur n'existe pas encore)
@@ -173,6 +235,12 @@ Future<void> _handleNotificationAction(
 
   final convId = payload.substring(5);
   if (convId.isEmpty) return;
+
+  // ✅ FIX : vérifier que Supabase est initialisé avant d'accéder à .client
+  if (!SupabaseConfig.isInitialized) {
+    _log('⚠️ Notification action ignored (Supabase not initialized): $actionId');
+    return;
+  }
 
   final supabase = SupabaseConfig.client;
   final currentUserId = SupabaseConfig.currentUser?.id;
@@ -320,33 +388,53 @@ Future<void> main() async {
         _log('⚠️ Offline cache: $e');
       }
 
-      ErrorWidget.builder = (details) => Material(
-            color: const Color(0xFF0A2F5C),
+      // ✅ FIX UI : afficher "Pas de connexion" au lieu de l'écran rouge
+      // pour les erreurs réseau. Les autres erreurs restent affichées en
+      // debug (utile pour les bugs UI).
+      ErrorWidget.builder = (details) {
+        final msg = details.exceptionAsString().toLowerCase();
+        if (_isNetworkError(msg)) {
+          return const Material(
             child: SafeArea(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(16),
-                child: SelectableText(
-                  '❌ ERREUR UI :\n\n${details.exceptionAsString()}',
-                  style: const TextStyle(
-                    color: Colors.redAccent,
-                    fontSize: 12,
-                    height: 1.5,
-                  ),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [NoConnectionOverlay()],
               ),
             ),
           );
+        }
+        return Material(
+          color: const Color(0xFF0A2F5C),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: SelectableText(
+                '❌ ERREUR UI :\n\n${details.exceptionAsString()}',
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                  height: 1.5,
+                ),
+              ),
+            ),
+          ),
+        );
+      };
 
+      // ✅ FIX : sur erreur réseau, marquer le backend comme down pour
+      // que le router affiche /no-connection au lieu de /login.
       FlutterError.onError = (details) {
         final msg = details.exceptionAsString().toLowerCase();
-        final isNetworkAuthError =
-            msg.contains('authretryablefetchexception') ||
-            msg.contains('socketexception') ||
-            msg.contains('connection reset') ||
-            msg.contains('stream has already been listened');
 
-        if (isNetworkAuthError) {
-          _log('⚠️ FlutterError network/stream ignored: ${details.exception}');
+        if (_isNetworkError(msg)) {
+          AppConnectivity.instance.markBackendDown();
+          _log('⚠️ FlutterError network → backend marked down: '
+              '${details.exception}');
+          return; // ne pas afficher la stacktrace
+        }
+
+        if (msg.contains('stream has already been listened')) {
+          _log('⚠️ FlutterError stream ignored: ${details.exception}');
           return;
         }
 
@@ -378,12 +466,21 @@ Future<void> main() async {
         _log('ℹ️ Web: Firebase/VoIP/Badge skipped');
       }
 
-      try {
-        await SupabaseConfig.initialize().timeout(_kInitTimeout);
-        _log('✓ Supabase OK');
-      } catch (e) {
-        _log('⚠️ Supabase: $e');
-      }
+      // ✅ FIX OFFLINE : premier essai Supabase (peut échouer si DNS mort)
+      await _tryInitSupabase(reason: 'cold-start');
+
+      // ✅ FIX OFFLINE : listener sur le retour du réseau.
+      // Si Supabase n'était pas initialisé (DNS mort au cold-start),
+      // on retente dès que le réseau revient.
+      Connectivity().onConnectivityChanged.listen((results) async {
+        final online = results.isNotEmpty &&
+            results.any((r) => r != ConnectivityResult.none);
+        if (online && !SupabaseConfig.isInitialized) {
+          // Petit délai pour laisser le DNS se stabiliser
+          await Future.delayed(const Duration(milliseconds: 800));
+          await _tryInitSupabase(reason: 'connectivity-restored');
+        }
+      });
 
       try {
         await LocalNotificationService.instance
@@ -462,38 +559,38 @@ Future<void> main() async {
       _log('❌ Uncaught (appLaunched=$_appLaunched): $error');
 
       final errorStr = error.toString().toLowerCase();
-      final isNetworkAuthError =
-          errorStr.contains('authretryablefetchexception') ||
-          errorStr.contains('socketexception') ||
-          errorStr.contains('connection reset') ||
-          errorStr.contains('clientexception') ||
-          errorStr.contains('failed host lookup') ||
-          errorStr.contains('network is unreachable');
 
-      if (_appLaunched && isNetworkAuthError) {
-        _log('⚠️ Network/Auth error ignored (app already running, likely offline)');
+      // ✅ FIX : au lieu d'ignorer silencieusement les erreurs réseau,
+      // on les signale à AppConnectivity pour que le router affiche
+      // /no-connection au lieu de /login.
+      if (_isNetworkError(errorStr)) {
+        AppConnectivity.instance.markBackendDown();
+        _log('⚠️ Network error in zone → backend marked down');
         return;
       }
 
-      if (!_appLaunched) {
-        runApp(MaterialApp(
-          theme: ThixPolicy.lightTheme(),
-          themeMode: ThemeMode.light,
-          home: Scaffold(
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: SelectableText(
-                  '❌ Erreur de démarrage :\n$error',
-                  style:
-                      const TextStyle(color: Colors.redAccent, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
+      if (_appLaunched) {
+        _log('⚠️ Non-network error ignored (app already running)');
+        return;
+      }
+
+      runApp(MaterialApp(
+        theme: ThixPolicy.lightTheme(),
+        themeMode: ThemeMode.light,
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SelectableText(
+                '❌ Erreur de démarrage :\n$error',
+                style:
+                    const TextStyle(color: Colors.redAccent, fontSize: 13),
+                textAlign: TextAlign.center,
               ),
             ),
           ),
-        ));
-      }
+        ),
+      ));
     },
   );
 }
@@ -539,6 +636,13 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
 
     if (state == AppLifecycleState.resumed) {
       _log('App resumed → session handled by AuthController (offline-safe)');
+
+      // ✅ FIX OFFLINE : si Supabase n'a pas pu être initialisé
+      // précédemment (DNS mort au cold-start), on retente au resumed.
+      if (!SupabaseConfig.isInitialized || SupabaseConfig.lastAttemptFailed) {
+        unawaited(_tryInitSupabase(reason: 'resumed'));
+      }
+
       if (!kIsWeb && _pushRegistered) {
         unawaited(AppBadgeSyncService.refreshNow());
       }
@@ -597,7 +701,10 @@ class _ThixAppState extends ConsumerState<ThixApp> with WidgetsBindingObserver {
       await PushNotificationService.instance.initialize();
       _log('✓ Push registered');
 
-      final uid = SupabaseConfig.currentUser?.id;
+      // ✅ FIX : vérifier que Supabase est initialisé avant .currentUser
+      final uid = SupabaseConfig.isInitialized
+          ? SupabaseConfig.currentUser?.id
+          : null;
       if (uid != null && uid.isNotEmpty) {
         await AppBadgeSyncService.startListening(uid);
         _log('✓ Badge Realtime started for ${_maskUid(uid)}');
