@@ -13,11 +13,11 @@ import 'package:thix_id/presentation/chat/status/create_status_page.dart';
 import 'package:thix_id/presentation/chat/status/status_viewer_page.dart';
 
 // ============================================================================
-// CONSTANTS (Format WhatsApp Cards)
+// CONSTANTS (Format WhatsApp Cards Ajusté)
 // ============================================================================
-const double _kCardHeight = 170.0; // Hauteur des cartes
-const double _kCardWidth = 115.0;  // Largeur des cartes
-const double _kCardRadius = 16.0;  // Arrondi des coins
+const double _kCardHeight = 135.0; // Réduit pour être moins imposant
+const double _kCardWidth = 95.0;   // Réduit pour être plus compact
+const double _kCardRadius = 12.0;  // Arrondi plus doux
 const int _kMaxLabelLength = 20;
 
 // ============================================================================
@@ -51,12 +51,6 @@ class _StoryValidators {
     if (name.isEmpty) return fallback;
     final first = name.split(' ').first.trim();
     return first.isEmpty ? fallback : first;
-  }
-
-  static String safeInitial(String? name) {
-    final s = sanitize(name, maxLength: 10);
-    if (s.isEmpty) return '?';
-    return s[0].toUpperCase();
   }
 }
 
@@ -96,15 +90,15 @@ class StatusStoryRow extends ConsumerWidget {
     final safeCurrentUserAvatar = _StoryValidators.sanitizeUrl(currentUserAvatar);
 
     return SizedBox(
-      height: _kCardHeight,
+      height: _kCardHeight + 16, // +16 pour le padding vertical
       child: RepaintBoundary(
         child: ListView.separated(
           scrollDirection: Axis.horizontal,
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           itemCount: ordered.length + (hasMine ? 0 : 1),
-          separatorBuilder: (_, __) => const SizedBox(width: 10),
+          separatorBuilder: (_, __) => const SizedBox(width: 8),
           itemBuilder: (ctx, i) {
-            // Carte "Mon statut" (si pas encore de statut actif)
+            // 1. Bouton "Mon statut" (si pas encore de statut)
             if (!hasMine && i == 0) {
               return _StatusCard(
                 label: l10n.t('status_my_status'),
@@ -119,6 +113,7 @@ class StatusStoryRow extends ConsumerWidget {
               );
             }
 
+            // 2. Cartes des contacts
             final idx = hasMine ? i : i - 1;
             final userId = ordered[idx];
             final stories = byUser[userId] ?? [];
@@ -132,14 +127,13 @@ class StatusStoryRow extends ConsumerWidget {
                 ? l10n.t('status_my_status')
                 : _StoryValidators.safeFirstName(first.displayName, 'User');
 
-            // L'image de fond (si c'est une vidéo, on affiche un placeholder ou une miniature)
             final mediaUrl = _StoryValidators.sanitizeUrl(first.mediaUrl);
             final isVideo = first.mediaType == 'video';
 
             return _StatusCard(
               label: displayName,
               avatarUrl: _StoryValidators.sanitizeUrl(first.avatarUrl),
-              mediaUrl: isVideo ? null : mediaUrl, // On ne met pas l'URL vidéo en background direct
+              mediaUrl: isVideo ? null : mediaUrl,
               textContent: first.content,
               background: first.background,
               hasUnseen: hasUnseen,
@@ -171,7 +165,7 @@ class StatusStoryRow extends ConsumerWidget {
 }
 
 // ============================================================================
-// WIDGET CARTE (Style WhatsApp)
+// WIDGET CARTE (Style WhatsApp Compact)
 // ============================================================================
 class _StatusCard extends StatelessWidget {
   final String label;
@@ -201,11 +195,8 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final safeLabel = _StoryValidators.sanitize(label, maxLength: _kMaxLabelLength);
-
-    // Couleurs de la bordure d'état (Vert si non vu, Gris si vu)
     final borderColor = hasUnseen ? const Color(0xFF25D366) : Colors.transparent;
 
-    // Décodage de la couleur de fond du statut texte
     Color bgColor = Colors.grey[300]!;
     if (background != null && background!.startsWith('#') && background!.length >= 7) {
       try {
@@ -223,14 +214,15 @@ class _StatusCard extends StatelessWidget {
           width: _kCardWidth,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(_kCardRadius),
-            border: hasUnseen 
-                ? Border.all(color: borderColor, width: 2.5) 
-                : Border.all(color: Colors.black12, width: 1), // Bordure fine si vu
+            border: Border.all(
+              color: hasUnseen ? borderColor : Colors.black12,
+              width: hasUnseen ? 2.0 : 1.0,
+            ),
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withOpacity(0.05),
-                blurRadius: 4,
-                offset: const Offset(0, 2),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
@@ -239,15 +231,15 @@ class _StatusCard extends StatelessWidget {
             child: Stack(
               fit: StackFit.expand,
               children: [
-                // 1. FOND (Image, Texte ou Couleur)
+                // 1. Fond
                 _buildBackground(bgColor),
 
-                // 2. DÉGRADÉ NOIR EN BAS (Pour lire le texte)
+                // 2. Dégradé noir en bas pour la lisibilité
                 Positioned(
                   bottom: 0,
                   left: 0,
                   right: 0,
-                  height: 70,
+                  height: 50,
                   child: Container(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -255,42 +247,42 @@ class _StatusCard extends StatelessWidget {
                         end: Alignment.bottomCenter,
                         colors: [
                           Colors.transparent,
-                          Colors.black.withOpacity(0.8),
+                          Colors.black.withOpacity(0.75),
                         ],
                       ),
                     ),
                   ),
                 ),
 
-                // 3. BOUTON "+" (Uniquement pour "Mon statut")
+                // 3. Bouton "+" pour Mon Statut
                 if (isAdd)
                   Positioned(
-                    top: 8,
-                    right: 8,
+                    top: 6,
+                    right: 6,
                     child: Container(
-                      width: 28,
-                      height: 28,
+                      width: 24,
+                      height: 24,
                       decoration: BoxDecoration(
-                        color: const Color(0xFF25D366), // Vert WhatsApp
+                        color: const Color(0xFF25D366),
                         shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+                        border: Border.all(color: Colors.white, width: 1.5),
                       ),
-                      child: const Icon(Icons.add, size: 18, color: Colors.white),
+                      child: const Icon(Icons.add, size: 14, color: Colors.white),
                     ),
                   ),
 
-                // 4. NOM DU CONTACT (En bas)
+                // 4. Nom du contact en bas
                 Positioned(
-                  bottom: 10,
-                  left: 10,
-                  right: 10,
+                  bottom: 6,
+                  left: 6,
+                  right: 6,
                   child: Text(
                     safeLabel.isEmpty ? 'Statut' : safeLabel,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Colors.white,
-                      fontSize: 13,
+                      fontSize: 11,
                       fontWeight: FontWeight.bold,
                       height: 1.2,
                     ),
@@ -305,21 +297,21 @@ class _StatusCard extends StatelessWidget {
   }
 
   Widget _buildBackground(Color bgColor) {
-    // Cas 1 : Bouton "Mon statut" (avec avatar centré sur fond gris)
-    if (isAdd || isMine && mediaUrl == null && textContent == null) {
+    // 1. Bouton "Mon statut" (sans statut actif)
+    if (isAdd) {
       return Container(
-        color: const Color(0xFFF0F2F5), // Gris clair WhatsApp
+        color: const Color(0xFFF0F2F5),
         alignment: Alignment.center,
         child: CircleAvatar(
-          radius: 28,
+          radius: 24,
           backgroundColor: Colors.grey[300],
           backgroundImage: avatarUrl != null ? CachedNetworkImageProvider(avatarUrl!) : null,
-          child: avatarUrl == null ? const Icon(Icons.person, color: Colors.grey, size: 30) : null,
+          child: avatarUrl == null ? const Icon(Icons.person, color: Colors.grey, size: 24) : null,
         ),
       );
     }
 
-    // Cas 2 : Statut avec Image
+    // 2. Statut avec Image
     if (mediaUrl != null) {
       return CachedNetworkImage(
         imageUrl: mediaUrl!,
@@ -329,21 +321,21 @@ class _StatusCard extends StatelessWidget {
       );
     }
 
-    // Cas 3 : Statut Texte (Fond coloré + texte au centre)
+    // 3. Statut Texte (Fond coloré + texte au centre)
     if (textContent != null && textContent!.isNotEmpty) {
       return Container(
         color: bgColor,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(8),
         alignment: Alignment.center,
         child: Text(
           textContent!,
           textAlign: TextAlign.center,
-          maxLines: 5,
+          maxLines: 4,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
           ),
         ),
       );
