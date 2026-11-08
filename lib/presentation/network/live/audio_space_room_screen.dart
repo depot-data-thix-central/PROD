@@ -1,23 +1,21 @@
 // lib/presentation/network/live/audio_space_room_screen.dart
 //
 // ============================================================================
-// 🎙️ AUDIO SPACE ROOM SCREEN — UI connectée au Manager (v2)
+// 🎙️ AUDIO SPACE ROOM SCREEN — style X Spaces (v3)
 // ============================================================================
-// Architecture :
-//   AudioSpaceManager (singleton global)
-//        ↓ stream
-//   AudioSpaceController (Riverpod, miroir)
-//        ↓
-//   Cette UI (ref.watch / ref.read)
-//
-// ✅ Survit à la navigation (l'hôte garde le contrôle)
-// ✅ Mode background affiché en bannière
-// ✅ Partage complet (multi-plateforme + invitations + QR)
-// ✅ Réactions propres (sendReaction)
-// ✅ Invitations entrantes détectées
+// ✅ Noms de TOUS les participants visibles (grille avatar + nom + rôle)
+// ✅ « +N autres auditeurs » → liste complète (Sur scène / Demandes / Auditeurs)
+// ✅ Chrono basé sur le début réel du salon (persistant)
+// ✅ Réduire (chevron) : le salon continue, audio en arrière-plan
+// ✅ Quitter / Terminer pour tous (hôte)
+// ✅ Demander la parole / Annuler / micro (intervenants)
+// ✅ Anneau animé sur celui qui parle
+// ✅ Commentaires en fenêtre, réactions flottantes, partage, invitation
+// ✅ Modération : inviter à parler, retirer le micro, couper, co-hôte, expulser
 // ============================================================================
 
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -38,10 +36,12 @@ import 'package:thix_id/l10n/app_localizations.dart';
 const Duration _kActionThrottle = Duration(milliseconds: 400);
 const Duration _kChatThrottle = Duration(milliseconds: 600);
 const int _kChatMaxLength = 300;
+const int _kGridColumns = 4;
+const int _kGridMax = 12;
 const List<String> _kReactions = ['❤️', '👏', '🔥', '😂', '🙌', '🎉', '💯'];
 
 // ════════════════════════════════════════════════════════════════════════
-// SANITIZER
+// HELPERS
 // ════════════════════════════════════════════════════════════════════════
 class _SpaceSanitizer {
   _SpaceSanitizer._();
@@ -56,6 +56,56 @@ class _SpaceSanitizer {
   }
 }
 
+int _rank(AudioSpaceRole r) {
+  switch (r) {
+    case AudioSpaceRole.host:
+      return 0;
+    case AudioSpaceRole.cohost:
+      return 1;
+    case AudioSpaceRole.speaker:
+      return 2;
+    case AudioSpaceRole.listener:
+      return 3;
+  }
+}
+
+int _cmp(AudioSpaceParticipant a, AudioSpaceParticipant b) {
+  final r = _rank(a.role).compareTo(_rank(b.role));
+  if (r != 0) return r;
+  return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+}
+
+String _fmt(Duration d) {
+  String two(int v) => v.toString().padLeft(2, '0');
+  final h = d.inHours;
+  final m = d.inMinutes.remainder(60);
+  final s = d.inSeconds.remainder(60);
+  return h > 0 ? '$h:${two(m)}:${two(s)}' : '${two(m)}:${two(s)}';
+}
+
+Widget _spaceAvatar(String? url, double size) {
+  return Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(
+      shape: BoxShape.circle,
+      color: ThixPolicy.surfaceSoft,
+      border: Border.all(color: ThixPolicy.border),
+    ),
+    child: ClipOval(
+      child: (url != null && url.isNotEmpty)
+          ? CachedNetworkImage(
+              imageUrl: url,
+              fit: BoxFit.cover,
+              errorWidget: (_, __, ___) => Icon(Icons.person,
+                  size: size * 0.5, color: ThixPolicy.textSecondary),
+            )
+          : Icon(Icons.person,
+              size: size * 0.5, color: ThixPolicy.textSecondary),
+    ),
+  );
+}
+
 // ════════════════════════════════════════════════════════════════════════
 // PAGE PRINCIPALE
 // ════════════════════════════════════════════════════════════════════════
@@ -68,15 +118,21 @@ class AudioSpaceRoomScreen extends ConsumerStatefulWidget {
       _AudioSpaceRoomScreenState();
 }
 
-class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
-  final _chatCtrl = TextEditingController();
-  final _chatScroll = ScrollController();
+class _FloaterData {
+  final int id;
+  final String emoji;
+  final double dx;
+  _FloaterData(this.id, this.emoji, this.dx);
+}
 
+class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   DateTime? _lastAction;
-  DateTime? _lastChat;
-  int _reactionBurst = 0;
-  String _lastReaction = '';
   StreamSubscription<Map<String, dynamic>>? _invitesSub;
+
+  final List<_FloaterData> _floaters = [];
+  int _floaterSeq = 0;
+  bool _showReactions = false;
+  bool _closing = false;
 
   // ════════════════════════════════════════════════════════════════════
   // LIFECYCLE
@@ -84,37 +140,53 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AudioSpaceManager.instance.roomOpen.value = true;
+    });
     Future.microtask(_ensureJoined);
     _listenInvites();
   }
 
+  @override
+  void dispose() {
+    _invitesSub?.cancel();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      AudioSpaceManager.instance.roomOpen.value = false;
+    });
+    super.dispose();
+  }
+
   Future<void> _ensureJoined() async {
-  final manager = AudioSpaceManager.instance;
-  if (manager.state.isActive && manager.state.spaceId == widget.space.id) {
-    debugPrint('[Room] Déjà dans ce space, skip join');
-    return;
-  }
-  if (manager.state.isActive) {
-    debugPrint('[Room] Un autre space est actif, skip');
-    return;
-  }
-  final user = ref.read(authControllerProvider).value;
+    if (!mounted) return;
+    final ctrl = ref.read(audioSpaceControllerProvider.notifier);
+    final st = ref.read(audioSpaceControllerProvider);
 
-  // ✅ FIX : utiliser var au lieu de final pour permettre l'assignation dans try/catch
-  bool isVerified = false;
-  try {
-    isVerified = (user as dynamic)?.isVerified ?? false;
-  } catch (_) {
-    isVerified = false;
-  }
+    // Déjà dans CE salon (réduit puis rouvert) : on ne rejoint pas, le chrono continue
+    if (st.isActive && st.spaceId == widget.space.id) return;
 
-  await ref.read(audioSpaceControllerProvider.notifier).join(
-        space: widget.space,
-        displayName: user?.displayName ?? 'Membre THIX',
-        avatarUrl: user?.photoUrl,
-        isVerified: isVerified,
-      );
-}
+    if (st.isActive) {
+      _snack('Quittez d\'abord le salon en cours.', error: true);
+      if (mounted) Navigator.of(context).pop();
+      return;
+    }
+
+    ctrl.acknowledge();
+
+    final user = ref.read(authControllerProvider).value;
+    bool isVerified = false;
+    try {
+      isVerified = (user as dynamic)?.isVerified ?? false;
+    } catch (_) {
+      isVerified = false;
+    }
+
+    await ctrl.join(
+      space: widget.space,
+      displayName: user?.displayName ?? 'Membre THIX',
+      avatarUrl: user?.photoUrl,
+      isVerified: isVerified,
+    );
+  }
 
   void _listenInvites() {
     final userId = ref.read(authControllerProvider).value?.id;
@@ -126,19 +198,8 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
       final inviteSpaceId = invite['space_id']?.toString();
       if (inviteSpaceId != widget.space.id) return;
       if (!mounted) return;
-      _snack(
-        '📨 ${invite['invited_by_name'] ?? "Quelqu\'un"} vous a invité',
-        error: false,
-      );
+      _snack('📨 ${invite['invited_by_name'] ?? "Quelqu\'un"} vous a invité');
     });
-  }
-
-  @override
-  void dispose() {
-    _chatCtrl.dispose();
-    _chatScroll.dispose();
-    _invitesSub?.cancel();
-    super.dispose();
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -156,15 +217,6 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
       return false;
     }
     _lastAction = now;
-    return true;
-  }
-
-  bool _throttleChat() {
-    final now = DateTime.now();
-    if (_lastChat != null && now.difference(_lastChat!) < _kChatThrottle) {
-      return false;
-    }
-    _lastChat = now;
     return true;
   }
 
@@ -191,6 +243,20 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     }
   }
 
+  void _addFloater(String emoji) {
+    if (!mounted) return;
+    final id = ++_floaterSeq;
+    setState(() {
+      _floaters.add(_FloaterData(id, emoji, math.Random().nextDouble() * 70));
+      if (_floaters.length > 25) _floaters.removeAt(0);
+    });
+  }
+
+  void _removeFloater(int id) {
+    if (!mounted) return;
+    setState(() => _floaters.removeWhere((f) => f.id == id));
+  }
+
   // ════════════════════════════════════════════════════════════════════
   // BUILD
   // ════════════════════════════════════════════════════════════════════
@@ -199,243 +265,90 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     final l10n = AppLocalizations.of(context);
     final state = ref.watch(audioSpaceControllerProvider);
     final ctrl = ref.read(audioSpaceControllerProvider.notifier);
-    final liveCount = state.participants.length;
 
-    return PopScope(
-      canPop: false,
-      onPopInvokedWithResult: (didPop, _) async {
-        if (didPop) return;
-        await _handleBack(l10n, ctrl, state);
-      },
-      child: Scaffold(
-        backgroundColor: ThixPolicy.tint,
-        appBar: _buildAppBar(l10n, state, ctrl, liveCount),
-        body: _buildBody(l10n, state, ctrl),
-      ),
-    );
-  }
+    ref.listen<AudioSpaceManagerState>(audioSpaceControllerProvider,
+        (prev, next) {
+      if (next.noticeTick != (prev?.noticeTick ?? 0) && next.notice != null) {
+        _snack(next.notice!);
+      }
+      if (next.reactionTick != (prev?.reactionTick ?? 0) &&
+          next.reactionEmoji != null) {
+        _addFloater(next.reactionEmoji!);
+      }
+      if (_closing || next.space?.id != widget.space.id) return;
+      final kicked = next.status == ManagerStatus.error &&
+          (next.errorMessage ?? '').contains('exclu');
+      if (next.status == ManagerStatus.ended || kicked) {
+        _closing = true;
+        _snack(next.errorMessage ?? 'Salon terminé.', error: true);
+        Future.microtask(() {
+          ctrl.acknowledge();
+          if (mounted) Navigator.of(context).maybePop();
+        });
+      }
+    });
 
-  // ════════════════════════════════════════════════════════════════════
-  // APP BAR (avec timer + mode background)
-  // ════════════════════════════════════════════════════════════════════
-  PreferredSizeWidget _buildAppBar(
-    AppLocalizations l10n,
-    AudioSpaceManagerState state,
-    AudioSpaceController ctrl,
-    int liveCount,
-  ) {
-    return AppBar(
-      backgroundColor: ThixPolicy.card,
-      elevation: 0,
-      leading: IconButton(
-        icon: const Icon(Icons.keyboard_arrow_down_rounded),
-        tooltip: _tx(l10n, 'audio_space_leave', 'Quitter'),
-        onPressed: () => _handleBack(l10n, ctrl, state),
-      ),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            widget.space.title,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: ThixPolicy.h2Style.copyWith(fontSize: 16),
-          ),
-          Row(
-            children: [
-              const _LiveDot(),
-              const SizedBox(width: 6),
-              // ✅ elapsedFormatted est maintenant défini dans AudioSpaceManagerState
-              Text(
-                state.elapsedFormatted,
-                style: const TextStyle(
-                  fontSize: 11,
-                  color: ThixPolicy.danger,
-                  fontWeight: FontWeight.w700,
-                  fontFeatures: [FontFeature.tabularFigures()],
+    return Scaffold(
+      backgroundColor: ThixPolicy.tint,
+      body: SafeArea(
+        child: Stack(
+          children: [
+            _buildBody(l10n, state, ctrl),
+            // Réactions flottantes
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Stack(
+                  children: [
+                    for (final f in _floaters)
+                      _FloatingEmoji(
+                        key: ValueKey(f.id),
+                        emoji: f.emoji,
+                        dx: f.dx,
+                        onDone: () => _removeFloater(f.id),
+                      ),
+                  ],
                 ),
               ),
-              const SizedBox(width: 8),
-              Text(
-                '${widget.space.topic} · $liveCount ${_tx(l10n, 'audio_space_people', 'personnes')}',
-                style: const TextStyle(fontSize: 11, color: ThixPolicy.textSecondary),
-              ),
-            ],
-          ),
-        ],
-      ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.person_add_alt_rounded),
-          tooltip: 'Inviter',
-          onPressed: () => _showInviteSheet(l10n, ctrl),
-        ),
-        IconButton(
-          icon: const Icon(Icons.share_rounded),
-          tooltip: _tx(l10n, 'audio_space_share', 'Partager'),
-          onPressed: () => _shareSpace(l10n, ctrl),
-        ),
-        if (ctrl.isHost)
-          TextButton(
-            onPressed: () => _confirmEnd(l10n, ctrl),
-            child: Text(
-              _tx(l10n, 'audio_space_end', 'Terminer'),
-              style: const TextStyle(color: ThixPolicy.danger),
             ),
-          ),
-      ],
+            if (_showReactions) _reactionPicker(ctrl),
+          ],
+        ),
+      ),
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // BODY
-  // ════════════════════════════════════════════════════════════════════
   Widget _buildBody(
     AppLocalizations l10n,
     AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
+    // État d'un autre salon / pas encore initialisé : simple chargement
+    if (state.space?.id != widget.space.id && !state.isActive) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     switch (state.status) {
       case ManagerStatus.idle:
       case ManagerStatus.joining:
         return const Center(child: CircularProgressIndicator());
       case ManagerStatus.ending:
-        return _statusPane(
-          'Fermeture du salon en cours...',
-          Icons.hourglass_top_rounded,
-        );
+        return _statusPane(ctrl, 'Fermeture du salon en cours...',
+            Icons.hourglass_top_rounded);
+      case ManagerStatus.ended:
       case ManagerStatus.error:
-        if (state.errorMessage?.contains('terminé') == true ||
-            state.errorMessage?.contains('exclu') == true) {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) {
-              _snack(state.errorMessage!, error: true);
-              Navigator.of(context).pop();
-            }
-          });
-        }
         return _statusPane(
+          ctrl,
           state.errorMessage ??
               _tx(l10n, 'audio_space_error', 'Impossible de rejoindre le salon.'),
           Icons.error_outline,
         );
       case ManagerStatus.live:
       case ManagerStatus.background:
-        return _buildLiveBody(l10n, state, ctrl);
+        return _buildLive(l10n, state, ctrl);
     }
   }
 
-  Widget _buildLiveBody(
-    AppLocalizations l10n,
-    AudioSpaceManagerState state,
-    AudioSpaceController ctrl,
-  ) {
-    final raised = state.participants.where((p) => p.handRaised).length;
-    final me = state.me;
-
-    return Stack(
-      children: [
-        Column(
-          children: [
-            if (state.isInBackground)
-              Container(
-                width: double.infinity,
-                color: ThixPolicy.warning.withValues(alpha: 0.15),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.screen_share_rounded,
-                        size: 16, color: ThixPolicy.warning),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        'Audio en cours en arrière-plan',
-                        style: TextStyle(fontSize: 12, color: ThixPolicy.warning),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            if (widget.space.recordingEnabled)
-              Container(
-                width: double.infinity,
-                color: ThixPolicy.warning.withValues(alpha: 0.15),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    const Icon(Icons.fiber_manual_record_rounded,
-                        size: 12, color: ThixPolicy.danger),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        _tx(l10n, 'audio_space_recording_notice',
-                            'Ce salon est enregistré.'),
-                        style: const TextStyle(
-                            fontSize: 12, color: ThixPolicy.danger),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-            if (ctrl.isHost && raised > 0)
-              Material(
-                color: ThixPolicy.domainMedia.withValues(alpha: 0.1),
-                child: InkWell(
-                  onTap: () => _requestsSheet(l10n, state, ctrl),
-                  child: Padding(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.back_hand_rounded,
-                            color: ThixPolicy.domainMedia, size: 18),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            '$raised ${_tx(l10n, 'audio_space_requests', 'demandes de parole')}',
-                            style:
-                                const TextStyle(fontWeight: FontWeight.w700),
-                          ),
-                        ),
-                        Text(
-                          _tx(l10n, 'audio_space_invite', 'Gérer'),
-                          style:
-                              const TextStyle(color: ThixPolicy.domainMedia),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-            Expanded(child: _speakersGrid(l10n, state, ctrl)),
-            _listenersRow(l10n, state),
-            _chatList(l10n, state),
-            _reactionsBar(l10n, ctrl),
-            _composer(l10n, ctrl),
-            _controls(l10n, state, ctrl),
-          ],
-        ),
-
-        if (_reactionBurst > 0)
-          Positioned(
-            right: 24,
-            bottom: 160,
-            child: _ReactionBurst(
-              key: ValueKey(_reactionBurst),
-              emoji: _lastReaction,
-            ),
-          ),
-      ],
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // STATUS PANE
-  // ════════════════════════════════════════════════════════════════════
-  Widget _statusPane(String text, IconData icon) {
+  Widget _statusPane(AudioSpaceController ctrl, String text, IconData icon) {
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
@@ -444,11 +357,13 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           children: [
             Icon(icon, size: 42, color: ThixPolicy.textSecondary),
             const SizedBox(height: 12),
-            Text(text,
-                textAlign: TextAlign.center, style: ThixPolicy.bodyStyle),
+            Text(text, textAlign: TextAlign.center, style: ThixPolicy.bodyStyle),
             const SizedBox(height: 16),
             ElevatedButton(
-              onPressed: () => Navigator.of(context).pop(),
+              onPressed: () {
+                ctrl.acknowledge();
+                Navigator.of(context).maybePop();
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: ThixPolicy.primary,
                 foregroundColor: Colors.white,
@@ -462,397 +377,302 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // SPEAKERS GRID
+  // LIVE
   // ════════════════════════════════════════════════════════════════════
-  Widget _speakersGrid(
+  Widget _buildLive(
     AppLocalizations l10n,
     AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
-    final speakers = state.participants
-        .where((p) => p.role != AudioSpaceRole.listener)
-        .toList();
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+    final space = state.space ?? widget.space;
+
+    return Column(
       children: [
-        Text(
-          _tx(l10n, 'audio_space_speakers', 'Intervenants'),
-          style: ThixPolicy.h2Style.copyWith(fontSize: 14),
+        _topBar(l10n, state, ctrl),
+        if (state.reconnecting)
+          _banner('Reconnexion audio…', ThixPolicy.warning,
+              Icons.wifi_off_rounded)
+        else if (!state.audioReady)
+          _banner('Connexion audio…', ThixPolicy.textSecondary,
+              Icons.graphic_eq_rounded),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+            children: [
+              _statusRow(l10n, state, space),
+              const SizedBox(height: 10),
+              _TitleText(space.title),
+              if (space.description.trim().isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(space.description,
+                    style: const TextStyle(
+                        fontSize: 13, color: ThixPolicy.textSecondary)),
+              ],
+              const SizedBox(height: 18),
+              _people(l10n, state, ctrl),
+            ],
+          ),
         ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 16,
-          runSpacing: 16,
-          children: [
-            for (final p in speakers)
-              _person(
-                l10n,
-                p,
-                ctrl,
-                canModerate:
-                    ctrl.isHost || state.me?.role == AudioSpaceRole.cohost,
-              ),
-          ],
+        _bottomBar(l10n, state, ctrl),
+      ],
+    );
+  }
+
+  Widget _banner(String text, Color color, IconData icon) {
+    return Container(
+      width: double.infinity,
+      color: color.withValues(alpha: 0.12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 8),
+          Text(text, style: TextStyle(fontSize: 12, color: color)),
+        ],
+      ),
+    );
+  }
+
+  // ── Barre du haut ──
+  Widget _topBar(
+    AppLocalizations l10n,
+    AudioSpaceManagerState state,
+    AudioSpaceController ctrl,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 4, 12, 0),
+      child: Row(
+        children: [
+          IconButton(
+            icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 34),
+            tooltip: 'Réduire',
+            onPressed: () => Navigator.of(context).maybePop(),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.ios_share_rounded),
+            tooltip: _tx(l10n, 'audio_space_share', 'Partager'),
+            onPressed: () => _shareSpace(l10n, state, ctrl),
+          ),
+          IconButton(
+            icon: const Icon(Icons.more_horiz_rounded),
+            tooltip: 'Plus',
+            onPressed: () => _moreSheet(l10n, state, ctrl),
+          ),
+          TextButton(
+            onPressed: () => _confirmLeave(ctrl),
+            child: Text(
+              _tx(l10n, 'audio_space_leave', 'Quitter'),
+              style: const TextStyle(
+                  color: ThixPolicy.danger,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _statusRow(
+    AppLocalizations l10n,
+    AudioSpaceManagerState state,
+    AudioSpace space,
+  ) {
+    return Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: 8,
+      runSpacing: 4,
+      children: [
+        if (space.recordingEnabled) const _RecChip(),
+        const _LiveDot(),
+        _ElapsedText(startedAt: state.startedAt),
+        Text(
+          '· ${state.participants.length} ${_tx(l10n, 'audio_space_listening', 'à l\'écoute')}',
+          style: const TextStyle(fontSize: 14, color: ThixPolicy.textSecondary),
         ),
       ],
     );
   }
 
-  Widget _person(
-    AppLocalizations l10n,
-    AudioSpaceParticipant p,
-    AudioSpaceController ctrl, {
-    required bool canModerate,
-  }) {
-    return Semantics(
-      button: true,
-      label: '${p.displayName}, ${_roleLabel(l10n, p.role)}',
-      child: GestureDetector(
-        onTap: canModerate && p.role != AudioSpaceRole.host
-            ? () => _moderationSheet(l10n, p, ctrl)
-            : null,
-        onLongPress: canModerate && p.role != AudioSpaceRole.host
-            ? () => _moderationSheet(l10n, p, ctrl)
-            : null,
-        child: SizedBox(
-          width: 88,
-          child: Column(
-            children: [
-              Stack(
-                children: [
-                  _avatar(p.avatarUrl, 64),
-                  if (!p.isMuted)
-                    const Positioned(
-                        right: 0, bottom: 0, child: _SpeakingBadge()),
-                  if (p.isMuted)
-                    const Positioned(
-                      right: 0,
-                      bottom: 0,
-                      child: CircleAvatar(
-                        radius: 10,
-                        backgroundColor: Colors.black54,
-                        child:
-                            Icon(Icons.mic_off, size: 12, color: Colors.white),
-                      ),
-                    ),
-                  if (p.handRaised)
-                    Positioned(
-                      left: 0,
-                      top: 0,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.amber,
-                          shape: BoxShape.circle,
-                        ),
-                        child: const Icon(Icons.back_hand_rounded,
-                            size: 12, color: Colors.white),
-                      ),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                p.displayName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                    fontSize: 12, fontWeight: FontWeight.w600),
-              ),
-              Text(
-                _roleLabel(l10n, p.role),
-                style: const TextStyle(
-                    fontSize: 10, color: ThixPolicy.textSecondary),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _listenersRow(AppLocalizations l10n, AudioSpaceManagerState state) {
-    final listeners = state.participants
-        .where((p) => p.role == AudioSpaceRole.listener)
-        .toList();
-    if (listeners.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Row(
-        children: [
-          Text(
-            '${_tx(l10n, 'audio_space_listeners', 'Auditeurs')} · ${listeners.length}',
-            style: const TextStyle(
-                fontSize: 12, color: ThixPolicy.textSecondary),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SizedBox(
-              height: 28,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                children: [
-                  for (final l in listeners.take(10))
-                    Padding(
-                      padding: const EdgeInsets.only(right: 6),
-                      child: _avatar(l.avatarUrl, 28),
-                    ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _avatar(String? url, double size) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        color: ThixPolicy.surfaceSoft,
-        border: Border.all(color: ThixPolicy.border),
-      ),
-      child: ClipOval(
-        child: (url != null && url.isNotEmpty)
-            ? CachedNetworkImage(imageUrl: url, fit: BoxFit.cover)
-            : Icon(Icons.person,
-                size: size * 0.5, color: ThixPolicy.textSecondary),
-      ),
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // CHAT
-  // ════════════════════════════════════════════════════════════════════
-  Widget _chatList(AppLocalizations l10n, AudioSpaceManagerState state) {
-    if (state.messages.isEmpty) {
-      return SizedBox(
-        height: 48,
-        child: Center(
-          child: Text(
-            _tx(l10n, 'audio_space_chat_empty',
-                'Le chat du salon apparaît ici pour tout le monde.'),
-            style: const TextStyle(fontSize: 12, color: ThixPolicy.textMuted),
-          ),
-        ),
-      );
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_chatScroll.hasClients) {
-        _chatScroll.jumpTo(_chatScroll.position.maxScrollExtent);
-      }
-    });
-    return SizedBox(
-      height: 140,
-      child: ListView.builder(
-        controller: _chatScroll,
-        padding: const EdgeInsets.symmetric(horizontal: 16),
-        itemCount: state.messages.length,
-        itemBuilder: (_, i) {
-          final m = state.messages[i];
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Text.rich(TextSpan(children: [
-              TextSpan(
-                text: '${m.displayName} ',
-                style: const TextStyle(
-                    fontWeight: FontWeight.w700, fontSize: 13),
-              ),
-              TextSpan(text: m.body, style: const TextStyle(fontSize: 13)),
-            ])),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _composer(AppLocalizations l10n, AudioSpaceController ctrl) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 4, 12, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: TextField(
-              controller: _chatCtrl,
-              maxLength: _kChatMaxLength,
-              inputFormatters: [
-                FilteringTextInputFormatter.deny(RegExp(r'[<>]')),
-              ],
-              decoration: InputDecoration(
-                counterText: '',
-                hintText: _tx(
-                    l10n, 'audio_space_chat_hint', 'Message du salon'),
-                filled: true,
-                fillColor: ThixPolicy.card,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(22),
-                  borderSide: BorderSide.none,
-                ),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-              onSubmitted: (_) => _sendChat(l10n, ctrl),
-            ),
-          ),
-          IconButton(
-            tooltip: _tx(l10n, 'audio_space_send', 'Envoyer'),
-            onPressed: () => _sendChat(l10n, ctrl),
-            icon: const Icon(Icons.send_rounded, color: ThixPolicy.domainMedia),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _sendChat(AppLocalizations l10n, AudioSpaceController ctrl) {
-    if (!_throttleChat()) return;
-    final clean = _SpaceSanitizer.chat(_chatCtrl.text);
-    if (clean.isEmpty) return;
-    HapticFeedback.lightImpact();
-    ctrl.sendChat(clean);
-    _chatCtrl.clear();
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // RÉACTIONS
-  // ════════════════════════════════════════════════════════════════════
-  Widget _reactionsBar(AppLocalizations l10n, AudioSpaceController ctrl) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (final e in _kReactions)
-            GestureDetector(
-              onTap: () {
-                if (!_throttleChat()) return;
-                HapticFeedback.lightImpact();
-                ctrl.sendReaction(e);
-                setState(() {
-                  _lastReaction = e;
-                  _reactionBurst++;
-                });
-              },
-              child: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: ThixPolicy.card,
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(e, style: const TextStyle(fontSize: 20)),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // CONTRÔLES
-  // ════════════════════════════════════════════════════════════════════
-  Widget _controls(
+  // ── Grille des participants (noms visibles) ──
+  Widget _people(
     AppLocalizations l10n,
     AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) {
-    final raised = state.participants.where((p) => p.handRaised).length;
-    final me = state.me;
-    final isMuted = me?.isMuted ?? true;
-    final handRaised = me?.handRaised ?? false;
+    final sorted = [...state.participants]..sort(_cmp);
+    final onStage =
+        sorted.where((p) => p.role != AudioSpaceRole.listener).toList();
+    final listeners =
+        sorted.where((p) => p.role == AudioSpaceRole.listener).toList();
 
-    return SafeArea(
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 6, 12, 12),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: [
-            _roundBtn(
-              icon: isMuted ? Icons.mic_off_rounded : Icons.mic_rounded,
-              color: isMuted
-                  ? ThixPolicy.textSecondary
-                  : ThixPolicy.domainMedia,
-              label: isMuted
-                  ? _tx(l10n, 'audio_space_muted', 'Muet')
-                  : _tx(l10n, 'audio_space_live_mic', 'Micro'),
-              // ✅ FIX: guard null-safe au lieu de me!
-              onTap: me != null && (ctrl.canSpeak(me) || ctrl.isHost)
-                  ? () {
-                      if (!_throttleAction()) return;
-                      HapticFeedback.selectionClick();
-                      ctrl.toggleMute();
-                    }
-                  : null,
-            ),
+    final maxShow = math.max(_kGridMax, onStage.length);
+    final room = math.max(0, maxShow - onStage.length);
+    final shownListeners = listeners.take(room).toList();
+    final hidden = listeners.length - shownListeners.length;
 
-            if (ctrl.isHost) ...[
-              _roundBtn(
-                icon: Icons.volume_off_rounded,
-                color: ThixPolicy.textSecondary,
-                label: _tx(l10n, 'audio_space_mute_all', 'Mute tous'),
-                onTap: () {
-                  if (!_throttleAction()) return;
-                  ctrl.hostMuteAll();
-                  _snack(_tx(l10n, 'audio_space_muted_all',
-                      'Intervenants coupés'));
-                },
-              ),
-              _roundBtn(
-                icon: Icons.back_hand_rounded,
-                color: ThixPolicy.domainMedia,
-                label:
-                    '${_tx(l10n, 'audio_space_requests', 'Demandes')}${raised > 0 ? ' ($raised)' : ''}',
-                onTap: () => _requestsSheet(l10n, state, ctrl),
-              ),
+    final canMod = ctrl.canModerate;
+
+    return LayoutBuilder(builder: (context, c) {
+      const gap = 8.0;
+      final width =
+          (c.maxWidth - gap * (_kGridColumns - 1)) / _kGridColumns;
+
+      Widget cell(AudioSpaceParticipant p) => _PersonCell(
+            width: width,
+            p: p,
+            speaking: state.speakingUserIds.contains(p.userId),
+            isMe: p.userId == ctrl.myId,
+            roleLabel: _roleLabel(l10n, p.role),
+            showHand: p.handRaised && canMod,
+            onTap: () => _personSheet(l10n, p, ctrl),
+          );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            spacing: gap,
+            runSpacing: 18,
+            children: [
+              for (final p in onStage) cell(p),
+              for (final p in shownListeners) cell(p),
             ],
-
-            if (!ctrl.isHost && me?.role == AudioSpaceRole.listener)
-              _roundBtn(
-                icon: handRaised
-                    ? Icons.back_hand_rounded
-                    : Icons.back_hand_outlined,
-                color: ThixPolicy.domainMedia,
-                label: _tx(l10n, 'audio_space_request', 'Parler'),
-                onTap: () {
-                  if (!_throttleAction()) return;
-                  HapticFeedback.selectionClick();
-                  ctrl.toggleHandRaise();
-                },
+          ),
+          if (hidden > 0) ...[
+            const SizedBox(height: 18),
+            InkWell(
+              onTap: () => _participantsSheet(l10n),
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                decoration: BoxDecoration(
+                  border: Border.all(color: ThixPolicy.border),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '+$hidden ${_tx(l10n, 'audio_space_other_listeners', 'autres auditeurs')}',
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: ThixPolicy.textSecondary),
+                  ],
+                ),
               ),
-
-            // ✅ FIX : _confirmLeave ne prend qu'un seul argument (ctrl)
-            _roundBtn(
-              icon: Icons.logout_rounded,
-              color: ThixPolicy.danger,
-              label: _tx(l10n, 'audio_space_leave', 'Quitter'),
-              onTap: () => _confirmLeave(ctrl),
             ),
           ],
-        ),
+        ],
+      );
+    });
+  }
+
+  // ── Barre du bas ──
+  Widget _bottomBar(
+    AppLocalizations l10n,
+    AudioSpaceManagerState state,
+    AudioSpaceController ctrl,
+  ) {
+    final me = state.me;
+    final canTalk = me?.role.canSpeak ?? false;
+    final requests = state.participants
+        .where((p) => p.handRaised && p.role == AudioSpaceRole.listener)
+        .length;
+
+    return Container(
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: ThixPolicy.border)),
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          _mainButton(l10n, me, canTalk, ctrl),
+          const Spacer(),
+          _iconButton(
+            icon: Icons.people_alt_outlined,
+            badge: ctrl.canModerate ? requests : 0,
+            tooltip: 'Personnes',
+            onTap: () => _participantsSheet(l10n),
+          ),
+          const SizedBox(width: 6),
+          _iconButton(
+            icon: _showReactions
+                ? Icons.favorite_rounded
+                : Icons.favorite_border_rounded,
+            tooltip: 'Réactions',
+            onTap: () => setState(() => _showReactions = !_showReactions),
+          ),
+          const SizedBox(width: 10),
+          _commentPill(state.messages.length),
+        ],
       ),
     );
   }
 
-  Widget _roundBtn({
-    required IconData icon,
-    required Color color,
-    required String label,
-    VoidCallback? onTap,
-  }) {
+  Widget _mainButton(
+    AppLocalizations l10n,
+    AudioSpaceParticipant? me,
+    bool canTalk,
+    AudioSpaceController ctrl,
+  ) {
+    final IconData icon;
+    final String label;
+    final Color color;
+    final VoidCallback? onTap;
+
+    if (me == null) {
+      icon = Icons.mic_none_rounded;
+      label = '';
+      color = ThixPolicy.textMuted;
+      onTap = null;
+    } else if (canTalk) {
+      icon = me.isMuted ? Icons.mic_off_rounded : Icons.mic_rounded;
+      label = me.isMuted
+          ? _tx(l10n, 'audio_space_muted', 'Muet')
+          : _tx(l10n, 'audio_space_live_mic', 'Micro actif');
+      color = me.isMuted ? ThixPolicy.textSecondary : ThixPolicy.domainMedia;
+      onTap = () {
+        if (!_throttleAction()) return;
+        HapticFeedback.selectionClick();
+        ctrl.toggleMute();
+      };
+    } else {
+      icon = me.handRaised
+          ? Icons.back_hand_rounded
+          : Icons.mic_none_rounded;
+      label = me.handRaised
+          ? _tx(l10n, 'audio_space_cancel_request', 'Annuler la demande')
+          : _tx(l10n, 'audio_space_request', 'Demander');
+      color = me.handRaised ? ThixPolicy.warning : ThixPolicy.textSecondary;
+      onTap = () {
+        if (!_throttleAction()) return;
+        HapticFeedback.selectionClick();
+        ctrl.toggleHandRaise();
+      };
+    }
+
     return GestureDetector(
       onTap: onTap,
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          CircleAvatar(
-            radius: 24,
-            backgroundColor: color.withValues(alpha: 0.12),
-            child: Icon(icon,
-                color: onTap == null
-                    ? color.withValues(alpha: 0.35)
-                    : color),
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.08),
+              border: Border.all(color: color.withValues(alpha: 0.6), width: 1.5),
+            ),
+            child: Icon(icon, color: color, size: 28),
           ),
           const SizedBox(height: 4),
           Text(label,
@@ -863,47 +683,91 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // SHEETS
-  // ════════════════════════════════════════════════════════════════════
-  Future<void> _requestsSheet(
-    AppLocalizations l10n,
-    AudioSpaceManagerState state,
-    AudioSpaceController ctrl,
-  ) async {
-    final raised = state.participants.where((p) => p.handRaised).toList();
-    await showModalBottomSheet(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                _tx(l10n, 'audio_space_requests', 'Demandes de parole'),
-                style: ThixPolicy.h2Style.copyWith(fontSize: 16),
+  Widget _iconButton({
+    required IconData icon,
+    required VoidCallback onTap,
+    String? tooltip,
+    int badge = 0,
+  }) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        IconButton(
+          icon: Icon(icon, size: 28, color: ThixPolicy.inkDeep),
+          tooltip: tooltip,
+          onPressed: onTap,
+        ),
+        if (badge > 0)
+          Positioned(
+            right: 2,
+            top: 2,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              decoration: BoxDecoration(
+                color: ThixPolicy.danger,
+                borderRadius: BorderRadius.circular(10),
               ),
-              const SizedBox(height: 8),
-              if (raised.isEmpty)
-                Text(_tx(l10n, 'audio_space_no_requests',
-                    'Aucune demande pour le moment.')),
-              for (final p in raised)
-                ListTile(
-                  contentPadding: EdgeInsets.zero,
-                  leading: _avatar(p.avatarUrl, 36),
-                  title: Text(p.displayName),
-                  trailing: TextButton(
-                    onPressed: () {
-                      Navigator.pop(context);
-                      if (!_throttleAction()) return;
-                      ctrl.promoteToSpeaker(p);
-                      _snack(_tx(l10n, 'audio_space_invited',
-                          'Invité à parler'));
-                    },
-                    child:
-                        Text(_tx(l10n, 'audio_space_invite', 'Accepter')),
+              child: Text('$badge',
+                  style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _commentPill(int count) {
+    return GestureDetector(
+      onTap: _chatSheet,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+        decoration: BoxDecoration(
+          color: ThixPolicy.primary,
+          borderRadius: BorderRadius.circular(26),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.chat_bubble_outline_rounded,
+                color: Colors.white, size: 22),
+            const SizedBox(width: 8),
+            Text('$count',
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 15)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reactionPicker(AudioSpaceController ctrl) {
+    return Positioned(
+      left: 16,
+      right: 16,
+      bottom: 96,
+      child: Material(
+        elevation: 6,
+        borderRadius: BorderRadius.circular(30),
+        color: Colors.white,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              for (final e in _kReactions)
+                GestureDetector(
+                  onTap: () {
+                    HapticFeedback.lightImpact();
+                    ctrl.sendReaction(e);
+                    _addFloater(e);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Text(e, style: const TextStyle(fontSize: 26)),
                   ),
                 ),
             ],
@@ -913,102 +777,262 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
   }
 
-  Future<void> _moderationSheet(
+  // ════════════════════════════════════════════════════════════════════
+  // SHEETS
+  // ════════════════════════════════════════════════════════════════════
+  Future<void> _participantsSheet(AppLocalizations l10n) async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _ParticipantsSheet(
+        roleLabel: (r) => _roleLabel(l10n, r),
+        onPerson: (p) {
+          Navigator.of(context).pop();
+          _personSheet(l10n, p, ref.read(audioSpaceControllerProvider.notifier));
+        },
+        onAccept: (p) {
+          if (!_throttleAction()) return;
+          ref.read(audioSpaceControllerProvider.notifier).promoteToSpeaker(p);
+        },
+      ),
+    );
+  }
+
+  Future<void> _chatSheet() async {
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const _ChatSheet(),
+    );
+  }
+
+  Future<void> _personSheet(
     AppLocalizations l10n,
     AudioSpaceParticipant p,
     AudioSpaceController ctrl,
   ) async {
+    final isMe = p.userId == ctrl.myId;
+    final canMod =
+        ctrl.canModerate && !isMe && p.role != AudioSpaceRole.host;
+    final amHost = ctrl.isHost;
+
     await showModalBottomSheet(
       context: context,
-      builder: (_) => SafeArea(
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ListTile(
-              title: Text(p.displayName),
-              subtitle: Text(_roleLabel(l10n, p.role)),
+            const SizedBox(height: 18),
+            _spaceAvatar(p.avatarUrl, 76),
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Flexible(
+                  child: Text(p.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.w800)),
+                ),
+                if (p.isVerified)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.verified_rounded,
+                        size: 18, color: ThixPolicy.primary),
+                  ),
+              ],
             ),
-            if (p.role == AudioSpaceRole.listener)
+            Text(_roleLabel(l10n, p.role),
+                style: const TextStyle(color: ThixPolicy.textSecondary)),
+            const SizedBox(height: 8),
+            if (canMod) ...[
+              const Divider(),
+              if (p.role == AudioSpaceRole.listener)
+                ListTile(
+                  leading: const Icon(Icons.mic_rounded),
+                  title: Text(_tx(l10n, 'audio_space_invite', 'Inviter à parler')),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    if (_throttleAction()) ctrl.promoteToSpeaker(p);
+                  },
+                ),
+              if (p.role == AudioSpaceRole.speaker ||
+                  p.role == AudioSpaceRole.cohost) ...[
+                ListTile(
+                  leading: Icon(p.isMuted
+                      ? Icons.mic_rounded
+                      : Icons.mic_off_rounded),
+                  title: Text(p.isMuted ? 'Autoriser le micro' : 'Couper le micro'),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    if (_throttleAction()) ctrl.hostMute(p.userId, !p.isMuted);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.hearing_disabled_rounded),
+                  title: Text(_tx(l10n, 'audio_space_remove_speaker',
+                      'Retirer de la scène')),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    if (_throttleAction()) ctrl.demoteToListener(p);
+                  },
+                ),
+              ],
+              if (amHost && p.role != AudioSpaceRole.cohost)
+                ListTile(
+                  leading: const Icon(Icons.star_rounded),
+                  title: const Text('Nommer co-hôte'),
+                  onTap: () {
+                    Navigator.pop(sheetCtx);
+                    if (_throttleAction()) ctrl.promoteToCohost(p);
+                  },
+                ),
               ListTile(
-                leading: const Icon(Icons.mic),
-                title: Text(
-                    _tx(l10n, 'audio_space_invite', 'Inviter à parler')),
+                leading: const Icon(Icons.block, color: ThixPolicy.danger),
+                title: Text(_tx(l10n, 'audio_space_kick', 'Expulser'),
+                    style: const TextStyle(color: ThixPolicy.danger)),
                 onTap: () {
-                  Navigator.pop(context);
-                  if (!_throttleAction()) return;
-                  ctrl.promoteToSpeaker(p);
-                  _snack(_tx(
-                      l10n, 'audio_space_invited', 'Invité à parler'));
+                  Navigator.pop(sheetCtx);
+                  _confirmKick(l10n, p, ctrl);
                 },
               ),
-            if (p.role == AudioSpaceRole.speaker ||
-                p.role == AudioSpaceRole.cohost)
-              ListTile(
-                leading: const Icon(Icons.hearing_disabled),
-                title: Text(_tx(l10n, 'audio_space_remove_speaker',
-                    'Retirer le micro')),
-                onTap: () {
-                  Navigator.pop(context);
-                  if (!_throttleAction()) return;
-                  ctrl.demoteToListener(p);
-                  _snack(
-                      _tx(l10n, 'audio_space_removed', 'Micro retiré'));
-                },
-              ),
-            ListTile(
-              leading:
-                  const Icon(Icons.block, color: ThixPolicy.danger),
-              title: Text(_tx(l10n, 'audio_space_kick', 'Expulser')),
-              onTap: () {
-                Navigator.pop(context);
-                _confirmKick(l10n, p, ctrl);
-              },
-            ),
+            ],
+            const SizedBox(height: 8),
           ],
         ),
       ),
     );
   }
 
-  Future<void> _confirmKick(
+  Future<void> _moreSheet(
     AppLocalizations l10n,
-    AudioSpaceParticipant p,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) async {
-    final ok = await showDialog<bool>(
+    final space = state.space ?? widget.space;
+    final requests = state.participants
+        .where((p) => p.handRaised && p.role == AudioSpaceRole.listener)
+        .length;
+
+    await showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (sheetCtx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 8),
+            ListTile(
+              leading: const Icon(Icons.link_rounded),
+              title: const Text('Copier le lien'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                Clipboard.setData(ClipboardData(text: space.shareLink));
+                _snack('Lien copié');
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.person_add_alt_rounded),
+              title: const Text('Inviter des contacts'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _showInviteSheet(l10n);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.people_alt_outlined),
+              title: Text(ctrl.canModerate
+                  ? 'Personnes et demandes${requests > 0 ? ' ($requests)' : ''}'
+                  : 'Personnes'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _participantsSheet(l10n);
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.info_outline_rounded),
+              title: const Text('À propos du salon'),
+              onTap: () {
+                Navigator.pop(sheetCtx);
+                _aboutDialog(space, state, ctrl);
+              },
+            ),
+            if (ctrl.canModerate)
+              ListTile(
+                leading: const Icon(Icons.volume_off_rounded),
+                title: Text(_tx(l10n, 'audio_space_mute_all',
+                    'Couper tous les micros')),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  if (_throttleAction()) ctrl.hostMuteAll();
+                },
+              ),
+            if (ctrl.isHost)
+              ListTile(
+                leading: const Icon(Icons.stop_circle_rounded,
+                    color: ThixPolicy.danger),
+                title: const Text('Terminer le salon pour tous',
+                    style: TextStyle(color: ThixPolicy.danger)),
+                onTap: () {
+                  Navigator.pop(sheetCtx);
+                  _confirmEnd(l10n, ctrl);
+                },
+              ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _aboutDialog(
+    AudioSpace space,
+    AudioSpaceManagerState state,
+    AudioSpaceController ctrl,
+  ) {
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_tx(
-            l10n, 'audio_space_kick_confirm_title', 'Expulser ?')),
-        content: Text(_tx(l10n, 'audio_space_kick_confirm_message',
-            'Retirer ${p.displayName} du salon ?')),
+        title: Text(space.title),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Hôte : ${ctrl.hostName}'),
+            const SizedBox(height: 6),
+            Text('Sujet : ${space.topic}'),
+            const SizedBox(height: 6),
+            Text('Durée : ${_fmt(state.elapsed)}'),
+            const SizedBox(height: 6),
+            Text('Participants : ${state.participants.length}'),
+            if (space.description.trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Text(space.description),
+            ],
+          ],
+        ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(_tx(l10n, 'audio_space_cancel', 'Annuler')),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              _tx(l10n, 'audio_space_kick', 'Expulser'),
-              style: const TextStyle(color: ThixPolicy.danger),
-            ),
-          ),
+              onPressed: () => Navigator.pop(ctx), child: const Text('Fermer')),
         ],
       ),
     );
-    if (ok == true && mounted) {
-      HapticFeedback.mediumImpact();
-      ctrl.kick(p);
-      _snack(_tx(l10n, 'audio_space_kicked', 'Expulsé'));
-    }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // PARTAGE
+  // PARTAGE / INVITATION
   // ════════════════════════════════════════════════════════════════════
   Future<void> _shareSpace(
     AppLocalizations l10n,
+    AudioSpaceManagerState state,
     AudioSpaceController ctrl,
   ) async {
     if (!_throttleAction()) return;
@@ -1019,7 +1043,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
 
     await AudioSpaceShareSheet.show(
       context,
-      space: widget.space,
+      space: state.space ?? widget.space,
       currentUserId: me.id,
       currentUserName: me.displayName,
       listeners: ctrl.participants.length,
@@ -1027,10 +1051,7 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
     );
   }
 
-  Future<void> _showInviteSheet(
-    AppLocalizations l10n,
-    AudioSpaceController ctrl,
-  ) async {
+  Future<void> _showInviteSheet(AppLocalizations l10n) async {
     if (!_throttleAction()) return;
     HapticFeedback.lightImpact();
 
@@ -1052,13 +1073,45 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
   // ════════════════════════════════════════════════════════════════════
   // CONFIRMATIONS
   // ════════════════════════════════════════════════════════════════════
+  Future<void> _confirmKick(
+    AppLocalizations l10n,
+    AudioSpaceParticipant p,
+    AudioSpaceController ctrl,
+  ) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(
+            _tx(l10n, 'audio_space_kick_confirm_title', 'Expulser ?')),
+        content: Text(_tx(l10n, 'audio_space_kick_confirm_message',
+            'Retirer ${p.displayName} du salon ?')),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text(_tx(l10n, 'audio_space_cancel', 'Annuler')),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_tx(l10n, 'audio_space_kick', 'Expulser'),
+                style: const TextStyle(color: ThixPolicy.danger)),
+          ),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      HapticFeedback.mediumImpact();
+      ctrl.kick(p);
+      _snack(_tx(l10n, 'audio_space_kicked', 'Expulsé'));
+    }
+  }
+
   Future<void> _confirmEnd(
       AppLocalizations l10n, AudioSpaceController ctrl) async {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text(_tx(l10n, 'audio_space_end_confirm_title',
-            'Terminer le salon ?')),
+        title: Text(_tx(
+            l10n, 'audio_space_end_confirm_title', 'Terminer le salon ?')),
         content: Text(_tx(l10n, 'audio_space_end_confirm_message',
             'Tous les participants seront déconnectés.')),
         actions: [
@@ -1068,84 +1121,593 @@ class _AudioSpaceRoomScreenState extends ConsumerState<AudioSpaceRoomScreen> {
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              _tx(l10n, 'audio_space_end', 'Terminer'),
-              style: const TextStyle(color: ThixPolicy.danger),
-            ),
+            child: Text(_tx(l10n, 'audio_space_end', 'Terminer'),
+                style: const TextStyle(color: ThixPolicy.danger)),
           ),
         ],
       ),
     );
-    if (ok == true && mounted) {
-      HapticFeedback.mediumImpact();
+    if (ok != true || !mounted) return;
+    HapticFeedback.mediumImpact();
+    _closing = true;
+    try {
       await ctrl.endSpace();
-      if (mounted) Navigator.pop(context);
+      if (mounted) Navigator.of(context).maybePop();
+    } catch (e) {
+      _closing = false;
+      _snack(e.toString().replaceFirst('Exception: ', ''), error: true);
     }
   }
 
-  Future<void> _handleBack(
-    AppLocalizations l10n,
-    AudioSpaceController ctrl,
-    AudioSpaceManagerState state,
-  ) async {
-    if (!_throttleAction()) return;
+  Future<void> _confirmLeave(AudioSpaceController ctrl) async {
+    final l10n = AppLocalizations.of(context);
 
-    if (!ctrl.isHost) {
-      await ctrl.leave();
-      if (mounted) Navigator.pop(context);
+    if (ctrl.isHost) {
+      final action = await showDialog<String>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Que souhaitez-vous faire ?'),
+          content: const Text(
+              'Vous pouvez quitter (le salon continue sans vous) ou le terminer pour tout le monde.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'cancel'),
+                child: const Text('Annuler')),
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, 'leave'),
+                child: const Text('Quitter')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'end'),
+              child: const Text('Terminer pour tous',
+                  style: TextStyle(color: ThixPolicy.danger)),
+            ),
+          ],
+        ),
+      );
+      if (action == 'end') {
+        await _confirmEnd(l10n, ctrl);
+      } else if (action == 'leave') {
+        await _doLeave(ctrl);
+      }
       return;
     }
 
-    final action = await showDialog<String>(
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Que souhaitez-vous faire ?'),
-        content: const Text(
-          'En tant qu\'hôte, vous pouvez continuer le salon en arrière-plan ou le terminer pour tout le monde.',
-        ),
+        title: const Text('Quitter le salon ?'),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'cancel'),
-            child: const Text('Annuler'),
-          ),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(_tx(l10n, 'audio_space_cancel', 'Annuler'))),
           TextButton(
-            onPressed: () => Navigator.pop(ctx, 'minimize'),
-            child: const Text('Minimiser'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'end'),
-            child: const Text('Terminer pour tous',
-                style: TextStyle(color: ThixPolicy.danger)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(_tx(l10n, 'audio_space_leave', 'Quitter'),
+                style: const TextStyle(color: ThixPolicy.danger)),
           ),
         ],
       ),
     );
-
-    if (action == 'minimize') {
-      if (mounted) Navigator.pop(context);
-    } else if (action == 'end') {
-      await ctrl.endSpace();
-      if (mounted) Navigator.pop(context);
-    }
+    if (ok == true) await _doLeave(ctrl);
   }
 
-  // ✅ FIX : _confirmLeave ne prend qu'un seul argument (ctrl)
-  // Il récupère l10n à l'intérieur via AppLocalizations.of(context)
-  Future<void> _confirmLeave(AudioSpaceController ctrl) async {
-    if (ctrl.isHost) {
-      final l10n = AppLocalizations.of(context);
-      _confirmEnd(l10n, ctrl);
-    } else {
-      if (!_throttleAction()) return;
-      await ctrl.leave();
-      if (mounted) Navigator.pop(context);
-    }
+  Future<void> _doLeave(AudioSpaceController ctrl) async {
+    if (!_throttleAction()) return;
+    _closing = true;
+    await ctrl.leave();
+    if (mounted) Navigator.of(context).maybePop();
   }
 }
 
 // ════════════════════════════════════════════════════════════════════════
-// LIVE DOT
+// CELLULE PARTICIPANT (avatar + NOM + rôle)
 // ════════════════════════════════════════════════════════════════════════
+class _PersonCell extends StatelessWidget {
+  final double width;
+  final AudioSpaceParticipant p;
+  final bool speaking;
+  final bool isMe;
+  final bool showHand;
+  final String roleLabel;
+  final VoidCallback onTap;
+
+  const _PersonCell({
+    required this.width,
+    required this.p,
+    required this.speaking,
+    required this.isMe,
+    required this.showHand,
+    required this.roleLabel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final avatarSize = (width - 8).clamp(40.0, 72.0);
+    final onStage = p.role != AudioSpaceRole.listener;
+    final name = isMe ? '${p.displayName} (vous)' : p.displayName;
+
+    return SizedBox(
+      width: width,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: speaking
+                          ? ThixPolicy.domainMedia
+                          : Colors.transparent,
+                      width: 3,
+                    ),
+                  ),
+                  child: _spaceAvatar(p.avatarUrl, avatarSize),
+                ),
+                if (onStage && p.isMuted)
+                  const Positioned(
+                    right: 0,
+                    bottom: 0,
+                    child: CircleAvatar(
+                      radius: 10,
+                      backgroundColor: Colors.black54,
+                      child: Icon(Icons.mic_off, size: 12, color: Colors.white),
+                    ),
+                  ),
+                if (showHand || (p.handRaised && isMe))
+                  Positioned(
+                    left: 0,
+                    top: 0,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                          color: Colors.amber, shape: BoxShape.circle),
+                      child: const Icon(Icons.back_hand_rounded,
+                          size: 12, color: Colors.white),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Text(
+                    name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                        fontSize: 13, fontWeight: FontWeight.w800),
+                  ),
+                ),
+                if (p.isVerified)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 2),
+                    child: Icon(Icons.verified_rounded,
+                        size: 13, color: ThixPolicy.primary),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (p.role == AudioSpaceRole.host)
+                  const Padding(
+                    padding: EdgeInsets.only(right: 3),
+                    child: Icon(Icons.graphic_eq_rounded,
+                        size: 12, color: ThixPolicy.primary),
+                  ),
+                Flexible(
+                  child: Text(
+                    roleLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 11, color: ThixPolicy.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FENÊTRE PERSONNES (Sur scène / Demandes / Auditeurs)
+// ════════════════════════════════════════════════════════════════════════
+class _ParticipantsSheet extends ConsumerWidget {
+  final String Function(AudioSpaceRole) roleLabel;
+  final void Function(AudioSpaceParticipant) onPerson;
+  final void Function(AudioSpaceParticipant) onAccept;
+
+  const _ParticipantsSheet({
+    required this.roleLabel,
+    required this.onPerson,
+    required this.onAccept,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final state = ref.watch(audioSpaceControllerProvider);
+    final ctrl = ref.read(audioSpaceControllerProvider.notifier);
+    final mod = ctrl.canModerate;
+
+    final sorted = [...state.participants]..sort(_cmp);
+    final onStage =
+        sorted.where((p) => p.role != AudioSpaceRole.listener).toList();
+    final listeners =
+        sorted.where((p) => p.role == AudioSpaceRole.listener).toList();
+    final requests = listeners.where((p) => p.handRaised).toList();
+
+    Widget list(List<AudioSpaceParticipant> items, {bool request = false}) {
+      if (items.isEmpty) {
+        return const Center(
+          child: Text('Personne pour le moment',
+              style: TextStyle(color: ThixPolicy.textMuted)),
+        );
+      }
+      return ListView.builder(
+        itemCount: items.length,
+        itemBuilder: (_, i) {
+          final p = items[i];
+          final isMe = p.userId == ctrl.myId;
+          return ListTile(
+            onTap: () => onPerson(p),
+            leading: _spaceAvatar(p.avatarUrl, 42),
+            title: Row(
+              children: [
+                Flexible(
+                  child: Text(isMe ? '${p.displayName} (vous)' : p.displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(fontWeight: FontWeight.w700)),
+                ),
+                if (p.isVerified)
+                  const Padding(
+                    padding: EdgeInsets.only(left: 4),
+                    child: Icon(Icons.verified_rounded,
+                        size: 15, color: ThixPolicy.primary),
+                  ),
+              ],
+            ),
+            subtitle: Text(roleLabel(p.role)),
+            trailing: request && mod
+                ? TextButton(
+                    onPressed: () => onAccept(p),
+                    child: const Text('Accepter'),
+                  )
+                : (p.handRaised && mod
+                    ? const Icon(Icons.back_hand_rounded,
+                        color: Colors.amber, size: 20)
+                    : null),
+          );
+        },
+      );
+    }
+
+    final tabs = <Tab>[
+      Tab(text: 'Sur scène (${onStage.length})'),
+      if (mod) Tab(text: 'Demandes (${requests.length})'),
+      Tab(text: 'Auditeurs (${listeners.length})'),
+    ];
+    final views = <Widget>[
+      list(onStage),
+      if (mod) list(requests, request: true),
+      list(listeners),
+    ];
+
+    return DefaultTabController(
+      length: tabs.length,
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.75,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(4)),
+            ),
+            const SizedBox(height: 8),
+            TabBar(
+              isScrollable: true,
+              labelColor: ThixPolicy.primary,
+              unselectedLabelColor: ThixPolicy.textSecondary,
+              indicatorColor: ThixPolicy.primary,
+              tabs: tabs,
+            ),
+            Expanded(child: TabBarView(children: views)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// FENÊTRE COMMENTAIRES
+// ════════════════════════════════════════════════════════════════════════
+class _ChatSheet extends ConsumerStatefulWidget {
+  const _ChatSheet();
+
+  @override
+  ConsumerState<_ChatSheet> createState() => _ChatSheetState();
+}
+
+class _ChatSheetState extends ConsumerState<_ChatSheet> {
+  final _input = TextEditingController();
+  final _scroll = ScrollController();
+  DateTime? _last;
+
+  @override
+  void dispose() {
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
+  void _send() {
+    final now = DateTime.now();
+    if (_last != null && now.difference(_last!) < _kChatThrottle) return;
+    _last = now;
+    final clean = _SpaceSanitizer.chat(_input.text);
+    if (clean.isEmpty) return;
+    HapticFeedback.lightImpact();
+    ref.read(audioSpaceControllerProvider.notifier).sendChat(clean);
+    _input.clear();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(audioSpaceControllerProvider);
+    final msgs = state.messages;
+    final avatars = {for (final p in state.participants) p.userId: p.avatarUrl};
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_scroll.hasClients) {
+        _scroll.jumpTo(_scroll.position.maxScrollExtent);
+      }
+    });
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        height: MediaQuery.of(context).size.height * 0.7,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          children: [
+            const SizedBox(height: 10),
+            Container(
+              width: 42,
+              height: 4,
+              decoration: BoxDecoration(
+                  color: ThixPolicy.border,
+                  borderRadius: BorderRadius.circular(4)),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(14),
+              child: Text('Commentaires (${msgs.length})',
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.w800)),
+            ),
+            const Divider(height: 1),
+            Expanded(
+              child: msgs.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: Text(
+                          'Les commentaires du salon apparaissent ici pour tout le monde.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: ThixPolicy.textMuted),
+                        ),
+                      ),
+                    )
+                  : ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.all(14),
+                      itemCount: msgs.length,
+                      itemBuilder: (_, i) {
+                        final m = msgs[i];
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              _spaceAvatar(avatars[m.userId], 30),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(m.displayName,
+                                        style: const TextStyle(
+                                            fontWeight: FontWeight.w800,
+                                            fontSize: 13)),
+                                    Text(m.body,
+                                        style: const TextStyle(fontSize: 14)),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            SafeArea(
+              top: false,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller: _input,
+                        maxLength: _kChatMaxLength,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.deny(RegExp(r'[<>]')),
+                        ],
+                        decoration: InputDecoration(
+                          counterText: '',
+                          hintText: 'Ajouter un commentaire…',
+                          filled: true,
+                          fillColor: ThixPolicy.surfaceSoft,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(22),
+                            borderSide: BorderSide.none,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 10),
+                        ),
+                        onSubmitted: (_) => _send(),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: _send,
+                      icon: const Icon(Icons.send_rounded,
+                          color: ThixPolicy.primary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════════
+// PETITS WIDGETS
+// ════════════════════════════════════════════════════════════════════════
+class _TitleText extends StatelessWidget {
+  final String text;
+  const _TitleText(this.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    var last = 0;
+    for (final m in RegExp(r'#[\p{L}\p{N}_]+', unicode: true).allMatches(text)) {
+      if (m.start > last) spans.add(TextSpan(text: text.substring(last, m.start)));
+      spans.add(TextSpan(
+        text: m.group(0),
+        style: const TextStyle(color: ThixPolicy.primary),
+      ));
+      last = m.end;
+    }
+    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+
+    return Text.rich(
+      TextSpan(
+        children: spans,
+        style: const TextStyle(
+          fontSize: 26,
+          fontWeight: FontWeight.w900,
+          height: 1.15,
+          color: ThixPolicy.inkDeep,
+        ),
+      ),
+    );
+  }
+}
+
+class _ElapsedText extends StatefulWidget {
+  final DateTime? startedAt;
+  const _ElapsedText({required this.startedAt});
+
+  @override
+  State<_ElapsedText> createState() => _ElapsedTextState();
+}
+
+class _ElapsedTextState extends State<_ElapsedText> {
+  Timer? _t;
+
+  @override
+  void initState() {
+    super.initState();
+    _t = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _t?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.startedAt;
+    var d = s == null ? Duration.zero : DateTime.now().difference(s);
+    if (d.isNegative) d = Duration.zero;
+    return Text(
+      _fmt(d),
+      style: const TextStyle(
+        fontSize: 14,
+        color: ThixPolicy.danger,
+        fontWeight: FontWeight.w800,
+        fontFeatures: [FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
+
+class _RecChip extends StatelessWidget {
+  const _RecChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        border: Border.all(color: ThixPolicy.border),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: const BoxDecoration(
+                color: ThixPolicy.danger, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 5),
+          const Text('REC',
+              style: TextStyle(fontWeight: FontWeight.w800, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+}
+
 class _LiveDot extends StatefulWidget {
   const _LiveDot();
   @override
@@ -1155,6 +1717,7 @@ class _LiveDot extends StatefulWidget {
 class _LiveDotState extends State<_LiveDot>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
+
   @override
   void initState() {
     super.initState();
@@ -1193,16 +1756,22 @@ class _LiveDotState extends State<_LiveDot>
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════
-// SPEAKING BADGE
-// ════════════════════════════════════════════════════════════════════════
-class _SpeakingBadge extends StatefulWidget {
-  const _SpeakingBadge();
+class _FloatingEmoji extends StatefulWidget {
+  final String emoji;
+  final double dx;
+  final VoidCallback onDone;
+  const _FloatingEmoji({
+    super.key,
+    required this.emoji,
+    required this.dx,
+    required this.onDone,
+  });
+
   @override
-  State<_SpeakingBadge> createState() => _SpeakingBadgeState();
+  State<_FloatingEmoji> createState() => _FloatingEmojiState();
 }
 
-class _SpeakingBadgeState extends State<_SpeakingBadge>
+class _FloatingEmojiState extends State<_FloatingEmoji>
     with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
@@ -1210,8 +1779,11 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 800))
-      ..repeat(reverse: true);
+        vsync: this, duration: const Duration(milliseconds: 2200))
+      ..addStatusListener((s) {
+        if (s == AnimationStatus.completed) widget.onDone();
+      })
+      ..forward();
   }
 
   @override
@@ -1224,58 +1796,17 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
   Widget build(BuildContext context) {
     return AnimatedBuilder(
       animation: _ctrl,
-      builder: (_, __) => Transform.scale(
-        scale: 0.9 + _ctrl.value * 0.2,
-        child: CircleAvatar(
-          radius: 10,
-          backgroundColor: ThixPolicy.domainMedia,
-          child: const Icon(Icons.graphic_eq_rounded,
-              size: 12, color: Colors.white),
-        ),
-      ),
-    );
-  }
-}
-
-// ════════════════════════════════════════════════════════════════════════
-// REACTION BURST
-// ════════════════════════════════════════════════════════════════════════
-class _ReactionBurst extends StatefulWidget {
-  final String emoji;
-  const _ReactionBurst({super.key, required this.emoji});
-
-  @override
-  State<_ReactionBurst> createState() => _ReactionBurstState();
-}
-
-class _ReactionBurstState extends State<_ReactionBurst>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..forward();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return FadeTransition(
-      opacity: Tween<double>(begin: 1, end: 0).animate(_ctrl),
-      child: SlideTransition(
-        position: Tween<Offset>(
-                begin: const Offset(0, 0.4), end: Offset.zero)
-            .animate(_ctrl),
-        child: Text(widget.emoji, style: const TextStyle(fontSize: 32)),
-      ),
+      builder: (_, __) {
+        final t = Curves.easeOut.transform(_ctrl.value);
+        return Positioned(
+          right: 18 + widget.dx,
+          bottom: 100 + t * 280,
+          child: Opacity(
+            opacity: (1 - _ctrl.value).clamp(0.0, 1.0),
+            child: Text(widget.emoji, style: const TextStyle(fontSize: 30)),
+          ),
+        );
+      },
     );
   }
 }
@@ -1309,7 +1840,7 @@ class _InviteContactsSheetState extends State<_InviteContactsSheet> {
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white.withOpacity(0.98),
+          color: Colors.white.withValues(alpha: 0.98),
           borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
         ),
         padding: const EdgeInsets.all(24),
@@ -1319,7 +1850,8 @@ class _InviteContactsSheetState extends State<_InviteContactsSheet> {
           children: [
             Center(
               child: Container(
-                width: 42, height: 4,
+                width: 42,
+                height: 4,
                 decoration: BoxDecoration(
                     color: ThixPolicy.border,
                     borderRadius: BorderRadius.circular(4)),
@@ -1338,8 +1870,8 @@ class _InviteContactsSheetState extends State<_InviteContactsSheet> {
                 builder: (context, snap) {
                   if (snap.connectionState == ConnectionState.waiting) {
                     return const Center(
-                        child:
-                            CircularProgressIndicator(color: ThixPolicy.primary));
+                        child: CircularProgressIndicator(
+                            color: ThixPolicy.primary));
                   }
                   final contacts = snap.data ?? [];
                   if (contacts.isEmpty) {
@@ -1359,25 +1891,22 @@ class _InviteContactsSheetState extends State<_InviteContactsSheet> {
                     itemBuilder: (_, i) {
                       final c = contacts[i];
                       final id = c['id']?.toString() ?? '';
-                      final name = (c['display_name'] ??
-                              c['full_name'] ??
-                              'Contact')
-                          .toString();
+                      final name =
+                          (c['display_name'] ?? c['full_name'] ?? 'Contact')
+                              .toString();
                       final avatar = c['avatar_url']?.toString() ?? '';
                       final isSelected = _selected.contains(id);
 
                       return InkWell(
                         onTap: () => setState(() {
-                          isSelected
-                              ? _selected.remove(id)
-                              : _selected.add(id);
+                          isSelected ? _selected.remove(id) : _selected.add(id);
                         }),
                         borderRadius: BorderRadius.circular(14),
                         child: Container(
                           padding: const EdgeInsets.all(12),
                           decoration: BoxDecoration(
                             color: isSelected
-                                ? ThixPolicy.primary.withOpacity(0.08)
+                                ? ThixPolicy.primary.withValues(alpha: 0.08)
                                 : ThixPolicy.surfaceSoft,
                             borderRadius: BorderRadius.circular(14),
                             border: Border.all(
@@ -1397,8 +1926,7 @@ class _InviteContactsSheetState extends State<_InviteContactsSheet> {
                                     : null,
                                 child: avatar.isEmpty
                                     ? const Icon(Icons.person,
-                                        size: 20,
-                                        color: ThixPolicy.textMuted)
+                                        size: 20, color: ThixPolicy.textMuted)
                                     : null,
                               ),
                               const SizedBox(width: 12),
