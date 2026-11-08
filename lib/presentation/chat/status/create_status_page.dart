@@ -7,9 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:html/parser.dart' as html_parser;
-import 'package:image_cropper/image_cropper.dart';
-import 'package:image/image.dart' as img;
-import 'package:video_compress/video_compress.dart';
 import 'package:video_player/video_player.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
@@ -23,7 +20,6 @@ import 'package:thix_id/services/chat/status_service.dart';
 const int _kMaxStatusLength = 200;
 const int _kMaxImageSizeBytes = 5 * 1024 * 1024; // 5MB
 const int _kMaxVideoDurationSeconds = 120; // 2 minutes
-const int _kMaxImageDimension = 1280; // Resize max dimension
 const double _kColorPickerSize = 36.0;
 const double _kColorPickerBorderSelected = 3.0;
 const double _kColorPickerBorderDefault = 1.0;
@@ -31,7 +27,6 @@ const double _kFontSizeStatus = 26.0;
 const double _kFontSizeHint = 24.0;
 const double _kLoaderSize = 18.0;
 
-// Palette de couleurs "Thix Status"
 const List<Color> _kStatusColors = [
   ThixPolicy.primary,
   Color(0xFF0F172A),
@@ -64,16 +59,21 @@ class _StatusValidators {
     return bytes > 0 && bytes <= _kMaxImageSizeBytes;
   }
 
-  static bool isValidVideoDuration(Duration duration) {
-    return duration.inSeconds > 0 && duration.inSeconds <= _kMaxVideoDurationSeconds;
+  /// Détecte si c'est une vidéo par l'extension
+  static bool isVideoFile(String path) {
+    final lower = path.toLowerCase();
+    return lower.endsWith('.mp4') ||
+        lower.endsWith('.mov') ||
+        lower.endsWith('.m4v') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.avi');
   }
 
   static String friendlyError(dynamic e) {
     final msg = e.toString().toLowerCase();
     if (msg.contains('timeout')) return 'Délai dépassé. Vérifiez votre connexion.';
     if (msg.contains('network')) return 'Erreur réseau. Réessayez.';
-    if (msg.contains('file') || msg.contains('image')) return 'Format ou taille d\'image invalide.';
-    if (msg.contains('video')) return 'Format vidéo invalide ou trop long.';
+    if (msg.contains('file') || msg.contains('image')) return "Format ou taille d'image invalide.";
     return 'Une erreur est survenue lors de la publication.';
   }
 }
@@ -93,28 +93,23 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
   final _textCtrl = TextEditingController();
   bool _sending = false;
   Color _bg = _kStatusColors.first;
-  
-  // Media preview state
+
   File? _selectedImage;
   File? _selectedVideo;
   VideoPlayerController? _videoController;
   Duration _videoDuration = Duration.zero;
-  Duration _videoTrimStart = Duration.zero;
-  Duration _videoTrimEnd = Duration.zero;
-  bool _showTrimSlider = false;
 
   @override
   void dispose() {
     _textCtrl.dispose();
     _videoController?.dispose();
-    VideoCompress.cancelAllCompression();
     super.dispose();
   }
 
   Future<void> _publishText() async {
     final l10n = AppLocalizations.of(context);
     final rawText = _textCtrl.text.trim();
-    
+
     if (rawText.isEmpty || _sending) return;
 
     final sanitizedText = _StatusValidators.sanitizeText(rawText);
@@ -129,12 +124,12 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     try {
       final hexColor = '#${_bg.value.toRadixString(16).padLeft(8, '0').substring(2)}';
-      
+
       final ok = await ref.read(statusProvider.notifier).createText(
             sanitizedText,
             background: hexColor,
           );
-      
+
       if (!mounted) return;
       setState(() => _sending = false);
 
@@ -158,8 +153,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     if (_sending) return;
 
     HapticFeedback.selectionClick();
-    
-    // Show dialog to choose between image or video
+
     final choice = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -188,11 +182,11 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
 
     final result = await FilePicker.platform.pickFiles(
       type: choice == 'image' ? FileType.image : FileType.video,
-      withData: false, // Use file path instead of bytes for large files
+      withData: false,
       allowMultiple: false,
     );
 
-    if (result == null || result.files.isEmpty) {
+    if (result == null || result.files.isEmpty || result.files.single.path == null) {
       debugPrint('[CreateStatus] ⚠️ No file selected');
       return;
     }
@@ -210,26 +204,22 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     try {
       setState(() => _sending = true);
 
-      // Check file size
       final bytes = await file.length();
       if (!_StatusValidators.isValidImageSize(bytes)) {
         _showError('${l10n.t('status_file_too_big')} (max 5MB)');
         return;
       }
 
-      // Resize image if needed
-      final resized = await _resizeImage(file);
-      
       if (!mounted) return;
       setState(() {
-        _selectedImage = resized;
+        _selectedImage = file;
         _selectedVideo = null;
         _videoController?.dispose();
         _videoController = null;
         _sending = false;
       });
 
-      debugPrint('[CreateStatus] ✓ Image processed: ${resized.path}');
+      debugPrint('[CreateStatus] ✓ Image processed: ${file.path}');
     } catch (e) {
       debugPrint('[CreateStatus] ❌ Image processing error: $e');
       if (mounted) {
@@ -239,82 +229,29 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
   }
 
-  Future<File> _resizeImage(File file) async {
-    final bytes = await file.readAsBytes();
-    final originalImage = img.decodeImage(bytes);
-    
-    if (originalImage == null) {
-      throw Exception('Failed to decode image');
-    }
-
-    // Resize if larger than max dimension
-    if (originalImage.width > _kMaxImageDimension || 
-        originalImage.height > _kMaxImageDimension) {
-      final resized = img.copyResize(
-        originalImage,
-        width: originalImage.width > originalImage.height 
-            ? _kMaxImageDimension 
-            : null,
-        height: originalImage.height > originalImage.width 
-            ? _kMaxImageDimension 
-            : null,
-        interpolation: img.Interpolation.lanczos,
-      );
-
-      final compressedBytes = img.encodeJpg(resized, quality: 85);
-      final tempDir = await FilePicker.platform.saveFile(
-        dialogTitle: 'Temp',
-        fileName: 'status_${DateTime.now().millisecondsSinceEpoch}.jpg',
-      );
-      
-      if (tempDir == null) {
-        // Fallback to temp directory
-        final tempFile = File('${file.path}.resized.jpg');
-        await tempFile.writeAsBytes(compressedBytes);
-        return tempFile;
-      }
-      
-      final resizedFile = File(tempDir);
-      await resizedFile.writeAsBytes(compressedBytes);
-      return resizedFile;
-    }
-
-    return file;
-  }
-
   Future<void> _processVideo(File file, AppLocalizations l10n) async {
     try {
       setState(() => _sending = true);
 
-      // Get video info
-      final info = await VideoCompress.getMediaInfo(file.path);
-      
-      if (info == null) {
-        _showError(l10n.t('status_video_invalid'));
-        return;
-      }
+      final controller = VideoPlayerController.file(file);
+      await controller.initialize();
+      _videoDuration = controller.value.duration;
 
-      _videoDuration = info.duration ?? Duration.zero;
-
-      if (!_StatusValidators.isValidVideoDuration(_videoDuration)) {
+      if (_videoDuration.inSeconds > _kMaxVideoDurationSeconds) {
+        controller.dispose();
         _showError('${l10n.t('status_video_too_long')} (max 2 min)');
         return;
       }
 
-      // Initialize video controller for preview
-      final controller = VideoPlayerController.file(file);
-      await controller.initialize();
       await controller.setLooping(true);
 
       if (!mounted) return;
-      
+
       setState(() {
         _selectedVideo = file;
         _selectedImage = null;
+        _videoController?.dispose();
         _videoController = controller;
-        _videoTrimStart = Duration.zero;
-        _videoTrimEnd = _videoDuration;
-        _showTrimSlider = _videoDuration.inSeconds > 30; // Show trim for videos > 30s
         _sending = false;
       });
 
@@ -329,33 +266,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
   }
 
-  Future<void> _cropImage() async {
-    if (_selectedImage == null) return;
-
-    final croppedFile = await ImageCropper().cropImage(
-      sourcePath: _selectedImage!.path,
-      compressQuality: 85,
-      uiSettings: [
-        AndroidUiSettings(
-          toolbarTitle: 'Recadrer',
-          toolbarColor: ThixPolicy.primary,
-          toolbarWidgetColor: Colors.white,
-          initAspectRatio: CropAspectRatioPreset.original,
-          lockAspectRatio: false,
-        ),
-        IOSUiSettings(
-          title: 'Recadrer',
-          cancelButtonTitle: 'Annuler',
-          doneButtonTitle: 'OK',
-        ),
-      ],
-    );
-
-    if (croppedFile != null && mounted) {
-      setState(() => _selectedImage = File(croppedFile.path));
-    }
-  }
-
   Future<void> _publishMedia() async {
     final l10n = AppLocalizations.of(context);
     if (_sending) return;
@@ -363,7 +273,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     setState(() => _sending = true);
 
     try {
-      final svc = ref.read(statusServiceProvider);
+      final service = StatusService();
       final sanitizedCaption = _StatusValidators.sanitizeText(
         _textCtrl.text.trim(),
         maxLength: 100,
@@ -374,31 +284,20 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       if (_selectedImage != null) {
         debugPrint('[CreateStatus] ⬆️ Uploading image status...');
         final bytes = await _selectedImage!.readAsBytes();
-        
-        id = await svc.createImageStatus(
+
+        id = await service.createImageStatus(
           bytes: Uint8List.fromList(bytes),
-          extension: 'jpg',
+          extension: _selectedImage!.path.split('.').last,
           caption: sanitizedCaption.isEmpty ? null : sanitizedCaption,
         );
       } else if (_selectedVideo != null) {
         debugPrint('[CreateStatus] ⬆️ Uploading video status...');
-        
-        // Trim video if needed
-        File videoToUpload = _selectedVideo!;
-        
-        if (_showTrimSlider && 
-            (_videoTrimStart != Duration.zero || _videoTrimEnd != _videoDuration)) {
-          final trimmed = await _trimVideo(_selectedVideo!, _videoTrimStart, _videoTrimEnd);
-          if (trimmed != null) {
-            videoToUpload = trimmed;
-          }
-        }
 
-        final bytes = await videoToUpload.readAsBytes();
-        
-        id = await svc.createVideoStatus(
+        final bytes = await _selectedVideo!.readAsBytes();
+
+        id = await service.createVideoStatus(
           bytes: Uint8List.fromList(bytes),
-          extension: 'mp4',
+          extension: _selectedVideo!.path.split('.').last,
           caption: sanitizedCaption.isEmpty ? null : sanitizedCaption,
         );
       }
@@ -423,29 +322,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
     }
   }
 
-  Future<File?> _trimVideo(File video, Duration start, Duration end) async {
-    try {
-      debugPrint('[CreateStatus] ✂️ Trimming video from $start to $end');
-      
-      final info = await VideoCompress.compressVideo(
-        video.path,
-        quality: VideoQuality.MediumQuality,
-        deleteOrigin: false,
-        includeAudio: true,
-        startTime: start.inSeconds.toDouble(),
-        duration: (end - start).inSeconds.toDouble(),
-      );
-
-      if (info?.file != null) {
-        return info!.file;
-      }
-    } catch (e) {
-      debugPrint('[CreateStatus] ❌ Video trim error: $e');
-      _showError('Erreur lors du découpage vidéo');
-    }
-    return null;
-  }
-
   void _showError(String message) {
     if (!mounted) return;
     HapticFeedback.lightImpact();
@@ -468,7 +344,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
       _selectedVideo = null;
       _videoController?.dispose();
       _videoController = null;
-      _showTrimSlider = false;
     });
   }
 
@@ -577,7 +452,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             ),
           ),
         ),
-        
+
         SizedBox(
           height: 48,
           child: ListView.separated(
@@ -588,7 +463,7 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             itemBuilder: (_, i) {
               final c = _kStatusColors[i];
               final sel = c == _bg;
-              
+
               return Semantics(
                 button: true,
                 label: '${l10n.t('status_color')} ${i + 1}',
@@ -608,8 +483,8 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                         color: Colors.white,
                         width: sel ? _kColorPickerBorderSelected : _kColorPickerBorderDefault,
                       ),
-                      boxShadow: sel 
-                          ? [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, spreadRadius: 1)] 
+                      boxShadow: sel
+                          ? [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 4, spreadRadius: 1)]
                           : null,
                     ),
                   ),
@@ -618,9 +493,9 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
             },
           ),
         ),
-        
+
         const SizedBox(height: 16),
-        
+
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
           child: Row(
@@ -654,7 +529,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
           child: Stack(
             fit: StackFit.expand,
             children: [
-              // Media preview
               if (_selectedImage != null)
                 InteractiveViewer(
                   minScale: 1.0,
@@ -672,7 +546,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                   ),
                 ),
 
-              // Caption input overlay
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -717,28 +590,10 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
                   ),
                 ),
               ),
-
-              // Crop button for images
-              if (_selectedImage != null)
-                Positioned(
-                  top: 16,
-                  right: 16,
-                  child: FloatingActionButton(
-                    mini: true,
-                    backgroundColor: Colors.black54,
-                    onPressed: _cropImage,
-                    child: const Icon(Icons.crop, color: Colors.white, size: 20),
-                  ),
-                ),
             ],
           ),
         ),
 
-        // Video trim slider
-        if (_showTrimSlider && _videoController != null)
-          _buildTrimSlider(l10n),
-
-        // Bottom actions
         Container(
           padding: const EdgeInsets.all(16),
           color: Colors.black,
@@ -760,71 +615,6 @@ class _CreateStatusPageState extends ConsumerState<CreateStatusPage> {
         ),
       ],
     );
-  }
-
-  Widget _buildTrimSlider(AppLocalizations l10n) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      color: Colors.black87,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                _formatDuration(_videoTrimStart),
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-              Text(
-                '${l10n.t('status_trim_video')} (${(_videoTrimEnd - _videoTrimStart).inSeconds}s)',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
-              ),
-              Text(
-                _formatDuration(_videoTrimEnd),
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          RangeSlider(
-            values: RangeValues(
-              _videoTrimStart.inSeconds.toDouble(),
-              _videoTrimEnd.inSeconds.toDouble(),
-            ),
-            min: 0,
-            max: _videoDuration.inSeconds.toDouble(),
-            divisions: _videoDuration.inSeconds,
-            labels: RangeLabels(
-              _formatDuration(_videoTrimStart),
-              _formatDuration(_videoTrimEnd),
-            ),
-            activeColor: ThixPolicy.primary,
-            inactiveColor: Colors.white24,
-            onChanged: (values) {
-              setState(() {
-                _videoTrimStart = Duration(seconds: values.start.round());
-                _videoTrimEnd = Duration(seconds: values.end.round());
-                
-                // Enforce max 2 minutes
-                if ((_videoTrimEnd - _videoTrimStart).inSeconds > _kMaxVideoDurationSeconds) {
-                  _videoTrimEnd = _videoTrimStart + const Duration(seconds: _kMaxVideoDurationSeconds);
-                }
-              });
-              
-              // Seek to start position
-              _videoController?.seekTo(_videoTrimStart);
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatDuration(Duration duration) {
-    final minutes = duration.inMinutes;
-    final seconds = duration.inSeconds % 60;
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 }
 
