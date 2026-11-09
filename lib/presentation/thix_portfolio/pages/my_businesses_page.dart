@@ -30,6 +30,7 @@
 //    • Business, BusinessStatus (fichier 3)
 //    • qr_flutter, share_plus, intl (DateFormat)
 // ════════════════════════════════════════════════════════════════════════════
+import 'dart:ui';                                         // ✅ pour ImageFilter
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
