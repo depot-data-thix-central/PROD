@@ -331,6 +331,12 @@ import 'package:thix_id/presentation/thix_ia/thix_ia_routes.dart';
 // === SETTINGS & POLITIQUES ===
 import 'package:thix_id/presentation/settings/policy_viewer_page.dart';
 import 'package:thix_id/presentation/settings/admin_policy_manager_page.dart';
+//__portofolio business
+import 'package:thix_id/presentation/thix_portfolio/pages/create_business_flow.dart';
+import 'package:thix_id/presentation/thix_portfolio/pages/my_businesses_page.dart';
+import 'package:thix_id/presentation/thix_portfolio/pages/business_public_page.dart';
+
+
 
 // ============================================================================
 // NO TRANSITION PAGE
@@ -1025,6 +1031,26 @@ class AppRouter {
         // ═══════════════════════════════════════════════════════════════════
         GoRoute(path: AppRoutes.certification, name: 'certification', pageBuilder: (_, __) => const NoTransitionPage(child: CertificationTiersPage())),
         GoRoute(path: '/thix-ia',              name: 'thix-ia-home',  builder: (_, __) => const ThixIaHomePage()),
+
+
+// ... dans ta liste de routes :
+GoRoute(
+  path: '/business/create',
+  name: 'business-create',
+  builder: (_, __) => const CreateBusinessFlow(),
+),
+GoRoute(
+  path: '/business/mine',
+  name: 'business-mine',
+  builder: (_, __) => const MyBusinessesPage(),
+),
+GoRoute(
+  path: '/b/:thixId',
+  name: 'business-public',
+  builder: (_, s) =>
+      BusinessPublicPage(thixId: s.pathParameters['thixId']!),
+),
+        
         ...educationRoutes,
         ...instructorRoutes,
         ...ThixMoneyRouter.routes,
