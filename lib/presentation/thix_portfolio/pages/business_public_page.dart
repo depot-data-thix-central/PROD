@@ -3,26 +3,16 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.1 — Novembre 2026 (CORRIGÉ CI)
+//  Version  : 1.0.3 — Novembre 2026 (CORRIGÉ CI v2)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Route : /b/:thixId  (app + Flutter Web → thixid.com/b/<ID>)
-//
-//  Corrections appliquées (CI #3841) :
-//    • _ContactSection : une seule méthode build (accolades équilibrées)
-//    • _card() : rayon lu via BusinessThemeExt (plus de ShapeBorder? ?? BorderRadius)
-//    • BusinessPublicPage : injection de BusinessThemeExt (style + radius)
-//      dans le ThemeData via copyWith(extensions: ...)
-//    • Suppression du null-check impossible sur le bundle (type non-nullable)
-//
-//  Comportement :
-//    1. Charge le BusinessBundle via businessPublicBundleProvider ;
-//    2. Applique le THÈME de l'entreprise (couleurs, police, rayon, anims) ;
-//    3. Rend un site ultra animé : cover parallax, logo glow, slogan
-//       typewriter, compteurs, sections révélées en cascade, carrousels ;
-//    4. Actions : partager (share_plus), QR (qr_flutter), copier l'ID,
-//       contacter (bottom sheet → url_launcher) ;
-//    5. États loading (shimmer) / introuvable (page dédiée).
+//  Corrections CI :
+//    • Remplacement de .ms (extension retirée) par Duration(milliseconds: ...)
+//    • Remplacement de .animate() (extension retirée) par animations natives
+//      (AnimatedOpacity, AnimatedScale, AnimatedBuilder, TweenAnimationBuilder)
+//    • Correction de BusinessThemeExt (radius ajouté)
+//    • Correction de _card() (rayon via extension)
+//    • Correction de _ContactSection (une seule méthode build)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:animated_text_kit/animated_text_kit.dart';
@@ -30,7 +20,6 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -45,7 +34,6 @@ import '../widgets/animated_counter.dart';
 import '../widgets/parallax_cover.dart';
 import '../widgets/reveal_on_scroll.dart';
 
-/// Domaine public canonique (à centraliser dans ta config plus tard).
 const String kThixPublicBaseUrl = 'https://thixid.com';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -69,7 +57,6 @@ class BusinessPublicPage extends ConsumerWidget {
         onRetry: () => ref.invalidate(businessPublicBundleProvider(thixId)),
       ),
       data: (bundle) {
-        // ✅ FIX CI : injection de l'extension (style + radius) dans le thème
         final ext = BusinessThemeExt(
           style: bundle.theme.animationStyle,
           radius: bundle.theme.radius,
@@ -218,7 +205,6 @@ class _BusinessSite extends StatelessWidget {
       ),
       body: CustomScrollView(
         slivers: [
-          // ── Cover parallax + app bar pinned ──
           SliverAppBar(
             expandedHeight: 340,
             pinned: true,
@@ -260,12 +246,10 @@ class _BusinessSite extends StatelessWidget {
             ),
           ),
 
-          // ── Identité : logo, nom, badge, slogan, compteurs ──
           SliverToBoxAdapter(
             child: _HeroIdentity(bundle: bundle),
           ),
 
-          // ── Sections éditoriales en cascade ──
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
             sliver: SliverList(
@@ -280,14 +264,11 @@ class _BusinessSite extends StatelessWidget {
             ),
           ),
 
-          // ── Footer THIX ──
           SliverToBoxAdapter(child: _Footer(bundle: bundle)),
         ],
       ),
     );
   }
-
-  // ── Actions ─
 
   Future<void> _copyId(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: bundle.business.thixId));
@@ -407,18 +388,12 @@ class _BusinessSite extends StatelessWidget {
 
   IconData _channelIcon(ContactChannelType type) {
     switch (type) {
-      case ContactChannelType.phone:
-        return Icons.phone;
-      case ContactChannelType.email:
-        return Icons.mail_outline;
-      case ContactChannelType.whatsapp:
-        return Icons.chat;
-      case ContactChannelType.website:
-        return Icons.language;
-      case ContactChannelType.address:
-        return Icons.place_outlined;
-      case ContactChannelType.map:
-        return Icons.map_outlined;
+      case ContactChannelType.phone:    return Icons.phone;
+      case ContactChannelType.email:    return Icons.mail_outline;
+      case ContactChannelType.whatsapp: return Icons.chat;
+      case ContactChannelType.website:  return Icons.language;
+      case ContactChannelType.address:  return Icons.place_outlined;
+      case ContactChannelType.map:      return Icons.map_outlined;
     }
   }
 }
@@ -429,7 +404,6 @@ class _BusinessSite extends StatelessWidget {
 
 class _HeroIdentity extends StatelessWidget {
   const _HeroIdentity({required this.bundle});
-
   final BusinessBundle bundle;
 
   @override
@@ -439,29 +413,25 @@ class _HeroIdentity extends StatelessWidget {
     final b = bundle.business;
     final style = theme.animationStyle;
 
-    // Compteurs disponibles (null-safe).
     final counters = <Widget>[
       if (b.ageYears != null && b.ageYears! > 0)
         AnimatedCounter(
           value: b.ageYears!,
           label: 'ans d\'expérience',
           compact: false,
-          duration:
-              Duration(milliseconds: (1200 * style.durationScale).round()),
+          duration: Duration(milliseconds: (1200 * style.durationScale).round()),
         ),
       if (b.employees != null && b.employees! > 0)
         AnimatedCounter(
           value: b.employees!,
           label: 'collaborateurs',
           compact: false,
-          duration:
-              Duration(milliseconds: (1200 * style.durationScale).round()),
+          duration: Duration(milliseconds: (1200 * style.durationScale).round()),
         ),
       AnimatedCounter(
         value: bundle.stats?.views ?? 0,
         label: 'visites',
-        duration:
-            Duration(milliseconds: (1400 * style.durationScale).round()),
+        duration: Duration(milliseconds: (1400 * style.durationScale).round()),
       ),
     ];
 
@@ -469,63 +439,51 @@ class _HeroIdentity extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
       child: Column(
         children: [
-          // Logo : scale + fade + glow conditionnel
           _logo(context),
-
           const SizedBox(height: 14),
-
-          // Nom + badge vérifié
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Flexible(
-                child: Text(
-                  b.name,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context)
-                      .textTheme
-                      .headlineSmall
-                      ?.copyWith(fontWeight: FontWeight.w900),
-                )
-                    .animate()
-                    .slideY(
-                      begin: 0.35,
-                      duration: (600 * style.durationScale).round().ms,
-                      curve: style.curve,
-                    )
-                    .fadeIn(duration: (450 * style.durationScale).round().ms),
+                child: _SlideIn(
+                  duration: Duration(milliseconds: (600 * style.durationScale).round()),
+                  delay: Duration(milliseconds: (200 * style.durationScale).round()),
+                  beginY: 0.35,
+                  child: Text(
+                    b.name,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineSmall
+                        ?.copyWith(fontWeight: FontWeight.w900),
+                  ),
+                ),
               ),
               if (b.verified)
                 Padding(
                   padding: const EdgeInsets.only(left: 6),
-                  child: Icon(Icons.verified,
-                          color: const Color(0xFF22C55E), size: 22)
-                      .animate(onPlay: (c) => c.repeat())
-                      .scale(
-                        begin: const Offset(1, 1),
-                        end: const Offset(1.18, 1.18),
-                        duration: 900.ms,
-                        curve: Curves.easeInOut,
-                      ),
+                  child: _PulseIcon(
+                    icon: Icons.verified,
+                    color: const Color(0xFF22C55E),
+                    size: 22,
+                  ),
                 ),
             ],
           ),
-
           const SizedBox(height: 4),
-
-          // Secteur • Ville
           if (b.sector != null || b.city != null)
-            Text(
-              [b.sector, b.city].whereType<String>().join(' • '),
-              style: Theme.of(context)
-                  .textTheme
-                  .bodyMedium
-                  ?.copyWith(color: scheme.onSurfaceVariant),
-            ).animate().fadeIn(delay: 200.ms, duration: 500.ms),
-
+            _FadeIn(
+              duration: const Duration(milliseconds: 500),
+              delay: const Duration(milliseconds: 300),
+              child: Text(
+                [b.sector, b.city].whereType<String>().join(' • '),
+                style: Theme.of(context)
+                    .textTheme
+                    .bodyMedium
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ),
           const SizedBox(height: 10),
-
-          // Slogan typewriter
           if (b.claim != null && b.claim!.trim().isNotEmpty)
             DefaultTextStyle(
               style: TextStyle(
@@ -539,16 +497,12 @@ class _HeroIdentity extends StatelessWidget {
                 animatedTexts: [
                   TypewriterAnimatedText(
                     b.claim!,
-                    speed: Duration(
-                        milliseconds: (35 * style.durationScale).round()),
+                    speed: Duration(milliseconds: (35 * style.durationScale).round()),
                   ),
                 ],
               ),
             ),
-
           const SizedBox(height: 22),
-
-          // Compteurs
           if (counters.isNotEmpty)
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -586,34 +540,285 @@ class _HeroIdentity extends StatelessWidget {
           : null,
     );
 
-    logo = logo
-        .animate()
-        .scale(
-          begin: const Offset(0.4, 0.4),
-          end: const Offset(1, 1),
-          duration: (700 * style.durationScale).round().ms,
-          curve: Curves.easeOutBack,
-        )
-        .fadeIn(duration: (500 * style.durationScale).round().ms);
+    // ✅ FIX CI : animations natives (plus de .animate())
+    logo = _ScaleFadeIn(
+      duration: Duration(milliseconds: (700 * style.durationScale).round()),
+      beginScale: 0.4,
+      child: logo,
+    );
 
     if (style.glow) {
-      logo = logo.animate().glow(
-            color: scheme.primary,
-            blurRadius: 26,
-            duration: (1200 * style.durationScale).round().ms,
-          );
+      logo = _GlowWrapper(
+        color: scheme.primary,
+        blurRadius: 26,
+        child: logo,
+      );
     }
     return logo;
   }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Rendu des sections (switch exhaustif sur le type)
+// Widgets d'animation NATIFS (remplacent .animate() de flutter_animate)
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Fade-in simple avec délai optionnel.
+class _FadeIn extends StatefulWidget {
+  const _FadeIn({
+    required this.child,
+    required this.duration,
+    this.delay = Duration.zero,
+  });
+  final Widget child;
+  final Duration duration;
+  final Duration delay;
+
+  @override
+  State<_FadeIn> createState() => _FadeInState();
+}
+
+class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  );
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(widget.delay, () {
+      if (mounted && !_started) {
+        _started = true;
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) =>
+      FadeTransition(opacity: _controller, child: widget.child);
+}
+
+/// Slide Y + fade.
+class _SlideIn extends StatefulWidget {
+  const _SlideIn({
+    required this.child,
+    required this.duration,
+    this.delay = Duration.zero,
+    this.beginY = 0.1,
+  });
+  final Widget child;
+  final Duration duration;
+  final Duration delay;
+  final double beginY;
+
+  @override
+  State<_SlideIn> createState() => _SlideInState();
+}
+
+class _SlideInState extends State<_SlideIn> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  );
+  late Animation<double> _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(widget.delay, () {
+      if (mounted && !_started) {
+        _started = true;
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _curve,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: Offset(0, widget.beginY),
+          end: Offset.zero,
+        ).animate(_curve),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Scale + fade.
+class _ScaleFadeIn extends StatefulWidget {
+  const _ScaleFadeIn({
+    required this.child,
+    required this.duration,
+    this.beginScale = 0.88,
+  });
+  final Widget child;
+  final Duration duration;
+  final double beginScale;
+
+  @override
+  State<_ScaleFadeIn> createState() => _ScaleFadeInState();
+}
+
+class _ScaleFadeInState extends State<_ScaleFadeIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: widget.duration,
+  );
+  late Animation<double> _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutBack,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _curve,
+      child: ScaleTransition(
+        scale: Tween<double>(begin: widget.beginScale, end: 1).animate(_curve),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+/// Icône qui pulse (remplace .scale repeat)
+class _PulseIcon extends StatefulWidget {
+  const _PulseIcon({
+    required this.icon,
+    required this.color,
+    this.size = 24,
+  });
+  final IconData icon;
+  final Color color;
+  final double size;
+
+  @override
+  State<_PulseIcon> createState() => _PulseIconState();
+}
+
+class _PulseIconState extends State<_PulseIcon>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 1.0 + (_controller.value * 0.18);
+        return Transform.scale(
+          scale: scale,
+          child: child,
+        );
+      },
+      child: Icon(widget.icon, color: widget.color, size: widget.size),
+    );
+  }
+}
+
+/// Effet de glow (remplace .glow() de flutter_animate)
+class _GlowWrapper extends StatefulWidget {
+  const _GlowWrapper({
+    required this.child,
+    required this.color,
+    this.blurRadius = 26,
+  });
+  final Widget child;
+  final Color color;
+  final double blurRadius;
+
+  @override
+  State<_GlowWrapper> createState() => _GlowWrapperState();
+}
+
+class _GlowWrapperState extends State<_GlowWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1200),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final opacity = 0.3 + (_controller.value * 0.4);
+        return Container(
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            boxShadow: [
+              BoxShadow(
+                color: widget.color.withValues(alpha: opacity),
+                blurRadius: widget.blurRadius,
+                spreadRadius: 2,
+              ),
+            ],
+          ),
+          child: child,
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Rendu des sections
 // ─────────────────────────────────────────────────────────────────────────────
 
 class _SectionRenderer extends StatelessWidget {
   const _SectionRenderer({required this.section});
-
   final BusinessSection section;
 
   @override
@@ -640,7 +845,6 @@ class _SectionRenderer extends StatelessWidget {
   }
 }
 
-/// En-tête commun de section (barre colorée + titre).
 Widget _sectionHeader(BuildContext context, String title) {
   final scheme = Theme.of(context).colorScheme;
   return Padding(
@@ -670,7 +874,6 @@ Widget _sectionHeader(BuildContext context, String title) {
   );
 }
 
-/// ✅ FIX CI : rayon lu via BusinessThemeExt (types cohérents).
 Card _card(BuildContext context, {required Widget child}) {
   final theme = Theme.of(context);
   final radius = theme.extension<BusinessThemeExt>()?.radius ??
@@ -683,7 +886,6 @@ Card _card(BuildContext context, {required Widget child}) {
   );
 }
 
-// ── About ──
 class _AboutSection extends StatelessWidget {
   const _AboutSection({required this.content});
   final AboutContent content;
@@ -715,7 +917,6 @@ class _AboutSection extends StatelessWidget {
   }
 }
 
-// ── Services ─
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({required this.content});
   final ServicesContent content;
@@ -764,7 +965,6 @@ class _ServicesSection extends StatelessWidget {
   }
 }
 
-// ── Products ─
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
@@ -827,7 +1027,6 @@ class _ProductsSection extends StatelessWidget {
   }
 }
 
-// ── Gallery (carrousel) ──
 class _GallerySection extends StatelessWidget {
   const _GallerySection({required this.content});
   final GalleryContent content;
@@ -870,7 +1069,6 @@ class _GallerySection extends StatelessWidget {
   }
 }
 
-// ── Team ─
 class _TeamSection extends StatelessWidget {
   const _TeamSection({required this.content});
   final TeamContent content;
@@ -928,7 +1126,6 @@ class _TeamSection extends StatelessWidget {
   }
 }
 
-// ── News ──
 class _NewsSection extends StatelessWidget {
   const _NewsSection({required this.content});
   final NewsContent content;
@@ -969,7 +1166,6 @@ class _NewsSection extends StatelessWidget {
   }
 }
 
-// ── Testimonials ──
 class _TestimonialsSection extends StatelessWidget {
   const _TestimonialsSection({required this.content});
   final TestimonialsContent content;
@@ -1026,7 +1222,6 @@ class _TestimonialsSection extends StatelessWidget {
   }
 }
 
-// ── Contact (aperçu cliquable) — ✅ FIX CI : une seule méthode build ──
 class _ContactSection extends StatelessWidget {
   const _ContactSection({required this.content});
   final ContactContent content;
@@ -1103,7 +1298,7 @@ class _Footer extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Extension Theme (style d'animation + rayon) — ✅ FIX CI : champ radius
+// Extension Theme
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BusinessThemeExt extends ThemeExtension<BusinessThemeExt> {
