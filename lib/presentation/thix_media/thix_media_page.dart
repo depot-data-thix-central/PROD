@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+import 'package:thix_id/data/models/live/live_model.dart';
 import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/models/media_content.dart';
 import 'package:thix_id/presentation/thix_media/providers/thix_media_provider.dart';
@@ -21,6 +22,8 @@ import 'admin/thix_media_admin_page.dart';
 import 'create_post_page.dart';
 import 'user_profile_page.dart';
 import 'live/pages/live_tab_page.dart';
+import 'live/pages/live_viewer_page.dart';
+import 'live/services/live_room_manager.dart';
 
 class MediaConfig {
   MediaConfig._();
@@ -394,6 +397,7 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
       backgroundColor: MediaLightPalette.surface,
       onRefresh: () {
         HapticFeedback.mediumImpact();
+        ref.invalidate(activeLivesProvider);
         return ref.read(thixMediaListProvider.notifier).refresh();
       },
       child: CustomScrollView(
@@ -457,8 +461,14 @@ class _ThixMediaPageState extends ConsumerState<ThixMediaPage> with AutomaticKee
     return [strTous, strFil, 'Films', 'Séries', 'Musique', 'Live'];
   }
 
+  /// ✅ Espace rétractable « En direct maintenant » sous le hero
   Widget _buildActiveLivesSpace() {
-    return const SizedBox(height: 16); 
+    return _LiveSpaceSection(
+      onSeeAll: () {
+        HapticFeedback.selectionClick();
+        ref.read(selectedCategoryProvider.notifier).state = 'Live';
+      },
+    );
   }
 
   Widget _buildShortcutsRow(List<String> categories, String selected, List<MediaContent> catalog) {
@@ -1065,6 +1075,432 @@ class _MediaSkeleton extends StatelessWidget {
           const SizedBox(height: 16),
           Text(_safeTr('media_loading', 'Chargement du catalogue…'), style: const TextStyle(color: MediaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ✅ ESPACE « EN DIRECT MAINTENANT » — rétractable, sous le hero
+// ============================================================================
+
+bool _kLiveSpaceExpanded = true; // mémorisé pendant la session
+
+class _LiveSpaceSection extends ConsumerStatefulWidget {
+  final VoidCallback onSeeAll;
+  const _LiveSpaceSection({required this.onSeeAll});
+
+  @override
+  ConsumerState<_LiveSpaceSection> createState() => _LiveSpaceSectionState();
+}
+
+class _LiveSpaceSectionState extends ConsumerState<_LiveSpaceSection> {
+  static const Color _red = Color(0xFFE11D48);
+  Timer? _auto;
+  bool _expanded = _kLiveSpaceExpanded;
+
+  @override
+  void initState() {
+    super.initState();
+    _auto = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (mounted && _expanded) ref.invalidate(activeLivesProvider);
+    });
+  }
+
+  @override
+  void dispose() {
+    _auto?.cancel();
+    super.dispose();
+  }
+
+  void _toggle() {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _expanded = !_expanded;
+      _kLiveSpaceExpanded = _expanded;
+    });
+  }
+
+  void _open(LiveSession live) {
+    HapticFeedback.selectionClick();
+    final m = LiveRoomManager.instance;
+    if (m.isActive && m.isHost) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Terminez d\'abord votre live en cours.'),
+        behavior: SnackBarBehavior.floating,
+      ));
+      return;
+    }
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => LiveViewerPage(liveId: live.id)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(activeLivesProvider);
+    final lives = async.valueOrNull ?? const <LiveSession>[];
+    final loading = async.isLoading && lives.isEmpty;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: MediaLightPalette.surface,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: MediaLightPalette.border),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.03),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── En-tête (toucher pour rétracter) ──
+            InkWell(
+              onTap: _toggle,
+              borderRadius: BorderRadius.circular(18),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Row(
+                  children: [
+                    const _PulseDot(),
+                    const SizedBox(width: 10),
+                    const Expanded(
+                      child: Text(
+                        'En direct maintenant',
+                        style: TextStyle(
+                          color: MediaLightPalette.textPrimary,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (lives.isNotEmpty)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 9, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: _red.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          '${lives.length}',
+                          style: const TextStyle(
+                            color: _red,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 6),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 220),
+                      child: const Icon(Icons.keyboard_arrow_down_rounded,
+                          color: MediaLightPalette.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // ── Contenu rétractable ──
+            AnimatedSize(
+              duration: const Duration(milliseconds: 240),
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _expanded
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (loading)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 28),
+                            child: Center(
+                              child: SizedBox(
+                                width: 22,
+                                height: 22,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: _red),
+                              ),
+                            ),
+                          )
+                        else if (lives.isEmpty)
+                          Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+                            child: Text(
+                              'Aucun live en cours pour le moment. Soyez le premier à passer en direct !',
+                              style: TextStyle(
+                                color: MediaLightPalette.textSecondary
+                                    .withValues(alpha: 0.9),
+                                fontSize: 13,
+                                height: 1.4,
+                              ),
+                            ),
+                          )
+                        else ...[
+                          SizedBox(
+                            height: 176,
+                            child: ListView.separated(
+                              scrollDirection: Axis.horizontal,
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 14),
+                              itemCount: lives.length.clamp(0, 10),
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(width: 12),
+                              itemBuilder: (context, i) => _LiveMiniCard(
+                                live: lives[i],
+                                onTap: () => _open(lives[i]),
+                              ),
+                            ),
+                          ),
+                          InkWell(
+                            onTap: widget.onSeeAll,
+                            borderRadius: const BorderRadius.vertical(
+                                bottom: Radius.circular(18)),
+                            child: const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Center(
+                                child: Text(
+                                  'Voir tous les lives',
+                                  style: TextStyle(
+                                    color: _red,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LiveMiniCard extends StatelessWidget {
+  final LiveSession live;
+  final VoidCallback onTap;
+  const _LiveMiniCard({required this.live, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cover = MediaSanitizer.imageUrl(live.coverUrl);
+    final avatar = MediaSanitizer.imageUrl(live.hostAvatarUrl);
+
+    return GestureDetector(
+      onTap: onTap,
+      child: SizedBox(
+        width: 118,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(14),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (cover != null)
+                CachedNetworkImage(
+                  imageUrl: cover,
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) => _fallback(),
+                )
+              else
+                _fallback(),
+              const DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [Colors.transparent, Colors.black87],
+                    stops: [0.4, 1],
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 7,
+                left: 7,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE11D48),
+                    borderRadius: BorderRadius.circular(5),
+                  ),
+                  child: const Text('LIVE',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                      )),
+                ),
+              ),
+              Positioned(
+                top: 7,
+                right: 7,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: Colors.black54,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.remove_red_eye_outlined,
+                          size: 10, color: Colors.white),
+                      const SizedBox(width: 3),
+                      Text(
+                        formatMediaNumber(live.viewerCount),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                left: 8,
+                right: 8,
+                bottom: 8,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 22,
+                          height: 22,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                                color: const Color(0xFFE11D48), width: 1.6),
+                          ),
+                          child: ClipOval(
+                            child: avatar != null
+                                ? CachedNetworkImage(
+                                    imageUrl: avatar,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => const Icon(
+                                        Icons.person,
+                                        size: 12,
+                                        color: Colors.white54),
+                                  )
+                                : const Icon(Icons.person,
+                                    size: 12, color: Colors.white54),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            live.hostUsername,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      live.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        height: 1.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _fallback() {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFF3A1A28), Color(0xFF121218)],
+        ),
+      ),
+      child: const Center(
+        child: Icon(Icons.live_tv_rounded, size: 30, color: Colors.white24),
+      ),
+    );
+  }
+}
+
+class _PulseDot extends StatefulWidget {
+  const _PulseDot();
+
+  @override
+  State<_PulseDot> createState() => _PulseDotState();
+}
+
+class _PulseDotState extends State<_PulseDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c;
+
+  @override
+  void initState() {
+    super.initState();
+    _c = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 1200))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (_, __) => Container(
+        width: 10,
+        height: 10,
+        decoration: BoxDecoration(
+          color: const Color(0xFFE11D48),
+          shape: BoxShape.circle,
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFE11D48).withValues(alpha: 0.5 * _c.value),
+              blurRadius: 6,
+              spreadRadius: 2 * _c.value,
+            ),
+          ],
+        ),
       ),
     );
   }
