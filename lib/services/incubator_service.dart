@@ -74,7 +74,7 @@ class IncubatorService {
     bool ascending = true,
     int? limit,
   }) async {
-    var q = _client.from(table).select(select).eq(column, value);
+    dynamic q = _client.from(table).select(select).eq(column, value);
     if (orderBy != null) q = q.order(orderBy, ascending: ascending);
     if (limit != null) q = q.limit(limit);
     final res = await q;
