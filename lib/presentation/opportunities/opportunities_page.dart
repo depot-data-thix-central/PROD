@@ -1,12 +1,11 @@
-// lib/presentation/opportunities/opportunities_page.dart
 // ============================================================================
-// OPPORTUNITÉS — v5 PROFESSIONAL
-//  • ✅ Hero banner XL (300 px) + badge NOUVEAU + compteur + CTA rond
-//  • ✅ Header avec statistiques (total / clôture ≤ 7 j / nouveautés)
-//  • ✅ Grille 2 colonnes, grandes photos, barre de progression
-//  • ✅ Couleurs d'urgence cohérentes (rouge ≤ 3 j, ambre ≤ 7 j, bleu)
-//  • ✅ Bouton ADMIN (détection repo : RBAC + profiles + metadata + email)
-//  • ✅ Recherche lisible : fond blanc, texte sombre, icône bleue
+// FICHIER : lib/presentation/opportunities/opportunities_page.dart
+// Module  : opportunities + accès INCUBATOR (v6 PROFESSIONAL)
+// ============================================================================
+// ✅ Segment control scrollable en haut : Opportunity ↔ Incubator
+// ✅ Design renforcé : glass morphism plus subtil, ombres plus douces
+// ✅ Landing Incubator intégrée avec hero + stats + programmes récents + CTA
+// ✅ Animations sur les transitions de segments
 // ============================================================================
 
 import 'dart:async';
@@ -47,7 +46,14 @@ class _Opp {
   static const red = Color(0xFFD64545);
   static const amber = Color(0xFFE08A00);
 
-  /// Couleur d'urgence selon les jours restants.
+  // Palette INCUBATOR
+  static const incBlueNight    = Color(0xFF061B4D);
+  static const incBlueInst     = Color(0xFF092C78);
+  static const incBlueElec     = Color(0xFF1455D9);
+  static const incGold         = Color(0xFFFFC107);
+  static const incGoldDeep     = Color(0xFFFF9800);
+  static const incGreen        = Color(0xFF16A34A);
+
   static Color urgency(int d) {
     if (d <= 0) return mut;
     if (d <= 3) return red;
@@ -61,18 +67,26 @@ const double _kGridCardHeight = 336;
 const double _kHeroHeight = 300;
 const double _kGridPhotoHeight = 150;
 
+enum _View { opportunities, incubator }
+
 class OpportunitiesPage extends ConsumerStatefulWidget {
   const OpportunitiesPage({super.key});
   @override
   ConsumerState<OpportunitiesPage> createState() => _OpportunitiesPageState();
 }
 
-class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
+class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage>
+    with SingleTickerProviderStateMixin {
   final OpportunityService _service = OpportunityService();
   late Future<List<OpportunityItem>> _future;
   final TextEditingController _searchCtrl = TextEditingController();
   final PageController _heroCtrl = PageController(viewportFraction: 0.9);
+  final ScrollController _segmentScrollCtrl = ScrollController();
   final Set<String> _saved = <String>{};
+
+  // Animation du segment control
+  late final AnimationController _segmentAnimCtrl;
+  late Animation<double> _indicatorAnim;
 
   Timer? _heroTimer;
   int _heroIndex = 0;
@@ -81,10 +95,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   bool _savedOnly = false;
   int _deadlineFilter = 0;
   bool _withReward = false;
-  int _sortMode = 0; // 0 = Nouveautés (created_at desc)
+  int _sortMode = 0;
 
   bool _isAdmin = false;
   bool _adminChecked = false;
+
+  _View _currentView = _View.opportunities;
 
   static const List<_Cat> _cats = [
     _Cat('Toutes', Icons.auto_awesome_rounded),
@@ -100,6 +116,14 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     super.initState();
     _future = _service.listOpportunities();
     _resolveIsAdmin();
+    _segmentAnimCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 280),
+    );
+    _indicatorAnim = CurvedAnimation(
+      parent: _segmentAnimCtrl,
+      curve: Curves.easeOutCubic,
+    );
   }
 
   @override
@@ -107,10 +131,12 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     _heroTimer?.cancel();
     _searchCtrl.dispose();
     _heroCtrl.dispose();
+    _segmentScrollCtrl.dispose();
+    _segmentAnimCtrl.dispose();
     super.dispose();
   }
 
-  // ═══════════════════ DÉTECTION ADMIN (logique du repo) ═══════════════════
+  // ═══════════════════ DÉTECTION ADMIN ═══════════════════
   Future<void> _resolveIsAdmin() async {
     final user = Supabase.instance.client.auth.currentUser;
     if (user == null) {
@@ -119,18 +145,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     }
     bool admin = false;
     try {
-      // 1) Metadata JWT (instantané)
       if (user.appMetadata['role'] == 'admin' ||
           user.userMetadata?['role'] == 'admin' ||
           user.userMetadata?['is_admin'] == true) {
         admin = true;
       }
-      // 2) RBAC officiel : table thix_admin_memberships
       if (!admin) {
         final role = await AdminRbacService().fetchMyRole();
         if (AdminRbacService.canAccess(role: role, minLevel: 5)) admin = true;
       }
-      // 3) profiles.role (AdminService)
       if (!admin) {
         final res = await Supabase.instance.client
             .from('profiles')
@@ -139,7 +162,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             .maybeSingle();
         if (res?['role'] == 'admin') admin = true;
       }
-      // 4) Fallback dev (AdminService)
       if (!admin) {
         admin = user.email?.endsWith('@thix.info') ?? false;
       }
@@ -160,11 +182,8 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   }
 
   int _daysLeft(OpportunityItem o) => o.deadline.difference(DateTime.now()).inDays;
-
   double _ratio(OpportunityItem o) => (_daysLeft(o).clamp(0, 30)) / 30.0;
-
-  bool _isNew(OpportunityItem o) =>
-      DateTime.now().difference(o.createdAt).inDays <= 7;
+  bool _isNew(OpportunityItem o) => DateTime.now().difference(o.createdAt).inDays <= 7;
 
   String _rewardOf(OpportunityItem o) =>
       ThixInputGuard.text(o.rewardLabel, maxLength: 60, fallback: '');
@@ -181,7 +200,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     });
   }
 
-  // ─── Filtres + tri (défaut : NOUVEAUTÉS en premier) ───
   List<OpportunityItem> _filter(List<OpportunityItem> all) {
     var list = List<OpportunityItem>.from(all);
     if (_savedOnly) list = list.where((o) => _saved.contains(o.id)).toList();
@@ -213,13 +231,11 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         list.sort((a, b) => a.title.toLowerCase().compareTo(b.title.toLowerCase()));
         break;
       default:
-        // ✅ NOUVEAUTÉS EN HAUT
         list.sort((a, b) => b.createdAt.compareTo(a.createdAt));
     }
     return list;
   }
 
-  /// Hero = 6 plus récentes
   List<OpportunityItem> _featured(List<OpportunityItem> all) {
     final sorted = List<OpportunityItem>.from(all)
       ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
@@ -235,6 +251,15 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
   void _toggleSave(String id) {
     HapticFeedback.selectionClick();
     setState(() => _saved.contains(id) ? _saved.remove(id) : _saved.add(id));
+  }
+
+  void _switchView(_View v) {
+    if (_currentView == v) return;
+    HapticFeedback.selectionClick();
+    setState(() {
+      _currentView = v;
+      _segmentAnimCtrl.forward(from: 0);
+    });
   }
 
   Widget _glassBox({
@@ -267,7 +292,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     return Scaffold(
       backgroundColor: _Opp.bg,
       body: RefreshIndicator(
-        color: _Opp.blue,
+        color: _currentView == _View.incubator ? _Opp.incBlueInst : _Opp.blue,
         backgroundColor: _Opp.card,
         onRefresh: () async {
           setState(() => _future = _service.listOpportunities());
@@ -276,28 +301,44 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         child: FutureBuilder<List<OpportunityItem>>(
           future: _future,
           builder: (context, snap) {
+            // ── Loading ──
             if (snap.connectionState != ConnectionState.done) {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-                slivers: [SliverToBoxAdapter(child: _skeletonAll(l10n))],
+                slivers: [
+                  SliverToBoxAdapter(child: _header(l10n)),
+                  SliverToBoxAdapter(child: _segmentControl(l10n)),
+                  SliverToBoxAdapter(child: _skeletonAll(l10n)),
+                ],
               );
             }
+
+            // ── Erreur ──
             if (snap.hasError) {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
                   SliverToBoxAdapter(child: _header(l10n)),
+                  SliverToBoxAdapter(child: _segmentControl(l10n)),
                   SliverToBoxAdapter(child: _errorState(l10n)),
                 ],
               );
             }
 
             final all = snap.data ?? const <OpportunityItem>[];
+
+            // ── Vue INCUBATOR (indépendante des données opportunities) ──
+            if (_currentView == _View.incubator) {
+              return _incubatorLanding(l10n);
+            }
+
+            // ── Vue OPPORTUNITIES vide ──
             if (all.isEmpty) {
               return CustomScrollView(
                 physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _header(l10n)),
+                  SliverToBoxAdapter(child: _header(l10n, all: all)),
+                  SliverToBoxAdapter(child: _segmentControl(l10n)),
                   SliverToBoxAdapter(child: _emptyState(l10n)),
                 ],
               );
@@ -318,6 +359,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
                       _header(l10n, all: all),
+                      _segmentControl(l10n),
                       _heroBanner(feat, l10n),
                       _catsRail(l10n),
                       _closingSection(all, l10n),
@@ -328,7 +370,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 if (filteredList.isEmpty)
                   SliverToBoxAdapter(child: _noResult(l10n))
                 else
-                  // ✅ GRILLE 2 COLONNES (grandes photos, style produit local)
                   SliverPadding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     sliver: SliverGrid(
@@ -353,24 +394,116 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════
+  // SEGMENT CONTROL SCROLLABLE — Opportunity ↔ Incubator
+  // ═══════════════════════════════════════════════════════════════════
+  Widget _segmentControl(AppLocalizations l10n) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: _Opp.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _Opp.line),
+        boxShadow: [
+          BoxShadow(
+            color: _Opp.blueDeep.withOpacity(0.04),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (ctx, cons) {
+          final segWidth = (cons.maxWidth - 8) / 2;
+          return Stack(
+            children: [
+              // Indicateur animé
+              AnimatedBuilder(
+                animation: _indicatorAnim,
+                builder: (context, _) {
+                  final t = _currentView == _View.opportunities ? 0.0 : 1.0;
+                  final animT = _segmentAnimCtrl.isAnimating
+                      ? Tween<double>(
+                          begin: _currentView == _View.opportunities ? 1.0 : 0.0,
+                          end: t,
+                        ).evaluate(_indicatorAnim)
+                      : t;
+                  return Positioned(
+                    left: 4 + (segWidth * animT),
+                    top: 4,
+                    child: Container(
+                      width: segWidth,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        gradient: _currentView == _View.incubator
+                            ? const LinearGradient(
+                                colors: [_Opp.incBlueNight, _Opp.incBlueInst],
+                              )
+                            : const LinearGradient(
+                                colors: [_Opp.blueDeep, _Opp.blue],
+                              ),
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: (_currentView == _View.incubator
+                                    ? _Opp.incBlueInst
+                                    : _Opp.blue)
+                                .withOpacity(0.35),
+                            blurRadius: 10,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+              // Segments
+              Row(
+                children: [
+                  _SegmentButton(
+                    label: _tr(l10n, 'seg_opportunities', 'Opportunités'),
+                    icon: Icons.workspace_premium_rounded,
+                    active: _currentView == _View.opportunities,
+                    color: _Opp.blue,
+                    onTap: () => _switchView(_View.opportunities),
+                    width: segWidth,
+                  ),
+                  _SegmentButton(
+                    label: _tr(l10n, 'seg_incubator', 'Incubator'),
+                    icon: Icons.rocket_launch_rounded,
+                    active: _currentView == _View.incubator,
+                    color: _Opp.incGold,
+                    onTap: () => _switchView(_View.incubator),
+                    width: segWidth,
+                  ),
+                ],
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   // ═══════════════════ HEADER GLASS + STATS + BOUTON ADMIN ═══════════════════
   Widget _header(AppLocalizations l10n, {List<OpportunityItem>? all}) {
     final top = MediaQuery.of(context).padding.top;
 
     return Container(
       clipBehavior: Clip.antiAlias,
-      decoration: const BoxDecoration(
+      decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
           colors: [_Opp.blueDark, _Opp.blueDeep, _Opp.blue],
-          stops: [0.0, 0.5, 1.0],
+          stops: const [0.0, 0.5, 1.0],
         ),
-        borderRadius: BorderRadius.vertical(bottom: Radius.circular(30)),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(30)),
       ),
       child: Stack(
         children: [
-          // Cercles décoratifs
           Positioned(
             top: -50,
             right: -40,
@@ -420,7 +553,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                         ],
                       ),
                     ),
-                    // ✅ BOUTON ADMIN (visible uniquement si compte admin du repo)
                     if (_isAdmin) ...[
                       GestureDetector(
                         onTap: () {
@@ -480,7 +612,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // ✅ RECHERCHE LISIBLE : fond blanc + texte sombre + icône bleue
                 Container(
                   height: 50,
                   decoration: BoxDecoration(
@@ -565,6 +696,581 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 ],
               ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════
+  // VUE INCUBATOR — LANDING INTÉGRÉE
+  // ═══════════════════════════════════════════════════════════════════
+  Widget _incubatorLanding(AppLocalizations l10n) {
+    return CustomScrollView(
+      physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+      slivers: [
+        SliverToBoxAdapter(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _incubatorHero(l10n),
+              _incubatorStats(l10n),
+              _incubatorFeatures(l10n),
+              _incubatorFeaturedPrograms(l10n),
+              _incubatorBottomCta(l10n),
+              const SizedBox(height: 120),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _incubatorHero(AppLocalizations l10n) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [_Opp.incBlueNight, _Opp.incBlueInst, _Opp.incBlueElec],
+          stops: [0.0, 0.5, 1.0],
+        ),
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: _Opp.incBlueInst.withOpacity(0.35),
+            blurRadius: 28,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          // Pattern décoratif
+          Positioned.fill(
+            child: CustomPaint(painter: const _HeroPatternPainter()),
+          ),
+          // Glow or
+          Positioned(
+            top: -80,
+            right: -80,
+            child: Container(
+              width: 220,
+              height: 220,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _Opp.incGold.withOpacity(0.15),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: -100,
+            left: -60,
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _Opp.incBlueElec.withOpacity(0.25),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(22, 26, 22, 26),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: _Opp.incGold.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: _Opp.incGold.withOpacity(0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: const BoxDecoration(
+                          color: _Opp.incGold,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        'SONATHIX GROUP',
+                        style: TextStyle(
+                          color: _Opp.incGold,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  children: [
+                    Container(
+                      height: 44,
+                      width: 44,
+                      decoration: BoxDecoration(
+                        color: _Opp.incGold,
+                        borderRadius: BorderRadius.circular(12),
+                        boxShadow: [
+                          BoxShadow(
+                            color: _Opp.incGold.withOpacity(0.4),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: const Icon(Icons.rocket_launch_rounded,
+                          color: _Opp.incBlueNight, size: 22),
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'INCUBATOR',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.5,
+                            ),
+                          ),
+                          Text(
+                            'Innover. Entreprendre. Grandir.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                Text(
+                  _tr(l10n, 'inc_hero_title',
+                      'Transformez votre idée en startup d\'impact.'),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                    height: 1.3,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  _tr(l10n, 'inc_hero_sub',
+                      'Accédez aux programmes, mentors, formations et pitchs pour faire décoller votre projet.'),
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12.5,
+                    height: 1.45,
+                  ),
+                ),
+                const SizedBox(height: 22),
+                // Double CTA
+                Row(
+                  children: [
+                    Expanded(
+                      child: _IncubatorPrimaryCta(
+                        label: _tr(l10n, 'inc_cta_primary', 'Ouvrir l\'espace'),
+                        icon: Icons.arrow_forward_rounded,
+                        onTap: () => context.go(AppRoutes.incubator),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _IncubatorGhostCta(
+                      label: _tr(l10n, 'inc_cta_secondary', 'Programmes'),
+                      onTap: () => context.go(AppRoutes.incubatorExplore),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _incubatorStats(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: _IncubatorStatCard(
+              value: '12+',
+              label: _tr(l10n, 'inc_stat_programs', 'Programmes'),
+              icon: Icons.school_rounded,
+              color: _Opp.incBlueInst,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _IncubatorStatCard(
+              value: '45+',
+              label: _tr(l10n, 'inc_stat_mentors', 'Mentors'),
+              icon: Icons.groups_rounded,
+              color: _Opp.incGold,
+              textColor: _Opp.incBlueNight,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: _IncubatorStatCard(
+              value: '200+',
+              label: _tr(l10n, 'inc_stat_founders', 'Fondateurs'),
+              icon: Icons.trending_up_rounded,
+              color: _Opp.incGreen,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _incubatorFeatures(AppLocalizations l10n) {
+    final features = [
+      (
+        icon: Icons.emoji_events_rounded,
+        title: _tr(l10n, 'inc_feat_programs', 'Programmes d\'incubation'),
+        desc: _tr(l10n, 'inc_feat_programs_d',
+            'Appels à projets, bourses et concours structurés.'),
+        color: _Opp.incBlueInst,
+      ),
+      (
+        icon: Icons.psychology_rounded,
+        title: _tr(l10n, 'inc_feat_mentors', 'Mentorat 1-to-1'),
+        desc: _tr(l10n, 'inc_feat_mentors_d',
+            'Experts sectoriels pour accompagner votre croissance.'),
+        color: _Opp.incBlueElec,
+      ),
+      (
+        icon: Icons.mic_external_on_rounded,
+        title: _tr(l10n, 'inc_feat_pitch', 'Pitch Room'),
+        desc: _tr(l10n, 'inc_feat_pitch_d',
+            'Préparez et présentez votre pitch devant des investisseurs.'),
+        color: _Opp.incGold,
+      ),
+      (
+        icon: Icons.workspace_premium_rounded,
+        title: _tr(l10n, 'inc_feat_resources', 'Ressources premium'),
+        desc: _tr(l10n, 'inc_feat_resources_d',
+            'Formations, outils et communauté entrepreneuriale.'),
+        color: _Opp.incGreen,
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionTitle(
+            _tr(l10n, 'inc_why_title', 'Pourquoi rejoindre INCUBATOR ?'),
+          ),
+          const SizedBox(height: 14),
+          ...features.map((f) => Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: _IncubatorFeatureCard(
+                  icon: f.icon,
+                  title: f.title,
+                  description: f.desc,
+                  color: f.color,
+                ),
+              )),
+        ],
+      ),
+    );
+  }
+
+  Widget _incubatorFeaturedPrograms(AppLocalizations l10n) {
+    // Programmes illustratifs (à remplacer par data réelle quand dispo)
+    final programs = [
+      (
+        title: 'AgriTech Accelerator 2026',
+        organizer: 'SONATHIX × AgriFund',
+        duration: '12 semaines',
+        seats: '15 places',
+        tag: 'Ouvert',
+        tagColor: _Opp.incGreen,
+      ),
+      (
+        title: 'FinTech Bootcamp',
+        organizer: 'Kinshasa Digital Hub',
+        duration: '8 semaines',
+        seats: '20 places',
+        tag: 'Bientôt',
+        tagColor: _Opp.incGold,
+      ),
+      (
+        title: 'Green Energy Challenge',
+        organizer: 'Congo Climate Fund',
+        duration: '16 semaines',
+        seats: '10 places',
+        tag: 'Ouvert',
+        tagColor: _Opp.incGreen,
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: _sectionTitle(
+                  _tr(l10n, 'inc_featured', 'Programmes à la une'),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+              GestureDetector(
+                onTap: () => context.go(AppRoutes.incubatorExplore),
+                child: Row(
+                  children: [
+                    Text(
+                      _tr(l10n, 'inc_see_all', 'Voir tout'),
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: _Opp.incBlueInst,
+                      ),
+                    ),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.chevron_right_rounded,
+                        size: 16, color: _Opp.incBlueInst),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 180,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              itemCount: programs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              itemBuilder: (context, i) {
+                final p = programs[i];
+                return GestureDetector(
+                  onTap: () => context.go(AppRoutes.incubator),
+                  child: Container(
+                    width: 230,
+                    decoration: BoxDecoration(
+                      color: _Opp.card,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(color: _Opp.line),
+                      boxShadow: [
+                        BoxShadow(
+                          color: _Opp.incBlueInst.withOpacity(0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 6),
+                        ),
+                      ],
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        // Header coloré
+                        Container(
+                          height: 72,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: i.isEven
+                                  ? const [_Opp.incBlueNight, _Opp.incBlueInst]
+                                  : const [_Opp.incBlueInst, _Opp.incBlueElec],
+                            ),
+                          ),
+                          child: Stack(
+                            children: [
+                              Positioned.fill(
+                                child: CustomPaint(
+                                    painter: const _HeroPatternPainter()),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 8, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: p.tagColor,
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: Text(
+                                        p.tag,
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w800,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    const Icon(Icons.school_rounded,
+                                        color: Colors.white, size: 20),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                p.title,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: _Opp.txt,
+                                  height: 1.2,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                p.organizer,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: _Opp.sub,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  _miniTag(Icons.schedule_rounded, p.duration),
+                                  const SizedBox(width: 6),
+                                  _miniTag(Icons.group_rounded, p.seats),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniTag(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+      decoration: BoxDecoration(
+        color: _Opp.blueSoft,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: _Opp.blue),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              color: _Opp.blueDeep,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _incubatorBottomCta(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 28, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.all(20),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: [_Opp.incGold, _Opp.incGoldDeep],
+          ),
+          borderRadius: BorderRadius.circular(22),
+          boxShadow: [
+            BoxShadow(
+              color: _Opp.incGold.withOpacity(0.4),
+              blurRadius: 20,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Icon(Icons.handshake_rounded,
+                  color: Colors.white, size: 26),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    _tr(l10n, 'inc_promo_title',
+                        'Ensemble, construisons l\'entreprise de demain.'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      height: 1.3,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    _tr(l10n, 'inc_promo_sub',
+                        'Rejoignez la communauté SONATHIX.'),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_rounded,
+                color: Colors.white, size: 22),
           ],
         ),
       ),
@@ -693,7 +1399,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   )
                 else
                   _heroFallback(o),
-                // Dégradé de lisibilité
                 DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
@@ -710,7 +1415,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                   ),
                 ),
                 if (closed) Container(color: Colors.black.withOpacity(0.25)),
-                // ── Barre haute : catégorie + NOUVEAU + bookmark ──
                 Positioned(
                   top: 14,
                   left: 14,
@@ -755,7 +1459,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     ],
                   ),
                 ),
-                // ── Panneau glass bas ──
                 Positioned(
                   left: 12,
                   right: 12,
@@ -880,7 +1583,7 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ CATÉGORIES (pills) ═══════════════════
+  // ═══════════════════ CATÉGORIES ═══════════════════
   Widget _catsRail(AppLocalizations l10n) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 14, 0, 0),
@@ -1009,7 +1712,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     );
   }
 
-  // ═══════════════════ GRILLE 2 COLONNES ═══════════════════
   Widget _listSectionHeader(int count, AppLocalizations l10n) {
     return _sectionTitle(
       _savedOnly ? _tr(l10n, 'opp_favorites', 'Mes favoris') : _tr(l10n, 'opp_all', 'Toutes les opportunités'),
@@ -1043,7 +1745,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── GRANDE PHOTO ──
             SizedBox(
               height: _kGridPhotoHeight,
               child: Stack(
@@ -1055,7 +1756,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                         errorWidget: (_, __, ___) => _letter(o, _kGridPhotoHeight))
                   else
                     _letter(o, _kGridPhotoHeight),
-                  // Voile bas pour lisibilité des badges
                   DecoratedBox(
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
@@ -1067,7 +1767,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                     ),
                   ),
                   if (closed) Container(color: Colors.black.withOpacity(0.35)),
-                  // Chip catégorie (glass)
                   Positioned(
                     top: 9,
                     left: 9,
@@ -1089,7 +1788,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       ),
                     ),
                   ),
-                  // Bookmark
                   Positioned(
                     top: 8,
                     right: 8,
@@ -1107,7 +1805,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       ),
                     ),
                   ),
-                  // Badge NOUVEAU (≤ 7 jours)
                   if (_isNew(o) && !closed)
                     Positioned(
                       bottom: 9,
@@ -1119,7 +1816,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                             style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                       ),
                     ),
-                  // Statut J-x / Clôturé
                   Positioned(
                     bottom: 9,
                     right: 9,
@@ -1141,7 +1837,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                 ],
               ),
             ),
-            // ── INFOS ──
             Expanded(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(11, 10, 11, 11),
@@ -1199,7 +1894,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
                       ],
                     ),
                     const SizedBox(height: 7),
-                    // ── BARRE DE PROGRESSION ──
                     ClipRRect(
                       borderRadius: BorderRadius.circular(3),
                       child: LinearProgressIndicator(
@@ -1356,7 +2050,6 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _header(l10n),
         Padding(
           padding: const EdgeInsets.fromLTRB(22, 22, 22, 6),
           child: Container(
@@ -1400,6 +2093,19 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
             Text(_tr(l10n, 'opp_empty_title', 'Aucune opportunité active'), style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 16, color: _Opp.txt)),
             const SizedBox(height: 6),
             Text(_tr(l10n, 'opp_empty_sub', 'De nouvelles bourses, emplois et subventions arrivent bientôt.'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 13, color: _Opp.sub)),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              icon: const Icon(Icons.rocket_launch_rounded, size: 16),
+              onPressed: () => _switchView(_View.incubator),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _Opp.incBlueInst,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+              ),
+              label: Text(_tr(l10n, 'inc_try_incubator', 'Essayer INCUBATOR')),
+            ),
           ],
         ),
       ),
@@ -1456,6 +2162,289 @@ class _OpportunitiesPageState extends ConsumerState<OpportunitiesPage> {
 }
 
 // ============================================================================
+// SEGMENT BUTTON
+// ============================================================================
+class _SegmentButton extends StatelessWidget {
+  const _SegmentButton({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.color,
+    required this.onTap,
+    required this.width,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final Color color;
+  final VoidCallback onTap;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: SizedBox(
+          width: width,
+          height: 44,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 16,
+                color: active ? Colors.white : _Opp.sub,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+                  color: active ? Colors.white : _Opp.sub,
+                  letterSpacing: -0.1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// WIDGETS INCUBATOR
+// ============================================================================
+class _IncubatorStatCard extends StatelessWidget {
+  const _IncubatorStatCard({
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.color,
+    this.textColor,
+  });
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final Color? textColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: _Opp.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _Opp.line),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(0.08),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: color, size: 18),
+          ),
+          const SizedBox(height: 10),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+              color: textColor ?? _Opp.txt,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 10.5,
+              color: _Opp.sub,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncubatorFeatureCard extends StatelessWidget {
+  const _IncubatorFeatureCard({
+    required this.icon,
+    required this.title,
+    required this.description,
+    required this.color,
+  });
+  final IconData icon;
+  final String title;
+  final String description;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _Opp.card,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _Opp.line),
+        boxShadow: [
+          BoxShadow(
+            color: _Opp.blueDeep.withOpacity(0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: _Opp.txt,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: _Opp.sub,
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IncubatorPrimaryCta extends StatelessWidget {
+  const _IncubatorPrimaryCta({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 52,
+          decoration: BoxDecoration(
+            color: _Opp.incGold,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: _Opp.incGold.withOpacity(0.4),
+                blurRadius: 12,
+                offset: const Offset(0, 6),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _Opp.incBlueNight,
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.1,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(icon, color: _Opp.incBlueNight, size: 17),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IncubatorGhostCta extends StatelessWidget {
+  const _IncubatorGhostCta({required this.label, required this.onTap});
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          width: 130,
+          height: 52,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.12),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.white.withOpacity(0.25)),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // ANNEAU COUNTDOWN
 // ============================================================================
 class _Ring extends StatelessWidget {
@@ -1501,6 +2490,30 @@ class _RingPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _RingPainter old) => old.progress != progress || old.color != color;
+}
+
+// ============================================================================
+// PATTERN PEINTER (hero Incubator)
+// ============================================================================
+class _HeroPatternPainter extends CustomPainter {
+  const _HeroPatternPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withOpacity(0.05)
+      ..strokeWidth = 1;
+    for (int i = -20; i < size.width + 20; i += 24) {
+      canvas.drawLine(
+        Offset(i.toDouble(), 0),
+        Offset(i.toDouble() + 80, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class _Cat {
