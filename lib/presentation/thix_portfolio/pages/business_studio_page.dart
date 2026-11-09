@@ -3,23 +3,30 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.1.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/edit/:id
 //
-//  Fonctionnalités :
-//    • Édition identité (nom, slogan, description, secteur, ville, contacts…)
-//    • Upload logo + cover (Supabase Storage bucket `business-media`)
-//    • Gestion des 8 sections : visibilité, ordre (↑/↓), édition du contenu
-//    • Publication / dépublication (checklist côté repository)
-//    • Accès direct au Theme Studio (/business/theme/:id) et à l'aperçu public
+//  ✅ NOUVEAUTÉS v1.1 :
+//    • UPLOAD DE PHOTOS PARTOUT (plus d'URL obligatoires) :
+//        - Galerie      → bouton upload par image
+//        - Produits     → bouton upload par image
+//        - Équipe       → bouton upload par photo
+//        - Actualités   → NOUVEAU champ image + bouton upload
+//        - Logo / Cover → déjà upload (inchangé)
+//      Chaque champ image = URL éditable + bouton 📤 + miniature live.
+//    • Upload → bucket Supabase `business-media` (public), chemin
+//      `<businessId>/sections/<timestamp>-<rand>.<ext>`, URL publique injectée.
 //
-//  Contraintes CI respectées :
-//    • Aucun package hors pubspec.yaml
-//    • Animations natives uniquement
-//    • l10n via l10n.t(...) avec args: []
+//  Fonctionnalités préservées :
+//    • Édition identité, visibilité/ordre des sections, édition jsonb typée
+//    • Publication / dépublication, accès Theme Studio + aperçu public
+//
+//  Contraintes CI : aucun package hors pubspec, animations natives, l10n t().
 // ════════════════════════════════════════════════════════════════════════════
+
+import 'dart:math';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
@@ -62,6 +69,162 @@ class _StudioLogger {
 }
 
 // ============================================================================
+// ✅ UPLOAD GÉNÉRIQUE (Storage) — utilisé par TOUTES les images du studio
+// ============================================================================
+
+/// Envoie [file] vers le bucket public `business-media` et retourne l'URL.
+Future<String> uploadBusinessImage(XFile file, String folder) async {
+  final bytes = await file.readAsBytes();
+  final ext = file.name.contains('.')
+      ? file.name.split('.').last.toLowerCase()
+      : 'jpg';
+  final stamp = DateTime.now().millisecondsSinceEpoch;
+  final rand = Random().nextInt(9999).toString().padLeft(4, '0');
+  final path = '$folder/sections-$stamp-$rand.$ext';
+  final bucket = Supabase.instance.client.storage.from('business-media');
+  await bucket.uploadBinary(
+    path,
+    bytes,
+    fileOptions: FileOptions(
+      contentType: file.mimeType.isEmpty ? 'image/$ext' : file.mimeType,
+      upsert: true,
+    ),
+  );
+  return bucket.getPublicUrl(path);
+}
+
+/// Ouvre la galerie, compresse, envoie et retourne l'URL (null si annulé).
+Future<String?> pickAndUploadImage(
+  BuildContext context, {
+  required String folder,
+  required VoidCallback onStart,
+  required VoidCallback onEnd,
+}) async {
+  final picker = ImagePicker();
+  final XFile? file = await picker.pickImage(
+    source: ImageSource.gallery,
+    imageQuality: 85,
+    maxWidth: 1400,
+  );
+  if (file == null) return null;
+  onStart();
+  try {
+    return await uploadBusinessImage(file, folder);
+  } finally {
+    onEnd();
+  }
+}
+
+// ============================================================================
+// ✅ CHAMP IMAGE = URL + BOUTON UPLOAD + MINIATURE
+// ============================================================================
+
+class _ImageField extends StatelessWidget {
+  const _ImageField({
+    required this.controller,
+    required this.label,
+    required this.onPick,
+    this.uploading = false,
+  });
+
+  final TextEditingController controller;
+  final String label;
+  final VoidCallback onPick;
+  final bool uploading;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: controller,
+        builder: (context, value, _) {
+          final url = value.text.trim();
+          final hasImage = url.startsWith('http');
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Miniature live
+              ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: hasImage
+                      ? CachedNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.cover,
+                          placeholder: (_, __) =>
+                              const ColoredBox(color: _Prism.border),
+                          errorWidget: (_, __, ___) => const ColoredBox(
+                              color: _Prism.border,
+                              child: Icon(Icons.broken_image_outlined,
+                                  size: 18, color: _Prism.inkMuted)),
+                        )
+                      : ColoredBox(
+                          color: _Prism.border,
+                          child: const Icon(Icons.image_outlined,
+                              size: 18, color: _Prism.inkMuted),
+                        ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // URL éditable (optionnelle)
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  decoration: InputDecoration(
+                    labelText: label,
+                    isDense: true,
+                    filled: true,
+                    fillColor: _Prism.bg,
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: _Prism.border)),
+                    enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(color: _Prism.border)),
+                    focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: const BorderSide(
+                            color: ThixPolicy.primary, width: 2)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // ✅ Bouton upload
+              SizedBox(
+                width: 46,
+                height: 46,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: ThixPolicy.primary,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: IconButton(
+                    tooltip: AppLocalizations.of(context)
+                        .t('biz_studio_upload'),
+                    icon: uploading
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.photo_camera_rounded,
+                            size: 20, color: Colors.white),
+                    onPressed: uploading ? null : onPick,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        },
+      ),
+    );
+  }
+}
+
+// ============================================================================
 // PAGE
 // ============================================================================
 
@@ -70,7 +233,8 @@ class BusinessStudioPage extends ConsumerStatefulWidget {
   final String businessId;
 
   @override
-  ConsumerState<BusinessStudioPage> createState() => _BusinessStudioPageState();
+  ConsumerState<BusinessStudioPage> createState() =>
+      _BusinessStudioPageState();
 }
 
 class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
@@ -109,8 +273,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
 
   Future<void> _load() async {
     try {
-      final bundle = await ref
-          .read(ownerBusinessBundleProvider(widget.businessId).future);
+      final bundle =
+          await ref.read(ownerBusinessBundleProvider(widget.businessId).future);
       final b = bundle.business;
       _name.text = b.name;
       _claim.text = b.claim ?? '';
@@ -179,44 +343,27 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       if (!mounted) return;
       setState(() => _saving = false);
       _snack(
-          AppLocalizations.of(context)
-              .t('biz_studio_error', args: ['$e'.length > 90 ? '${'$e'.substring(0, 90)}…' : '$e']),
+          AppLocalizations.of(context).t('biz_studio_error', args: ['$e']),
           error: true);
     }
   }
 
-  // ── Upload média (Storage) ──
+  // ── Upload logo / cover ──
   Future<void> _pickAndUpload({required bool isLogo}) async {
     if (_business == null) return;
     final l10n = AppLocalizations.of(context);
-    final picker = ImagePicker();
-    final XFile? file = await picker.pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 85,
-      maxWidth: 1400,
-    );
-    if (file == null) return;
-
     setState(() => _saving = true);
     try {
-      final bytes = await file.readAsBytes();
-      final ext = file.name.contains('.')
-          ? file.name.split('.').last.toLowerCase()
-          : 'jpg';
-      final kind = isLogo ? 'logo' : 'cover';
-      final path =
-          '${widget.businessId}/$kind-${DateTime.now().millisecondsSinceEpoch}.$ext';
-      final bucket = Supabase.instance.client.storage.from('business-media');
-      await bucket.uploadBinary(
-        path,
-        bytes,
-        fileOptions: FileOptions(
-          contentType: (file.mimeType == null || file.mimeType!.isEmpty) ? 'image/$ext' : file.mimeType,
-          upsert: true,
-        ),
+      final url = await pickAndUploadImage(
+        context,
+        folder: widget.businessId,
+        onStart: () {},
+        onEnd: () {},
       );
-      final url = bucket.getPublicUrl(path);
-
+      if (url == null) {
+        if (mounted) setState(() => _saving = false);
+        return;
+      }
       final updated = _business!.copyWith(
         logoUrl: isLogo ? url : _business!.logoUrl,
         coverUrl: isLogo ? _business!.coverUrl : url,
@@ -233,7 +380,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       _StudioLogger.error('upload', e);
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack(l10n.t('biz_studio_error', args: ['$e']), error: true);
+      _snack(l10n.t('biz_studio_upload_error', args: ['$e']), error: true);
     }
   }
 
@@ -330,19 +477,15 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       return Scaffold(
         backgroundColor: _Prism.bg,
         appBar: AppBar(title: Text(l10n.t('biz_studio_title'))),
-        body: Center(
-          child: Text(l10n.t('biz_mine_error_title')),
-        ),
+        body: Center(child: Text(l10n.t('biz_mine_error_title'))),
       );
     }
 
     return Scaffold(
       backgroundColor: _Prism.bg,
       appBar: AppBar(
-        title: Text(
-          l10n.t('biz_studio_title'),
-          style: const TextStyle(fontWeight: FontWeight.w800),
-        ),
+        title: Text(l10n.t('biz_studio_title'),
+            style: const TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           IconButton(
             tooltip: l10n.t('biz_studio_preview'),
@@ -368,11 +511,9 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
         children: [
-          // ── Statut ──
           _StatusBanner(business: b),
           const SizedBox(height: 16),
 
-          // ── Identité ──
           _StudioCard(
             title: l10n.t('biz_studio_identity'),
             icon: Icons.badge_rounded,
@@ -384,7 +525,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
                     maxLines: 4),
                 Row(
                   children: [
-                    Expanded(child: _tf(_sector, l10n.t('biz_studio_sector'))),
+                    Expanded(
+                        child: _tf(_sector, l10n.t('biz_studio_sector'))),
                     const SizedBox(width: 10),
                     Expanded(child: _tf(_city, l10n.t('biz_studio_city'))),
                   ],
@@ -396,8 +538,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
                             numeric: true)),
                     const SizedBox(width: 10),
                     Expanded(
-                        child: _tf(
-                            _employees, l10n.t('biz_studio_employees'),
+                        child: _tf(_employees,
+                            l10n.t('biz_studio_employees'),
                             numeric: true)),
                   ],
                 ),
@@ -428,7 +570,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ),
           const SizedBox(height: 16),
 
-          // ── Médias ──
           _StudioCard(
             title: l10n.t('biz_studio_media'),
             icon: Icons.image_rounded,
@@ -452,7 +593,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ),
           const SizedBox(height: 16),
 
-          // ── Sections ──
           _StudioCard(
             title: l10n.t('biz_studio_sections'),
             icon: Icons.view_agenda_rounded,
@@ -499,7 +639,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: ThixPolicy.primary, width: 2),
+            borderSide:
+                const BorderSide(color: ThixPolicy.primary, width: 2),
           ),
         ),
       ),
@@ -573,7 +714,8 @@ class _StatusBanner extends StatelessWidget {
 // ============================================================================
 
 class _StudioCard extends StatelessWidget {
-  const _StudioCard({required this.title, required this.icon, required this.child});
+  const _StudioCard(
+      {required this.title, required this.icon, required this.child});
   final String title;
   final IconData icon;
   final Widget child;
@@ -658,16 +800,17 @@ class _MediaRow extends StatelessWidget {
               Text(label,
                   style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
-              OutlinedButton(
+              OutlinedButton.icon(
                 onPressed: onChange,
+                icon: const Icon(Icons.photo_camera_rounded, size: 16),
+                label: Text(l10n.t('biz_studio_change'),
+                    style: const TextStyle(fontSize: 12)),
                 style: OutlinedButton.styleFrom(
                   padding:
                       const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(10)),
                 ),
-                child: Text(l10n.t('biz_studio_change'),
-                    style: const TextStyle(fontSize: 12)),
               ),
             ],
           ),
@@ -770,7 +913,7 @@ class _SectionRow extends StatelessWidget {
 }
 
 // ============================================================================
-// ÉDITEUR DE SECTION (bottom sheet)
+// ÉDITEUR DE SECTION (bottom sheet) — ✅ UPLOAD PHOTOS PARTOUT
 // ============================================================================
 
 class _SectionEditorSheet extends StatefulWidget {
@@ -782,14 +925,15 @@ class _SectionEditorSheet extends StatefulWidget {
 }
 
 class _SectionEditorSheetState extends State<_SectionEditorSheet> {
-  // Champs "en-tête" (about)
   late final TextEditingController _title = TextEditingController();
   late final TextEditingController _tagline = TextEditingController();
   late final TextEditingController _body = TextEditingController();
 
-  // Listes d'items : contrôleurs par item
   final List<List<TextEditingController>> _items = [];
   final List<ContactChannelType> _contactTypes = [];
+
+  /// ✅ Index du champ image en cours d'upload (pour le spinner)
+  String _uploadingKey = '';
 
   @override
   void initState() {
@@ -826,8 +970,11 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
       }
     } else if (c is NewsContent) {
       _title.text = c.title;
+      // ✅ v1.1 : [titre, résumé, IMAGE, lien]
       for (final it in c.posts) {
-        _items.add(_ctrls([it.title, it.excerpt ?? '', it.url ?? '']));
+        _items.add(_ctrls([
+          it.title, it.excerpt ?? '', it.imageUrl ?? '', it.url ?? ''
+        ]));
       }
     } else if (c is TestimonialsContent) {
       _title.text = c.title;
@@ -865,6 +1012,36 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     super.dispose();
   }
 
+  // ✅ Upload vers Storage puis injection de l'URL dans le controller
+  Future<void> _pickFor(TextEditingController target, String key) async {
+    final l10n = AppLocalizations.of(context);
+    setState(() => _uploadingKey = key);
+    try {
+      final url = await pickAndUploadImage(
+        context,
+        folder: widget.section.businessId,
+        onStart: () {},
+        onEnd: () {},
+      );
+      if (!mounted) return;
+      if (url != null) {
+        target.text = url;
+        target.selection =
+            TextSelection.collapsed(offset: url.length);
+      }
+      setState(() => _uploadingKey = '');
+    } catch (e) {
+      _StudioLogger.error('section upload', e);
+      if (!mounted) return;
+      setState(() => _uploadingKey = '');
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.t('biz_studio_upload_error', args: ['$e'])),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
+  }
+
   void _addItem() {
     setState(() {
       switch (widget.section.type) {
@@ -877,7 +1054,7 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
         case BusinessSectionType.team:
           _items.add(_ctrls(['', '', '', '']));
         case BusinessSectionType.news:
-          _items.add(_ctrls(['', '', '']));
+          _items.add(_ctrls(['', '', '', ''])); // ✅ + image
         case BusinessSectionType.testimonials:
           _items.add(_ctrls(['', '', '', '']));
         case BusinessSectionType.contact:
@@ -973,7 +1150,8 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                 NewsPost(
                   title: _v(it, 0),
                   excerpt: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  url: _v(it, 2).isEmpty ? null : _v(it, 2),
+                  imageUrl: _v(it, 2).isEmpty ? null : _v(it, 2),
+                  url: _v(it, 3).isEmpty ? null : _v(it, 3),
                 ),
           ],
         );
@@ -1055,7 +1233,8 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                 children: [
                   _sheetField(_title, l10n.t('biz_studio_field_title')),
                   if (type == BusinessSectionType.about) ...[
-                    _sheetField(_tagline, l10n.t('biz_studio_field_tagline')),
+                    _sheetField(
+                        _tagline, l10n.t('biz_studio_field_tagline')),
                     _sheetField(_body, l10n.t('biz_studio_field_body'),
                         maxLines: 6),
                   ],
@@ -1079,8 +1258,10 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                                 const Spacer(),
                                 IconButton(
                                   visualDensity: VisualDensity.compact,
-                                  icon: const Icon(Icons.delete_outline_rounded,
-                                      size: 18, color: ThixPolicy.danger),
+                                  icon: const Icon(
+                                      Icons.delete_outline_rounded,
+                                      size: 18,
+                                      color: ThixPolicy.danger),
                                   onPressed: () => _removeItem(i),
                                 ),
                               ],
@@ -1116,6 +1297,14 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     Widget f(int idx, String label, {int maxLines = 1}) =>
         _sheetField(it[idx], label, maxLines: maxLines);
 
+    // ✅ Champ image = URL + upload + miniature
+    Widget img(int idx, String label, String key) => _ImageField(
+          controller: it[idx],
+          label: label,
+          uploading: _uploadingKey == key,
+          onPick: () => _pickFor(it[idx], key),
+        );
+
     switch (type) {
       case BusinessSectionType.services:
         return [
@@ -1128,12 +1317,12 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
           f(0, l10n.t('biz_studio_field_title')),
           f(1, l10n.t('biz_studio_field_description'), maxLines: 3),
           f(2, l10n.t('biz_studio_field_price')),
-          f(3, l10n.t('biz_studio_field_image_url')),
+          img(3, l10n.t('biz_studio_field_image_url'), 'p$i-img'),
           f(4, l10n.t('biz_studio_field_url')),
         ];
       case BusinessSectionType.gallery:
         return [
-          f(0, l10n.t('biz_studio_field_image_url')),
+          img(0, l10n.t('biz_studio_field_image_url'), 'g$i-img'),
           f(1, l10n.t('biz_studio_field_caption')),
         ];
       case BusinessSectionType.team:
@@ -1141,13 +1330,14 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
           f(0, l10n.t('biz_studio_field_name')),
           f(1, l10n.t('biz_studio_field_role')),
           f(2, l10n.t('biz_studio_field_bio'), maxLines: 3),
-          f(3, l10n.t('biz_studio_field_photo_url')),
+          img(3, l10n.t('biz_studio_field_photo_url'), 't$i-img'),
         ];
       case BusinessSectionType.news:
         return [
           f(0, l10n.t('biz_studio_field_title')),
           f(1, l10n.t('biz_studio_field_excerpt'), maxLines: 3),
-          f(2, l10n.t('biz_studio_field_url')),
+          img(2, l10n.t('biz_studio_field_image_url'), 'n$i-img'),
+          f(3, l10n.t('biz_studio_field_link')),
         ];
       case BusinessSectionType.testimonials:
         return [
