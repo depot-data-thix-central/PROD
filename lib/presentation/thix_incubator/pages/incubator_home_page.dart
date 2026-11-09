@@ -545,7 +545,7 @@ class _HeroSliver extends StatelessWidget {
                               ),
                             ),
                             child: const Text(
-                              'L'INNOVATION POUR L’AFRIQUE',
+                              "L’INNOVATION POUR L’AFRIQUE",
                               style: TextStyle(
                                 color: IncubatorColors.premiumGold,
                                 fontSize: 9,
