@@ -756,9 +756,10 @@ class _ApplicationBottomSheetState extends State<_ApplicationBottomSheet> {
     try {
       final service = context.read<IncubatorService>();
       await service.submitApplication(
-        programId: widget.program.id,
-        message: _sanitize(_messageCtrl.text),
-      );
+  programId: widget.program.id,
+  programTitle: widget.program.title,  // ← AJOUTER CETTE LIGNE
+  message: _sanitize(_messageCtrl.text),
+);
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on TimeoutException {
