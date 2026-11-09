@@ -3,40 +3,21 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/my_businesses_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.2 — Novembre 2026 (CORRIGÉ CI v2)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Route : /business/mine
-//
-//  Fonctionnalités :
-//    • Liste des entreprises de l'utilisateur (via myBusinessesProvider)
-//    • Filtres : Tous / Publiés / Brouillons / Suspendus
-//    • Tri : Plus récent / Plus ancien / Alphabétique
-//    • Actions par entreprise :
-//        - Ouvrir le site public (/b/:id)
-//        - Studio d'édition (/business/edit/:id)
-//        - Afficher QR
-//        - Partager le lien
-//        - Publier / Dépublier (avec checklist)
-//        - Supprimer (confirmation dialog)
-//    • État vide avec CTA vers /business/create
-//    • Pull-to-refresh
-//
-//  Design : cohérent Prism Light v3 (cartes blanches, ombres soft,
-//  puces statut colorées, bouton flottant « + Nouveau site »).
-//
-//  Dépendances :
-//    • BusinessRepository (fichier 4)
-//    • Business, BusinessStatus (fichier 3)
-//    • qr_flutter, share_plus, intl (DateFormat)
+//  Corrections CI v2 :
+//    • import 'dart:ui' pour ImageFilter
+//    • Remplacement de .animate() et .ms par animations natives
+//    • Toutes les animations sont 100 % natives Flutter
 // ════════════════════════════════════════════════════════════════════════════
-import 'dart:ui';                                         // ✅ pour ImageFilter
+
+import 'dart:ui'; // ✅ FIX CI v2 : pour ImageFilter
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
@@ -243,7 +224,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
     final repo = ref.read(businessRepositoryProvider);
 
     if (b.isPublished) {
-      // Dépublier
       try {
         await repo.unpublish(b.id);
         _MineLogger.info('Unpublished', {'id': b.id});
@@ -269,7 +249,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       return;
     }
 
-    // Publier : checklist de validation
     final issues = <String>[];
     if (b.name.trim().isEmpty) issues.add(l10n.t('biz_mine_check_name'));
     if ((b.description ?? '').trim().isEmpty) {
@@ -341,7 +320,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       return;
     }
 
-    // Tout est bon : publication
     try {
       await repo.publish(b.id);
       _MineLogger.info('Published', {'id': b.id, 'thix': b.thixId});
@@ -400,8 +378,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
     );
     if (confirm != true || !mounted) return;
 
-    // Note : suppression = update status='deleted' (soft delete).
-    // La vraie suppression DB peut être ajoutée via RPC dédiée.
     try {
       await ref.read(businessRepositoryProvider).updateBusiness(
           businessId: b.id,
@@ -435,7 +411,6 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
       backgroundColor: _Prism.bg,
       body: Stack(
         children: [
-          // Halos
           Positioned(
               top: -100,
               right: -60,
@@ -488,23 +463,21 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
                             delegate: SliverChildBuilderDelegate(
                               (context, i) => Padding(
                                 padding: const EdgeInsets.only(bottom: 14),
-                                child: _BusinessCard(
-                                  business: filtered[i],
-                                  onOpen: () => _onOpen(filtered[i]),
-                                  onStudio: () => _onStudio(filtered[i]),
-                                  onQr: () => _onQr(context, filtered[i]),
-                                  onShare: () => _onShare(filtered[i]),
-                                  onTogglePublish: () =>
-                                      _onTogglePublish(context, filtered[i]),
-                                  onDelete: () =>
-                                      _onDelete(context, filtered[i]),
-                                )
-                                    .animate(delay: (i * 60).ms)
-                                    .fadeIn(duration: 400.ms)
-                                    .slideY(
-                                        begin: 0.06,
-                                        duration: 450.ms,
-                                        curve: Curves.easeOutCubic),
+                                // ✅ FIX CI v2 : animation NATIVE (pas de .animate())
+                                child: _StaggeredFadeIn(
+                                  delay: Duration(milliseconds: i * 60),
+                                  child: _BusinessCard(
+                                    business: filtered[i],
+                                    onOpen: () => _onOpen(filtered[i]),
+                                    onStudio: () => _onStudio(filtered[i]),
+                                    onQr: () => _onQr(context, filtered[i]),
+                                    onShare: () => _onShare(filtered[i]),
+                                    onTogglePublish: () =>
+                                        _onTogglePublish(context, filtered[i]),
+                                    onDelete: () =>
+                                        _onDelete(context, filtered[i]),
+                                  ),
+                                ),
                               ),
                               childCount: filtered.length,
                             ),
@@ -536,11 +509,69 @@ class _MyBusinessesPageState extends ConsumerState<MyBusinessesPage> {
             Container(
                 decoration: BoxDecoration(shape: BoxShape.circle, color: c)),
             BackdropFilter(
+              // ✅ FIX CI v2 : ImageFilter nécessite import 'dart:ui'
               filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
               child: Container(color: Colors.transparent),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// Animation native staggered fade-in + slide
+// ============================================================================
+
+class _StaggeredFadeIn extends StatefulWidget {
+  const _StaggeredFadeIn({required this.delay, required this.child});
+  final Duration delay;
+  final Widget child;
+
+  @override
+  State<_StaggeredFadeIn> createState() => _StaggeredFadeInState();
+}
+
+class _StaggeredFadeInState extends State<_StaggeredFadeIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 400),
+  );
+  late Animation<double> _curve = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutCubic,
+  );
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future.delayed(widget.delay, () {
+      if (mounted && !_started) {
+        _started = true;
+        _controller.forward();
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: _curve,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.06),
+          end: Offset.zero,
+        ).animate(_curve),
+        child: widget.child,
       ),
     );
   }
@@ -740,7 +771,6 @@ class _Filters extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Filtres (pills)
           SizedBox(
             height: 42,
             child: ListView.separated(
@@ -785,7 +815,6 @@ class _Filters extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          // Tri
           Row(
             children: [
               const Icon(Icons.sort_rounded,
@@ -868,26 +897,24 @@ class _EmptyState extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Container(
-              padding: const EdgeInsets.all(18),
-              decoration: BoxDecoration(
-                gradient: _Prism.brand,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: ThixPolicy.primary.withValues(alpha: 0.28),
-                      blurRadius: 20,
-                      offset: const Offset(0, 8)),
-                ],
+            // ✅ FIX CI v2 : animation NATIVE (pas de .animate())
+            _PulseWrapper(
+              child: Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  gradient: _Prism.brand,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                        color: ThixPolicy.primary.withValues(alpha: 0.28),
+                        blurRadius: 20,
+                        offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: const Icon(Icons.storefront_rounded,
+                    size: 44, color: Colors.white),
               ),
-              child: const Icon(Icons.storefront_rounded,
-                  size: 44, color: Colors.white),
-            )
-                .animate(onPlay: (c) => c.repeat(reverse: true))
-                .scale(begin: const Offset(1, 1),
-                    end: const Offset(1.08, 1.08),
-                    duration: 1600.ms,
-                    curve: Curves.easeInOut),
+            ),
             const SizedBox(height: 20),
             Text(
                 hasAny
@@ -937,6 +964,41 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
+/// Pulse animation native
+class _PulseWrapper extends StatefulWidget {
+  const _PulseWrapper({required this.child});
+  final Widget child;
+
+  @override
+  State<_PulseWrapper> createState() => _PulseWrapperState();
+}
+
+class _PulseWrapperState extends State<_PulseWrapper>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1600),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        final scale = 1.0 + (_controller.value * 0.08);
+        return Transform.scale(scale: scale, child: child);
+      },
+      child: widget.child,
+    );
+  }
+}
+
 // ============================================================================
 // CARTE BUSINESS
 // ============================================================================
@@ -964,8 +1026,7 @@ class _BusinessCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final name = _Sanitizer.text(business.name, maxLength: 40);
-    final sector =
-        _Sanitizer.text(business.sector, maxLength: 30);
+    final sector = _Sanitizer.text(business.sector, maxLength: 30);
     final city = _Sanitizer.text(business.city, maxLength: 30);
     final fmt = DateFormat.yMMMd('fr_FR');
 
@@ -979,10 +1040,8 @@ class _BusinessCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Header : cover + logo + statut
           Stack(
             children: [
-              // Cover / dégradé
               ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(24)),
@@ -1000,7 +1059,6 @@ class _BusinessCard extends StatelessWidget {
                       : _GradientFallback(),
                 ),
               ),
-              // Logo
               Positioned(
                 left: 14,
                 top: 48,
@@ -1033,7 +1091,6 @@ class _BusinessCard extends StatelessWidget {
                   ),
                 ),
               ),
-              // Badge statut
               Positioned(
                 right: 12,
                 top: 12,
@@ -1074,7 +1131,6 @@ class _BusinessCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Nom + meta
                 Padding(
                   padding: const EdgeInsets.only(left: 48, top: 4),
                   child: Column(
@@ -1104,7 +1160,6 @@ class _BusinessCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
 
-                // THIX ID (sélectionnable)
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 12, vertical: 10),
@@ -1132,7 +1187,6 @@ class _BusinessCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 12),
 
-                // Date de création
                 Row(
                   children: [
                     const Icon(Icons.access_time_rounded,
@@ -1149,7 +1203,6 @@ class _BusinessCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
 
-                // Actions
                 Row(
                   children: [
                     Expanded(
@@ -1178,7 +1231,6 @@ class _BusinessCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 10),
 
-                // Ligne secondaire
                 Row(
                   children: [
                     Expanded(
@@ -1359,7 +1411,7 @@ class _IconChip extends StatelessWidget {
 }
 
 // ============================================================================
-// FAB CRÉER (grand + petit)
+// FAB CRÉER
 // ============================================================================
 
 class _CreateFab extends StatelessWidget {
@@ -1399,84 +1451,3 @@ class _CreateFab extends StatelessWidget {
     );
   }
 }
-
-// ============================================================================
-// CLÉS l10n À AJOUTER (app_fr.arb / app_en.arb)
-// ============================================================================
-//
-// FR :
-//   "biz_mine_title":             "Mes sites",
-//   "biz_mine_subtitle":          "Gérez vos portfolios entreprises THIX",
-//   "biz_mine_filter_all":        "Tous",
-//   "biz_mine_filter_published":  "Publiés",
-//   "biz_mine_filter_draft":      "Brouillons",
-//   "biz_mine_filter_suspended":  "Suspendus",
-//   "biz_mine_sort_by":           "TRIER PAR",
-//   "biz_mine_sort_newest":       "Plus récent",
-//   "biz_mine_sort_oldest":       "Plus ancien",
-//   "biz_mine_sort_alpha":        "A → Z",
-//   "biz_mine_created_on":        "Créé le",
-//   "biz_mine_action_open":       "Ouvrir",
-//   "biz_mine_action_studio":     "Studio",
-//   "biz_mine_action_publish":    "Publier",
-//   "biz_mine_action_unpublish":  "Dépublier",
-//   "biz_mine_create_first":      "Créer mon premier site",
-//   "biz_mine_empty_title":       "Aucun site pour l'instant",
-//   "biz_mine_empty_hint":        "Créez votre premier portfolio entreprise en moins de 2 minutes.",
-//   "biz_mine_empty_filter_title":"Aucun résultat pour ce filtre",
-//   "biz_mine_empty_filter_hint": "Essayez un autre filtre ou créez un nouveau site.",
-//   "biz_mine_published":         "{0} est désormais en ligne 🚀",
-//   "biz_mine_unpublished":       "{0} n'est plus accessible au public.",
-//   "biz_mine_deleted":           "{0} a été supprimé.",
-//   "biz_mine_delete_title":      "Supprimer ce site ?",
-//   "biz_mine_delete_confirm":    "« {0} » et toutes ses données seront marqués comme supprimés. Cette action est réversible par un administrateur.",
-//   "biz_mine_checklist_title":   "Avant de publier",
-//   "biz_mine_checklist_hint":    "Complétez les éléments suivants :",
-//   "biz_mine_check_name":        "Nom de l'entreprise",
-//   "biz_mine_check_description": "Description",
-//   "biz_mine_check_logo":        "Logo",
-//   "biz_mine_check_cover":       "Image de couverture",
-//   "biz_mine_open_studio":       "Ouvrir le studio",
-//   "biz_mine_error_title":       "Impossible de charger vos sites",
-//   "biz_mine_error_generic":     "Une erreur est survenue : {0}",
-//   "common_cancel":              "Annuler",
-//   "common_delete":              "Supprimer",
-//
-// EN :
-//   "biz_mine_title":             "My sites",
-//   "biz_mine_subtitle":          "Manage your THIX business portfolios",
-//   "biz_mine_filter_all":        "All",
-//   "biz_mine_filter_published":  "Published",
-//   "biz_mine_filter_draft":      "Drafts",
-//   "biz_mine_filter_suspended":  "Suspended",
-//   "biz_mine_sort_by":           "SORT BY",
-//   "biz_mine_sort_newest":       "Newest",
-//   "biz_mine_sort_oldest":       "Oldest",
-//   "biz_mine_sort_alpha":        "A → Z",
-//   "biz_mine_created_on":        "Created on",
-//   "biz_mine_action_open":       "Open",
-//   "biz_mine_action_studio":     "Studio",
-//   "biz_mine_action_publish":    "Publish",
-//   "biz_mine_action_unpublish":  "Unpublish",
-//   "biz_mine_create_first":      "Create my first site",
-//   "biz_mine_empty_title":       "No sites yet",
-//   "biz_mine_empty_hint":        "Create your first business portfolio in under 2 minutes.",
-//   "biz_mine_empty_filter_title":"No results for this filter",
-//   "biz_mine_empty_filter_hint": "Try another filter or create a new site.",
-//   "biz_mine_published":         "{0} is now live 🚀",
-//   "biz_mine_unpublished":       "{0} is no longer publicly visible.",
-//   "biz_mine_deleted":           "{0} has been deleted.",
-//   "biz_mine_delete_title":      "Delete this site?",
-//   "biz_mine_delete_confirm":    "« {0} » and all its data will be marked as deleted. This action is reversible by an admin.",
-//   "biz_mine_checklist_title":   "Before publishing",
-//   "biz_mine_checklist_hint":    "Complete the following items:",
-//   "biz_mine_check_name":        "Business name",
-//   "biz_mine_check_description": "Description",
-//   "biz_mine_check_logo":        "Logo",
-//   "biz_mine_check_cover":       "Cover image",
-//   "biz_mine_open_studio":       "Open studio",
-//   "biz_mine_error_title":       "Cannot load your sites",
-//   "biz_mine_error_generic":     "An error occurred: {0}",
-//   "common_cancel":              "Cancel",
-//   "common_delete":              "Delete",
-// ============================================================================
