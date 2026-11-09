@@ -63,7 +63,7 @@ class BusinessPublicPage extends ConsumerWidget {
         );
         return Theme(
           data: bundle.theme.toThemeData().copyWith(
-                extensions: <Object, ThemeExtension<dynamic>>{ext: ext},
+                extensions: [ext],
               ),
           child: _BusinessSite(bundle: bundle),
         );
