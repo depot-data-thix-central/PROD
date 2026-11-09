@@ -1,8 +1,7 @@
-//lib/presentation/thix_incubator/pages/incubator_home_page.dart
 // ============================================================================
-// INCUBATOR HOME PAGE — SONATHIX GROUP
-// Module : thix_incubator
-// Route  : /incubator
+// FICHIER : lib/presentation/thix_incubator/pages/incubator_home_page.dart
+// Module  : thix_incubator
+// Route   : /incubator
 // ============================================================================
 // Design data-driven : AUCUNE donnée en dur. Tout vient de Supabase via
 // IncubatorProvider. États gérés : loading (skeleton) / empty / error / data.
@@ -24,7 +23,6 @@ import '../../../providers/incubator_provider.dart';
 import '../../../models/incubator_program.dart';
 import '../../../models/incubator_project.dart';
 import '../../../models/incubator_activity.dart';
-import '../widgets/incubator_bottom_nav.dart';
 
 // ---------------------------------------------------------------------------
 // CHARTES COULEURS INCUBATOR (à déplacer dans lib/theme.dart)
@@ -153,7 +151,7 @@ class _IncubatorHomePageState extends State<IncubatorHomePage>
           },
         ),
       ),
-      bottomNavigationBar: const IncubatorBottomNav(currentIndex: 0),
+      bottomNavigationBar: _IncubatorBottomNavPlaceholder(currentIndex: 0),
     );
   }
 }
@@ -1739,6 +1737,92 @@ class _SectionHeader extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// BOTTOM NAV PLACEHOLDER (inline pour éviter import manquant)
+// ============================================================================
+class _IncubatorBottomNavPlaceholder extends StatelessWidget {
+  const _IncubatorBottomNavPlaceholder({required this.currentIndex});
+  final int currentIndex;
+
+  static const _items = [
+    (icon: Icons.home_rounded,         label: 'Accueil'),
+    (icon: Icons.explore_rounded,      label: 'Explorer'),
+    (icon: Icons.folder_rounded,       label: 'Projets'),
+    (icon: Icons.mic_rounded,          label: 'Pitch'),
+    (icon: Icons.person_rounded,       label: 'Profil'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).brightness == Brightness.dark
+            ? const Color(0xFF111827) : Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: Theme.of(context).brightness == Brightness.dark
+                ? const Color(0xFF1F2937) : const Color(0xFFE2E8F0),
+          ),
+        ),
+      ),
+      child: SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(_items.length, (i) {
+              final item = _items[i];
+              final active = i == currentIndex;
+              return Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      // TODO: navigation réelle quand les pages existent
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            item.icon,
+                            size: 22,
+                            color: active
+                                ? IncubatorColors.electricBlue
+                                : (Theme.of(context).brightness == Brightness.dark
+                                    ? const Color(0xFF6B7280)
+                                    : const Color(0xFF94A3B8)),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            item.label,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                              color: active
+                                  ? IncubatorColors.electricBlue
+                                  : (Theme.of(context).brightness == Brightness.dark
+                                      ? const Color(0xFF6B7280)
+                                      : const Color(0xFF94A3B8)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ),
+        ),
       ),
     );
   }
