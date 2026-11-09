@@ -3,10 +3,17 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.1 — Novembre 2026 (CORRIGÉ CI)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /b/:thixId  (app + Flutter Web → thixid.com/b/<ID>)
+//
+//  Corrections appliquées (CI #3841) :
+//    • _ContactSection : une seule méthode build (accolades équilibrées)
+//    • _card() : rayon lu via BusinessThemeExt (plus de ShapeBorder? ?? BorderRadius)
+//    • BusinessPublicPage : injection de BusinessThemeExt (style + radius)
+//      dans le ThemeData via copyWith(extensions: ...)
+//    • Suppression du null-check impossible sur le bundle (type non-nullable)
 //
 //  Comportement :
 //    1. Charge le BusinessBundle via businessPublicBundleProvider ;
@@ -16,9 +23,6 @@
 //    4. Actions : partager (share_plus), QR (qr_flutter), copier l'ID,
 //       contacter (bottom sheet → url_launcher) ;
 //    5. États loading (shimmer) / introuvable (page dédiée).
-//
-//  Toutes les durées / courbes / glow / parallax respectent
-//  BusinessTheme.animationStyle (elegant | dynamic | minimal).
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:animated_text_kit/animated_text_kit.dart';
@@ -34,7 +38,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../core/thix_business_id.dart';
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
 import '../models/business_theme.dart';
@@ -65,13 +68,17 @@ class BusinessPublicPage extends ConsumerWidget {
         invalid: error is BusinessIdInvalidException,
         onRetry: () => ref.invalidate(businessPublicBundleProvider(thixId)),
       ),
-      data: (data) {
-        if (data == null) {
-          return _PublicNotFound(thixId: thixId, onRetry: null);
-        }
+      data: (bundle) {
+        // ✅ FIX CI : injection de l'extension (style + radius) dans le thème
+        final ext = BusinessThemeExt(
+          style: bundle.theme.animationStyle,
+          radius: bundle.theme.radius,
+        );
         return Theme(
-          data: data.theme.toThemeData(),
-          child: _BusinessSite(bundle: data),
+          data: bundle.theme.toThemeData().copyWith(
+                extensions: <Object, ThemeExtension<dynamic>>{ext: ext},
+              ),
+          child: _BusinessSite(bundle: bundle),
         );
       },
     );
@@ -107,14 +114,20 @@ class _PublicSkeleton extends StatelessWidget {
               padding: const EdgeInsets.all(20),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-                  const SizedBox(height: 220, child: DecoratedBox(
-                      decoration: BoxDecoration(color: Colors.white))),
+                  const SizedBox(
+                      height: 220,
+                      child: DecoratedBox(
+                          decoration: BoxDecoration(color: Colors.white))),
                   const SizedBox(height: 16),
-                  const SizedBox(height: 24, child: DecoratedBox(
-                      decoration: BoxDecoration(color: Colors.white))),
+                  const SizedBox(
+                      height: 24,
+                      child: DecoratedBox(
+                          decoration: BoxDecoration(color: Colors.white))),
                   const SizedBox(height: 16),
-                  const SizedBox(height: 140, child: DecoratedBox(
-                      decoration: BoxDecoration(color: Colors.white))),
+                  const SizedBox(
+                      height: 140,
+                      child: DecoratedBox(
+                          decoration: BoxDecoration(color: Colors.white))),
                 ]),
               ),
             ),
@@ -154,9 +167,7 @@ class _PublicNotFound extends StatelessWidget {
                   size: 84, color: theme.colorScheme.outline),
               const SizedBox(height: 16),
               Text(
-                invalid
-                    ? 'Identifiant invalide'
-                    : 'Entreprise introuvable',
+                invalid ? 'Identifiant invalide' : 'Entreprise introuvable',
                 style: theme.textTheme.headlineSmall
                     ?.copyWith(fontWeight: FontWeight.w800),
                 textAlign: TextAlign.center,
@@ -276,7 +287,7 @@ class _BusinessSite extends StatelessWidget {
     );
   }
 
-  // ── Actions ──
+  // ── Actions ─
 
   Future<void> _copyId(BuildContext context) async {
     await Clipboard.setData(ClipboardData(text: bundle.business.thixId));
@@ -435,22 +446,22 @@ class _HeroIdentity extends StatelessWidget {
           value: b.ageYears!,
           label: 'ans d\'expérience',
           compact: false,
-          duration: Duration(
-              milliseconds: (1200 * style.durationScale).round()),
+          duration:
+              Duration(milliseconds: (1200 * style.durationScale).round()),
         ),
       if (b.employees != null && b.employees! > 0)
         AnimatedCounter(
           value: b.employees!,
           label: 'collaborateurs',
           compact: false,
-          duration: Duration(
-              milliseconds: (1200 * style.durationScale).round()),
+          duration:
+              Duration(milliseconds: (1200 * style.durationScale).round()),
         ),
       AnimatedCounter(
         value: bundle.stats?.views ?? 0,
         label: 'visites',
-        duration: Duration(
-            milliseconds: (1400 * style.durationScale).round()),
+        duration:
+            Duration(milliseconds: (1400 * style.durationScale).round()),
       ),
     ];
 
@@ -506,9 +517,10 @@ class _HeroIdentity extends StatelessWidget {
           if (b.sector != null || b.city != null)
             Text(
               [b.sector, b.city].whereType<String>().join(' • '),
-              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
+              style: Theme.of(context)
+                  .textTheme
+                  .bodyMedium
+                  ?.copyWith(color: scheme.onSurfaceVariant),
             ).animate().fadeIn(delay: 200.ms, duration: 500.ms),
 
           const SizedBox(height: 10),
@@ -658,12 +670,15 @@ Widget _sectionHeader(BuildContext context, String title) {
   );
 }
 
+/// ✅ FIX CI : rayon lu via BusinessThemeExt (types cohérents).
 Card _card(BuildContext context, {required Widget child}) {
   final theme = Theme.of(context);
+  final radius = theme.extension<BusinessThemeExt>()?.radius ??
+      BorderRadius.circular(24);
   return Card(
     elevation: 0,
     color: theme.colorScheme.surfaceContainerLow,
-    shape: RoundedRectangleBorder(borderRadius: theme.cardTheme.shape ?? BorderRadius.circular(24)),
+    shape: RoundedRectangleBorder(borderRadius: radius),
     child: Padding(padding: const EdgeInsets.all(16), child: child),
   );
 }
@@ -700,7 +715,7 @@ class _AboutSection extends StatelessWidget {
   }
 }
 
-// ── Services ──
+// ── Services ─
 class _ServicesSection extends StatelessWidget {
   const _ServicesSection({required this.content});
   final ServicesContent content;
@@ -749,7 +764,7 @@ class _ServicesSection extends StatelessWidget {
   }
 }
 
-// ── Products ──
+// ── Products ─
 class _ProductsSection extends StatelessWidget {
   const _ProductsSection({required this.content});
   final ProductsContent content;
@@ -842,7 +857,8 @@ class _GallerySection extends StatelessWidget {
                   imageUrl: img.url,
                   fit: BoxFit.cover,
                   width: double.infinity,
-                  placeholder: (_, __) => const ColoredBox(color: Colors.black12),
+                  placeholder: (_, __) =>
+                      const ColoredBox(color: Colors.black12),
                   errorWidget: (_, __, ___) =>
                       const ColoredBox(color: Colors.black12),
                 ),
@@ -854,7 +870,7 @@ class _GallerySection extends StatelessWidget {
   }
 }
 
-// ── Team ──
+// ── Team ─
 class _TeamSection extends StatelessWidget {
   const _TeamSection({required this.content});
   final TeamContent content;
@@ -1010,16 +1026,10 @@ class _TestimonialsSection extends StatelessWidget {
   }
 }
 
-// ── Contact (aperçu cliquable) ──
+// ── Contact (aperçu cliquable) — ✅ FIX CI : une seule méthode build ──
 class _ContactSection extends StatelessWidget {
   const _ContactSection({required this.content});
   final ContactContent content;
-
-  @override
-  Widget build(BuildContext context) {
-    if (content.channels.isEmpty) {
-    return const SizedBox.shrink();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -1093,16 +1103,23 @@ class _Footer extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Extension Theme pour exposer le style d'animation au contexte
+// Extension Theme (style d'animation + rayon) — ✅ FIX CI : champ radius
 // ─────────────────────────────────────────────────────────────────────────────
 
 class BusinessThemeExt extends ThemeExtension<BusinessThemeExt> {
-  const BusinessThemeExt({required this.style});
+  const BusinessThemeExt({required this.style, required this.radius});
   final BusinessAnimationStyle style;
+  final BorderRadius radius;
 
   @override
-  BusinessThemeExt copyWith({BusinessAnimationStyle? style}) =>
-      BusinessThemeExt(style: style ?? this.style);
+  BusinessThemeExt copyWith({
+    BusinessAnimationStyle? style,
+    BorderRadius? radius,
+  }) =>
+      BusinessThemeExt(
+        style: style ?? this.style,
+        radius: radius ?? this.radius,
+      );
 
   @override
   BusinessThemeExt lerp(BusinessThemeExt? other, double t) =>
