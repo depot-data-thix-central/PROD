@@ -3,25 +3,15 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.2.0 — Novembre 2026
+//  Version  : 1.3.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/edit/:id
 //
-//  ✅ v1.2 : upload de photos PARTOUT :
-//    • À propos     → champ image (upload 📤)
-//    • Services     → champ image par service (upload 📤)
-//    • Produits     → champ image par produit (upload 📤)
-//    • Galerie      → champ image par visuel (upload 📤)
-//    • Équipe       → champ photo par membre (upload 📤)
-//    • Actualités   → champ image par article (upload 📤)
-//    • Logo / Cover → upload (inchangé)
-//
-//  Chaque champ image = URL éditable + bouton 📤 + miniature live.
-//  Upload → bucket Supabase `business-media` (public).
-//
-//  Fonctionnalités préservées : identité, visibilité/ordre des sections,
-//  édition jsonb typée, publication, Theme Studio, aperçu public.
+//  ✅ v1.3 : Gestion des nouvelles sections (Réalisations, Projets, Partenaires)
+//    • Upload de photos/vidéos PARTOUT (URL éditable + bouton 📤 + miniature)
+//    • Support du pourcentage d'évolution pour les projets
+//    • Correction de la faille Null Safety sur MimeType
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'dart:math';
@@ -80,11 +70,15 @@ Future<String> uploadBusinessImage(XFile file, String folder) async {
   final rand = Random().nextInt(9999).toString().padLeft(4, '0');
   final path = '$folder/sections-$stamp-$rand.$ext';
   final bucket = Supabase.instance.client.storage.from('business-media');
+  
   await bucket.uploadBinary(
     path,
     bytes,
     fileOptions: FileOptions(
-      contentType: (file.mimeType == null || file.mimeType!.isEmpty) ? 'image/$ext' : file.mimeType,
+      // ✅ FIX : Gestion du null safety pour mimeType
+      contentType: (file.mimeType == null || file.mimeType!.isEmpty) 
+          ? 'image/$ext' 
+          : file.mimeType!,
       upsert: true,
     ),
   );
@@ -144,17 +138,14 @@ class _ImageField extends StatelessWidget {
                       ? CachedNetworkImage(
                           imageUrl: url,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) =>
-                              const ColoredBox(color: _Prism.border),
+                          placeholder: (_, __) => const ColoredBox(color: _Prism.border),
                           errorWidget: (_, __, ___) => const ColoredBox(
                               color: _Prism.border,
-                              child: Icon(Icons.broken_image_outlined,
-                                  size: 18, color: _Prism.inkMuted)),
+                              child: Icon(Icons.broken_image_outlined, size: 18, color: _Prism.inkMuted)),
                         )
-                      : ColoredBox(
+                      : const ColoredBox(
                           color: _Prism.border,
-                          child: const Icon(Icons.image_outlined,
-                              size: 18, color: _Prism.inkMuted),
+                          child: Icon(Icons.image_outlined, size: 18, color: _Prism.inkMuted),
                         ),
                 ),
               ),
@@ -175,8 +166,7 @@ class _ImageField extends StatelessWidget {
                         borderSide: const BorderSide(color: _Prism.border)),
                     focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(14),
-                        borderSide: const BorderSide(
-                            color: ThixPolicy.primary, width: 2)),
+                        borderSide: const BorderSide(color: ThixPolicy.primary, width: 2)),
                   ),
                 ),
               ),
@@ -192,13 +182,8 @@ class _ImageField extends StatelessWidget {
                   child: IconButton(
                     tooltip: AppLocalizations.of(context).t('biz_studio_upload'),
                     icon: uploading
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.photo_camera_rounded,
-                            size: 20, color: Colors.white),
+                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : const Icon(Icons.photo_camera_rounded, size: 20, color: Colors.white),
                     onPressed: uploading ? null : onPick,
                   ),
                 ),
@@ -220,8 +205,7 @@ class BusinessStudioPage extends ConsumerStatefulWidget {
   final String businessId;
 
   @override
-  ConsumerState<BusinessStudioPage> createState() =>
-      _BusinessStudioPageState();
+  ConsumerState<BusinessStudioPage> createState() => _BusinessStudioPageState();
 }
 
 class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
@@ -260,8 +244,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
 
   Future<void> _load() async {
     try {
-      final bundle =
-          await ref.read(ownerBusinessBundleProvider(widget.businessId).future);
+      final bundle = await ref.read(ownerBusinessBundleProvider(widget.businessId).future);
       final b = bundle.business;
       _name.text = b.name;
       _claim.text = b.claim ?? '';
@@ -298,7 +281,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
 
   BusinessRepository get _repo => ref.read(businessRepositoryProvider);
 
-  // ── Sauvegarde identité ──
   Future<void> _saveIdentity() async {
     if (_business == null) return;
     FocusScope.of(context).unfocus();
@@ -307,8 +289,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
       final updated = _business!.copyWith(
         name: _name.text.trim(),
         claim: _claim.text.trim().isEmpty ? null : _claim.text.trim(),
-        description:
-            _description.text.trim().isEmpty ? null : _description.text.trim(),
+        description: _description.text.trim().isEmpty ? null : _description.text.trim(),
         sector: _sector.text.trim().isEmpty ? null : _sector.text.trim(),
         city: _city.text.trim().isEmpty ? null : _city.text.trim(),
         sinceYear: int.tryParse(_sinceYear.text.trim()),
@@ -317,25 +298,18 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         phone: _phone.text.trim().isEmpty ? null : _phone.text.trim(),
         email: _email.text.trim().isEmpty ? null : _email.text.trim(),
       );
-      final saved = await _repo.updateBusiness(
-          businessId: widget.businessId, business: updated);
+      final saved = await _repo.updateBusiness(businessId: widget.businessId, business: updated);
       if (!mounted) return;
-      setState(() {
-        _business = saved;
-        _saving = false;
-      });
+      setState(() { _business = saved; _saving = false; });
       _snack(AppLocalizations.of(context).t('biz_studio_saved'));
     } catch (e) {
       _StudioLogger.error('saveIdentity', e);
       if (!mounted) return;
       setState(() => _saving = false);
-      _snack(
-          AppLocalizations.of(context).t('biz_studio_error', args: ['$e']),
-          error: true);
+      _snack(AppLocalizations.of(context).t('biz_studio_error', args: ['$e']), error: true);
     }
   }
 
-  // ── Upload logo / cover ──
   Future<void> _pickAndUpload({required bool isLogo}) async {
     if (_business == null) return;
     final l10n = AppLocalizations.of(context);
@@ -350,13 +324,9 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         logoUrl: isLogo ? url : _business!.logoUrl,
         coverUrl: isLogo ? _business!.coverUrl : url,
       );
-      final saved = await _repo.updateBusiness(
-          businessId: widget.businessId, business: updated);
+      final saved = await _repo.updateBusiness(businessId: widget.businessId, business: updated);
       if (!mounted) return;
-      setState(() {
-        _business = saved;
-        _saving = false;
-      });
+      setState(() { _business = saved; _saving = false; });
       _snack(l10n.t('biz_studio_saved'));
     } catch (e) {
       _StudioLogger.error('upload', e);
@@ -366,18 +336,14 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     }
   }
 
-  // ── Sections : visibilité / ordre / contenu ──
   Future<void> _persistSections(List<BusinessSection> next) async {
     try {
-      final saved = await _repo.upsertSections(
-          businessId: widget.businessId, sections: next);
+      final saved = await _repo.upsertSections(businessId: widget.businessId, sections: next);
       if (!mounted) return;
       setState(() => _sections = saved);
     } catch (e) {
       _StudioLogger.error('persistSections', e);
-      _snack(
-          AppLocalizations.of(context).t('biz_studio_error', args: ['$e']),
-          error: true);
+      _snack(AppLocalizations.of(context).t('biz_studio_error', args: ['$e']), error: true);
     }
   }
 
@@ -417,7 +383,6 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     _snack(AppLocalizations.of(context).t('biz_studio_section_saved'));
   }
 
-  // ── Publication ──
   Future<void> _togglePublish() async {
     if (_business == null) return;
     final l10n = AppLocalizations.of(context);
@@ -427,13 +392,8 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           ? await _repo.unpublish(widget.businessId)
           : await _repo.publish(widget.businessId);
       if (!mounted) return;
-      setState(() {
-        _business = saved;
-        _saving = false;
-      });
-      _snack(saved.isPublished
-          ? l10n.t('biz_studio_published')
-          : l10n.t('biz_studio_unpublished'));
+      setState(() { _business = saved; _saving = false; });
+      _snack(saved.isPublished ? l10n.t('biz_studio_published') : l10n.t('biz_studio_unpublished'));
     } catch (e) {
       if (!mounted) return;
       setState(() => _saving = false);
@@ -441,51 +401,29 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     }
   }
 
-  // ── Build ──
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
 
     if (_loading) {
-      return Scaffold(
-        backgroundColor: _Prism.bg,
-        appBar: AppBar(title: Text(l10n.t('biz_studio_title'))),
-        body: const Center(child: CircularProgressIndicator()),
-      );
+      return Scaffold(backgroundColor: _Prism.bg, appBar: AppBar(title: Text(l10n.t('biz_studio_title'))), body: const Center(child: CircularProgressIndicator()));
     }
 
     final b = _business;
     if (b == null) {
-      return Scaffold(
-        backgroundColor: _Prism.bg,
-        appBar: AppBar(title: Text(l10n.t('biz_studio_title'))),
-        body: Center(child: Text(l10n.t('biz_mine_error_title'))),
-      );
+      return Scaffold(backgroundColor: _Prism.bg, appBar: AppBar(title: Text(l10n.t('biz_studio_title'))), body: Center(child: Text(l10n.t('biz_mine_error_title'))));
     }
 
     return Scaffold(
       backgroundColor: _Prism.bg,
       appBar: AppBar(
-        title: Text(l10n.t('biz_studio_title'),
-            style: const TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(l10n.t('biz_studio_title'), style: const TextStyle(fontWeight: FontWeight.w800)),
         actions: [
+          IconButton(tooltip: l10n.t('biz_studio_preview'), icon: const Icon(Icons.open_in_new_rounded), onPressed: () => context.push(_kPublicRoute(b.thixId))),
+          IconButton(tooltip: l10n.t('biz_studio_theme'), icon: const Icon(Icons.palette_rounded), onPressed: () => context.push('$_kThemeRoute/${b.id}')),
           IconButton(
-            tooltip: l10n.t('biz_studio_preview'),
-            icon: const Icon(Icons.open_in_new_rounded),
-            onPressed: () => context.push(_kPublicRoute(b.thixId)),
-          ),
-          IconButton(
-            tooltip: l10n.t('biz_studio_theme'),
-            icon: const Icon(Icons.palette_rounded),
-            onPressed: () => context.push('$_kThemeRoute/${b.id}'),
-          ),
-          IconButton(
-            tooltip: b.isPublished
-                ? l10n.t('biz_studio_unpublish')
-                : l10n.t('biz_studio_publish'),
-            icon: Icon(b.isPublished
-                ? Icons.cloud_off_rounded
-                : Icons.cloud_upload_rounded),
+            tooltip: b.isPublished ? l10n.t('biz_studio_unpublish') : l10n.t('biz_studio_publish'),
+            icon: Icon(b.isPublished ? Icons.cloud_off_rounded : Icons.cloud_upload_rounded),
             onPressed: _saving ? null : _togglePublish,
           ),
         ],
@@ -503,47 +441,17 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
               children: [
                 _tf(_name, l10n.t('biz_studio_field_name')),
                 _tf(_claim, l10n.t('biz_studio_claim')),
-                _tf(_description, l10n.t('biz_studio_description'),
-                    maxLines: 4),
-                Row(
-                  children: [
-                    Expanded(
-                        child: _tf(_sector, l10n.t('biz_studio_sector'))),
-                    const SizedBox(width: 10),
-                    Expanded(child: _tf(_city, l10n.t('biz_studio_city'))),
-                  ],
-                ),
-                Row(
-                  children: [
-                    Expanded(
-                        child: _tf(_sinceYear, l10n.t('biz_studio_since'),
-                            numeric: true)),
-                    const SizedBox(width: 10),
-                    Expanded(
-                        child: _tf(_employees,
-                            l10n.t('biz_studio_employees'),
-                            numeric: true)),
-                  ],
-                ),
+                _tf(_description, l10n.t('biz_studio_description'), maxLines: 4),
+                Row(children: [Expanded(child: _tf(_sector, l10n.t('biz_studio_sector'))), const SizedBox(width: 10), Expanded(child: _tf(_city, l10n.t('biz_studio_city')))]),
+                Row(children: [Expanded(child: _tf(_sinceYear, l10n.t('biz_studio_since'), numeric: true)), const SizedBox(width: 10), Expanded(child: _tf(_employees, l10n.t('biz_studio_employees'), numeric: true))]),
                 _tf(_website, l10n.t('biz_studio_website')),
-                Row(
-                  children: [
-                    Expanded(child: _tf(_phone, l10n.t('biz_studio_phone'))),
-                    const SizedBox(width: 10),
-                    Expanded(child: _tf(_email, l10n.t('biz_studio_email'))),
-                  ],
-                ),
+                Row(children: [Expanded(child: _tf(_phone, l10n.t('biz_studio_phone'))), const SizedBox(width: 10), Expanded(child: _tf(_email, l10n.t('biz_studio_email')))]),
                 const SizedBox(height: 12),
                 SizedBox(
                   width: double.infinity,
                   child: FilledButton.icon(
                     onPressed: _saving ? null : _saveIdentity,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2))
-                        : const Icon(Icons.save_rounded, size: 18),
+                    icon: _saving ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.save_rounded, size: 18),
                     label: Text(l10n.t('biz_studio_save')),
                   ),
                 ),
@@ -557,19 +465,9 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
             icon: Icons.image_rounded,
             child: Column(
               children: [
-                _MediaRow(
-                  label: l10n.t('biz_studio_logo'),
-                  imageUrl: b.logoUrl,
-                  round: true,
-                  onChange: () => _pickAndUpload(isLogo: true),
-                ),
+                _MediaRow(label: l10n.t('biz_studio_logo'), imageUrl: b.logoUrl, round: true, onChange: () => _pickAndUpload(isLogo: true)),
                 const SizedBox(height: 12),
-                _MediaRow(
-                  label: l10n.t('biz_studio_cover'),
-                  imageUrl: b.coverUrl,
-                  round: false,
-                  onChange: () => _pickAndUpload(isLogo: false),
-                ),
+                _MediaRow(label: l10n.t('biz_studio_cover'), imageUrl: b.coverUrl, round: false, onChange: () => _pickAndUpload(isLogo: false)),
               ],
             ),
           ),
@@ -598,8 +496,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
     );
   }
 
-  Widget _tf(TextEditingController ctrl, String label,
-      {int maxLines = 1, bool numeric = false}) {
+  Widget _tf(TextEditingController ctrl, String label, {int maxLines = 1, bool numeric = false}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -611,19 +508,9 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
           isDense: true,
           filled: true,
           fillColor: _Prism.bg,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: _Prism.border),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide: const BorderSide(color: _Prism.border),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14),
-            borderSide:
-                const BorderSide(color: ThixPolicy.primary, width: 2),
-          ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _Prism.border)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _Prism.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: ThixPolicy.primary, width: 2)),
         ),
       ),
     );
@@ -645,43 +532,20 @@ class _StatusBanner extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: published
-            ? ThixPolicy.success.withValues(alpha: 0.10)
-            : const Color(0xFFF59E0B).withValues(alpha: 0.10),
+        color: published ? ThixPolicy.success.withValues(alpha: 0.10) : const Color(0xFFF59E0B).withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: published
-              ? ThixPolicy.success.withValues(alpha: 0.35)
-              : const Color(0xFFF59E0B).withValues(alpha: 0.35),
-        ),
+        border: Border.all(color: published ? ThixPolicy.success.withValues(alpha: 0.35) : const Color(0xFFF59E0B).withValues(alpha: 0.35)),
       ),
       child: Row(
         children: [
-          Icon(
-            published ? Icons.cloud_done_rounded : Icons.edit_note_rounded,
-            color: published ? ThixPolicy.success : const Color(0xFFB45309),
-          ),
+          Icon(published ? Icons.cloud_done_rounded : Icons.edit_note_rounded, color: published ? ThixPolicy.success : const Color(0xFFB45309)),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  published
-                      ? l10n.t('biz_mine_filter_published')
-                      : l10n.t('biz_mine_filter_draft'),
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: published
-                        ? ThixPolicy.success
-                        : const Color(0xFFB45309),
-                  ),
-                ),
-                SelectableText(
-                  business.thixId,
-                  style: const TextStyle(
-                      fontSize: 12, fontWeight: FontWeight.w700),
-                ),
+                Text(published ? l10n.t('biz_mine_filter_published') : l10n.t('biz_mine_filter_draft'), style: TextStyle(fontWeight: FontWeight.w800, color: published ? ThixPolicy.success : const Color(0xFFB45309))),
+                SelectableText(business.thixId, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
               ],
             ),
           ),
@@ -696,8 +560,7 @@ class _StatusBanner extends StatelessWidget {
 // ============================================================================
 
 class _StudioCard extends StatelessWidget {
-  const _StudioCard(
-      {required this.title, required this.icon, required this.child});
+  const _StudioCard({required this.title, required this.icon, required this.child});
   final String title;
   final IconData icon;
   final Widget child;
@@ -706,23 +569,11 @@ class _StudioCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: _Prism.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: _Prism.border),
-      ),
+      decoration: BoxDecoration(color: _Prism.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: _Prism.border)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Icon(icon, size: 20, color: ThixPolicy.primary),
-              const SizedBox(width: 8),
-              Text(title,
-                  style: const TextStyle(
-                      fontSize: 15, fontWeight: FontWeight.w800)),
-            ],
-          ),
+          Row(children: [Icon(icon, size: 20, color: ThixPolicy.primary), const SizedBox(width: 8), Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800))]),
           const SizedBox(height: 14),
           child,
         ],
@@ -736,12 +587,7 @@ class _StudioCard extends StatelessWidget {
 // ============================================================================
 
 class _MediaRow extends StatelessWidget {
-  const _MediaRow({
-    required this.label,
-    required this.imageUrl,
-    required this.round,
-    required this.onChange,
-  });
+  const _MediaRow({required this.label, required this.imageUrl, required this.round, required this.onChange});
   final String label;
   final String? imageUrl;
   final bool round;
@@ -759,19 +605,8 @@ class _MediaRow extends StatelessWidget {
             width: round ? 64 : 96,
             height: 64,
             child: has
-                ? CachedNetworkImage(
-                    imageUrl: imageUrl!,
-                    fit: BoxFit.cover,
-                    placeholder: (_, __) =>
-                        const ColoredBox(color: _Prism.border),
-                    errorWidget: (_, __, ___) =>
-                        const ColoredBox(color: _Prism.border),
-                  )
-                : ColoredBox(
-                    color: _Prism.border,
-                    child: const Icon(Icons.add_photo_alternate_outlined,
-                        color: _Prism.inkMuted),
-                  ),
+                ? CachedNetworkImage(imageUrl: imageUrl!, fit: BoxFit.cover, placeholder: (_, __) => const ColoredBox(color: _Prism.border), errorWidget: (_, __, ___) => const ColoredBox(color: _Prism.border))
+                : const ColoredBox(color: _Prism.border, child: Icon(Icons.add_photo_alternate_outlined, color: _Prism.inkMuted)),
           ),
         ),
         const SizedBox(width: 12),
@@ -779,20 +614,13 @@ class _MediaRow extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label,
-                  style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(label, style: const TextStyle(fontWeight: FontWeight.w700)),
               const SizedBox(height: 6),
               OutlinedButton.icon(
                 onPressed: onChange,
                 icon: const Icon(Icons.photo_camera_rounded, size: 16),
-                label: Text(l10n.t('biz_studio_change'),
-                    style: const TextStyle(fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10)),
-                ),
+                label: Text(l10n.t('biz_studio_change'), style: const TextStyle(fontSize: 12)),
+                style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10))),
               ),
             ],
           ),
@@ -807,15 +635,7 @@ class _MediaRow extends StatelessWidget {
 // ============================================================================
 
 class _SectionRow extends StatelessWidget {
-  const _SectionRow({
-    required this.section,
-    required this.canUp,
-    required this.canDown,
-    required this.onUp,
-    required this.onDown,
-    required this.onVisible,
-    required this.onEdit,
-  });
+  const _SectionRow({required this.section, required this.canUp, required this.canDown, required this.onUp, required this.onDown, required this.onVisible, required this.onEdit});
   final BusinessSection section;
   final bool canUp;
   final bool canDown;
@@ -826,22 +646,14 @@ class _SectionRow extends StatelessWidget {
 
   IconData get _icon {
     switch (section.type) {
-      case BusinessSectionType.about:
-        return Icons.info_outline_rounded;
-      case BusinessSectionType.services:
-        return Icons.miscellaneous_services_rounded;
-      case BusinessSectionType.products:
-        return Icons.inventory_2_outlined;
-      case BusinessSectionType.gallery:
-        return Icons.photo_library_outlined;
-      case BusinessSectionType.team:
-        return Icons.groups_outlined;
-      case BusinessSectionType.news:
-        return Icons.article_outlined;
-      case BusinessSectionType.testimonials:
-        return Icons.rate_review_outlined;
-      case BusinessSectionType.contact:
-        return Icons.mail_outline_rounded;
+      case BusinessSectionType.about: return Icons.info_outline_rounded;
+      case BusinessSectionType.services: return Icons.miscellaneous_services_rounded;
+      case BusinessSectionType.products: return Icons.inventory_2_outlined;
+      case BusinessSectionType.gallery: return Icons.photo_library_outlined;
+      case BusinessSectionType.team: return Icons.groups_outlined;
+      case BusinessSectionType.news: return Icons.article_outlined;
+      case BusinessSectionType.testimonials: return Icons.rate_review_outlined;
+      case BusinessSectionType.contact: return Icons.mail_outline_rounded;
     }
   }
 
@@ -867,27 +679,11 @@ class _SectionRow extends StatelessWidget {
         children: [
           Icon(_icon, size: 20, color: ThixPolicy.primary),
           const SizedBox(width: 10),
-          Expanded(
-            child: Text(_title(l10n),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.w700)),
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.arrow_upward_rounded, size: 18),
-            onPressed: canUp ? onUp : null,
-          ),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.arrow_downward_rounded, size: 18),
-            onPressed: canDown ? onDown : null,
-          ),
+          Expanded(child: Text(_title(l10n), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700))),
+          IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.arrow_upward_rounded, size: 18), onPressed: canUp ? onUp : null),
+          IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.arrow_downward_rounded, size: 18), onPressed: canDown ? onDown : null),
           Switch(value: section.visible, onChanged: onVisible),
-          IconButton(
-            icon: const Icon(Icons.edit_rounded, size: 18),
-            onPressed: onEdit,
-          ),
+          IconButton(icon: const Icon(Icons.edit_rounded, size: 18), onPressed: onEdit),
         ],
       ),
     );
@@ -895,7 +691,7 @@ class _SectionRow extends StatelessWidget {
 }
 
 // ============================================================================
-// ÉDITEUR DE SECTION (bottom sheet) — ✅ v1.2 uploads partout
+// ÉDITEUR DE SECTION (bottom sheet)
 // ============================================================================
 
 class _SectionEditorSheet extends StatefulWidget {
@@ -907,17 +703,14 @@ class _SectionEditorSheet extends StatefulWidget {
 }
 
 class _SectionEditorSheetState extends State<_SectionEditorSheet> {
-  // Champs « À propos »
   late final TextEditingController _title = TextEditingController();
   late final TextEditingController _tagline = TextEditingController();
   late final TextEditingController _body = TextEditingController();
   late final TextEditingController _aboutImage = TextEditingController();
 
-  // Listes d'items : contrôleurs par item
   final List<List<TextEditingController>> _items = [];
   final List<ContactChannelType> _contactTypes = [];
 
-  /// Clé du champ image en cours d'upload (spinner)
   String _uploadingKey = '';
 
   @override
@@ -931,84 +724,44 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
       _aboutImage.text = c.imageUrl ?? '';
     } else if (c is ServicesContent) {
       _title.text = c.title;
-      for (final it in c.items) {
-        _items.add(_ctrls([
-          it.title, it.description ?? '', it.price ?? '', it.imageUrl ?? ''
-        ]));
-      }
+      for (final it in c.items) { _items.add(_ctrls([it.title, it.description ?? '', it.price ?? '', it.imageUrl ?? ''])); }
     } else if (c is ProductsContent) {
       _title.text = c.title;
-      for (final it in c.items) {
-        _items.add(_ctrls([
-          it.title, it.description ?? '', it.price ?? '',
-          it.imageUrl ?? '', it.url ?? ''
-        ]));
-      }
+      for (final it in c.items) { _items.add(_ctrls([it.title, it.description ?? '', it.price ?? '', it.imageUrl ?? '', it.url ?? ''])); }
     } else if (c is GalleryContent) {
       _title.text = c.title;
-      for (final it in c.images) {
-        _items.add(_ctrls([it.url, it.caption ?? '']));
-      }
+      for (final it in c.images) { _items.add(_ctrls([it.url, it.caption ?? ''])); }
     } else if (c is TeamContent) {
       _title.text = c.title;
-      for (final it in c.members) {
-        _items.add(_ctrls([
-          it.name, it.role ?? '', it.bio ?? '', it.photoUrl ?? ''
-        ]));
-      }
+      for (final it in c.members) { _items.add(_ctrls([it.name, it.role ?? '', it.bio ?? '', it.photoUrl ?? ''])); }
     } else if (c is NewsContent) {
       _title.text = c.title;
-      for (final it in c.posts) {
-        _items.add(_ctrls([
-          it.title, it.excerpt ?? '', it.imageUrl ?? '', it.url ?? ''
-        ]));
-      }
+      for (final it in c.posts) { _items.add(_ctrls([it.title, it.excerpt ?? '', it.imageUrl ?? '', it.url ?? ''])); }
     } else if (c is TestimonialsContent) {
       _title.text = c.title;
-      for (final it in c.items) {
-        _items.add(_ctrls([
-          it.quote, it.author ?? '', it.role ?? '',
-          it.rating?.toString() ?? ''
-        ]));
-      }
+      for (final it in c.items) { _items.add(_ctrls([it.quote, it.author ?? '', it.role ?? '', it.rating?.toString() ?? ''])); }
     } else if (c is ContactContent) {
       _title.text = c.title;
-      for (final it in c.channels) {
-        _items.add(_ctrls([it.value, it.label ?? '']));
-        _contactTypes.add(it.type);
-      }
+      for (final it in c.channels) { _items.add(_ctrls([it.value, it.label ?? ''])); _contactTypes.add(it.type); }
     }
   }
 
-  List<TextEditingController> _ctrls(List<String> values) =>
-      values.map((v) => TextEditingController(text: v)).toList();
+  List<TextEditingController> _ctrls(List<String> values) => values.map((v) => TextEditingController(text: v)).toList();
 
-  String _v(List<TextEditingController> l, int i) =>
-      l.length > i ? l[i].text.trim() : '';
+  String _v(List<TextEditingController> l, int i) => l.length > i ? l[i].text.trim() : '';
 
   @override
   void dispose() {
-    _title.dispose();
-    _tagline.dispose();
-    _body.dispose();
-    _aboutImage.dispose();
-    for (final group in _items) {
-      for (final c in group) {
-        c.dispose();
-      }
-    }
+    _title.dispose(); _tagline.dispose(); _body.dispose(); _aboutImage.dispose();
+    for (final group in _items) { for (final c in group) { c.dispose(); } }
     super.dispose();
   }
 
-  // ✅ Upload vers Storage puis injection de l'URL dans le controller
   Future<void> _pickFor(TextEditingController target, String key) async {
     final l10n = AppLocalizations.of(context);
     setState(() => _uploadingKey = key);
     try {
-      final url = await pickAndUploadImage(
-        context,
-        folder: widget.section.businessId,
-      );
+      final url = await pickAndUploadImage(context, folder: widget.section.businessId);
       if (!mounted) return;
       if (url != null) {
         target.text = url;
@@ -1019,47 +772,30 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
       _StudioLogger.error('section upload', e);
       if (!mounted) return;
       setState(() => _uploadingKey = '');
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(l10n.t('biz_studio_upload_error', args: ['$e'])),
-        backgroundColor: ThixPolicy.danger,
-        behavior: SnackBarBehavior.floating,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(l10n.t('biz_studio_upload_error', args: ['$e'])), backgroundColor: ThixPolicy.danger, behavior: SnackBarBehavior.floating));
     }
   }
 
   void _addItem() {
     setState(() {
       switch (widget.section.type) {
-        case BusinessSectionType.services:
-          _items.add(_ctrls(['', '', '', '']));
-        case BusinessSectionType.products:
-          _items.add(_ctrls(['', '', '', '', '']));
-        case BusinessSectionType.gallery:
-          _items.add(_ctrls(['', '']));
-        case BusinessSectionType.team:
-          _items.add(_ctrls(['', '', '', '']));
-        case BusinessSectionType.news:
-          _items.add(_ctrls(['', '', '', '']));
-        case BusinessSectionType.testimonials:
-          _items.add(_ctrls(['', '', '', '']));
-        case BusinessSectionType.contact:
-          _items.add(_ctrls(['', '']));
-          _contactTypes.add(ContactChannelType.phone);
-        default:
-          break;
+        case BusinessSectionType.services: _items.add(_ctrls(['', '', '', '']));
+        case BusinessSectionType.products: _items.add(_ctrls(['', '', '', '', '']));
+        case BusinessSectionType.gallery: _items.add(_ctrls(['', '']));
+        case BusinessSectionType.team: _items.add(_ctrls(['', '', '', '']));
+        case BusinessSectionType.news: _items.add(_ctrls(['', '', '', '']));
+        case BusinessSectionType.testimonials: _items.add(_ctrls(['', '', '', '']));
+        case BusinessSectionType.contact: _items.add(_ctrls(['', ''])); _contactTypes.add(ContactChannelType.phone);
+        default: break;
       }
     });
   }
 
   void _removeItem(int i) {
     setState(() {
-      for (final c in _items[i]) {
-        c.dispose();
-      }
+      for (final c in _items[i]) { c.dispose(); }
       _items.removeAt(i);
-      if (widget.section.type == BusinessSectionType.contact) {
-        _contactTypes.removeAt(i);
-      }
+      if (widget.section.type == BusinessSectionType.contact) { _contactTypes.removeAt(i); }
     });
   }
 
@@ -1067,109 +803,21 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     final t = _title.text.trim();
     switch (widget.section.type) {
       case BusinessSectionType.about:
-        return AboutContent(
-          title: t.isEmpty ? 'À propos' : t,
-          tagline: _tagline.text.trim().isEmpty ? null : _tagline.text.trim(),
-          body: _body.text,
-          imageUrl:
-              _aboutImage.text.trim().isEmpty ? null : _aboutImage.text.trim(),
-        );
+        return AboutContent(title: t.isEmpty ? 'À propos' : t, tagline: _tagline.text.trim().isEmpty ? null : _tagline.text.trim(), body: _body.text, imageUrl: _aboutImage.text.trim().isEmpty ? null : _aboutImage.text.trim());
       case BusinessSectionType.services:
-        return ServicesContent(
-          title: t.isEmpty ? 'Nos services' : t,
-          items: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                ServiceItem(
-                  title: _v(it, 0),
-                  description: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  price: _v(it, 2).isEmpty ? null : _v(it, 2),
-                  imageUrl: _v(it, 3).isEmpty ? null : _v(it, 3),
-                ),
-          ],
-        );
+        return ServicesContent(title: t.isEmpty ? 'Nos services' : t, items: [for (final it in _items) if (_v(it, 0).isNotEmpty) ServiceItem(title: _v(it, 0), description: _v(it, 1).isEmpty ? null : _v(it, 1), price: _v(it, 2).isEmpty ? null : _v(it, 2), imageUrl: _v(it, 3).isEmpty ? null : _v(it, 3))]);
       case BusinessSectionType.products:
-        return ProductsContent(
-          title: t.isEmpty ? 'Produits' : t,
-          items: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                ProductItem(
-                  title: _v(it, 0),
-                  description: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  price: _v(it, 2).isEmpty ? null : _v(it, 2),
-                  imageUrl: _v(it, 3).isEmpty ? null : _v(it, 3),
-                  url: _v(it, 4).isEmpty ? null : _v(it, 4),
-                ),
-          ],
-        );
+        return ProductsContent(title: t.isEmpty ? 'Produits' : t, items: [for (final it in _items) if (_v(it, 0).isNotEmpty) ProductItem(title: _v(it, 0), description: _v(it, 1).isEmpty ? null : _v(it, 1), price: _v(it, 2).isEmpty ? null : _v(it, 2), imageUrl: _v(it, 3).isEmpty ? null : _v(it, 3), url: _v(it, 4).isEmpty ? null : _v(it, 4))]);
       case BusinessSectionType.gallery:
-        return GalleryContent(
-          title: t.isEmpty ? 'Galerie' : t,
-          images: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                GalleryImage(
-                  url: _v(it, 0),
-                  caption: _v(it, 1).isEmpty ? null : _v(it, 1),
-                ),
-          ],
-        );
+        return GalleryContent(title: t.isEmpty ? 'Galerie' : t, images: [for (final it in _items) if (_v(it, 0).isNotEmpty) GalleryImage(url: _v(it, 0), caption: _v(it, 1).isEmpty ? null : _v(it, 1))]);
       case BusinessSectionType.team:
-        return TeamContent(
-          title: t.isEmpty ? 'Équipe' : t,
-          members: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                TeamMember(
-                  name: _v(it, 0),
-                  role: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  bio: _v(it, 2).isEmpty ? null : _v(it, 2),
-                  photoUrl: _v(it, 3).isEmpty ? null : _v(it, 3),
-                ),
-          ],
-        );
+        return TeamContent(title: t.isEmpty ? 'Équipe' : t, members: [for (final it in _items) if (_v(it, 0).isNotEmpty) TeamMember(name: _v(it, 0), role: _v(it, 1).isEmpty ? null : _v(it, 1), bio: _v(it, 2).isEmpty ? null : _v(it, 2), photoUrl: _v(it, 3).isEmpty ? null : _v(it, 3))]);
       case BusinessSectionType.news:
-        return NewsContent(
-          title: t.isEmpty ? 'Actualités' : t,
-          posts: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                NewsPost(
-                  title: _v(it, 0),
-                  excerpt: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  imageUrl: _v(it, 2).isEmpty ? null : _v(it, 2),
-                  url: _v(it, 3).isEmpty ? null : _v(it, 3),
-                ),
-          ],
-        );
+        return NewsContent(title: t.isEmpty ? 'Actualités' : t, posts: [for (final it in _items) if (_v(it, 0).isNotEmpty) NewsPost(title: _v(it, 0), excerpt: _v(it, 1).isEmpty ? null : _v(it, 1), imageUrl: _v(it, 2).isEmpty ? null : _v(it, 2), url: _v(it, 3).isEmpty ? null : _v(it, 3))]);
       case BusinessSectionType.testimonials:
-        return TestimonialsContent(
-          title: t.isEmpty ? 'Témoignages' : t,
-          items: [
-            for (final it in _items)
-              if (_v(it, 0).isNotEmpty)
-                TestimonialItem(
-                  quote: _v(it, 0),
-                  author: _v(it, 1).isEmpty ? null : _v(it, 1),
-                  role: _v(it, 2).isEmpty ? null : _v(it, 2),
-                  rating: int.tryParse(_v(it, 3)),
-                ),
-          ],
-        );
+        return TestimonialsContent(title: t.isEmpty ? 'Témoignages' : t, items: [for (final it in _items) if (_v(it, 0).isNotEmpty) TestimonialItem(quote: _v(it, 0), author: _v(it, 1).isEmpty ? null : _v(it, 1), role: _v(it, 2).isEmpty ? null : _v(it, 2), rating: int.tryParse(_v(it, 3)))]);
       case BusinessSectionType.contact:
-        return ContactContent(
-          title: t.isEmpty ? 'Contact' : t,
-          channels: [
-            for (var i = 0; i < _items.length; i++)
-              if (_v(_items[i], 0).isNotEmpty)
-                ContactChannel(
-                  type: _contactTypes[i],
-                  value: _v(_items[i], 0),
-                  label: _v(_items[i], 1).isEmpty ? null : _v(_items[i], 1),
-                ),
-          ],
-        );
+        return ContactContent(title: t.isEmpty ? 'Contact' : t, channels: [for (var i = 0; i < _items.length; i++) if (_v(_items[i], 0).isNotEmpty) ContactChannel(type: _contactTypes[i], value: _v(_items[i], 0), label: _v(_items[i], 1).isEmpty ? null : _v(_items[i], 1))]);
     }
   }
 
@@ -1180,36 +828,21 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
     final isList = type != BusinessSectionType.about;
 
     return DraggableScrollableSheet(
-      initialChildSize: 0.75,
+      initialChildSize: 0.8,
       minChildSize: 0.4,
       maxChildSize: 0.95,
       builder: (_, controller) => Container(
-        decoration: const BoxDecoration(
-          color: _Prism.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-        ),
+        decoration: const BoxDecoration(color: _Prism.surface, borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
         child: Column(
           children: [
             const SizedBox(height: 10),
-            Container(
-                width: 42,
-                height: 5,
-                decoration: BoxDecoration(
-                    color: _Prism.border,
-                    borderRadius: BorderRadius.circular(3))),
+            Container(width: 42, height: 5, decoration: BoxDecoration(color: _Prism.border, borderRadius: BorderRadius.circular(3))),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
               child: Row(
                 children: [
-                  Expanded(
-                    child: Text(l10n.t('biz_studio_edit_section'),
-                        style: const TextStyle(
-                            fontSize: 16, fontWeight: FontWeight.w900)),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(context),
-                  ),
+                  Expanded(child: Text(l10n.t('biz_studio_edit_section'), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900))),
+                  IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(context)),
                 ],
               ),
             ),
@@ -1222,42 +855,22 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                   _sheetField(_title, l10n.t('biz_studio_field_title')),
                   if (type == BusinessSectionType.about) ...[
                     _sheetField(_tagline, l10n.t('biz_studio_field_tagline')),
-                    // ✅ v1.2 : photo de la section À propos
-                    _ImageField(
-                      controller: _aboutImage,
-                      label: l10n.t('biz_studio_field_image_url'),
-                      uploading: _uploadingKey == 'about-img',
-                      onPick: () => _pickFor(_aboutImage, 'about-img'),
-                    ),
-                    _sheetField(_body, l10n.t('biz_studio_field_body'),
-                        maxLines: 6),
+                    _ImageField(controller: _aboutImage, label: l10n.t('biz_studio_field_image_url'), uploading: _uploadingKey == 'about-img', onPick: () => _pickFor(_aboutImage, 'about-img')),
+                    _sheetField(_body, l10n.t('biz_studio_field_body'), maxLines: 6),
                   ],
                   if (isList)
                     for (var i = 0; i < _items.length; i++) ...[
                       Container(
                         padding: const EdgeInsets.all(12),
                         margin: const EdgeInsets.only(bottom: 12),
-                        decoration: BoxDecoration(
-                          color: _Prism.bg,
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: _Prism.border),
-                        ),
+                        decoration: BoxDecoration(color: _Prism.bg, borderRadius: BorderRadius.circular(14), border: Border.all(color: _Prism.border)),
                         child: Column(
                           children: [
                             Row(
                               children: [
-                                Text('${i + 1}.',
-                                    style: const TextStyle(
-                                        fontWeight: FontWeight.w800)),
+                                Text('${i + 1}.', style: const TextStyle(fontWeight: FontWeight.w800)),
                                 const Spacer(),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  icon: const Icon(
-                                      Icons.delete_outline_rounded,
-                                      size: 18,
-                                      color: ThixPolicy.danger),
-                                  onPressed: () => _removeItem(i),
-                                ),
+                                IconButton(visualDensity: VisualDensity.compact, icon: const Icon(Icons.delete_outline_rounded, size: 18, color: ThixPolicy.danger), onPressed: () => _removeItem(i)),
                               ],
                             ),
                             ..._fieldsFor(type, i),
@@ -1265,17 +878,9 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
                         ),
                       ),
                     ],
-                  if (isList)
-                    OutlinedButton.icon(
-                      onPressed: _addItem,
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: Text(l10n.t('biz_studio_add_item')),
-                    ),
+                  if (isList) OutlinedButton.icon(onPressed: _addItem, icon: const Icon(Icons.add_rounded, size: 18), label: Text(l10n.t('biz_studio_add_item'))),
                   const SizedBox(height: 16),
-                  FilledButton(
-                    onPressed: () => Navigator.pop(context, _build()),
-                    child: Text(l10n.t('biz_studio_save')),
-                  ),
+                  FilledButton(onPressed: () => Navigator.pop(context, _build()), child: Text(l10n.t('biz_studio_save'))),
                 ],
               ),
             ),
@@ -1288,90 +893,43 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
   List<Widget> _fieldsFor(BusinessSectionType type, int i) {
     final l10n = AppLocalizations.of(context);
     final it = _items[i];
-    Widget f(int idx, String label, {int maxLines = 1}) =>
-        _sheetField(it[idx], label, maxLines: maxLines);
-
-    // ✅ Champ image = URL + upload + miniature
-    Widget img(int idx, String label, String key) => _ImageField(
-          controller: it[idx],
-          label: label,
-          uploading: _uploadingKey == key,
-          onPick: () => _pickFor(it[idx], key),
-        );
+    Widget f(int idx, String label, {int maxLines = 1}) => _sheetField(it[idx], label, maxLines: maxLines);
+    Widget img(int idx, String label, String key) => _ImageField(controller: it[idx], label: label, uploading: _uploadingKey == key, onPick: () => _pickFor(it[idx], key));
 
     switch (type) {
       case BusinessSectionType.services:
-        return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_description'), maxLines: 3),
-          f(2, l10n.t('biz_studio_field_price')),
-          img(3, l10n.t('biz_studio_field_image_url'), 's$i-img'),
-        ];
+        return [f(0, l10n.t('biz_studio_field_title')), f(1, l10n.t('biz_studio_field_description'), maxLines: 3), f(2, l10n.t('biz_studio_field_price')), img(3, l10n.t('biz_studio_field_image_url'), 's$i-img')];
       case BusinessSectionType.products:
-        return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_description'), maxLines: 3),
-          f(2, l10n.t('biz_studio_field_price')),
-          img(3, l10n.t('biz_studio_field_image_url'), 'p$i-img'),
-          f(4, l10n.t('biz_studio_field_url')),
-        ];
+        // Utilisé pour "Projets en cours" : Le champ Prix (idx 2) servira au Pourcentage
+        return [f(0, l10n.t('biz_studio_field_title')), f(1, l10n.t('biz_studio_field_description'), maxLines: 3), f(2, l10n.t('biz_studio_field_price')), img(3, l10n.t('biz_studio_field_image_url'), 'p$i-img'), f(4, l10n.t('biz_studio_field_url'))];
       case BusinessSectionType.gallery:
-        return [
-          img(0, l10n.t('biz_studio_field_image_url'), 'g$i-img'),
-          f(1, l10n.t('biz_studio_field_caption')),
-        ];
+        // Utilisé pour "Nos Réalisations"
+        return [img(0, l10n.t('biz_studio_field_image_url'), 'g$i-img'), f(1, l10n.t('biz_studio_field_caption'))];
       case BusinessSectionType.team:
-        return [
-          f(0, l10n.t('biz_studio_field_name')),
-          f(1, l10n.t('biz_studio_field_role')),
-          f(2, l10n.t('biz_studio_field_bio'), maxLines: 3),
-          img(3, l10n.t('biz_studio_field_photo_url'), 't$i-img'),
-        ];
+        // Utilisé pour "Nos Partenaires"
+        return [f(0, l10n.t('biz_studio_field_name')), f(1, l10n.t('biz_studio_field_role')), f(2, l10n.t('biz_studio_field_bio'), maxLines: 3), img(3, l10n.t('biz_studio_field_photo_url'), 't$i-img')];
       case BusinessSectionType.news:
-        return [
-          f(0, l10n.t('biz_studio_field_title')),
-          f(1, l10n.t('biz_studio_field_excerpt'), maxLines: 3),
-          img(2, l10n.t('biz_studio_field_image_url'), 'n$i-img'),
-          f(3, l10n.t('biz_studio_field_link')),
-        ];
+        return [f(0, l10n.t('biz_studio_field_title')), f(1, l10n.t('biz_studio_field_excerpt'), maxLines: 3), img(2, l10n.t('biz_studio_field_image_url'), 'n$i-img'), f(3, l10n.t('biz_studio_field_link'))];
       case BusinessSectionType.testimonials:
-        return [
-          f(0, l10n.t('biz_studio_field_quote'), maxLines: 4),
-          f(1, l10n.t('biz_studio_field_author')),
-          f(2, l10n.t('biz_studio_field_role')),
-          f(3, l10n.t('biz_studio_field_rating')),
-        ];
+        return [f(0, l10n.t('biz_studio_field_quote'), maxLines: 4), f(1, l10n.t('biz_studio_field_author')), f(2, l10n.t('biz_studio_field_role')), f(3, l10n.t('biz_studio_field_rating'))];
       case BusinessSectionType.contact:
         return [
           Padding(
             padding: const EdgeInsets.only(bottom: 10),
             child: DropdownButtonFormField<ContactChannelType>(
               initialValue: _contactTypes[i],
-              decoration: InputDecoration(
-                labelText: l10n.t('biz_studio_field_type'),
-                isDense: true,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              items: [
-                for (final t in ContactChannelType.values)
-                  DropdownMenuItem(value: t, child: Text(t.name)),
-              ],
-              onChanged: (v) {
-                if (v != null) setState(() => _contactTypes[i] = v);
-              },
+              decoration: InputDecoration(labelText: l10n.t('biz_studio_field_type'), isDense: true, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+              items: [for (final t in ContactChannelType.values) DropdownMenuItem(value: t, child: Text(t.name))],
+              onChanged: (v) { if (v != null) setState(() => _contactTypes[i] = v); },
             ),
           ),
-          f(0, l10n.t('biz_studio_field_value')),
-          f(1, l10n.t('biz_studio_field_label')),
+          f(0, l10n.t('biz_studio_field_value')), f(1, l10n.t('biz_studio_field_label')),
         ];
-      default:
-        return [];
+      default: return [];
     }
   }
 
-  Widget _sheetField(TextEditingController ctrl, String label,
-      {int maxLines = 1}) {
+  Widget _sheetField(TextEditingController ctrl, String label, {int maxLines = 1}) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: TextField(
@@ -1382,16 +940,9 @@ class _SectionEditorSheetState extends State<_SectionEditorSheet> {
           isDense: true,
           filled: true,
           fillColor: _Prism.bg,
-          border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: _Prism.border)),
-          enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide: const BorderSide(color: _Prism.border)),
-          focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(14),
-              borderSide:
-                  const BorderSide(color: ThixPolicy.primary, width: 2)),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _Prism.border)),
+          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: _Prism.border)),
+          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: ThixPolicy.primary, width: 2)),
         ),
       ),
     );
