@@ -3,20 +3,18 @@
 //  Fichier  : lib/presentation/thix_portfolio/widgets/reveal_on_scroll.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.2 — Novembre 2026 (CORRIGÉ CI)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Révèle son enfant (fade + slide/scale) la première fois qu'il entre
-//  dans le viewport (> 15 % visible), puis reste stable (pas de rejeu).
-//
-//  • Durée & courbe pilotées par [BusinessAnimationStyle.durationScale/curve]
-//  • Délai = [staggerIndex] × style.staggerMs  → effet cascade premium
-//  • 6 directions : up, down, left, right, fade, scale
-//  • Dépendance : visibility_detector (déjà ajoutée au pubspec)
+//  Corrections CI :
+//    • Suppression de la dépendance `visibility_detector` (non installée)
+//    • Approche 100 % native : écoute du ScrollController parent
+//      pour détecter quand le widget entre dans le viewport.
+//    • Fallback : si aucun Scrollable parent, animation immédiate au build.
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
-import 'package:visibility_detector/visibility_detector.dart';
+import 'package:flutter/rendering.dart';
 
 import '../models/business_theme.dart';
 
@@ -36,14 +34,8 @@ class RevealOnScroll extends StatefulWidget {
   final Widget child;
   final BusinessAnimationStyle style;
   final RevealDirection direction;
-
-  /// Position dans la cascade (0 = immédiat, 1 = +staggerMs, …).
   final int staggerIndex;
-
-  /// Amplitude du décalage (fraction d'écran, 0 → 1).
   final double distance;
-
-  /// Seuil de visibilité déclenchant l'animation (0 → 1).
   final double visibleThreshold;
 
   @override
@@ -65,61 +57,94 @@ class _RevealOnScrollState extends State<RevealOnScroll>
   );
 
   bool _played = false;
+  ScrollPosition? _position;
+  final GlobalKey _widgetKey = GlobalKey();
+
+  @override
+  void initState() {
+    super.initState();
+    // Démarre immédiatement si pas de scrollable parent
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _attach();
+      if (!_played && mounted) {
+        _checkVisibility();
+      }
+    });
+  }
+
+  void _attach() {
+    _detach();
+    final pos = Scrollable.maybeOf(context)?.position;
+    if (pos != null) {
+      _position = pos;
+      _position!.addListener(_checkVisibility);
+    } else {
+      // Pas de scrollable parent → animation immédiate
+      _play();
+    }
+  }
+
+  void _detach() {
+    _position?.removeListener(_checkVisibility);
+    _position = null;
+  }
+
+  void _checkVisibility() {
+    if (_played || !mounted) return;
+    final renderBox = _widgetKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null || !renderBox.hasSize) return;
+
+    final widgetOffset = renderBox.localToGlobal(Offset.zero);
+    final screenHeight = MediaQuery.of(context).size.height;
+    final widgetHeight = renderBox.size.height;
+
+    // Le widget est-il visible à >= threshold % de sa hauteur ?
+    final visibleTop = widgetOffset.dy.clamp(0.0, screenHeight.toDouble());
+    final visibleBottom = (widgetOffset.dy + widgetHeight).clamp(0.0, screenHeight.toDouble());
+    final visibleHeight = visibleBottom - visibleTop;
+    final visibleFraction = visibleHeight / widgetHeight;
+
+    if (visibleFraction >= widget.visibleThreshold) {
+      _play();
+    }
+  }
+
+  void _play() {
+    if (_played) return;
+    _played = true;
+    // Applique le délai stagger
+    Future.delayed(
+      Duration(milliseconds: widget.staggerIndex * widget.style.staggerMs),
+      () {
+        if (mounted) _controller.forward();
+      },
+    );
+  }
 
   @override
   void dispose() {
+    _detach();
     _controller.dispose();
     super.dispose();
   }
 
-  void _onVisibility(VisibilityInfo info) {
-    if (_played || !mounted) return;
-    if (info.visibleFraction >= widget.visibleThreshold) {
-      _played = true;
-      _controller.forward();
-    }
-  }
-
   Offset get _beginOffset {
     switch (widget.direction) {
-      case RevealDirection.up:
-        return Offset(0, widget.distance);
-      case RevealDirection.down:
-        return Offset(0, -widget.distance);
-      case RevealDirection.left:
-        return Offset(widget.distance, 0);
-      case RevealDirection.right:
-        return Offset(-widget.distance, 0);
+      case RevealDirection.up:    return Offset(0, widget.distance);
+      case RevealDirection.down:  return Offset(0, -widget.distance);
+      case RevealDirection.left:  return Offset(widget.distance, 0);
+      case RevealDirection.right: return Offset(-widget.distance, 0);
       case RevealDirection.fade:
-      case RevealDirection.scale:
-        return Offset.zero;
+      case RevealDirection.scale: return Offset.zero;
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final delayed = widget.staggerIndex > 0
-        ? DelayedAnimationWrapper(
-            delay: Duration(
-              milliseconds:
-                  widget.staggerIndex * widget.style.staggerMs,
-            ),
-            controller: _controller,
-            child: _buildAnimated(),
-          )
-        : _buildAnimated();
-
-    return VisibilityDetector(
-      key: ValueKey('thix-reveal-${widget.staggerIndex}-${hashCode}'),
-      onVisibilityChanged: _onVisibility,
-      child: delayed,
-    );
-  }
-
-  Widget _buildAnimated() {
+    Widget animated;
     switch (widget.direction) {
       case RevealDirection.scale:
-        return FadeTransition(
+        animated = FadeTransition(
           opacity: _curve,
           child: ScaleTransition(
             scale: Tween<double>(begin: 0.88, end: 1).animate(_curve),
@@ -127,9 +152,9 @@ class _RevealOnScrollState extends State<RevealOnScroll>
           ),
         );
       case RevealDirection.fade:
-        return FadeTransition(opacity: _curve, child: widget.child);
+        animated = FadeTransition(opacity: _curve, child: widget.child);
       default:
-        return FadeTransition(
+        animated = FadeTransition(
           opacity: _curve,
           child: SlideTransition(
             position: Tween<Offset>(begin: _beginOffset, end: Offset.zero)
@@ -138,41 +163,7 @@ class _RevealOnScrollState extends State<RevealOnScroll>
           ),
         );
     }
+
+    return Container(key: _widgetKey, child: animated);
   }
-}
-
-/// Applique un délai avant de lancer le controller partagé (cascade).
-class DelayedAnimationWrapper extends StatefulWidget {
-  const DelayedAnimationWrapper({
-    super.key,
-    required this.delay,
-    required this.controller,
-    required this.child,
-  });
-
-  final Duration delay;
-  final AnimationController controller;
-  final Widget child;
-
-  @override
-  State<DelayedAnimationWrapper> createState() =>
-      _DelayedAnimationWrapperState();
-}
-
-class _DelayedAnimationWrapperState extends State<DelayedAnimationWrapper> {
-  bool _ready = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Le controller parent est lancé par RevealOnScroll ; on retarde
-    // simplement l'affichage de l'enfant jusqu'à échéance du délai.
-    Future.delayed(widget.delay, () {
-      if (mounted) setState(() => _ready = true);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) =>
-      _ready ? widget.child : const SizedBox.shrink();
 }
