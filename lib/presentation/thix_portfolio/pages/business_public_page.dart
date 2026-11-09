@@ -1082,7 +1082,7 @@ class _GallerySection extends StatelessWidget {
                             gradient: LinearGradient(
                               begin: Alignment.center,
                               end: Alignment.bottomCenter,
-                              colors: [Colors.transparent, Colors.black60],
+                              colors: [Colors.transparent, Colors.black54],
                             ),
                           ),
                           child: Text(img.caption!,
