@@ -1,19 +1,33 @@
 // lib/presentation/thix_ia/pages/thix_ia_home_page.dart
 //
-// ThixIaHomePage — "Modern Sleek Light" (Production Enterprise)
+// ThixIaHomePage — "PRISM LIGHT v3" (Production Enterprise)
 //
-// Design 200% refait : Thème BLANC / CLAIR éclatant.
-// - Background off-white avec cartes pure white (SleekCard)
-// - Ombres ultra-douces (Apple-like) et bordures subtiles
-// - Orbes de fond (Primary) pour un effet IA moderne
-// - Logique 100% préservée, Sanitization, i18n avec args: []
-// - Zéro erreur de constante (const) avec la palette.
+// REDESIGN 100 % — Système de design « Prism Light » :
+//   • Header glass flottant (blur + pill) qui se densifie au scroll
+//   • Hero AURORA : dégradé animé en boucle + particules flottantes
+//   • SPOTLIGHT BUSINESS : carte gradient ultra-visible (créer / mes sites)
+//   • Bento grid des actions (hiérarchie visuelle Idée > autres)
+//   • Moteurs : puces v2 + puce BUSINESS gradient en première position
+//   • Analyses récentes : anneaux de progression (plus premium que linear)
+//   • Stats : tuiles icônes gradient + nombres forts
+//   • FAB BUSINESS scroll-reactive : apparaît quand l'utilisateur glisse
+//     (masquée en haut de page), animation slide+fade, pulse subtil
+//
+// Logique 100 % préservée : providers, sanitizer, logger, i18n (args: []),
+// haptics, semantics, routes ThixIARoutes, ThixPolicy.
+//
+// Nouvelles clés l10n à ajouter (voir liste en bas de fichier) :
+//   ia_biz_spotlight_title / ia_biz_spotlight_subtitle
+//   ia_biz_spotlight_create / ia_biz_spotlight_mine / ia_biz_fab_label
 
+import 'dart:math' as math;
 import 'dart:ui';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -27,23 +41,55 @@ import '../providers/thix_ia_provider.dart';
 import '../providers/analysis_provider.dart';
 
 // ============================================================================
-// PALETTE CLAIRE (Light Mode Premium)
+// ROUTES BUSINESS (module thix_portfolio)
 // ============================================================================
 
-class _IaLightPalette {
-  _IaLightPalette._();
+const String _kRouteBusinessCreate = '/business/create';
+const String _kRouteBusinessMine = '/business/mine';
 
-  static const Color background = Color(0xFFF8FAFC); // Gris/Bleu très très clair
-  static const Color surface = Color(0xFFFFFFFF);    // Blanc pur pour les cartes
-  static const Color border = Color(0xFFE2E8F0);     // Bordures douces
+// ============================================================================
+// PALETTE « PRISM LIGHT »
+// ============================================================================
 
-  static const Color textPrimary = Color(0xFF0F172A); // Encre très foncée
-  static const Color textSecondary = Color(0xFF475569); // Gris moyen
-  static const Color textMuted = Color(0xFF94A3B8);   // Gris clair
+class _Prism {
+  _Prism._();
+
+  static const Color bg = Color(0xFFF6F7FB);
+  static const Color surface = Color(0xFFFFFFFF);
+  static const Color border = Color(0xFFE6E9F2);
+
+  static const Color ink = Color(0xFF0B1220);
+  static const Color inkSoft = Color(0xFF3E4C63);
+  static const Color inkMuted = Color(0xFF8A94A6);
+
+  static const Color violet = Color(0xFF7C3AED);
+  static const Color cyan = Color(0xFF06B6D4);
+  static const Color amber = Color(0xFFF59E0B);
+
+  static const LinearGradient brand = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [ThixPolicy.primary, Color(0xFF4338CA), _Prism.violet],
+  );
+
+  static const LinearGradient business = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF0EA5E9), ThixPolicy.primary, Color(0xFF4338CA)],
+  );
+
+  static List<BoxShadow> soft([double a = 0.05, double b = 14, double y = 6]) =>
+      [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: a),
+          blurRadius: b,
+          offset: Offset(0, y),
+        ),
+      ];
 }
 
 // ============================================================================
-// CONSTANTS
+// CONSTANTS / LOGGING / SANITIZER (inchangés)
 // ============================================================================
 
 const int _kMaxNameLength = 60;
@@ -51,25 +97,19 @@ const int _kMaxRoleLength = 40;
 const int _kMaxCodeLength = 24;
 const int _kMaxSectorLength = 40;
 
-// ============================================================================
-// LOGGING
-// ============================================================================
-
 class _IaHomeLogger {
-  static const _tag = 'IaHomeLight';
+  static const _tag = 'IaHomePrism';
   static void info(String m, [Map<String, dynamic>? d]) => _log('INFO', m, d);
   static void warn(String m, [Map<String, dynamic>? d]) => _log('WARN', m, d);
   static void error(String m, [Map<String, dynamic>? d]) => _log('ERROR', m, d);
   static void _log(String l, String m, Map<String, dynamic>? d) {
     if (!kDebugMode && l == 'INFO') return;
-    final data = d != null ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}' : '';
+    final data = d != null
+        ? ' ${d.entries.map((e) => '${e.key}=${e.value}').join(', ')}'
+        : '';
     debugPrint('[$_tag] [$l] $m$data');
   }
 }
-
-// ============================================================================
-// SANITIZER
-// ============================================================================
 
 class _Sanitizer {
   _Sanitizer._();
@@ -82,30 +122,26 @@ class _Sanitizer {
 
   static String errorMessage(Object error) {
     final msg = error.toString();
-    if (msg.length > 120) {
-      return '${msg.substring(0, 120)}…';
-    }
+    if (msg.length > 120) return '${msg.substring(0, 120)}…';
     return msg;
   }
 }
 
 // ============================================================================
-// ENUM (logique préservée)
+// ENUM / PROVIDER (inchangés)
 // ============================================================================
 
 enum ThixQuickAction { idea, market, businessPlan, legal }
 
-// ============================================================================
-// PROVIDER
-// ============================================================================
-
-final thixIaCurrentProfileProvider = FutureProvider<Map<String, dynamic>?>((ref) async {
+final thixIaCurrentProfileProvider =
+    FutureProvider<Map<String, dynamic>?>((ref) async {
   final user = Supabase.instance.client.auth.currentUser;
   if (user == null) return null;
   try {
     final row = await Supabase.instance.client
         .from('profiles')
-        .select('id, thix_id, display_name, full_name, avatar_url, photo_url, occupation, profession, city, country, role_title')
+        .select('id, thix_id, display_name, full_name, avatar_url, photo_url, '
+            'occupation, profession, city, country, role_title')
         .eq('id', user.id)
         .maybeSingle();
     if (row != null) return row;
@@ -115,54 +151,13 @@ final thixIaCurrentProfileProvider = FutureProvider<Map<String, dynamic>?>((ref)
   return {
     'id': user.id,
     'display_name': _Sanitizer.text(
-        user.userMetadata?['display_name'] ?? user.email?.split('@').first ?? 'Utilisateur',
+        user.userMetadata?['display_name'] ??
+            user.email?.split('@').first ??
+            'Utilisateur',
         maxLength: _kMaxNameLength),
     'avatar_url': user.userMetadata?['avatar_url'],
   };
 });
-
-// ============================================================================
-// SLEEK CARD WIDGET (Remplace le Glassmorphism)
-// ============================================================================
-
-class _SleekCard extends StatelessWidget {
-  final Widget child;
-  final double radius;
-  final EdgeInsetsGeometry? padding;
-  final double? width;
-  final bool hasShadow;
-
-  const _SleekCard({
-    required this.child,
-    this.radius = 20,
-    this.padding,
-    this.width,
-    this.hasShadow = true,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: _IaLightPalette.surface,
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: _IaLightPalette.border, width: 1),
-        boxShadow: hasShadow
-            ? [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                )
-              ]
-            : null,
-      ),
-      child: child,
-    );
-  }
-}
 
 // ============================================================================
 // PAGE PRINCIPALE
@@ -175,11 +170,36 @@ class ThixIaHomePage extends ConsumerStatefulWidget {
 }
 
 class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
+  final ScrollController _scrollController = ScrollController();
+  bool _showBizFab = false;
+  bool _headerDense = false;
+
   @override
   void initState() {
     super.initState();
+    _scrollController.addListener(_onScroll);
     Future.microtask(() => ref.read(projectsProvider.notifier).refresh());
-    _IaHomeLogger.info('Home initialized (Light Mode)');
+    _IaHomeLogger.info('Home initialized (Prism Light v3)');
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// FAB Business : visible dès que l'utilisateur GLISSE (> 220 px).
+  void _onScroll() {
+    final o = _scrollController.offset;
+    final show = o > 220;
+    final dense = o > 40;
+    if (show != _showBizFab || dense != _headerDense) {
+      setState(() {
+        _showBizFab = show;
+        _headerDense = dense;
+      });
+    }
   }
 
   Future<void> _onQuickAction(ThixQuickAction action) async {
@@ -191,16 +211,19 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       final go = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
-          backgroundColor: _IaLightPalette.surface,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          backgroundColor: _Prism.surface,
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
           title: Text(l10n.t('ia_home_no_project_title'),
-              style: const TextStyle(color: _IaLightPalette.textPrimary, fontWeight: FontWeight.w800)),
+              style: const TextStyle(
+                  color: _Prism.ink, fontWeight: FontWeight.w800)),
           content: Text(l10n.t('ia_home_no_project_message'),
-              style: const TextStyle(color: _IaLightPalette.textSecondary)),
+              style: const TextStyle(color: _Prism.inkSoft)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text(l10n.t('common_cancel'), style: const TextStyle(color: _IaLightPalette.textSecondary)),
+              child: Text(l10n.t('common_cancel'),
+                  style: const TextStyle(color: _Prism.inkSoft)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
@@ -208,7 +231,8 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                 backgroundColor: ThixPolicy.primary,
                 foregroundColor: Colors.white,
                 elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
               ),
               child: Text(l10n.t('ia_home_create_project')),
             ),
@@ -237,27 +261,34 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
     await ref.read(activeProjectProvider.notifier).setActive(selected.projectCode);
 
     if (!mounted) return;
-    showDialog(context: context, barrierDismissible: false, builder: (_) => const _LoadingDialog());
+    showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (_) => const _LoadingDialog());
 
     try {
       final analyses = ref.read(analysesProvider.notifier);
       switch (action) {
         case ThixQuickAction.idea:
         case ThixQuickAction.market:
-          await analyses.startMarketAnalysis(country: selected.country, sector: selected.sector);
+          await analyses.startMarketAnalysis(
+              country: selected.country, sector: selected.sector);
           break;
         case ThixQuickAction.businessPlan:
-          await analyses.startFinanceAnalysis(inputs: {'sector': selected.sector, 'country': selected.country});
+          await analyses.startFinanceAnalysis(
+              inputs: {'sector': selected.sector, 'country': selected.country});
           break;
         case ThixQuickAction.legal:
-          await analyses.startLegalAnalysis(jurisdiction: selected.country, sector: selected.sector);
+          await analyses.startLegalAnalysis(
+              jurisdiction: selected.country, sector: selected.sector);
           break;
       }
 
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(l10n.t('ia_home_analysis_started', args: [_Sanitizer.text(selected.projectCode, maxLength: _kMaxCodeLength)])),
+          content: Text(l10n.t('ia_home_analysis_started',
+              args: [_Sanitizer.text(selected.projectCode, maxLength: _kMaxCodeLength)])),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
         ));
@@ -267,7 +298,8 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       if (mounted) Navigator.of(context).pop();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text(l10n.t('ia_home_analysis_error', args: [_Sanitizer.errorMessage(e)])),
+          content: Text(l10n.t('ia_home_analysis_error',
+              args: [_Sanitizer.errorMessage(e)])),
           backgroundColor: ThixPolicy.danger,
           behavior: SnackBarBehavior.floating,
         ));
@@ -295,62 +327,131 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
     final profileAsync = ref.watch(thixIaCurrentProfileProvider);
 
     return Scaffold(
-      backgroundColor: _IaLightPalette.background,
+      backgroundColor: _Prism.bg,
       body: Stack(
         children: [
-          // Orbes d'ambiance douces en arrière-plan (Style IA Moderne)
-          Positioned(top: -100, right: -50, child: _halo(250, ThixPolicy.primary.withValues(alpha: 0.15))),
-          Positioned(top: 200, left: -100, child: _halo(300, const Color(0xFF8B5CF6).withValues(alpha: 0.10))), // Touche violette
+          // Halos d'ambiance (repaint isolés)
+          Positioned(
+              top: -120,
+              right: -70,
+              child: _halo(260, ThixPolicy.primary.withValues(alpha: 0.14))),
+          Positioned(
+              top: 240,
+              left: -110,
+              child: _halo(300, _Prism.violet.withValues(alpha: 0.10))),
+          Positioned(
+              bottom: -80,
+              right: -60,
+              child: _halo(220, _Prism.cyan.withValues(alpha: 0.08))),
 
           SafeArea(
             bottom: false,
             child: RefreshIndicator(
               color: ThixPolicy.primary,
-              backgroundColor: _IaLightPalette.surface,
+              backgroundColor: _Prism.surface,
               onRefresh: () async {
                 HapticFeedback.mediumImpact();
                 ref.invalidate(thixIaCurrentProfileProvider);
                 await ref.read(projectsProvider.notifier).refresh();
               },
               child: CustomScrollView(
-                physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+                controller: _scrollController,
+                physics: const BouncingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics()),
                 slivers: [
-                  SliverToBoxAdapter(child: _TopBar(profileAsync: profileAsync)),
-                  SliverToBoxAdapter(child: _UserHeader(profileAsync: profileAsync)),
+                  SliverToBoxAdapter(
+                      child: _GlassHeader(
+                          profileAsync: profileAsync, dense: _headerDense)),
+                  SliverToBoxAdapter(
+                      child: _UserHeader(profileAsync: profileAsync)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 18)),
+                  SliverToBoxAdapter(
+                      child: _AuroraHero(onAnalyze: () {
+                            HapticFeedback.mediumImpact();
+                            context.push(ThixIARoutes.createProject);
+                          }))
+                      .animate()
+                      .fadeIn(duration: 500.ms)
+                      .slideY(begin: 0.06, duration: 500.ms, curve: Curves.easeOutCubic)),
                   const SliverToBoxAdapter(child: SizedBox(height: 16)),
-                  SliverToBoxAdapter(child: _HeroBanner(onAnalyze: () {
-                    HapticFeedback.mediumImpact();
-                    context.push(ThixIARoutes.createProject);
-                  })),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  SliverToBoxAdapter(child: _SectionTitle(l10n.t('ia_home_section_intent'))),
+
+                  // ⭐ SPOTLIGHT BUSINESS — toujours visible, ultra premium
+                  SliverToBoxAdapter(
+                      child: _BusinessSpotlight(
+                        onCreate: () {
+                          HapticFeedback.mediumImpact();
+                          context.push(_kRouteBusinessCreate);
+                        },
+                        onMine: () {
+                          HapticFeedback.selectionClick();
+                          context.push(_kRouteBusinessMine);
+                        },
+                      ))
+                      .animate(delay: 80.ms)
+                      .fadeIn(duration: 500.ms)
+                      .slideY(begin: 0.08, duration: 500.ms, curve: Curves.easeOutCubic)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 26)),
+
+                  SliverToBoxAdapter(
+                      child: _SectionTitle(l10n.t('ia_home_section_intent'))),
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  SliverToBoxAdapter(child: _MainActions(onAction: _onQuickAction)),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  SliverToBoxAdapter(child: _SectionTitle(l10n.t('ia_home_section_engines'), seeAll: true, onSeeAll: () {
-                    HapticFeedback.selectionClick();
-                    context.push(ThixIARoutes.projects);
-                  })),
+                  SliverToBoxAdapter(
+                      child: _BentoActions(onAction: _onQuickAction)),
+                  const SliverToBoxAdapter(child: SizedBox(height: 26)),
+
+                  SliverToBoxAdapter(
+                      child: _SectionTitle(l10n.t('ia_home_section_engines'),
+                          seeAll: true,
+                          onSeeAll: () {
+                            HapticFeedback.selectionClick();
+                            context.push(ThixIARoutes.projects);
+                          })),
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  const SliverToBoxAdapter(child: RepaintBoundary(child: _MotorsRow())),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  SliverToBoxAdapter(child: _SectionTitle(l10n.t('ia_home_section_recent'), seeAll: true, onSeeAll: () {
-                    HapticFeedback.selectionClick();
-                    context.push(ThixIARoutes.projects);
-                  })),
+                  const SliverToBoxAdapter(
+                      child: RepaintBoundary(child: _MotorsRow())),
+                  const SliverToBoxAdapter(child: SizedBox(height: 26)),
+
+                  SliverToBoxAdapter(
+                      child: _SectionTitle(l10n.t('ia_home_section_recent'),
+                          seeAll: true,
+                          onSeeAll: () {
+                            HapticFeedback.selectionClick();
+                            context.push(ThixIARoutes.projects);
+                          })),
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  SliverToBoxAdapter(child: RepaintBoundary(child: _RecentAnalyses(
-                    projectsAsync: projectsAsync,
-                    onOpen: (c) => context.push(ThixIARoutes.projectDetailPath(c)),
-                    onCreate: () => context.push(ThixIARoutes.createProject),
-                  ))),
-                  const SliverToBoxAdapter(child: SizedBox(height: 24)),
-                  SliverToBoxAdapter(child: _SectionTitle(l10n.t('ia_home_section_stats'))),
+                  SliverToBoxAdapter(
+                      child: RepaintBoundary(
+                          child: _RecentAnalyses(
+                        projectsAsync: projectsAsync,
+                        onOpen: (c) =>
+                            context.push(ThixIARoutes.projectDetailPath(c)),
+                        onCreate: () =>
+                            context.push(ThixIARoutes.createProject),
+                      ))),
+                  const SliverToBoxAdapter(child: SizedBox(height: 26)),
+
+                  SliverToBoxAdapter(
+                      child: _SectionTitle(l10n.t('ia_home_section_stats'))),
                   const SliverToBoxAdapter(child: SizedBox(height: 12)),
-                  SliverToBoxAdapter(child: RepaintBoundary(child: _QuickStats(projectsAsync: projectsAsync))),
-                  const SliverToBoxAdapter(child: SizedBox(height: 40)),
+                  SliverToBoxAdapter(
+                      child: RepaintBoundary(
+                          child: _QuickStats(projectsAsync: projectsAsync))),
+                  const SliverToBoxAdapter(child: SizedBox(height: 96)),
                 ],
               ),
+            ),
+          ),
+
+          // ⭐ FAB BUSINESS — apparaît quand on glisse
+          Positioned(
+            right: 20,
+            bottom: 28,
+            child: _BusinessFab(
+              visible: _showBizFab,
+              onTap: () {
+                HapticFeedback.mediumImpact();
+                context.push(_kRouteBusinessCreate);
+              },
             ),
           ),
         ],
@@ -365,7 +466,8 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
         height: s,
         child: Stack(
           children: [
-            Container(decoration: BoxDecoration(shape: BoxShape.circle, color: c)),
+            Container(
+                decoration: BoxDecoration(shape: BoxShape.circle, color: c)),
             BackdropFilter(
               filter: ImageFilter.blur(sigmaX: 80, sigmaY: 80),
               child: Container(color: Colors.transparent),
@@ -378,35 +480,13 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
 }
 
 // ============================================================================
-// LOADING DIALOG
+// HEADER GLASS FLOTTANT
 // ============================================================================
 
-class _LoadingDialog extends StatelessWidget {
-  const _LoadingDialog();
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: _SleekCard(
-        radius: 24,
-        padding: const EdgeInsets.all(24),
-        child: const SizedBox(
-          width: 40,
-          height: 40,
-          child: CircularProgressIndicator(strokeWidth: 3, color: ThixPolicy.primary),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// TOP BAR
-// ============================================================================
-
-class _TopBar extends StatelessWidget {
-  const _TopBar({required this.profileAsync});
+class _GlassHeader extends StatelessWidget {
+  const _GlassHeader({required this.profileAsync, required this.dense});
   final AsyncValue<Map<String, dynamic>?> profileAsync;
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -419,65 +499,108 @@ class _TopBar extends StatelessWidget {
       if (country != null && country.isNotEmpty) country
     ].join(', ');
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-      child: Row(
-        children: [
-          Expanded(
-            child: Row(
-              children: [
-                const Icon(Icons.location_on_rounded, size: 16, color: _IaLightPalette.textSecondary),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    _Sanitizer.text(loc.isNotEmpty ? loc : '—', maxLength: 40),
-                    style: const TextStyle(fontSize: 12, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Column(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOut,
+      margin: EdgeInsets.fromLTRB(16, 10, 16, dense ? 10 : 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: _Prism.surface.withValues(alpha: dense ? 0.92 : 0.72),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _Prism.border),
+        boxShadow: dense ? _Prism.soft(0.06, 16, 8) : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(22),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+          child: Row(
             children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(Icons.location_on_rounded,
+                        size: 15, color: _Prism.inkSoft),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        _Sanitizer.text(
+                            loc.isNotEmpty ? loc : '—',
+                            maxLength: 40),
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: _Prism.inkSoft,
+                            fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Column(
                 children: [
-                  const Icon(Icons.auto_awesome_rounded, size: 16, color: ThixPolicy.primary),
-                  const SizedBox(width: 4),
-                  Text('THIX IA', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: _IaLightPalette.textPrimary, letterSpacing: -0.5)),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ShaderMask(
+                        shaderCallback: (r) => _Prism.brand.createShader(r),
+                        child: const Icon(Icons.auto_awesome_rounded,
+                            size: 16, color: Colors.white),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text('THIX IA',
+                          style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                              color: _Prism.ink,
+                              letterSpacing: -0.5)),
+                    ],
+                  ),
+                  Text(l10n.t('ia_home_brand_tagline'),
+                      style: const TextStyle(
+                          fontSize: 9,
+                          color: _Prism.inkMuted,
+                          fontWeight: FontWeight.w600)),
                 ],
               ),
-              Text(l10n.t('ia_home_brand_tagline'), style: const TextStyle(fontSize: 9, color: _IaLightPalette.textMuted, fontWeight: FontWeight.w600)),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: _Prism.border.withValues(alpha: 0.7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Text('FR',
+                          style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: _Prism.ink)),
+                    ),
+                    const SizedBox(width: 10),
+                    Semantics(
+                      button: true,
+                      label: l10n.t('network_notifications'),
+                      child: const Icon(Icons.notifications_none_rounded,
+                          size: 23, color: _Prism.ink),
+                    ),
+                  ],
+                ),
+              ),
             ],
           ),
-          Expanded(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(color: _IaLightPalette.border, borderRadius: BorderRadius.circular(12)),
-                  child: const Text('FR', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: _IaLightPalette.textPrimary)),
-                ),
-                const SizedBox(width: 12),
-                Semantics(
-                  button: true,
-                  label: l10n.t('network_notifications'),
-                  child: const Icon(Icons.notifications_none_rounded, size: 24, color: _IaLightPalette.textPrimary),
-                ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
 // ============================================================================
-// USER HEADER
+// USER HEADER (anneau gradient autour de l'avatar)
 // ============================================================================
 
 class _UserHeader extends StatelessWidget {
@@ -499,39 +622,63 @@ class _UserHeader extends StatelessWidget {
     return profileAsync.when(
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-        child: SizedBox(width: 44, height: 44, child: CircularProgressIndicator(strokeWidth: 2)),
+        child: SizedBox(
+            width: 44, height: 44, child: CircularProgressIndicator(strokeWidth: 2)),
       ),
-      error: (_, __) => _body(l10n.t('ia_home_user_default'), null, null, l10n),
+      error: (_, __) =>
+          _body(l10n.t('ia_home_user_default'), null, null, l10n),
       data: (p) => _body(
-        _Sanitizer.text(_pick(p, ['display_name', 'full_name']) ?? l10n.t('ia_home_user_default'), maxLength: _kMaxNameLength),
+        _Sanitizer.text(
+            _pick(p, ['display_name', 'full_name']) ??
+                l10n.t('ia_home_user_default'),
+            maxLength: _kMaxNameLength),
         _pick(p, ['avatar_url', 'photo_url']),
-        _Sanitizer.text(_pick(p, ['role_title', 'occupation', 'profession']), maxLength: _kMaxRoleLength),
+        _Sanitizer.text(_pick(p, ['role_title', 'occupation', 'profession']),
+            maxLength: _kMaxRoleLength),
         l10n,
       ),
     );
   }
 
-  Widget _body(String name, String? photo, String? role, AppLocalizations l10n) {
+  Widget _body(
+      String name, String? photo, String? role, AppLocalizations l10n) {
     final h = DateTime.now().hour;
-    final greet = h < 12 ? l10n.t('ia_greeting_morning') : h < 18 ? l10n.t('ia_greeting_afternoon') : l10n.t('ia_greeting_evening');
+    final greet = h < 12
+        ? l10n.t('ia_greeting_morning')
+        : h < 18
+            ? l10n.t('ia_greeting_afternoon')
+            : l10n.t('ia_greeting_evening');
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Row(
         children: [
+          // Anneau gradient
           Container(
-            width: 52,
-            height: 52,
-            decoration: BoxDecoration(
+            padding: const EdgeInsets.all(2.5),
+            decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: _IaLightPalette.surface, width: 2),
-              boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 8, offset: const Offset(0, 2))],
+              gradient: _Prism.brand,
+              boxShadow: [
+                BoxShadow(
+                    color: ThixPolicy.primary.withValues(alpha: 0.25),
+                    blurRadius: 12,
+                    offset: Offset(0, 4)),
+              ],
             ),
             child: CircleAvatar(
               radius: 26,
-              backgroundColor: _IaLightPalette.border,
-              backgroundImage: (photo != null && photo.isNotEmpty) ? CachedNetworkImageProvider(photo) : null,
-              child: (photo == null || photo.isEmpty) ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?', style: const TextStyle(color: _IaLightPalette.textPrimary, fontWeight: FontWeight.bold)) : null,
+              backgroundColor: _Prism.surface,
+              backgroundImage: (photo != null && photo.isNotEmpty)
+                  ? CachedNetworkImageProvider(photo)
+                  : null,
+              child: (photo == null || photo.isEmpty)
+                  ? Text(
+                      name.isNotEmpty ? name[0].toUpperCase() : '?',
+                      style: const TextStyle(
+                          color: _Prism.ink, fontWeight: FontWeight.w800),
+                    )
+                  : null,
             ),
           ),
           const SizedBox(width: 14),
@@ -539,12 +686,37 @@ class _UserHeader extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('$greet,', style: const TextStyle(fontSize: 13, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-                Text(name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 20, color: _IaLightPalette.textPrimary, letterSpacing: -0.3), maxLines: 1, overflow: TextOverflow.ellipsis),
+                Text('$greet,',
+                    style: const TextStyle(
+                        fontSize: 13,
+                        color: _Prism.inkSoft,
+                        fontWeight: FontWeight.w600)),
+                Text(name,
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 21,
+                        color: _Prism.ink,
+                        letterSpacing: -0.4),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis),
                 if (role != null && role.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
-                    child: Text(role, style: const TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w700, fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: ThixPolicy.primary.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(role,
+                          style: const TextStyle(
+                              color: ThixPolicy.primary,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ),
                   ),
               ],
             ),
@@ -556,12 +728,140 @@ class _UserHeader extends StatelessWidget {
 }
 
 // ============================================================================
-// HERO BANNER (Vibrant & Clean)
+// HERO AURORA (dégradé animé + particules)
 // ============================================================================
 
-class _HeroBanner extends StatelessWidget {
-  const _HeroBanner({required this.onAnalyze});
+class _AuroraHero extends StatefulWidget {
+  const _AuroraHero({required this.onAnalyze});
   final VoidCallback onAnalyze;
+
+  @override
+  State<_AuroraHero> createState() => _AuroraHeroState();
+}
+
+class _AuroraHeroState extends State<_AuroraHero>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(seconds: 9),
+  )..repeat(reverse: true);
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return AnimatedBuilder(
+      animation: _c,
+      builder: (context, child) {
+        final t = _c.value;
+        return Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          child: Container(
+            height: 172,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(28),
+              gradient: LinearGradient(
+                begin: Alignment.lerp(Alignment.topLeft, Alignment.bottomLeft, t)!,
+                end: Alignment.lerp(Alignment.bottomRight, Alignment.topRight, t)!,
+                colors: const [
+                  ThixPolicy.primary,
+                  Color(0xFF4338CA),
+                  _Prism.violet,
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(
+                    color: ThixPolicy.primary.withValues(alpha: 0.32),
+                    blurRadius: 24,
+                    offset: const Offset(0, 10)),
+              ],
+            ),
+            child: Stack(
+              children: [
+                // Particules flottantes
+                for (var i = 0; i < 3; i++)
+                  Positioned(
+                    right: 18 + i * 34.0,
+                    top: 20 + math.sin((t + i * 0.33) * math.pi * 2) * 14,
+                    child: Container(
+                      width: 10 - i * 2.0,
+                      height: 10 - i * 2.0,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.22 - i * 0.05),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  right: -24,
+                  bottom: -30,
+                  child: Icon(Icons.auto_awesome_rounded,
+                      size: 150, color: Colors.white.withValues(alpha: 0.10)),
+                ),
+                child!,
+              ],
+            ),
+          ),
+        );
+      },
+      child: Padding(
+        padding: const EdgeInsets.all(22),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l10n.t('ia_home_hero_title'),
+                style: const TextStyle(
+                    color: Colors.white,
+                    height: 1.12,
+                    fontSize: 23,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4)),
+            const SizedBox(height: 8),
+            Text(l10n.t('ia_home_hero_subtitle'),
+                style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500)),
+            const Spacer(),
+            Semantics(
+              button: true,
+              label: l10n.t('ia_action_idea'),
+              child: ElevatedButton.icon(
+                onPressed: widget.onAnalyze,
+                icon: const Icon(Icons.bolt_rounded, size: 18),
+                label: Text(l10n.t('ia_action_idea'),
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: ThixPolicy.primary,
+                  elevation: 0,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// ⭐ SPOTLIGHT BUSINESS (carte ultra-visible, permanente)
+// ============================================================================
+
+class _BusinessSpotlight extends StatelessWidget {
+  const _BusinessSpotlight({required this.onCreate, required this.onMine});
+  final VoidCallback onCreate;
+  final VoidCallback onMine;
 
   @override
   Widget build(BuildContext context) {
@@ -569,54 +869,278 @@ class _HeroBanner extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
-        height: 160,
         decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(24),
-          gradient: const LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [ThixPolicy.primary, ThixPolicy.primaryDeep],
-          ),
+          borderRadius: BorderRadius.circular(28),
+          gradient: _Prism.business,
           boxShadow: [
-            BoxShadow(color: ThixPolicy.primary.withValues(alpha: 0.3), blurRadius: 20, offset: const Offset(0, 8)),
+            BoxShadow(
+                color: const Color(0xFF0EA5E9).withValues(alpha: 0.30),
+                blurRadius: 22,
+                offset: const Offset(0, 9)),
           ],
         ),
         child: Stack(
           children: [
             Positioned(
-              right: -20,
-              top: -20,
-              child: Icon(Icons.auto_awesome_rounded, size: 140, color: Colors.white.withValues(alpha: 0.1)),
+              right: -10,
+              top: -18,
+              child: Icon(Icons.storefront_rounded,
+                  size: 130, color: Colors.white.withValues(alpha: 0.10)),
             ),
             Padding(
               padding: const EdgeInsets.all(20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              child: Row(
                 children: [
-                  Text(l10n.t('ia_home_hero_title'), style: const TextStyle(color: Colors.white, height: 1.1, fontSize: 22, fontWeight: FontWeight.w900)),
-                  const SizedBox(height: 8),
-                  Text(l10n.t('ia_home_hero_subtitle'), style: TextStyle(color: Colors.white.withValues(alpha: 0.8), fontSize: 12, fontWeight: FontWeight.w500)),
-                  const Spacer(),
-                  Semantics(
-                    button: true,
-                    label: l10n.t('ia_action_idea'),
-                    child: ElevatedButton.icon(
-                      onPressed: onAnalyze,
-                      icon: const Icon(Icons.bolt_rounded, size: 18),
-                      label: Text(l10n.t('ia_action_idea'), style: const TextStyle(fontWeight: FontWeight.w800)),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.white,
-                        foregroundColor: ThixPolicy.primary,
-                        elevation: 0,
-                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                      ),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.verified_rounded,
+                                  size: 13, color: Colors.white),
+                              SizedBox(width: 4),
+                              Text('THIX PORTFOLIO',
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      letterSpacing: 0.6)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Text(l10n.t('ia_biz_spotlight_title'),
+                            style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 18,
+                                height: 1.15,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.3)),
+                        const SizedBox(height: 6),
+                        Text(l10n.t('ia_biz_spotlight_subtitle'),
+                            style: TextStyle(
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500)),
+                        const SizedBox(height: 14),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: ElevatedButton.icon(
+                                onPressed: onCreate,
+                                icon: const Icon(Icons.add_business_rounded,
+                                    size: 17),
+                                label: Text(l10n.t('ia_biz_spotlight_create'),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12.5)),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.white,
+                                  foregroundColor: ThixPolicy.primary,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 11),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: onMine,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.white,
+                                  side: BorderSide(
+                                      color: Colors.white
+                                          .withValues(alpha: 0.65)),
+                                  padding: const EdgeInsets.symmetric(
+                                      vertical: 11),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14)),
+                                ),
+                                child: Text(l10n.t('ia_biz_spotlight_mine'),
+                                    style: const TextStyle(
+                                        fontWeight: FontWeight.w800,
+                                        fontSize: 12.5)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// BENTO GRID DES ACTIONS
+// ============================================================================
+
+class _BentoActions extends StatelessWidget {
+  const _BentoActions({required this.onAction});
+  final void Function(ThixQuickAction) onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Expanded(
+                flex: 6,
+                child: _BentoTile(
+                  tall: true,
+                  icon: Icons.lightbulb_rounded,
+                  tint: ThixPolicy.primary,
+                  title: l10n.t('ia_action_idea_short'),
+                  tag: l10n.t('ia_action_idea_tag'),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    onAction(ThixQuickAction.idea);
+                  },
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 5,
+                child: Column(
+                  children: [
+                    _BentoTile(
+                      icon: Icons.bar_chart_rounded,
+                      tint: _Prism.violet,
+                      title: l10n.t('ia_action_market_short'),
+                      tag: l10n.t('ia_action_market_tag'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onAction(ThixQuickAction.market);
+                      },
+                    ),
+                    const SizedBox(height: 12),
+                    _BentoTile(
+                      icon: Icons.description_rounded,
+                      tint: _Prism.cyan,
+                      title: l10n.t('ia_action_bp_short'),
+                      tag: l10n.t('ia_action_bp_tag'),
+                      onTap: () {
+                        HapticFeedback.selectionClick();
+                        onAction(ThixQuickAction.businessPlan);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _BentoTile(
+            icon: Icons.balance_rounded,
+            tint: _Prism.amber,
+            title: l10n.t('ia_action_legal_short'),
+            tag: l10n.t('ia_action_legal_tag'),
+            onTap: () {
+              HapticFeedback.selectionClick();
+              onAction(ThixQuickAction.legal);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _BentoTile extends StatelessWidget {
+  const _BentoTile({
+    required this.icon,
+    required this.tint,
+    required this.title,
+    required this.tag,
+    required this.onTap,
+    this.tall = false,
+  });
+
+  final IconData icon;
+  final Color tint;
+  final String title;
+  final String tag;
+  final VoidCallback onTap;
+  final bool tall;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: title,
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: tall ? 168 : 78,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: _Prism.surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: _Prism.border),
+            boxShadow: _Prism.soft(0.04, 12, 5),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          tint.withValues(alpha: 0.16),
+                          tint.withValues(alpha: 0.06),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(icon, color: tint, size: 19),
+                  ),
+                  const Spacer(),
+                  Icon(Icons.arrow_outward_rounded,
+                      size: 15, color: _Prism.inkMuted),
+                ],
+              ),
+              const Spacer(),
+              Text(title,
+                  style: const TextStyle(
+                      fontSize: 14,
+                      height: 1.15,
+                      fontWeight: FontWeight.w800,
+                      color: _Prism.ink)),
+              const SizedBox(height: 3),
+              Text(tag,
+                  maxLines: tall ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                      fontSize: 10.5,
+                      color: _Prism.inkSoft,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
       ),
     );
@@ -640,8 +1164,22 @@ class _SectionTitle extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
+          Container(
+            width: 4,
+            height: 18,
+            decoration: BoxDecoration(
+              gradient: _Prism.brand,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 9),
           Expanded(
-            child: Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: _IaLightPalette.textPrimary, letterSpacing: -0.3)),
+            child: Text(title,
+                style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w900,
+                    color: _Prism.ink,
+                    letterSpacing: -0.3)),
           ),
           if (seeAll && onSeeAll != null)
             Semantics(
@@ -651,9 +1189,14 @@ class _SectionTitle extends StatelessWidget {
                 onTap: onSeeAll,
                 child: Row(
                   children: [
-                    Text(l10n.t('common_see_all'), style: const TextStyle(color: ThixPolicy.primary, fontWeight: FontWeight.w700, fontSize: 13)),
+                    Text(l10n.t('common_see_all'),
+                        style: const TextStyle(
+                            color: ThixPolicy.primary,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 13)),
                     const SizedBox(width: 4),
-                    const Icon(Icons.arrow_forward_rounded, size: 14, color: ThixPolicy.primary),
+                    const Icon(Icons.arrow_forward_rounded,
+                        size: 14, color: ThixPolicy.primary),
                   ],
                 ),
               ),
@@ -665,68 +1208,7 @@ class _SectionTitle extends StatelessWidget {
 }
 
 // ============================================================================
-// MAIN ACTIONS
-// ============================================================================
-
-class _MainActions extends StatelessWidget {
-  const _MainActions({required this.onAction});
-  final void Function(ThixQuickAction) onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
-    final items = [
-      (ThixQuickAction.idea, l10n.t('ia_action_idea_short'), l10n.t('ia_action_idea_tag'), Icons.lightbulb_rounded),
-      (ThixQuickAction.market, l10n.t('ia_action_market_short'), l10n.t('ia_action_market_tag'), Icons.bar_chart_rounded),
-      (ThixQuickAction.businessPlan, l10n.t('ia_action_bp_short'), l10n.t('ia_action_bp_tag'), Icons.description_rounded),
-      (ThixQuickAction.legal, l10n.t('ia_action_legal_short'), l10n.t('ia_action_legal_tag'), Icons.balance_rounded),
-    ];
-
-    return SizedBox(
-      height: 130,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: items.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 12),
-        itemBuilder: (_, i) {
-          final it = items[i];
-          return Semantics(
-            button: true,
-            label: it.$2,
-            child: GestureDetector(
-              onTap: () {
-                HapticFeedback.selectionClick();
-                onAction(it.$1);
-              },
-              child: _SleekCard(
-                width: 120,
-                padding: const EdgeInsets.all(14),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), shape: BoxShape.circle),
-                      child: Icon(it.$4, color: ThixPolicy.primary, size: 20),
-                    ),
-                    const Spacer(),
-                    Text(it.$2, style: const TextStyle(fontSize: 13, height: 1.2, fontWeight: FontWeight.w800, color: _IaLightPalette.textPrimary)),
-                    const SizedBox(height: 4),
-                    Text(it.$3, style: const TextStyle(fontSize: 10, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-}
-
-// ============================================================================
-// MOTORS ROW
+// MOTORS ROW (puce BUSINESS gradient en tête)
 // ============================================================================
 
 class _MotorsRow extends StatelessWidget {
@@ -736,39 +1218,84 @@ class _MotorsRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     final motors = [
-      (l10n.t('ia_motor_research'), Icons.search_rounded),
-      (l10n.t('ia_motor_market'), Icons.trending_up_rounded),
-      (l10n.t('ia_motor_business'), Icons.work_rounded),
-      (l10n.t('ia_motor_finance'), Icons.attach_money_rounded),
-      (l10n.t('ia_motor_legal'), Icons.balance_rounded),
-      (l10n.t('ia_motor_design'), Icons.edit_rounded),
+      (l10n.t('ia_motor_research'), Icons.search_rounded, ThixPolicy.primary),
+      (l10n.t('ia_motor_market'), Icons.trending_up_rounded, _Prism.violet),
+      (l10n.t('ia_motor_business'), Icons.work_rounded, _Prism.cyan),
+      (l10n.t('ia_motor_finance'), Icons.attach_money_rounded, _Prism.amber),
+      (l10n.t('ia_motor_legal'), Icons.balance_rounded, _Prism.inkSoft),
+      (l10n.t('ia_motor_design'), Icons.edit_rounded, ThixPolicy.primary),
     ];
 
     return SizedBox(
-      height: 40,
+      height: 42,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        itemCount: motors.length,
+        itemCount: motors.length + 1,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
-          final m = motors[i];
+          // ⭐ Puce BUSINESS gradient, première position, très visible
+          if (i == 0) {
+            return Semantics(
+              button: true,
+              label: l10n.t('ia_biz_fab_label'),
+              child: GestureDetector(
+                onTap: () {
+                  HapticFeedback.mediumImpact();
+                  context.push(_kRouteBusinessCreate);
+                },
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+                  decoration: BoxDecoration(
+                    gradient: _Prism.business,
+                    borderRadius: BorderRadius.circular(21),
+                    boxShadow: [
+                      BoxShadow(
+                          color: ThixPolicy.primary.withValues(alpha: 0.30),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4)),
+                    ],
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.storefront_rounded,
+                          color: Colors.white, size: 16),
+                      SizedBox(width: 6),
+                      Text('BUSINESS',
+                          style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                              color: Colors.white,
+                              letterSpacing: 0.4)),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }
+          final m = motors[i - 1];
           return Semantics(
             button: true,
             label: m.$1,
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
               decoration: BoxDecoration(
-                color: _IaLightPalette.surface,
-                borderRadius: BorderRadius.circular(20), // Pilules très arrondies
-                border: Border.all(color: _IaLightPalette.border),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.02), blurRadius: 4, offset: const Offset(0, 2))],
+                color: _Prism.surface,
+                borderRadius: BorderRadius.circular(21),
+                border: Border.all(color: _Prism.border),
+                boxShadow: _Prism.soft(0.03, 6, 2),
               ),
               child: Row(
                 children: [
-                  Icon(m.$2, color: ThixPolicy.primary, size: 16),
+                  Icon(m.$2, color: m.$3, size: 15),
                   const SizedBox(width: 6),
-                  Text(m.$1, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: _IaLightPalette.textPrimary)),
+                  Text(m.$1,
+                      style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: _Prism.ink)),
                 ],
               ),
             ),
@@ -780,11 +1307,12 @@ class _MotorsRow extends StatelessWidget {
 }
 
 // ============================================================================
-// RECENT ANALYSES
+// RECENT ANALYSES (anneaux de progression)
 // ============================================================================
 
 class _RecentAnalyses extends StatelessWidget {
-  const _RecentAnalyses({required this.projectsAsync, required this.onOpen, required this.onCreate});
+  const _RecentAnalyses(
+      {required this.projectsAsync, required this.onOpen, required this.onCreate});
   final AsyncValue projectsAsync;
   final void Function(String) onOpen;
   final VoidCallback onCreate;
@@ -795,17 +1323,26 @@ class _RecentAnalyses extends StatelessWidget {
     return projectsAsync.when(
       loading: () => const Padding(
         padding: EdgeInsets.all(20),
-        child: Center(child: SizedBox(width: 30, height: 30, child: CircularProgressIndicator(strokeWidth: 3, color: ThixPolicy.primary))),
+        child: Center(
+            child: SizedBox(
+                width: 30,
+                height: 30,
+                child: CircularProgressIndicator(
+                    strokeWidth: 3, color: ThixPolicy.primary))),
       ),
       error: (e, _) => Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: _SleekCard(
-          padding: const EdgeInsets.all(16),
+        child: _card(
           child: Row(
             children: [
-              const Icon(Icons.error_outline_rounded, color: ThixPolicy.danger, size: 24),
+              const Icon(Icons.error_outline_rounded,
+                  color: ThixPolicy.danger, size: 24),
               const SizedBox(width: 12),
-              Expanded(child: Text(l10n.t('ia_home_error_generic', args: [_Sanitizer.errorMessage(e)]), style: const TextStyle(color: _IaLightPalette.textSecondary))),
+              Expanded(
+                  child: Text(
+                      l10n.t('ia_home_error_generic',
+                          args: [_Sanitizer.errorMessage(e)]),
+                      style: const TextStyle(color: _Prism.inkSoft))),
             ],
           ),
         ),
@@ -815,17 +1352,24 @@ class _RecentAnalyses extends StatelessWidget {
         if (list.isEmpty) {
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: _SleekCard(
-              padding: const EdgeInsets.all(20),
+            child: _card(
               child: Column(
                 children: [
-                  const Icon(Icons.folder_open_rounded, size: 40, color: _IaLightPalette.textMuted),
+                  const Icon(Icons.folder_open_rounded,
+                      size: 40, color: _Prism.inkMuted),
                   const SizedBox(height: 12),
-                  Text(l10n.t('ia_home_no_analyses'), style: const TextStyle(color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600)),
+                  Text(l10n.t('ia_home_no_analyses'),
+                      style: const TextStyle(
+                          color: _Prism.inkSoft, fontWeight: FontWeight.w600)),
                   const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: onCreate,
-                    style: ElevatedButton.styleFrom(backgroundColor: _IaLightPalette.textPrimary, foregroundColor: Colors.white, elevation: 0),
+                    style: ElevatedButton.styleFrom(
+                        backgroundColor: _Prism.ink,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14))),
                     child: Text(l10n.t('ia_home_create_project')),
                   ),
                 ],
@@ -840,8 +1384,10 @@ class _RecentAnalyses extends StatelessWidget {
             children: list.take(3).map((p) {
               final pct = (p.progress * 100).clamp(0, 100).toInt();
               final name = _Sanitizer.text(p.name, maxLength: _kMaxNameLength);
-              final code = _Sanitizer.text(p.projectCode, maxLength: _kMaxCodeLength);
-              final sector = _Sanitizer.text(p.sector, maxLength: _kMaxSectorLength);
+              final code =
+                  _Sanitizer.text(p.projectCode, maxLength: _kMaxCodeLength);
+              final sector =
+                  _Sanitizer.text(p.sector, maxLength: _kMaxSectorLength);
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -853,42 +1399,59 @@ class _RecentAnalyses extends StatelessWidget {
                       HapticFeedback.selectionClick();
                       onOpen(p.projectCode);
                     },
-                    child: _SleekCard(
-                      padding: const EdgeInsets.all(16),
+                    child: _card(
                       child: Row(
                         children: [
-                          Container(
-                            width: 44,
-                            height: 44,
-                            decoration: BoxDecoration(color: ThixPolicy.primary.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
-                            child: const Icon(Icons.insert_chart_rounded, color: ThixPolicy.primary, size: 22),
+                          // Anneau de progression
+                          SizedBox(
+                            width: 46,
+                            height: 46,
+                            child: Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                CircularProgressIndicator(
+                                  value: pct / 100,
+                                  strokeWidth: 4.5,
+                                  strokeCap: StrokeCap.round,
+                                  backgroundColor: _Prism.border,
+                                  valueColor: const AlwaysStoppedAnimation(
+                                      ThixPolicy.primary),
+                                ),
+                                Center(
+                                  child: Text('$pct%',
+                                      style: const TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w900,
+                                          color: _Prism.ink)),
+                                ),
+                              ],
+                            ),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text(name, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _IaLightPalette.textPrimary), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                Text(name,
+                                    style: const TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                        color: _Prism.ink),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
                                 const SizedBox(height: 4),
-                                Text('$code • $sector', style: const TextStyle(fontSize: 12, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w500), maxLines: 1, overflow: TextOverflow.ellipsis),
+                                Text('$code • $sector',
+                                    style: const TextStyle(
+                                        fontSize: 12,
+                                        color: _Prism.inkSoft,
+                                        fontWeight: FontWeight.w500),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
                               ],
                             ),
                           ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              Text('$pct%', style: const TextStyle(color: ThixPolicy.success, fontWeight: FontWeight.w900, fontSize: 14)),
-                              const SizedBox(height: 6),
-                              SizedBox(
-                                width: 48,
-                                height: 4,
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(2),
-                                  child: LinearProgressIndicator(value: pct / 100, backgroundColor: _IaLightPalette.border, valueColor: const AlwaysStoppedAnimation(ThixPolicy.success)),
-                                ),
-                              ),
-                            ],
-                          ),
+                          const Icon(Icons.chevron_right_rounded,
+                              color: _Prism.inkMuted, size: 22),
                         ],
                       ),
                     ),
@@ -901,6 +1464,17 @@ class _RecentAnalyses extends StatelessWidget {
       },
     );
   }
+
+  Widget _card({required Widget child}) => Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: _Prism.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _Prism.border),
+          boxShadow: _Prism.soft(0.04, 12, 5),
+        ),
+        child: child,
+      );
 }
 
 // ============================================================================
@@ -919,20 +1493,29 @@ class _QuickStats extends StatelessWidget {
       error: (_, __) => const SizedBox.shrink(),
       data: (projects) {
         final list = projects is List<ThixProject> ? projects : <ThixProject>[];
-        final active = list.where((p) => p.isActive || p.status == 'draft').length;
+        final active =
+            list.where((p) => p.isActive || p.status == 'draft').length;
         final analyses = list.fold<int>(0, (s, p) => s + p.analysesCount);
-        final countries = list.map((p) => p.country).where((c) => c.trim().isNotEmpty).toSet();
-        final avg = list.isEmpty ? 0 : (list.fold<double>(0, (s, p) => s + p.progress) / list.length * 100).round();
+        final countries =
+            list.map((p) => p.country).where((c) => c.trim().isNotEmpty).toSet();
+        final avg = list.isEmpty
+            ? 0
+            : (list.fold<double>(0, (s, p) => s + p.progress) / list.length * 100)
+                .round();
 
         final stats = [
-          ('$analyses', l10n.t('ia_stat_analyses'), Icons.insights_rounded),
-          ('$active', l10n.t('ia_stat_active'), Icons.track_changes_rounded),
-          ('${countries.length}', l10n.t('ia_stat_countries'), Icons.public_rounded),
-          ('$avg%', l10n.t('ia_stat_progress'), Icons.verified_rounded),
+          ('$analyses', l10n.t('ia_stat_analyses'), Icons.insights_rounded,
+              ThixPolicy.primary),
+          ('$active', l10n.t('ia_stat_active'), Icons.track_changes_rounded,
+              _Prism.violet),
+          ('${countries.length}', l10n.t('ia_stat_countries'),
+              Icons.public_rounded, _Prism.cyan),
+          ('$avg%', l10n.t('ia_stat_progress'), Icons.verified_rounded,
+              _Prism.amber),
         ];
 
         return SizedBox(
-          height: 80,
+          height: 86,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -942,24 +1525,52 @@ class _QuickStats extends StatelessWidget {
               final s = stats[i];
               return Semantics(
                 label: '${s.$1} ${s.$2}',
-                child: _SleekCard(
-                  width: 140,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                child: Container(
+                  width: 148,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: _Prism.surface,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: _Prism.border),
+                    boxShadow: _Prism.soft(0.04, 10, 4),
+                  ),
                   child: Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(color: _IaLightPalette.border.withValues(alpha: 0.5), shape: BoxShape.circle),
-                        child: Icon(s.$3, color: _IaLightPalette.textPrimary, size: 18),
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              s.$4.withValues(alpha: 0.18),
+                              s.$4.withValues(alpha: 0.06),
+                            ],
+                          ),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(s.$3, color: s.$4, size: 17),
                       ),
-                      const SizedBox(width: 12),
+                      const SizedBox(width: 11),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(s.$1, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _IaLightPalette.textPrimary)),
-                            Text(s.$2, style: const TextStyle(fontSize: 10, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(s.$1,
+                                style: const TextStyle(
+                                    fontSize: 19,
+                                    fontWeight: FontWeight.w900,
+                                    color: _Prism.ink,
+                                    letterSpacing: -0.4)),
+                            Text(s.$2,
+                                style: const TextStyle(
+                                    fontSize: 10,
+                                    color: _Prism.inkSoft,
+                                    fontWeight: FontWeight.w600),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
                           ],
                         ),
                       ),
@@ -971,6 +1582,105 @@ class _QuickStats extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+// ============================================================================
+// ⭐ FAB BUSINESS — SCROLL-REACTIVE (« on glisse »)
+// ============================================================================
+
+class _BusinessFab extends StatelessWidget {
+  const _BusinessFab({required this.visible, required this.onTap});
+  final bool visible;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    return IgnorePointer(
+      ignoring: !visible,
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOut,
+        child: AnimatedSlide(
+          offset: visible ? Offset.zero : const Offset(0, 1.4),
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOutCubic,
+          child: Semantics(
+            button: true,
+            label: l10n.t('ia_biz_fab_label'),
+            child: GestureDetector(
+              onTap: onTap,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 15),
+                decoration: BoxDecoration(
+                  gradient: _Prism.business,
+                  borderRadius: BorderRadius.circular(28),
+                  boxShadow: [
+                    BoxShadow(
+                        color: ThixPolicy.primary.withValues(alpha: 0.40),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8)),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Icône pulse subtil
+                    const Icon(Icons.storefront_rounded,
+                            color: Colors.white, size: 20)
+                        .animate(onPlay: (c) => c.repeat())
+                        .scale(
+                          begin: const Offset(1, 1),
+                          end: const Offset(1.15, 1.15),
+                          duration: 900.ms,
+                          curve: Curves.easeInOut,
+                        ),
+                    const SizedBox(width: 9),
+                    Text(l10n.t('ia_biz_fab_label'),
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.2)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// LOADING DIALOG
+// ============================================================================
+
+class _LoadingDialog extends StatelessWidget {
+  const _LoadingDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: _Prism.surface,
+          borderRadius: BorderRadius.circular(24),
+          boxShadow: _Prism.soft(0.10, 30, 12),
+        ),
+        child: const SizedBox(
+          width: 40,
+          height: 40,
+          child: CircularProgressIndicator(
+              strokeWidth: 3, color: ThixPolicy.primary),
+        ),
+      ),
     );
   }
 }
@@ -993,35 +1703,51 @@ class _ProjectPickerSheet extends StatelessWidget {
       maxChildSize: 0.85,
       builder: (_, controller) => Container(
         decoration: const BoxDecoration(
-          color: _IaLightPalette.surface,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          color: _Prism.surface,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
         child: Column(
           children: [
             const SizedBox(height: 12),
-            Container(width: 40, height: 5, decoration: BoxDecoration(color: _IaLightPalette.border, borderRadius: BorderRadius.circular(3))),
+            Container(
+                width: 42,
+                height: 5,
+                decoration: BoxDecoration(
+                    color: _Prism.border,
+                    borderRadius: BorderRadius.circular(3))),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 12, 12),
               child: Row(
                 children: [
-                  Expanded(child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: _IaLightPalette.textPrimary))),
+                  Expanded(
+                      child: Text(title,
+                          style: const TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              color: _Prism.ink))),
                   TextButton(
                     onPressed: () {
                       Navigator.pop(context);
                       context.push(ThixIARoutes.createProject);
                     },
-                    style: TextButton.styleFrom(foregroundColor: ThixPolicy.primary),
-                    child: Text(l10n.t('ia_home_new_project'), style: const TextStyle(fontWeight: FontWeight.bold)),
+                    style:
+                        TextButton.styleFrom(foregroundColor: ThixPolicy.primary),
+                    child: Text(l10n.t('ia_home_new_project'),
+                        style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
                 ],
               ),
             ),
-            const Divider(height: 1, color: _IaLightPalette.border),
+            const Divider(height: 1, color: _Prism.border),
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(l10n.t('ia_home_pick_hint'), style: const TextStyle(color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w600, fontSize: 13)),
+                child: Text(l10n.t('ia_home_pick_hint'),
+                    style: const TextStyle(
+                        color: _Prism.inkSoft,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 13)),
               ),
             ),
             Expanded(
@@ -1032,18 +1758,34 @@ class _ProjectPickerSheet extends StatelessWidget {
                   final p = projects[i];
                   final pct = (p.progress * 100).toInt();
                   final name = _Sanitizer.text(p.name, maxLength: _kMaxNameLength);
-                  final code = _Sanitizer.text(p.projectCode, maxLength: _kMaxCodeLength);
+                  final code =
+                      _Sanitizer.text(p.projectCode, maxLength: _kMaxCodeLength);
                   return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 4),
                     leading: Container(
                       width: 44,
                       height: 44,
-                      decoration: BoxDecoration(color: _IaLightPalette.border.withValues(alpha: 0.5), shape: BoxShape.circle),
-                      child: const Icon(Icons.folder_rounded, color: _IaLightPalette.textPrimary, size: 20),
+                      decoration: BoxDecoration(
+                          color: _Prism.border.withValues(alpha: 0.5),
+                          shape: BoxShape.circle),
+                      child: const Icon(Icons.folder_rounded,
+                          color: _Prism.ink, size: 20),
                     ),
-                    title: Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: _IaLightPalette.textPrimary)),
-                    subtitle: Text('$code • $pct%', style: const TextStyle(fontSize: 12, color: _IaLightPalette.textSecondary, fontWeight: FontWeight.w500)),
-                    trailing: const Icon(Icons.chevron_right_rounded, color: _IaLightPalette.textMuted, size: 24),
+                    title: Text(name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: _Prism.ink)),
+                    subtitle: Text('$code • $pct%',
+                        style: const TextStyle(
+                            fontSize: 12,
+                            color: _Prism.inkSoft,
+                            fontWeight: FontWeight.w500)),
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: _Prism.inkMuted, size: 24),
                     onTap: () => Navigator.pop(context, p),
                   );
                 },
@@ -1055,3 +1797,22 @@ class _ProjectPickerSheet extends StatelessWidget {
     );
   }
 }
+
+// ============================================================================
+// CLÉS l10n À AJOUTER (app_fr.arb / app_en.arb)
+// ============================================================================
+//
+// FR :
+//   "ia_biz_spotlight_title":   "Votre entreprise mérite un site pro",
+//   "ia_biz_spotlight_subtitle":"Créez votre portfolio animé, partagez votre THIX ID.",
+//   "ia_biz_spotlight_create":  "Créer mon site",
+//   "ia_biz_spotlight_mine":    "Mes sites",
+//   "ia_biz_fab_label":         "Business",
+//
+// EN :
+//   "ia_biz_spotlight_title":   "Your business deserves a pro website",
+//   "ia_biz_spotlight_subtitle":"Create your animated portfolio, share your THIX ID.",
+//   "ia_biz_spotlight_create":  "Create my site",
+//   "ia_biz_spotlight_mine":    "My sites",
+//   "ia_biz_fab_label":         "Business",
+// ============================================================================
