@@ -84,7 +84,7 @@ Future<String> uploadBusinessImage(XFile file, String folder) async {
     path,
     bytes,
     fileOptions: FileOptions(
-      contentType: file.mimeType.isEmpty ? 'image/$ext' : file.mimeType,
+      contentType: (file.mimeType == null || file.mimeType!.isEmpty) ? 'image/$ext' : file.mimeType,
       upsert: true,
     ),
   );
