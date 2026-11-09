@@ -338,7 +338,7 @@ import 'package:thix_id/presentation/thix_portfolio/pages/business_public_page.d
 import 'package:thix_id/presentation/thix_portfolio/pages/business_studio_page.dart';
 import 'package:thix_id/presentation/thix_portfolio/pages/theme_studio_page.dart';
 
-
+import 'presentation/thix_incubator/incubator_router.dart';
 // ============================================================================
 // NO TRANSITION PAGE
 // ============================================================================
@@ -1066,6 +1066,7 @@ GoRoute(
         ...ThixMoneyRouter.routes,
         ...ThixWeedingRoutes.routes,
         ...ThixIaRouter.routes,
+        ...IncubatorRouter.routes,
       ],
     );
   }
