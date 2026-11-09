@@ -1,24 +1,24 @@
 // lib/presentation/thix_ia/pages/thix_ia_home_page.dart
 //
-// ThixIaHomePage — "PRISM LIGHT v3" (Production Enterprise)
+// ThixIaHomePage — "PRISM LIGHT v3" (Production Enterprise) — CORRIGÉ CI
 //
-// REDESIGN 100 % — Système de design « Prism Light » :
+// Corrections appliquées :
+//   • Parenthèses équilibrées sur les slivers animés
+//   • .animate() déplacé DANS le child du SliverToBoxAdapter
+//     (un Sliver ne peut JAMAIS être wrappé par un widget non-sliver)
+//
+// Design « Prism Light » :
 //   • Header glass flottant (blur + pill) qui se densifie au scroll
 //   • Hero AURORA : dégradé animé en boucle + particules flottantes
-//   • SPOTLIGHT BUSINESS : carte gradient ultra-visible (créer / mes sites)
+//   • SPOTLIGHT BUSINESS : carte gradient ultra-visible
 //   • Bento grid des actions (hiérarchie visuelle Idée > autres)
 //   • Moteurs : puces v2 + puce BUSINESS gradient en première position
-//   • Analyses récentes : anneaux de progression (plus premium que linear)
+//   • Analyses récentes : anneaux de progression
 //   • Stats : tuiles icônes gradient + nombres forts
 //   • FAB BUSINESS scroll-reactive : apparaît quand l'utilisateur glisse
-//     (masquée en haut de page), animation slide+fade, pulse subtil
 //
 // Logique 100 % préservée : providers, sanitizer, logger, i18n (args: []),
 // haptics, semantics, routes ThixIARoutes, ThixPolicy.
-//
-// Nouvelles clés l10n à ajouter (voir liste en bas de fichier) :
-//   ia_biz_spotlight_title / ia_biz_spotlight_subtitle
-//   ia_biz_spotlight_create / ia_biz_spotlight_mine / ia_biz_fab_label
 
 import 'dart:math' as math;
 import 'dart:ui';
@@ -89,7 +89,7 @@ class _Prism {
 }
 
 // ============================================================================
-// CONSTANTS / LOGGING / SANITIZER (inchangés)
+// CONSTANTS / LOGGING / SANITIZER
 // ============================================================================
 
 const int _kMaxNameLength = 60;
@@ -128,7 +128,7 @@ class _Sanitizer {
 }
 
 // ============================================================================
-// ENUM / PROVIDER (inchangés)
+// ENUM / PROVIDER
 // ============================================================================
 
 enum ThixQuickAction { idea, market, businessPlan, legal }
@@ -258,7 +258,9 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
     );
     if (selected == null || !mounted) return;
 
-    await ref.read(activeProjectProvider.notifier).setActive(selected.projectCode);
+    await ref
+        .read(activeProjectProvider.notifier)
+        .setActive(selected.projectCode);
 
     if (!mounted) return;
     showDialog(
@@ -275,8 +277,10 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
               country: selected.country, sector: selected.sector);
           break;
         case ThixQuickAction.businessPlan:
-          await analyses.startFinanceAnalysis(
-              inputs: {'sector': selected.sector, 'country': selected.country});
+          await analyses.startFinanceAnalysis(inputs: {
+            'sector': selected.sector,
+            'country': selected.country
+          });
           break;
         case ThixQuickAction.legal:
           await analyses.startLegalAnalysis(
@@ -288,7 +292,10 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(l10n.t('ia_home_analysis_started',
-              args: [_Sanitizer.text(selected.projectCode, maxLength: _kMaxCodeLength)])),
+              args: [
+                _Sanitizer.text(selected.projectCode,
+                    maxLength: _kMaxCodeLength)
+              ])),
           backgroundColor: ThixPolicy.success,
           behavior: SnackBarBehavior.floating,
         ));
@@ -365,31 +372,41 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                   SliverToBoxAdapter(
                       child: _UserHeader(profileAsync: profileAsync)),
                   const SliverToBoxAdapter(child: SizedBox(height: 18)),
+
+                  // ✅ FIX CI : .animate() DANS le child du sliver
                   SliverToBoxAdapter(
-                      child: _AuroraHero(onAnalyze: () {
-                            HapticFeedback.mediumImpact();
-                            context.push(ThixIARoutes.createProject);
-                          }))
-                      .animate()
-                      .fadeIn(duration: 500.ms)
-                      .slideY(begin: 0.06, duration: 500.ms, curve: Curves.easeOutCubic)),
+                    child: _AuroraHero(onAnalyze: () {
+                      HapticFeedback.mediumImpact();
+                      context.push(ThixIARoutes.createProject);
+                    })
+                        .animate()
+                        .fadeIn(duration: 500.ms)
+                        .slideY(
+                            begin: 0.06,
+                            duration: 500.ms,
+                            curve: Curves.easeOutCubic),
+                  ),
                   const SliverToBoxAdapter(child: SizedBox(height: 16)),
 
-                  // ⭐ SPOTLIGHT BUSINESS — toujours visible, ultra premium
+                  // ⭐ SPOTLIGHT BUSINESS — ✅ FIX CI : idem
                   SliverToBoxAdapter(
-                      child: _BusinessSpotlight(
-                        onCreate: () {
-                          HapticFeedback.mediumImpact();
-                          context.push(_kRouteBusinessCreate);
-                        },
-                        onMine: () {
-                          HapticFeedback.selectionClick();
-                          context.push(_kRouteBusinessMine);
-                        },
-                      ))
-                      .animate(delay: 80.ms)
-                      .fadeIn(duration: 500.ms)
-                      .slideY(begin: 0.08, duration: 500.ms, curve: Curves.easeOutCubic)),
+                    child: _BusinessSpotlight(
+                      onCreate: () {
+                        HapticFeedback.mediumImpact();
+                        context.push(_kRouteBusinessCreate);
+                      },
+                      onMine: () {
+                        HapticFeedback.selectionClick();
+                        context.push(_kRouteBusinessMine);
+                      },
+                    )
+                        .animate(delay: 80.ms)
+                        .fadeIn(duration: 500.ms)
+                        .slideY(
+                            begin: 0.08,
+                            duration: 500.ms,
+                            curve: Curves.easeOutCubic),
+                  ),
                   const SliverToBoxAdapter(child: SizedBox(height: 26)),
 
                   SliverToBoxAdapter(
@@ -400,7 +417,8 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                   const SliverToBoxAdapter(child: SizedBox(height: 26)),
 
                   SliverToBoxAdapter(
-                      child: _SectionTitle(l10n.t('ia_home_section_engines'),
+                      child: _SectionTitle(
+                          l10n.t('ia_home_section_engines'),
                           seeAll: true,
                           onSeeAll: () {
                             HapticFeedback.selectionClick();
@@ -412,7 +430,8 @@ class _ThixIaHomePageState extends ConsumerState<ThixIaHomePage> {
                   const SliverToBoxAdapter(child: SizedBox(height: 26)),
 
                   SliverToBoxAdapter(
-                      child: _SectionTitle(l10n.t('ia_home_section_recent'),
+                      child: _SectionTitle(
+                          l10n.t('ia_home_section_recent'),
                           seeAll: true,
                           onSeeAll: () {
                             HapticFeedback.selectionClick();
@@ -524,8 +543,7 @@ class _GlassHeader extends StatelessWidget {
                     const SizedBox(width: 4),
                     Flexible(
                       child: Text(
-                        _Sanitizer.text(
-                            loc.isNotEmpty ? loc : '—',
+                        _Sanitizer.text(loc.isNotEmpty ? loc : '—',
                             maxLength: 40),
                         style: const TextStyle(
                             fontSize: 12,
@@ -623,7 +641,9 @@ class _UserHeader extends StatelessWidget {
       loading: () => const Padding(
         padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
         child: SizedBox(
-            width: 44, height: 44, child: CircularProgressIndicator(strokeWidth: 2)),
+            width: 44,
+            height: 44,
+            child: CircularProgressIndicator(strokeWidth: 2)),
       ),
       error: (_, __) =>
           _body(l10n.t('ia_home_user_default'), null, null, l10n),
@@ -653,7 +673,6 @@ class _UserHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Row(
         children: [
-          // Anneau gradient
           Container(
             padding: const EdgeInsets.all(2.5),
             decoration: const BoxDecoration(
@@ -766,8 +785,10 @@ class _AuroraHeroState extends State<_AuroraHero>
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(28),
               gradient: LinearGradient(
-                begin: Alignment.lerp(Alignment.topLeft, Alignment.bottomLeft, t)!,
-                end: Alignment.lerp(Alignment.bottomRight, Alignment.topRight, t)!,
+                begin:
+                    Alignment.lerp(Alignment.topLeft, Alignment.bottomLeft, t)!,
+                end: Alignment.lerp(
+                    Alignment.bottomRight, Alignment.topRight, t)!,
                 colors: const [
                   ThixPolicy.primary,
                   Color(0xFF4338CA),
@@ -783,7 +804,6 @@ class _AuroraHeroState extends State<_AuroraHero>
             ),
             child: Stack(
               children: [
-                // Particules flottantes
                 for (var i = 0; i < 3; i++)
                   Positioned(
                     right: 18 + i * 34.0,
@@ -793,7 +813,8 @@ class _AuroraHeroState extends State<_AuroraHero>
                       height: 10 - i * 2.0,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: Colors.white.withValues(alpha: 0.22 - i * 0.05),
+                        color:
+                            Colors.white.withValues(alpha: 0.22 - i * 0.05),
                       ),
                     ),
                   ),
@@ -855,7 +876,7 @@ class _AuroraHeroState extends State<_AuroraHero>
 }
 
 // ============================================================================
-// ⭐ SPOTLIGHT BUSINESS (carte ultra-visible, permanente)
+// ⭐ SPOTLIGHT BUSINESS
 // ============================================================================
 
 class _BusinessSpotlight extends StatelessWidget {
@@ -1234,7 +1255,6 @@ class _MotorsRow extends StatelessWidget {
         itemCount: motors.length + 1,
         separatorBuilder: (_, __) => const SizedBox(width: 8),
         itemBuilder: (_, i) {
-          // ⭐ Puce BUSINESS gradient, première position, très visible
           if (i == 0) {
             return Semantics(
               button: true,
@@ -1279,8 +1299,7 @@ class _MotorsRow extends StatelessWidget {
             button: true,
             label: m.$1,
             child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9),
               decoration: BoxDecoration(
                 color: _Prism.surface,
                 borderRadius: BorderRadius.circular(21),
@@ -1312,7 +1331,9 @@ class _MotorsRow extends StatelessWidget {
 
 class _RecentAnalyses extends StatelessWidget {
   const _RecentAnalyses(
-      {required this.projectsAsync, required this.onOpen, required this.onCreate});
+      {required this.projectsAsync,
+      required this.onOpen,
+      required this.onCreate});
   final AsyncValue projectsAsync;
   final void Function(String) onOpen;
   final VoidCallback onCreate;
@@ -1402,7 +1423,6 @@ class _RecentAnalyses extends StatelessWidget {
                     child: _card(
                       child: Row(
                         children: [
-                          // Anneau de progression
                           SizedBox(
                             width: 46,
                             height: 46,
@@ -1496,11 +1516,14 @@ class _QuickStats extends StatelessWidget {
         final active =
             list.where((p) => p.isActive || p.status == 'draft').length;
         final analyses = list.fold<int>(0, (s, p) => s + p.analysesCount);
-        final countries =
-            list.map((p) => p.country).where((c) => c.trim().isNotEmpty).toSet();
+        final countries = list
+            .map((p) => p.country)
+            .where((c) => c.trim().isNotEmpty)
+            .toSet();
         final avg = list.isEmpty
             ? 0
-            : (list.fold<double>(0, (s, p) => s + p.progress) / list.length * 100)
+            : (list.fold<double>(0, (s, p) => s + p.progress) / list.length *
+                    100)
                 .round();
 
         final stats = [
@@ -1587,7 +1610,7 @@ class _QuickStats extends StatelessWidget {
 }
 
 // ============================================================================
-// ⭐ FAB BUSINESS — SCROLL-REACTIVE (« on glisse »)
+// ⭐ FAB BUSINESS — SCROLL-REACTIVE
 // ============================================================================
 
 class _BusinessFab extends StatelessWidget {
@@ -1629,7 +1652,6 @@ class _BusinessFab extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Icône pulse subtil
                     const Icon(Icons.storefront_rounded,
                             color: Colors.white, size: 20)
                         .animate(onPlay: (c) => c.repeat())
@@ -1730,8 +1752,8 @@ class _ProjectPickerSheet extends StatelessWidget {
                       Navigator.pop(context);
                       context.push(ThixIARoutes.createProject);
                     },
-                    style:
-                        TextButton.styleFrom(foregroundColor: ThixPolicy.primary),
+                    style: TextButton.styleFrom(
+                        foregroundColor: ThixPolicy.primary),
                     child: Text(l10n.t('ia_home_new_project'),
                         style: const TextStyle(fontWeight: FontWeight.bold)),
                   ),
@@ -1757,9 +1779,10 @@ class _ProjectPickerSheet extends StatelessWidget {
                 itemBuilder: (_, i) {
                   final p = projects[i];
                   final pct = (p.progress * 100).toInt();
-                  final name = _Sanitizer.text(p.name, maxLength: _kMaxNameLength);
-                  final code =
-                      _Sanitizer.text(p.projectCode, maxLength: _kMaxCodeLength);
+                  final name =
+                      _Sanitizer.text(p.name, maxLength: _kMaxNameLength);
+                  final code = _Sanitizer.text(p.projectCode,
+                      maxLength: _kMaxCodeLength);
                   return ListTile(
                     contentPadding: const EdgeInsets.symmetric(
                         horizontal: 20, vertical: 4),
