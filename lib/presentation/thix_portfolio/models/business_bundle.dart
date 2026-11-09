@@ -3,19 +3,19 @@
 //  Fichier  : lib/presentation/thix_portfolio/models/business_bundle.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.1.0 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
+//
+//  ✅ v1.1 : champs `imageUrl` ajoutés à :
+//    • AboutContent  (image_url)  → section « À propos » avec photo
+//    • ServiceItem   (image_url)  → cartes services avec photo OU icône
 //
 //  Regroupe tout ce qui compose le site public d'une entreprise :
 //    • Business        : identité, vérification, statut
-//    • BusinessTheme   : couleurs, police, style d'animation (fichier 2)
-//    • BusinessSection : bloc éditorial typé (8 types possibles)
-//    • BusinessStats   : KPI agrégés (vues, partages, contacts)
+//    • BusinessTheme   : couleurs, police, style d'animation
+//    • BusinessSection : bloc éditorial typé (8 types, contenu jsonb)
+//    • BusinessStats   : KPI agrégés
 //    • BusinessBundle  : objet racine servi à la page publique + au studio
-//
-//  Tout le contenu flexible est stocké dans le champ `content` JSONB.
-//  Les 8 `BusinessSectionContent` sont typés (sealed class) pour garantir
-//  une sérialisation sûre côté client et un éditeur de studio sans `dynamic`.
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/foundation.dart';
@@ -244,7 +244,6 @@ enum BusinessSectionType {
     }
   }
 
-  /// Icône Material associée (utilisée par le studio).
   String get iconName {
     switch (this) {
       case BusinessSectionType.about:
@@ -300,34 +299,51 @@ sealed class BusinessSectionContent {
   }
 }
 
-// ── About ───────────────────────────────────────────────────────────────────
+// ── About (✅ v1.1 : imageUrl) ───────────────────────────────────────────────
 
 class AboutContent extends BusinessSectionContent {
-  const AboutContent({required this.title, required this.body, this.tagline});
+  const AboutContent({
+    required this.title,
+    required this.body,
+    this.tagline,
+    this.imageUrl,
+  });
 
   final String title;
   final String body;
   final String? tagline;
+  final String? imageUrl;
 
   factory AboutContent.fromJson(Map<String, dynamic> j) => AboutContent(
         title: (j['title'] as String?) ?? 'À propos',
         body: (j['body'] as String?) ?? '',
         tagline: j['tagline'] as String?,
+        imageUrl: j['image_url'] as String?,
       );
 
   @override
-  Map<String, Object?> toJson() =>
-      {'title': title, 'body': body, 'tagline': tagline};
+  Map<String, Object?> toJson() => {
+        'title': title,
+        'body': body,
+        'tagline': tagline,
+        'image_url': imageUrl,
+      };
 
-  AboutContent copyWith({String? title, String? body, String? tagline}) =>
+  AboutContent copyWith({
+    String? title,
+    String? body,
+    String? tagline,
+    String? imageUrl,
+  }) =>
       AboutContent(
         title: title ?? this.title,
         body: body ?? this.body,
         tagline: tagline ?? this.tagline,
+        imageUrl: imageUrl ?? this.imageUrl,
       );
 }
 
-// ── Services ────────────────────────────────────────────────────────────────
+// ── Services (✅ v1.1 : ServiceItem.imageUrl) ────────────────────────────────
 
 @immutable
 class ServiceItem {
@@ -336,18 +352,21 @@ class ServiceItem {
     this.description,
     this.iconName,
     this.price,
+    this.imageUrl,
   });
 
   final String title;
   final String? description;
   final String? iconName;
   final String? price;
+  final String? imageUrl;
 
   factory ServiceItem.fromJson(Map<String, dynamic> j) => ServiceItem(
         title: (j['title'] as String?) ?? '',
         description: j['description'] as String?,
         iconName: j['icon_name'] as String?,
         price: j['price'] as String?,
+        imageUrl: j['image_url'] as String?,
       );
 
   Map<String, Object?> toJson() => {
@@ -355,6 +374,7 @@ class ServiceItem {
         'description': description,
         'icon_name': iconName,
         'price': price,
+        'image_url': imageUrl,
       };
 }
 
@@ -379,7 +399,7 @@ class ServicesContent extends BusinessSectionContent {
       };
 }
 
-// ── Products ────────────────────────────────────────────────────────────────
+// ── Products ───────────────────────────────────────────────────────────────
 
 @immutable
 class ProductItem {
@@ -644,7 +664,7 @@ class TestimonialsContent extends BusinessSectionContent {
       };
 }
 
-// ── Contact ─────────────────────────────────────────────────────────────────
+// ── Contact ────────────────────────────────────────────────────────────────
 
 enum ContactChannelType { phone, email, whatsapp, website, address, map }
 
@@ -737,8 +757,9 @@ class BusinessSection {
 
   factory BusinessSection.fromJson(Map<String, dynamic> j) {
     final type = BusinessSectionType.fromSlug(j['type'] as String?);
-    final rawContent =
-        (j['content'] is Map) ? Map<String, dynamic>.from(j['content'] as Map) : null;
+    final rawContent = (j['content'] is Map)
+        ? Map<String, dynamic>.from(j['content'] as Map)
+        : null;
     return BusinessSection(
       id: j['id'] as String,
       businessId: j['business_id'] as String,
@@ -828,7 +849,7 @@ class BusinessBundle {
   final Business business;
   final BusinessTheme theme;
 
-  /// Sections **déjà triées** par `position`, filtrées selon `visible`.
+  /// Sections **déjà triées** par `position`.
   final List<BusinessSection> sections;
 
   final BusinessStats? stats;
@@ -836,20 +857,19 @@ class BusinessBundle {
   factory BusinessBundle.fromJson(Map<String, dynamic> j) {
     final rawSections = (j['business_sections'] as List? ?? const [])
         .whereType<Map>()
-        .map((e) =>
-            BusinessSection.fromJson(Map<String, dynamic>.from(e)))
+        .map((e) => BusinessSection.fromJson(Map<String, dynamic>.from(e)))
         .toList();
     rawSections.sort((a, b) => a.position.compareTo(b.position));
 
-    // Stats : agrégées depuis `business_stats` si présente, sinon 0.
     BusinessStats? stats;
     if (j['stats'] is Map) {
-      stats = BusinessStats.fromJson(
-          Map<String, dynamic>.from(j['stats'] as Map));
+      stats =
+          BusinessStats.fromJson(Map<String, dynamic>.from(j['stats'] as Map));
     }
 
     return BusinessBundle(
-      business: Business.fromJson(Map<String, dynamic>.from(j['business'] ?? j)),
+      business:
+          Business.fromJson(Map<String, dynamic>.from(j['business'] ?? j)),
       theme: BusinessTheme.fromJson(
           Map<String, dynamic>.from(j['business_themes'] ?? const {})),
       sections: rawSections,
@@ -869,8 +889,7 @@ class BusinessBundle {
     return null;
   }
 
-  /// URL de partage canonique (app web) — à compléter dans le repository
-  /// avec le vrai domaine depuis config.
+  /// URL de partage canonique.
   Uri shareUri({String baseUrl = 'https://thixid.com'}) =>
       Uri.parse('$baseUrl/b/${business.thixId}');
 
@@ -916,8 +935,7 @@ class BusinessCreationResult {
 // Helpers polices Google Fonts
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Liste filtrée des polices Google Fonts recommandées (chargement rapide,
-/// bonne lisibilité, caractères latin étendu inclus).
+/// Liste filtrée des polices Google Fonts recommandées.
 const List<String> kRecommendedFontFamilies = [
   'Plus Jakarta Sans',
   'Poppins',
