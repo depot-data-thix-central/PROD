@@ -211,7 +211,7 @@ class _BusinessStudioPageState extends ConsumerState<BusinessStudioPage> {
         path,
         bytes,
         fileOptions: FileOptions(
-          contentType: file.mimeType.isEmpty ? 'image/$ext' : file.mimeType,
+          contentType: (file.mimeType == null || file.mimeType!.isEmpty) ? 'image/$ext' : file.mimeType,
           upsert: true,
         ),
       );
