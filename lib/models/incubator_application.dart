@@ -86,7 +86,7 @@ class IncubatorApplication {
 
   static List<IncubatorApplication> decodeList(String raw) {
     if (raw.trim().isEmpty) return const [];
-    final decoded = const JsonEncoder().convert(raw);
+    final decoded = const JsonDecoder().convert(raw);
     if (decoded is! List) return const [];
     return decoded
         .whereType<Map>()
