@@ -673,16 +673,21 @@ class _UserHeader extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 0),
       child: Row(
         children: [
+          
           Container(
             padding: const EdgeInsets.all(2.5),
-            decoration: const BoxDecoration(
+            decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: _Prism.brand,
               boxShadow: [
                 BoxShadow(
-                    color: ThixPolicy.primary.withValues(alpha: 0.25),
+                    color: Color.fromRGBO(
+                        (ThixPolicy.primary.r * 255).round(),
+                        (ThixPolicy.primary.g * 255).round(),
+                        (ThixPolicy.primary.b * 255).round(),
+                        0.25),
                     blurRadius: 12,
-                    offset: Offset(0, 4)),
+                    offset: const Offset(0, 4)),
               ],
             ),
             child: CircleAvatar(
