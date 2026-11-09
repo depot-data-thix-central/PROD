@@ -368,4 +368,17 @@ class AppRoutes {
   static const String trainingDetailsBasePath = '/education';
   static const String instructorDashboard  = '/';
   static const String instructorCourses    = '/instructor/courses';
+static const String incubator                 = '/incubator';
+static const String incubatorExplore          = '/incubator/explore';
+static const String incubatorProjects         = '/incubator/projects';
+static const String incubatorNewProject       = '/incubator/projects/new';
+static const String incubatorApplications     = '/incubator/applications';
+static const String incubatorMentors          = '/incubator/mentors';
+static const String incubatorPitch            = '/incubator/pitch';
+static const String incubatorTrainings        = '/incubator/trainings';
+static const String incubatorResources        = '/incubator/resources';
+
+static String incubatorProgram(String programId) => '/incubator/program/$programId';
+static String incubatorProject(String projectId) => '/incubator/projects/$projectId';
+  
 }
