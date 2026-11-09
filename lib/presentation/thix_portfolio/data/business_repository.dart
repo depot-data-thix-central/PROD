@@ -3,25 +3,16 @@
 //  Fichier  : lib/presentation/thix_portfolio/data/business_repository.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.2 — Novembre 2026 (CORRIGÉ CI)
 // ════════════════════════════════════════════════════════════════════════════
+//
+//  Corrections CI :
+//    • Ajout de `import 'dart:async'` pour `unawaited()`
 //
 //  Seul point d'accès à Supabase pour tout le module portfolio business.
-//
-//  Principes clés :
-//    • L'identifiant THIX est **toujours généré côté DB** via RPC
-//      `generate_thix_biz_id` (atomicité + sécurité garanties).
-//    • Création = appel unique `create_business` (transactionnel).
-//    • Lecture publique = jointure 1 requête business + theme + sections.
-//    • `trackView` est fire-and-forget (non bloquant, silencieux en erreur).
-//    • Les exceptions Supabase sont converties en erreurs métier typées.
-//
-//  Prérequis :
-//    1. Migration SQL 20261109_thix_portfolio_business.sql exécutée.
-//    2. Un provider `supabaseClientProvider` existant dans ton projet
-//       (déjà présent dans `lib/supabase/`).
-//    3. `flutter_riverpod` + `supabase_flutter` dans le pubspec ✅.
 // ════════════════════════════════════════════════════════════════════════════
+
+import 'dart:async'; // ✅ FIX CI : pour unawaited()
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,19 +23,16 @@ import '../models/business_bundle.dart';
 import '../models/business_theme.dart';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Erreurs métier (typées, traçables, localisables)
+// Erreurs métier
 // ─────────────────────────────────────────────────────────────────────────────
 
 @immutable
 abstract class BusinessError implements Exception {
   const BusinessError(this.message, [this.cause]);
-
   final String message;
   final Object? cause;
-
   @override
-  String toString() =>
-      '$runtimeType: $message${cause == null ? '' : ' ($cause)'}';
+  String toString() => '$runtimeType: $message${cause == null ? '' : ' ($cause)'}';
 }
 
 class BusinessNotFoundException extends BusinessError {
@@ -76,7 +64,6 @@ class BusinessPublishException extends BusinessError {
 
 class BusinessRepository {
   BusinessRepository(this._db);
-
   final SupabaseClient _db;
 
   static const String _tableBusinesses = 'businesses';
@@ -84,32 +71,25 @@ class BusinessRepository {
   static const String _tableSections = 'business_sections';
   static const String _tableStats = 'business_stats';
 
-  // ── SELECT business + theme + sections (jointure) ──────────────────────
+  // ── SELECT public ───────────────────────────────────────────────────
 
-  /// Charge un bundle complet par `thix_id`.
-  ///
-  /// Lance [BusinessNotFoundException] si l'entreprise n'existe pas ou
-  /// n'est pas publiée. Lance [BusinessIdInvalidException] si l'ID
-  /// fourni ne passe pas la validation offline ([ThixBusinessId.isValid]).
   Future<BusinessBundle> fetchPublicBundle(String thixId) async {
     if (!ThixBusinessId.isValid(thixId)) {
-      throw const BusinessIdInvalidException('');
+      throw BusinessIdInvalidException(thixId);
     }
     final normalized = ThixBusinessId.parse(thixId).raw;
 
     try {
-      // Jointure 1 requête : business → theme (1:1) → sections (1:N)
       final row = await _db
           .from(_tableBusinesses)
-          .select(
-              '*, business_themes(*), business_sections(*)')
+          .select('*, business_themes(*), business_sections(*)')
           .eq('thix_id', normalized)
           .eq('status', BusinessStatus.published.slug)
           .maybeSingle();
 
       if (row == null) throw BusinessNotFoundException(normalized);
 
-      // Track de la vue (non bloquant)
+      // ✅ FIX CI : unawaited fonctionne maintenant grâce à l'import dart:async
       unawaited(trackView(normalized));
 
       return BusinessBundle.fromJson(row);
@@ -121,7 +101,6 @@ class BusinessRepository {
     }
   }
 
-  /// Récupère le bundle pour l'**owner** (draft inclus).
   Future<BusinessBundle> fetchOwnerBundle(String businessId) async {
     try {
       final row = await _db
@@ -135,7 +114,6 @@ class BusinessRepository {
     }
   }
 
-  /// Liste des entreprises de l'utilisateur courant (studio / dashboard).
   Future<List<Business>> listMine() async {
     final rows = await _db
         .from(_tableBusinesses)
@@ -147,12 +125,8 @@ class BusinessRepository {
         .toList(growable: false);
   }
 
-  // ── CREATE (génération ID côté DB) ─────────────────────────────────────
+  // ── CREATE (génération ID côté DB) ──────────────────────────────────
 
-  /// Crée une entreprise. L'identifiant THIX est **entièrement généré
-  /// côté serveur** par la fonction Postgres `create_business`.
-  ///
-  /// Retourne le [BusinessCreationResult] contenant l'ID généré.
   Future<BusinessCreationResult> create({
     required String name,
     String? sector,
@@ -163,7 +137,6 @@ class BusinessRepository {
       throw const BusinessCreationException(
           'Le nom de l\'entreprise doit contenir au moins 2 caractères.');
     }
-
     try {
       final response = await _db.rpc(
         'create_business',
@@ -174,25 +147,18 @@ class BusinessRepository {
           'p_country': (country ?? 'CD').trim(),
         },
       );
-
       if (response is! Map) {
         throw const BusinessCreationException(
             'Réponse inattendue du serveur lors de la création.');
       }
-
-      return BusinessCreationResult.fromJson(
-          Map<String, dynamic>.from(response));
+      return BusinessCreationResult.fromJson(Map<String, dynamic>.from(response));
     } on PostgrestException catch (e) {
-      throw BusinessCreationException(
-          'Création impossible : ${e.message}', e);
+      throw BusinessCreationException('Création impossible : ${e.message}', e);
     } catch (e) {
-      throw BusinessCreationException(
-          'Erreur inattendue lors de la création.', e);
+      throw BusinessCreationException('Erreur inattendue lors de la création.', e);
     }
   }
 
-  /// Expose directement la RPC de génération d'ID (utile pour prévisualiser
-  /// un ID avant de finaliser la création — ex : démo studio).
   Future<ThixBusinessId> previewNextId() async {
     final response = await _db.rpc('generate_thix_biz_id');
     final raw = (response as String).trim();
@@ -204,9 +170,8 @@ class BusinessRepository {
     return parsed;
   }
 
-  // ── UPDATE (business + theme + sections) ───────────────────────────────
+  // ── UPDATE ──────────────────────────────────────────────────────────
 
-  /// Met à jour les champs d'identité de l'entreprise.
   Future<Business> updateBusiness({
     required String businessId,
     required Business business,
@@ -235,14 +200,11 @@ class BusinessRepository {
           .single();
       return Business.fromJson(Map<String, dynamic>.from(row));
     } on PostgrestException catch (e) {
-      if (_isRlsAuthError(e)) {
-        throw const BusinessNotAuthorizedException();
-      }
+      if (_isRlsAuthError(e)) throw const BusinessNotAuthorizedException();
       rethrow;
     }
   }
 
-  /// Remplace le thème complet (upsert = insert si absent, update sinon).
   Future<BusinessTheme> upsertTheme({
     required String businessId,
     required BusinessTheme theme,
@@ -261,15 +223,11 @@ class BusinessRepository {
           .single();
       return BusinessTheme.fromJson(Map<String, dynamic>.from(res));
     } on PostgrestException catch (e) {
-      if (_isRlsAuthError(e)) {
-        throw const BusinessNotAuthorizedException();
-      }
+      if (_isRlsAuthError(e)) throw const BusinessNotAuthorizedException();
       rethrow;
     }
   }
 
-  /// Remplace toutes les sections d'une entreprise (transaction logique :
-  /// on écrase la liste en une seule requête d'upsert sur (business_id,type)).
   Future<List<BusinessSection>> upsertSections({
     required String businessId,
     required List<BusinessSection> sections,
@@ -285,29 +243,24 @@ class BusinessRepository {
               'updated_at': DateTime.now().toIso8601String(),
             })
         .toList(growable: false);
-
     try {
       final res = await _db
           .from(_tableSections)
           .upsert(rows, onConflict: 'business_id,type')
           .select();
       final list = res
-          .map((e) =>
-              BusinessSection.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) => BusinessSection.fromJson(Map<String, dynamic>.from(e)))
           .toList()
         ..sort((a, b) => a.position.compareTo(b.position));
       return list;
     } on PostgrestException catch (e) {
-      if (_isRlsAuthError(e)) {
-        throw const BusinessNotAuthorizedException();
-      }
+      if (_isRlsAuthError(e)) throw const BusinessNotAuthorizedException();
       rethrow;
     }
   }
 
-  // ── PUBLISH / UNPUBLISH ────────────────────────────────────────────────
+  // ── PUBLISH / UNPUBLISH ─────────────────────────────────────────────
 
-  /// Publie le site. Refuse si aucun logo / cover / description / nom.
   Future<Business> publish(String businessId) async {
     final bundle = await fetchOwnerBundle(businessId);
     final b = bundle.business;
@@ -315,18 +268,14 @@ class BusinessRepository {
       throw const BusinessPublishException('Le nom est obligatoire.');
     }
     if ((b.description ?? '').trim().isEmpty) {
-      throw const BusinessPublishException(
-          'Ajoutez une description avant de publier.');
+      throw const BusinessPublishException('Ajoutez une description avant de publier.');
     }
     if (b.logoUrl == null || b.logoUrl!.isEmpty) {
-      throw const BusinessPublishException(
-          'Ajoutez un logo avant de publier.');
+      throw const BusinessPublishException('Ajoutez un logo avant de publier.');
     }
     if (b.coverUrl == null || b.coverUrl!.isEmpty) {
-      throw const BusinessPublishException(
-          'Ajoutez une image de couverture avant de publier.');
+      throw const BusinessPublishException('Ajoutez une image de couverture avant de publier.');
     }
-
     final now = DateTime.now();
     final row = await _db
         .from(_tableBusinesses)
@@ -341,7 +290,6 @@ class BusinessRepository {
     return Business.fromJson(Map<String, dynamic>.from(row));
   }
 
-  /// Passe en draft (le site reste accessible à l'owner seulement).
   Future<Business> unpublish(String businessId) async {
     final row = await _db
         .from(_tableBusinesses)
@@ -355,19 +303,16 @@ class BusinessRepository {
     return Business.fromJson(Map<String, dynamic>.from(row));
   }
 
-  // ── STATS ──────────────────────────────────────────────────────────────
+  // ── STATS ───────────────────────────────────────────────────────────
 
-  /// Enregistre une vue sur le site public (fire-and-forget).
   Future<void> trackView(String thixId) async {
     try {
       await _db.rpc('track_business_view', params: {'p_thix_id': thixId});
     } catch (e) {
-      // Silencieux : une vue ratée ne doit pas casser l'UX.
       debugPrint('trackView ignoré: $e');
     }
   }
 
-  /// Charge les stats agrégées (30 derniers jours + total) pour l'owner.
   Future<BusinessStats> fetchStats(String businessId) async {
     try {
       final rows = await _db
@@ -380,15 +325,14 @@ class BusinessRepository {
           );
       return rows.fold<BusinessStats>(
         const BusinessStats(),
-        (acc, r) => acc +
-            BusinessStats.fromJson(Map<String, dynamic>.from(r)),
+        (acc, r) => acc + BusinessStats.fromJson(Map<String, dynamic>.from(r)),
       );
     } catch (_) {
       return const BusinessStats();
     }
   }
 
-  // ── Helpers ────────────────────────────────────────────────────────────
+  // ── Helpers ─────────────────────────────────────────────────────────
 
   bool _isRlsAuthError(PostgrestException e) {
     final code = e.code?.toLowerCase() ?? '';
@@ -404,37 +348,28 @@ class BusinessRepository {
 // Providers Riverpod
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Provider du repository (singleton pour toute la durée de vie de l'app).
-///
-/// Dépend du provider `supabaseClientProvider` existant dans ton projet.
-/// Si ton app l'expose différemment (ex: `supabaseProvider`), remplace.
 final businessRepositoryProvider = Provider<BusinessRepository>((ref) {
   return BusinessRepository(Supabase.instance.client);
 });
 
-/// Provider du bundle public — mis en cache 5 min par thixId.
 final businessPublicBundleProvider = FutureProvider.autoDispose
     .family<BusinessBundle, String>((ref, thixId) async {
   final repo = ref.watch(businessRepositoryProvider);
   ref.keepAlive();
-  // TTL 5 min
   Future.delayed(const Duration(minutes: 5), ref.invalidateSelf);
   return repo.fetchPublicBundle(thixId);
 });
 
-/// Provider des entreprises de l'utilisateur courant.
 final myBusinessesProvider =
     FutureProvider.autoDispose<List<Business>>((ref) async {
   return ref.watch(businessRepositoryProvider).listMine();
 });
 
-/// Provider du bundle d'une entreprise pour l'owner (par businessId).
 final ownerBusinessBundleProvider = FutureProvider.autoDispose
     .family<BusinessBundle, String>((ref, businessId) async {
   return ref.watch(businessRepositoryProvider).fetchOwnerBundle(businessId);
 });
 
-/// Provider des stats d'une entreprise.
 final businessStatsProvider = FutureProvider.autoDispose
     .family<BusinessStats, String>((ref, businessId) async {
   return ref.watch(businessRepositoryProvider).fetchStats(businessId);
