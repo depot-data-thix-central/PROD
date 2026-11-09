@@ -3,7 +3,7 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.1.0 — Novembre 2026
+//  Version  : 1.1.1 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/edit/:id
@@ -65,6 +65,7 @@ class _StudioLogger {
   static void info(String m) {
     if (kDebugMode) debugPrint('[$_tag] $m');
   }
+
   static void error(String m, Object e) => debugPrint('[$_tag] $m : $e');
 }
 
@@ -82,11 +83,15 @@ Future<String> uploadBusinessImage(XFile file, String folder) async {
   final rand = Random().nextInt(9999).toString().padLeft(4, '0');
   final path = '$folder/sections-$stamp-$rand.$ext';
   final bucket = Supabase.instance.client.storage.from('business-media');
+  
   await bucket.uploadBinary(
     path,
     bytes,
     fileOptions: FileOptions(
-      contentType: file.mimeType?.isNotEmpty == true ? file.mimeType! : 'image/$ext',
+      // ✅ FIX : Gestion du null safety pour mimeType
+      contentType: (file.mimeType == null || file.mimeType!.isEmpty) 
+          ? 'image/$ext' 
+          : file.mimeType!,
       upsert: true,
     ),
   );
@@ -161,9 +166,9 @@ class _ImageField extends StatelessWidget {
                               child: Icon(Icons.broken_image_outlined,
                                   size: 18, color: _Prism.inkMuted)),
                         )
-                      : ColoredBox(
+                      : const ColoredBox(
                           color: _Prism.border,
-                          child: const Icon(Icons.image_outlined,
+                          child: Icon(Icons.image_outlined,
                               size: 18, color: _Prism.inkMuted),
                         ),
                 ),
@@ -217,7 +222,7 @@ class _ImageField extends StatelessWidget {
                 ),
               ),
             ],
-          ),
+          );
         },
       ),
     );
@@ -785,9 +790,9 @@ class _MediaRow extends StatelessWidget {
                     errorWidget: (_, __, ___) =>
                         const ColoredBox(color: _Prism.border),
                   )
-                : ColoredBox(
+                : const ColoredBox(
                     color: _Prism.border,
-                    child: const Icon(Icons.add_photo_alternate_outlined,
+                    child: Icon(Icons.add_photo_alternate_outlined,
                         color: _Prism.inkMuted),
                   ),
           ),
