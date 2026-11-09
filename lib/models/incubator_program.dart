@@ -7,6 +7,8 @@
 // Statuts : 'draft' | 'upcoming' | 'open' | 'closed' | 'archived'
 // ============================================================================
 
+import 'dart:convert';
+
 class IncubatorProgram {
   final String id;
   final String title;
@@ -149,5 +151,3 @@ class IncubatorProgram {
     return const JsonEncoder().convert(items.map((e) => e.toJson()).toList());
   }
 }
-
-import 'dart:convert';
