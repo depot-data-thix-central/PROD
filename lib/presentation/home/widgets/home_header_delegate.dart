@@ -1,4 +1,12 @@
 // lib/presentation/home/widgets/home_header_delegate.dart
+//
+// ✅ MISE À JOUR : la recherche du header résout désormais les THIX ID
+//    BUSINESS : saisie validée offline (checksum) → vérification
+//    `status = published` en base → navigation vers /b/<ID> (portfolio
+//    animé de l'entreprise). Si introuvable → SnackBar explicite.
+//    Tout le reste (recherche personnelle via onVerify, update hint,
+//    badges, langue) est 100 % préservé.
+
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -6,6 +14,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:go_router/go_router.dart';
 import 'package:html/parser.dart' as html_parser;
+import 'package:supabase_flutter/supabase_flutter.dart'; // ✅ FIX : résolution business
 
 import 'package:thix_id/nav.dart';
 import 'package:thix_id/presentation/common/notifications_sheet.dart';
@@ -16,6 +25,10 @@ import 'package:thix_id/l10n/app_localizations.dart';
 import 'package:thix_id/services/notification_counters_service.dart';
 import 'package:thix_id/services/app_update_service.dart';
 import 'package:thix_id/core/theme/thix_design_policy.dart';
+
+// ✅ FIX : module portfolio business (validation offline + repository)
+import 'package:thix_id/presentation/thix_portfolio/core/thix_business_id.dart';
+import 'package:thix_id/presentation/thix_portfolio/data/business_repository.dart';
 
 import 'app_update_sheet.dart';
 import 'app_update_strings.dart';
@@ -33,8 +46,13 @@ class _HeaderValidators {
     if (input == null || input.trim().isEmpty) return '';
     final doc = html_parser.parse(input);
     var s = doc.body?.text ?? input;
-    s = s.replaceAll(RegExp(r'<[^>]*>'), '').replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '').trim();
-    return s.length > _kMaxDisplayNameLength ? s.substring(0, _kMaxDisplayNameLength) : s;
+    s = s
+        .replaceAll(RegExp(r'<[^>]*>'), '')
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
+        .trim();
+    return s.length > _kMaxDisplayNameLength
+        ? s.substring(0, _kMaxDisplayNameLength)
+        : s;
   }
 
   static String formatBadgeCount(int total) {
@@ -98,7 +116,8 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
   double get minExtent => _headerExtent();
 
   @override
-  Widget build(BuildContext context, double shrinkOffset, bool overlapsContent) {
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
     final content = _PremiumHeader(
       safeTop: safeTop,
       displayName: _HeaderValidators.sanitizeDisplayName(displayName),
@@ -121,7 +140,8 @@ class HomeHeaderDelegate extends SliverPersistentHeaderDelegate {
           child: Container(
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.72),
-              border: Border(bottom: BorderSide(color: HomeTheme.line.withOpacity(0.9))),
+              border: Border(
+                  bottom: BorderSide(color: HomeTheme.line.withOpacity(0.9))),
             ),
             child: content,
           ),
@@ -176,6 +196,9 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
   final FocusNode _searchFocus = FocusNode();
   bool _searchOpen = false;
 
+  /// ✅ FIX : état de résolution d'un THIX ID Business (spinner du bouton ✔)
+  bool _resolvingBusiness = false;
+
   @override
   void initState() {
     super.initState();
@@ -217,18 +240,57 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
     if (mounted) setState(() => _searchOpen = false);
   }
 
-  void _submit(String value) {
-    if (!mounted || widget.isSearching || value.trim().isEmpty) return;
-    widget.onVerify?.call();
+  void _closeSearchSilent() {
+    _searchFocus.unfocus();
+    if (mounted) setState(() => _searchOpen = false);
+  }
+
+  // ── ✅ FIX : SOUMISSION UNIVERSELLE (Business ID → portfolio, sinon perso) ──
+  Future<void> _submit(String value) async {
+    if (!mounted || widget.isSearching || _resolvingBusiness) return;
+    final raw = value.trim();
+    if (raw.isEmpty) return;
+
+    // 1) Validation OFFLINE du format (checksum SHA-256, legacy accepté)
+    final parsed = ThixBusinessId.tryParse(raw);
+    if (parsed == null) {
+      // Ce n'est pas un ID business → comportement personnel existant
+      widget.onVerify?.call();
+      return;
+    }
+
+    // 2) Vérification en base : existe ET publiée
+    setState(() => _resolvingBusiness = true);
+    try {
+      final repo = BusinessRepository(Supabase.instance.client);
+      final bundle = await repo.fetchPublicBundle(parsed.raw);
+      if (!mounted) return;
+      setState(() => _resolvingBusiness = false);
+      _closeSearchSilent();
+      HapticFeedback.mediumImpact();
+      // 3) Ouverture du portfolio animé de l'entreprise
+      context.push('/b/${bundle.business.thixId}');
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _resolvingBusiness = false);
+      final l10n = AppLocalizations.of(context);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(l10n.t('home_biz_not_found', args: [parsed.raw])),
+        backgroundColor: ThixPolicy.danger,
+        behavior: SnackBarBehavior.floating,
+      ));
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final localeCode = context.select<LocaleController, String>((c) => c.locale.languageCode);
+    final localeCode =
+        context.select<LocaleController, String>((c) => c.locale.languageCode);
     final canSearch = widget.searchController != null;
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(ThixPolicy.s16, widget.safeTop + 8, ThixPolicy.s16, 8),
+      padding: EdgeInsets.fromLTRB(
+          ThixPolicy.s16, widget.safeTop + 8, ThixPolicy.s16, 8),
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 220),
         switchInCurve: Curves.easeOut,
@@ -236,16 +298,19 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
         transitionBuilder: (child, anim) => FadeTransition(
           opacity: anim,
           child: SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0.08, 0), end: Offset.zero).animate(anim),
+            position: Tween<Offset>(begin: const Offset(0.08, 0), end: Offset.zero)
+                .animate(anim),
             child: child,
           ),
         ),
-        child: (_searchOpen && canSearch) ? _buildSearchRow() : _buildIdleRow(localeCode, canSearch),
+        child: (_searchOpen && canSearch)
+            ? _buildSearchRow()
+            : _buildIdleRow(localeCode, canSearch),
       ),
     );
   }
 
-  // ── ÉTAT REPLIÉ : [Update · Mettre à jour] + nom + [🔍] [🌐] [🔔] ──────
+  // ── ÉTAT REPLIÉ : [Update · Mettre à jour] + nom + [🔍] [] [] ──────
   Widget _buildIdleRow(String localeCode, bool canSearch) {
     return Row(
       key: const ValueKey('header_idle'),
@@ -273,7 +338,8 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
                     ),
                   ),
                   if (widget.isAuthenticated)
-                    const CertificationNameBadge(iconSize: 12, padding: EdgeInsets.only(left: 4)),
+                    const CertificationNameBadge(
+                        iconSize: 12, padding: EdgeInsets.only(left: 4)),
                 ],
               ),
             ],
@@ -290,7 +356,9 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
               ),
               const SizedBox(width: 8),
             ],
-            _LanguageButton(localeCode: localeCode, onTap: () => _openLanguageSheet(context)),
+            _LanguageButton(
+                localeCode: localeCode,
+                onTap: () => _openLanguageSheet(context)),
             const SizedBox(width: 8),
             _NotificationsButton(
               badgeCountsStream: widget.badgeCountsStream,
@@ -322,13 +390,14 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.94),
               borderRadius: BorderRadius.circular(19),
-              border: Border.all(color: HomeTheme.sky.withOpacity(0.55), width: 1.2),
+              border: Border.all(
+                  color: HomeTheme.sky.withOpacity(0.55), width: 1.2),
               boxShadow: HomeTheme.softShadow(0.10),
             ),
             child: TextField(
               controller: widget.searchController,
               focusNode: _searchFocus,
-              enabled: !widget.isSearching,
+              enabled: !widget.isSearching && !_resolvingBusiness,
               textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.search,
               onSubmitted: _submit,
@@ -346,6 +415,7 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
                 focusedBorder: InputBorder.none,
                 filled: false,
                 counterText: '',
+                // ✅ FIX : hint mis à jour (ID business ou personnel)
                 hintText: l10n.t('home_search_hint'),
                 hintStyle: ThixPolicy.captionStyle.copyWith(
                   color: HomeTheme.inkSoft.withOpacity(0.8),
@@ -359,9 +429,12 @@ class _PremiumHeaderState extends State<_PremiumHeader> {
         const SizedBox(width: 8),
         _HeaderVerifyButton(
           semanticsLabel: l10n.t('home_verify_id'),
-          isLoading: widget.isSearching,
+          // ✅ FIX : spinner pendant la résolution business AUSSI
+          isLoading: widget.isSearching || _resolvingBusiness,
           onTap: () {
-            if (!widget.isSearching) widget.onVerify?.call();
+            if (!widget.isSearching && !_resolvingBusiness) {
+              _submit(widget.searchController?.text ?? '');
+            }
           },
         ),
       ],
@@ -406,7 +479,8 @@ class _UpdateHint extends StatelessWidget {
           duration: const Duration(milliseconds: 300),
           transitionBuilder: (child, anim) => FadeTransition(
             opacity: anim,
-            child: SizeTransition(sizeFactor: anim, axisAlignment: -1, child: child),
+            child: SizeTransition(
+                sizeFactor: anim, axisAlignment: -1, child: child),
           ),
           child: available
               ? Semantics(
@@ -422,10 +496,12 @@ class _UpdateHint extends StatelessWidget {
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 1.5),
                             decoration: BoxDecoration(
                               color: HomeTheme.skySoft,
-                              border: Border.all(color: HomeTheme.sky.withOpacity(0.25)),
+                              border: Border.all(
+                                  color: HomeTheme.sky.withOpacity(0.25)),
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
@@ -448,7 +524,8 @@ class _UpdateHint extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(width: 2),
-                          const Icon(Icons.chevron_right_rounded, size: 14, color: HomeTheme.skyDeep),
+                          const Icon(Icons.chevron_right_rounded,
+                              size: 14, color: HomeTheme.skyDeep),
                         ],
                       ),
                     ),
@@ -475,7 +552,8 @@ class _HeaderIconButton extends StatelessWidget {
   final IconData icon;
   final String semantics;
   final VoidCallback onTap;
-  const _HeaderIconButton({required this.icon, required this.semantics, required this.onTap});
+  const _HeaderIconButton(
+      {required this.icon, required this.semantics, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -499,7 +577,8 @@ class _HeaderVerifyButton extends StatelessWidget {
   final String semanticsLabel;
   final bool isLoading;
   final VoidCallback onTap;
-  const _HeaderVerifyButton({required this.semanticsLabel, required this.isLoading, required this.onTap});
+  const _HeaderVerifyButton(
+      {required this.semanticsLabel, required this.isLoading, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -519,12 +598,22 @@ class _HeaderVerifyButton extends StatelessWidget {
               end: Alignment.bottomRight,
               colors: [HomeTheme.sky, HomeTheme.skyDeep],
             ),
-            boxShadow: [BoxShadow(color: HomeTheme.skyDeep.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 4))],
+            boxShadow: [
+              BoxShadow(
+                  color: HomeTheme.skyDeep.withOpacity(0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4))
+            ],
           ),
           alignment: Alignment.center,
           child: isLoading
-              ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-              : const Icon(Icons.person_search_rounded, color: Colors.white, size: 17),
+              ? const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 2, color: Colors.white))
+              : const Icon(Icons.person_search_rounded,
+                  color: Colors.white, size: 17),
         ),
       ),
     );
@@ -557,7 +646,8 @@ class _LanguageButton extends StatelessWidget {
                 right: -3,
                 bottom: -3,
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
                   decoration: BoxDecoration(
                     color: HomeTheme.skyDeep,
                     borderRadius: BorderRadius.circular(6),
@@ -565,7 +655,10 @@ class _LanguageButton extends StatelessWidget {
                   ),
                   child: Text(
                     localeCode.toUpperCase(),
-                    style: const TextStyle(color: Colors.white, fontSize: 6.5, fontWeight: FontWeight.w900),
+                    style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 6.5,
+                        fontWeight: FontWeight.w900),
                   ),
                 ),
               ),
@@ -581,7 +674,10 @@ class _NotificationsButton extends StatelessWidget {
   final Stream<SectionBadgeCounts> badgeCountsStream;
   final bool isAuthenticated;
   final VoidCallback onTap;
-  const _NotificationsButton({required this.badgeCountsStream, required this.isAuthenticated, required this.onTap});
+  const _NotificationsButton(
+      {required this.badgeCountsStream,
+      required this.isAuthenticated,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -608,14 +704,17 @@ class _NotificationsButton extends StatelessWidget {
                 alignment: Alignment.center,
                 clipBehavior: Clip.none,
                 children: [
-                  const Icon(Icons.notifications_none_rounded, size: 19, color: HomeTheme.ink),
+                  const Icon(Icons.notifications_none_rounded,
+                      size: 19, color: HomeTheme.ink),
                   if (total > 0)
                     Positioned(
                       right: -3,
                       top: -3,
                       child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1.5),
-                        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 4, vertical: 1.5),
+                        constraints:
+                            const BoxConstraints(minWidth: 16, minHeight: 16),
                         decoration: BoxDecoration(
                           color: HomeTheme.alert,
                           borderRadius: BorderRadius.circular(8),
@@ -624,7 +723,10 @@ class _NotificationsButton extends StatelessWidget {
                         child: Text(
                           badgeText,
                           textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.w900),
+                          style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 8,
+                              fontWeight: FontWeight.w900),
                         ),
                       ),
                     ),
