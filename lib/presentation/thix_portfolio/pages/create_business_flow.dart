@@ -3,10 +3,16 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/create_business_flow.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.3 — Novembre 2026 (CORRIGÉ CI v4)
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/create
+//
+//  Corrections CI v4 :
+//    • Import dart:ui pour ImageFilter
+//    • validator optionnel dans _PrismField (nullable)
+//    • Remplacement de .glow() (flutter_animate) par widget natif
+//    • Remplacement de .withValues() par Color.fromRGBO() dans les const
 //
 //  Parcours utilisateur :
 //    1. FORMULAIRE — nom + secteur + ville + pays (validation live)
@@ -20,17 +26,13 @@
 //    • Haptic feedback + semantics pour accessibilité
 //    • Gestion réseau : retry, timeout soft, message d'erreur lisible
 //    • Navigation : retour à l'accueil THIX IA ou ouverture du site
-//
-//  Dépendances :
-//    • BusinessRepository (fichier 4) via businessRepositoryProvider
-//    • ThixBusinessId (fichier 1) pour la validation du résultat serveur
-//    • qr_flutter, share_plus, url_launcher
 // ════════════════════════════════════════════════════════════════════════════
+
+import 'dart:ui'; // ✅ FIX CI v4 : pour ImageFilter.blur
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -327,10 +329,7 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
           onCountryChanged: (v) => setState(() => _country = v),
           onSubmit: _submit,
           errorMessage: _errorMessage,
-        )
-            .animate()
-            .fadeIn(duration: 400.ms)
-            .slideY(begin: 0.08, duration: 450.ms, curve: Curves.easeOutCubic);
+        );
       case _Step.creating:
         return const _CreatingStep(key: ValueKey('step-creating'));
       case _Step.success:
@@ -342,10 +341,7 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
           onShare: _shareId,
           onOpen: _openPublicSite,
           onHome: _goHome,
-        )
-            .animate()
-            .fadeIn(duration: 500.ms)
-            .slideY(begin: 0.10, duration: 600.ms, curve: Curves.easeOutBack);
+        );
     }
   }
 
@@ -359,6 +355,7 @@ class _CreateBusinessFlowState extends ConsumerState<CreateBusinessFlow> {
             Container(
                 decoration: BoxDecoration(shape: BoxShape.circle, color: c)),
             BackdropFilter(
+              // ✅ ImageFilter nécessite import 'dart:ui'
               filter: ImageFilter.blur(sigmaX: 70, sigmaY: 70),
               child: Container(color: Colors.transparent),
             ),
@@ -505,6 +502,7 @@ class _FormStep extends StatelessWidget {
               ),
               const SizedBox(height: 14),
 
+              // ✅ FIX CI v4 : validator optionnel (nullable) pour champs facultatifs
               _PrismField(
                 controller: sectorCtrl,
                 label: l10n.t('biz_create_field_sector'),
@@ -513,6 +511,7 @@ class _FormStep extends StatelessWidget {
                 textCapitalization: TextCapitalization.words,
                 maxLength: _kMaxSectorLength,
                 optional: true,
+                // pas de validator : champ facultatif
               ),
               const SizedBox(height: 14),
 
@@ -524,6 +523,7 @@ class _FormStep extends StatelessWidget {
                 textCapitalization: TextCapitalization.words,
                 maxLength: _kMaxCityLength,
                 optional: true,
+                // pas de validator : champ facultatif
               ),
               const SizedBox(height: 14),
 
@@ -558,7 +558,6 @@ class _FormStep extends StatelessWidget {
                 GestureDetector(
                   onTap: () {
                     HapticFeedback.selectionClick();
-                    // Re-submit via parent
                     formKey.currentState?.validate();
                   },
                   child: Container(
@@ -657,7 +656,7 @@ class _StepIndicator extends StatelessWidget {
 }
 
 // ============================================================================
-// CHAMP DE FORMULAIRE « PRISM »
+// CHAMP DE FORMULAIRE « PRISM » — ✅ FIX CI v4 : validator optionnel
 // ============================================================================
 
 class _PrismField extends StatelessWidget {
@@ -666,7 +665,7 @@ class _PrismField extends StatelessWidget {
     required this.label,
     required this.hint,
     required this.icon,
-    required this.validator,
+    this.validator, // ✅ optionnel maintenant (nullable)
     this.maxLength,
     this.textCapitalization = TextCapitalization.none,
     this.optional = false,
@@ -676,7 +675,7 @@ class _PrismField extends StatelessWidget {
   final String label;
   final String hint;
   final IconData icon;
-  final String? Function(String?) validator;
+  final String? Function(String?)? validator; // ✅ nullable
   final int? maxLength;
   final TextCapitalization textCapitalization;
   final bool optional;
@@ -724,9 +723,7 @@ class _PrismField extends StatelessWidget {
             controller: controller,
             textCapitalization: textCapitalization,
             maxLength: maxLength,
-            validator: optional
-                ? (_) => null
-                : validator,
+            validator: optional ? (_) => null : validator,
             decoration: InputDecoration(
               counterText: '',
               prefixIcon: Icon(icon, color: ThixPolicy.primary, size: 20),
@@ -840,30 +837,30 @@ class _CreatingStep extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Spinner brand
-            Container(
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                gradient: _Prism.brand,
-                shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                      color: ThixPolicy.primary.withValues(alpha: 0.35),
-                      blurRadius: 24,
-                      offset: const Offset(0, 10)),
-                ],
-              ),
-              child: const SizedBox(
-                width: 42,
-                height: 42,
-                child: CircularProgressIndicator(
-                  strokeWidth: 3.5,
-                  color: Colors.white,
+            // Spinner brand (rotation native)
+            _RotatingSpinner(
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  gradient: _Prism.brand,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                        color: ThixPolicy.primary.withValues(alpha: 0.35),
+                        blurRadius: 24,
+                        offset: const Offset(0, 10)),
+                  ],
+                ),
+                child: const SizedBox(
+                  width: 42,
+                  height: 42,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3.5,
+                    color: Colors.white,
+                  ),
                 ),
               ),
-            )
-                .animate(onPlay: (c) => c.repeat())
-                .rotate(duration: 3000.ms, curve: Curves.linear),
+            ),
             const SizedBox(height: 32),
 
             Text(l10n.t('biz_create_creating_title'),
@@ -885,6 +882,43 @@ class _CreatingStep extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Spinner rotatif natif (remplace .animate().rotate())
+class _RotatingSpinner extends StatefulWidget {
+  const _RotatingSpinner({required this.child});
+  final Widget child;
+
+  @override
+  State<_RotatingSpinner> createState() => _RotatingSpinnerState();
+}
+
+class _RotatingSpinnerState extends State<_RotatingSpinner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 3000),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return Transform.rotate(
+          angle: _controller.value * 2 * 3.14159265,
+          child: child,
+        );
+      },
+      child: widget.child,
     );
   }
 }
@@ -920,33 +954,28 @@ class _SuccessStep extends StatelessWidget {
         _StepIndicator(current: 3),
         const SizedBox(height: 22),
 
-        // Checkmark célébration
+        // ✅ FIX CI v4 : animation NATIVE (pas de .animate().scale().glow())
         Center(
-          child: Container(
-            padding: const EdgeInsets.all(22),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFF10B981), Color(0xFF059669)],
+          child: _ScaleGlowIn(
+            child: Container(
+              padding: const EdgeInsets.all(22),
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: [Color(0xFF10B981), Color(0xFF059669)],
+                ),
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                      // ✅ Color.fromRGBO au lieu de withValues pour const
+                      color: Color.fromRGBO(16, 185, 129, 0.30),
+                      blurRadius: 28,
+                      offset: const Offset(0, 10)),
+                ],
               ),
-              shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.30),
-                    blurRadius: 28,
-                    offset: const Offset(0, 10)),
-              ],
+              child: const Icon(Icons.check_rounded,
+                  size: 50, color: Colors.white),
             ),
-            child: const Icon(Icons.check_rounded,
-                size: 50, color: Colors.white),
-          )
-              .animate()
-              .scale(begin: const Offset(0.3, 0.3),
-                  end: const Offset(1, 1),
-                  duration: 500.ms,
-                  curve: Curves.easeOutBack)
-              .glow(color: const Color(0xFF10B981),
-                  blurRadius: 32,
-                  duration: 1400.ms),
+          ),
         ),
         const SizedBox(height: 20),
 
@@ -1046,10 +1075,7 @@ class _SuccessStep extends StatelessWidget {
               ),
             ],
           ),
-        )
-            .animate(delay: 100.ms)
-            .fadeIn(duration: 500.ms)
-            .slideY(begin: 0.08, duration: 600.ms, curve: Curves.easeOutCubic),
+        ),
 
         const SizedBox(height: 22),
 
@@ -1069,13 +1095,7 @@ class _SuccessStep extends StatelessWidget {
               backgroundColor: Colors.white,
             ),
           ),
-        )
-            .animate(delay: 200.ms)
-            .fadeIn(duration: 500.ms)
-            .scale(begin: const Offset(0.85, 0.85),
-                end: const Offset(1, 1),
-                duration: 600.ms,
-                curve: Curves.easeOutBack),
+        ),
         const SizedBox(height: 10),
         Center(
           child: Text(l10n.t('biz_create_qr_hint'),
@@ -1125,72 +1145,45 @@ class _SuccessStep extends StatelessWidget {
 }
 
 // ============================================================================
-// CLÉS l10n À AJOUTER (app_fr.arb / app_en.arb)
+// Widget animation scale (natif) — remplace .animate().scale()
 // ============================================================================
-//
-// FR :
-//   "biz_create_title":              "Créez votre site entreprise",
-//   "biz_create_subtitle":           "Un THIX ID Business unique vous sera attribué. Partagez-le pour afficher votre portfolio animé.",
-//   "biz_create_field_name":         "Nom de l'entreprise",
-//   "biz_create_field_name_hint":    "Ex : SONATHIX GROUP",
-//   "biz_create_field_sector":       "Secteur d'activité",
-//   "biz_create_field_sector_hint":  "Ex : Technologie",
-//   "biz_create_field_city":         "Ville",
-//   "biz_create_field_city_hint":    "Ex : Kinshasa",
-//   "biz_create_field_country":      "Pays",
-//   "biz_create_cta":                "Créer mon site",
-//   "biz_create_error_name_too_short":"Le nom doit contenir au moins 2 caractères.",
-//   "biz_create_error_name_too_long":"Le nom est trop long.",
-//   "biz_create_error_generic":      "Impossible de créer l'entreprise : {0}",
-//   "biz_create_step_info":          "Infos",
-//   "biz_create_step_creating":      "Création",
-//   "biz_create_step_success":       "Prêt",
-//   "biz_create_creating_title":     "Génération de votre THIX ID",
-//   "biz_create_creating_subtitle":  "Notre serveur prépare votre espace et génère votre identifiant unique sécurisé…",
-//   "biz_create_success_title":      "Votre site est prêt 🎉",
-//   "biz_create_success_subtitle":   "Le portfolio de {0} est désormais accessible via son THIX ID.",
-//   "biz_create_your_id":            "VOTRE THIX ID BUSINESS",
-//   "biz_create_id_copied":          "THIX ID copié dans le presse-papiers",
-//   "biz_create_qr_hint":            "À scanner pour accéder à votre site",
-//   "biz_create_open_site":          "Voir mon site",
-//   "biz_create_go_home":            "Retour à l'accueil",
-//   "common_optional":               "FACULTATIF",
-//   "common_retry":                  "Réessayer",
-//   "common_copy":                   "Copier",
-//   "common_share":                  "Partager",
-//   "common_close":                  "Fermer",
-//   "common_back":                   "Retour",
-//
-// EN :
-//   "biz_create_title":              "Create your business site",
-//   "biz_create_subtitle":           "You'll receive a unique THIX Business ID. Share it to display your animated portfolio.",
-//   "biz_create_field_name":         "Company name",
-//   "biz_create_field_name_hint":    "e.g. SONATHIX GROUP",
-//   "biz_create_field_sector":       "Industry",
-//   "biz_create_field_sector_hint":  "e.g. Technology",
-//   "biz_create_field_city":         "City",
-//   "biz_create_field_city_hint":    "e.g. Kinshasa",
-//   "biz_create_field_country":      "Country",
-//   "biz_create_cta":                "Create my site",
-//   "biz_create_error_name_too_short":"Name must contain at least 2 characters.",
-//   "biz_create_error_name_too_long":"Name is too long.",
-//   "biz_create_error_generic":      "Cannot create business: {0}",
-//   "biz_create_step_info":          "Info",
-//   "biz_create_step_creating":      "Creating",
-//   "biz_create_step_success":       "Ready",
-//   "biz_create_creating_title":     "Generating your THIX ID",
-//   "biz_create_creating_subtitle":  "Our server is setting up your space and generating your secure unique ID…",
-//   "biz_create_success_title":      "Your site is ready 🎉",
-//   "biz_create_success_subtitle":   "The {0} portfolio is now accessible via its THIX ID.",
-//   "biz_create_your_id":            "YOUR THIX BUSINESS ID",
-//   "biz_create_id_copied":          "THIX ID copied to clipboard",
-//   "biz_create_qr_hint":            "Scan to access your site",
-//   "biz_create_open_site":          "Open my site",
-//   "biz_create_go_home":            "Back to home",
-//   "common_optional":               "OPTIONAL",
-//   "common_retry":                  "Retry",
-//   "common_copy":                   "Copy",
-//   "common_share":                  "Share",
-//   "common_close":                  "Close",
-//   "common_back":                   "Back",
-// ============================================================================
+
+class _ScaleGlowIn extends StatefulWidget {
+  const _ScaleGlowIn({required this.child});
+  final Widget child;
+
+  @override
+  State<_ScaleGlowIn> createState() => _ScaleGlowInState();
+}
+
+class _ScaleGlowInState extends State<_ScaleGlowIn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 500),
+  );
+  late Animation<double> _scaleAnim = CurvedAnimation(
+    parent: _controller,
+    curve: Curves.easeOutBack,
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ScaleTransition(
+      scale: _scaleAnim,
+      child: widget.child,
+    );
+  }
+}
