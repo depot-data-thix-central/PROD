@@ -3,19 +3,15 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/business_public_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.3 — Novembre 2026 (CORRIGÉ CI v2)
+//  Version  : 1.0.4 — Novembre 2026 (CORRIGÉ CI v3)
 // ════════════════════════════════════════════════════════════════════════════
 //
-//  Corrections CI :
-//    • Remplacement de .ms (extension retirée) par Duration(milliseconds: ...)
-//    • Remplacement de .animate() (extension retirée) par animations natives
-//      (AnimatedOpacity, AnimatedScale, AnimatedBuilder, TweenAnimationBuilder)
-//    • Correction de BusinessThemeExt (radius ajouté)
-//    • Correction de _card() (rayon via extension)
-//    • Correction de _ContactSection (une seule méthode build)
+//  Corrections CI v3 :
+//    • extensions: [ext] au lieu de Map (Flutter 3.47 attend un Iterable)
+//    • Typewriter natif au lieu de AnimatedTextKit (non dans pubspec)
+//    • Toutes les animations sont NATIVES Flutter
 // ════════════════════════════════════════════════════════════════════════════
 
-import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:flutter/material.dart';
@@ -61,6 +57,7 @@ class BusinessPublicPage extends ConsumerWidget {
           style: bundle.theme.animationStyle,
           radius: bundle.theme.radius,
         );
+        // ✅ FIX CI v3 : extensions attend un Iterable (liste), pas un Map
         return Theme(
           data: bundle.theme.toThemeData().copyWith(
                 extensions: [ext],
@@ -484,6 +481,7 @@ class _HeroIdentity extends StatelessWidget {
               ),
             ),
           const SizedBox(height: 10),
+          // ✅ FIX CI v3 : Typewriter NATIF (pas de package animated_text_kit)
           if (b.claim != null && b.claim!.trim().isNotEmpty)
             DefaultTextStyle(
               style: TextStyle(
@@ -491,15 +489,9 @@ class _HeroIdentity extends StatelessWidget {
                 fontSize: 15,
                 fontWeight: FontWeight.w600,
               ),
-              child: AnimatedTextKit(
-                totalRepeatCount: 1,
-                displayFullTextOnTap: true,
-                animatedTexts: [
-                  TypewriterAnimatedText(
-                    b.claim!,
-                    speed: Duration(milliseconds: (35 * style.durationScale).round()),
-                  ),
-                ],
+              child: _Typewriter(
+                text: b.claim!,
+                speed: Duration(milliseconds: (35 * style.durationScale).round()),
               ),
             ),
           const SizedBox(height: 22),
@@ -540,7 +532,6 @@ class _HeroIdentity extends StatelessWidget {
           : null,
     );
 
-    // ✅ FIX CI : animations natives (plus de .animate())
     logo = _ScaleFadeIn(
       duration: Duration(milliseconds: (700 * style.durationScale).round()),
       beginScale: 0.4,
@@ -559,10 +550,68 @@ class _HeroIdentity extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Typewriter NATIF (remplace AnimatedTextKit non présent dans pubspec)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _Typewriter extends StatefulWidget {
+  const _Typewriter({required this.text, required this.speed});
+  final String text;
+  final Duration speed;
+
+  @override
+  State<_Typewriter> createState() => _TypewriterState();
+}
+
+class _TypewriterState extends State<_Typewriter> {
+  int _charIndex = 0;
+  bool _cursorVisible = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _startTyping();
+  }
+
+  void _startTyping() {
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      final timer = _typeChar();
+    });
+  }
+
+  Future<void> _typeChar() async {
+    while (_charIndex < widget.text.length && mounted) {
+      await Future.delayed(widget.speed);
+      if (!mounted) return;
+      setState(() => _charIndex++);
+    }
+    // Curseur clignotant après la fin
+    if (mounted) {
+      _blinkCursor();
+    }
+  }
+
+  void _blinkCursor() {
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (!mounted) return;
+      setState(() => _cursorVisible = !_cursorVisible);
+      _blinkCursor();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final displayed = widget.text.substring(0, _charIndex);
+    return Text(
+      '$displayed${_cursorVisible ? '│' : ' '}',
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Widgets d'animation NATIFS (remplacent .animate() de flutter_animate)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Fade-in simple avec délai optionnel.
 class _FadeIn extends StatefulWidget {
   const _FadeIn({
     required this.child,
@@ -606,7 +655,6 @@ class _FadeInState extends State<_FadeIn> with SingleTickerProviderStateMixin {
       FadeTransition(opacity: _controller, child: widget.child);
 }
 
-/// Slide Y + fade.
 class _SlideIn extends StatefulWidget {
   const _SlideIn({
     required this.child,
@@ -666,7 +714,6 @@ class _SlideInState extends State<_SlideIn> with SingleTickerProviderStateMixin 
   }
 }
 
-/// Scale + fade.
 class _ScaleFadeIn extends StatefulWidget {
   const _ScaleFadeIn({
     required this.child,
@@ -716,7 +763,6 @@ class _ScaleFadeInState extends State<_ScaleFadeIn>
   }
 }
 
-/// Icône qui pulse (remplace .scale repeat)
 class _PulseIcon extends StatefulWidget {
   const _PulseIcon({
     required this.icon,
@@ -760,7 +806,6 @@ class _PulseIconState extends State<_PulseIcon>
   }
 }
 
-/// Effet de glow (remplace .glow() de flutter_animate)
 class _GlowWrapper extends StatefulWidget {
   const _GlowWrapper({
     required this.child,
