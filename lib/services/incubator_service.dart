@@ -51,6 +51,8 @@ class IncubatorService {
   // ─────────────────────────────────────────────────────────────────────────
   SupabaseClient get _client => Supabase.instance.client;
 
+  /// SELECT générique — chaîne chaînée sans réassignation pour éviter les
+  /// conflits de types PostgREST (PostgrestFilterBuilder → TransformBuilder).
   Future<List<Map<String, dynamic>>> _select(
     String table, {
     String select = '*',
@@ -58,13 +60,27 @@ class IncubatorService {
     bool ascending = true,
     int? limit,
   }) async {
-    var q = _client.from(table).select(select);
-    if (orderBy != null) q = q.order(orderBy, ascending: ascending);
-    if (limit != null) q = q.limit(limit);
-    final res = await q;
-    return (res as List).cast<Map<String, dynamic>>();
+    final List<dynamic> res;
+    if (orderBy != null && limit != null) {
+      res = await _client
+          .from(table)
+          .select(select)
+          .order(orderBy, ascending: ascending)
+          .limit(limit);
+    } else if (orderBy != null) {
+      res = await _client
+          .from(table)
+          .select(select)
+          .order(orderBy, ascending: ascending);
+    } else if (limit != null) {
+      res = await _client.from(table).select(select).limit(limit);
+    } else {
+      res = await _client.from(table).select(select);
+    }
+    return res.cast<Map<String, dynamic>>();
   }
 
+  /// SELECT avec filtre WHERE simple — même approche chaînée.
   Future<List<Map<String, dynamic>>> _selectWhere(
     String table,
     String column,
@@ -74,13 +90,33 @@ class IncubatorService {
     bool ascending = true,
     int? limit,
   }) async {
-    dynamic q = _client.from(table).select(select).eq(column, value);
-    if (orderBy != null) q = q.order(orderBy, ascending: ascending);
-    if (limit != null) q = q.limit(limit);
-    final res = await q;
-    return (res as List).cast<Map<String, dynamic>>();
+    final List<dynamic> res;
+    if (orderBy != null && limit != null) {
+      res = await _client
+          .from(table)
+          .select(select)
+          .eq(column, value)
+          .order(orderBy, ascending: ascending)
+          .limit(limit);
+    } else if (orderBy != null) {
+      res = await _client
+          .from(table)
+          .select(select)
+          .eq(column, value)
+          .order(orderBy, ascending: ascending);
+    } else if (limit != null) {
+      res = await _client
+          .from(table)
+          .select(select)
+          .eq(column, value)
+          .limit(limit);
+    } else {
+      res = await _client.from(table).select(select).eq(column, value);
+    }
+    return res.cast<Map<String, dynamic>>();
   }
 
+  /// INSERT simple.
   Future<void> _insert(String table, Map<String, dynamic> data) async {
     await _client.from(table).insert(data);
   }
@@ -96,9 +132,9 @@ class IncubatorService {
   static String _sanitize(String s) =>
       s.replaceAll(RegExp(r'[\p{C}]', unicode: true), '').trim();
 
+  /// Génération d'ID unique préfixé (entièrement en arithmétique entière).
   static String _generateId(String prefix) {
     final ts = DateTime.now().microsecondsSinceEpoch.toRadixString(36);
-    // ✅ Opération 100% entière — aucun cast double → int
     final r = (DateTime.now().millisecond ^
             (DateTime.now().microsecond * 0x1000000 ~/ 1000000))
         .toRadixString(36);
@@ -146,8 +182,7 @@ class IncubatorService {
   Future<IncubatorProgram?> fetchProgram(String id) async {
     if (!_isValidId(id)) return null;
     try {
-      final res = await _selectWhere(_tPrograms, 'id', id)
-          .timeout(_timeout);
+      final res = await _selectWhere(_tPrograms, 'id', id).timeout(_timeout);
       if (res.isNotEmpty) {
         return IncubatorProgram.fromJson(res.first);
       }
