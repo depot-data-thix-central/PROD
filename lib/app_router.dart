@@ -335,7 +335,8 @@ import 'package:thix_id/presentation/settings/admin_policy_manager_page.dart';
 import 'package:thix_id/presentation/thix_portfolio/pages/create_business_flow.dart';
 import 'package:thix_id/presentation/thix_portfolio/pages/my_businesses_page.dart';
 import 'package:thix_id/presentation/thix_portfolio/pages/business_public_page.dart';
-
+import 'package:thix_id/presentation/thix_portfolio/pages/business_studio_page.dart';
+import 'package:thix_id/presentation/thix_portfolio/pages/theme_studio_page.dart';
 
 
 // ============================================================================
@@ -1050,7 +1051,16 @@ GoRoute(
   builder: (_, s) =>
       BusinessPublicPage(thixId: s.pathParameters['thixId']!),
 ),
-        
+        GoRoute(
+  path: '/business/edit/:id',
+  name: 'business-studio',
+  builder: (_, s) => BusinessStudioPage(businessId: s.pathParameters['id']!),
+),
+GoRoute(
+  path: '/business/theme/:id',
+  name: 'business-theme-studio',
+  builder: (_, s) => ThemeStudioPage(businessId: s.pathParameters['id']!),
+),
         ...educationRoutes,
         ...instructorRoutes,
         ...ThixMoneyRouter.routes,
