@@ -3,7 +3,7 @@
 //  Fichier  : lib/presentation/thix_portfolio/pages/theme_studio_page.dart
 //  Module   : THIX Portfolio Business
 //  Éditeur  : SONATHIX GROUP — Kinshasa, RDC
-//  Version  : 1.0.0 — Novembre 2026
+//  Version  : 1.0.1 — Novembre 2026
 // ════════════════════════════════════════════════════════════════════════════
 //
 //  Route : /business/theme/:id
@@ -14,6 +14,7 @@
 //    • Police (Google Fonts recommandées), rayon, style d'animation, dark mode
 //    • Aperçu live du site miniaturisé (reconstruit à chaque changement)
 //    • Sauvegarde via repo.upsertTheme
+//    • i18n FR/EN inline (aucune dépendance l10n)
 // ════════════════════════════════════════════════════════════════════════════
 
 import 'package:flutter/material.dart';
@@ -21,11 +22,19 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import 'package:thix_id/core/theme/thix_design_policy.dart';
-import 'package:thix_id/l10n/app_localizations.dart';
 
 import '../data/business_repository.dart';
 import '../models/business_bundle.dart';
 import '../models/business_theme.dart';
+
+// ─── i18n minimaliste FR/EN ─────────────────────────────────────────────────
+String _lang(BuildContext c) =>
+    Localizations.localeOf(c).languageCode.toLowerCase();
+
+/// Retourne la chaîne française si la locale courante est `fr`, sinon l'anglaise.
+String _s(BuildContext c, String fr, String en) =>
+    _lang(c) == 'fr' ? fr : en;
+// ────────────────────────────────────────────────────────────────────────────
 
 class _Prism {
   _Prism._();
@@ -94,7 +103,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
         _saving = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(AppLocalizations.of(context).t('biz_theme_saved')),
+        content: Text(_s(context, 'Thème enregistré ✓', 'Theme saved ✓')),
         backgroundColor: ThixPolicy.success,
         behavior: SnackBarBehavior.floating,
       ));
@@ -102,8 +111,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
       if (!mounted) return;
       setState(() => _saving = false);
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(
-            AppLocalizations.of(context).t('biz_theme_error', args: ['$e'])),
+        content: Text(_s(context, 'Erreur : $e', 'Error: $e')),
         backgroundColor: ThixPolicy.danger,
         behavior: SnackBarBehavior.floating,
       ));
@@ -121,11 +129,12 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     if (_loading) {
       return Scaffold(
         backgroundColor: _Prism.bg,
-        appBar: AppBar(title: Text(l10n.t('biz_theme_title'))),
+        appBar: AppBar(
+          title: Text(_s(context, 'Thème & style', 'Theme & style')),
+        ),
         body: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -133,7 +142,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
     return Scaffold(
       backgroundColor: _Prism.bg,
       appBar: AppBar(
-        title: Text(l10n.t('biz_theme_title'),
+        title: Text(_s(context, 'Thème & style', 'Theme & style'),
             style: const TextStyle(fontWeight: FontWeight.w800)),
         actions: [
           Padding(
@@ -145,7 +154,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
                       width: 16,
                       height: 16,
                       child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text(l10n.t('biz_theme_save')),
+                  : Text(_s(context, 'Enregistrer', 'Save')),
             ),
           ),
         ],
@@ -158,7 +167,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
           const SizedBox(height: 20),
 
           // ── Presets ──
-          Text(l10n.t('biz_theme_presets'),
+          Text(_s(context, 'Styles prédéfinis', 'Presets'),
               style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
           SizedBox(
@@ -213,31 +222,34 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
           const SizedBox(height: 20),
 
           // ── Couleurs ──
-          Text(l10n.t('biz_theme_colors'),
+          Text(_s(context, 'Couleurs', 'Colors'),
               style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
           _ColorRow(
-            label: l10n.t('biz_theme_primary'),
+            label: _s(context, 'Primaire', 'Primary'),
             hex: _theme.primaryHex,
-            onPick: (h) => _pickColor(h, (v) => _theme = _theme.copyWith(primaryHex: v)),
+            onPick: (h) =>
+                _pickColor(h, (v) => _theme = _theme.copyWith(primaryHex: v)),
             onChanged: (v) => _theme = _theme.copyWith(primaryHex: v),
           ),
           _ColorRow(
-            label: l10n.t('biz_theme_secondary'),
+            label: _s(context, 'Secondaire', 'Secondary'),
             hex: _theme.secondaryHex,
-            onPick: (h) => _pickColor(h, (v) => _theme = _theme.copyWith(secondaryHex: v)),
+            onPick: (h) =>
+                _pickColor(h, (v) => _theme = _theme.copyWith(secondaryHex: v)),
             onChanged: (v) => _theme = _theme.copyWith(secondaryHex: v),
           ),
           _ColorRow(
-            label: l10n.t('biz_theme_accent'),
+            label: _s(context, 'Accent', 'Accent'),
             hex: _theme.accentHex,
-            onPick: (h) => _pickColor(h, (v) => _theme = _theme.copyWith(accentHex: v)),
+            onPick: (h) =>
+                _pickColor(h, (v) => _theme = _theme.copyWith(accentHex: v)),
             onChanged: (v) => _theme = _theme.copyWith(accentHex: v),
           ),
           const SizedBox(height: 20),
 
           // ── Police ──
-          Text(l10n.t('biz_theme_font'),
+          Text(_s(context, 'Police', 'Font'),
               style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 10),
           Container(
@@ -263,7 +275,8 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
                     ),
                 ],
                 onChanged: (v) {
-                  if (v != null) setState(() => _theme = _theme.copyWith(fontFamily: v));
+                  if (v != null)
+                    setState(() => _theme = _theme.copyWith(fontFamily: v));
                 },
               ),
             ),
@@ -271,7 +284,8 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
           const SizedBox(height: 20),
 
           // ── Rayon ──
-          Text('${l10n.t('biz_theme_radius')} : ${_theme.cornerRadius.round()}',
+          Text(
+              '${_s(context, 'Rayon', 'Radius')} : ${_theme.cornerRadius.round()}',
               style: const TextStyle(fontWeight: FontWeight.w800)),
           Slider(
             value: _theme.cornerRadius.clamp(
@@ -280,12 +294,13 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
             max: BusinessTheme.kMaxRadius,
             divisions: 36,
             activeColor: ThixPolicy.primary,
-            onChanged: (v) => setState(() => _theme = _theme.copyWith(cornerRadius: v)),
+            onChanged: (v) =>
+                setState(() => _theme = _theme.copyWith(cornerRadius: v)),
           ),
           const SizedBox(height: 12),
 
           // ── Style d'animation ──
-          Text(l10n.t('biz_theme_anim'),
+          Text(_s(context, "Style d'animation", 'Animation style'),
               style: const TextStyle(fontWeight: FontWeight.w800)),
           const SizedBox(height: 8),
           Wrap(
@@ -293,7 +308,7 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
             children: [
               for (final s in BusinessAnimationStyle.values)
                 ChoiceChip(
-                  label: Text(_animLabel(l10n, s)),
+                  label: Text(_animLabel(context, s)),
                   selected: _theme.animationStyle == s,
                   onSelected: (_) =>
                       setState(() => _theme = _theme.copyWith(animationStyle: s)),
@@ -304,25 +319,26 @@ class _ThemeStudioPageState extends ConsumerState<ThemeStudioPage> {
 
           // ── Dark mode ──
           SwitchListTile(
-            title: Text(l10n.t('biz_theme_dark'),
+            title: Text(_s(context, 'Mode sombre', 'Dark mode'),
                 style: const TextStyle(fontWeight: FontWeight.w700)),
             value: _theme.darkMode,
             activeThumbColor: ThixPolicy.primary,
-            onChanged: (v) => setState(() => _theme = _theme.copyWith(darkMode: v)),
+            onChanged: (v) =>
+                setState(() => _theme = _theme.copyWith(darkMode: v)),
           ),
         ],
       ),
     );
   }
 
-  String _animLabel(AppLocalizations l10n, BusinessAnimationStyle s) {
+  String _animLabel(BuildContext c, BusinessAnimationStyle s) {
     switch (s) {
       case BusinessAnimationStyle.elegant:
-        return l10n.t('biz_theme_anim_elegant');
+        return _s(c, 'Élégant', 'Elegant');
       case BusinessAnimationStyle.dynamic:
-        return l10n.t('biz_theme_anim_dynamic');
+        return _s(c, 'Dynamique', 'Dynamic');
       case BusinessAnimationStyle.minimal:
-        return l10n.t('biz_theme_anim_minimal');
+        return _s(c, 'Minimal', 'Minimal');
     }
   }
 }
@@ -371,7 +387,8 @@ class _ColorRow extends StatelessWidget {
               key: ValueKey(hex),
               style: const TextStyle(fontWeight: FontWeight.w700),
               onChanged: (v) {
-                if (ThixColorUtils.isValidHex(v)) onChanged(ThixColorUtils.normalizeHex(v));
+                if (ThixColorUtils.isValidHex(v))
+                  onChanged(ThixColorUtils.normalizeHex(v));
               },
               decoration: InputDecoration(
                 labelText: label,
@@ -416,7 +433,6 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
     return Container(
       margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -467,16 +483,16 @@ class _ColorPickerSheetState extends State<_ColorPickerSheet> {
                 }
               },
               decoration: InputDecoration(
-                labelText: l10n.t('biz_theme_hex'),
+                labelText: _s(context, 'Code hexadécimal', 'Hex code'),
                 isDense: true,
-                border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(14)),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
               ),
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: () => Navigator.pop(context, _selected),
-              child: Text(l10n.t('biz_theme_apply')),
+              child: Text(_s(context, 'Appliquer', 'Apply')),
             ),
           ],
         ),
@@ -528,7 +544,9 @@ class _LivePreview extends StatelessWidget {
                   radius: 20,
                   backgroundColor: Theme.of(context).colorScheme.primary,
                   child: Text(
-                    businessName.isNotEmpty ? businessName[0].toUpperCase() : 'T',
+                    businessName.isNotEmpty
+                        ? businessName[0].toUpperCase()
+                        : 'T',
                     style: const TextStyle(
                         color: Colors.white, fontWeight: FontWeight.w900),
                   ),
@@ -538,14 +556,20 @@ class _LivePreview extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(businessName.isEmpty ? 'Entreprise' : businessName,
+                      Text(
+                          businessName.isEmpty
+                              ? _s(context, 'Entreprise', 'Company')
+                              : businessName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(fontWeight: FontWeight.w900)),
-                      Text('Slogan de démonstration',
+                      Text(
+                          _s(context, 'Slogan de démonstration', 'Demo tagline'),
                           style: TextStyle(
                               fontSize: 11,
-                              color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant)),
                     ],
                   ),
                 ),
@@ -568,9 +592,13 @@ class _LivePreview extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('Service premium',
-                            style: const TextStyle(fontWeight: FontWeight.w800)),
-                        Text('Description courte…',
+                        Text(
+                            _s(context, 'Service premium', 'Premium service'),
+                            style:
+                                const TextStyle(fontWeight: FontWeight.w800)),
+                        Text(
+                            _s(context,
+                                'Description courte…', 'Short description…'),
                             style: TextStyle(
                                 fontSize: 11,
                                 color: Theme.of(context)
